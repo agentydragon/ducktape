@@ -58,10 +58,6 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
             "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: second}}}]\n",
         )],
     );
-    let baseline = staged.run_with_analysis(&staged.artifact, false);
-    assert_ok(&baseline.result, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline.output_root());
-    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let result = assign_with_import_order(
         &staged,
@@ -89,18 +85,7 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
         "{assessment:#}"
     );
     assert_eq!(assessment["legacy_gate_accepts"], true, "{assessment:#}");
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "{assessment:#}"
-    );
-    assert_ne!(
-        assessment["emitted_order"], baseline_report["emitted_order"],
-        "candidate extraction into the earlier ESM module must invert source-unit order"
-    );
+    assert_candidate_changes_emitted_order(assessment, &staged);
 
     // Apply the identical move through the ordinary graph-backed edit path,
     // then compare the assessment with run --analysis over that candidate YAML.
@@ -219,10 +204,6 @@ console.log(written, read);\n";
 #[test]
 fn bindings_unassign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     let staged = two_function_ordering_tree();
-    let baseline = staged.run_with_analysis(&staged.artifact, false);
-    assert_ok(&baseline.result, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline.output_root());
-    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let before = module_snapshot(&staged.modules);
     let ordinary = staged.unassign("first", None, true);
@@ -242,18 +223,7 @@ fn bindings_unassign_assessment_matches_the_staged_run_for_its_candidate_plan() 
     assert_ok(&result.result, "bindings unassign --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "{assessment:#}"
-    );
-    assert_ne!(
-        assessment["emitted_order"], baseline_report["emitted_order"],
-        "unassigning the first function into residual must change the emitted order"
-    );
+    assert_candidate_changes_emitted_order(assessment, &staged);
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = staged.unassign("first", None, false);

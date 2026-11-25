@@ -214,13 +214,14 @@ pub(super) fn entry_exports_for_moved_bindings(
 ) -> Vec<ModuleItem> {
     let mut exports = BTreeMap::<String, String>::new();
     for decl in declarations.iter().filter(|decl| decl.exported) {
-        for (name, id) in &decl.bindings {
+        for id in &decl.bindings {
             if binding_assignment.contains_key(id) {
+                let name = id.0.as_str();
                 let final_local = entry_renames
                     .get(name)
                     .cloned()
-                    .unwrap_or_else(|| name.clone());
-                exports.insert(final_local, name.clone());
+                    .unwrap_or_else(|| name.to_owned());
+                exports.insert(final_local, name.to_owned());
             }
         }
     }

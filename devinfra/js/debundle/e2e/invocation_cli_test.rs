@@ -206,7 +206,7 @@ fn print_only_reports_tree_roots_without_creating_outputs() {
     let config = temp.path().join("tree config.yaml");
     let modules = temp.path().join("module tree");
     let vendor_marks = temp.path().join("vendor marks.yaml");
-    let package_root = temp.path().join("pkg ;$(touch package-marker)");
+    let package_root = temp.path().join("pkg=archive ;$(touch package-marker)");
     let package_root_argument = format!("synthetic={}", package_root.display());
 
     let mut command = fixture.process(&[

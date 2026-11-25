@@ -32,14 +32,15 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 use artifact::paths::{join_module_path, module_path_dirname, relative_module_path};
 use artifact::{ArtifactIndexes, ImportReferenceKind};
 use binding_targets::{imported_export_name, module_export_name, public_export_name};
-use js_ast::{new_url_expr, set_str_value, str_value};
+use js_ast::{
+    is_dotted_import_meta_property, new_url_expr, set_str_value, str_value, worker_literal_source,
+};
 use spec::PartialSwapKind;
 
 use crate::plan::VendorResolutionPlan;
 use crate::{
-    DeferredImport, MaterializedOutputChunkIndex, PartialSwapIdentRewriter, VendorImportRewrites,
-    bundled_facade_import_source, make_named_reexport, make_namespace_reexport,
-    resolve_partial_swap_import_target,
+    MaterializedOutputChunkIndex, VendorImportRewrites, bundled_facade_import_source,
+    make_named_reexport, make_namespace_reexport, resolve_partial_swap_import_target,
 };
 
 pub(crate) struct PassthroughContext<'a> {
@@ -87,15 +88,7 @@ pub(crate) fn rewrite_passthrough_module(
 
     // Pass C: body reference rewrites for member-access / named-rename
     // bindings collected in Pass A.
-    if !state.body_rewrites.is_empty() {
-        let mut rewriter = PartialSwapIdentRewriter {
-            bindings: &state.body_rewrites,
-            references_by_symbol: &mut state.references_rewritten,
-        };
-        module.visit_mut_with(&mut rewriter);
-    }
-
-    for (key, count) in state.references_rewritten {
+    for (key, count) in state.finish(&mut module.body) {
         *references_by_symbol.entry(key).or_insert(0) += count;
     }
 }
@@ -135,15 +128,8 @@ pub fn rewrite_peeled_module_imports(
             other => rewritten.push(other),
         }
     }
-    if !state.body_rewrites.is_empty() {
-        let mut rewriter = PartialSwapIdentRewriter {
-            bindings: &state.body_rewrites,
-            references_by_symbol: &mut state.references_rewritten,
-        };
-        rewritten.visit_mut_with(&mut rewriter);
-    }
     *body = rewritten;
-    state.references_rewritten
+    state.finish(body)
 }
 
 fn rewrite_directive_items(
@@ -233,21 +219,28 @@ fn rewrite_import_decl(
                 continue;
             };
             let imported_name = imported_export_name(&named);
-            match plan_named_import_replacement(
+            let Some(action) = context
+                .plan
+                .swapped_named_import_action(target_chunk_id, &imported_name)
+            else {
+                retained_specifiers.push(ImportSpecifier::Named(named));
+                continue;
+            };
+            if let Some(directive) = state.materialize(
+                action,
+                named.local.to_id(),
                 target_chunk_id,
-                &imported_name,
-                &named.local,
-                caller_chunk_id,
-                caller_file_path,
-                context,
-                state,
+                imported_name.to_string(),
+                |path| {
+                    bundled_facade_import_source(
+                        context.chunk_table,
+                        caller_chunk_id,
+                        caller_file_path,
+                        path,
+                    )
+                },
             ) {
-                Some(imports) => {
-                    for deferred in imports {
-                        new_body.push(deferred.into_module_item());
-                    }
-                }
-                None => retained_specifiers.push(ImportSpecifier::Named(named)),
+                new_body.push(directive.into_module_item());
             }
         }
         if !retained_specifiers.is_empty() {
@@ -294,39 +287,6 @@ fn rewrite_import_decl(
         }
     }
     new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-}
-
-/// Classify one named import of `imported_name` targeting a partially /
-/// bundled-partially swapped chunk: `Some(replacement imports)` when a
-/// live rewrite exists (the specifier is dropped and the imports are
-/// spliced in position), `None` to retain the specifier on the chunk
-/// re-import. Classification and materialization are shared with lowering.
-fn plan_named_import_replacement(
-    target_chunk_id: ChunkId,
-    imported_name: &str,
-    local: &Ident,
-    caller_chunk_id: ChunkId,
-    caller_file_path: &str,
-    context: &PassthroughContext<'_>,
-    state: &mut VendorImportRewrites,
-) -> Option<Vec<DeferredImport>> {
-    let action = context
-        .plan
-        .swapped_named_import_action(target_chunk_id, imported_name)?;
-    Some(state.materialize(
-        action,
-        local.to_id(),
-        target_chunk_id,
-        imported_name.to_string(),
-        |path| {
-            bundled_facade_import_source(
-                context.chunk_table,
-                caller_chunk_id,
-                caller_file_path,
-                path,
-            )
-        },
-    ))
 }
 
 /// Rewrite `export { <chunk_export> as <name> } from "<vendor-chunk>"`
@@ -507,7 +467,7 @@ impl VisitMut for SourceCanonicalizer<'_> {
     }
 
     fn visit_mut_new_expr(&mut self, node: &mut NewExpr) {
-        if let Some(source) = worker_new_str(node).map(str_value)
+        if let Some(source) = worker_literal_source(node).map(str_value)
             && let Some(rewritten) = self.rewrite_source(&source)
             && let Some(args) = &mut node.args
             && let Some(first) = args.first_mut()
@@ -523,20 +483,7 @@ fn canonicalizable_call_source_mut(node: &mut CallExpr) -> Option<&mut Str> {
     let is_literal_host_require = matches!(
         &node.callee,
         Callee::Expr(callee)
-            if matches!(
-                callee.unwrap_parens(),
-                Expr::Member(MemberExpr {
-                    obj,
-                    prop: MemberProp::Ident(property),
-                    ..
-                }) if matches!(
-                    &**obj,
-                    Expr::MetaProp(MetaPropExpr {
-                        kind: MetaPropKind::ImportMeta,
-                        ..
-                    })
-                ) && property.sym == *"require"
-            )
+            if is_dotted_import_meta_property(callee.unwrap_parens(), "require")
     );
     if !is_dynamic_import && !is_literal_host_require {
         return None;
@@ -549,17 +496,4 @@ fn canonicalizable_call_source_mut(node: &mut CallExpr) -> Option<&mut Str> {
         return None;
     };
     Some(source)
-}
-
-fn worker_new_str(node: &NewExpr) -> Option<&Str> {
-    if matches!(&*node.callee, Expr::Ident(ident) if ident.sym == *"Worker" || ident.sym == *"SharedWorker")
-        && let Some(args) = &node.args
-        && let Some(first) = args.first()
-        && first.spread.is_none()
-        && let Expr::Lit(Lit::Str(s)) = &*first.expr
-    {
-        Some(s)
-    } else {
-        None
-    }
 }

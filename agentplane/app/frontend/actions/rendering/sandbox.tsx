@@ -279,7 +279,7 @@ const sandboxTemplatePresentation: ActionPresentation = {
   compactCardExpands: expandsForRejectedArguments(templateArgs),
 };
 
-export const sandboxRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+const sandboxRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
   ["exec", sandboxExecPresentation],
   ["create", sandboxCreatePresentation],
   ["get", sandboxGetPresentation],
@@ -287,3 +287,5 @@ export const sandboxRenderers: ReadonlyMap<string, ActionPresentation> = new Map
   ["list", sandboxListPresentation],
   ["get_template", sandboxTemplatePresentation],
 ]);
+
+export const sandboxPresentationGroup: readonly [string, typeof sandboxRenderers] = ["sandbox", sandboxRenderers];

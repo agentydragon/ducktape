@@ -432,6 +432,7 @@ rust_library(
         "support/runtime.rs",
         "support/saved_analysis.rs",
         "support/serialized.rs",
+        "support/source_record_namespace.rs",
         "support/tree_assertions.rs",
         "support/unescaped_local_callable.rs",
         "support/workspace.rs",
@@ -1318,6 +1319,7 @@ debundle_e2e_test(
 corpus_files(
     name = "corpus_files",
     srcs = glob(["cases/**"]),
+    visibility = ["//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__"],
 )
 
 rust_library(
@@ -1379,4 +1381,19 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "context_read_retained_test",
     saved_analysis_tools = True,
+)
+
+exports_files(
+    [
+        "cases/emission/catchall_export_consumer/app.js",
+        "cases/emission/catchall_export_consumer/read.probe.mjs",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__"],
+)
+
+debundle_e2e_test(
+    name = "resolve_placement_test",
+    data = ["//devinfra/js/debundle:debundle_resolve_placement"],
+    env = {"DEBUNDLE_TEST_RESOLVER": "$(rlocationpath //devinfra/js/debundle:debundle_resolve_placement)"},
+    deps = ["@crates//:serde_json"],
 )

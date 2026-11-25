@@ -22,7 +22,7 @@ service EgressAdmin {
   rpc WatchCredentials(WatchCredentialsRequest) returns (stream WatchCredentialsResponse) {
     option (google.api.http) = {get: "/v1/credentials:watch"};
   }
-  // The proxy's readiness with the facts it rests on, as `/healthz` reports them.
+  // The proxy's readiness with the facts it rests on.
   rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
 }
 
@@ -126,10 +126,10 @@ message WatchDecisionsResponse {
 
 message GetHealthRequest {}
 
-// The body of `/healthz`, with its status code as `ready`.
+// The readiness verdict as `ready`, and the facts it rests on.
 message GetHealthResponse {
-  // Whether the proxy can enforce on a synced index none of whose kinds is failing: the 200 or 503 of
-  // `/healthz`.
+  // Whether the proxy can enforce on a synced index none of whose kinds is failing: the verdict the
+  // standard health service reports for its empty service.
   bool ready = 1;
   bool synced = 2;
   bool draining = 3;

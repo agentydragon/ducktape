@@ -87,8 +87,7 @@ async def test_property_recurring_expense_events_start_hidden_on_rollout_graph(p
     await page.goto(f"{augur_server}{PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded")
     await page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
     await page.locator("[data-product-fan-chart='net_worth_quanta']").wait_for(state="visible", timeout=30_000)
-    # Select a rollout by clicking the terminal-distribution plot (the per-rollout "sliver" strip
-    # was replaced by the quantile-line distribution in #1848; the plot is the click-to-inspect surface).
+    # Select a rollout by clicking the terminal-distribution plot, the click-to-inspect surface.
     plot = page.locator("[data-product-terminal-distribution-plot]")
     await plot.wait_for(state="visible", timeout=30_000)
     box = await plot.bounding_box()

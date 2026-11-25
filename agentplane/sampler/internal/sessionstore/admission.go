@@ -5,18 +5,34 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(*Session) error) (*eventlogpb.EventEntry, error) {
+var (
+	ErrSessionBlocked        = fmt.Errorf("session is blocked: %w", protocol.ErrPrecondition)
+	ErrInterruptTurnInactive = fmt.Errorf("interrupt target is not the active turn: %w", protocol.ErrPrecondition)
+	ErrInterruptOwnerMissing = fmt.Errorf("interrupt target has no sampler owner: %w", protocol.ErrPrecondition)
+)
+
+// AdmissionState holds the projected session and evidence read under its admission lock.
+// ProviderRoutes is only valid during the validation callback.
+type AdmissionState struct {
+	Session           *Session
+	Conversation      *Conversation
+	HasQueuedCommands bool
+	ProviderRoutes    func() ([]ProviderRequest, error)
+}
+
+func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(AdmissionState) error) (*eventlogpb.EventEntry, error) {
 	if command == nil || command.GetCommandId() == "" || ownerKey == "" {
 		return nil, protocol.ErrInvalid
 	}
@@ -40,12 +56,8 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			if !bytes.Equal(payload, wire) {
 				return ErrConflict
 			}
-			var entryBytes []byte
-			if err := tx.QueryRowContext(ctx, `SELECT entry FROM sampler_event WHERE session_id=$1 AND sequence=$2`, id, sequence).Scan(&entryBytes); err != nil {
-				return err
-			}
-			admission = &eventlogpb.EventEntry{}
-			if err := eventcodec.Decode(entryBytes, admission); err != nil {
+			admission, err = journalEntry(ctx, tx, id, sequence)
+			if err != nil {
 				return err
 			}
 			return notifyWork(ctx, tx)
@@ -54,11 +66,12 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			return err
 		}
 		if session.Blocked {
-			return protocol.ErrPrecondition
+			return ErrSessionBlocked
 		}
 		if validate != nil {
 			// Validate against the state after earlier commands, under the admission lock.
 			projected := *session
+			hasQueuedCommands := false
 			rows, err := tx.QueryContext(ctx, `SELECT payload FROM sampler_command
                 WHERE session_id=$1 AND outcome=$2 ORDER BY admission`, id,
 				int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
@@ -67,6 +80,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			}
 			defer rows.Close()
 			for rows.Next() {
+				hasQueuedCommands = true
 				var wire []byte
 				if err := rows.Scan(&wire); err != nil {
 					return err
@@ -86,20 +100,30 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				return err
 			}
 			rows.Close()
-			if err := validate(&projected); err != nil {
+			if err := validate(AdmissionState{
+				Session:           &projected,
+				Conversation:      conversation,
+				HasQueuedCommands: hasQueuedCommands,
+				ProviderRoutes: func() ([]ProviderRequest, error) {
+					return providerRoutes(ctx, tx, conversation.ID)
+				},
+			}); err != nil {
 				return err
 			}
 		}
 		if interrupt := command.GetInterruptTurn(); interrupt != nil {
-			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() || conversation.Owner == nil {
-				return protocol.ErrPrecondition
+			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() {
+				return ErrInterruptTurnInactive
+			}
+			if conversation.Owner == nil {
+				return ErrInterruptOwnerMissing
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_interrupt(id,conversation_id,generation,target_turn,result)
 				VALUES($1,$2,$3,$4,NULL)`, uuid.New(), conversation.ID, conversation.Generation, interrupt.GetTurnId()); err != nil {
 				return err
 			}
 		}
-		admission, err = appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{
+		admission, err = s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{
 			CommandAdmitted: &eventpb.CommandAdmitted{Command: command},
 		}})
 		if err != nil {
@@ -119,7 +143,6 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerpb.GetCommandResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 	defer cancel()
-	var wire []byte
 	var outcome int32
 	var failure sql.NullString
 	var sequence uint64
@@ -129,11 +152,8 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 		}
 		return nil, err
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT entry FROM sampler_event WHERE session_id=$1 AND sequence=$2`, id, sequence).Scan(&wire); err != nil {
-		return nil, err
-	}
-	entry := &eventlogpb.EventEntry{}
-	if err := eventcodec.Decode(wire, entry); err != nil {
+	entry, err := journalEntry(ctx, s.db, id, sequence)
+	if err != nil {
 		return nil, err
 	}
 	response := &samplerpb.GetCommandResponse{Admission: entry, Outcome: samplerpb.CommandOutcome(outcome)}
@@ -141,32 +161,6 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 		response.FailureReason = failure.String
 	}
 	return response, nil
-}
-
-func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) ([]*eventlogpb.EventEntry, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
-	defer cancel()
-	if limit <= 0 || limit > 4096 {
-		return nil, protocol.ErrInvalid
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT entry FROM sampler_event WHERE session_id=$1 AND sequence>$2 ORDER BY sequence LIMIT $3`, id, after, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var entries []*eventlogpb.EventEntry
-	for rows.Next() {
-		var wire []byte
-		if err := rows.Scan(&wire); err != nil {
-			return nil, err
-		}
-		entry := &eventlogpb.EventEntry{}
-		if err := eventcodec.Decode(wire, entry); err != nil {
-			return nil, err
-		}
-		entries = append(entries, entry)
-	}
-	return entries, rows.Err()
 }
 
 // Checkpoint is the last snapshot whose entries and metadata completed export to target.
@@ -186,12 +180,13 @@ func (s *Store) Checkpoint(ctx context.Context, id, target string) (*uint64, err
 }
 
 func (s *Store) CommitCheckpoint(ctx context.Context, id, target string, cursor uint64) error {
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, _, err := lockSession(ctx, tx, id); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor) VALUES($1,$2,$3)
-			ON CONFLICT(session_id,destination) DO UPDATE SET cursor=GREATEST(sampler_export_checkpoint.cursor,EXCLUDED.cursor)`, id, target, cursor)
-		return err
-	})
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor) VALUES($1,$2,$3)
+		ON CONFLICT(session_id,destination) DO UPDATE SET cursor=GREATEST(sampler_export_checkpoint.cursor,EXCLUDED.cursor)`, id, target, cursor)
+	var violation *pq.Error
+	if errors.As(err, &violation) && violation.Constraint == "sampler_export_checkpoint_session_id_fkey" && violation.Code == "23503" {
+		return protocol.ErrMissing
+	}
+	return err
 }

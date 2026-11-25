@@ -7,7 +7,6 @@ from playwright.async_api import Locator, expect
 from testing.frontend_visual.capture import VisualHarness
 from testing.frontend_visual.viewports import Viewport
 
-pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

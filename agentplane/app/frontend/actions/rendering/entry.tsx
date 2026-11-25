@@ -2,8 +2,19 @@
 // widget over the parsed, typed value. The registry (index.tsx) safeParses once per dispatch and
 // hands the widget already-validated data. Leaf module, so index.tsx and every group's module import
 // it without a cycle.
-import type { ReactNode } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import type { z } from "zod";
+
+const compactPane = createContext(false);
+
+/** Identifies the collapsed summary so previews can keep it brief. */
+export function CompactPaneContent({ children }: { children: ReactNode }): ReactNode {
+  return <compactPane.Provider value>{children}</compactPane.Provider>;
+}
+
+export function useCompactPane(): boolean {
+  return useContext(compactPane);
+}
 
 export type ArgumentsPreview<S extends z.ZodType = z.ZodType> = {
   schema: S;

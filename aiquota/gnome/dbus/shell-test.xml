@@ -1,0 +1,114 @@
+<?xml version="1.0"?>
+<node>
+  <interface name="works.allegedly.AiQuotaTest">
+    <method name="Reload">
+      <arg name="path" type="s" direction="in"/>
+    </method>
+    <method name="SetStreamStatus">
+      <arg name="status" type="s" direction="in"/>
+      <arg name="error" type="s" direction="in"/>
+    </method>
+    <method name="SetSyncState">
+      <arg name="lastAttemptAt" type="d" direction="in"/>
+      <arg name="nextRetryAt" type="d" direction="in"/>
+      <arg name="now" type="d" direction="in"/>
+    </method>
+    <method name="GetStreamStatus">
+      <arg name="status" type="s" direction="out"/>
+    </method>
+    <method name="GetBalanceText">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetGrantText">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetReadingGroups">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="groups" type="s" direction="out"/>
+    </method>
+    <method name="GetStatusText">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetBurnText">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetSpendText">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetRowPositions">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="positions" type="s" direction="out"/>
+    </method>
+    <method name="GetResetText">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetPanelText">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetPanelProviders">
+      <arg name="providers" type="s" direction="out"/>
+    </method>
+    <method name="SetDetailsOpen">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="open" type="b" direction="in"/>
+    </method>
+    <method name="ActivateMeter">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="index" type="u" direction="in"/>
+      <arg name="hit" type="b" direction="out"/>
+    </method>
+    <method name="GetDetailsOpen">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="open" type="b" direction="out"/>
+    </method>
+    <method name="GetDetailsText">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetConnectionDetails">
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetEmptyLabelText">
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetHeaderText">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetWindowRows">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="rows" type="s" direction="out"/>
+    </method>
+    <method name="SetPresentationTime">
+      <arg name="now" type="d" direction="in"/>
+    </method>
+    <method name="GetMeterAccessibility">
+      <arg name="provider" type="s" direction="in"/>
+      <arg name="meters" type="s" direction="out"/>
+    </method>
+    <method name="SetViewForTest">
+      <arg name="view" type="s" direction="in"/>
+    </method>
+    <method name="ConnectDaemon"/>
+    <method name="FetchView"/>
+    <method name="GetCurrentView">
+      <arg name="view" type="s" direction="out"/>
+    </method>
+    <method name="GetDaemonOwner">
+      <arg name="owner" type="s" direction="out"/>
+    </method>
+    <method name="OpenMenu"/>
+    <method name="WaitForPaint"/>
+    <method name="CloseMenu"/>
+    <method name="GetMenuGeometry">
+      <arg name="rect" type="(iiii)" direction="out"/>
+    </method>
+  </interface>
+</node>

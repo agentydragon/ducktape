@@ -36,13 +36,14 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
 )
 
 from cluster.cdk8s import flux
+from cluster.cdk8s.gitlab_spike import demo
+from cluster.cdk8s.gitlab_spike.app import DEMO_NAMESPACE, WEB
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.providers.flux.notification import ReceiverResource
 
 NAME = "gitlab-spike-delivery"
 _NAME = "gitlab-spike"
 _NAMESPACE = "flux-system"
-_DEMO_NAMESPACE = "gitlab-spike-demo"
 
 
 def chart(app: App) -> Chart:
@@ -52,7 +53,7 @@ def chart(app: App) -> Chart:
         "source",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         spec=GitRepositorySpec(
-            url="http://gitlab-spike-webservice-default.gitlab-spike.svc:8181/spike/acceptance.git",
+            url=f"{WEB.url}/{demo.PROJECT}.git",
             interval="1m",
             ref=GitRepositorySpecRef(branch="main"),
             secret_ref=GitRepositorySpecSecretRef(name="gitlab-spike-git"),
@@ -63,7 +64,7 @@ def chart(app: App) -> Chart:
         "image",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         spec=ImageRepositorySpec(
-            image="registry-gitlab-spike.allegedly.works/spike/acceptance",
+            image=demo.IMAGE_REPOSITORY,
             interval="1m",
             secret_ref=ImageRepositorySpecSecretRef(name="gitlab-spike-registry"),
         ),
@@ -116,7 +117,7 @@ def chart(app: App) -> Chart:
     role = Role(
         chart,
         "demo-deployer",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_DEMO_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=DEMO_NAMESPACE),
         rules=[
             RolePolicyRule(
                 resources=[ApiResource.CONFIG_MAPS, ApiResource.SERVICES, ApiResource.DEPLOYMENTS],
@@ -134,7 +135,7 @@ def chart(app: App) -> Chart:
         ),
         path="./k8s",
         interval="1m",
-        target_namespace=_DEMO_NAMESPACE,
+        target_namespace=DEMO_NAMESPACE,
         service_account_name=reconciler.name,
         timeout="5m",
     )

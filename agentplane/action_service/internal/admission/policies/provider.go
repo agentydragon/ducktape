@@ -87,6 +87,9 @@ func (p *Provider) Decide(ctx context.Context, bindings []Binding, action store.
 							}),
 						},
 					}}
+				case Indeterminate:
+					return NoOpinion{ReasonDescription: truncated(fmt.Sprintf("set %s %s[%d] %s could not be evaluated: %s",
+						set.Name, store.PolicySourceRules, numbered.Number, policy.Kind.Type(), outcome.Reason))}
 				case NotMatched:
 					if policy.lists(action) {
 						declined = append(declined, fmt.Sprintf("set %s %s[%d] %s: %s",

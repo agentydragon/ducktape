@@ -69,14 +69,16 @@ impl CandidateEmissionDraft {
         }
     }
 
-    /// Run the fixed whole-program rewrite sequence.
-    pub fn finalize(self) -> Result<FinalizedCandidateEmissionDraft> {
+    /// Run the whole-program rewrites, then return the lowering records for reporting.
+    pub fn finalize(
+        self,
+    ) -> Result<(FinalizedCandidateEmissionDraft, Vec<SelectedModuleLowering>)> {
         let Self {
             files,
             vendor_plan,
             selected_lowerings,
             materialized_chunks,
-            vendor_reference_rewrites,
+            vendor_reference_rewrites: mut references_by_symbol,
         } = self;
         // Cross-chunk import naturalization runs first, before the emission
         // rewrites canonicalize source specifiers. Both change AST bodies
@@ -95,20 +97,20 @@ impl CandidateEmissionDraft {
         //
         // Runs after materialization so the per-symbol consumer rewrite
         // cannot erase binding names spec selectors matched on.
-        let (files, emission_rewrites) = files.rewrite_bodies(|artifact, indexes| {
+        let (files, global_use_elisions) = files.rewrite_bodies(|artifact, indexes| {
             naturalize_cross_chunk_imports(
                 artifact,
                 indexes,
                 &selected_lowerings,
                 &materialized_chunks,
             )?;
-            apply_emission_rewrites_in_place(artifact, &vendor_plan, indexes)
+            apply_emission_rewrites_in_place(
+                artifact,
+                &vendor_plan,
+                indexes,
+                &mut references_by_symbol,
+            )
         })?;
-        let mut references_by_symbol = vendor_reference_rewrites;
-        for (key, count) in emission_rewrites.references_by_symbol {
-            *references_by_symbol.entry(key).or_insert(0) += count;
-        }
-
         // Trim dead named import specifiers across the whole bundle (entry
         // included): the lowerer over-imports residual/hub bindings the
         // importing file never references. Runs immediately before the
@@ -125,12 +127,15 @@ impl CandidateEmissionDraft {
             Ok(())
         })?;
 
-        Ok(FinalizedCandidateEmissionDraft {
-            files,
-            vendor_plan,
-            references_by_symbol,
-            global_use_elisions: emission_rewrites.global_use_elisions,
-        })
+        Ok((
+            FinalizedCandidateEmissionDraft {
+                files,
+                vendor_plan,
+                references_by_symbol,
+                global_use_elisions,
+            },
+            selected_lowerings,
+        ))
     }
 }
 
@@ -145,15 +150,15 @@ impl FinalizedCandidateEmissionDraft {
         &self.references_by_symbol
     }
 
-    /// Prepared-parse global-use sites each vendor residual strip removed,
-    /// per partially-swapped chunk.
-    pub fn global_use_elisions(&self) -> &BTreeMap<ChunkId, GlobalUseElisions> {
-        &self.global_use_elisions
-    }
-
-    /// Consume the finalized product for reconstruction. No caller can
-    /// rewrite the files after this point.
-    pub fn into_files_and_vendor_plan(self) -> (EmissionFiles, Arc<VendorResolutionPlan>) {
-        (self.files, self.vendor_plan)
+    /// Consume the finalized files, their replacements and the source-global sites
+    /// elided by vendor stripping. These all describe the same candidate.
+    pub fn into_reconstruction_parts(
+        self,
+    ) -> (
+        EmissionFiles,
+        Arc<VendorResolutionPlan>,
+        BTreeMap<ChunkId, GlobalUseElisions>,
+    ) {
+        (self.files, self.vendor_plan, self.global_use_elisions)
     }
 }

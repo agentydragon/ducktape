@@ -42,6 +42,15 @@ where
     F: FnOnce(&T, &mut String) -> Result<()>,
     W: Write + ?Sized,
 {
+    write_rendered(output, &render_report(value, format, text_render)?)
+}
+
+/// Render the exact bytes written to stdout, including the terminating newline.
+pub fn render_report<T: Serialize>(
+    value: &T,
+    format: OutputFormat,
+    text_render: impl FnOnce(&T, &mut String) -> Result<()>,
+) -> std::result::Result<Vec<u8>, ReportOutputError> {
     match format {
         OutputFormat::Text => {
             let mut buffer = String::new();
@@ -49,25 +58,42 @@ where
             if !buffer.is_empty() && !buffer.ends_with('\n') {
                 buffer.push('\n');
             }
-            output
-                .write_all(buffer.as_bytes())
-                .map_err(ReportOutputError::Write)?;
+            Ok(buffer.into_bytes())
         }
-        OutputFormat::Json => {
-            let mut bytes =
-                serde_json::to_vec_pretty(value).map_err(ReportOutputError::Serialize)?;
-            bytes.push(b'\n');
-            output.write_all(&bytes).map_err(ReportOutputError::Write)?;
-        }
-        OutputFormat::Ndjson => {
-            // For ndjson on a non-array shape, fall back to one compact JSON
-            // document per call. Array commands use `write_ndjson_list`.
-            let mut bytes = serde_json::to_vec(value).map_err(ReportOutputError::Serialize)?;
-            bytes.push(b'\n');
-            output.write_all(&bytes).map_err(ReportOutputError::Write)?;
-        }
+        OutputFormat::Json | OutputFormat::Ndjson => json_line(value, format == OutputFormat::Json),
     }
+}
+
+pub fn write_rendered<W: Write + ?Sized>(
+    output: &mut W,
+    bytes: &[u8],
+) -> std::result::Result<(), ReportOutputError> {
+    output.write_all(bytes).map_err(ReportOutputError::Write)?;
     output.flush().map_err(ReportOutputError::Flush)
+}
+
+fn json_line<T: Serialize>(
+    value: &T,
+    pretty: bool,
+) -> std::result::Result<Vec<u8>, ReportOutputError> {
+    let mut bytes = if pretty {
+        serde_json::to_vec_pretty(value)
+    } else {
+        serde_json::to_vec(value)
+    }
+    .map_err(ReportOutputError::Serialize)?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+/// Adapt a renderer that cannot fail to `write_report`'s fallible signature.
+pub fn infallible<T>(
+    render: impl FnOnce(&T, &mut String),
+) -> impl FnOnce(&T, &mut String) -> Result<()> {
+    move |value, out| {
+        render(value, out);
+        Ok(())
+    }
 }
 
 /// Write one text record followed by a newline.
@@ -77,10 +103,7 @@ pub fn write_line(
 ) -> std::result::Result<(), ReportOutputError> {
     let mut text = text.to_string();
     text.push('\n');
-    output
-        .write_all(text.as_bytes())
-        .map_err(ReportOutputError::Write)?;
-    output.flush().map_err(ReportOutputError::Flush)
+    write_rendered(output, text.as_bytes())
 }
 
 /// An operation failed before its stdout diagnostic failed. The original
@@ -109,9 +132,9 @@ pub fn write_ndjson_list<T: Serialize, W: Write + ?Sized>(
         return Ok(false);
     }
     for item in items {
-        let mut bytes = serde_json::to_vec(item).map_err(ReportOutputError::Serialize)?;
-        bytes.push(b'\n');
-        output.write_all(&bytes).map_err(ReportOutputError::Write)?;
+        output
+            .write_all(&json_line(item, false)?)
+            .map_err(ReportOutputError::Write)?;
     }
     output.flush().map_err(ReportOutputError::Flush)?;
     Ok(true)

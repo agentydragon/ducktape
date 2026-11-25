@@ -1,11 +1,10 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
+use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
-use crate::module_apply::{
-    ModulesApplyArgs, physical_plan_changes, read_assignment_request, run_modules_apply,
-};
+use crate::module_apply::{ModulesApplyArgs, read_assignment_request, run_modules_apply};
 use crate::module_proposals::{GraphCorpusScope, discover_graphs, scope_graphs_to_tree};
 use crate::source_unit_apply::{SourceUnitApplyOptions, run_source_unit_apply};
 use anyhow::{Context, Result, ensure};
@@ -27,39 +26,41 @@ pub(super) struct ModulesNs {
 }
 
 impl ModulesNs {
-    pub(super) fn supports_selected_ownership_edit(&self) -> bool {
-        matches!(&self.command, ModulesNsCommand::Apply(_))
-    }
-    pub(super) fn edits_with_graph(&self) -> bool {
+    fn graph_edit_args(&self) -> Option<&GraphEditArgs> {
         match &self.command {
-            ModulesNsCommand::Merge(args) => args.edit.dependency_graph_path.is_some(),
-            ModulesNsCommand::Delete(args) => args.edit.dependency_graph_path.is_some(),
-            ModulesNsCommand::Apply(_) => true,
-            _ => false,
-        }
-    }
-    pub(super) fn writes_with_graph(&self) -> bool {
-        match &self.command {
-            ModulesNsCommand::Merge(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            ModulesNsCommand::Delete(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            ModulesNsCommand::Apply(args) => !args.dry_run,
-            _ => false,
-        }
-    }
-    pub(super) fn format(&self) -> Option<OutputFormat> {
-        match &self.command {
-            ModulesNsCommand::Merge(args) => args.edit.format,
-            ModulesNsCommand::Delete(args) => args.edit.format,
-            ModulesNsCommand::Propose(args) => args.format,
-            ModulesNsCommand::Check(args) => args.format,
-            ModulesNsCommand::Apply(args) => args.format,
+            ModulesNsCommand::Merge(args) => Some(&args.edit),
+            ModulesNsCommand::Delete(args) => Some(&args.edit),
             _ => None,
         }
     }
+
+    pub(super) fn supports_selected_ownership_edit(&self) -> bool {
+        matches!(&self.command, ModulesNsCommand::Apply(_))
+    }
+
+    pub(super) fn edits_with_graph(&self) -> bool {
+        matches!(&self.command, ModulesNsCommand::Apply(_))
+            || self
+                .graph_edit_args()
+                .is_some_and(GraphEditArgs::edits_with_graph)
+    }
+
+    pub(super) fn writes_with_graph(&self) -> bool {
+        matches!(&self.command, ModulesNsCommand::Apply(args) if !args.dry_run)
+            || self
+                .graph_edit_args()
+                .is_some_and(GraphEditArgs::writes_with_graph)
+    }
+
+    pub(super) fn format(&self) -> Option<OutputFormat> {
+        match &self.command {
+            ModulesNsCommand::Propose(args) => args.format,
+            ModulesNsCommand::Check(args) => args.format,
+            ModulesNsCommand::Apply(args) => args.format,
+            _ => self.graph_edit_args().and_then(|edit| edit.format),
+        }
+    }
+
     pub(super) fn verify_graph(
         &self,
         roots: &CurrentRoots,
@@ -67,9 +68,10 @@ impl ModulesNs {
         if let ModulesNsCommand::Propose(args) = &self.command {
             return verify_proposal_graphs(args, roots);
         }
+        if let Some(edit) = self.graph_edit_args() {
+            return edit.verify_graph(roots).map(crate::single_graph_context);
+        }
         let context = match &self.command {
-            ModulesNsCommand::Merge(args) => args.edit.verify_graph(roots),
-            ModulesNsCommand::Delete(args) => args.edit.verify_graph(roots),
             ModulesNsCommand::Check(args) => crate::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
@@ -280,6 +282,8 @@ fn run_modules_check(
             .as_str()
             .to_string();
     }
+    let residual_units_extracted = problem.residual_gain(&candidate);
+    let existing_units_moved = problem.existing_units_moved(&candidate);
     let graph_accepted = accepted(&validation);
     let selector_realization_error = if graph_accepted && !args.graph_only {
         let realization = (|| {
@@ -287,11 +291,11 @@ fn run_modules_check(
                 .source_root
                 .as_deref()
                 .context("executable plan check requires --source-root for selector preflight")?;
-            preflight_assignment(
+            run_source_unit_apply(
                 stderr,
-                &input,
-                &args.common.dependency_graph_path,
                 &args.common.modules_root,
+                &args.common.dependency_graph_path,
+                input,
                 source_root,
                 source_context,
                 preview_options(args.tree_config.as_deref(), changes.clone(), &import_order),
@@ -335,8 +339,8 @@ fn run_modules_check(
         },
         changes,
         import_order,
-        residual_units_extracted: problem.residual_gain(&candidate),
-        existing_units_moved: problem.existing_units_moved(&candidate),
+        residual_units_extracted,
+        existing_units_moved,
         validation: validation.report,
         selector_realization_error,
     };
@@ -450,6 +454,7 @@ fn preview_options<'a>(
     import_order: &[spec::ModulePath],
 ) -> SourceUnitApplyOptions<'a> {
     SourceUnitApplyOptions {
+        chunk_logical_destinations: true,
         tree_config,
         assignments,
         import_order: Some(import_order.to_vec()),
@@ -458,33 +463,6 @@ fn preview_options<'a>(
         dry_run: true,
         effect_assessment_context: None,
     }
-}
-
-fn preflight_assignment(
-    stderr: &mut (dyn std::io::Write + Send),
-    input: &analysis::DependencyGraphInput,
-    graph: &Path,
-    modules_root: &Path,
-    source_root: &Path,
-    source_context: Option<&VerifiedGraphSourceContext>,
-    mut preview: SourceUnitApplyOptions<'_>,
-) -> Result<()> {
-    preview.assignments = physical_plan_changes(
-        preview.assignments,
-        input,
-        preview.tree_config,
-        modules_root,
-        source_context,
-    )?;
-    run_source_unit_apply(
-        stderr,
-        modules_root,
-        graph,
-        source_root,
-        source_context,
-        preview,
-    )?;
-    Ok(())
 }
 
 fn preflight_one_proposal(
@@ -505,20 +483,14 @@ fn preflight_one_proposal(
         return;
     };
     let context = context.filter(|context| context.chunk_id() == proposal.chunk_id);
-    let modules_root = args
-        .tree_config
-        .as_ref()
-        .and(context)
-        .and_then(VerifiedGraphSourceContext::modules_root)
-        .unwrap_or(&args.modules_root);
-    if let Err(error) = preflight_assignment(
+    if let Err(error) = run_source_unit_apply(
         stderr,
+        &args.modules_root,
+        &proposal.graph,
         proposal
             .input
-            .as_ref()
+            .take()
             .expect("found proposal retains its graph"),
-        &proposal.graph,
-        modules_root,
         source_root,
         context,
         preview_options(
@@ -529,7 +501,6 @@ fn preflight_one_proposal(
     ) {
         reject_selector_realization(&mut proposal.search, &error);
     }
-    proposal.input = None;
 }
 
 fn take_proposal_plan(proposal: &mut ConstructedProposal) -> Result<Option<AssignmentPlan>> {
@@ -576,26 +547,16 @@ fn preflight_selected_corpus(
         if proposal.search.status != peel::search::SearchStatus::Found {
             continue;
         }
-        if args.source_root.is_none()
-            || proposal
-                .input
-                .as_ref()
-                .expect("found proposal retains its graph")
-                .report()
-                .ownership_subset
-                .is_none()
-        {
+        let input = proposal
+            .input
+            .as_ref()
+            .expect("found proposal retains its graph");
+        if args.source_root.is_none() || input.report().ownership_subset.is_none() {
             preflight_one_proposal(args, proposal, stderr, Some(context));
             continue;
         }
-        let header = graph_provenance::read_graph_header(&proposal.graph)?;
-        ensure!(
-            header.chunk_id == proposal.chunk_id,
-            "graph chunk changed during proposal preparation"
-        );
-        let provenance = header
-            .provenance
-            .context("selected-view editing requires graph provenance")?;
+        let provenance =
+            crate::selected_view_apply::selected_provenance(context, &proposal.graph, input)?;
         let key = pipeline::SelectedOwnershipProgram::key(context, &provenance)?;
         match groups.entry(key) {
             std::collections::btree_map::Entry::Vacant(entry) => {

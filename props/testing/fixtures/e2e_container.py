@@ -104,11 +104,6 @@ class E2EStack:
     model: str
     resolved_images: dict[str, ResolvedImage]  # repo_name → ResolvedImage
 
-    @property
-    def image_digests(self) -> dict[str, str]:
-        """repo_name → digest (sha256:...)."""
-        return {name: img.digest for name, img in self.resolved_images.items()}
-
 
 def _build_agent_base_env(db_config: DatabaseConfig) -> dict[str, str]:
     """Build agent_base_env for e2e tests.
@@ -197,7 +192,7 @@ async def _make_stack(
                     extra_hosts=HOST_GATEWAY,
                     pull_auth={"username": db.config.user, "password": db.config.password},
                 )
-                registry = AgentRegistry(
+                async with AgentRegistry(
                     executor=executor,
                     db=db,
                     db_config=db.config,
@@ -206,9 +201,7 @@ async def _make_stack(
                     registry_config=registry_proxy_config,
                     llm_base_url=llm_proxy_url,
                     agent_registry_url=registry_proxy_server.origin,
-                )
-
-                try:
+                ) as registry:
                     proxy_url = f"localhost:{registry_proxy_server.port}"
                     crane = bazel_crane(registry=proxy_url, username=db.config.user, password=db.config.password)
                     resolved_images: dict[str, ResolvedImage] = {}
@@ -222,8 +215,6 @@ async def _make_stack(
                         for resolved_image in resolved_images.values():
                             tasks.create_task(executor.ensure_image(resolved_image.oci_ref))
                     yield E2EStack(registry=registry, model=model, resolved_images=resolved_images)
-                finally:
-                    await registry.close()
 
     finally:
         fake_openai.check_errors()

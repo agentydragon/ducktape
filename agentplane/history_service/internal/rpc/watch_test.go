@@ -8,8 +8,13 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -173,4 +178,64 @@ func TestDrainingEndsOpenWatches(t *testing.T) {
 	watch.wantChanged()
 	server.service.Drain()
 	watch.wantReconnectAndCleanEnd()
+}
+
+func TestSelectedSummariesSnapshotAndUpdates(t *testing.T) {
+	server := newServer(t, time.Hour)
+	sessionID, _ := server.record(t)
+	missing := uuid.New()
+	stream, err := server.client.WatchSessionSummaries(callContext(t), &historypb.WatchSessionSummariesRequest{Selected: &historypb.SelectedSessionSummaries{SessionIds: []string{sessionID.String(), missing.String()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot := first.GetSnapshot(); snapshot == nil || len(snapshot.GetSummaries()) != 1 || snapshot.GetSummaries()[0].GetSessionId() != sessionID.String() {
+		t.Fatalf("snapshot: %v", first)
+	}
+	if _, err := server.history.BindWriter(t.Context(), missing, testWriter, ""); err != nil {
+		t.Fatal(err)
+	}
+	next, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.GetSummary().GetSessionId() != missing.String() {
+		t.Fatalf("update: %v", next)
+	}
+}
+
+func TestSelectedSummariesRespectDelegatedReadScope(t *testing.T) {
+	owner := storage.Identity{Name: "watch-owner-" + uuid.NewString(), UID: uuid.NewString()}
+	other := storage.Identity{Name: "watch-other-" + uuid.NewString(), UID: uuid.NewString()}
+	server, connect := newServiceAccessServer(t, time.Minute, callDeadline, nil, []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}, newLiveIdentities(owner, other))
+	ownID := server.recordAs(t, owner)
+	otherID := server.recordAs(t, other)
+	stream, err := connect(t, peertls.ActionsURI).WatchSessionSummaries(serviceDelegatedIdentity(t, owner), &historypb.WatchSessionSummariesRequest{Selected: &historypb.SelectedSessionSummaries{SessionIds: []string{ownID.String(), otherID.String()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := first.GetSnapshot().GetSummaries(); len(got) != 1 || got[0].GetSessionId() != ownID.String() {
+		t.Fatalf("snapshot exposes wrong scope: %v", first)
+	}
+}
+
+func TestSelectedSummariesRejectRecordedAfter(t *testing.T) {
+	server := newServer(t, time.Hour)
+	stream, err := server.client.WatchSessionSummaries(callContext(t), &historypb.WatchSessionSummariesRequest{
+		RecordedAfter: proto.Uint64(0), Selected: &historypb.SelectedSessionSummaries{SessionIds: []string{uuid.NewString()}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("got %v, want InvalidArgument", err)
+	}
 }

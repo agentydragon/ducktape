@@ -11,7 +11,6 @@ func TestProviderErrorsPreserveTheirCauses(t *testing.T) {
 	errorsWithCause := []error{
 		&ProviderTransientError{Cause: cause},
 		&ProviderPhaseTimeoutError{Phase: ProviderTimeoutSemanticIdle, Timeout: time.Second, Cause: cause},
-		&ProviderProgressError{Cause: cause},
 		&ProviderEvidencePersistenceError{Cause: cause},
 	}
 	for _, err := range errorsWithCause {

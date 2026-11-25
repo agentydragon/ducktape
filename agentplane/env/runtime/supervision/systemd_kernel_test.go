@@ -58,8 +58,8 @@ func TestSystemdKernelFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	config, sandboxUID := loadSystemdProofConfiguration(t)
-	if config.Environment.Kind != "vm" {
-		t.Fatal("systemd proof requires VM configuration")
+	if config.Environment.Supervision != "systemd" {
+		t.Fatalf("systemd proof requires environment.supervision=systemd, got %q", config.Environment.Supervision)
 	}
 	launcher := &SystemdLauncher{
 		Slice: WorkloadSlice, AgentUID: config.Environment.AgentUID, AgentGID: config.Environment.AgentGID,
@@ -832,7 +832,7 @@ func proofUnitProperties(executable string, args []string, slice string) []syste
 type systemdProofRuntimeConfig struct {
 	StateDir    string `json:"state_dir"`
 	Environment struct {
-		Kind         string   `json:"kind"`
+		Supervision  string   `json:"supervision"`
 		AgentUID     uint32   `json:"agent_uid"`
 		AgentGID     uint32   `json:"agent_gid"`
 		BlockDevices []string `json:"block_devices"`

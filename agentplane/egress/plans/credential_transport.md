@@ -12,9 +12,8 @@ remaining bearer and Secret-backed credentials.
 own bearer goes only to the configured local API server's host and port over TLS (#15075). Every
 other source is chosen without them. `proxy/proxy.go` distinguishes HTTP, HTTPS, and cleartext
 HTTP/2, then dials the admitted address. Its TLS transport verifies upstream certificates, but a
-matching rule can also substitute a `secretRef` or `projectedWorkloadToken` credential into
-plaintext HTTP. The HTTP/2 transport test deliberately
-exercises that behavior with a local upstream.
+matching rule can also substitute a `secretRef` credential into plaintext HTTP. The HTTP/2 transport
+test deliberately exercises that behavior with a local upstream.
 
 `clusterInternal` permits private DNS answers; it is not a transport-security declaration.
 Kubernetes already combines that flag with an HTTPS endpoint. Public Gateway TLS also says
@@ -26,9 +25,8 @@ are a separate transport boundary, owned by the existing platform-routing decisi
 Audited the committed testing/staging PolicySets, including delivery and public-coder grants, and
 their cdk8s authors at `b3ec6c38b6`. This is desired configuration, not a live traffic inventory.
 The table's schemes and ports are the proposed permitted origins; current rules do not restrict
-either. This historical inventory omits later grants including `quest-read` and projected workload
-credentials for Session Dispatcher and EnvironmentService; refresh it before choosing transport
-constraints. Retain existing host, method, path, and identity restrictions.
+either. This historical inventory omits later grants including `quest-read`; refresh it before
+choosing transport constraints. Retain existing host, method, path, and identity restrictions.
 
 | Credentials and destinations                                                                          | Proposed origins                 | Authoritative source                                                                       |
 | ----------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -36,7 +34,6 @@ constraints. Retain existing host, method, path, and identity restrictions.
 | `google-readonly`, `grocy-sf-readonly`, `activitywatch-read`, public `aiquota-read`, `haku-mailbox`   | HTTPS 443                        | `cluster/cdk8s/agentplane/egress_staging_credentials.py` and `actions_staging_policies.py` |
 | Public `forgejo-haku` and `forgejo-finance-agent`: `git.allegedly.works`                              | HTTPS 443                        | `egress_staging_credentials.py::_forgejo_rules`                                            |
 | `brave-search`, `public-coder-matrix`, plus reused GitHub/AIQuota credentials                         | HTTPS 443                        | `cluster/cdk8s/public_coder/egress.py`                                                     |
-| Kubernetes projected workload token                                                                   | HTTPS 443                        | `cluster/cdk8s/agentplane/egress.py`, `sandbox_pod.py`                                     |
 | `agentplane-runner-ingress`: History ingress                                                          | HTTP/h2c 8081                    | `history_service.py::ingress_service`                                                      |
 | `ollama`, `litellm-cheap-experiments`                                                                 | HTTP 11435 and 4000 respectively | `egress.py::_egress_policies`, Ollama and LiteLLM Service definitions                      |
 | Internal Forgejo credentials and existing host aliases                                                | HTTP 3000                        | `egress_staging_credentials.py::_forgejo_rules`, `cluster/cdk8s/forgejo/app.py`            |

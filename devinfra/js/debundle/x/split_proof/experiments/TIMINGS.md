@@ -2,7 +2,7 @@
 
 Every number here was measured on one machine (4 cores, 15 GB, Linux), Lean 4.35.0 from nixpkgs.
 Node was v22.23.5 for the first measurements and v24.22.2 for the later ones. Node only parses and runs smoke tests, so it is not in the check times.
-Wall-clock unless noted. Raw output is in [`records/`](records) and [`splits/results/`](splits/results).
+Wall-clock unless noted. Raw output is in [`records/`](records) and [split results](../integration/library_splits/results).
 Where a run did not finish, the table says so and gives the time at which I stopped it.
 
 The checker went through six stages. Names used below:
@@ -17,19 +17,19 @@ The main tables are in [`README.md` § 5](README.md#5-how-far-does-the-check-sca
 
 ## Building and running
 
-These are historical measurements; the `check` executable and verbatim-output workflow have since been removed.
+These measurements predate the removal of the `check` executable and verbatim-output workflow. The current 12-statement example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
 
-| What                                                                                                           | Time                               |
-| -------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| fetch Lean 4.35 from the Nix cache (first time)                                                                | 38 s                               |
-| clean `lake build` (default targets: core library and `render`)                                                | 18.6 s                             |
-| then `lake build Experiments check lower lowersplit evalorder`                                                 | 14.7 s                             |
-| `./run.sh --controls --fuzz --experiments --lowering --es-order --splits` from a fresh copy in the repository  | 302 s                              |
-| kernel check of the real 12-statement example (`lake env lean Experiments/Generated.lean`, with process start) | 1.5 s (0.6 s in the first version) |
-| fuzzer, 600 requests (510 unique splits), each rendered and run in Node                                        | 47–53 s                            |
-| mutation test, 6 mutants × 400 splits                                                                          | 247 s                              |
-| `splits/run_all.sh`: 2,740 splits of six real bundles, each checked and run in Node, 4 jobs                    | 154 s                              |
-| `es_order/check.mjs 500 1`: 500 random import graphs, Node against the model                                   | 52 s                               |
+| What                                                                                                          | Time                               |
+| ------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| fetch Lean 4.35 from the Nix cache (first time)                                                               | 38 s                               |
+| clean `lake build` (default targets: core library and `render`)                                               | 18.6 s                             |
+| then `lake build Experiments check lower lowersplit evalorder`                                                | 14.7 s                             |
+| `./run.sh --controls --fuzz --experiments --lowering --es-order --splits` from a fresh copy in the repository | 302 s                              |
+| kernel check of the real 12-statement example (`lake env lean EsmSplit/Generated.lean`, with process start)   | 1.5 s (0.6 s in the first version) |
+| fuzzer, 600 requests (510 unique splits), each rendered and run in Node                                       | 47–53 s                            |
+| mutation test, 6 mutants × 400 splits                                                                         | 247 s                              |
+| `splits/run_all.sh`: 2,740 splits of six real bundles, each checked and run in Node, 4 jobs                   | 154 s                              |
+| `es_order/check.mjs 500 1`: 500 random import graphs, Node against the model                                  | 52 s                               |
 
 ## The check on the example, compiled
 
@@ -39,14 +39,14 @@ These are historical measurements; the `check` executable and verbatim-output wo
 
 ## Real bundles: lowering to ESTree and the Lean footprint analysis
 
-| Bundle          | Source | Top-level statements | `node dump.mjs` (acorn + eslint-scope + JSON) | Lean footprints (process start + JSON parse + analysis) |
-| --------------- | ------ | -------------------- | --------------------------------------------- | ------------------------------------------------------- |
-| lodash (subset) | 84 KB  | 670                  | 182 ms                                        | 79 ms                                                   |
-| acorn           | 199 KB | 447                  | 238 ms                                        | 92 ms                                                   |
-| semver (CJS)    | 72 KB  | 59                   | 154 ms                                        | 78 ms                                                   |
-| zod             | 744 KB | 1,072                | 465 ms                                        | 200 ms                                                  |
-| acorn, minified | 119 KB | 374                  | 202 ms                                        | 92 ms                                                   |
-| zod, minified   | 447 KB | 805                  | 531 ms                                        | 192 ms                                                  |
+| Bundle          | Source | Top-level statements | AST dump (Acorn + eslint-scope + JSON) | Lean footprints (process start + JSON parse + analysis) |
+| --------------- | ------ | -------------------- | -------------------------------------- | ------------------------------------------------------- |
+| lodash (subset) | 84 KB  | 670                  | 182 ms                                 | 79 ms                                                   |
+| acorn           | 199 KB | 447                  | 238 ms                                 | 92 ms                                                   |
+| semver (CJS)    | 72 KB  | 59                   | 154 ms                                 | 78 ms                                                   |
+| zod             | 744 KB | 1,072                | 465 ms                                 | 200 ms                                                  |
+| acorn, minified | 119 KB | 374                  | 202 ms                                 | 92 ms                                                   |
+| zod, minified   | 447 KB | 805                  | 531 ms                                 | 192 ms                                                  |
 
 Best of 2 (dump) and best of 3 (Lean). Inside one process the footprint stage alone took 3 ms (lodash, 670 statements), 6 ms (acorn, 447) and 35 ms (zod, minified, 805).
 

@@ -6,7 +6,6 @@ py_library(
     deps = [
         "@pypi//pillow",
         "@pypi//qrcode",
-        "@pypi//svg_py",
     ],
 )
 

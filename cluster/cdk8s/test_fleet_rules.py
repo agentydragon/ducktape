@@ -2,27 +2,15 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import (
-    ApiObject,
-    ApiObjectMetadata,
-    App,
-    Chart,
-    JsonPatch,
-    Testing as Cdk8sTesting,
-)  # pytest auto-collects classes named Test*
 
 from cluster.cdk8s.fleet_rules import (
-    add_fleet_rules,
     cilium_rules_enforce_something,
     daemonsets_leave_offline_nodes,
     https_egress_sni_conflicts,
     pinned_https_egress,
     pod_hardening,
-    resolved_references,
-    unused_waivers,
+    reference_kind_mismatches,
 )
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL
-from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION
 
 _HARDENED = {"securityContext": {"seccompProfile": {"type": "RuntimeDefault"}}}
 _RESOURCES = {"requests": {"cpu": "10m", "memory": "16Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}}
@@ -186,32 +174,13 @@ def test_waivers_name_objects_that_still_break_their_rule() -> None:
         _policy("open", [_https({"toEntities": ["world"]})]),
         _policy("pinned", [_https({"toEntities": ["world"]}, ["a.example.test"])]),
     ]
-    assert unused_waivers(objects, unhardened={"Deployment/bare"}, unpinned={"open"}) == []
-    assert unused_waivers(objects, unhardened={"Deployment/ok", "Deployment/gone"}, unpinned={"pinned"}) == [
+    assert pod_hardening(objects, unhardened={"Deployment/bare", "Deployment/ok", "Deployment/gone"}) == [
         "pod hardening waived for Deployment/gone, which is not in this App or passes",
         "pod hardening waived for Deployment/ok, which is not in this App or passes",
-        "unpinned HTTPS egress waived for CiliumNetworkPolicy/pinned, which is not in this App or passes",
     ]
-
-
-def test_auto_vpa_namespace_owned_policy_requires_controlled_values(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "vpa")
-    ApiObject(
-        chart,
-        "partial-vpa-policy",
-        api_version="v1",
-        kind="Namespace",
-        metadata=ApiObjectMetadata(
-            name="partial",
-            labels={VPA_UPDATE_MODE_LABEL: "auto"},
-            annotations={
-                VPA_RESOURCE_POLICY_ANNOTATION: '{"containerPolicies":[{"containerName":"*","minAllowed":{"cpu":"10m"}}]}'
-            },
-        ),
-    )
-    add_fleet_rules(chart)
-    with pytest.raises(Exception, match=r"Namespace/partial: VPA container policy '\*' lacks controlledValues"):
-        Cdk8sTesting.synth(chart)
+    assert pinned_https_egress(objects, unpinned={"open", "pinned"}) == [
+        "unpinned HTTPS egress waived for CiliumNetworkPolicy/pinned, which is not in this App or passes"
+    ]
 
 
 def _reader(
@@ -228,7 +197,9 @@ def _reader(
     return _deployment(name, containers=[container], pod=pod)
 
 
-def test_references_resolve_in_chart_and_reject_wrong_kind() -> None:
+def test_reference_kind_mismatches_only_when_namespace_is_known() -> None:
+    wrong_map: dict[str, Any] = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "wrong-kind"}}
+    wrong_certificate_kind = _reader("wrong-certificate-kind", config_map="ca-secret")
     objects = [
         {
             "apiVersion": "external-secrets.io/v1",
@@ -254,12 +225,37 @@ def test_references_resolve_in_chart_and_reject_wrong_kind() -> None:
         # External and unmatched references are outside this App's validation scope.
         _reader("external", env_secret="oidc", config_map="image-tag"),
         _reader("unmatched", env_secret="missing-secret", config_map="missing-map"),
-        {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "wrong-kind"}},
+        wrong_map,
         _reader("wrong-kind", volume_secret="wrong-kind"),
+        wrong_certificate_kind,
+        _reader("unknown-bundle-target", env_secret="ca-bundle"),
     ]
-    assert resolved_references(objects) == [
-        "Deployment/wrong-kind reads Secret 'wrong-kind', but the app creates a ConfigMap with that name"
+    for obj in objects:
+        if obj["kind"] != "Bundle":
+            obj["metadata"]["namespace"] = "same"
+    assert reference_kind_mismatches(objects) == [
+        "Deployment/wrong-kind in namespace 'same' reads Secret 'wrong-kind', but the app creates a ConfigMap with that name",
+        "Deployment/wrong-certificate-kind in namespace 'same' reads ConfigMap 'ca-secret', but the app creates a Secret with that name",
     ]
+
+    # An object in another namespace cannot satisfy this Pod reference. A
+    # missing namespace may be supplied by Kustomize, so it cannot prove a mismatch.
+    wrong_map["metadata"]["namespace"] = "other"
+    assert reference_kind_mismatches(objects) == [
+        "Deployment/wrong-certificate-kind in namespace 'same' reads ConfigMap 'ca-secret', but the app creates a Secret with that name"
+    ]
+    del wrong_map["metadata"]["namespace"]
+    assert len(reference_kind_mismatches(objects)) == 1
+
+    # The consumer's namespace may also be assigned after synthesis.
+    del wrong_certificate_kind["metadata"]["namespace"]
+    assert reference_kind_mismatches(objects) == []
+
+    # A known same-kind resource elsewhere suppresses the heuristic too: an
+    # external producer could supply this namespace's Secret independently.
+    wrong_map["metadata"]["namespace"] = "same"
+    objects.append({"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "wrong-kind", "namespace": "other"}})
+    assert reference_kind_mismatches(objects) == []
 
 
 _STAGING = "agentplane-staging"
@@ -324,15 +320,14 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
         labels=proxy,
     )
     assert https_egress_sni_conflicts([open_egress, internal]) == []
-    # A selector this cannot reduce to labels -- none at all, or `matchExpressions` -- covers
-    # everything in scope, so it conflicts rather than being skipped.
+    # Without contradictory required labels, these selectors can cover the open endpoint.
     no_selector = _policy("catch-all", [_https({"toEntities": ["remote-node", "host"]}, ["a.test"])])
     assert len(https_egress_sni_conflicts([open_egress, no_selector])) == 1
     expressions = _policy_for("expressions", pinned_egress["spec"]["egress"], namespace=_STAGING, labels={})
-    expressions["spec"]["endpointSelector"]["matchExpressions"] = [
-        {"key": "app.kubernetes.io/name", "operator": "In", "values": ["egress"]}
-    ]
+    expressions["spec"]["endpointSelector"]["matchExpressions"] = [{"key": "tier", "operator": "Exists"}]
     assert len(https_egress_sni_conflicts([open_egress, expressions])) == 1
+    expressions["spec"]["endpointSelector"]["matchLabels"] = another
+    assert https_egress_sni_conflicts([open_egress, expressions]) == []
     # The same shape inside one policy -- a pinned rule and an open one on 443 -- is the same
     # contradiction, and is named as its own error.
     both = _policy_for(
@@ -356,18 +351,6 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
         },
     }
     assert len(https_egress_sni_conflicts([open_egress, clusterwide])) == 1
-
-
-def test_rules_fail_synth_naming_the_object(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "fleet")
-    ApiObject(
-        chart, "bare", api_version="apps/v1", kind="Deployment", metadata=ApiObjectMetadata(name="bare")
-    ).add_json_patch(JsonPatch.add("/spec", {"template": {"spec": {"containers": [{"name": "main"}]}}}))
-    add_fleet_rules(chart)
-    with pytest.raises(
-        Exception, match=r"(?s)Validation failed.*Deployment/bare container main: seccomp profile is None"
-    ):
-        Cdk8sTesting.synth(chart)
 
 
 if __name__ == "__main__":

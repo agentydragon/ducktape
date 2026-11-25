@@ -31,7 +31,6 @@ py_test(
         ":cluster",
         ":flux",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest_bazel",
     ],
 )
@@ -61,14 +60,12 @@ py_library(
 py_library(
     name = "flux",
     srcs = ["flux.py"],
-    data = ["@multitool//tools/flux"],
     deps = [
         ":k8s",
         "//cluster/cdk8s:manifest_roots",
         "@pypi//durationpy",
         "@pypi//pydantic",
         "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -81,18 +78,7 @@ py_library(
         ":k8s",
         ":kustomize",
         "//cluster/cdk8s:manifest_roots",
-        "@pypi//networkx",
-        "@pypi//numpy",
-        "@pypi//pygit2",
-        "@pypi//types_networkx",
     ],
-)
-
-py_library(
-    name = "flux_bootstrap_auth",
-    testonly = True,
-    srcs = ["flux_bootstrap_auth.py"],
-    deps = [":k8s"],
 )
 
 py_library(
@@ -113,7 +99,10 @@ py_library(
     name = "health_checks",
     testonly = True,
     srcs = ["health_checks.py"],
-    deps = [":cluster"],
+    deps = [
+        ":cluster",
+        ":k8s",
+    ],
 )
 
 py_library(
@@ -134,25 +123,13 @@ py_library(
 )
 
 py_library(
-    name = "helm_templates",
-    testonly = True,
-    srcs = ["helm_templates.py"],
-    data = [
-        "//cluster/terraform/main:cilium-values.yaml",
-        "@multitool//tools/helm",
-    ],
-    deps = [
-        "@rules_python//python/runfiles",
-    ],
-)
-
-py_library(
     name = "image_automation",
     testonly = True,
     srcs = ["image_automation.py"],
     deps = [
         ":cluster",
         ":k8s",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -179,14 +156,10 @@ py_test(
 py_test(
     name = "test_kustomize",
     srcs = ["test_kustomize.py"],
-    data = ["//cluster/k8s/agentplane-staging:image_pins"],
     deps = [
         ":kustomize",
-        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -198,7 +171,6 @@ py_test(
         ":cluster",
         ":flux",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -207,12 +179,18 @@ py_test(
 py_test(
     name = "test_flux",
     srcs = ["test_flux.py"],
+    data = [
+        "//cluster:generated/artifact-generators/artifact-generators.k8s.yaml",
+        "//cluster/k8s:flux/ducktape-flux/ducktape-flux.k8s.yaml",
+        "//cluster/k8s/flux/flux-system:gotk-sync.yaml",
+    ],
     deps = [
         ":flux",
-        ":flux_bootstrap_auth",
-        "@pypi//durationpy",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -224,7 +202,6 @@ py_test(
         ":dependencies",
         ":flux",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -238,8 +215,6 @@ py_test(
         ":flux",
         ":health_checks",
         ":k8s",
-        ":kustomize",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -252,8 +227,6 @@ py_test(
         ":dependencies",
         ":flux",
         ":k8s",
-        ":kustomize",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -261,9 +234,14 @@ py_test(
 py_test(
     name = "test_helm_templates",
     srcs = ["test_helm_templates.py"],
+    data = [
+        "//cluster/terraform/main:cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
     deps = [
-        ":helm_templates",
+        "//:conftest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -275,8 +253,11 @@ py_test(
         "//:conftest",
         "//cluster/scripts:nebula_mesh",
         "//cluster/scripts:nebula_mesh_fixtures",
+        "//cluster/scripts:render_mobile_nebula_config",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -289,6 +270,7 @@ py_test(
         "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
+        "@multitool//tools/flux",
         "@multitool//tools/kustomize",
     ],
     deps = [
@@ -297,7 +279,6 @@ py_test(
         ":conftest",
         ":dependencies",
         ":flux",
-        ":flux_bootstrap_auth",
         ":health_checks",
         ":image_automation",
         ":k8s",
@@ -306,6 +287,7 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -314,12 +296,12 @@ py_test(
     srcs = ["test_rotations_config.py"],
     data = [
         "//:sops_config",
-        # Importing the generator starts jsii's Node runtime.
-        "@nodejs_linux_amd64//:bin/node",
+        "@sops_linux_amd64//file:sops",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {"SOPS_RLOCATION": "$(rlocationpath @sops_linux_amd64//file:sops)"},
     deps = [
-        "//cluster/cdk8s/authentik:jwt_rotation",
+        "//:conftest",
+        "//cluster/cdk8s/authentik:jwt_roster",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
@@ -334,7 +316,6 @@ py_test(
         ":cluster",
         ":flux",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -342,24 +323,19 @@ py_test(
 
 py_test(
     name = "test_flux_build",
-    # The whole cluster manifest tree below is fetched inside this test's own clock on RBE,
-    # which is minutes against the ~7s the test itself spends; see
-    # <devinfra/buildbuddy/debug/2026_08_rbe_small_test_timeouts.md>.
     size = "medium",
     srcs = ["test_flux_build.py"],
-    # validate_flux_build needs the whole tree the root kustomization references.
-    # cluster_all_files' glob stops at package boundaries, so each local package
-    # supplies its Kustomize inputs through a filegroup. :cluster_k8s_inputs collects them;
-    # :flux carries the CLI.
     data = [
-        ":cluster_k8s_inputs",
-        "//cluster:generated_manifests",
+        "//cluster/k8s:flux_root",
+        "@multitool//tools/flux",
     ],
     deps = [
         ":conftest",
         ":flux",
+        ":k8s",
         "//:conftest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -370,23 +346,6 @@ py_test(
         ":cluster",
         ":image_automation",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_generator_namespace",
-    srcs = ["test_generator_namespace.py"],
-    data = [
-        ":cluster_k8s_inputs",
-        "//agentplane/crds:manifests",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//cluster/cdk8s:manifest_roots",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )

@@ -39,17 +39,6 @@ py_library(
 )
 
 py_library(
-    name = "mock_factory",
-    srcs = ["mock_factory.py"],
-    deps = [
-        ":data",
-        "//x/wt/server:git_manager",
-        "//x/wt/server:github_client",
-        "//x/wt/server:worktree_service",
-    ],
-)
-
-py_library(
     name = "repo_factory",
     srcs = ["repo_factory.py"],
     deps = [
@@ -73,7 +62,6 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":config_factory",
-        ":mock_factory",
         ":repo_factory",
         ":utils",
         "//x/wt/server:git_manager",

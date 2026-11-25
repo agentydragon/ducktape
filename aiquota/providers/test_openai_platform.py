@@ -4,9 +4,10 @@ from decimal import Decimal
 import httpx
 import pytest_bazel
 
+from aiquota.config import OpenAIPlatformSettings
 from aiquota.models import FetchError, FetchSuccess
 from aiquota.providers.client import provider_client
-from aiquota.providers.openai_platform import OpenAIPlatformProvider, OpenAIPlatformSettings
+from aiquota.providers.openai_platform import OpenAIPlatformProvider
 
 
 async def test_fetch_reports_balance_and_grant_expiry(tmp_path):

@@ -1,0 +1,10 @@
+# Upstream owner: packages/utils/geometry/shape.ts (v0.18.1)
+source_matches:
+  - match: |
+      var getCurvePathOps = shape => {
+        if (!shape) return [];
+        for (let set of shape.sets) if (set.type === "path") return set.ops;
+        return shape.sets[0].ops;
+      };
+    bindings:
+      - getCurvePathOps

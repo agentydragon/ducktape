@@ -787,7 +787,9 @@ hid-sensor-hub debug spam is a separate side-todo.
 - Upstream sources: <https://github.com/torvalds/linux/tree/v6.19/drivers/bus/mhi/host>.
 - Local clones (read-only for reference):
   - `~/code/linux` — torvalds/linux v6.19 (kernel sources).
-  - `~/code/modemmanager` — MM 1.24.2 (sleep handler verified).
+  - `~/code/modemmanager` — MM 1.24.2 (sleep handler verified); tag:
+    <https://gitlab.freedesktop.org/mobile-broadband/ModemManager/-/tree/1.24.2/src>
+    (`mm-sleep-monitor-systemd.c`: logind `PrepareForSleep` monitor).
   - `~/code/fii_linux` — Foxconn FoxFlss repo (their suspend workaround).
 - NixOS config: `nix/nixos/hosts/rugged/foxconn-wwan.nix` carries the
   MM `--test-low-power-suspend-resume` drop-in + `foxflss_watchdog.py`

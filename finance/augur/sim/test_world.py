@@ -16,6 +16,7 @@ from finance.augur.sim.agent import EconomicAgent, assemble
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
+from finance.augur.sim.holdings import Pool
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
@@ -28,14 +29,6 @@ from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RES
 from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import Capture, World
-
-
-@dataclass(frozen=True, kw_only=True)
-class Pool:
-    agent_id: AgentId
-    account_id: AccountId
-    asset_id: AssetId
-    quantity_scale: int
 
 
 @dataclass(frozen=True, kw_only=True)

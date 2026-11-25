@@ -1,11 +1,10 @@
 # Build and push standalone container images in parallel, then pin digests atomically.
-# Most images still target GHCR; RTL-TCP targets the private Forgejo registry.
+# FreeCAD targets GHCR; RTL-TCP targets the private Forgejo registry.
 #
 # Images:
 #   freecad-test  — FreeCAD test runner (skills/freecad/Dockerfile.test)
 #   rtl-tcp       — RTL-SDR Blog V4 rtl_tcp server (x/rtl_tcp/Dockerfile); Flux ImagePolicy,
 #                   no digest pin needed. Uses rtl-sdr-blog fork for V4 R828D support.
-#   loom-gym-sandbox — forecasting-eval agent environment (x/loom/gym/sandbox); GHCR, devel only.
 #
 # (cpap-sync is built via Bazel — see //cpap:image and the
 # push-images.yml matrix. The RBE container image is rbe-container-image.yml, kept
@@ -22,7 +21,6 @@ on:
       # keep-sorted start
       - ".github/workflows/container-images.yml"
       - "skills/freecad/Dockerfile.test"
-      - "x/loom/gym/sandbox/**"
       - "x/rtl_tcp/Dockerfile"
       # keep-sorted end
   workflow_dispatch:
@@ -92,25 +90,6 @@ jobs:
             --tag "$IMAGE:latest" \
             x/rtl_tcp
 
-  loom-gym-sandbox:
-    name: Loom Gym Sandbox
-    # The forecasting-eval agent environment (interactive python3 + sci toolkit).
-    # A Dockerfile rather than an oci_image because the agent shells into a general
-    # python env, not a single py_binary. The in-cluster eval Job pulls this from
-    # GHCR and tags it loom-gym-sandbox:latest into the docker-ci daemon.
-    if: github.ref_name == 'devel'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.ref_name }}
-
-      - uses: ./.github/actions/ghcr-build-push
-        with:
-          image: ghcr.io/${{ github.repository_owner }}/loom-gym-sandbox
-          context: x/loom/gym/sandbox
-
   # `pin-digests` pushes via the ducktape-automation GitHub App so the commit
   # bypasses the main-protection ruleset (github-actions can't bypass on
   # personal-account repos). The GHCR docker login below stays on github.token
@@ -141,7 +120,6 @@ jobs:
           password: ${{ github.token }}
 
       - name: Pin freecad_test
-        if: needs.freecad-image.result == 'success'
         run: |
           DIGEST=$(docker manifest inspect "$FREECAD_IMAGE:${{ needs.freecad-image.outputs.pin_tag }}" --verbose | \
             python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")

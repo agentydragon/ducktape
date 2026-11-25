@@ -109,17 +109,9 @@ func serveOwned[Request, Response any](
 	ctx context.Context, s *Notifications, request *Request,
 	handle func(context.Context, inboxstore.Owner, *Request) (*Response, error),
 ) (*Response, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.timeout)
-	defer cancel()
-	caller, err := s.admittedActor(ctx)
-	if err != nil {
-		return nil, failure(ctx, err)
-	}
-	response, err := handle(ctx, inboxstore.Owner{Identity: caller.identity}, request)
-	if err != nil {
-		return nil, failure(ctx, err)
-	}
-	return response, nil
+	return serve(ctx, s, request, func(ctx context.Context, caller identityActor, request *Request) (*Response, error) {
+		return handle(ctx, inboxstore.Owner{Identity: caller.identity}, request)
+	})
 }
 
 func (s *Notifications) CreateSubscription(ctx context.Context, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {

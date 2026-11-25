@@ -37,7 +37,7 @@ resource "kubernetes_secret_v1" "gitlab_spike_oidc" {
         name               = "openid_connect"
         scope              = ["openid", "profile", "email"]
         response_type      = "code"
-        issuer             = "https://auth.allegedly.works/application/o/gitlab-spike/"
+        issuer             = "https://auth.allegedly.works/application/o/${authentik_application.gitlab_spike.slug}/"
         discovery          = true
         client_auth_method = "query"
         uid_field          = "sub"

@@ -12,8 +12,8 @@ Small Talos k8s cluster with GitOps and HTTPS.
   cross-namespace. No Vault (<docs/decisions.md> § "Secrets: SOPS SSOT").
 
 Prerequisites (credentials and access): <docs/bootstrap.md#prerequisites>. direnv in
-`cluster/`: its `.envrc` exports `KUBECONFIG`/`TALOSCONFIG` and provides `talosctl`,
-`kubectl`, `get-passwords` (service credentials).
+`cluster/` exports `KUBECONFIG` and `TALOSCONFIG` for the devshell's `kubectl` and
+`talosctl`.
 
 ## Infrastructure
 
@@ -45,6 +45,8 @@ GPU: wyrm2 provides `nvidia.com/gpu`; GPU pods need `runtimeClassName: nvidia`
 ## Services
 
 Service inventory: [curated services](docs/topology.md#services).
+Resource sizing and availability: [VPA rollout plan](plans/vpa.md) and
+[current inventory](https://agentydragon.github.io/ducktape/vpa/).
 
 To find checked-in `HTTPRoute` manifests, run this from the repository root.
 

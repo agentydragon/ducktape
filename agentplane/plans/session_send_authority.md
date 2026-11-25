@@ -27,16 +27,14 @@ cached generation without that validation is not a fence; do not assume cross-se
 
 ## Recovery and decisions for review
 
-1. **Complete bounded outcome visibility.** Deletion terminal snapshots reach only connected
-   `WatchDispatches` streams, and a watcher behind an earlier terminal-row invalidation can miss
-   its outcome when cleanup removes the row ([SPEC](../session_dispatcher/dispatcher/SPEC.md#possible-command-forwarding-and-deletion-outcomes)).
-   Broadcasting all retained receipts can overflow bounded subscriptions. Durable post-deletion
-   outcome visibility and retention remain open Dispatcher/History decisions. Neither notification
-   delivery nor Runtime admission proves that an uncertain effect failed. Explicit Session deletion
+1. **Session deletion fence.** Dispatcher retains accepted commands and their delivery outcomes across
+   Environment deletion ([SPEC](../session_dispatcher/dispatcher/SPEC.md#possible-command-forwarding-and-deletion-outcomes)).
+   Neither notification delivery nor Runtime admission proves that an uncertain effect failed. Explicit Session deletion
    is not implemented; callers must not deliberately reuse its UUID if added later.
    `deletionTimestamp` is not a cross-service linearization point, and manual finalizer removal or
    foreground deletion bypasses the managed handshake. See
-   [SESSION_DELETION_FENCE](task_dag.md#session_deletion_fence--prove-and-enforce-the-session-deletion-fence).
+   [Session and inbox lifetime](task_dag.md#session_and_inbox_lifetime--decide-session-and-inbox-lifetimes)
+   for retention and reconciliation after future explicit Session deletion.
 2. **Queued sender revocation.** The first cutover retains current service trust and effective-caller
    checks. Whether an accepted command is cancelled on a later user grant revocation remains a
    separate generalized-policy decision in

@@ -6,13 +6,13 @@ import os
 import shutil
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 import yaml
-from python.runfiles import runfiles
 
+from devinfra.js.debundle.skills.shared.examples.contract_examples import tree_run_argv
 from devinfra.js.debundle.skills.shared.examples.isolated_edit import recorded_run
 
 
@@ -23,19 +23,10 @@ def entry_source_units(graph_path: Path) -> set[str]:
     return {node["id"] for node in graph["nodes"] if node["destination"] in entry_keys}
 
 
-def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(tmp_path: Path) -> None:
-    files = runfiles.Create()
-    assert files is not None
-    engine = files.Rlocation(os.environ["DEBUNDLE_PEEL_ENGINE"])
-    node = files.Rlocation(os.environ["DEBUNDLE_PEEL_NODE"])
-    skill = files.Rlocation(os.environ["DEBUNDLE_PEEL_SKILL"])
-    fixture = files.Rlocation("ducktape/devinfra/js/debundle/skills/shared/examples/fixture/spec_config.yaml")
-    assert engine is not None
-    assert node is not None
-    assert skill is not None
-    assert fixture is not None
-    original = tmp_path / "inputs"
-    shutil.copytree(Path(fixture).parent, original)
+@pytest.mark.parametrize("selected_view", [False, True], ids=["full-tree", "selected-view"])
+def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(
+    engine: str, node: str, shared: Path, original: Path, tmp_path: Path, selected_view: bool
+) -> None:
     (original / "modules/main/calculation.yaml").unlink()
     (original / "modules/main/values.yaml").write_text("members: [{selector: {binding: {name: initialValue}}}]\n")
     config_path = original / "spec_config.yaml"
@@ -45,25 +36,12 @@ def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(tmp_pat
     records = tmp_path / "records"
     records.mkdir()
     output = tmp_path / "output"
-    recorded_run(
-        [
-            engine,
-            "run",
-            "--graphs",
-            "--tree-config",
-            str(original / "spec_config.yaml"),
-            "--tree-modules",
-            str(original / "modules"),
-            "--tree-vendor-marks",
-            str(original / "vendor_marks.yaml"),
-            "--tree-source-root",
-            str(original),
-            "--out-root",
-            str(output),
-        ],
-        tmp_path,
-        records / "initial",
-    )
+    subset = tmp_path / "selection.json"
+    subset_args = []
+    if selected_view:
+        subset.write_text(json.dumps({"modules": [{"chunk": "main", "module": "values"}]}))
+        subset_args = ["--ownership-subset", str(subset)]
+    recorded_run([*tree_run_argv(engine, original, output), "--graphs", *subset_args], tmp_path, records / "initial")
     snapshot_text = recorded_run(
         [
             engine,
@@ -77,17 +55,16 @@ def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(tmp_pat
         tmp_path,
         records / "snapshot",
     )
+    if selected_view:
+        subset.unlink()
+    shutil.rmtree(original)
     baseline_entry_units = entry_source_units(output / "reports/tree/main/dependency_graph.json.gz")
     snapshot_report = tmp_path / "snapshot_report.json"
     snapshot_report.write_text(snapshot_text)
     snapshot = json.loads(snapshot_text)
     authored_owner = Path(snapshot["modules"]) / "main/values.yaml"
     authored_owner_before = authored_owner.read_bytes()
-    extracted = tmp_path / "skill"
-    with zipfile.ZipFile(skill) as archive:
-        archive.extractall(extracted)
-    recipe = extracted / "debundle_lane_worker/references/skills/shared/examples/peel_more.py"
-    assert recipe.is_file()
+    recipe = shared / "examples/peel_more.py"
     result = subprocess.run(
         [sys.executable, str(recipe), "--snapshot-report", str(snapshot_report), "--evidence", str(records / "peel")],
         cwd=tmp_path,

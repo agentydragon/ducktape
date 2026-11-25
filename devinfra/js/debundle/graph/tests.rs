@@ -80,32 +80,26 @@ mod chunk_constraining_module_edges_tests {
         assert!(canonical.edges.is_empty());
     }
 
-    /// `chunk_source_import_order_from_adjacency` returns every module of
-    /// the canonical set plus the `extra_nodes`, which have no canonical
-    /// edges.
     #[test]
-    fn chunk_source_import_order_includes_extra_nodes() {
-        // Simple two-module DAG.
-        let source = "const a = 1; const b = a + 1;";
+    fn chunk_source_import_order_keeps_lazy_only_members_and_isolated_nodes() {
+        let source = "const a = () => c(); const b = a; function c() { return b; }";
         let dependency_graph = parse_and_build(source);
         let mut assignment = ModuleAssignment::new(
             &dependency_graph,
             crate::EntryDestination::from_module_id(ModuleId(0)),
         );
         assignment.set(SourceUnitId(1), ModuleId(1));
+        assignment.set(SourceUnitId(2), ModuleId(2));
         let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
-        let extra: BTreeSet<ModuleId> = BTreeSet::from([ModuleId(5), ModuleId(0)]);
+        let linker_position = position_lookup(&chunk_linker_order_from_pairs(canonical.pairs()));
         let order = chunk_source_import_order_from_adjacency(
-            canonical.pairs(),
+            &linker_position,
             &canonical.i_successors,
-            &extra,
+            &BTreeSet::from([ModuleId(5)]),
         );
-        assert!(
-            order.contains(&ModuleId(5)),
-            "extra node must be included; got {order:?}"
-        );
-        assert!(order.contains(&ModuleId(0)));
-        assert!(order.contains(&ModuleId(1)));
+        // The a/b/c import cycle has one eager read, b -> a. Visit b
+        // before a to rescue that read, then the lazy-only c and isolated 5.
+        assert_eq!(order, [ModuleId(1), ModuleId(0), ModuleId(2), ModuleId(5)]);
     }
 }
 
@@ -127,7 +121,7 @@ mod from_report_tests {
     };
     use source_identity::SourceUnitId;
 
-    use crate::{DependencyEdgeId, DependencyGraph, DependencyGraphInput, EdgeRole, StatementKind};
+    use crate::{DependencyEdgeId, DependencyGraphInput, EdgeRole, StatementKind};
     use analysis_model::DepKind;
 
     fn node(id: &str, ordinal: usize) -> SourceUnitReport {
@@ -200,8 +194,9 @@ mod from_report_tests {
                 },
             ),
         ] {
-            let graph =
-                DependencyGraph::from_report(&report_with_edge("unit:0", wire_role)).unwrap();
+            let input =
+                DependencyGraphInput::from_report(report_with_edge("unit:0", wire_role)).unwrap();
+            let graph = input.graph();
             assert_eq!(graph.num_edges(), 1, "{case}");
             assert_eq!(
                 graph.edge(DependencyEdgeId(0)).reason.role(),
@@ -214,11 +209,14 @@ mod from_report_tests {
     #[test]
     fn loaded_graph_shares_topology_and_retains_report_metadata() {
         let mut report = report_with_edge(
-            "unit:0",
+            "provider",
             Some(EdgeRoleReport::PromotedAtInit {
-                callee_source_unit: "unit:2".to_string(),
+                callee_source_unit: "callee".to_string(),
             }),
         );
+        report.nodes[0].id = "provider".to_string();
+        report.nodes[2].id = "callee".to_string();
+        report.nodes.swap(0, 2);
         report.nodes[1]
             .declared_bindings
             .push(crate::BindingReport {
@@ -231,13 +229,15 @@ mod from_report_tests {
         assert!(std::sync::Arc::ptr_eq(&first, &second));
         assert!(std::ptr::eq(input.graph(), &*first));
         assert_eq!(input.source_unit_id("unit:1"), Some(SourceUnitId(1)));
+        assert_eq!(input.source_unit_id("provider"), Some(SourceUnitId(2)));
+        assert_eq!(input.source_unit_id("callee"), Some(SourceUnitId(0)));
         assert_eq!(input.source_unit_id("missing"), None);
         assert_eq!(first.edge(DependencyEdgeId(0)).from, SourceUnitId(1));
-        assert_eq!(first.edge(DependencyEdgeId(0)).to, SourceUnitId(0));
+        assert_eq!(first.edge(DependencyEdgeId(0)).to, SourceUnitId(2));
         assert_eq!(
             first.edge(DependencyEdgeId(0)).reason.role(),
             EdgeRole::PromotedAtInit {
-                callee_source_unit: SourceUnitId(2)
+                callee_source_unit: SourceUnitId(0)
             },
         );
         assert_eq!(
@@ -252,10 +252,30 @@ mod from_report_tests {
     /// planner-side gate would otherwise reason over a weaker graph.
     #[test]
     fn from_report_errors_on_unresolvable_edge_endpoint() {
-        let err = DependencyGraph::from_report(&report_with_edge("unit:999", None)).unwrap_err();
-        assert_eq!(err.endpoint, "unit:999");
-        assert_eq!(err.edge_id, "dependency_edge:0");
+        let err =
+            DependencyGraphInput::from_report(report_with_edge("unit:999", None)).unwrap_err();
+        assert_eq!(
+            err,
+            crate::GraphReportIdError::MissingEndpoint {
+                endpoint: "unit:999".into(),
+                edge_id: "dependency_edge:0".into(),
+            }
+        );
         assert!(err.to_string().contains("unit:999"), "{err}");
+    }
+
+    #[test]
+    fn repeated_node_id_cannot_redirect_an_edge() {
+        let mut report = report_with_edge("unit:0", None);
+        report.nodes[0].id = "unit:0".into();
+        report.nodes[1].id = "unit:0".into();
+        let err = DependencyGraphInput::from_report(report).unwrap_err();
+        assert_eq!(
+            err,
+            crate::GraphReportIdError::DuplicateNode {
+                id: "unit:0".into()
+            }
+        );
     }
 
     #[test]
@@ -275,9 +295,10 @@ mod from_report_tests {
         let wire = serde_json::to_value(&report).unwrap();
         assert!(wire["nodes"][0].get("heap_native_integrity_uses").is_none());
         let parsed: DependencyGraphReport = serde_json::from_value(wire.clone()).unwrap();
-        let graph = DependencyGraph::from_report(&parsed).unwrap();
+        let input = DependencyGraphInput::from_report(parsed).unwrap();
         assert_eq!(
-            graph
+            input
+                .graph()
                 .iter_nodes()
                 .nth(1)
                 .unwrap()
@@ -292,9 +313,9 @@ mod from_report_tests {
                 .remove("heap_native_integrity_uses");
         }
         let old_report: DependencyGraphReport = serde_json::from_value(old_wire).unwrap();
-        let old_graph = DependencyGraph::from_report(&old_report).unwrap();
+        let old = DependencyGraphInput::from_report(old_report).unwrap();
         assert!(
-            old_graph
+            old.graph()
                 .iter_nodes()
                 .all(|node| node.heap_native_integrity_uses.is_empty())
         );

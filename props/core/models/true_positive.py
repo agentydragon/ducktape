@@ -16,9 +16,6 @@ class LineRange(BaseModel):
             "(e.g., 'definition site' vs 'call site' within the same occurrence)"
         ),
     )
-    # NOTE: No default on end_line for OpenAI strict mode compatibility (used in MCP inputs)
-    # TODO: Decouple DB state and MCP I/O shapes so database models can have sensible defaults
-    # while MCP inputs maintain strict mode compliance
 
     @model_validator(mode="after")
     def _validate_range(self) -> LineRange:

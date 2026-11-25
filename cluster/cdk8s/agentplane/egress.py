@@ -20,7 +20,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
 )
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerResources,
@@ -59,7 +59,7 @@ from agentplane.crd_group import GROUP
 from agentplane.egress.settings import APIServer, Settings
 from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.net.peertls.config import APP_URI, EGRESS_PROXY_URI
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
     database,
@@ -79,10 +79,10 @@ from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
 from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
-from cluster.cdk8s.litellm import proxy as litellm_proxy
+from cluster.cdk8s.litellm import endpoint as litellm
 from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
 from cluster.cdk8s.ollama import app as ollama
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -234,14 +234,14 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         (
             "ollama",
             ollama.DIRECT_TOKEN,
-            f"Direct Ollama inference and model metadata at http://{ollama.AUTH_PROXY.fqdn}:{ollama.AUTH_PROXY.port.number}. "
+            f"Direct Ollama inference and model metadata at http://{ollama.AUTH_PROXY.authority}. "
             "Uses the existing token-authenticated proxy, not the unauthenticated Ollama port. "
             "Shared local GPUs; avoid unbounded or concurrent load experiments.",
         ),
         (
             "litellm-cheap-experiments",
             CHEAP_EXPERIMENTS_KEY,
-            "The shared LiteLLM cheap-experiments virtual key at http://litellm.litellm.svc.cluster.local:4000. "
+            f"The shared LiteLLM cheap-experiments virtual key at {litellm.API_BASE}. "
             "LiteLLM enforces its model allowlist and shared spending budget; this is not an admin key.",
         ),
     ):
@@ -578,9 +578,7 @@ class Egress(Construct):
             # Where kubernetesServiceAccount credentials impersonate, with the proxy's own bearer. What
             # it may impersonate there is kubernetes_accounts.py's Role, not this.
             local_api_server=APIServer(host=KUBERNETES_HOST, port=443, token_file=Path(_API_SERVER_TOKEN_FILE)),
-            tls_passthrough_targets=[
-                f"{service.fqdn}:{service.port.number}" for service in (self.admin, *tls_passthrough_services)
-            ],
+            tls_passthrough_targets=[service.authority for service in (self.admin, *tls_passthrough_services)],
             forward=Listener(
                 listen_address=f"0.0.0.0:{self.proxy.pod_port}",
                 tls=TLS(
@@ -608,14 +606,13 @@ class Egress(Construct):
             "service-admin",
             metadata=ApiObjectMetadata(name=self.admin.name, namespace=env.namespace),
             selector=workload.deployment,
-            ports=[self.admin.port.service_port()],
+            ports=[self.admin.service_port()],
         )
         _egress_credentials(self, namespace=env.namespace)
-        (litellm_spec,) = litellm_proxy.proxy_specs()
         _egress_policies(
             self,
             namespace=env.namespace,
-            litellm_host=litellm_host or litellm_proxy.service(litellm_spec).fqdn,
+            litellm_host=litellm_host or litellm.SERVICE.fqdn,
             litellm_cluster_internal=litellm_cluster_internal,
         )
 
@@ -649,12 +646,9 @@ class Egress(Construct):
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
             ]
         )
-        Role(self, "role", metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace), rules=role_rules)
+        role = Role(self, "role", metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace), rules=role_rules)
         RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
-            role=Role.from_role_name(self, "role-ref", NAME),
+            self, "rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace), role=role
         ).add_subjects(service_account)
         # A standing workload's record lives in its own namespace; its Identity subject in the policy
         # namespace, read above.
@@ -756,6 +750,12 @@ class Egress(Construct):
 
         zones = self.env.egress.zones
         extra_ports = [self.admin.container_port()]
+        health = TlsGrpcHealth(
+            port=self.admin.pod_port,
+            ca_file=_SVID_CA_FILE,
+            server_uri=EGRESS_PROXY_URI,
+            liveness_service=_LIVENESS_HEALTH_SERVICE,
+        )
         workload = add_service_workload(
             self,
             self.env,
@@ -764,43 +764,19 @@ class Egress(Construct):
             image=f"{_PROXY_IMAGE}:{_PLACEHOLDER_TAG}",
             env_variables={
                 Settings.database_url_env: self.database_url,
-                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+                "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
                 **self.container_env,
             },
             extra_ports=extra_ports,
-            readiness=tls_grpc_probe(
-                port=self.admin.pod_port,
-                ca_file=_SVID_CA_FILE,
-                server_uri=EGRESS_PROXY_URI,
-                initial_delay_seconds=3,
-                period_seconds=10,
-            ),
-            liveness=tls_grpc_probe(
-                port=self.admin.pod_port,
-                ca_file=_SVID_CA_FILE,
-                server_uri=EGRESS_PROXY_URI,
-                service=_LIVENESS_HEALTH_SERVICE,
-                initial_delay_seconds=30,
-                period_seconds=30,
-            ),
+            readiness=health.readiness(),
+            liveness=health.liveness(initial_delay_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),
             ),
             termination_grace=Duration.seconds(60),
-            startup=tls_grpc_probe(
-                port=self.admin.pod_port,
-                ca_file=_SVID_CA_FILE,
-                server_uri=EGRESS_PROXY_URI,
-                service=_LIVENESS_HEALTH_SERVICE,
-                initial_delay_seconds=0,
-                period_seconds=5,
-                failure_threshold=60,
-            ),
+            startup=health.startup(),
             tolerate_control_plane=True,
-            annotations={
-                "configmap.reloader.stakater.com/reload": f"{self.env.namespace}-egress-upstream-ca,public-web-pki"
-            },
             placement=self.placement if zones is None else None,
             replica_profile=self.env.egress.replicas,
             traffic_distribution=self.env.egress.traffic_distribution,
@@ -816,20 +792,10 @@ class Egress(Construct):
                     NodeTaintQuery.exists(node_scheduling.CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE)
                 )
             )
-            # The fluent scheduling API has no topologySpreadConstraints equivalent.
-            ApiObject.of(workload.deployment).add_json_patch(
-                JsonPatch.add(
-                    "/spec/template/spec/topologySpreadConstraints", [node_scheduling.zone_spread(zones, _LABELS)]
-                )
-            )
+            node_scheduling.set_topology_spread(workload.deployment, node_scheduling.zone_spread(zones, _LABELS))
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        workload.container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, workload.container)
         workload.container.mount("/etc/agentplane-egress/svid", svid_volume, read_only=True)
         workload.container.mount("/etc/agentplane-egress/svid-ca", svid_ca_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)
@@ -837,7 +803,6 @@ class Egress(Construct):
 
     def _add_network_policy(self, runners: Pods) -> None:
         namespace = self.env.namespace
-        (litellm_spec,) = litellm_proxy.proxy_specs()
         NetworkPolicy(
             self,
             "networkpolicy",
@@ -863,7 +828,7 @@ class Egress(Construct):
                 notifications.service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),
-                litellm_proxy.service(litellm_spec).egress(),
+                litellm.SERVICE.egress(),
                 # hostNetwork: Cilium sees the node, not an endpoint.
                 EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[home_assistant.SERVICE.port.number]),
                 # Local Gateway requests also need backend identity/target-port grants: keep those

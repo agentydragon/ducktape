@@ -200,7 +200,6 @@ def _credentials(chart: Chart) -> None:
         reader=reader,
         source_namespace=MONITORING_PASSWORD.secret.namespace,
         source_secret=MONITORING_PASSWORD.secret.name,
-        consumer_namespace=NAMESPACE,
     )
     ExternalSecret(
         chart,
@@ -227,7 +226,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_SERVICE.labels),
-        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_HTTP.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.k8s_service_port()]),
     )
     ServiceMonitor(
         chart,

@@ -10,21 +10,19 @@ stays hand-written beside the generated output in the flat Plaid manifest direct
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ConfigMap, ServiceAccount, k8s
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecTargetCreationPolicy,
-    ExternalSecretSpecTargetDeletionPolicy,
-)
+from cdk8s_plus_34 import ConfigMap, k8s
 
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE, POSTGRES
+from cluster.cdk8s.plaid_mcp.secret_copy import copy_secret
+from cluster.cdk8s.pod_policy import harden
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 _NAME = "plaid-mcp"
 _CONFIG_MAP = "config"
@@ -38,7 +36,6 @@ _WEB = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
 _OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-link/"
-_OIDC_READER = "plaid-link-oidc-reader"
 _WEBHOOK_HOST = "plaid-mcp.allegedly.works"
 _WEBHOOK_URL = f"https://{_WEBHOOK_HOST}/webhooks/plaid"
 _CONFIG = {
@@ -66,46 +63,8 @@ def _env() -> list[k8s.EnvVar]:
     ]
 
 
-def _container_security_context() -> k8s.SecurityContext:
-    return k8s.SecurityContext(
-        allow_privilege_escalation=False,
-        capabilities=k8s.Capabilities(drop=["ALL"]),
-        run_as_group=1000,
-        run_as_non_root=True,
-        run_as_user=1000,
-    )
-
-
 def _resources() -> k8s.ResourceRequirements:
     return container_resources(cpu="50m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi")
-
-
-def _oidc_credentials(chart: Chart) -> None:
-    """Read only the app's Authentik client Secret from the Authentik namespace through ESO."""
-    reader = ServiceAccount(
-        chart,
-        "oidc-secret-reader",
-        metadata=ApiObjectMetadata(name=_OIDC_READER, namespace=NAMESPACE),
-        automount_token=False,
-    )
-    store = single_secret_store(
-        chart,
-        "plaid-link-oidc",
-        reader=reader,
-        source_namespace="authentik",
-        source_secret=_OIDC_CREDENTIALS.name,
-        consumer_namespace=NAMESPACE,
-    )
-    ExternalSecret(
-        chart,
-        "oidc-external-secret",
-        metadata=ApiObjectMetadata(name=_OIDC_CREDENTIALS.name, namespace=NAMESPACE),
-        refresh_interval="10m",
-        secret_store_ref=SecretStoreRef.cluster(store),
-        data_from=[DataFrom.from_extract(_OIDC_CREDENTIALS.name)],
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
-    )
 
 
 def _rbac(chart: Chart) -> None:
@@ -136,7 +95,7 @@ def _rbac(chart: Chart) -> None:
 
 def _deployment(chart: Chart) -> None:
     health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(_WEB.pod_port))
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
@@ -147,7 +106,11 @@ def _deployment(chart: Chart) -> None:
                 "description": (
                     "Plaid Link UI authenticates users with Authentik OIDC; verified webhooks queue transaction"
                     " syncs, with the daily Cron catching up the mirror."
-                )
+                ),
+                # Web startup reached 48m CPU, and working set peaked at 316 MiB.
+                **initial_request_annotations(
+                    ContainerPolicy.cpu_and_memory_requests_only("plaid-web", cpu_floor="50m", memory_floor="384Mi")
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -161,14 +124,15 @@ def _deployment(chart: Chart) -> None:
                     # K8sSecretStore.from_incluster (finance/plaid/db/secret_store.py) writes the
                     # access-token Secrets with this token.
                     automount_service_account_token=True,
-                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(
                             name="plaid-web",
                             image="git.allegedly.works/ducktape-ci/plaid-mcp-server:unset",
                             image_pull_policy="Always",
-                            security_context=_container_security_context(),
-                            ports=[_WEB.port.k8s_container_port()],
+                            security_context=k8s.SecurityContext(
+                                run_as_user=1000, run_as_group=1000, run_as_non_root=True
+                            ),
+                            ports=[_WEB.k8s_container_port()],
                             env=[
                                 *_env(),
                                 k8s.EnvVar(name="PLAID_MCP_OIDC_ISSUER", value=_OIDC_ISSUER),
@@ -185,10 +149,11 @@ def _deployment(chart: Chart) -> None:
             ),
         ),
     )
+    harden(deployment)
 
 
 def _sync_cronjob(chart: Chart) -> None:
-    k8s.KubeCronJob(
+    cronjob = k8s.KubeCronJob(
         chart,
         "sync",
         metadata=k8s.ObjectMeta(
@@ -216,15 +181,14 @@ def _sync_cronjob(chart: Chart) -> None:
                             # The sync reads the access-token Secrets through K8sSecretStore.
                             automount_service_account_token=True,
                             restart_policy="Never",
-                            security_context=k8s.PodSecurityContext(
-                                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
-                            ),
                             containers=[
                                 k8s.Container(
                                     name="sync",
                                     image="git.allegedly.works/ducktape-ci/plaid-mcp-sync:unset",
                                     image_pull_policy="Always",
-                                    security_context=_container_security_context(),
+                                    security_context=k8s.SecurityContext(
+                                        run_as_user=1000, run_as_group=1000, run_as_non_root=True
+                                    ),
                                     env=_env(),
                                     resources=_resources(),
                                 )
@@ -235,6 +199,7 @@ def _sync_cronjob(chart: Chart) -> None:
             ),
         ),
     )
+    harden(cronjob)
 
 
 def chart(app: App) -> Chart:
@@ -242,14 +207,14 @@ def chart(app: App) -> Chart:
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     ConfigMap(chart, "config", metadata=ApiObjectMetadata(name=_CONFIG_MAP, namespace=NAMESPACE), data=_CONFIG)
     _rbac(chart)
-    _oidc_credentials(chart)
+    copy_secret(chart, "plaid-link-oidc", source_namespace="authentik", target=_OIDC_CREDENTIALS)
     _deployment(chart)
     _sync_cronjob(chart)
     k8s.KubeService(
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_WEB.name, namespace=NAMESPACE, labels=_WEB.labels),
-        spec=k8s.ServiceSpec(selector=_WEB.pods.selector, ports=[_WEB.port.k8s_service_port()], type="ClusterIP"),
+        spec=k8s.ServiceSpec(selector=_WEB.pods.selector, ports=[_WEB.k8s_service_port()], type="ClusterIP"),
     )
     https_route(
         chart,

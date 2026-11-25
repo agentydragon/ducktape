@@ -22,6 +22,7 @@ from finance.budget.wire import (
     TrailingMonthsWindow,
     WindowSpec,
 )
+from finance.calendar_months import offset_calendar_month
 
 
 def _resolve_window(window: WindowSpec, *, today: date, coverage_starts: date | None) -> date:
@@ -34,8 +35,7 @@ def _resolve_window(window: WindowSpec, *, today: date, coverage_starts: date | 
     """
     current_month = date(today.year, today.month, 1)
     if isinstance(window, TrailingMonthsWindow):
-        total = current_month.year * 12 + (current_month.month - 1) - (window.months - 1)
-        start_month = date(total // 12, total % 12 + 1, 1)
+        start_month = offset_calendar_month(current_month, 1 - window.months)
     else:
         if coverage_starts is None:
             raise ValueError(

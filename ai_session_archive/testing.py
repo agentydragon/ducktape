@@ -14,18 +14,16 @@ from ai_session_archive.database_migrate import RUNNER
 from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.restic import ResticRepository, find_pinned_restic_binary
 from ai_session_archive.source_paths import HarnessRoot
-from testing.postgres import DatabaseNames, create_temporary_database
 
 
 @pytest.fixture
-def postgres_engine(postgres_admin_url: str, database_names: DatabaseNames) -> Iterator[Engine]:
-    with create_temporary_database(postgres_admin_url, database_names()) as database_url:
-        engine = create_engine(database_url)
-        try:
-            RUNNER.apply(database_url)
-            yield engine
-        finally:
-            engine.dispose()
+def postgres_engine(empty_postgres_url: str) -> Iterator[Engine]:
+    engine = create_engine(empty_postgres_url)
+    try:
+        RUNNER.apply(empty_postgres_url)
+        yield engine
+    finally:
+        engine.dispose()
 
 
 def new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:

@@ -368,6 +368,7 @@ def main() -> int:
             print(f"test targets in scope: {test_target_count}")
 
             _probe("before-test")
+            test_rc = 0
             if test_target_count == 0:
                 print("No test targets in scope -- skipping bazel test.")
             else:
@@ -375,13 +376,18 @@ def main() -> int:
                 if test_rc == 4 and not selection.full_sweep:
                     print("No runnable tests after tag filtering in the affected set; continuing to build.")
                     test_rc = 0
-                if test_rc != 0:
+                if test_rc == 3 and os.environ.get("GITHUB_EVENT_NAME") == "push":
+                    # Bazel built the tests but some failed. Publishers still need normal-build digests.
+                    print(
+                        "Push tests failed. Building publication inputs before returning the test failure.", flush=True
+                    )
+                elif test_rc != 0:
                     return test_rc
                 _probe("after-test")
 
-            _run_bazel("build", role="build", targets=selection.targets)
+            _run_bazel("build", role="build", targets=selection.targets, check=test_rc == 0)
             _probe("after-build")
-            return 0
+            return test_rc
         finally:
             _finalize_probe(selection_snapshot)
 

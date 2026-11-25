@@ -18,7 +18,7 @@ from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.orchestration_v1.binding import LaunchPreset
 from agentplane.app.settings import Settings
-from agentplane.env.config import Configuration, GuestResources, VMExecutorPlacement
+from agentplane.env.config import Executor, GuestResources
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.notification_service.settings import NoticeDebounceSettings
@@ -59,14 +59,14 @@ class CentralSamplerProps:
     rpc_timeout_seconds: int
     lease_seconds: int
     admin_service_callers: tuple[str, ...] = ()
-    replicas: ReplicaProfile | None = None
     # The settings carry each credential file path; this map names only the Secret key
     # projected there, keyed by connection name.
     connection_credentials: Mapping[str, SecretKey] = field(default_factory=dict)
     executor_initialize_timeout_seconds: int = settings.DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
     turn_timeout_seconds: int | None = None
-    auto_compact_tokens: int | None = None
     actions: settings.ActionsConfig | None = None
+    context_source_writes: bool = False
+    event_block_writes: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,14 +111,22 @@ class AppProps:
 
 @dataclass(frozen=True)
 class BearerMcpMount:
-    """The environment's copy of one static-bearer MCP backend's bearer Secret, mounted at
-    `/run/secrets/<name>/<file_name>` for an `action_groups` entry's `bearer_file` to name."""
+    """The environment's copy of one static-bearer MCP backend's bearer Secret, mounted in `mount_dir`
+    for an `action_groups` entry's `bearer_file` to name as `path`."""
 
     name: str
     secret_name: str
     secret_key: str
     file_name: str = "bearer-token"
     optional: bool = False
+
+    @property
+    def mount_dir(self) -> str:
+        return f"/run/secrets/{self.name}"
+
+    @property
+    def path(self) -> str:
+        return f"{self.mount_dir}/{self.file_name}"
 
 
 @dataclass(frozen=True)
@@ -183,7 +191,6 @@ class McpEdgeProps:
     operator_oidc: OperatorOidcSettings
     oauth_secret_name: str | None
     hostname: str | None
-    replicas: ReplicaProfile | None = None
     extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
 
 
@@ -212,6 +219,9 @@ class Environment:
     # Whether this environment has VM Sandboxes: the runner VM template (environment_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
+    # Whether History packs BoundaryRecord and ExecutionProgress entries. Enable only after all reader
+    # replicas support those block kinds.
+    compact_execution_evidence: bool = False
     # Deployment-published runtime facts shared with the co-hosted discovery service.
     runtime_catalog: Catalog | None = None
     # Static services that should retain replicas across hosts.
@@ -227,9 +237,7 @@ class Environment:
     vm_storage_class: str | None = None
     # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
     vm_resources: GuestResources | None = None
-    vm_executor_placement: VMExecutorPlacement | None = None
-    # CLEANUP(added 2026-11-20): Remove once staging's agentplane-runner-disk pin accepts placement.
-    omit_executor_placement_from_config: bool = False
+    vm_executor: Executor | None = None
     # Opt-in: trusted KVM launcher with same-Pod RAM checkpoints.
     firecracker_sandboxes: bool = False
     # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.
@@ -257,11 +265,3 @@ class Environment:
                 raise ValueError("vm_storage_class cannot be empty")
             if not self.vm_sandboxes:
                 raise ValueError("vm_storage_class requires vm_sandboxes")
-
-
-def runtime_config_json(env: Environment, config: Configuration) -> str:
-    if env.omit_executor_placement_from_config and config.environment.executor is not None:
-        if config.environment.executor.placement != "direct":
-            raise ValueError("older runtime configuration supports only direct executor placement")
-        return config.model_dump_json(exclude_none=True, exclude={"environment": {"executor": {"placement"}}})
-    return config.model_dump_json(exclude_none=True)

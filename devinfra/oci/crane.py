@@ -76,6 +76,12 @@ def find_crane() -> Path:
     raise RuntimeError("crane is not on PATH")
 
 
+def docker_auth_config(registry: str, username: str, password: str) -> dict[str, object]:
+    """Build a Docker auth config dict for a single registry."""
+    auth = base64.b64encode(f"{username}:{password}".encode()).decode()
+    return {"auths": {registry: {"auth": auth}}}
+
+
 def _format_crane_error(args: tuple[str, ...], returncode: int | None, stderr: str, stdout: str) -> str:
     """Build a multiline message describing a failed crane subprocess.
 
@@ -112,8 +118,7 @@ class Crane:
         self._config_dir: tempfile.TemporaryDirectory[str] | None = None
         if registry and username and password:
             self._config_dir = tempfile.TemporaryDirectory(prefix="crane_auth_")
-            auth = base64.b64encode(f"{username}:{password}".encode()).decode()
-            config = {"auths": {registry: {"auth": auth}}}
+            config = docker_auth_config(registry, username, password)
             Path(self._config_dir.name, "config.json").write_text(json.dumps(config))
             self._env = {**os.environ, "DOCKER_CONFIG": self._config_dir.name}
 

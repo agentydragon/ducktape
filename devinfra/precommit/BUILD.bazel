@@ -24,6 +24,7 @@ py_test(
     deps = [
         ":conftest",
         ":filename_conventions",
+        ":git_hook",
         "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest",
@@ -46,7 +47,9 @@ py_test(
         ":conftest",
         ":git_hook",
         "//:conftest",
+        "@pypi//opentelemetry_sdk",
         "@pypi//pygit2",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

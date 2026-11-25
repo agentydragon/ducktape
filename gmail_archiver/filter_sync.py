@@ -5,15 +5,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Self
 
+from gmail_api.filters import SizeComparison
 from gmail_api.labels import GmailLabel, SystemLabel, resolve_label_id
 from gmail_archiver.filter_planner import criteria_to_gmail_query
-from gmail_archiver.gmail_api_models import (
-    CreateFilterRequest,
-    FilterAction,
-    FilterCriteria,
-    GmailFilter,
-    SizeComparison,
-)
+from gmail_archiver.gmail_api_models import CreateFilterRequest, FilterAction, FilterCriteria, GmailFilter
 from gmail_archiver.gmail_yaml_filters_models import CompoundCondition, FilterRule
 
 

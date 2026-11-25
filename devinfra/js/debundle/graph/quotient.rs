@@ -1,46 +1,15 @@
-use petgraph::algo::tarjan_scc;
-use petgraph::graphmap::DiGraphMap;
 use source_identity::SourceUnitId;
 
 use crate::ModuleId;
 use crate::module_assignment::ModuleAssignment;
 
-use super::dependency_graph::DependencyGraph;
 use super::edge::{DependencyEdge, EdgeRole};
-
-/// The I∪S module dependency graph: the quotient of an [`DependencyGraph`]
-/// by a [`ModuleAssignment`], one edge per directed `(from, to)` module pair.
-///
-/// Newtype around `petgraph::DiGraphMap<ModuleId, ()>`. Mutation
-/// happens only inside [`build_module_quotient`]; callers go through
-/// the read-only accessors `all_edges`, `contains_edge` and `sccs`.
-#[derive(Debug, Clone, Default)]
-pub struct ModuleQuotient(DiGraphMap<ModuleId, ()>);
-
-impl ModuleQuotient {
-    /// Iterate over every `(from, to)` pair in the quotient.
-    pub fn all_edges(&self) -> impl Iterator<Item = (ModuleId, ModuleId)> + '_ {
-        self.0.all_edges().map(|(from, to, _)| (from, to))
-    }
-
-    /// `true` iff the directed edge `(from, to)` is present.
-    pub fn contains_edge(&self, from: ModuleId, to: ModuleId) -> bool {
-        self.0.contains_edge(from, to)
-    }
-
-    /// Strongly-connected components of the quotient, via
-    /// `petgraph::algo::tarjan_scc`. Each inner `Vec` is one SCC.
-    pub fn sccs(&self) -> Vec<Vec<ModuleId>> {
-        tarjan_scc(&self.0)
-    }
-}
 
 /// Selects between the gate and lenient views in
 /// [`assignment_endpoints`].
 ///
-/// `Lenient` drops cross-module `PromotedAtInit` edges (the quotient
-/// builder and reports view); `Gate` keeps them (the realizability
-/// gate, incremental simulator, and canonical chunk-edge set). See
+/// `Lenient` drops cross-module `PromotedAtInit` edges (the quotient report).
+/// `Gate` keeps them for the canonical chunk-edge set and realizability checks. See
 /// [`EdgeRole`] for the ESM-semantics justification.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum EndpointView {
@@ -53,9 +22,8 @@ pub enum EndpointView {
 ///
 /// `view` selects which projection rule the caller wants:
 ///
-/// - [`EndpointView::Lenient`] — used by `build_module_quotient` and
-///   the gate crate's quotient edge report builder. Drops same-module edges
-///   AND drops cross-module [`EdgeRole::PromotedAtInit`] edges when
+/// - [`EndpointView::Lenient`] — used by the gate crate's quotient report.
+///   Drops same-module edges and cross-module [`EdgeRole::PromotedAtInit`] edges when
 ///   the callee module differs from the caller module. ESM
 ///   justification: the body read fires inside a call into a
 ///   *different* module, so by ESM DFS post-order the callee module
@@ -134,21 +102,4 @@ pub fn project_endpoints(
         return None;
     }
     Some((from, to))
-}
-
-/// Quotient the dependency graph by `assignment` to build the module
-/// dependency graph consumed by validation and emit. The single
-/// public construction path; validation and reports both go through
-/// this for any non-hypothetical quotient.
-pub fn build_module_quotient(
-    dependency_graph: &DependencyGraph,
-    assignment: &ModuleAssignment,
-) -> ModuleQuotient {
-    let mut graph = DiGraphMap::new();
-    for edge in dependency_graph.iter_edges() {
-        if let Some((from, to)) = assignment_endpoints(edge, assignment, EndpointView::Lenient) {
-            graph.add_edge(from, to, ());
-        }
-    }
-    ModuleQuotient(graph)
 }

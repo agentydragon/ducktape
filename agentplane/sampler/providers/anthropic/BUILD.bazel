@@ -42,9 +42,9 @@ go_test(
     race = "on",
     deps = [
         "//agentplane/proto:event_go_proto",
-        "//agentplane/sampler/internal/content",
         "//agentplane/sampler/internal/providerio",
         "//agentplane/sampler/protocol",
+        "//agentplane/sampler/testing/providerfixture",
         "//agentplane/sampler/testing/wirefixture",
     ],
 )

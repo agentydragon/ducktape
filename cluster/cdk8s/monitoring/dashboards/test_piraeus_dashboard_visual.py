@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
 
@@ -18,15 +19,12 @@ from grafana.visual_tests.visual_harness import grafana_dashboard, record_stage
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 
-pytest_plugins = ("devinfra.testing.pytest_outputs",)
-
 
 @pytest.mark.asyncio
 async def test_piraeus_dashboard_visual(tmp_path: Path, test_outputs: BoundTestOutputs) -> None:
     with grafana_dashboard(
-        tmp_path,
-        (Runfiles.CreateOrRaise().root() / os.environ["GRAFANA_DASHBOARD_RLOCATION"]),
-        piraeus_metrics.samples(),
+        json.loads((Runfiles.CreateOrRaise().root() / os.environ["GRAFANA_DASHBOARD_RLOCATION"]).read_text()),
+        prometheus_samples=(tmp_path, piraeus_metrics.samples()),
     ) as base_url:
         async with (
             async_playwright() as playwright,

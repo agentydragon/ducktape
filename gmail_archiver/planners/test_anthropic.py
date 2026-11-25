@@ -1,11 +1,11 @@
 """Tests for Anthropic receipt parser."""
 
 from datetime import datetime
-from decimal import Decimal
 
+import pytest
 import pytest_bazel
 
-from gmail_archiver.planners.anthropic import AnthropicReceipt, parse_anthropic
+from gmail_archiver.planners.anthropic import parse_charge_date
 
 SAMPLE_RECEIPT_FULL = """
 Anthropic, PBC
@@ -30,65 +30,18 @@ Some other text here without receipt or invoice numbers.
 """
 
 
-class TestAnthropicParser:
-    def test_parse_full_receipt(self, make_email):
-        msg = make_email(
-            sender="invoice+statements@mail.anthropic.com",
-            subject="Your receipt from Anthropic, PBC #0000-0000-0000",
-            body=SAMPLE_RECEIPT_FULL,
-        )
+@pytest.mark.parametrize(
+    ("text", "charge_date"),
+    [
+        (SAMPLE_RECEIPT_FULL, datetime(2025, 12, 15)),
+        (SAMPLE_RECEIPT_MINIMAL, datetime(2025, 1, 1)),
+        ("This email has no extractable data.", None),
+    ],
+)
+def test_parse_charge_date(make_email, text: str, charge_date: datetime | None) -> None:
+    msg = make_email(sender="invoice+statements@mail.anthropic.com", body=text)
 
-        receipt = parse_anthropic(msg)
-
-        assert isinstance(receipt, AnthropicReceipt)
-        assert receipt.amount == Decimal("90.28")
-        assert receipt.charge_date == datetime(2025, 12, 15)
-        assert receipt.invoice_number == "TEST-INVOICE-0001"
-        assert receipt.receipt_number == "0000-0000-0000"
-
-    def test_parse_minimal_receipt(self, make_email):
-        msg = make_email(sender="invoice+statements@mail.anthropic.com", body=SAMPLE_RECEIPT_MINIMAL)
-
-        receipt = parse_anthropic(msg)
-
-        assert isinstance(receipt, AnthropicReceipt)
-        assert receipt.amount == Decimal("45.00")
-        assert receipt.charge_date == datetime(2025, 1, 1)
-        assert receipt.invoice_number is None
-        assert receipt.receipt_number is None
-
-    def test_parse_missing_all_fields(self, make_email):
-        msg = make_email(sender="invoice+statements@mail.anthropic.com", body="This email has no extractable data.")
-
-        receipt = parse_anthropic(msg)
-
-        assert isinstance(receipt, AnthropicReceipt)
-        assert receipt.amount is None
-        assert receipt.charge_date is None
-        assert receipt.invoice_number is None
-        assert receipt.receipt_number is None
-
-    def test_parse_multiple_amounts_uses_first(self, make_email):
-        msg = make_email(
-            sender="invoice+statements@mail.anthropic.com",
-            body="""
-            Receipt from Anthropic, PBC $10.00 Paid January 1, 2025
-            Some other price $20.00 mentioned here.
-            """,
-        )
-
-        receipt = parse_anthropic(msg)
-        assert receipt.amount == Decimal("10.00")
-
-    def test_parse_number_fields_accept_their_shortest_shapes(self, make_email):
-        """Shortest ids the invoice and receipt patterns accept."""
-        msg = make_email(
-            sender="invoice+statements@mail.anthropic.com", body="Invoice number A-1\nReceipt number 0-0-0"
-        )
-
-        receipt = parse_anthropic(msg)
-        assert receipt.invoice_number == "A-1"
-        assert receipt.receipt_number == "0-0-0"
+    assert parse_charge_date(msg) == charge_date
 
 
 if __name__ == "__main__":

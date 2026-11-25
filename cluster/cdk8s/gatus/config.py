@@ -24,9 +24,9 @@ from cluster.cdk8s.authentik import app as authentik_app
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo import app as forgejo_app
 from cluster.cdk8s.grocy import app as grocy_app
-from cluster.cdk8s.litellm import proxy as litellm_proxy
+from cluster.cdk8s.litellm import endpoint as litellm
 from cluster.cdk8s.matrix import matrix
-from cluster.cdk8s.monitoring import grafana_instance, loki, mimir
+from cluster.cdk8s.monitoring import grafana_instance, loki_endpoints, mimir
 from cluster.cdk8s.nix_cache import attic
 from cluster.cdk8s.ollama import tabby
 from cluster.cdk8s.service_ref import ServiceRef
@@ -68,7 +68,7 @@ class Endpoint(BaseModel):
 
 
 def _in_cluster(service: ServiceRef) -> str:
-    return f"http://{service.fqdn}:{service.port.number}"
+    return f"http://{service.authority}"
 
 
 # Endpoint names key Gatus' stored results, so each household keeps its established label.
@@ -76,8 +76,7 @@ _GROCY_LABELS = {"sf": "SF", "vallejo": "Vallejo"}
 
 
 def _endpoints() -> list[Endpoint]:
-    (litellm,) = litellm_proxy.proxy_specs()
-    litellm_url = _in_cluster(litellm_proxy.service(litellm))
+    litellm_url = _in_cluster(litellm.SERVICE)
     return [
         Endpoint(
             name="Website", group=Group.CORE, url=f"https://{website.HOSTNAME}", interval="60s", conditions=[_STATUS_OK]
@@ -173,17 +172,21 @@ def _endpoints() -> list[Endpoint]:
         Endpoint(
             name="Loki write",
             group=Group.CLUSTER,
-            url=f"{loki.WRITE_URL}/ready",
+            url=f"{loki_endpoints.WRITE_URL}/ready",
             interval="60s",
             conditions=[_STATUS_OK],
         ),
         Endpoint(
-            name="Loki read", group=Group.CLUSTER, url=f"{loki.READ_URL}/ready", interval="60s", conditions=[_STATUS_OK]
+            name="Loki read",
+            group=Group.CLUSTER,
+            url=f"{loki_endpoints.READ_URL}/ready",
+            interval="60s",
+            conditions=[_STATUS_OK],
         ),
         Endpoint(
             name="Loki labels API",
             group=Group.CLUSTER,
-            url=f"{loki.READ_URL}/loki/api/v1/labels",
+            url=f"{loki_endpoints.READ_URL}/loki/api/v1/labels",
             interval="120s",
             conditions=[_STATUS_OK],
         ),

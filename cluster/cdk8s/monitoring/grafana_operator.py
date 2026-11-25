@@ -37,20 +37,19 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def grafana_operator(chart: Chart, directory: RenderedDirectory, monitoring_namespace: Kustomization) -> Kustomization:
+def grafana_operator(
+    chart: Chart,
+    directory: RenderedDirectory,
+    monitoring_namespace: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
+) -> Kustomization:
     return flux_kustomization(
         chart,
         "grafana-operator",
         directory,
         wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2",
-                kind="HelmRelease",
-                name="grafana-operator",
-                namespace=NAMESPACE,
-            )
-        ],
+        health_checks=health_checks,
         timeout="5m",
         depends_on=[flux_kustomization_depends_on(monitoring_namespace)],
     )

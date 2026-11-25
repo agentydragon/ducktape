@@ -2,8 +2,8 @@
 name: flux_reconcile_audit
 description: >-
   Audit every Flux Kustomization and HelmRelease over a window (default 7d):
-  classify broken / slow / miswired / propagating / suspended / healthy with
-  per-item culprit, failure counts, and p99 reconcile duration. Use for
+  classify each resource using Kustomization history or HelmRelease conditions,
+  with optional Loki counts and Mimir p99 reconcile duration. Use for
   "what's slow / stuck / been broken this week".
 ---
 
@@ -32,39 +32,37 @@ set the Slow threshold.
 
 ## Buckets
 
-Classification reads each object's `status.history` entries inside the window
-(one entry per revision, carrying status, attempt count, and duration). First
-rule that matches wins.
+For Kustomizations, classification uses per-revision reconcile history within
+the window. For HelmReleases, classification uses current conditions and optional
+Mimir latency. HelmRelease history records deployments.
 
-| Bucket          | Rule                                                                                                    |
-| --------------- | ------------------------------------------------------------------------------------------------------- |
-| **Suspended**   | `spec.suspend=true`. Informational only.                                                                |
-| **Broken**      | The latest history entry has a failure status: the controller is stuck at that revision.                |
-| **Propagating** | `Ready=False reason=DependencyNotReady` with no failure entries in the window: a dependsOn catching up. |
-| **Miswired**    | Latest entry succeeded, but the window holds failure entries: Flux retried until it converged.          |
-| **Slow**        | Succeeded, and p99 duration ≥ the per-kind threshold.                                                   |
-| **Healthy**     | Everything else.                                                                                        |
-
-Broken keys on the latest entry, not on the failure count: a Kustomization now
-`ReconciliationSucceeded` after many failed attempts is Miswired, not Broken.
+| Bucket          | Kustomization                                                                       | HelmRelease                                                          |
+| --------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Suspended**   | `spec.suspend=true`.                                                                | `spec.suspend=true`.                                                 |
+| **Broken**      | Latest reconcile entry failed.                                                      | `Stalled=True` or a failure in `Ready=False`.                        |
+| **Propagating** | `Ready=False reason=DependencyNotReady` and no failures in the window.              | Waiting on a prerequisite or reconciling without a reported failure. |
+| **Miswired**    | Earlier reconcile entries failed and the latest did not.                            | Requires ordered reconcile evidence.                                 |
+| **Slow**        | A success in the window and p99 or longest last reconcile time meets the threshold. | `Ready=True` and Mimir p99 meets the threshold.                      |
+| **Unknown**     |                                                                                     | No Ready result and no active reconciliation reported.               |
+| **Healthy**     | Everything else.                                                                    | `Ready=True`.                                                        |
 
 ## Data sources
 
-1. **`status.history`** (Flux 2.7+) — primary signal for every bucket. Flux
-   keeps about 10 entries, so a long window on a busy object sees only the
-   most recent revisions.
-2. **`Ready` condition message** — parsed for Flux's bracketed
-   `[Kind/namespace/name status: 'X']` reference: the underlying culprit.
+1. **Kustomization `status.history`** (Flux 2.7+) — about 10 entries per
+   object, each with a status, attempt count, and duration for the revision.
+2. **Flux conditions** — current HelmRelease readiness and progress. A
+   bracketed `[Kind/namespace/name status: 'X']` reference in a Ready condition
+   message identifies the underlying culprit.
 3. **Label-selector probe** — lists each kind in `DEFAULT_PROBE_KINDS`
    (Deployment, CNPG `Cluster`, SeaweedFS `Bucket`, …) cluster-wide once and
    groups by `kustomize.toolkit.fluxcd.io/name`.
 4. **Mimir** (`--include-mimir`) — `histogram_quantile(0.99, …)` over
-   `gotk_reconcile_duration_seconds_bucket`. Without it, p99 is the longest
-   in-window history duration.
+   `gotk_reconcile_duration_seconds_bucket`. The default report shows the
+   longest in-window last reconcile duration where Kustomization history includes it.
 5. **Loki** (`--include-loki`, used only when `--window` > 1h) — counts of
    `Reconciliation failed` / `Reconciliation finished` controller log lines,
-   for windows longer than the history covers. The larger of the history
-   and Loki counts is reported.
+   for windows longer than the history covers. The report uses Loki counts for
+   HelmReleases and the larger of history and Loki counts for Kustomizations.
 
 ### Port-forwards for Mimir and Loki
 
@@ -75,20 +73,18 @@ kubectl port-forward -n monitoring svc/mimir-querier 8080:8080 >/tmp/mimir-pf.lo
 kubectl port-forward -n loki svc/loki-read 3100:3100 >/tmp/loki-pf.log 2>&1 &
 ```
 
-Wait until both logs print `Forwarding from` before running. A failed Mimir or
-Loki query is swallowed and returns nothing, so a port-forward still booting
-silently drops that source from the report.
+Wait for `Forwarding from`. A failed Mimir or Loki query logs a warning and
+contributes no values to the report.
 
 Mimir needs the Flux controllers scraped: the PodMonitor in
 `cluster/cdk8s/flux_monitoring.py` (`kubectl get podmonitor -n flux-system flux-system`).
 
 ## What the report contains
 
-Per non-healthy resource: current `Ready` status and reason, p99 duration
-(source noted), failed/succeeded attempts in the window (with Loki supplements),
-the latest entry's status and revision, revisions that failed then recovered,
-the culprit, the last error (truncated to 400 chars), the five most recent
-history entries, and unhealthy managed objects from the probe (at most 8).
+Per non-healthy resource, the report includes current `Ready` status and reason,
+available durations and attempt counts, the culprit, and the last error. For
+Kustomizations it also includes up to five history entries, recovered revisions,
+and up to eight unhealthy managed objects.
 
 ## Gotchas
 

@@ -5,28 +5,16 @@ description: Integrate multiple debundle lane-worker branches through a validate
 
 # Debundle Integrator
 
-Combine worker results in dedicated isolated integration state. Inputs are the
-receiving revision and graph/input identity, worker baselines and relative YAML
-patches, completed check records, adapter checks, conflict policy, and push
-permission.
+Follow the [integration procedure](references/docs/integration.md) in an isolated
+checkout of the receiving revision. Obtain each worker's starting identity,
+relative YAML patch and check results, plus the adapter's conflict and push
+policy.
 
-Read [integrate worker results](references/docs/integration.md) before applying
-patches. That guide owns baseline comparison, merge-train validation, conflict
-policy, and isolation of failing branches. Individual green workers do not prove
-the combined spec; never substitute an edited snapshot's starting verification
-for integration checks.
+Integrate the reviewed patches. A saved [placement plan](references/docs/module_proposals.md)
+binds its starting graph and cannot be replayed against another worker's edited
+tree. Validate the combined spec and emitted behavior. Isolate failing patches
+and return semantic conflicts to their authors.
 
-Saved plans bind their starting graph/program context. Do not replay a worker's
-old plan after another edit or graph refresh, or concatenate individually
-accepted plans without checking the combined assignment. Resolve the receiving
-spec and run the complete check plus normal regeneration and relevant behavior
-for the actual integrated result; see [exact plans](references/docs/module_proposals.md).
-
-Return final SHA, per-branch landed/failed/skipped status, conflicts resolved,
-actual gate/runtime results, and follow-up assignments. Preserve worker intent;
-report semantic conflicts instead of silently redesigning the change. Push only
-when explicitly requested.
-
-The [task chooser](references/README.md#choose-a-task) links to command recipes;
-use the [bug reproduction workflow](references/docs/bug_reproductions.md) when
-tooling blocks integration.
+Report the verified final target SHA, per-branch landed/failed/skipped status,
+conflict resolutions, actual check results and follow-ups. Use the
+[bug reproduction workflow](references/docs/bug_reproductions.md) for tooling blockers.

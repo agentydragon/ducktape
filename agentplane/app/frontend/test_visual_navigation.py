@@ -26,7 +26,6 @@ from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.page_capture import wait_for_stable
 from testing.frontend_visual.viewports import MOBILE_TOUCH, SMALL_MOBILE, Viewport
 
-pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -399,6 +398,30 @@ async def open_phone_drawer(view: VisualPage, app: AgentplaneFixture) -> Page:
     await page.get_by_role("button", name="Toggle navigation").click()
     await expect(page.locator(".agentplane-sidebar-open")).to_be_visible()
     return page
+
+
+@pytest.mark.parametrize("viewport", [SMALL_MOBILE, MOBILE_TOUCH], ids=["small-mobile", "mobile-touch"])
+async def test_mobile_navigation_toggle_same_spot(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/")
+    await view.check(context="fixture ready")
+    page = view.page
+    initial_url = page.url
+    toggle = page.get_by_role("button", name="Toggle navigation")
+    box = await toggle.bounding_box()
+    assert box is not None
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    await page.mouse.click(x, y)
+    drawer = page.locator(".agentplane-sidebar-open")
+    await expect(drawer).to_be_visible()
+    new_thread = drawer.get_by_role("button", name="New thread (via Sandboxes)")
+    new_box = await new_thread.bounding_box()
+    assert page.viewport_size is not None
+    assert new_box is not None
+    assert new_box["x"] > page.viewport_size["width"] / 2
+    await view.capture()
+    await page.mouse.click(x, y)
+    await expect(drawer).to_have_count(0)
+    assert page.url == initial_url
 
 
 @MOBILE_ONLY

@@ -1,0 +1,294 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+load("//devinfra/lint:linters.bzl", "eslint_test")
+
+package(default_testonly = True)
+
+# Sources resolve the parser and printer through the parent package's isolated npm links.
+js_library(
+    name = "harness",
+    srcs = ["harness.mjs"],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    ],
+)
+
+js_test(
+    name = "input_test",
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+    entry_point = "input_test.mjs",
+    env = {"LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)"},
+)
+
+js_test(
+    name = "metadata_link_worlds_test",
+    entry_point = "metadata_link_worlds_test.mjs",
+    env = {"NODE_OPTIONS": "--experimental-vm-modules"},
+)
+
+_TEST_DATA = [
+    ":harness",
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+]
+
+_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
+
+js_test(
+    name = "joint_static_test",
+    size = "medium",
+    data = _TEST_DATA + [
+        "//devinfra/js/debundle/x/split_proof/lean:joint_static_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+    entry_point = "joint_static_test.mjs",
+    env = dict(
+        _TEST_ENV,
+        JOINT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:joint_static_test_runner)",
+    ),
+)
+
+[
+    js_test(
+        name = name,
+        size = "medium",
+        data = _TEST_DATA,
+        entry_point = name + ".mjs",
+        env = _TEST_ENV,
+    )
+    for name in [
+        "arithmetic_observer_test",
+        "arithmetic_test",
+        "arrays_test",
+        "async_methods_test",
+        "bitwise_test",
+        "classes_test",
+        "derived_defaults_test",
+        "derived_object_parameters_test",
+        "derived_fields_test",
+        "composition_test",
+        "function_declaration_test",
+        "hoisted_moves_test",
+        "if_test",
+        "import_cells_test",
+        "initializer_moves_test",
+        "literal_records_test",
+        "logical_test",
+        "member_test",
+        "module_graph_test",
+        "module_metadata_test",
+        "numeric_prefix_test",
+        "object_elements_test",
+        "object_spread_test",
+        "optional_callee_test",
+        "pre_super_test",
+        "prefix_record_creation_test",
+        "provider_location_test",
+        "realm_constructors_test",
+        "record_prefix_test",
+        "record_values_test",
+        "relational_test",
+        "reordering_test",
+        "resolved_placement_test",
+        "rest_parameters_test",
+        "strict_arguments_test",
+        "schedule_moves_test",
+        "regexp_test",
+        "small_records_test",
+        "structural_intrinsic_number_test",
+        "static_blocks_test",
+        "string_initializer_test",
+        "structural_object_method_test",
+        "switch_test",
+        "symbol_brand_test",
+        "symbol_iterator_test",
+        "symbol_tag_test",
+        "weakmap_constructor_test",
+        "wide_provider_scope_test",
+        "wide_records_test",
+    ]
+]
+
+[
+    js_test(
+        name = name,
+        size = "medium",
+        data = _TEST_DATA,
+        entry_point = name + ".mjs",
+        env = _TEST_ENV,
+        shard_count = shards,
+    )
+    for name, shards in [
+        ("browser_globals_test", 4),
+        ("computed_class_keys_test", 4),
+        ("conditional_super_test", 3),
+        ("default_parameters_test", 3),
+        ("flat_patterns_test", 6),
+        ("generator_test", 4),
+        ("guarded_super_test", 3),
+        ("identifier_assignment_test", 3),
+        ("instanceof_test", 5),
+        ("loops_test", 4),
+        ("new_target_test", 3),
+        ("numeric_property_keys_test", 2),
+        ("object_parameter_defaults_test", 6),
+        ("pre_super_object_test", 5),
+        ("private_elements_test", 4),
+        ("optional_chain_test", 3),
+        ("sequence_test", 3),
+        ("super_members_test", 3),
+        ("templates_test", 3),
+        ("tagged_templates_test", 3),
+    ]
+]
+
+js_test(
+    name = "iterators_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "iterators_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
+
+js_test(
+    name = "dense_array_batch_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "dense_array_batch_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 2,
+)
+
+js_test(
+    name = "wide_table_reversal_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "wide_table_reversal_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
+
+js_test(
+    name = "spread_arguments_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "spread_arguments_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
+
+js_test(
+    name = "provider_programs_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "provider_programs_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
+
+js_test(
+    name = "programs_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "programs_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
+
+js_test(
+    name = "host_profile_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "host_profile_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
+
+# Preserve the 48-reader reduction-budget regression for explicit runs.
+js_test(
+    name = "module_graph_scale_test",
+    size = "medium",
+    args = ["--full-graph"],
+    data = _TEST_DATA,
+    entry_point = "module_graph_test.mjs",
+    env = _TEST_ENV,
+    tags = ["manual"],
+)
+
+js_test(
+    name = "staged_ast_gate_test",
+    size = "medium",
+    data = _TEST_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest"],
+    entry_point = "staged_ast_gate_test.mjs",
+    env = dict(
+        _TEST_ENV,
+        SPLIT_PROOF_TIMINGS = "1",
+    ),
+)
+
+js_test(
+    name = "mutations_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "mutations_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
+
+js_test(
+    name = "property_assignment_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "property_assignment_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 8,
+)
+
+js_test(
+    name = "table_lookups_test",
+    size = "medium",
+    data = _TEST_DATA + [
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
+    ],
+    entry_point = "table_lookups_test.mjs",
+    env = _TEST_ENV,
+)
+
+js_test(
+    name = "record_fuel_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "wide_table_reversal_test.mjs",
+    # Cross the old probe ceiling without repeating the 44-row scaling workload.
+    env = _TEST_ENV | {
+        "LINKED_TABLE_FIELDS": "1410",
+        "LINKED_TABLE_ROWS": "3",
+    },
+    shard_count = 3,
+)
+
+js_test(
+    name = "certified_split_test",
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    ],
+    entry_point = "certified_split_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_library(
+    name = "lint_sources",
+    srcs = glob(["*.mjs"]),
+)
+
+eslint_test(
+    name = "eslint_test",
+    srcs = [":lint_sources"],
+)

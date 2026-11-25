@@ -1,17 +1,17 @@
 //! `TransformSpec.chunk_renames` applies in-place renames to bindings
-//! staying in entry's body without creating an explicit `Logical(R)`
-//! module that would form a 2-module SCC with `ResidualEntry`.
+//! staying in entry's body without creating an explicit logical module `R`
+//! that would form a 2-module SCC with the entry destination.
 //!
-//! ## Why not a `Logical(R)` module
+//! ## Why not a logical module `R`
 //!
-//! The residual-member-rename path needs a `Logical(R)` module, which the
-//! validator treats as a distinct node from `ModuleId::ResidualEntry`. When
+//! The residual-member-rename path needs a logical module `R`, which the
+//! validator treats as a distinct node from the `EntryDestination`. When
 //! the chunk interleaves orphan top-level statements (`console.log(x)` etc.,
-//! source_unit = `ResidualEntry`) with side-effecting initializers on residual-
-//! owned decls (source_unit = `Logical(R)`), the S-edge ordering loop produces a
-//! 2-module SCC. Both nodes emit into files that evaluate in the chunk's
-//! same init phase — the cycle is a validator artifact, not a real
-//! evaluation hazard, but the gate still rejects.
+//! owned by entry) with side-effecting initializers on residual-owned decls
+//! (owned by `R`), the S-edge ordering loop produces a 2-module SCC. Both
+//! nodes emit into files that evaluate in the chunk's same init phase — the
+//! cycle is a validator artifact, not a real evaluation hazard, but the gate
+//! still rejects.
 //!
 //! ## What `chunk_renames` does
 //!
@@ -23,8 +23,8 @@
 //! module take their rename from the module plan; the
 //! `chunk_renames` entry (if any) is dropped for those.
 //!
-//! With no `Logical(R)` to interleave against, the orphan stmts and
-//! unowned decls share `ResidualEntry` ownership; no cycle.
+//! With no `R` to interleave against, the orphan stmts and unowned decls
+//! share entry ownership; no cycle.
 
 use debundle_e2e_support::*;
 

@@ -1,6 +1,5 @@
 import io
 import re
-import struct
 import textwrap
 from pathlib import Path
 
@@ -14,7 +13,6 @@ from testing.frontend_visual.page_capture import (
     PageErrors,
     RequestFence,
     assert_network_settled,
-    screenshot_locator,
     wait_for_stable,
 )
 
@@ -150,33 +148,6 @@ async def test_render_readiness_has_a_deadline_and_names_the_stalled_stage(page:
     await page.evaluate(f"() => {{ {stall}; }}")
     with pytest.raises(AssertionError, match=f"render readiness: {stage} did not settle within 200ms"):
         await wait_for_stable(page, timeout_ms=200)
-
-
-async def test_screenshot_requires_exactly_one_target(page: Page) -> None:
-    await page.set_content("<div id='present'>x</div>")
-
-    assert (await screenshot_locator(page, page.locator("#present"), context="scene foo")).startswith(b"\x89PNG")
-    with pytest.raises(ValueError, match="scene foo: screenshot target must match exactly one element, got 0"):
-        await screenshot_locator(page, page.locator("#absent"), context="scene foo")
-
-
-@pytest.mark.parametrize(("css_height", "rows"), [("40.4px", 40), ("40.5px", 41), ("2000px", 2000)])
-async def test_screenshot_rounds_to_the_nearest_pixel_and_takes_the_whole_element(
-    page: Page, css_height: str, rows: int
-) -> None:
-    await page.set_viewport_size({"width": 300, "height": 200})
-    await page.set_content(f"<body style='margin: 0'><div id='el' style='width: 100px; height: {css_height}'></div>")
-
-    png = await screenshot_locator(page, page.locator("#el"), context="scene foo")
-
-    assert struct.unpack(">II", png[16:24]) == (100, rows)
-
-
-async def test_screenshot_refuses_an_element_with_no_extent(page: Page) -> None:
-    await page.set_content("<div id='empty'></div>")
-
-    with pytest.raises(ValueError, match=r"scene foo: .*has no visible extent"):
-        await screenshot_locator(page, page.locator("#empty"), context="scene foo")
 
 
 async def test_devtools_viewport_captures_the_last_row_as_drawn_and_playwrights_does_not(browser: Browser) -> None:

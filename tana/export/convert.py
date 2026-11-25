@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import html
+from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+from itertools import chain
 from pathlib import Path
 
 from tana.domain.nodes import MIN_TUPLE_CHILDREN, BaseNode, CodeBlockNode, TupleNode, VisualNode
@@ -326,10 +328,13 @@ def _roots(store: TanaGraph) -> list[BaseNode]:
     )
 
 
+def format_tanapaste(lines: Iterable[str]) -> str:
+    """Frame rendered lines as a TanaPaste document with one final newline."""
+    return "\n".join(chain(("%%tana%%",), lines)).rstrip() + "\n"
+
+
 def _export(store: TanaGraph, style: str) -> str:
     lines: list[str] = []
-    if style == "tana":
-        lines.append("%%tana%%")
     roots = _roots(store)
     ctx = RenderContext(store, style, roots={n.id for n in roots})
     for r in roots:
@@ -348,6 +353,8 @@ def _export(store: TanaGraph, style: str) -> str:
         else:
             lines.extend(node_lines)
 
+    if style == "tana":
+        return format_tanapaste(lines)
     return "\n".join(lines).rstrip() + "\n"
 
 

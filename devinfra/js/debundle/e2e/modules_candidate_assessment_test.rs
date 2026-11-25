@@ -31,26 +31,54 @@ fn write_import_order(staged: &TreeStaged, name: &str, appended: &[&str]) -> Pat
     path
 }
 
-fn apply_with_import_order(
+fn apply_args(staged: &TreeStaged, batch: &Path, import_order: &Path) -> Vec<String> {
+    [
+        "modules",
+        "apply",
+        "--assignments",
+        path(batch),
+        "--modules",
+        path(&staged.modules),
+        "--graph",
+        path(&staged.graph),
+        "--source-root",
+        path(&staged.root().join("snapshot")),
+        "--tree-config",
+        path(&staged.config),
+        "--import-order",
+        path(import_order),
+        "--format",
+        "json",
+    ]
+    .map(str::to_owned)
+    .into()
+}
+
+fn run_apply(
     staged: &TreeStaged,
     batch: &Path,
     import_order: &Path,
     analysis: Option<&Path>,
-    dry_run: bool,
-    complete_context: bool,
-    partial_context_without_analysis: bool,
+    extra_args: &[&str],
 ) -> StagedInvocation {
     let outputs = staged.run.workspace().child();
-    let output_root = outputs.path().join("out");
-    let mut args = staged.apply_args(
-        batch,
-        analysis,
-        dry_run,
-        complete_context,
-        partial_context_without_analysis,
-        &output_root,
-    );
-    args.extend(["--import-order".to_string(), path(import_order).to_string()]);
+    let mut args = apply_args(staged, batch, import_order);
+    if let Some(analysis) = analysis {
+        args.extend(
+            [
+                "--tree-vendor-marks",
+                path(&staged.vendor_marks),
+                "--tree-source-root",
+                path(staged.root()),
+                "--out-root",
+                path(&outputs.path().join("out")),
+                "--analysis",
+                path(analysis),
+            ]
+            .map(str::to_owned),
+        );
+    }
+    args.extend(extra_args.iter().map(|arg| (*arg).to_owned()));
     StagedInvocation::tree_command(&args, outputs)
 }
 
@@ -80,10 +108,6 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let baseline = staged.run_with_analysis(&staged.artifact, false);
-    assert_ok(&baseline.result, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline.output_root());
-    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let request = residual_apply_request(&staged, "second", "a_earlier");
     assert_eq!(
@@ -95,41 +119,20 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     let import_order = write_import_order(&staged, "apply-import-order.json", &["a_earlier"]);
 
     let before = module_snapshot(&staged.modules);
-    let result = apply_with_import_order(
+    let result = run_apply(
         &staged,
         &batch,
         &import_order,
         Some(&staged.artifact),
-        true,
-        true,
-        false,
+        &["--dry-run"],
     );
     assert_ok(&result.result, "modules apply --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "{assessment:#}"
-    );
-    assert_ne!(
-        assessment["emitted_order"], baseline_report["emitted_order"],
-        "claiming the later residual in an earlier module must change the actual emitted order"
-    );
+    assert_candidate_changes_emitted_order(assessment, &staged);
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let applied = apply_with_import_order(
-        &staged,
-        &batch,
-        &import_order,
-        Some(&staged.artifact),
-        false,
-        true,
-        false,
-    );
+    let applied = run_apply(&staged, &batch, &import_order, Some(&staged.artifact), &[]);
     assert_ok(&applied.result, "modules apply --analysis");
     let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
     assert_eq!(
@@ -160,14 +163,12 @@ fn modules_apply_assessment_accepts_a_closed_no_swap_candidate() {
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
     let import_order = write_import_order(&staged, "apply-import-order.json", &["new_module"]);
 
-    let result = apply_with_import_order(
+    let result = run_apply(
         &staged,
         &batch,
         &import_order,
         Some(&staged.artifact),
-        true,
-        true,
-        false,
+        &["--dry-run"],
     );
     assert_ok(
         &result.result,
@@ -216,14 +217,12 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
     let before = module_snapshot(&staged.modules);
 
     let foreign = staged_tree(&[("main", "function other() { return \"other\"; }\n")], &[]);
-    let stale = apply_with_import_order(
+    let stale = run_apply(
         &staged,
         &batch,
         &import_order,
         Some(&foreign.artifact),
-        true,
-        true,
-        false,
+        &["--dry-run"],
     );
     let stderr = assert_refused(&stale);
     assert!(
@@ -232,27 +231,17 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let partial = apply_with_import_order(
+    let partial = run_apply(
         &staged,
         &batch,
         &import_order,
-        Some(&staged.artifact),
-        true,
-        false,
-        false,
+        None,
+        &["--dry-run", "--analysis", path(&staged.artifact)],
     );
     assert_refused(&partial);
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let not_dry = apply_with_import_order(
-        &staged,
-        &batch,
-        &import_order,
-        Some(&foreign.artifact),
-        false,
-        true,
-        false,
-    );
+    let not_dry = run_apply(&staged, &batch, &import_order, Some(&foreign.artifact), &[]);
     assert_refused(&not_dry);
     assert_eq!(module_snapshot(&staged.modules), before);
 
@@ -279,27 +268,23 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
     let scoped_import_order =
         write_import_order(&scoped, "scoped-import-order.json", &["a_earlier"]);
     let scoped_before = module_snapshot(&scoped.modules);
-    let scoped_preview = apply_with_import_order(
+    let scoped_preview = run_apply(
         &scoped,
         &scoped_batch,
         &scoped_import_order,
         None,
-        true,
-        false,
-        false,
+        &["--dry-run"],
     );
     assert_ok(
         &scoped_preview.result,
         "ordinary scoped modules apply --dry-run",
     );
-    let scoped_refused = apply_with_import_order(
+    let scoped_refused = run_apply(
         &scoped,
         &scoped_batch,
         &scoped_import_order,
         Some(&scoped.artifact),
-        true,
-        true,
-        false,
+        &["--dry-run"],
     );
     let stderr = assert_refused(&scoped_refused);
     assert!(stderr.contains("one full-tree module root"), "{stderr}");
@@ -320,41 +305,18 @@ fn modules_apply_assessment_inputs_are_explicit_but_ambient_defaults_are_ignored
     let root = staged.root();
     let out = root.join("ambient-out");
 
-    let mut ambient_args = staged.apply_args(&batch, None, true, false, false, &out);
-    ambient_args.extend([
-        "--import-order".to_string(),
-        path(&import_order).to_string(),
-    ]);
-    let ambient = process::debundle_output(
-        std::process::Command::new(debundler_path())
-            .args(ambient_args.iter().map(String::as_str))
-            .env("DEBUNDLE_TREE_SOURCE_ROOT", root)
-            .env("DEBUNDLE_OUT", &out),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        ambient.status.success(),
-        "ambient transform defaults changed ordinary apply behavior:\n{}",
-        String::from_utf8_lossy(&ambient.stderr)
-    );
+    let mut command = Command::new(debundler_path());
+    command
+        .args(apply_args(&staged, &batch, &import_order))
+        .arg("--dry-run")
+        .env("DEBUNDLE_TREE_SOURCE_ROOT", root)
+        .env("DEBUNDLE_OUT", &out);
+    let ambient = process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"));
+    process::assert_success(&ambient);
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let mut explicit_args = staged.apply_args(&batch, None, true, false, false, &out);
-    explicit_args.extend([
-        "--import-order".to_string(),
-        path(&import_order).to_string(),
-        "--tree-source-root".to_string(),
-        path(root).to_string(),
-        "--out-root".to_string(),
-        path(&out).to_string(),
-    ]);
-    let explicit = process::debundle_output(
-        std::process::Command::new(debundler_path())
-            .args(explicit_args.iter().map(String::as_str))
-            .env("DEBUNDLE_TREE_SOURCE_ROOT", root)
-            .env("DEBUNDLE_OUT", &out),
-    )
-    .unwrap_or_else(|err| panic!("{err}"));
+    command.args(["--tree-source-root", path(root), "--out-root", path(&out)]);
+    let explicit = process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"));
     assert_eq!(explicit.status.code(), Some(1));
     assert!(
         String::from_utf8_lossy(&explicit.stderr).contains("require --analysis"),
@@ -389,10 +351,6 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
             ),
         ],
     );
-    let baseline = staged.run_with_analysis(&staged.artifact, false);
-    assert_ok(&baseline.result, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline.output_root());
-    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let before = module_snapshot(&staged.modules);
     let ordinary = staged.merge("z_later", "a_earlier", None, true);
@@ -412,15 +370,8 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
     assert_ok(&result.result, "modules merge --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
+    assert_candidate_changes_emitted_order(assessment, &staged);
     assert_eq!(assessment["swapped_pairs"], 1, "{assessment:#}");
-    assert_ne!(
-        assessment["emitted_order"], baseline_report["emitted_order"],
-        "merging the earliest unit into the last module must change the emitted order"
-    );
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = staged.merge("z_later", "a_earlier", None, false);
@@ -439,10 +390,6 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
 fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
     let staged = two_function_ordering_tree();
     fs::create_dir_all(staged.modules.join("alternate")).unwrap();
-    let baseline = staged.run_with_analysis(&staged.artifact, false);
-    assert_ok(&baseline.result, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline.output_root());
-    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let before = module_snapshot(&staged.modules);
     let ordinary = staged.delete("a_earlier", true, None, true);
@@ -465,18 +412,7 @@ fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
     );
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "{assessment:#}"
-    );
-    assert_ne!(
-        assessment["emitted_order"], baseline_report["emitted_order"],
-        "deleting the earliest module must move its binding to residual and invert emitted order"
-    );
+    assert_candidate_changes_emitted_order(assessment, &staged);
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = staged.delete("a_earlier", true, None, false);
@@ -533,10 +469,6 @@ fn modules_apply_assessment_matches_staged_run_for_existing_unit_move() {
             "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: second}}}]\n",
         )],
     );
-    let baseline = staged.run_with_analysis(&staged.artifact, false);
-    assert_ok(&baseline.result, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline.output_root());
-    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let batch = staged.root().join("assignments.json");
     fs::write(
@@ -550,14 +482,12 @@ fn modules_apply_assessment_matches_staged_run_for_existing_unit_move() {
     .unwrap();
     let import_order = write_import_order(&staged, "assignment-import-order.json", &["a_earlier"]);
     let before = module_snapshot(&staged.modules);
-    let result = apply_with_import_order(
+    let result = run_apply(
         &staged,
         &batch,
         &import_order,
         Some(&staged.artifact),
-        true,
-        true,
-        false,
+        &["--dry-run"],
     );
     assert_ok(
         &result.result,
@@ -565,22 +495,10 @@ fn modules_apply_assessment_matches_staged_run_for_existing_unit_move() {
     );
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "{assessment:#}"
-    );
-    assert_ne!(
-        assessment["emitted_order"], baseline_report["emitted_order"],
-        "moving the later source unit into an earlier module must invert the emitted order"
-    );
+    assert_candidate_changes_emitted_order(assessment, &staged);
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let applied =
-        apply_with_import_order(&staged, &batch, &import_order, None, false, false, false);
+    let applied = run_apply(&staged, &batch, &import_order, None, &[]);
     assert_ok(&applied.result, "ordinary graph-backed modules apply");
     let applied_outcome: Value = serde_json::from_str(&applied.result.stdout).unwrap();
     assert!(
@@ -627,14 +545,12 @@ fn modules_apply_assessment_refuses_stale_or_partial_context_before_writes() {
     let import_order = write_import_order(&staged, "assignment-import-order.json", &["a_earlier"]);
     let before = module_snapshot(&staged.modules);
 
-    let stale = apply_with_import_order(
+    let stale = run_apply(
         &staged,
         &batch,
         &import_order,
         Some(&foreign.artifact),
-        true,
-        true,
-        false,
+        &["--dry-run"],
     );
     let stderr = assert_refused(&stale);
     assert!(
@@ -643,99 +559,45 @@ fn modules_apply_assessment_refuses_stale_or_partial_context_before_writes() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let partial = apply_with_import_order(&staged, &batch, &import_order, None, true, false, true);
+    let partial = run_apply(
+        &staged,
+        &batch,
+        &import_order,
+        None,
+        &["--dry-run", "--tree-source-root", path(staged.root())],
+    );
     let stderr = assert_refused(&partial);
     assert!(stderr.contains("require --analysis"), "{stderr}");
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let env_defaults = {
-        let output = process::debundle_output(
-            Command::new(debundler_path())
-                .args([
-                    "modules",
-                    "apply",
-                    "--assignments",
-                    path(&batch),
-                    "--modules",
-                    path(&staged.modules),
-                    "--graph",
-                    path(&staged.graph),
-                    "--source-root",
-                    path(&staged.root().join("snapshot")),
-                    "--tree-config",
-                    path(&staged.config),
-                    "--import-order",
-                    path(&import_order),
-                    "--dry-run",
-                    "--format",
-                    "json",
-                ])
-                .env("DEBUNDLE_TREE_SOURCE_ROOT", staged.root())
-                .env("DEBUNDLE_OUT", staged.root().join("ambient-output")),
-        )
-        .unwrap_or_else(|err| panic!("{err}"));
-        CommandResult {
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            status: output.status,
-        }
-    };
-    assert_ok(
-        &env_defaults,
-        "ordinary modules apply with transform environment defaults",
-    );
+    let mut command = Command::new(debundler_path());
+    let out_root = staged.root().join("ambient-output");
+    command
+        .args(apply_args(&staged, &batch, &import_order))
+        .arg("--dry-run")
+        .env("DEBUNDLE_TREE_SOURCE_ROOT", staged.root())
+        .env("DEBUNDLE_OUT", &out_root);
+    let env_defaults = process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"));
+    process::assert_success(&env_defaults);
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let explicit_auxiliary_matching_environment = {
-        let source_root = staged.root().to_path_buf();
-        let out_root = staged.root().join("ambient-output");
-        let output = process::debundle_output(
-            Command::new(debundler_path())
-                .args([
-                    "modules",
-                    "apply",
-                    "--assignments",
-                    path(&batch),
-                    "--modules",
-                    path(&staged.modules),
-                    "--graph",
-                    path(&staged.graph),
-                    "--source-root",
-                    path(&source_root.join("snapshot")),
-                    "--tree-config",
-                    path(&staged.config),
-                    "--import-order",
-                    path(&import_order),
-                    "--tree-source-root",
-                    path(&source_root),
-                    "--out-root",
-                    path(&out_root),
-                    "--dry-run",
-                    "--format",
-                    "json",
-                ])
-                .env("DEBUNDLE_TREE_SOURCE_ROOT", &source_root)
-                .env("DEBUNDLE_OUT", &out_root),
-        )
-        .unwrap_or_else(|err| panic!("{err}"));
-        CommandResult {
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            status: output.status,
-        }
-    };
+    command.args([
+        "--tree-source-root",
+        path(staged.root()),
+        "--out-root",
+        path(&out_root),
+    ]);
+    let explicit_auxiliary_matching_environment =
+        process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"));
+    let stderr = String::from_utf8_lossy(&explicit_auxiliary_matching_environment.stderr);
     assert_eq!(
         explicit_auxiliary_matching_environment.status.code(),
         Some(1),
-        "explicit transform inputs must still require --analysis when equal to environment defaults\n{}",
-        explicit_auxiliary_matching_environment.stderr
+        "explicit transform inputs must still require --analysis when equal to environment defaults\n{stderr}"
     );
     assert!(
-        explicit_auxiliary_matching_environment
-            .stderr
-            .contains("require --analysis"),
-        "expected explicit-context refusal:\n{}",
-        explicit_auxiliary_matching_environment.stderr
+        stderr.contains("require --analysis"),
+        "expected explicit-context refusal:\n{stderr}"
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 }
@@ -762,14 +624,12 @@ fn modules_apply_assessment_refuses_scoped_tree_before_writes() {
     .unwrap();
     let import_order = write_import_order(&staged, "assignment-import-order.json", &["a_earlier"]);
     let before = module_snapshot(&staged.modules);
-    let result = apply_with_import_order(
+    let result = run_apply(
         &staged,
         &batch,
         &import_order,
         Some(&staged.artifact),
-        true,
-        true,
-        false,
+        &["--dry-run"],
     );
     let stderr = assert_refused(&result);
     assert!(stderr.contains("one full-tree module root"), "{stderr}");

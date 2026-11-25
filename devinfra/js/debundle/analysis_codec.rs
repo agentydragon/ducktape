@@ -39,20 +39,24 @@ impl ContextOrdinals {
     pub fn snapshot_binding(&self, binding: &Id) -> Result<SavedBinding> {
         Ok(SavedBinding {
             symbol: binding.0.clone(),
-            context_ordinal: self
-                .ordinal(binding.1.as_u32())
+            context_ordinal: *self
+                .ordinals
+                .get(&binding.1)
                 .context("binding context is outside the analyzed modules")?,
         })
     }
 
     pub fn restore_binding(&self, binding: SavedBinding) -> Result<Id> {
-        let context = self.context(binding.context_ordinal).with_context(|| {
-            format!(
-                "unknown binding context ordinal {}",
-                binding.context_ordinal
-            )
-        })?;
-        Ok((binding.symbol, SyntaxContext::from_u32(context)))
+        let context = self
+            .contexts
+            .get(binding.context_ordinal as usize)
+            .with_context(|| {
+                format!(
+                    "unknown binding context ordinal {}",
+                    binding.context_ordinal
+                )
+            })?;
+        Ok((binding.symbol, *context))
     }
 
     /// Numbers contexts across `modules`; callers use the same modules in the
@@ -67,16 +71,6 @@ impl ContextOrdinals {
         }
         collector
     }
-
-    fn ordinal(&self, raw: u32) -> Option<u32> {
-        self.ordinals.get(&SyntaxContext::from_u32(raw)).copied()
-    }
-
-    fn context(&self, ordinal: u32) -> Option<u32> {
-        self.contexts
-            .get(ordinal as usize)
-            .map(|context| context.as_u32())
-    }
 }
 
 impl Visit for ContextOrdinals {
@@ -90,11 +84,12 @@ impl Visit for ContextOrdinals {
 }
 
 /// zstd-compressed named MessagePack of an already process-independent value.
-pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    let mut encoder = zstd::Encoder::new(Vec::new(), ZSTD_LEVEL)?;
+pub fn encode<T: Serialize>(value: &T, output: impl std::io::Write) -> Result<()> {
+    let mut encoder = zstd::Encoder::new(output, ZSTD_LEVEL)?;
     let mut serializer = rmp_serde::Serializer::new(&mut encoder).with_struct_map();
     value.serialize(&mut serializer)?;
-    Ok(encoder.finish()?)
+    encoder.finish()?;
+    Ok(())
 }
 
 /// Inverse of [`encode`]. The saved value's caller restores bindings with the
@@ -159,7 +154,8 @@ mod tests {
     #[test]
     fn ordinary_tuples_round_trip_without_context_interpretation() {
         let values = vec![("counter".to_string(), 0_u32), ("ordinary".to_string(), 7)];
-        let encoded = encode(&values).expect("encode tuple data");
+        let mut encoded = Vec::new();
+        encode(&values, &mut encoded).expect("encode tuple data");
         assert_eq!(decode::<Vec<(String, u32)>>(&encoded).unwrap(), values);
     }
 }

@@ -17,7 +17,7 @@ import hashlib
 import json
 import subprocess
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import NotRequired, TypedDict, cast
 
 
 class Snapshot(TypedDict):
@@ -26,6 +26,7 @@ class Snapshot(TypedDict):
     graph: str
     spec_root: str
     graph_source_root: str
+    graph_ownership_subset_root: NotRequired[str | None]
     graph_package_roots: dict[str, str]
     source_root: str
     tree_config: str
@@ -48,6 +49,13 @@ def recorded_run(argv: list[str], cwd: Path, evidence: Path) -> str:
     return result.stdout
 
 
+def verify_worker_snapshot(snapshot: Snapshot, evidence: Path) -> Snapshot:
+    """Record the baseline check and use the copied engine's verified paths."""
+    cwd = Path(snapshot["directory"])
+    report = recorded_run([snapshot["engine"], "snapshot", "verify", str(cwd)], cwd, evidence / "baseline")
+    return cast(Snapshot, json.loads(report))
+
+
 def graph_command(snapshot: Snapshot) -> list[str]:
     """Global relocation options, including every package root returned by the CLI."""
     argv = [
@@ -57,6 +65,8 @@ def graph_command(snapshot: Snapshot) -> list[str]:
         "--graph-source-root",
         snapshot["graph_source_root"],
     ]
+    if (root := snapshot.get("graph_ownership_subset_root")) is not None:
+        argv.extend(["--graph-ownership-subset-root", root])
     for name, root in snapshot["graph_package_roots"].items():
         argv.extend(["--graph-package-root", f"{name}={root}"])
     return argv
@@ -84,9 +94,8 @@ def merge_and_regenerate(
     evidence.mkdir(parents=True, exist_ok=False)
     import_order = evidence / "import_order.json"
     import_order.write_text(json.dumps(final_import_order, indent=2) + "\n")
+    snapshot = verify_worker_snapshot(snapshot, evidence)
     cwd = Path(snapshot["directory"])
-    verified = recorded_run([snapshot["engine"], "snapshot", "verify", str(cwd)], cwd, evidence / "baseline")
-    snapshot = cast(Snapshot, json.loads(verified))
     modules = (Path(snapshot["modules"]) / module_subdir).resolve()
     modules.relative_to(Path(snapshot["modules"]).resolve())
     merge = [

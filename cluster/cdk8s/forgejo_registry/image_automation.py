@@ -1,18 +1,14 @@
-"""Flux image automation for the CI images in our Forgejo registry: one ImageRepository
-scanning each image and one ImagePolicy selecting its newest tag.
+"""Authenticated Flux scans for the ducktape-ci Forgejo registry.
 
-Every entry has the same shape -- same registry, scan interval, pull credential and tag
-policy -- so the roster below is just the names. The `ImageUpdateAutomation` that writes
-the selected tags back into each directory's `image-pins/` Component lives in
-`cluster/generated/flux-image-automation-ghcr`, not here; nothing in this chart carries an
-`$imagepolicy` marker, so Flux never rewrites this generated file. The Receiver that scans an
-image on its push (`forgejo_registry/chart.py`) is built from the same roster.
+This chart tracks devel tags. Platform Sessions declares its provider images in its own
+chart and tracks main tags. The tenant Receiver filters package pushes for both rosters.
+The ImageUpdateAutomation in flux-image-automation-ghcr writes the selected tags to
+each workload's image-pins/ Component.
 """
 
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from constructs import Construct
 from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
     ImageRepository,
     ImageRepositorySpec,
@@ -20,6 +16,7 @@ from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
 )
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -27,13 +24,9 @@ NAME = "flux-image-automation-forgejo"
 # Flux's own namespace, where the image-reflector controller reads these.
 NAMESPACE = "flux-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/flux-image-automation-forgejo"
-_REGISTRY = "git.allegedly.works/ducktape-ci"
-_SCAN_INTERVAL = "5m"
-# The ducktape-ci pull credential, reflected here from cluster/k8s/forgejo-images/;
-# the registry is private, so an unauthenticated scan finds nothing.
-_PULL_SECRET = "forgejo-images-creds"
+REGISTRY = "git.allegedly.works/ducktape-ci"
 
-# Every CI image Flux watches. The ImagePolicy takes the entry's name, and that name is
+# The ImagePolicy takes the entry's name, and that name is
 # what an image-pins/ Component's marker references
 # (`{"$imagepolicy": "flux-system:<name>:tag"}`), so renaming one is a coordinated change
 # across every directory that pins the image -- not a rename here.
@@ -59,7 +52,6 @@ IMAGES = (
     "agentplane-sandbox-build",
     "agentplane-sessions",
     "ai-session-archive-importer",
-    "ai-session-archive-migrator",
     "ai-session-archive-web",
     "aiquota-api",
     "airlock",
@@ -86,7 +78,6 @@ IMAGES = (
     "loki-read-proxy",
     "matrix-user-provisioner",
     "mcp-oauth-facade",
-    "osm-mcp",
     "plaid-mcp-server",
     "plaid-mcp-sync",
     "plaid-spend",
@@ -113,37 +104,29 @@ _REPOSITORIES = {"grocy-mcp-oidc-server": "grocy-mcp", "tana-mcp": "tana-desktop
 
 
 def package_name(image: str) -> str:
-    """The registry package of the `IMAGES` entry `image`: the name Forgejo's `package` webhook reports."""
+    """The Forgejo package name used by both the registry scan and the push webhook."""
     return _REPOSITORIES.get(image, image)
 
 
-class ForgejoImageAutomation(Construct):
-    """The ImageRepository/ImagePolicy pair for every image in `IMAGES`."""
-
-    def __init__(self, scope: Construct, id: str) -> None:
-        super().__init__(scope, id)
-        for name in IMAGES:
-            newest_ci_tag_policy(
-                self,
-                ImageRepository(
-                    self,
-                    f"{name}-repository",
-                    metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-                    spec=ImageRepositorySpec(
-                        image=f"{_REGISTRY}/{package_name(name)}",
-                        interval=_SCAN_INTERVAL,
-                        secret_ref=ImageRepositorySpecSecretRef(name=_PULL_SECRET),
-                    ),
-                ),
-            )
+def track_ci_image(chart: Chart, name: str, *, prefix: str) -> None:
+    """Scan the private package in flux-system and select its newest CI tag for the given branch."""
+    repository = ImageRepository(
+        chart,
+        f"{name}-repository",
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+        spec=ImageRepositorySpec(
+            image=f"{REGISTRY}/{package_name(name)}",
+            interval="5m",
+            secret_ref=ImageRepositorySpecSecretRef(name=pull_credentials.SECRET_NAME),
+        ),
+    )
+    newest_ci_tag_policy(chart, repository, prefix=prefix)
 
 
 def chart(app: App) -> Chart:
-    """The ImageRepository/ImagePolicy pair per CI image, as one chart. The directory had
-    one hand-written file per pair; a single generated file keeps each pair adjacent
-    (cluster/AGENTS.md § Container Images)."""
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    ForgejoImageAutomation(chart, "images")
+    for name in IMAGES:
+        track_ci_image(chart, name, prefix="devel")
     return chart
 
 

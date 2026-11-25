@@ -1,8 +1,4 @@
-// esbuild option overrides for the production bundle, threaded into the native
-// esbuild() rule via spa_bundle's `config` attribute. The rule owns
-// entryPoints/bundle/outdir/format/target/sourcemap/minify/splitting and the
-// bazel-sandbox module resolver; this file adds the automatic React JSX runtime,
-// Tailwind plugin, $lib/$components aliases, and the .svg=text loader.
+// Common module resolution and Tailwind settings for the app and its browser tests.
 import tailwindcss from "esbuild-plugin-tailwindcss";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";

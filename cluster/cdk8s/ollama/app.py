@@ -17,7 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 from jinja2 import Environment, StrictUndefined
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, piraeus_storage
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -26,8 +26,10 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.ollama import tabby
 from cluster.cdk8s.ollama.tabby_endpoint import NAMESPACE
+from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 # Avoid colliding with this module's ollama Flux constructor.
 from model_catalog import ollama as models
@@ -52,8 +54,6 @@ _NGINX_CONF = "nginx.conf"
 _MODELS_DIR = "/models"
 _SSD_MODELS_DIR = "/ssd-models"
 _SCRIPTS_DIR = "/scripts"
-# Pause this Deployment before exclusive host inference experiments.
-_PAUSED_FOR_HOST_EXPERIMENTS = False
 
 
 def _namespace(scope: Construct) -> None:
@@ -73,25 +73,21 @@ def _namespace(scope: Construct) -> None:
 
 def _claims(scope: Construct) -> None:
     # Both on wyrm2's own Piraeus pools, which pins Ollama to the GPU host.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "piraeus-models",
-        metadata=k8s.ObjectMeta(name=_MODELS_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("200Gi")}),
-        ),
+        name=_MODELS_CLAIM,
+        namespace=NAMESPACE,
+        storage_class=piraeus_storage.HDD_LOCAL,
+        size="200Gi",
     )
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "piraeus-ssd-models",
-        metadata=k8s.ObjectMeta(name=_SSD_MODELS_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
-        ),
+        name=_SSD_MODELS_CLAIM,
+        namespace=NAMESPACE,
+        storage_class=piraeus_storage.SSD_LOCAL,
+        size="100Gi",
     )
 
 
@@ -162,7 +158,7 @@ def _auth_proxy_container() -> k8s.Container:
         image="nginx:1.31-alpine",
         # activitywatch's nginx:alpine sidecar peaks at a 60Mi VPA upper bound.
         resources=container_resources(cpu="10m", memory="32Mi", memory_limit="256Mi"),
-        ports=[AUTH_PROXY.port.k8s_container_port()],
+        ports=[AUTH_PROXY.k8s_container_port()],
         # nginx-auth-proxy.conf.template reads all three.
         env=[
             DIRECT_TOKEN.env_var("OLLAMA_DIRECT_TOKEN"),
@@ -232,9 +228,7 @@ def _service(scope: Construct) -> None:
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE, labels={"app": "ollama"}),
         spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            selector=_PODS.selector,
-            ports=[SERVICE.port.k8s_service_port(), AUTH_PROXY.port.k8s_service_port()],
+            type="ClusterIP", selector=_PODS.selector, ports=[SERVICE.k8s_service_port(), AUTH_PROXY.k8s_service_port()]
         ),
     )
 
@@ -359,19 +353,12 @@ def _direct_token(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "direct-token",
-        name=DIRECT_TOKEN.secret.name,
-        namespace=DIRECT_TOKEN.secret.namespace,
-        key=DIRECT_TOKEN.key,
+        target=DIRECT_TOKEN,
         # A direct-API credential is generated once, not periodically rotated.
         refresh="8760h",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        target_annotations={
-            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "claude-sandbox",
-            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "claude-sandbox",
-        },
+        target_annotations=mirror_annotations(["claude-sandbox"]),
     )
 
 
@@ -423,15 +410,18 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     _rbac(chart)
-    if not _PAUSED_FOR_HOST_EXPERIMENTS:
-        _setup_job(chart, scripts)
+    _setup_job(chart, scripts)
     _direct_token(chart)
     tabby.add_tabbyapi(chart)
     return chart
 
 
 def ollama(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    kyverno: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -456,5 +446,7 @@ def ollama(
             external_secrets_operator,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment, HTTPRoute and Namespace.
             kyverno,
+            # TabbyAPI's PodMonitor.
+            monitoring_crds,
         ),
     )

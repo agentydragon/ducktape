@@ -15,8 +15,7 @@ agents log read access scoped per namespace:
   - ``Authorization: Bearer <kubernetes token>``: the proxy issues a
     SelfSubjectAccessReview for ``get pods/log`` in that namespace **with the
     caller's own token**, so the decision is exactly the caller's Kubernetes
-    RBAC (the same ``agent-readable-logs`` RoleBindings that gate
-    ``kubectl logs``). The apiserver authenticates the token; the proxy holds
+    RBAC for reading Pod logs. The apiserver authenticates the token; the proxy holds
     no credential of its own. A token the apiserver rejects answers 401, an
     RBAC denial 403, and an apiserver that cannot be consulted 502 — never a
     fall-through to the allowlist below.

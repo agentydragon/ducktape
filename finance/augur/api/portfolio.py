@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
-from functools import cached_property
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -24,16 +23,18 @@ from pydantic import (
     model_validator,
 )
 
-from finance.augur.api.schemas import ID_PATTERN, NonNegativeCurrencyAmount, PositiveCurrencyAmount, duplicates
+from finance.augur.api.schemas import (
+    ID_PATTERN,
+    ApiModel,
+    NonNegativeCurrencyAmount,
+    PositiveCurrencyAmount,
+    duplicates,
+)
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId, PortfolioId
 from finance.augur.sim.income import InterestCharacter
 from finance.augur.sim.tlh import TlhAssumptions
-
-
-class PortfolioConfigModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, ignored_types=(cached_property,))
 
 
 class PortfolioAccountType(StrEnum):
@@ -56,14 +57,14 @@ class HoldingKind(StrEnum):
     OTHER = "other"
 
 
-class PortfolioAccountConfig(PortfolioConfigModel):
+class PortfolioAccountConfig(ApiModel):
     account_id: AccountId = Field(pattern=ID_PATTERN)
     owner_agent_id: AgentId = Field(pattern=ID_PATTERN)
     account_type: PortfolioAccountType = PortfolioAccountType.TAXABLE_BROKERAGE
     label: str | None = None
 
 
-class HoldingTaxLotConfig(PortfolioConfigModel):
+class HoldingTaxLotConfig(ApiModel):
     lot_id: LotId = Field(pattern=ID_PATTERN)
     holding_period_months_at_start: NonNegativeInt
     quantity: PositiveFloat
@@ -81,7 +82,7 @@ class HoldingAssetKind(StrEnum):
     PRIVATE_EQUITY = "private_equity"
 
 
-class _HoldingPositionBase(PortfolioConfigModel):
+class _HoldingPositionBase(ApiModel):
     position_id: str = Field(pattern=ID_PATTERN)
     account_id: AccountId = Field(pattern=ID_PATTERN)
     label: str | None = None
@@ -155,7 +156,7 @@ class PrivateEquityHoldingConfig(_HoldingPositionBase):
 type HoldingPositionConfig = Annotated[SecurityHoldingConfig | PrivateEquityHoldingConfig, Field(discriminator="kind")]
 
 
-class BondHoldingConfig(PortfolioConfigModel):
+class BondHoldingConfig(ApiModel):
     """A bond held at scenario start, in the deployment's idiom.
 
     Deliberately NOT a third `HoldingPositionConfig` variant. A bond is not a tax lot — the
@@ -192,7 +193,7 @@ class BondHoldingConfig(PortfolioConfigModel):
     months_to_maturity_at_start: PositiveInt
 
 
-class PortfolioConfig(PortfolioConfigModel):
+class PortfolioConfig(ApiModel):
     """Deployment-authored portfolio facts.
 
     Month 0 is the start of the simulated scenario. Tax lots express their

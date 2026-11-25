@@ -154,6 +154,5 @@ configMapGenerator:
         git_remote: https://github.com/agentydragon/ducktape.git
         git_username: x-access-token
         git_clone_depth: 1
-        sops_config: .sops.yaml
         git_author_name: attic-jwt-rotation
         git_author_email: noreply@allegedly.works

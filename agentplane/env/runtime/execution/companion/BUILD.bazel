@@ -11,7 +11,7 @@ go_library(
         "//agentplane/env/runtime/execution:__subpackages__",
     ],
     deps = [
-        "//agentplane/env/runtime/execution/codexexecserver",
+        "//agentplane/env/runtime/execution/backend",
         "//agentplane/env/runtime/execution/companion/control",
         "//agentplane/env/runtime/execution/companion/control:control_go_proto",
         "//agentplane/env/runtime/supervision",

@@ -6,7 +6,6 @@ import io
 import json
 import logging
 import os
-import signal
 import traceback
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,21 +22,18 @@ from PIL import Image
 from agentplane.env import config as configuration
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import serve_gateway
-from agentplane.env.e2e.testing.history_tunnel import history_tunnel
+from agentplane.env.e2e.testing.history_ingress import history_ingress
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
-from agentplane.env.runtime.execution.testing.codex_exec_server_container import (
-    CodexExecServerContainer,
-    inspect_codex_exec_server_container,
-)
+from agentplane.env.runtime.execution.testing.executor_companion import ExecutorCompanion, inspect_executor_companion
 from agentplane.grpc.calls import dial
-from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.testing.go_service import go_history_service, migrate_history_database
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, MTLS, SANDBOX_CONTROLLER_URI
 from agentplane.proto import event_pb2, session_pb2
-from agentplane.sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc
-from agentplane.sampler.testing import Endpoint, SamplerTestClient, create_request, go_sampler, settings, turn_completed
+from agentplane.sampler.api import sampler_admin_pb2
+from agentplane.sampler.testing import Endpoint, create_request, go_sampler, settings, turn_completed
 from agentplane.sampler.testing_store import Store
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.session_dispatcher.testing.gateway_process import run_gateway
@@ -48,8 +44,8 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.postgres import create_temporary_database
 from testing.sqlalchemy_engines import postgres_async_engine
 
-# gazelle:include_dep //agentplane/env/runtime/execution/testing:codex_exec_server_container
-pytest_plugins = ("agentplane.env.runtime.execution.testing.codex_exec_server_container",)
+# gazelle:include_dep //agentplane/env/runtime/execution/testing:executor_companion
+pytest_plugins = ("agentplane.env.runtime.execution.testing.executor_companion",)
 logger = logging.getLogger(__name__)
 
 
@@ -91,7 +87,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
     database_url: str,
     postgres_admin_url: str,
     api_server: KubernetesApiServer,
-    codex_exec_server_container: CodexExecServerContainer,
+    executor_companion: ExecutorCompanion,
     code_mode_host: str,
     tmp_path: Path,
 ) -> None:
@@ -123,9 +119,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
             ) as history,
         ):
             store = Store(engine)
-            initial_companion = await asyncio.to_thread(
-                inspect_codex_exec_server_container, codex_exec_server_container.socket
-            )
+            initial_companion = await asyncio.to_thread(inspect_executor_companion, executor_companion.socket)
             assert not initial_companion.owned
             config = launches.config(
                 session_pb2.HARNESS_CODEX,
@@ -133,8 +127,8 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 sandbox=sandbox.identity,
                 state_dir=tmp_path / "runner-state",
                 home=tmp_path / "runner-home",
-                codex_executor_url=codex_exec_server_container.url,
-                codex_executor_socket=codex_exec_server_container.socket,
+                executor_url=executor_companion.url,
+                executor_socket=executor_companion.socket,
             )
             control = configuration.EnvironmentRuntimeControl(
                 listen_address="127.0.0.1:9090",
@@ -145,17 +139,12 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 ),
             )
             async with (
-                history_tunnel(history.ingress_target) as history_proxy,
+                history_ingress(history.ingress_target) as ingress,
                 RunningRunner(
                     config,
                     runner_gateway,
                     history=history.reader,
-                    ingress_endpoint=configuration.Endpoint(
-                        target=history.ingress_target,
-                        svid=configuration.SVIDEndpoint(
-                            server_uri="spiffe://agentplane/history-ingress", proxy_address=history_proxy
-                        ),
-                    ),
+                    ingress_endpoint=ingress,
                     control_endpoint=control,
                     observe_control=False,
                     controller_credentials=gateway.environment_service.channel_credentials(SANDBOX_CONTROLLER_URI),
@@ -174,7 +163,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     undeclared_outputs_dir(),
                     gateway_target=gateway.environment_service.target,
                     gateway_tls=gateway.environment_service.tls_for(CENTRAL_SAMPLER_URI),
-                    gateway_token_file=None,
                     history_target=history.ingress_target,
                     history_tls=history.history_tls,
                 )
@@ -184,6 +172,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 request.spec.placement.central_sampler_v1.executor_environment.name = sandbox.destination.target.name
                 request.spec.placement.central_sampler_v1.executor_environment.uid = sandbox.destination.target.uid
                 sampler_settings.environment_namespace = sandbox.destination.target.namespace
+                sampler_settings.event_block_writes = True
                 request.setup_script = (
                     "printf before > artifact.txt\n"
                     "printf 'gateway setup stdout\\n'\n"
@@ -191,13 +180,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 )
                 session_id = request.session_id
                 async with (
-                    go_sampler(sampler_settings, undeclared_outputs_dir()) as sampler_endpoint,
+                    go_sampler(sampler_settings, undeclared_outputs_dir()) as stub,
                     capture_sampler_failure(store, session_id),
                 ):
-                    stub = SamplerTestClient(
-                        harness_host_pb2_grpc.HarnessHostStub(sampler_endpoint.channel),
-                        sampler_admin_pb2_grpc.SamplerAdminStub(sampler_endpoint.channel),
-                    )
                     with pytest.raises(grpc.aio.AioRpcError) as bearer_rejected:
                         await stub.admin.GetSession(
                             sampler_admin_pb2.GetSessionRequest(session_id=session_id),
@@ -296,8 +281,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     outage_reader = history.reader.new_client()
                     outage_reader.request_timeout_s = 0.5
                     async with outage_reader:
-                        history.process.process.send_signal(signal.SIGSTOP)
-                        try:
+                        with history.process.paused():
                             with pytest.raises(TimeoutError):
                                 await outage_reader.read_session_events(session_id)
                             async with outage_request as exchange:
@@ -323,8 +307,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                             assert [entry.cursor for entry in [*prefix, *outage_suffix]] == list(
                                 range(prefix[0].cursor, prefix[0].cursor + len(prefix) + len(outage_suffix))
                             )
-                        finally:
-                            history.process.process.send_signal(signal.SIGCONT)
 
                     await history.reader.redial()
                     await history.folded(UUID(session_id), outage_cursor)
@@ -367,11 +349,11 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                         # Orderly lease release fences the owned process domain and leaves the
                         # companion healthy in a fresh idle generation before Runner exits.
                         companion_status = await asyncio.to_thread(
-                            inspect_codex_exec_server_container, codex_exec_server_container.socket
+                            inspect_executor_companion, executor_companion.socket
                         )
                         assert companion_status.generation != initial_companion.generation
                         assert not companion_status.owned
-                        await asyncio.to_thread(codex_exec_server_container.check_health)
+                        await asyncio.to_thread(executor_companion.check_health)
                     finally:
                         if not shutdown.done():
                             shutdown.cancel()

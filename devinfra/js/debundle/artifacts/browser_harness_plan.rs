@@ -1,12 +1,13 @@
 //! Browser loading decisions prepared before final program acceptance.
 
 use source_identity::ChunkId;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::{Context, Result, bail};
+use artifact::ChunkBundle;
 use artifact::paths::{
     chunk_id_for_js_path, module_path_from_path, normalize_module_path, path_from_module_path,
 };
@@ -14,7 +15,6 @@ use artifact::runtime_resources::{
     RuntimeResourceDestination, RuntimeResourceKind, RuntimeResourceResolution,
     UnresolvedResourceReason, local_resource_path,
 };
-use artifact::{ChunkBundle, get_chunk_entry_path};
 use lol_html::{RewriteStrSettings, element, end, end_tag, html_content::ContentType, rewrite_str};
 use output_layout::DebundleOutputLayout;
 use serde::Deserialize;
@@ -43,8 +43,7 @@ pub struct BrowserHarnessPlan {
 impl BrowserHarnessPlan {
     pub(super) fn prepare(
         artifact: &ChunkBundle,
-        excluded_chunk_ids: &BTreeSet<ChunkId>,
-        replacement_packages: &BTreeMap<ChunkId, String>,
+        replacement_packages: &BTreeMap<ChunkId, &str>,
         options: &EmitBrowserHarnessConfig,
     ) -> Result<Self> {
         let asset_summary_raw = fs::read_to_string(&options.asset_summary_path)
@@ -86,7 +85,7 @@ impl BrowserHarnessPlan {
             let chunk_id = artifact.chunk_table.get(&chunk_name).with_context(|| {
                 format!("Snapshot manifest does not contain chunk {chunk_name}")
             })?;
-            if !artifact.has_chunk(chunk_id) || excluded_chunk_ids.contains(&chunk_id) {
+            if !artifact.has_chunk(chunk_id) || replacement_packages.contains_key(&chunk_id) {
                 bail!("Snapshot manifest does not contain chunk {chunk_name}");
             }
         }
@@ -99,7 +98,6 @@ impl BrowserHarnessPlan {
         asset_paths.sort();
         let runtime_resources = resolve_runtime_resources(
             artifact,
-            excluded_chunk_ids,
             replacement_packages,
             &asset_paths,
             &options.snapshot_root,
@@ -151,11 +149,13 @@ fn runtime_js_href(artifact: &ChunkBundle, js_path: &str, app_root: &Path) -> Re
         .chunk_table
         .get(chunk_name)
         .with_context(|| format!("Unknown chunk: {chunk_name}"))?;
-    let entry_file = get_chunk_entry_path(artifact, chunk_id)
+    let entry_file = artifact
+        .find_chunk(chunk_id)
+        .and_then(|chunk| chunk.entry_path())
         .with_context(|| format!("Missing chunk entry file for {chunk_name}"))?;
     let entry_path = app_root
         .join(path_from_module_path(chunk_name))
-        .join(path_from_module_path(&entry_file));
+        .join(path_from_module_path(entry_file));
     Ok(artifact::paths::relative_module_specifier(
         app_root,
         &entry_path,
@@ -420,8 +420,7 @@ fn is_external_url(value: &str) -> bool {
 
 fn resolve_runtime_resources(
     artifact: &ChunkBundle,
-    excluded: &BTreeSet<ChunkId>,
-    replacements: &BTreeMap<ChunkId, String>,
+    replacements: &BTreeMap<ChunkId, &str>,
     assets: &[PathBuf],
     snapshot_root: &Path,
 ) -> Vec<RuntimeResourceResolution> {
@@ -436,19 +435,13 @@ fn resolve_runtime_resources(
         let source = chunk.js.metadata.source_path.clone();
         let destination = if let Some(package) = replacements.get(&chunk.chunk_id) {
             RuntimeResourceDestination::Replacement {
-                package: package.clone(),
+                package: (*package).to_owned(),
             }
-        } else if excluded.contains(&chunk.chunk_id) {
-            RuntimeResourceDestination::Unresolved {
-                reason: UnresolvedResourceReason::MissingEmission {
-                    path: source.clone(),
-                },
-            }
-        } else if let Some(entry) = get_chunk_entry_path(artifact, chunk.chunk_id) {
+        } else if let Some(entry) = chunk.entry_path() {
             RuntimeResourceDestination::Emitted {
                 path: artifact::paths::join_module_path(&[
                     artifact.chunk_table.name(chunk.chunk_id),
-                    &entry,
+                    entry,
                 ]),
             }
         } else {
@@ -463,7 +456,7 @@ fn resolve_runtime_resources(
     artifact
         .chunks
         .iter()
-        .filter(|chunk| !excluded.contains(&chunk.chunk_id))
+        .filter(|chunk| !replacements.contains_key(&chunk.chunk_id))
         .flat_map(|chunk| {
             chunk
                 .analysis

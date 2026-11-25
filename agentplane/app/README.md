@@ -91,14 +91,14 @@ bbr test //agentplane/app/...
 Session membership and App metadata stay available. History summaries, Thread views, and retained-event
 reads report the History Service error.
 The generated Dispatcher command facade remains available: it validates the Session and current Sandbox
-UID independently of History. The browser retains submitted commands until History can reconcile
-their admission. Running marks and the archive guard read Dispatcher activity independently of History. Sandbox lifecycle and Action review
+UID independently of History. A selected Thread with a live Dispatcher workset can verify retained
+originals and release their browser copies while History is unavailable. Running marks and the
+archive guard read Dispatcher activity independently of History. Sandbox lifecycle and Action review
 keep working. Browser History watches reconnect and refresh summaries when the service recovers.
 
 ## Implementation and testing
 
-- `internal/server/`: route registration, the HTTP server and service composition. The generated
-  frontend API comes from `//agentplane/app/cmd:export_schema_bin`.
+- `internal/server/`: route registration, the HTTP server and service composition.
 - `cmd/`: process signal handling, CLI selection and the `agentplane-app` executable.
 - `internal/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
   History owns event storage, folding and evidence; `internal/historydata/` reads it through gRPC.
@@ -113,9 +113,8 @@ keep working. Browser History watches reconnect and refresh summaries when the s
   `sandbox_models.py`: deployment configuration schema used by cdk8s.
 - `agentplane/sandboxes/runtimeconfig`: shared deployment-published model and harness offers read by
   the app and existing-environment discovery.
-- `testing/`: Go process fixtures, real service peers and test-only HTTP DTOs checked against Go's
-  OpenAPI schema. Browser and Electric tests use Chromium, PostgreSQL, History and Electric with
-  the Go API process. k3s tests deploy the packaged Go image.
+- `testing/`: Go process fixtures, real service peers and test-only HTTP DTOs. Browser and Electric tests use
+  Chromium, PostgreSQL, History and Electric with the Go API process. k3s tests deploy the packaged Go image.
 - `frontend/`: React SPA and visual scenarios on the repository's TypeScript/esbuild toolchain.
 
 ## Live views
@@ -126,10 +125,27 @@ The browser sends `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, and `In
 the generated `/upstream/dispatcher/v1/sessions/{id}:<verb>` HTTP facade. Each request carries a
 stable command ID and addresses its Session. The Dispatcher checks Session authority and resolves its
 placement. Each command returns its stored `Dispatch`, including an exact-turn interrupt. If a
-response is lost, the browser keeps the Session command for exact-ID retry and History reconciliation.
-Older saved commands remain visible for History reconciliation and updates to known Dispatches.
-Their original Sandbox UID, when recorded, fences Dispatch updates. Only Session-addressed commands
-are eligible for delivery.
+response is lost, the browser keeps the authored command and reads its Dispatch by the original ID on
+reload, reconnect, or Retry. A matching stored command confirms the receipt. A missing live receipt
+permits a Session-addressed retry with the same command ID and payload under Dispatcher's immutable
+Session placement and deleted-Sandbox fence. An unreadable or conflicting receipt leaves the original
+saved. Older commands with uncertain or Sandbox-addressed destinations support read-only status checks.
+
+The App stores operator acknowledgement separately from delivery. An acknowledgement identifies the
+verified OIDC issuer and subject, Session, command ID and exact positive Dispatcher receipt version
+the operator saw. The same operator sees it across browser logins and App replicas. Other operators
+maintain independent attention and history, including for the same receipt. Username changes leave
+preferences intact. Acknowledgements are idempotent and retained across App upgrades. A later revision can request
+attention again, including a changed UNKNOWN outcome. The App records the time of acknowledgement
+and keeps the referenced command and revision discoverable in newest-first pages. Dispatcher and
+History retain authority over the outcome and effects. If the original receipt expires or changes,
+its acknowledgement remains a reference without that original evidence.
+
+The operator-only `/upstream/app/v1/threads/{thread_id}/notice-acknowledgements` collection accepts
+an acknowledgement by POST and lists history by GET (default 25, maximum 100). The collection's
+`:batchGet` method checks up to 100 exact pairs at once. All three operations verify the retained
+Session before reading or writing operator preferences. During rollout, clients receiving a failure
+from an older App replica must keep the notice visible.
 
 The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
 with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`. The app's
@@ -141,10 +157,14 @@ Only the first `CaughtUp` of a fresh snapshot reconciles missing commands; incre
 unchanged commands alone. Deletion receipts may have no Sandbox address. If retention coverage expired
 (`OUT_OF_RANGE`), the browser clears its cursor and takes a fresh snapshot, retaining a visible warning
 that some delivery updates may be missing. A fresh snapshot cannot recover pruned deletion receipts.
-Queued and delivering are distinct from runner admission; a Dispatcher admission proves only that the Runner journaled the command, not an effect.
-History remains the authority for command outcomes. The browser retains the command locally until History
-projects its admission or command row; the app adds no command queue. Grant the Session Dispatcher's
-service caller allowlist `spiffe://agentplane/app` before rolling out an app image that requires this setting.
+A runner admission proves the command reached the runner journal. History supplies evidence of its effect.
+
+While the selected Thread has a live Session workset, the browser checks attempted commands with
+`BatchGetDispatches`. A current receipt can release the persisted browser copy when the Session,
+command ID, operation and payload match and the receipt agrees with any saved Sandbox name and UID.
+A missing or legacy deletion receipt, an unreadable response, or a workset disconnect during the
+lookup leaves the copy in place. This check only reads receipts. After reload, the conversation
+shows a bounded set of outstanding commands. Delivery history pages through older retained originals.
 
 The `/upstream/dispatcher/…` BFF routes expose generated Dispatcher HTTP reads and writes to a browser
 operator session. Agents and Agentplane services call the Dispatcher over native gRPC, not through the app.
@@ -159,10 +179,10 @@ and executor report command failures after submission.
 
 The Sandbox page lists Sessions from the Dispatcher's retained inventory, including Sessions that
 History has not recorded. Materialization and required Environment state come from Dispatcher;
-a row's running/idle mark still comes from History and live Environment observations. Thread marks
-are not current while their watches are disconnected. The Status tab shows the
-Sandbox's state and lets an operator change its wake-on-message and idle-suspend settings, as the list
-does; the Kubernetes conditions and containers below start open only where one is unmet. It reads
+a row's running/idle mark comes from Dispatcher activity and is Unknown while its watch is disconnected.
+The Status tab shows the Sandbox's state and lets an operator change its wake-on-message and idle-suspend
+settings, as the list does; the Kubernetes conditions and containers below start open only where one is
+unmet. It reads
 `GET /upstream/environments/v1/environments/{namespace}/{name}:runtime-diagnostics?target.uid={uid}`
 through the generated EnvironmentService facade for current runner process and Session diagnostics; it does not
 wake a suspended Sandbox. A missing or unavailable runner is
@@ -382,12 +402,12 @@ clears the token and rebuilds the inventory from a new snapshot; reloading the p
 empty. Disconnection keeps the previous view with stale health. Tokens advance after applying frames.
 
 Dispatcher records alone determine list membership, newest-first order and Environment grouping.
-The browser joins paged App metadata for titles and archived state and batched History summaries
+The browser joins paged App metadata for titles and archived state and History summaries
 for visible rows. History-only metadata cannot add a Session to the list. Search, archive counts
 and pagination apply to Dispatcher members; the open Session stays pinned outside the visible page.
 A missing History summary yields a row showing Dispatcher materialization, with no invented
-running/idle state. History summary and App metadata watches invalidate their joins; inventory
-upserts refresh them directly. There is no list polling loop. History content continues through
+running/idle state. App metadata watch frames reload metadata; summary frames and inventory
+upserts reselect the window. There is no list polling loop. History content continues through
 its existing Electric shapes. The App metadata list and watch expose only App-held titles and
 archived state, keyed by Session ID; metadata creation time orders metadata pages. They do not read
 History, filter by Environment, synthesize membership, or relay History notifications. Browsers get
@@ -402,11 +422,8 @@ sidebar and the landing page share one browser listing and its search.
 
 The retained snapshot stays navigable during an outage, and the browser connection, stale
 Kubernetes watch, and disconnected database listener all show in the topbar's one connection
-indicator rather than as page banners. A Thread's live dot
-requires fresh sources, a running Sandbox, and its last observed harness state; a stale persisted
-RUNNING state alone does not make a suspended or deleted Sandbox look live. The snapshot includes
-the feed's active turn, and how the Thread's last completed turn ended (`last_turn_status`, read
-from the newest stored `turn_completed` entry through a partial index), so the sidebar and
+indicator rather than as page banners. A Thread's status dot follows Dispatcher activity; History
+contributes only how the Thread's last completed turn ended (`last_turn_status`), so the sidebar and
 open-thread composer can use the same status-dot component. These are operational snapshots, not
 replacements for a Thread's runner Event prefix.
 
@@ -430,8 +447,8 @@ The Thread composer shows an approximate age of this Thread's latest model-origi
 beside its send controls on wider screens, or at the scrollable Thread history tail on narrow screens.
 The fold records it on the Thread's summary in the same transaction as the events it folds, using
 assistant/reasoning output and generated tool calls/arguments; it ignores tool
-output, user input, harness bookkeeping and turn completion. A migration backfills existing
-logs. The timestamp is a **proxy** for LLM-request recency: model output can arrive well after
+output, user input, harness bookkeeping and turn completion. The timestamp is a **proxy** for
+LLM-request recency: model output can arrive well after
 an upstream request, and a request with no model output may not be represented. The UI does
 not report a provider request time or a cache hit. The value remains meaningful during a
 long-running tool or an active turn, and is unknown when no qualifying event was observed.
@@ -511,7 +528,7 @@ Authorize follows only the server-held continuation returned by the authenticate
 Service; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
 terminal page. Completing consent alone does not activate a grant: the MCP edge's OAuth server still
 verifies the same upstream operator and completes issuance. Operator credentials never
-reach the external client. An external-client Action is auto-approved only by an
+reach the external client. An external-client Action is auto-approved only by a
 PolicyBinding naming its ServiceAccount, otherwise by the operator; clients sharing a
 ServiceAccount share receipts while submitted Actions preserve exact connection provenance.
 
@@ -687,16 +704,9 @@ snapshot, and changing the Environment incarnation or account discards the prior
 
 ## Decisions
 
-- **Connection direction:** Environments dials the runner's private mTLS gRPC server
-  ([runner control](../docs/runner_control.md)); the runner pushes journals to Event ingress.
-  Callers use the stable `environments` Service across Pod replacements.
 - **Model credentials:** staging uses a dedicated key for OpenAI/Claude subscription and local
-  Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no
-  key: the sidecar strips caller Authorization on the exact-origin SVID route, the central proxy
-  authorizes CONNECT for the Sandbox's ServiceAccount, and the LLM ingress verifies the current
-  Sandbox certificate before it uses its one server-held key. The model endpoint remains governed
-  by the credentialless egress design in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather
-  than excepted from it.
+  Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no key: see
+  [LLM ingress](../llm_ingress/README.md) and the [egress design](../docs/adr_sandbox_proxy_gateway.md).
 - **No gRPC-Web or Connect surface for browsers:** the app stays the one HTTP surface; the schema is
   shared through proto-JSON and generated types instead.
 - **Deletion takes only a suspended sandbox:** it removes the Pod and the volume with everything on

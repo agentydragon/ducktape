@@ -153,9 +153,8 @@ type samplerExportFixture struct {
 	target    string
 	tls       *transport.ClientTLS
 	// identity is a live Identity the sampler may act for; ingress records how each push was admitted.
-	identity  workloadauthtesting.IdentityWorkload
-	ingress   *samplerExportIngressServer
-	samplerDB *sql.DB
+	identity workloadauthtesting.IdentityWorkload
+	ingress  *samplerExportIngressServer
 }
 
 const samplerExportPolicyNamespace = "test-sampler-export-policies"
@@ -222,7 +221,7 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	address := grpcserver.Serve(t, server)
 
 	return samplerExportFixture{
-		history: history, historyDB: historyDB, samplerDB: samplerDB, source: samplerSource, target: address, tls: exportTLS,
+		history: history, historyDB: historyDB, source: samplerSource, target: address, tls: exportTLS,
 		identity: named, ingress: ingressServer,
 	}
 }

@@ -31,71 +31,26 @@ type (
 
 type Proxy struct {
 	pb.UnimplementedExecutorServer
-	client           pb.ExecutorClient
-	admit            Admit
-	ctx              context.Context
-	cancel           context.CancelFunc
-	mu               sync.Mutex
-	drainMu          sync.Mutex
-	sessions         map[string]*session
-	poisoned         map[string]error
-	slots            map[uint64]context.CancelFunc
-	nextSlot         uint64
-	opening          int
-	closed, draining bool
-	workers          sync.WaitGroup
-	onChange         func()
+	client   pb.ExecutorClient
+	admit    Admit
+	ctx      context.Context
+	cancel   context.CancelFunc
+	mu       sync.Mutex
+	sessions map[string]*session
+	poisoned map[string]error
+	slots    map[uint64]context.CancelFunc
+	nextSlot uint64
+	opening  int
+	closed   bool
+	workers  sync.WaitGroup
 }
 
-func New(ctx context.Context, client pb.ExecutorClient, admit Admit, onChange func()) (*Proxy, error) {
+func New(ctx context.Context, client pb.ExecutorClient, admit Admit) (*Proxy, error) {
 	if ctx == nil || client == nil || admit == nil {
 		return nil, errors.New("context, backend client and admission are required")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	return &Proxy{client: client, admit: admit, ctx: ctx, cancel: cancel, sessions: map[string]*session{}, poisoned: map[string]error{}, slots: map[uint64]context.CancelFunc{}, onChange: onChange}, nil
-}
-
-func (p *Proxy) changed() {
-	if p.onChange != nil {
-		p.onChange()
-	}
-}
-
-func (p *Proxy) Active() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.opening > 0 || len(p.sessions) > 0
-}
-
-func (p *Proxy) wait(ctx context.Context) error {
-	done := make(chan struct{})
-	go func() { p.workers.Wait(); close(done) }()
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (p *Proxy) Drain(ctx context.Context) error {
-	p.drainMu.Lock()
-	defer p.drainMu.Unlock()
-	p.mu.Lock()
-	p.draining = true
-	for _, cancel := range p.slots {
-		cancel()
-	}
-	p.mu.Unlock()
-	p.changed()
-	err := p.wait(ctx)
-	p.mu.Lock()
-	if !p.closed {
-		p.draining = false
-	}
-	p.mu.Unlock()
-	p.changed()
-	return err
+	return &Proxy{client: client, admit: admit, ctx: ctx, cancel: cancel, sessions: map[string]*session{}, poisoned: map[string]error{}, slots: map[uint64]context.CancelFunc{}}, nil
 }
 
 func (p *Proxy) Close() error {
@@ -106,8 +61,8 @@ func (p *Proxy) Close() error {
 		cancel()
 	}
 	p.mu.Unlock()
-	p.changed()
-	return p.wait(context.Background())
+	p.workers.Wait()
+	return nil
 }
 
 func (p *Proxy) OpenSession(r *pb.OpenSessionRequest, stream pb.Executor_OpenSessionServer) error {
@@ -124,7 +79,7 @@ func (p *Proxy) OpenSession(r *pb.OpenSessionRequest, stream pb.Executor_OpenSes
 	err := p.admit(stream.Context(), r.Scope, true, func(ctx context.Context) error {
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		if p.closed || p.draining || p.ctx.Err() != nil {
+		if p.closed || p.ctx.Err() != nil {
 			return status.Error(codes.Unavailable, "execution proxy is stopping")
 		}
 		if r.GetResumeSessionId() != "" && p.poisoned[r.GetResumeSessionId()] != nil {
@@ -198,7 +153,6 @@ func (p *Proxy) OpenSession(r *pb.OpenSessionRequest, stream pb.Executor_OpenSes
 			close(current.done)
 			p.mu.Unlock()
 		}
-		p.changed()
 	}()
 	if prior != nil {
 		prior.cancel()
@@ -214,7 +168,6 @@ func (p *Proxy) OpenSession(r *pb.OpenSessionRequest, stream pb.Executor_OpenSes
 			return status.FromContextError(c.Err()).Err()
 		}
 	}
-	p.changed()
 	backend, err := p.client.OpenSession(c, r)
 	if err != nil {
 		return err
@@ -229,7 +182,7 @@ func (p *Proxy) OpenSession(r *pb.OpenSessionRequest, stream pb.Executor_OpenSes
 		}
 		current = &session{scope: proto.Clone(r.Scope).(*pb.ExecutionScope), ctx: c, cancel: cancel, done: make(chan struct{}), calls: make(chan struct{}, 64), handles: make(map[string]uint64), id: first.ExecutionSessionId}
 		p.mu.Lock()
-		if p.closed || p.draining || c.Err() != nil || p.sessions[first.ExecutionSessionId] != nil {
+		if p.closed || c.Err() != nil || p.sessions[first.ExecutionSessionId] != nil {
 			p.mu.Unlock()
 			return status.Error(codes.Unavailable, "execution proxy stopped during session open")
 		}
@@ -244,7 +197,6 @@ func (p *Proxy) OpenSession(r *pb.OpenSessionRequest, stream pb.Executor_OpenSes
 	if current == nil {
 		return nil
 	}
-	p.changed()
 	for {
 		resp, err := backend.Recv()
 		if err != nil {
@@ -277,7 +229,7 @@ func call[T any](ctx context.Context, p *Proxy, r request, fn func(context.Conte
 	err := p.admit(ctx, r.GetScope(), false, func(context.Context) error {
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		if p.closed || p.draining || p.ctx.Err() != nil {
+		if p.closed || p.ctx.Err() != nil {
 			return status.Error(codes.Unavailable, "execution proxy is stopping")
 		}
 		s := p.sessions[r.GetExecutionSessionId()]

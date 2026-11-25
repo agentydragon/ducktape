@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Set
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
@@ -54,11 +54,6 @@ def tls_service(namespace: str) -> ServiceRef:
         port=Port(name="grpc-tls", number=_TLS_PORT),
         pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
     )
-
-
-def tls_target(namespace: str) -> str:
-    endpoint = tls_service(namespace)
-    return f"{endpoint.fqdn}:{endpoint.port.number}"
 
 
 class PolicyController(Construct):
@@ -120,7 +115,6 @@ class PolicyController(Construct):
                 cpu=CpuResources(request=Cpu.millis(10)),
                 memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
-            termination_grace=Duration.seconds(30),
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,

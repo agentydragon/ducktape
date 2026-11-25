@@ -1,6 +1,6 @@
 """Shared agent loop infrastructure for critic developer agents.
 
-Contains tool argument models, loop state, tool provider factory, and handlers
+Contains tool argument models, loop state, the `create_tools` factory, and handlers
 used by both optimize and improve modes.
 """
 

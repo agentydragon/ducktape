@@ -82,7 +82,6 @@ pub(super) struct ModuleEmissionInputs<'output, 'planning, 'cache, 'vendor> {
 /// per-plan bookkeeping `PreparedCandidateEmissionPlan::emit` rolls up.
 pub(super) struct LoweredModuleOutput {
     pub(super) file: JsFile,
-    pub(super) record: (String, FileRole),
     pub(super) lowering: SelectedModuleLowering,
     pub(super) vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
@@ -158,7 +157,7 @@ fn emitted_import_local_index(
 
 impl PreparedModuleEmission<'_> {
     pub(super) fn emit(self) -> LoweredModuleOutput {
-        let (file, record, lowering) = build_module_output(
+        let (file, lowering) = build_module_output(
             self.plan,
             self.body,
             &self.explicit_renames,
@@ -166,7 +165,6 @@ impl PreparedModuleEmission<'_> {
         );
         LoweredModuleOutput {
             file,
-            record,
             lowering,
             vendor_reference_rewrites: self.vendor_reference_rewrites,
         }
@@ -273,8 +271,7 @@ pub(super) fn prepare_module_emission<'output>(
         retained: runtime_reimports,
         imported_overrides,
         external_imports: vendor_external_imports,
-        body_rewrites: vendor_body_rewrites,
-        references_rewritten: mut vendor_reference_rewrites,
+        mut rewrites,
     } = plan_vendor_reimports(
         runtime_reimports,
         vendor_import_oracle,
@@ -441,7 +438,7 @@ pub(super) fn prepare_module_emission<'output>(
             &mut peeled_body,
             chunk_id_interned,
             &plan.target_file,
-            &mut vendor_reference_rewrites,
+            &mut rewrites.references_rewritten,
         );
         body.extend(peeled_body);
     }
@@ -476,11 +473,12 @@ pub(super) fn prepare_module_emission<'output>(
     // expression rewrite, not a rename — so it runs as a separate
     // plan-driven visitor sequenced after the sealed rename
     // application, like the runtime-URL rewrite above.
-    if !vendor_body_rewrites.is_empty() {
+    if !cross_module_chunk_renames.is_empty() {
         // `cross_module_chunk_renames` may have renamed an import
         // local's sym in place (ctxt preserved); remap the keys so
         // the replacement still matches the body's idents.
-        let bindings: BTreeMap<Id, vendor::IdentRewriteTarget> = vendor_body_rewrites
+        rewrites.body_rewrites = rewrites
+            .body_rewrites
             .into_iter()
             .map(
                 |(id, target)| match cross_module_chunk_renames.get(id.0.as_ref()) {
@@ -489,12 +487,8 @@ pub(super) fn prepare_module_emission<'output>(
                 },
             )
             .collect();
-        let mut rewriter = vendor::PartialSwapIdentRewriter {
-            bindings: &bindings,
-            references_by_symbol: &mut vendor_reference_rewrites,
-        };
-        body.visit_mut_with(&mut rewriter);
     }
+    let vendor_reference_rewrites = rewrites.finish(&mut body);
     // ImportSpecifier-bound members (`BindingKind::Imported` in
     // `assignment_analysis.inputs().binding_catalogue()`): for each `Imported` binding whose
     // `re_exporter` is this module, emit a re-import
@@ -600,7 +594,7 @@ fn build_module_output(
     body: Vec<ModuleItem>,
     explicit_renames: &BTreeMap<String, String>,
     context: &ModuleOutputContext<'_>,
-) -> (JsFile, (String, FileRole), SelectedModuleLowering) {
+) -> (JsFile, SelectedModuleLowering) {
     let mut sorted_plan_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
     sorted_plan_bindings.sort_by(|a, b| a.0.cmp(b.0));
     let binding_names: Vec<String> = sorted_plan_bindings
@@ -691,7 +685,6 @@ fn build_module_output(
             source_path: context.source_path.to_string(),
         },
     };
-    let record = (plan.target_file.clone(), FileRole::Module);
     let lowering = SelectedModuleLowering {
         binding_names,
         chunk_id: context.chunk_id.to_string(),
@@ -704,7 +697,7 @@ fn build_module_output(
         target_file: plan.target_file.clone(),
         target_path: plan.target_path.clone(),
     };
-    (file, record, lowering)
+    (file, lowering)
 }
 
 fn provenance_header(label: &str, values: &[String], chunk_id: &str) -> String {

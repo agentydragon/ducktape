@@ -8,7 +8,7 @@ use analysis_model::DepKind;
 use gate::AssignmentAnalysis;
 use serde::Serialize;
 
-use crate::ownership_subset::SelectedModule;
+use ownership_subset::SelectedModule;
 
 const EDGE_EXAMPLES_PER_KIND: usize = 4;
 

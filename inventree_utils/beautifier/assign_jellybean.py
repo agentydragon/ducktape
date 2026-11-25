@@ -7,19 +7,19 @@ from pathlib import Path
 from textwrap import dedent
 
 from inventree.api import InvenTreeAPI
-from inventree.base import Parameter, ParameterTemplate
+from inventree.base import ParameterTemplate
 from inventree.part import Part
 from more_itertools import one
 from tqdm import tqdm
 
 from inventree_utils.beautifier.cli_util import build_table, choose
-from inventree_utils.beautifier.inventree_util import part_url
+from inventree_utils.beautifier.inventree_util import create_part_parameter, list_part_parameters, part_url
 
 JELLYBEAN_PARAM_NAME = "Jellybean P/N"
 
 
 def get_parts_without_parameter(api: InvenTreeAPI, template):
-    part_pks_with_param = {param.part for param in Parameter.list(api, template=template.pk)}
+    part_pks_with_param = {param.model_id for param in list_part_parameters(api, template=template.pk)}
     return [p for p in Part.list(api) if p.pk not in part_pks_with_param]
 
 
@@ -169,7 +169,7 @@ def assign_jellybean(api: InvenTreeAPI):
     # commit changes
     progress = tqdm(assignments)
     for part, jellybean_pn in progress:
-        Parameter.create(api, data={"part": part.pk, "template": param_template.pk, "data": jellybean_pn})
+        create_part_parameter(api, part, param_template, jellybean_pn)
         progress.set_description(f"{part.name} ← {jellybean_pn}")
 
     print("Done.")

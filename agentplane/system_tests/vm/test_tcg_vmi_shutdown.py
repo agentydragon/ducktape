@@ -436,19 +436,16 @@ def _stop_launcher_lifecycle_capture(stop: threading.Event, thread: threading.Th
 
 def _count_guest_payload(consoles: Path, payload: bytes) -> int:
     return sum(
-        1
-        for path in consoles.glob("*/*.cri.log")
-        for line in path.read_bytes().splitlines(keepends=True)
-        if line.endswith(b"\n") and line.rstrip(b"\r\n").split(b" ", 3)[1:] == [b"stdout", b"F", payload]
+        1 for path in consoles.glob("*/*.cri.log") for _, record in guest_logs.cri_records(path) if record == payload
     )
 
 
 def _write_shutdown_request_count(output: Path) -> int:
     consoles = output / "vm-artifacts" / "consoles"
     try:
-        count = _count_guest_payload(consoles, host_qemu.SHUTDOWN_REQUESTED)
+        count = _count_guest_payload(consoles, shutdown_diagnostic.SHUTDOWN_REQUESTED)
         result: dict[str, Any] = {
-            "marker": host_qemu.SHUTDOWN_REQUESTED.decode(),
+            "marker": shutdown_diagnostic.SHUTDOWN_REQUESTED.decode(),
             "observed_guest_acpi_request_markers": count,
             "meaning": "count of exact guest-console CRI payloads emitted by the ACPI poweroff handler",
             "qmp_system_powerdown_commands_observed": False,
@@ -462,15 +459,10 @@ def _write_shutdown_request_count(output: Path) -> int:
 
 def _require_shutdown_proof_progress(consoles: Path, output: Path) -> None:
     """Require direct-TTY progress markers from a complete healthy guest shutdown."""
-    records: list[tuple[str, bytes]] = []
-    for path in sorted(consoles.glob("*/*.cri.log")):
-        for line in path.read_bytes().splitlines(keepends=True):
-            if not line.endswith(b"\n"):
-                continue
-            fields = line.rstrip(b"\r\n").split(b" ", 3)
-            if len(fields) == 4 and fields[1:3] == [b"stdout", b"F"]:
-                records.append((fields[0].decode("ascii", errors="replace"), fields[3]))
-    records.sort(key=lambda record: record[0])
+    records = sorted(
+        (record for path in sorted(consoles.glob("*/*.cri.log")) for record in guest_logs.cri_records(path)),
+        key=lambda record: record[0],
+    )
     payloads = [payload for _, payload in records]
     expected_markers = [
         (b"AGENTPLANE_SHUTDOWN_PROOF_ENTER", True),

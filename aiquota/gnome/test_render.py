@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import json
 import re
-import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
@@ -38,13 +37,12 @@ import pytest_bazel
 from python.runfiles import Runfiles
 
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture, meter_quota_view
-from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
-from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
 
-_EXTENSION_ZIP = "ducktape/aiquota/gnome/aiquota.zip"
+pytest_plugins = ("gnome.testing.fixtures",)
+
 _EXTENSION_UUID = "aiquota@allegedly.works"
 _EMPTY_FIXTURE = "empty"
 
@@ -109,20 +107,6 @@ def test_extension_metadata_supports_gnome_50(extension_dir: Path) -> None:
     metadata = json.loads((extension_dir / "metadata.json").read_text())
 
     assert "50" in metadata["shell-version"]
-
-
-@pytest.fixture(scope="module")
-def gnome_shell_test_image() -> str:
-    return load_oci_image(gnome_shell_test.LAYOUT_RLOCATION)
-
-
-@pytest.fixture(scope="module")
-def extension_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Unzip the distribution zip into a single dir for bind-mounting."""
-    dest = tmp_path_factory.mktemp("claude-quota-ext")
-    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as z:
-        z.extractall(dest)
-    return dest
 
 
 @pytest.fixture(scope="module")
@@ -204,6 +188,65 @@ def test_banked_reset_visibility(
             session.close_menu()
 
 
+def test_quota_bars_toggle_provider_details(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "binding_summary")
+    session.open_menu()
+    try:
+        assert len(_ProviderPopup(session, "codex").windows) == 2
+        for index in (0, 1):
+            assert session.call("GetDetailsOpen", "codex") == b"(false,)\n"
+            assert session.call("ActivateMeter", "codex", str(index)) == b"(true,)\n"
+            assert session.call("GetDetailsOpen", "codex") == b"(true,)\n"
+            if index == 0:
+                capture_menu.capture(session.open_menu(), label="Expanded quota bars", checkpoint="bar-details")
+            assert session.call("ActivateMeter", "codex", str(index)) == b"(true,)\n"
+    finally:
+        session.close_menu()
+
+
+def test_live_shaped_multiple_accounts(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "multi_account_live_shape")
+    pro = _ProviderPopup(session, "codex:example-pro")
+    maximum = _ProviderPopup(session, "codex:example-max")
+    assert len(pro.windows) == len(maximum.windows) == 1
+    assert "35%" in pro.windows[0]
+    assert "80%" in maximum.windows[0]
+    assert "1,235 credits" in maximum.header
+    assert json.loads(string_reply(session.call("GetPanelProviders"))) == [
+        "claude:example-claude",
+        "codex:example-pro",
+        "codex:example-max",
+    ]
+    session.open_menu()
+    try:
+        capture_menu.capture(session.open_menu(), label="Multiple accounts collapsed", checkpoint="collapsed")
+        assert session.call("ActivateMeter", "codex:example-pro", "0") == b"(true,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-pro") == b"(true,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-max") == b"(false,)\n"
+        capture_menu.capture(session.open_menu(), label="Multiple accounts first expanded", checkpoint="first-expanded")
+        assert session.call("ActivateMeter", "codex:example-max", "0") == b"(true,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-pro") == b"(false,)\n"
+        assert session.call("GetDetailsOpen", "codex:example-max") == b"(true,)\n"
+        capture_menu.capture(
+            session.open_menu(), label="Multiple accounts second expanded", checkpoint="second-expanded"
+        )
+    finally:
+        session.close_menu()
+
+
+def test_balance_only_provider_keeps_details_toggle(session: GnomeSession) -> None:
+    _reload_fixture(session, "openai_platform_credits")
+    session.open_menu()
+    try:
+        popup = _ProviderPopup(session, "openai_platform")
+        assert not popup.windows
+        assert popup.details
+        session.call("SetDetailsOpen", "openai_platform", "true")
+        assert session.call("GetDetailsOpen", "openai_platform") == b"(true,)\n"
+    finally:
+        session.close_menu()
+
+
 def test_zero_resets_move_into_details_when_a_different_window_passes_reset(session: GnomeSession) -> None:
     _reload_fixture(session, "banked_resets_exhausted")
     popup = _ProviderPopup(session, "codex")
@@ -219,7 +262,7 @@ def test_zero_resets_move_into_details_when_a_different_window_passes_reset(sess
 def test_claude_prepaid_balance(session: GnomeSession) -> None:
     _reload_fixture(session, "claude_prepaid_balance")
     popup = _ProviderPopup(session, "claude")
-    assert popup.header == "Claude — Available balance: $123"
+    assert popup.header == "Claude — Balance: $123"
     assert "Claude prepaid credits" in popup.details
     assert not popup.balance
 
@@ -257,21 +300,21 @@ def test_claude_reset_grants(session: GnomeSession) -> None:
 def test_claude_prepaid_balance_unavailable(session: GnomeSession) -> None:
     _reload_fixture(session, "claude_prepaid_balance_unavailable")
     popup = _ProviderPopup(session, "claude")
-    assert popup.header == "Claude — Available balance: unavailable"
+    assert popup.header == "Claude — Balance: unavailable"
     assert not popup.balance
 
 
 def test_claude_prepaid_balance_stale(session: GnomeSession) -> None:
     _reload_fixture(session, "claude_prepaid_balance_stale")
     balance = _ProviderPopup(session, "claude").balance
-    assert "Available balance: $123" in balance
+    assert "Balance: $123" in balance
     assert "stale 1h ago" in balance
 
 
 def test_stale_fallback(session: GnomeSession) -> None:
     _reload_fixture(session, "stale_fallback")
     popup = _ProviderPopup(session, "claude")
-    assert "Available balance: $123" in popup.header
+    assert "Balance: $123" in popup.header
     status = popup.status
     assert "Refresh failed" in status
     assert "Stale · observation" in status
@@ -369,7 +412,7 @@ def test_openai_platform_credits(session: GnomeSession) -> None:
     _reload_fixture(session, "openai_platform_credits")
     popup = _ProviderPopup(session, "openai_platform")
     grants = popup.grants
-    assert popup.header == "OpenAI API — Available balance: $126"
+    assert popup.header == "OpenAI API — Balance: $126"
     assert not popup.balance
     assert "Grant: $100 left" in grants
     assert "Grant: $26 left" in grants
@@ -382,7 +425,7 @@ def test_openai_platform_credits(session: GnomeSession) -> None:
 def test_platform_credits_with_subscription_resets(session: GnomeSession) -> None:
     _reload_fixture(session, "platform_credits_with_subscription_resets")
     claude = _ProviderPopup(session, "claude")
-    assert "Available balance: $26" in claude.header
+    assert "Balance: $26" in claude.header
     assert len(claude.windows) == 2
 
     codex = _ProviderPopup(session, "codex")
@@ -394,7 +437,7 @@ def test_platform_credits_with_subscription_resets(session: GnomeSession) -> Non
 
     openai = _ProviderPopup(session, "openai_platform")
     grants = openai.grants
-    assert "Available balance: $60" in openai.header
+    assert "Balance: $60" in openai.header
     assert not openai.balance
     assert "Grant: $60" in grants
     assert "Jun 1" in grants
@@ -410,6 +453,29 @@ def test_wire_fields(session: GnomeSession) -> None:
     assert "pp" not in windows[0]
     assert "-55 pp" in codex.details
     assert "internal-only" not in "\n".join(windows)
+
+
+def test_panel_pace_unit_setting(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+    _reload_fixture(session, "binding_summary")
+    claude = _ProviderPopup(session, "claude")
+    codex = _ProviderPopup(session, "codex")
+    zai = _ProviderPopup(session, "zai")
+    assert claude.panel == "+10 pp"
+    assert codex.panel == "+18 pp"
+    assert zai.panel == "-15 pp"
+    setting = ("set", "org.gnome.shell.extensions.aiquota", "panel-show-pace-unit")
+    try:
+        session.gsettings(*setting, "false")
+        wait_until(
+            lambda: claude.panel == "+10" and codex.panel == "+18" and zai.panel == "-15", "panel did not update"
+        )
+        assert "+10 pp" in claude.details
+        geometry = session.open_menu()
+        capture_menu.capture(geometry, label="Panel pace without unit", checkpoint="compact-pace")
+    finally:
+        session.close_menu()
+        session.gsettings(*setting, "true")
+        wait_until(lambda: claude.panel == "+10 pp", "panel did not restore pace units")
 
 
 def test_binding_summary(session: GnomeSession) -> None:
@@ -478,7 +544,7 @@ def test_paid_credits(session: GnomeSession) -> None:
     codex = _ProviderPopup(session, "codex")
     windows = codex.windows
     assert len(windows) == 2
-    assert "Codex — Paid credits:" in codex.header
+    assert "Codex — 2,746 credits" in codex.header
     assert "Banked resets: 0" in codex.reset
     assert "Included quota exhausted" not in codex.status
     assert "paid credits available" not in codex.status
@@ -509,8 +575,8 @@ def test_observed_account_2026_11_04(session: GnomeSession, capture_menu: GnomeM
     openai = _ProviderPopup(session, "openai_platform")
     assert len(claude.windows) == 1
     assert len(codex.windows) == 1
-    assert "Claude — Available balance:" in claude.header
-    assert "Codex — Paid credits:" in codex.header
+    assert "Claude — Balance:" in claude.header
+    assert "Codex — 45,191 credits" in codex.header
     assert not claude.balance
     assert not codex.balance
     assert json.loads(string_reply(session.call("GetPanelProviders"))) == ["claude", "codex"]
@@ -541,10 +607,10 @@ def test_observed_account_2026_11_04(session: GnomeSession, capture_menu: GnomeM
 def test_anthropic_organization_headers_and_group_transitions(session: GnomeSession) -> None:
     popup = _ProviderPopup(session, "anthropic_platform")
     _reload_fixture(session, "platform_credits_with_subscription_resets")
-    assert popup.header == "Anthropic API — Shared org"
+    assert popup.header == "Anthropic API · Shared org"
     (single,) = popup.groups
     assert single["header"] == ""
-    assert single["balance"] == "Available balance: $75"
+    assert single["balance"] == "Balance: $75"
     assert "Grant: $50" in single["grants"]
     assert "Promo grant: $25" in single["grants"]
     assert "scope: Claude API (Sonnet)" in single["grants"]
@@ -556,8 +622,8 @@ def test_anthropic_organization_headers_and_group_transitions(session: GnomeSess
     main, secondary = popup.groups
     assert main["header"] == "Main org"
     assert secondary["header"] == "Secondary org"
-    assert main["balance"] == "Available balance: $123"
-    assert secondary["balance"] == "Available balance: $50"
+    assert main["balance"] == "Balance: $123"
+    assert secondary["balance"] == "Balance: $50"
     assert "Grant: $85" in main["grants"]
     assert "Promo grant" in main["grants"]
     assert "scope: Claude API (Sonnet), Claude Code" in main["grants"]
@@ -567,7 +633,7 @@ def test_anthropic_organization_headers_and_group_transitions(session: GnomeSess
     assert secondary["grants"] == ""
 
     _reload_fixture(session, "platform_credits_with_subscription_resets")
-    assert popup.header == "Anthropic API — Shared org"
+    assert popup.header == "Anthropic API · Shared org"
     assert len(popup.groups) == 1
 
 
@@ -580,10 +646,10 @@ def test_anthropic_balance_error_remains_visible_under_its_header(
     session.close_menu()
     session.call("SetViewForTest", json.dumps(data))
     popup = _ProviderPopup(session, "anthropic_platform")
-    assert popup.header == "Anthropic API — Shared org"
-    assert popup.groups[0]["balance"] == "Available balance: lookup failed"
+    assert popup.header == "Anthropic API · Shared org"
+    assert popup.groups[0]["balance"] == "Balance: lookup failed"
     details = popup.details
-    assert "Available balance: example lookup failure" in details
+    assert "Balance: example lookup failure" in details
     assert "Shared org" not in details
 
 
@@ -602,7 +668,7 @@ def test_render_distinct_prepaid_and_quota_staleness(
 
     popup = _ProviderPopup(session, "claude")
     assert "Stale · observation 1h old" in popup.status
-    assert "Available balance: $123 · stale 2h ago" in popup.balance
+    assert "Balance: $123 · stale 2h ago" in popup.balance
 
     geometry = session.open_menu()
     try:
@@ -669,6 +735,7 @@ def test_view_signal_wins_getter_and_owner_restart_invalidates_reply(session: Gn
         daemon.call("ReleaseGetView")
         assert string_reply(session.call("GetCurrentView")) == signal_view
         assert daemon.counters() == (1, 1, 0)
+        assert string_reply(session.call("GetStreamStatus")) == "Connected"
 
         daemon.call("SetViewSilently", _view_json(3))
         session.call("FetchView")
@@ -702,7 +769,7 @@ def test_client_freshness_deadline_suppresses_cached_projections(session: GnomeS
     session.call("SetViewForTest", json.dumps(data))
     codex = _ProviderPopup(session, "codex")
     rows = "\n".join(codex.windows)
-    assert "exhausts" not in rows
+    assert "0% in" not in rows
     assert "on pace" not in rows
     assert " pace:" not in codex.details
 

@@ -26,9 +26,9 @@ from python.runfiles import Runfiles
 from cluster.cdk8s import cilium, opentofu
 from cluster.cdk8s.authentik import db
 from cluster.cdk8s.authentik.db import NAMESPACE
-from cluster.cdk8s.flux import kustomize_kustomization
+from cluster.cdk8s.flux import write_kustomization
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
@@ -120,12 +120,6 @@ _WORKER_RESOURCES = {"requests": {"cpu": "300m", "memory": "512Mi"}, "limits": {
 
 def _values() -> dict[str, object]:
     return {
-        "global": {
-            "deploymentAnnotations": {
-                "secret.reloader.stakater.com/reload": f"{db.POSTGRES.app_secret.name},authentik-user-password",
-                "configmap.reloader.stakater.com/reload": _BLUEPRINTS_CONFIG_MAP,
-            }
-        },
         # The worker processes the blueprints natively from this ConfigMap.
         "blueprints": {"configMaps": [_BLUEPRINTS_CONFIG_MAP]},
         "authentik": {
@@ -327,9 +321,7 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_yaml(
-        root / OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[write_charts(root, OUTPUT_DIR, chart), *(f"{secret}.sops.yaml" for secret in _SOPS_SECRETS)]
-        ),
+    write_kustomization(
+        root / OUTPUT_DIR,
+        resources=[write_charts(root, OUTPUT_DIR, chart), *(f"{secret}.sops.yaml" for secret in _SOPS_SECRETS)],
     )

@@ -16,7 +16,7 @@ from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.portfolio import ProductTlhCohort, product_portfolio_response
 from finance.augur.sim.ids import AccountId, AgentId, PortfolioId
 from finance.augur.sim.money import USD
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.testing.tlh import NO_HARVEST
 
 
 def test_product_portfolio_response_carries_tlh_portfolios_as_money_apart_from_holdings() -> None:
@@ -42,13 +42,7 @@ def test_product_portfolio_response_carries_tlh_portfolios_as_money_apart_from_h
                         TlhCohort(value=Decimal("250.01"), cost_basis=Decimal(300), purchase_month_index=-4),
                         TlhCohort(value=Decimal(750), cost_basis=Decimal("299.99"), purchase_month_index=0),
                     ],
-                    assumptions=TlhAssumptions(
-                        peak_annual_yield=0,
-                        floor_annual_yield=0,
-                        maturity_decay_exponent=1,
-                        drawdown_sensitivity=0,
-                        short_term_fraction=1,
-                    ),
+                    assumptions=NO_HARVEST,
                 ),
                 label="Test direct indexing",
             ),

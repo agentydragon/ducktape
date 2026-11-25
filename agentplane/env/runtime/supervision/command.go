@@ -38,13 +38,7 @@ type CommandFiles struct {
 	Stdin, Stdout, Stderr *os.File
 }
 
-func (f CommandFiles) close() {
-	for _, file := range []*os.File{f.Stdin, f.Stdout, f.Stderr} {
-		if file != nil {
-			_ = file.Close()
-		}
-	}
-}
+func (f CommandFiles) close() { closeFiles(f.Stdin, f.Stdout, f.Stderr) }
 
 func (f CommandFiles) validate(tty bool) error {
 	if f.Stdout == nil || f.Stderr == nil || (tty && f.Stdin == nil) {

@@ -174,20 +174,7 @@ let
             headerTimeout = false;
             chunkTimeout = false;
           };
-          models = builtins.listToAttrs (
-            map (rosterModel: {
-              name = rosterModel.id;
-              value = {
-                inherit (rosterModel) name;
-                reasoning = false;
-                temperature = true;
-                tool_call = rosterModel.toolCall;
-                limit = {
-                  inherit (rosterModel) context output;
-                };
-              };
-            }) (builtins.attrValues modelsForPicker)
-          );
+          models = builtins.mapAttrs (_: model: model // { temperature = true; }) providerModels;
         };
       }
     );

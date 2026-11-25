@@ -14,10 +14,11 @@ Functions and loops avoid unnecessary nesting by exiting early on failing precon
 - With shared cleanup that would prevent early return, extract a helper so early exits are possible without duplicating cleanup
 - Combine with "No unnecessary nesting" and walrus rules: flatten `if a: if b:` into `if a and b:` and use `:=` where it enables a single clear guard
 
-## Positive examples
+## Examples
+
+Guard a failing precondition at the point where the outcome is known:
 
 ```python
-# Function guard: fail fast on preconditions
 def load_user(uid: str) -> User:
     if not uid:
         raise ValueError("uid required")
@@ -26,100 +27,15 @@ def load_user(uid: str) -> User:
     return repo.get(uid)
 ```
 
-```python
-# Loop guard: continue instead of wrapping entire body
-for job in jobs:
-    if not job.ready:
-        continue
-    process(job)
-```
+In a loop, continue past an ineligible item so the work on an eligible one stays together:
 
 ```python
-# Combine trivial guards with walrus
-if (rec := get_record(key)) is None or rec.error:
-    return None
-return rec.value
-```
-
-```js
-// JS: early returns instead of nested ifs
-function handle(req) {
-  if (!req.auth) return unauthorized();
-  if (!req.body) return badRequest();
-  return ok(process(req.body));
-}
-```
-
-```python
-# Shared cleanup via helper enables early bailout
-conn = connect()
-try:
-    def _do():
-        if not request.valid:
-            return None
-        if not has_perm(request.user):
-            return None
-        return serve(request)
-    result = _do()
-finally:
-    conn.close()
-```
-
-## Negative examples
-
-```python
-# Trivial else wrapping the happy path — should early‑return
-def handle(req):
-    if not req.auth:
-        return unauthorized()
-    else:
-        # Entire body is under else
-        result = process(req)
-        return ok(result)
-```
-
-```python
-# Loop uses else to skip — should guard with continue
 for task in tasks:
-    if task.ready:
-        run(task)
-        log(task)
-    else:
+    if not task.ready:
         continue
+    run(task)
+    log(task)
 ```
 
-```python
-# Function wrapped by a trivial if — should be early return
-def load_user(uid: str) -> User | None:
-    if uid:
-        user = repo.get(uid)
-        return user
-```
-
-```python
-# Nested trivial guards — should be flattened or early-exited
-def save(item):
-    if item:
-        if item.valid:
-            if not item.error:
-                return persist(item)
-```
-
-```python
-# Loop body wrapped — should use continue
-for task in tasks:
-    if task.ready:
-        run(task)
-        log(task)
-```
-
-```python
-# Error flag used later — should raise immediately
-ok = True
-for part in parts:
-    if part.invalid:
-        ok = False
-# ... many lines later ...
-if not ok:
-    raise ValueError("invalid part")
-```
+An early exit must still release acquired resources. A context manager or a
+`finally` block can own the cleanup while the guarded operation returns.

@@ -16,12 +16,18 @@ py_test(
     data = [
         "//third_party/gitstatusd",
         "//x/wt:wt_cli",
+        "@wt_shell_test//:flat",
     ],
+    env = {"RSYNC_CLOSURE": "$(rlocationpath @wt_shell_test//:flat)"},
     deps = [
         ":conftest",
         "//:conftest",
+        "//x/wt/shared:git_utils",
         "//x/wt/testing:git_helpers",
+        "@pypi//pygit2",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

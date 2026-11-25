@@ -10,8 +10,6 @@ import (
 	"github.com/google/go-github/v88/github"
 )
 
-const commitStatusesPageSize = 100
-
 // CommitStatuses reads all status contexts for an immutable commit SHA.
 func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, installationID int64) ([]githubmodel.CommitStatus, error) {
 	owner, name, err := splitRepository(repository)
@@ -26,7 +24,7 @@ func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, ins
 	for page := 1; ; {
 		result, err := callAsCommitStatusesInstallation(ctx, c, installationID, func(ctx context.Context, client *github.Client) (resourcePage[*github.CombinedStatus], *github.Response, error) {
 			value, response, err := client.Repositories.GetCombinedStatus(ctx, owner, name, sha, &github.ListOptions{
-				PerPage: commitStatusesPageSize,
+				PerPage: pageSize,
 				Page:    page,
 			})
 			return resourcePage[*github.CombinedStatus]{value: value, response: response}, response, err

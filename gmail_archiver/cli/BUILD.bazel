@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "filters",
@@ -26,6 +26,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":options",
+        "//gmail_api:labels",
+        "//gmail_archiver:gmail_client",
         "@pypi//rich",
         "@pypi//typer",
     ],
@@ -37,6 +39,36 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//gmail_archiver:gmail_client",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_filters",
+    srcs = ["test_filters.py"],
+    deps = [
+        ":filters",
+        "//:conftest",
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:gmail_client",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_labels",
+    srcs = ["test_labels.py"],
+    deps = [
+        ":labels",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//gmail_archiver:gmail_api_models",
+        "//gmail_archiver:gmail_client",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
 )

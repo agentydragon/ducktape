@@ -12,30 +12,27 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from pyedflib import highlevel
+from pyedflib import EdfReader
 
 
 def summarize_edf(path: Path) -> None:
     """Print a summary of all signals in an EDF file."""
-    signals, signal_headers, header = highlevel.read_edf(str(path))
+    with EdfReader(str(path)) as reader:
+        start = reader.getStartdatetime()
+        duration_m = reader.getFileDuration() / 60
+        print(f"\n{path.name}  ({duration_m:.1f} min, {start})")
+        print(f"  {'Signal':<30s} {'Hz':>6s} {'Min':>8s} {'Mean':>8s} {'Max':>8s} {'Unit':<8s}")
+        print(f"  {'-' * 70}")
 
-    start = f"{header['startdate']}"
-    duration_s = header["Duration"] * header["file_duration"]
-    duration_m = duration_s / 60
-
-    print(f"\n{path.name}  ({duration_m:.1f} min, {start})")
-    print(f"  {'Signal':<30s} {'Hz':>6s} {'Min':>8s} {'Mean':>8s} {'Max':>8s} {'Unit':<8s}")
-    print(f"  {'-' * 70}")
-
-    for i, sh in enumerate(signal_headers):
-        sig = signals[i]
-        if len(sig) == 0:
-            continue
-        print(
-            f"  {sh['label']:<30s} {sh['sample_frequency']:>6.0f}"
-            f" {np.min(sig):>8.2f} {np.mean(sig):>8.2f} {np.max(sig):>8.2f}"
-            f" {sh['dimension']:<8s}"
-        )
+        for index, header in enumerate(reader.getSignalHeaders()):
+            signal = reader.readSignal(index)
+            if len(signal) == 0:
+                continue
+            print(
+                f"  {header['label']:<30s} {header['sample_frequency']:>6.0f}"
+                f" {np.min(signal):>8.2f} {np.mean(signal):>8.2f} {np.max(signal):>8.2f}"
+                f" {header['dimension']:<8s}"
+            )
 
 
 def main() -> None:

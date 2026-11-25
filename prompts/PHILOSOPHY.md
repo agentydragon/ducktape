@@ -57,7 +57,7 @@ Different automated tools have different reliability profiles:
 
 ```text
 1. Understand the issue pattern and its characteristics
-2. Run automated scans to gather candidates (grep/AST/ruff/vulture/etc.)
+2. Run automated scans to gather candidates (grep/AST/ruff/etc.)
 3. Understand recall/precision of each tool for this pattern
 4. Verify candidates with appropriate scrutiny:
    - High precision: light verification
@@ -96,6 +96,7 @@ Different automated tools have different reliability profiles:
 2. **Understanding intent** - Is this a workaround, migration, or antipattern?
 3. **Subjective judgment** - Is documentation "useless"? Is a name "vague"? (human/LLM verification needed)
 4. **Low-recall patterns** - May need supplemental manual reading to find all issues
+5. **Preserved intent** - Code written for a reason keeps a note instead of being deleted
 
 ## Prompt Writing Style: You-Language
 
@@ -228,7 +229,7 @@ Automated scans should be **mentioned as hints only** when:
 ```markdown
 ## Detection Strategy
 
-**MANDATORY first step**: From the repository root, run `python -m prompts.scans.scan_error_handling` to find ALL exception handlers.
+**MANDATORY first step**: From the repository root, run `bb run //prompts/scans:scan_error_handling_bin -- .` to find ALL exception handlers.
 
 - Surfaces concrete candidates - forces you to review each exception handler
 - Prevents claiming "looks fine" without examining actual code
@@ -334,61 +335,6 @@ Use grep to find single-statement functions as candidates, then manually review 
 
 **Benefit**: Agent/LLM can apply this strategy to any codebase
 
-## Prioritize Recall: Don't Miss Issues
-
-**Philosophy**: The goal is 100% recall. Use tools strategically to achieve it.
-
-### ❌ Low Recall Approach (Misses Issues)
-
-```text
-Only check files modified in last commit
-Only look for exact pattern "cast(dict[str, Any], ...)"
-Stop after finding 5 issues
-```
-
-**Result**: False confidence, missed issues
-
-### ✅ High Recall Approach (Finds Everything)
-
-```text
-Use grep/AST to find ALL cast() calls (100% recall for this pattern)
-Verify each candidate (handle precision issue)
-For low-recall patterns: supplement with manual reading
-Continue until confident you've found everything
-```
-
-**Result**: Comprehensive cleanup, no missed issues
-
-## LLM/Agent Usage
-
-When using LLM agents to apply scan prompts:
-
-### 1. Tool Selection Phase
-
-1. **Understand pattern characteristics**: Does this pattern have high/low recall? High/low precision?
-2. **Choose appropriate tools**: grep/AST/ruff/vulture/etc. based on pattern
-3. **Set expectations**: Know what each tool will find/miss
-
-### 2. Discovery Phase
-
-1. **Run automated scans**: Use grep/AST/linters to gather ALL candidates (aim for 100% recall where possible)
-2. **Understand tool output**: Did tool likely find everything? Or just hints?
-3. **Provide context**: Fetch surrounding code for each candidate
-
-### 3. Verification Phase
-
-1. **Match verification to precision**:
-   - High precision tool: Light verification ("does this actually match pattern?")
-   - Low precision tool: Deep verification ("is this actually problematic?")
-2. **Check false positives**: Is this actually bad code or acceptable?
-3. **Understand intent**: Why was it written this way? Migration? Workaround?
-
-### 4. Fix Phase
-
-1. **Fix confirmed issues**: Only fix what verification confirmed
-2. **Preserve intent**: If code exists for a reason, document instead of delete
-3. **Consider supplemental reading**: For low-recall patterns, manually check areas tools might miss
-
 ## Helper Scripts: High-Level Descriptions
 
 Instead of providing full implementations, give high-level descriptions:
@@ -413,69 +359,5 @@ Strong coding LLM can reconstruct from this description.
 - Avoids maintenance of sample code
 - Emphasizes that implementation is a means, not the goal
 
-## Example: Code Skeleton Generation
-
-**Instead of**: Full working script to strip function bodies
-
-**Provide**: High-level description of what to build:
-
-```markdown
-Create helper that strips function bodies, preserving signatures and docs:
-
-1. Parse file with AST
-2. For each function, extract signature + docstring
-3. Output minimal skeleton (sig + docstring + ...)
-4. Feed skeleton to LLM for review
-
-LLM sees context without implementation noise.
-```
-
-## Anti-Patterns in Scan Prompts
-
-### ❌ Don't Do This
-
-1. **Ignore tool characteristics**: "Just run this tool" (without explaining recall/precision)
-2. **Provide full implementations**: 100+ lines of AST walker code in the prompt
-3. **Hardcode specific values**: List of 50 function names to search for
-4. **Skip verification for low-precision tools**: "Auto-fix all grep results"
-5. **Claim completeness without justification**: "If grep finds nothing, you're done" (when grep has low recall)
-
-### ✅ Do This Instead
-
-1. **Characterize tool reliability**: "grep for cast() has ~100% recall, ~95% precision"
-2. **High-level descriptions**: "Build AST tool that finds X pattern"
-3. **General strategies**: "Look for functions where name matches return"
-4. **Match verification to precision**: "High precision: light verification. Low precision: deep review"
-5. **Acknowledge recall limitations**: "This pattern has ~60% recall; supplement with manual reading of [areas]"
-
-## Summary
-
-**Core Loop**:
-
-1. Understand pattern characteristics (recall/precision of available tools)
-2. Run automated scans to gather candidates (aim for 100% recall)
-3. Verify candidates with appropriate scrutiny (based on precision)
-4. Fix confirmed issues
-5. For low-recall patterns: supplement with manual reading
-
-**Philosophy**:
-
-- **Goal is 100% recall** - don't miss any real issues
-- **Automated tools are essential** - use them strategically based on their characteristics
-- **Some patterns have 100% recall** - grep/AST can find all instances
-- **Agent uses intelligence** - combines tools, understands their limitations, verifies appropriately
-- **Verification matches precision** - high precision = light verification, low precision = deep review
-
-**Tool Characteristics Matter**:
-
-- High recall, high precision: Run tool, verify all → Done
-- High recall, low precision: Run tool, filter false positives → Done
-- Low recall: Run tool, verify candidates → Supplement with manual reading
-- Manual only: Use automation for hints, but expect to find issues by reading
-
-**Result**:
-
-- Comprehensive cleanup (100% recall goal)
-- No missed issues (proper tool selection)
-- No broken code (appropriate verification)
-- Understanding of codebase (verification requires context)
+A scan prompt that follows this rule: <scans/useless_comments_and_docs.md> asks for a
+signature-only skeleton helper and leaves the script itself to you.

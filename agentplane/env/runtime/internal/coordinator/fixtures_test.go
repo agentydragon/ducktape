@@ -60,7 +60,7 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "pid1", PodPID1: true, InitializationCwd: workspace, Control: insecureControl(), WorkspaceRoot: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, ModelConfigClient: fixtureModelConfig{endpoint: endpoint}}
+	config := Config{StateDir: root, Launch: launch, Supervision: "pid1", InitializationCwd: workspace, Control: insecureControl(), WorkspaceRoot: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, ModelConfigClient: fixtureModelConfig{endpoint: endpoint}}
 	return runtimeTestConfig{Config: config}
 }
 
@@ -242,6 +242,27 @@ func newTestRuntime(t *testing.T, config Config, injected state.State, deps runt
 func openTestRuntimeStore(dir string) (interface{ Close() error }, error) {
 	_, backing, err := cosistate.Open(dir, lifecycle.Namespace)
 	return backing, err
+}
+
+// requireOwnerRetained fails with failure when the environment owner in dir can be taken, so Runtime released it.
+func requireOwnerRetained(t *testing.T, dir, failure string) {
+	t.Helper()
+	if owner, err := openTestRuntimeStore(dir); err == nil {
+		_ = owner.Close()
+		t.Fatal(failure)
+	}
+}
+
+// requireOwnerReleased fails with failure when the environment owner in dir cannot be taken, so Runtime still holds it.
+func requireOwnerReleased(t *testing.T, dir, failure string) {
+	t.Helper()
+	owner, err := openTestRuntimeStore(dir)
+	if err != nil {
+		t.Fatalf("%s: %v", failure, err)
+	}
+	if err := owner.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func closeTestRuntimeStore(r *Runtime) error {

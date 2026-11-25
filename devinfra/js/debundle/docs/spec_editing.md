@@ -3,6 +3,74 @@
 Inspecting, proposing, moving, merging, and renaming modules and bindings;
 `comment:` fields. Operational base: `cli.md`.
 
+## Tree spec configuration
+
+The [tree invocation](../README.md#getting-started) reads a config and per-module
+YAML trees. This `spec/spec_config.yaml` example starts with three entry
+chunks and scopes two separate trees to `print`.
+
+```yaml
+main_chunk_id: cli
+module_roots:
+  chunks/cli: cli
+  chunks/print: print
+  chunks/structured_io: structuredIO
+  shared/print_routing: print
+
+inputs:
+  root: extracted
+  js_list_path: js-files.txt
+
+write_js_tree: true
+
+unassigned_mode:
+  cli: { kind: inline_in_entry }
+  print: { kind: inline_in_entry }
+  structuredIO: { kind: inline_in_entry }
+
+import_order:
+  cli: []
+  print: []
+  structuredIO: []
+
+chunk_renames:
+  print:
+    members:
+      - name: helper
+        selector:
+          binding:
+            name: a
+            kind: function_declaration
+```
+
+- With no `module_roots`, every module file below `--tree-modules` belongs to
+  `main_chunk_id`. With explicit roots, the compiler loads only those subtrees.
+  Create each listed directory even when it is empty. Paths are normalized,
+  relative to `--tree-modules`, and may not overlap.
+- Logical module paths are relative to each subtree. For example,
+  `shared/print_routing/dispatch.yaml` defines `dispatch` in `print`. The
+  subtrees for one chunk share selector scope and must use distinct logical
+  module paths.
+- Resolve relative `inputs.root` and `inputs.js_list_path` from `--tree-source-root`.
+  In this example, `js-files.txt` can list
+  `cli.js`, `print.js`, and `structuredIO.js` on separate lines, with the
+  files under `extracted/`. To use a stable local filename for a hashed
+  original, put `alias.js<TAB>original/path.js` on one line. The compiler reads
+  `alias.js` as chunk `alias` and resolves original imports using
+  `original/path.js`. Omit a separate line for that original path.
+- Use `vendor_marks: []` in the vendor marks file for a capture without vendor
+  marks. `write_js_tree: true` writes the emitted JS for a CLI capture.
+- The empty `import_order` lists apply while the example emits no nonentry
+  modules. Update the [import priorities](../SPEC.md#import-priorities) as you
+  add owners, following the [unassigned source policy](../SPEC.md#unassigned-source)
+  for that chunk.
+- Edit entry renames in config `chunk_renames`. The `bindings` commands edit
+  module YAMLs. The example assumes `print` has a top-level function named `a`.
+  Run full-tree `debundle spec validate` to check entry renames and lowering.
+  The source-only preflight reads module YAML and source. See the
+  [entry rename contract](../SPEC.md#entities) and
+  [pipeline validation](cli.md#running-the-pipeline).
+
 ## References to logical members
 
 `chunk_analysis_options.<chunk>.initializer_call_effect_inputs[].resolved_member`
@@ -81,120 +149,33 @@ proof. Check the reported omitted counts and read the source behind candidate
 consumers; use `--all` for an intentional exhaustive artifact rather than as the
 first query over a high-fanout family.
 
-## Workflow: reviewing existing module boundaries
+## Workflow: reorganizing existing modules
 
-Use `describe`, `coverage`, `atoms` and source inspection to understand current
-claims and structural constraints. Choose semantic destinations from source
-behavior and callers. Check a complete `{unit_id, module}` map with
-`modules check --batch changes.json`. Preview with
-`modules apply --assignments changes.json --dry-run`, then apply the same
-assignments without `--dry-run`. Exact apply preserves existing selector entries
-and their metadata, including grouped source matches and anonymous statements.
-The [CLI guide](cli.md#applying-explicit-assignments-modules-apply---assignments)
-defines the batch and validation contract.
-
-## Workflow: proposing residual modules
-
-Use [residual proposals](module_proposals.md) to derive groups under the
-append-one-owner, baseline-preserving entry-residual policy:
-
-1. **Inspect.** Review `graph-summary`, residual `atoms`, relevant source and
-   edge evidence with `describe` and `inspect-source --id`.
-2. **Propose.** Run `debundle modules propose --format json` without a seed. The
-   constructor derives feasibility for all entry-residual atoms; inspect the
-   outcome before saving its executable `.plan`.
-3. **Review.** Read every source-unit destination in the plan and check the
-   semantic boundaries, fresh paths, required companions and final import
-   priority. Changed or combined decisions need a complete check.
-4. **Check and preview.** Run `modules check --plan plan.json`, then
-   `modules apply --plan plan.json --dry-run --format json`. Review the
-   synthesized selectors and the resolved final assignment.
-5. **Apply and run.** Apply the same plan, materialize the result, run relevant
-   behavior checks and refresh the graph before another graph-backed edit.
-
-`found` includes graph acceptance and selector-writer preflight. Materialization
-and runtime behavior remain separate evidence. `exhausted_no_peel` applies only to the
-reported scope; `incomplete` and errors do not establish that no placement
-exists.
+Use `describe`, `coverage`, `atoms` and source inspection to choose destinations.
+For existing claims and anonymous statements together, follow the
+[reviewed source-unit assignment workflow](#workflow-applying-a-reviewed-source-unit-assignment).
+For unclaimed entry code, the [residual proposal workflow](module_proposals.md#workflow)
+discovers whole groups and takes a checked plan through preview, apply and runtime checks.
 
 ## Workflow: moving a binding from one module to another
 
-`debundle bindings assign` is the move primitive. Each positional
-argument is colon-separated: `<sym>:<module>[:<readable>]`.
-
-### Single move, keep current name
-
-```bash
-debundle bindings assign XOe:runtime/plugins
-```
-
-`<sym>` accepts minified (`XOe`) or readable
-(`PluginSettingsAccessor`) form. The destination module is
-auto-created if it doesn't yet exist; the source module is auto-deleted
-when its `members:` becomes empty and it has no module-level `comment:`,
-remaining `source_matches:`, `annotations:`, or `anonymous_statements:`.
-An explicit empty-string comment also keeps the module. Unrelated empty modules
-are not swept.
-
-### Move + rename in one step
+For a known binding, use `bindings assign <sym>:<module>[:<readable>]`.
+Omit the readable name to keep it. Preview the whole batch together so the
+gate can check bindings that must move together. For example, with both
+destinations already present:
 
 ```bash
-debundle bindings assign XOe:runtime/plugins:PluginSettingsAccessor
+debundle bindings assign --dry-run \
+  XOe:runtime/plugins:PluginSettingsAccessor YOe:runtime/plugins ZOe:runtime/widgets
 ```
 
-The optional third field sets the new readable `name:`. Validation
-includes name-collision detection.
-
-### Batch move
-
-Multi-binding refactors run as one atomic operation: validation is
-checked on the post-batch spec, not after each individual move. This
-lets the intermediate state be "invalid" (e.g. half-moved atom) so
-long as the final state is valid.
-
-```bash
-debundle bindings assign \
-    XOe:runtime/plugins:PluginSettingsAccessor \
-    YOe:runtime/plugins \
-    ZOe:runtime/widgets:WidgetRegistry
-```
-
-For large refactors, pipe JSON:
-
-```bash
-debundle bindings assign --batch moves.json
-debundle bindings assign --batch - < moves.json
-```
-
-JSON shape:
-
-```json
-[
-  { "sym": "XOe", "module": "runtime/plugins", "readable": "PluginSettingsAccessor" },
-  { "sym": "YOe", "module": "runtime/plugins" },
-  { "sym": "ZOe", "module": "runtime/widgets", "readable": "WidgetRegistry" }
-]
-```
-
-`sym` and `module` are required; `readable` is optional. `--batch` accepts only move objects in the JSON shape shown here.
-Duplicate and contradictory entries: <cli.md> § Batch atomicity.
-
-### Default validation, `--dry-run`, `--no-verify`
-
-```bash
-# Default: validate the post-batch spec; refuse if invalid; apply if valid.
-debundle bindings assign XOe:runtime/plugins
-
-# Preview only: run validation, print verdict, don't modify any file.
-debundle bindings assign --dry-run XOe:runtime/plugins
-
-# Apply without validating. Escape hatch for intentional intermediate states.
-debundle bindings assign --no-verify XOe:runtime/plugins
-```
-
-`--dry-run` + `--no-verify` together: show what would change without
-validating. Useful for inspecting an intermediate that you know
-violates the gate.
+Apply the reviewed command by removing `--dry-run`. To create a destination,
+include `--import-order final-order.json` with the complete final nonentry
+priority. The [batch contract](cli.md#batch-atomicity-bindings-assign)
+covers JSON file and stdin input, duplicate moves, and when a drained source
+module is deleted. See [name resolution](cli.md#name-and-identifier-resolution)
+for accepted selector and readable names and
+[validation modes](cli.md#validate-by-default-mutating-commands) for unchecked edits.
 
 ## Workflow: renaming a binding without moving
 
@@ -202,10 +183,9 @@ violates the gate.
 debundle bindings rename XOe PluginSettingsAccessor
 ```
 
-`<original>` accepts minified or current readable form. Validation is
-name-collision detection (no two bindings share the same readable name
-within the chunk). Mostly a convenience over `bindings assign` for the
-rename-only case. `--no-verify` / `--dry-run` available.
+Resolve names against one chunk's modules tree. See the
+[names-only batch contract](cli.md#names-only-batches-bindings-rename) for
+swaps, collisions, annotation ownership and dry runs.
 
 A rename can change other templates: a free identifier naming the old export
 name stops being a reference and alpha-renames, and one naming the new name
@@ -281,16 +261,13 @@ the two source units are order-independent during initialization.
 
 ## Workflow: applying a reviewed source-unit assignment
 
-For exact source-unit movement, use `modules apply --assignments`. The batch is
-an array of `{ "unit_id": "...", "module": "..." }` changes. Use current
-source-unit IDs and extensionless logical module IDs. Omitted units retain
-their current destinations. Exact apply can move existing claims, claim
-residual units, and move anonymous statements in the same complete candidate.
-It preserves selectors and metadata on existing claims, including grouped
-`source_matches` and annotations. Reviewed `--selector-overrides` can provide a
-source-backed selector for a newly claimed binding when synthesis is not the
-right anchor. Preview with `--dry-run`; preview and write share the same
-selector-resolution and complete assignment validation. See the [CLI guide](cli.md#applying-explicit-assignments-modules-apply---assignments).
+Check the full [destination batch](cli.md#checking-explicit-destination-batches-modules-check)
+with `modules check --batch changes.json --format json`. Save the accepted
+`.plan` to retain its graph identity and import priority. Preview with
+`modules apply --plan plan.json --dry-run`, then apply that plan, regenerate
+and run the relevant behavior checks. To supply reviewed names or selector
+overrides for fresh claims, see [explicit assignments](cli.md#applying-explicit-assignments-modules-apply---assignments)
+and [multi-chunk application](cli.md#applying-assignments-in-a-multi-chunk-tree).
 
 Both `modules apply` and `modules merge` consolidate compatible source-match
 records in their destinations when the template bytes, identifier policy and
@@ -393,29 +370,10 @@ debundle modules merge --target runtime/plugins runtime/widgets
 Source-module comments and notes are composed as described in
 § Comments and notes below.
 
-A graph-checked merge that creates a target owner must receive the complete
-final nonentry `import_order` as a JSON array via `--import-order`. The gate
-checks that exact order and stores it in the verified tree config with the
-module edit; it does not infer a schedule. Keep the owner list and order
-together when reviewing or integrating the merge.
-
-The edit gate checks direct claims against the dependency graph and, for typed
-`kind` pins, the original source before checking the post-merge assignment.
-Pass `--graph <dependency_graph.json.gz>` for the chunk's edge topology and
-`--source-root <dir>` when the graph's relative source paths are not otherwise
-resolvable. It rejects missing or ambiguous local claims, mismatched typed
-claims, and merges that would create cross-module cycles or split an atomic
-group. `--dry-run` runs these checks without writing. Use `--no-verify` to
-skip validation (e.g. during multi-step refactors where an intermediate state
-is intentionally invalid).
-
-A successful edit gate covers source claims, the post-merge assignment, and
-realizability checks. It does not establish complete reconstruction
-acceptance; `debundle run` remains the end-to-end acceptance path for vendor
-boundaries, exports, reconstruction, and browser planning.
-The source-claim check recognizes named, default, and namespace imports as
-import specifiers, while module emission currently supports moving named
-imports only (`lowering/imports/imports_runtime.rs`).
+For a new target, supply the complete final nonentry priority with
+`--import-order final-order.json`. See [whole-module merge batches](cli.md#whole-module-merge-batches)
+for the graph and source arguments and [edit validation](cli.md#validate-by-default-mutating-commands)
+for what the edit gate checks. Run `debundle run` to validate reconstruction.
 
 ## Comments and notes
 
@@ -441,9 +399,8 @@ belongs under `annotations.<export_name>`, which also accepts `purity`, `effect`
 On `modules merge`, non-empty source-module comments join the target comment
 with `--- from <source>:` dividers. The command adds `merged from: <sources>`
 provenance to the target's module-level `note:`, composing with any existing
-note. `bindings assign` carries a binding's annotations when moving it and
-keeps a drained source module if its module-level `comment:` is present,
-including an explicit empty string.
+note. For binding moves and automatic cleanup of drained sources, see the
+[batch contract](cli.md#batch-atomicity-bindings-assign).
 
 ### Workflow: authoring `comment:` fields
 

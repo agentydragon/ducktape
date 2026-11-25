@@ -89,6 +89,10 @@ class GrantView(BaseModel):
 
 class ProviderView(BaseModel):
     provider: str
+    account_id: str | None = None
+    account_label: str | None = None
+    plan_type: str | None = None
+    account_tier: str | None = None
     label: str = ""
     balances: list[BalanceView] = Field(default_factory=list)
     grants: list[GrantView] = Field(default_factory=list)
@@ -119,12 +123,17 @@ class AllQuotasView(BaseModel):
     providers: list[ProviderView]
 
 
-def to_view(quotas: AllQuotas, now: datetime | None = None) -> AllQuotasView:
+# Leave room for the next scheduled poll to finish before warning about staleness.
+_STALE_AFTER = timedelta(minutes=10)
+
+
+def to_view(quotas: AllQuotas, now: datetime | None = None, *, poll_interval: timedelta | None = None) -> AllQuotasView:
     moment = now or datetime.now(UTC)
+    stale_after = max(_STALE_AFTER, 2 * poll_interval) if poll_interval is not None else _STALE_AFTER
     return AllQuotasView(
         fetched_at=quotas.fetched_at,
         presentation_at=moment,
-        providers=[_provider_view(pq, moment) for pq in quotas.providers],
+        providers=[_provider_view(pq, moment, stale_after=stale_after) for pq in quotas.providers],
     )
 
 
@@ -138,10 +147,23 @@ def refresh_view(
         connection_error=connection_error,
         providers=[
             _provider_view(
-                ProviderQuota(provider=pv.provider, last_output=pv.last_output, last_success=pv.last_success),
+                ProviderQuota(
+                    provider=pv.provider,
+                    account_id=pv.account_id,
+                    account_label=pv.account_label,
+                    plan_type=pv.plan_type,
+                    account_tier=pv.account_tier,
+                    last_output=pv.last_output,
+                    last_success=pv.last_success,
+                ),
                 moment,
                 selection=pv.display,
                 offline=connection_error is not None,
+                stale_after=(
+                    pv.stale_at - pv.display.observed_at
+                    if pv.stale_at is not None and pv.display.observed_at is not None
+                    else _STALE_AFTER
+                ),
             )
             for pv in view.providers
         ],
@@ -174,8 +196,6 @@ _PROVIDER_LABELS = {
     "openai_platform": "OpenAI API",
     "anthropic_platform": "Anthropic API",
 }
-# Two collector intervals avoid a stale warning during the normal five-minute poll boundary.
-_STALE_AFTER = timedelta(minutes=10)
 _PRODUCT_LABELS = {"claude_api": "Claude API", "claude_code": "Claude Code"}
 # The broad API promo scope in the observed account fixture. Unknown products or
 # model-specific qualifiers remain visible restrictions, never inferred as universal.
@@ -183,14 +203,19 @@ _BROAD_API_PRODUCTS = {"agent_sdk", "api", "batch", "console", "managed-agents",
 
 
 def _provider_view(
-    pq: ProviderQuota, now: datetime, *, selection: DisplaySelection | None = None, offline: bool = False
+    pq: ProviderQuota,
+    now: datetime,
+    *,
+    stale_after: timedelta,
+    selection: DisplaySelection | None = None,
+    offline: bool = False,
 ) -> ProviderView:
     selection = selection if selection is not None else _select_display(pq)
     observed_at = selection.observed_at
     stale_since = (
         observed_at
         if observed_at is not None
-        and (offline or selection.source == "last_success" or now - observed_at >= _STALE_AFTER)
+        and (offline or selection.source == "last_success" or now - observed_at >= stale_after)
         else None
     )
     source = selection.result
@@ -251,7 +276,20 @@ def _provider_view(
         if anthropic_credits is not None
         else None
     )
-    balances, grants = _credit_rows(selection, display_openai_platform_credits, display_anthropic_credits, stale_since)
+    org_label = (
+        display_anthropic_credits.organizations[0].name
+        if pq.provider == "anthropic_platform"
+        and display_anthropic_credits is not None
+        and len(display_anthropic_credits.organizations) == 1
+        else None
+    )
+    balances, grants = _credit_rows(
+        selection,
+        display_openai_platform_credits,
+        display_anthropic_credits,
+        stale_since,
+        inline_anthropic_org=org_label is not None,
+    )
     grants.extend(_reset_grant_rows(source, now))
     reset_pending = any(window.reset_pending for window in display_windows)
     activity_current = stale_since is None and not reset_pending
@@ -268,13 +306,27 @@ def _provider_view(
     error = pq.last_output.result.error if not isinstance(pq.last_output.result, FetchSuccess) else None
     return ProviderView(
         provider=pq.provider,
+        account_id=pq.account_id,
+        account_label=pq.account_label,
+        plan_type=pq.plan_type,
+        account_tier=pq.account_tier,
         error_summary=_error_summary(error),
         error_detail=error,
-        label=_PROVIDER_LABELS.get(pq.provider, pq.provider),
+        label=" · ".join(
+            filter(
+                None,
+                [
+                    _PROVIDER_LABELS.get(pq.provider, pq.provider),
+                    pq.account_label,
+                    pq.account_tier or pq.plan_type,
+                    org_label,
+                ],
+            )
+        ),
         balances=balances,
         grants=grants,
         stale_since=stale_since,
-        stale_at=observed_at + _STALE_AFTER if observed_at is not None else None,
+        stale_at=observed_at + stale_after if observed_at is not None else None,
         status=status,
         display=selection,
         last_output=pq.last_output,
@@ -334,11 +386,7 @@ def _window_view(
         used=display_used_percent(window),
         reset="awaiting update" if reset_pending else format_duration(window.reset_seconds),
         pace=format_pace(pace),
-        forecast=None
-        if reset_pending or stale
-        else "exhausted"
-        if exhausted
-        else format_pace_forecast(pace, window.reset_seconds),
+        forecast=None if reset_pending or stale else "exhausted" if exhausted else format_pace_forecast(pace),
         tint="stale"
         if stale or reset_pending
         else "hot"
@@ -390,6 +438,8 @@ def _credit_rows(
     openai: OpenAIPlatformCredits | None,
     anthropic: AnthropicPlatformCredits | None,
     stale_since: datetime | None,
+    *,
+    inline_anthropic_org: bool = False,
 ) -> tuple[list[BalanceView], list[GrantView]]:
     balances: list[BalanceView] = []
     grants: list[GrantView] = []
@@ -403,7 +453,7 @@ def _credit_rows(
         )
         balances.append(
             BalanceView(
-                label="Available balance",
+                label="Balance",
                 value=summary,
                 pool_detail="Claude prepaid credits",
                 exact_value=(
@@ -421,15 +471,14 @@ def _credit_rows(
     result = selection.result
     if result is not None and result.paid_credits is not None:
         credits = result.paid_credits
-        balances.append(
-            BalanceView(label="Paid credits", value=format_paid_credit_balance(credits.balance, credits.unlimited))
-        )
+        value = format_paid_credit_balance(credits.balance, credits.unlimited)
+        balances.append(BalanceView(label="" if value.endswith(" credits") else "Paid credits", value=value))
     if openai is not None:
         exact = format_exact_usd(openai.total_available_usd)
         summary = format_summary_usd(openai.total_available_usd)
         balances.append(
             BalanceView(
-                label="Available balance",
+                label="Balance",
                 value=summary,
                 exact_value=exact if summary_hides_fraction(openai.total_available_usd) else None,
             )
@@ -470,7 +519,7 @@ def _credit_rows(
                 value = "lookup failed"
             balances.append(
                 BalanceView(
-                    label="Available balance",
+                    label="Balance",
                     value=value,
                     exact_value=(
                         exact
@@ -482,7 +531,7 @@ def _credit_rows(
                         )
                         else None
                     ),
-                    group=org.name,
+                    group=None if inline_anthropic_org else org.name,
                     error=org.error,
                 )
             )
@@ -531,7 +580,7 @@ def _credit_rows(
                             expires_at=tranche.expires_at,
                             scope=None if broad_scope else scope,
                             scope_detail=scope if broad_scope else None,
-                            group=org.name,
+                            group=None if inline_anthropic_org else org.name,
                         )
                     )
     return balances, grants

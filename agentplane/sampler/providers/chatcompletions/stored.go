@@ -71,7 +71,7 @@ func PrepareRequest(store content.ContentWriter, model, effort string, instructi
 func PrepareNextProfile(store interface {
 	content.ContentReader
 	content.ContentWriter
-}, id content.ContentID, effort string,
+}, id content.ContentID, model, effort string,
 ) (content.ContentID, error) {
 	raw, err := load(store, id, profileKind)
 	if err != nil {
@@ -81,11 +81,12 @@ func PrepareNextProfile(store interface {
 	if err := json.Unmarshal(raw, &profile); err != nil {
 		return "", err
 	}
-	if profile.StreamOptions != nil && profile.StreamOptions.IncludeUsage && profile.ReasoningEffort == effort {
+	if profile.StreamOptions != nil && profile.StreamOptions.IncludeUsage && profile.ReasoningEffort == effort && profile.Model == model {
 		return id, nil
 	}
 	profile.StreamOptions = &streamOptions{IncludeUsage: true}
 	profile.ReasoningEffort = effort
+	profile.Model = model
 	raw, err = json.Marshal(profile)
 	if err != nil {
 		return "", err

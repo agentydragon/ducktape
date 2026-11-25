@@ -27,6 +27,33 @@ theorem dropped_module_rejected : ¬ Permutes bundle plan_dropped_module := by d
 def planControls : List (String × Plan) :=
   [("missing_import", plan_missing_import), ("dropped_module", plan_dropped_module)]
 
+/-! ## Export names
+
+The entry's own statement publishes `X` as `m`, and `show.mjs` needs the entry's local `m`. -/
+
+def exportBundle : Bundle := [
+  { src := "const X = 1;", defs := ["X"] },
+  { src := "const m = 2;", defs := ["m"] },
+  { src := "function show() { return m; }", defs := ["show"], lazy := ["m"], hoisted := true },
+  { src := "export { X as m };", eager := ["X"], exports := [("m", some "X")] }]
+
+def exportSpec : Spec where
+  entry := "main.mjs"
+  modules := [("main.mjs", [.name "X", .name "m", .stmt 3]), ("show.mjs", [.name "show"])]
+
+/-- The splitter exports the local `m` under another name. -/
+theorem export_alias_valid : Valid exportBundle exportSpec (mkPlan exportBundle exportSpec) := by decide +kernel
+
+theorem export_alias_named : ((mkPlan exportBundle exportSpec).find "main.mjs").map (·.exports) = some [("m$1", "m")] := by
+  decide +kernel
+
+/-- A splitter that exports it as `m` publishes `m` twice. -/
+theorem export_collision_rejected : ¬ ExportsUnique exportBundle
+    { entry := "main.mjs"
+      mods := [{ name := "main.mjs", stmts := [0, 1, 3], imports := [("show.mjs", [])], exports := [("m", "m")] },
+               { name := "show.mjs", stmts := [2], imports := [("main.mjs", ["m"])], exports := [] }] } := by
+  decide +kernel
+
 /-! ## The semantic model sees the difference
 
 A value records where it came from (statement `j` applied to the values it read). The world is a

@@ -7,20 +7,39 @@ use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
 use swc_common::{
-    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Span, Spanned,
-    SyntaxContext,
+    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceFile, SourceMap, Span,
+    Spanned, SyntaxContext,
 };
 use swc_ecma_ast::{
-    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, ExprOrSpread,
-    Id, Ident, IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit,
-    MemberExpr, MemberProp, MetaPropExpr, MetaPropKind, Module, ModuleDecl, ModuleExportName,
-    ModuleItem, NamedExport, NewExpr, Stmt, Str, VarDecl, VarDeclKind, VarDeclarator,
+    ArrayLit, ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr,
+    ExprOrSpread, Id, Ident, IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase,
+    ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropExpr, MetaPropKind, Module, ModuleDecl,
+    ModuleExportName, ModuleItem, NamedExport, NewExpr, Stmt, Str, VarDecl, VarDeclKind,
+    VarDeclarator,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 use swc_ecma_transforms_base::resolver;
 use swc_ecma_visit::{VisitMutWith, VisitWith};
+
+/// A literal whose evaluation produces a primitive JS value (in particular, not a RegExp).
+/// Callers matching source syntax choose whether to unwrap parentheses first.
+pub fn is_primitive_literal(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
+    )
+}
+
+/// No holes or spreads: every element is an explicit primitive literal.
+pub fn is_dense_primitive_array(array: &ArrayLit) -> bool {
+    array.elems.iter().all(|element| {
+        element.as_ref().is_some_and(|element| {
+            element.spread.is_none() && is_primitive_literal(element.expr.unwrap_parens())
+        })
+    })
+}
 
 /// Run `body` inside a fresh `swc_common::GLOBALS` arena. Production
 /// entry point (`main.rs`) wraps the
@@ -95,26 +114,14 @@ impl ParsedJsModule {
 
 #[derive(Clone, Debug)]
 pub struct SourceLineIndex {
-    files: Vec<FileLineIndex>,
-}
-
-#[derive(Clone, Debug)]
-struct FileLineIndex {
-    start_pos: BytePos,
-    line_starts: Vec<BytePos>,
+    files: Vec<Lrc<SourceFile>>,
 }
 
 impl SourceLineIndex {
     pub fn for_source_map(cm: &SourceMap) -> Self {
-        let files = cm
-            .files()
-            .iter()
-            .map(|file| FileLineIndex {
-                start_pos: file.start_pos,
-                line_starts: file.analyze().lines.clone(),
-            })
-            .collect();
-        Self { files }
+        Self {
+            files: cm.files().to_vec(),
+        }
     }
 
     pub fn line_for_span(&self, span: swc_common::Span) -> Option<usize> {
@@ -140,9 +147,8 @@ impl SourceLineIndex {
         if pos == BytePos(0) {
             return None;
         }
-        let file = self.file_for_pos(pos)?;
-        let line = file.line_for_pos(pos);
-        let line_start = *file.line_starts.get(line.checked_sub(1)?)?;
+        let (line, start) = self.locate_line(pos)?;
+        let line_start = start?;
         Some((line, (pos.0 - line_start.0 + 1) as usize))
     }
 
@@ -150,27 +156,15 @@ impl SourceLineIndex {
         if pos.is_dummy() {
             return None;
         }
-        let file = self.file_for_pos(pos)?;
-        Some(file.line_for_pos(pos))
+        Some(self.locate_line(pos)?.0)
     }
 
-    fn file_for_pos(&self, pos: BytePos) -> Option<&FileLineIndex> {
+    fn locate_line(&self, pos: BytePos) -> Option<(usize, Option<BytePos>)> {
         let index = self.files.partition_point(|file| file.start_pos <= pos);
-        if index == 0 {
-            None
-        } else {
-            self.files.get(index - 1)
-        }
-    }
-}
-
-impl FileLineIndex {
-    fn line_for_pos(&self, pos: BytePos) -> usize {
-        match self.line_starts.binary_search(&pos) {
-            Ok(line_index) => line_index + 1,
-            Err(0) => 0,
-            Err(insert_index) => insert_index,
-        }
+        let file = self.files.get(index.checked_sub(1)?)?;
+        let starts = &file.analyze().lines;
+        let line = starts.partition_point(|&start| start <= pos);
+        Some((line, line.checked_sub(1).map(|i| starts[i])))
     }
 }
 
@@ -238,19 +232,11 @@ pub fn parse_js_module(
     source_name: &str,
     source: &str,
 ) -> std::result::Result<ParsedJsModule, JsParseError> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let fm = source_file(&cm, source_name, source);
-    let (module, unresolved_mark, top_level_mark) = parse_and_resolve(source_name, &fm)?;
-    Ok(ParsedJsModule {
-        cm,
-        module,
-        unresolved_mark,
-        top_level_mark,
-    })
+    parse_js_module_consuming(source_name, source.to_string())
 }
 
 /// Like `parse_js_module` but takes ownership of the source string, avoiding
-/// the clone inside `source_file`. The source text is retrievable via
+/// its clone. The source text is retrievable via
 /// `ParsedJsModule::source_text()`.
 pub fn parse_js_module_consuming(
     source_name: &str,
@@ -275,21 +261,7 @@ pub fn parse_js_module_ast(
     source_name: &str,
     source: &str,
 ) -> std::result::Result<Module, JsParseError> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let fm = source_file(&cm, source_name, source);
-    let (module, _, _) = parse_and_resolve(source_name, &fm)?;
-    Ok(module)
-}
-
-fn source_file(
-    cm: &Lrc<SourceMap>,
-    source_name: &str,
-    source: &str,
-) -> Lrc<swc_common::SourceFile> {
-    cm.new_source_file(
-        FileName::Custom(source_name.to_string()).into(),
-        source.to_string(),
-    )
+    parse_js_module(source_name, source).map(|parsed| parsed.module)
 }
 
 /// Parse a source file and run SWC's `resolver` pass to assign
@@ -729,26 +701,16 @@ fn attach_binding_comments(
 /// `// <text>`. The output is a `Vec<String>`, one entry per emitted
 /// line, ready to be joined by `\n` callers.
 pub fn format_comment_block_lines(text: &str) -> Vec<String> {
-    text.split('\n')
-        .map(|line| {
-            let trimmed = line.trim_end();
-            if trimmed.is_empty() {
-                "//".to_string()
-            } else {
-                format!("// {trimmed}")
-            }
-        })
+    format_member_comment_line_texts(text)
+        .into_iter()
+        .map(|body| format!("//{body}"))
         .collect()
 }
 
 /// Format spec comment text into the per-line texts SWC's `Line`-kind
 /// Comment expects (the prefix `//` is added by the emitter, so each
 /// entry is the *body* of one line comment, including any leading
-/// space).
-///
-/// Mirrors [`format_comment_block_lines`] but returns the bare body
-/// for each line (`" foo"` vs `"// foo"`), since SWC emits the `//`
-/// itself.
+/// space): `""` for an empty line, `" <text>"` otherwise.
 fn format_member_comment_line_texts(text: &str) -> Vec<String> {
     text.split('\n')
         .map(|line| {
@@ -912,6 +874,34 @@ pub fn named_export_module_item(
         type_only: false,
         with: None,
     }))
+}
+
+/// Whether the expression is a dotted `import.meta` property access.
+/// Callers choose whether to unwrap parentheses before this check.
+pub fn is_dotted_import_meta_property(expr: &Expr, name: &str) -> bool {
+    matches!(
+        expr,
+        Expr::Member(member)
+            if matches!(&*member.obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta)
+                && matches!(&member.prop, MemberProp::Ident(prop) if prop.sym == name)
+    )
+}
+
+/// Whether the constructor is spelled `Worker` or `SharedWorker`.
+pub fn is_worker_constructor(node: &NewExpr) -> bool {
+    matches!(&*node.callee, Expr::Ident(ident) if ident.sym == *"Worker" || ident.sym == *"SharedWorker")
+}
+
+/// The first, unspread string argument of a worker constructor.
+pub fn worker_literal_source(node: &NewExpr) -> Option<&Str> {
+    if !is_worker_constructor(node) {
+        return None;
+    }
+    let first = node.args.as_ref()?.first()?;
+    match first.expr.as_ref() {
+        Expr::Lit(Lit::Str(source)) if first.spread.is_none() => Some(source),
+        _ => None,
+    }
 }
 
 /// `new URL("<source>", import.meta.url)`, the module-relative form a worker

@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest_bazel
-from python.runfiles import Runfiles
 
 from grocy_mcp.fix_openapi_spec import (
     _MISSING_PRODUCT_PROPERTIES,
@@ -14,7 +11,6 @@ from grocy_mcp.fix_openapi_spec import (
     strip_empty_enums,
     strip_replaced_routes,
 )
-from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS
 
 
 def test_strip_empty_enums_removes_empty_enum() -> None:
@@ -73,19 +69,6 @@ def test_strip_replaced_routes_removes_replaced_methods() -> None:
 
     # /stock GET replaced — path gone.
     assert "/stock" not in paths
-
-
-def test_fixed_spec_has_every_writable_product_column() -> None:
-    """The served Product schema must accept every writable product column."""
-    spec_path = Runfiles.CreateOrRaise().root() / "ducktape/grocy_mcp/grocy.openapi.fixed.json"
-    spec = json.loads(spec_path.read_text())
-    properties = spec["components"]["schemas"]["Product"]["properties"]
-
-    missing = PRODUCT_WRITABLE_FIELDS - properties.keys()
-    assert not missing, (
-        f"PRODUCT_WRITABLE_FIELDS entries missing from patched Product schema: {sorted(missing)}. "
-        f"Add them to _MISSING_PRODUCT_PROPERTIES in fix_openapi_spec.py."
-    )
 
 
 def test_patch_product_schema_does_not_clobber_existing_upstream_property() -> None:

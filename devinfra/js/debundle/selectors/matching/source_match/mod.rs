@@ -25,9 +25,7 @@ pub(crate) use std::collections::{BTreeMap, BTreeSet};
 pub(crate) use anyhow::Result;
 pub(crate) use js_ast::item_var_decl;
 pub(crate) use serde::Serialize;
-pub(crate) use spec::{
-    AnonymousStatementSelector, SourceMatch, SourceMatchClaim, SourceMatchIdentifierMode,
-};
+pub(crate) use spec::{AnonymousStatementSelector, SourceMatchClaim, SourceMatchIdentifierMode};
 pub(crate) use swc_ecma_ast::*;
 pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 

@@ -64,7 +64,8 @@ was then evaluated as the alternative — and **parked**:
 - Wiring spans **three build systems**: the Nix-bundled prettier
   (`nix/packages/prettier/` — `package.json` + an `npmDepsHash` rebuild, since
   pre-commit's `language: system` prettier resolves plugins off the Nix wrapper's
-  `NODE_PATH`), the pnpm/Bazel `prettier_bin` (`//:prettierrc` deps + lockfile),
+  `NODE_PATH`), the Bazel `prettier_js_tree` rule (`//:prettierrc` and the root npm
+  lockfile),
   and `.prettierrc.cjs` (`require()` + `importOrder` groups, with
   `importOrderSideEffects` care so a side-effect `import "./x.css"` / polyfill
   isn't reordered into a behavior change) — plus a one-time repo-wide reorder.

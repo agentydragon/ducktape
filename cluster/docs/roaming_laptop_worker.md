@@ -1,73 +1,35 @@
-# Roaming Laptop Worker Node
+# Roaming laptop workers
 
-**Status**: Implemented (2026-03). rugged (Dell Rugged 12) joined as roaming
-worker via `nix/nixos/hosts/rugged/` + `k8s-worker.nix` + `nebula.nix`.
-Nebula mesh with OVH lighthouses/relays solves the double-NAT hole-punching
-problem that made KubeSpan unreliable. See
-`lessons_learned/nebula_mesh_migration_tombstone.md` for the full history.
+[`rugged`](../../nix/nixos/hosts/rugged/default.nix) and
+[`iguana`](../../nix/nixos/hosts/iguana/default.nix) join the Talos cluster
+through the NixOS [worker module](../../nix/nixos/modules/k8s-worker.nix).
+It runs containerd and kubelet, takes the bootstrap kubeconfig from sops-nix,
+and serves the local API endpoint through HAProxy. Cilium uses the same
+`localhost:7445` endpoint on Talos through KubePrism.
+[Cilium values](../terraform/main/cilium-values.yaml).
 
-Remaining validation: test double-NAT passthrough and relay with real workloads
-such as rugged behind a mobile hotspot or restrictive corporate NAT while pods
-produce cross-node traffic.
+[Nebula membership](mesh_membership.md) owns discovery and relay setup.
+[Cluster networking](network.md) owns the VXLAN-over-Nebula path.
+The [mesh migration record](lessons_learned/nebula_mesh_migration_tombstone.md)
+explains the double-NAT failure that led to replacing KubeSpan.
 
-## How It Works
+## Scheduling and recovery
 
-NixOS laptop joins the Talos k8s cluster as a worker without VMs:
+- The [roaming taint](mesh_membership.md#roaming-k8s-nodes) limits placement to
+  opt-in work such as CI executors, batch jobs, local inference and development.
+  Keep ingress and services required for OVH-only operation on stable nodes.
+- Prefer disposable workloads. For intentional node-local data, use the
+  retaining `piraeus-ssd-local` class. [Piraeus storage classes](piraeus.md#storage-classes).
+  Its claim stays bound to the laptop while the laptop is offline.
+- The [roaming node controller](../roaming_node_controller/README.md) owns
+  tainting, eviction and return behavior.
 
-- **`nebula.nix`** — joins the Nebula mesh (UDP 4242). OVH lighthouses provide
-  peer discovery; relay mode handles double-NAT when hole-punching fails.
-- **`k8s-worker.nix`** — containerd + kubelet, haproxy on `localhost:7445`
-  load-balancing across control plane Nebula IPs, sops-nix for credentials.
-- **Cilium agent** runs as a DaemonSet, VXLAN encapsulated inside Nebula.
+## Host compatibility
 
-Key files:
-
-- `nix/nixos/hosts/rugged/default.nix` — host config
-- `nix/nixos/modules/k8s-worker.nix` — k8s worker module
-- `nix/nixos/modules/nebula.nix` — Nebula mesh module
-- `cluster/terraform/main/nebula.tf` — PKI
-
-## Networking
-
-| Property    | Value                                          |
-| ----------- | ---------------------------------------------- |
-| Mesh        | Nebula (UDP 4242), lighthouses on OVH          |
-| Node IP     | Nebula mesh IP (e.g., `10.42.0.30` for rugged) |
-| API server  | haproxy `localhost:7445` → CP Nebula IPs       |
-| Pod overlay | VXLAN (UDP 8472) encapsulated in Nebula        |
-| Relay       | OVH lighthouses relay when hole-punching fails |
-
-## Scheduling
-
-Taint `node-role.kubernetes.io/roaming=true:NoSchedule`, labels
-`topology.kubernetes.io/region=roaming`, `node.kubernetes.io/role=roaming`.
-
-**Good fit**: BuildBuddy executors, batch ML/LLM jobs, CI runners, dev/test workloads.
-**Avoid**: StatefulSets, ingress, anything in the OVH-only resilience invariant, and any PVC
-other than a strict-local `piraeus-ssd-local` claim, which goes offline with the laptop.
-
-## Intermittent Connectivity
-
-- Node goes `NotReady` after ~40s (`node-monitor-grace-period`)
-- Offline handling (out-of-service taint, eviction): <../roaming_node_controller/README.md>
-- Taint ensures only opt-in workloads land there
-- Stateless workloads, except strict-local `piraeus-ssd-local` claims (`cdk8s/piraeus.py`)
-
-## Known Gotchas
-
-- **API endpoint**: Cilium uses `k8sServiceHost: localhost`, `k8sServicePort: 7445`.
-  Talos nodes use KubePrism; NixOS workers use haproxy.
-- **Cilium `SYS_MODULE`**: Pre-load `sch_ingress` etc. on non-Talos nodes.
-- **Kubelet version**: Must be within 1 minor version of the cluster.
-- **Kubelet label restrictions**: `node-role.kubernetes.io/*` labels rejected by
-  kubelet — use `node.kubernetes.io/role` instead. Taints are fine.
-
-## Historical Notes
-
-This plan went through three networking iterations:
-
-1. Tailscale/Headscale (second WireGuard mesh, required DaemonSet)
-2. KubeSpan/kubespand (reimplemented Talos KubeSpan for Linux — failed on
-   double-NAT, no relay capability). See
-   `lessons_learned/nebula_mesh_migration_tombstone.md`.
-3. Nebula mesh (current) — lighthouses + relays solve double-NAT reliably.
+- The shared Cilium chart omits `SYS_MODULE` for Talos. Supply required kernel
+  features on NixOS, including ingress traffic control. Load modular features
+  on the host before Cilium starts. [Cilium kernel requirements](https://docs.cilium.io/en/stable/operations/system_requirements/).
+- Check the kubelet against every API server during upgrades.
+  [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/#kubelet).
+- Use `node.kubernetes.io/role` for the kubelet-set role label.
+  `node-role.kubernetes.io/roaming` is the taint key.

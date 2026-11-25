@@ -98,6 +98,7 @@ py_test(
     deps = [
         ":assign_jellybean",
         "//:conftest",
+        "@pypi//inventree",
         "@pypi//pytest_bazel",
     ],
 )
@@ -121,5 +122,18 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_upload_lcsc_images",
+    srcs = ["test_upload_lcsc_images.py"],
+    deps = [
+        ":upload_lcsc_images",
+        "//:conftest",
+        "@pypi//inventree",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//requests",
     ],
 )

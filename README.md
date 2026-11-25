@@ -8,7 +8,7 @@ Personal infrastructure monorepo: configuration for **agentydragon** (ThinkPad),
 
 - **Python:** deps in `pyproject.toml`, used as `@pypi//pkg`; lockfile `requirements_bazel.txt` is generated (<devinfra/docs/lockfiles.md>). ruff + mypy run as Bazel aspects; `--config=nolint` skips them (<devinfra/docs/linting.md>).
 - **Rust:** deps in root `Cargo.toml`, used as `@crates//name`; regenerate `Cargo.Bazel.lock` per <devinfra/docs/lockfiles.md>.
-- **Gazelle** owns Python BUILD files; CI fails on drift. After adding/moving `.py` files or changing imports run `gazelle` (devshell; or `bb run //devinfra:gazelle`), check with `gazelle -mode=diff`. One `py_library` per `.py` file, referenced as `//pkg:module`; `__init__.py` stubs are generated via `imports = [".."]`. Conventions: [STYLE.md § Gazelle](STYLE.md#gazelle); mechanism: <devinfra/docs/gazelle.md>.
+- **Gazelle:** Run `gazelle` from the devshell after changing Python files or imports. See [regeneration and drift checks](devinfra/docs/gazelle.md) and [BUILD conventions](STYLE.md#gazelle).
 - **BuildBuddy** provides remote cache and RBE. `bbr` (wraps `bb remote`) runs the whole invocation on a remote runner; `bb run` keeps Bazel local and dispatches only actions. Two images: `ghcr.io/agentydragon/rbe-container-image` (<devinfra/buildbuddy/images/rbe/Dockerfile>) is the action environment; `ghcr.io/agentydragon/buildbuddy-remote-runner` (<devinfra/buildbuddy/images/runner/image.nix>, pinned in <.bbrc>) adds Nix devtools for the outer invocation. Setup: <devinfra/buildbuddy/setup.sh>.
 
 ## Dotfiles
@@ -17,15 +17,7 @@ Nix home-manager in `nix/home/`; **never edit dotfiles in `~/`**. Deploy: <nix/R
 
 ## Development
 
-```bash
-nix shell .#precommit -c pre-commit install
-nix shell .#precommit -c pre-commit run --all-files
-bb run //devinfra/lint:buildifier
-```
-
-### Lint/Format Exclusions
-
-`path/** rules-lint-ignored=true` in `.gitattributes`, plus `ruff.toml` `exclude` for Python. Other pre-commit gitattributes: `filename-conventions-ignored=true` (skip kebab-case check; default on for `cluster/`, `tf/` and a few others), `cluster-manifest-ignored=true` (non-manifest YAML under `cluster/k8s/`).
+See [pre-commit setup, formatting, and exclusions](devinfra/docs/linting.md).
 
 ## CI
 

@@ -1,6 +1,7 @@
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 import base64
+import os
 from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -193,6 +194,149 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
             db.scalars(select(ResticSnapshotRow).where(ResticSnapshotRow.machine_id == "archive-test"))
         )
         assert all(row.capture_status == "unknown" for row in snapshot_rows)
+
+
+def test_changed_file_version_is_kept_with_same_metadata_diff(tmp_path: Path, postgres_engine: Engine) -> None:
+    repository, env = new_repository(tmp_path)
+    claude_root = tmp_path / "home" / ".claude"
+    main_path = claude_root / "projects" / "example-project" / "main-session.jsonl"
+    main_path.parent.mkdir(parents=True)
+    repeated = b'{"type":"user","timestamp":"2026-01-01T00:00:00Z","message":{"content":"hello"}}\n'
+    ending_b = b'{"type":"assistant","timestamp":"2026-01-01T00:00:01Z","message":{"content":"ok"}}\n'
+    ending_c = ending_b.replace(b'"ok"', b'"no"')
+    main_path.write_bytes(repeated + repeated + ending_b)
+    backup(env, claude_root)
+    initial_snapshot = repository.list_snapshots()[0]
+
+    factory = sessionmaker(postgres_engine, expire_on_commit=False)
+    ingestor = new_ingestor(
+        factory, repository, HarnessRoot(Harness.CLAUDE, str(claude_root)), machine_id="archive-modified-test"
+    )
+    report = ingestor.ingest()
+    assert report.files_failed == 0
+
+    original_stat = main_path.stat()
+    main_path.write_bytes(repeated + repeated + ending_c)
+    os.utime(main_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    backup(env, claude_root)
+    snapshots = repository.list_snapshots()
+    changed_snapshot = next(snapshot for snapshot in snapshots if snapshot.id != initial_snapshot.id)
+    assert changed_snapshot.parent_id == initial_snapshot.id
+    changes = repository.diff_snapshots(initial_snapshot.id, changed_snapshot.id)
+    assert any(change.path.endswith("/main-session.jsonl") and change.modifier == "M" for change in changes), [
+        (change.path, change.modifier) for change in changes
+    ]
+    report = ingestor.ingest()
+    assert report.files_failed == 0
+
+    with factory() as db:
+        main = next(
+            item
+            for item in list_sessions(
+                db, machine_id="archive-modified-test", harness=Harness.CLAUDE, cursor=None, limit=100
+            ).data
+            if item.title == "hello"
+        )
+        versions = list_versions(db, session_id=main.id)
+        assert len(versions) == 2
+        first = next(version for version in versions if version.snapshot_id == initial_snapshot.id)
+        changed = next(version for version in versions if version.snapshot_id == changed_snapshot.id)
+        first_events = list_events(db, session_id=main.id, version_id=first.id, cursor=None, limit=20)
+        changed_events = list_events(db, session_id=main.id, version_id=changed.id, cursor=None, limit=20)
+        assert first_events is not None
+        assert changed_events is not None
+        assert [event.ordinal for event in changed_events.data] == [0, 1, 2]
+        assert changed_events.data[0].raw_base64 == changed_events.data[1].raw_base64
+        assert first_events.data[2].raw_base64 != changed_events.data[2].raw_base64
+        changed_row = db.get(SnapshotFileRow, ("archive-modified-test", changed_snapshot.id, str(main_path)))
+        assert changed_row is not None
+        assert changed_row.change_kind == "M"
+        changed_snapshot_row = db.get(ResticSnapshotRow, ("archive-modified-test", changed_snapshot.id))
+        assert changed_snapshot_row is not None
+        assert changed_snapshot_row.comparison_snapshot_id == initial_snapshot.id
+
+
+def test_truncated_and_deleted_file_keeps_prior_versions(tmp_path: Path, postgres_engine: Engine) -> None:
+    repository, env = new_repository(tmp_path)
+    claude_root = tmp_path / "home" / ".claude"
+    main_path = claude_root / "projects" / "example-project" / "main-session.jsonl"
+    main_path.parent.mkdir(parents=True)
+    repeated = b'{"type":"user","timestamp":"2026-01-01T00:00:00Z","message":{"content":"hello"}}\n'
+    ending = b'{"type":"assistant","timestamp":"2026-01-01T00:00:01Z","message":{"content":"ok"}}\n'
+    main_path.write_bytes(repeated + repeated + ending)
+    backup(env, claude_root)
+    initial_snapshot = repository.list_snapshots()[0]
+
+    factory = sessionmaker(postgres_engine, expire_on_commit=False)
+    ingestor = new_ingestor(
+        factory, repository, HarnessRoot(Harness.CLAUDE, str(claude_root)), machine_id="archive-truncated-test"
+    )
+    report = ingestor.ingest()
+    assert report.files_failed == 0
+    main_path.write_bytes(repeated)
+    backup(env, claude_root)
+    truncation_snapshot = repository.list_snapshots()[-1]
+    report = ingestor.ingest()
+    assert report.files_failed == 0
+    main_path.unlink()
+    backup(env, claude_root)
+    deletion_snapshot = repository.list_snapshots()[-1]
+    report = ingestor.ingest()
+    assert report.files_failed == 0
+
+    with factory() as db:
+        main = next(
+            item
+            for item in list_sessions(
+                db, machine_id="archive-truncated-test", harness=Harness.CLAUDE, cursor=None, limit=100
+            ).data
+            if item.title == "hello"
+        )
+        versions = list_versions(db, session_id=main.id)
+        assert len(versions) == 2
+        original = next(version for version in versions if version.snapshot_id == initial_snapshot.id)
+        original_events = list_events(db, session_id=main.id, version_id=original.id, cursor=None, limit=20)
+        assert original_events is not None
+        assert [event.ordinal for event in original_events.data] == [0, 1, 2]
+        truncated = next(version for version in versions if version.snapshot_id == truncation_snapshot.id)
+        events = list_events(db, session_id=main.id, version_id=truncated.id, cursor=None, limit=20)
+        assert events is not None
+        assert [event.ordinal for event in events.data] == [0]
+        deletion = db.get(SnapshotFileRow, ("archive-truncated-test", deletion_snapshot.id, str(main_path)))
+        assert deletion is not None
+        assert deletion.status == "deleted"
+        assert db.scalar(select(SessionRow).where(SessionRow.id == main.id)) is not None
+
+
+def test_parentless_restic_snapshot_uses_full_inventory(tmp_path: Path, postgres_engine: Engine) -> None:
+    repository, env = new_repository(tmp_path)
+    claude_root = tmp_path / "home" / ".claude"
+    transcript = claude_root / "projects" / "example-project" / "session.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_bytes(b'{"type":"user","message":{"content":"original"}}\n')
+    backup(env, claude_root)
+    first_snapshot = repository.list_snapshots()[0]
+    factory = sessionmaker(postgres_engine, expire_on_commit=False)
+    ingestor = new_ingestor(
+        factory, repository, HarnessRoot(Harness.CLAUDE, str(claude_root)), machine_id="parentless-test"
+    )
+    ingestor.ingest()
+
+    transcript.write_bytes(b'{"type":"user","message":{"content":"forced snapshot"}}\n')
+    backup(env, claude_root, force=True)
+    second_snapshot = next(snapshot for snapshot in repository.list_snapshots() if snapshot.id != first_snapshot.id)
+    assert second_snapshot.parent_id is None
+    report = ingestor.ingest()
+    assert report.files_failed == 0
+    assert report.snapshots_incomplete == 0
+    with factory() as db:
+        snapshot_row = db.get(ResticSnapshotRow, ("parentless-test", second_snapshot.id))
+        assert snapshot_row is not None
+        assert snapshot_row.comparison_snapshot_id is None
+        file_row = db.get(SnapshotFileRow, ("parentless-test", second_snapshot.id, str(transcript)))
+        assert file_row is not None
+        assert file_row.change_kind == "inventory"
+        assert file_row.status == "complete"
 
 
 if __name__ == "__main__":

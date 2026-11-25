@@ -22,7 +22,7 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 	threadPresets := map[string]settings.ThreadPreset{
 		"default": {
 			Harness: "HARNESS_CODEX", Model: "model-a", CWD: "/state/workspaces/{session_id}",
-			ReasoningEffort: sessionTestStringPtr("high"), Instructions: "from preset", SetupScript: "setup",
+			ReasoningEffort: new("high"), Instructions: "from preset", SetupScript: "setup",
 		},
 	}
 	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "sandbox-uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}
@@ -63,15 +63,15 @@ func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
 	}{
 		{"sandbox missing", status.Error(codes.NotFound, "demo"), codes.NotFound, "demo"},
 		{"canceled", context.Canceled, codes.Canceled, "canceled"},
-		{"deadline", context.DeadlineExceeded, codes.DeadlineExceeded, "Upstream service unavailable"},
+		{"deadline", context.DeadlineExceeded, codes.DeadlineExceeded, "Environment service could not look up the Sandbox"},
 		{"resource exhausted", status.Error(codes.ResourceExhausted, "quota"), codes.ResourceExhausted, "quota"},
 		{"grpc aborted", fmt.Errorf("upstream: %w", status.Error(codes.Aborted, "aborted")), codes.Aborted, "aborted"},
 		{"grpc already exists", status.Error(codes.AlreadyExists, "existing"), codes.AlreadyExists, "existing"},
-		{"grpc internal", status.Error(codes.Internal, "private-upstream-diagnostic"), codes.Internal, "Upstream service unavailable"},
-		{"unknown error", errors.New("private-upstream-diagnostic"), codes.Unavailable, "Upstream service unavailable"},
+		{"grpc internal", status.Error(codes.Internal, "private-upstream-diagnostic"), codes.Internal, "Environment service could not look up the Sandbox"},
+		{"unknown error", errors.New("private-upstream-diagnostic"), codes.Unavailable, "Environment service could not look up the Sandbox"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got := status.Convert(sessionRPCError(test.err))
+			got := status.Convert(sessionRPCError(test.err, "Environment service could not look up the Sandbox"))
 			if got.Code() != test.wantCode || !strings.Contains(got.Message(), test.wantDetail) || strings.Contains(got.Message(), "private-upstream-diagnostic") {
 				t.Fatalf("got %v, want %v containing %q without private details", got, test.wantCode, test.wantDetail)
 			}
@@ -79,4 +79,10 @@ func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
 	}
 }
 
-func sessionTestStringPtr(value string) *string { return &value }
+func TestSessionRPCErrorNamesUnconfirmedDispatcherCreation(t *testing.T) {
+	operation := "Session Dispatcher could not confirm Thread creation; check this attempt before retrying"
+	got := status.Convert(sessionRPCError(status.Error(codes.Unavailable, "private-upstream-diagnostic"), operation))
+	if got.Code() != codes.Unavailable || !strings.Contains(got.Message(), operation) || strings.Contains(got.Message(), "private-upstream-diagnostic") {
+		t.Fatalf("unexpected Dispatcher error: %v", got)
+	}
+}

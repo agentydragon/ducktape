@@ -90,7 +90,7 @@ func (e *Transport) incarnationFenceError(err error, scope *executorpb.Execution
 	return &Failure{
 		Kind: FailureIncarnationFence, Method: method, IntentID: intentID, ProcessID: processID,
 		ExecutionSessionID: executionSessionID, AfterSequence: afterSequence, Output: output,
-		RemoteOutcome: remoteOutcome, RequestOutcome: outcomePointer(NotDispatched),
+		RemoteOutcome: remoteOutcome, RequestOutcome: new(NotDispatched),
 		CurrentIncarnationUID: changed.GetIncarnationUid(), Cause: err,
 	}
 }

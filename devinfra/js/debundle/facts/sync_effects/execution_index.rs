@@ -39,7 +39,7 @@ use crate::analysis_inputs::{
     ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
-use crate::execution_evidence::SourceLocation;
+use crate::execution_evidence::SourceLocator;
 use crate::facts::abstract_domain::builtins::{
     self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
 };
@@ -281,13 +281,6 @@ fn primitive_constant(expression: &Expr) -> bool {
         }
         _ => false,
     }
-}
-
-fn primitive_literal(expression: &Expr) -> bool {
-    matches!(
-        expression.unwrap_parens(),
-        Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_))
-    )
 }
 
 #[derive(Clone, Copy)]
@@ -1817,6 +1810,21 @@ enum NativeReceiverRoot {
     BundleGlobal,
 }
 
+impl NativeReceiverRoot {
+    fn intrinsic_root(&self) -> Option<NativeIntrinsic> {
+        match self {
+            Self::Intrinsic(root)
+            | Self::IntrinsicPrototype(root)
+            | Self::IntrinsicDescendant(root) => Some(*root),
+            Self::ArrayIteratorPrototype
+            | Self::SetIteratorPrototype
+            | Self::OrdinaryDirect { .. }
+            | Self::OrdinaryDescendant { .. }
+            | Self::BundleGlobal => None,
+        }
+    }
+}
+
 type NativeReceiverRoots = BTreeSet<NativeReceiverRoot>;
 
 /// Global-object names the native census resolves.
@@ -2056,7 +2064,7 @@ fn set_from_primitive_array_aliases(expression: &Expr) -> Option<Vec<Id>> {
         if element.spread.is_some() {
             return None;
         }
-        if primitive_literal(&element.expr) {
+        if js_ast::is_primitive_literal(element.expr.unwrap_parens()) {
             continue;
         }
         let Expr::Ident(identifier) = element.expr.unwrap_parens() else {
@@ -2090,9 +2098,10 @@ fn set_from_set_spread_source(expression: &Expr) -> Option<(Id, Span, Span)> {
         && argument.spread.is_none()
         && first.spread.is_some()
         && rest.iter().all(|element| {
-            element
-                .as_ref()
-                .is_some_and(|element| element.spread.is_none() && primitive_literal(&element.expr))
+            element.as_ref().is_some_and(|element| {
+                element.spread.is_none()
+                    && js_ast::is_primitive_literal(element.expr.unwrap_parens())
+            })
         }))
     .then(|| {
         (
@@ -5617,7 +5626,7 @@ impl ExecutionIndex {
             let check_known_identity =
                 matches!(initializer, ValueExpr::Binding(_) | ValueExpr::Member(..));
             if check_known_identity {
-                let roots = intrinsic_roots(
+                let mut roots = intrinsic_roots(
                     initializer,
                     raw_aliases,
                     &self.census_globals,
@@ -5625,19 +5634,12 @@ impl ExecutionIndex {
                     &BTreeMap::new(),
                     &CallableReturnInputs::default(),
                 );
+                roots.remove(&NativeReceiverRoot::Intrinsic(
+                    NativeIntrinsic::UnknownGlobalValue,
+                ));
                 let contradictions: BTreeSet<_> = roots
                     .iter()
-                    .filter_map(|root| match root {
-                        NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue) => None,
-                        NativeReceiverRoot::Intrinsic(root)
-                        | NativeReceiverRoot::IntrinsicPrototype(root)
-                        | NativeReceiverRoot::IntrinsicDescendant(root) => Some(*root),
-                        NativeReceiverRoot::OrdinaryDirect { .. }
-                        | NativeReceiverRoot::OrdinaryDescendant { .. }
-                        | NativeReceiverRoot::ArrayIteratorPrototype
-                        | NativeReceiverRoot::SetIteratorPrototype
-                        | NativeReceiverRoot::BundleGlobal => None,
-                    })
+                    .filter_map(NativeReceiverRoot::intrinsic_root)
                     .collect();
                 if !contradictions.is_empty() {
                     self.value_input_errors.push(format!(
@@ -5761,27 +5763,19 @@ impl ExecutionIndex {
                 &BTreeMap::new(),
                 &CallableReturnInputs::default(),
             );
-            let contradiction = roots.iter().any(|root| {
-                matches!(
-                    root,
-                    NativeReceiverRoot::Intrinsic(root)
-                        | NativeReceiverRoot::IntrinsicPrototype(root)
-                        | NativeReceiverRoot::IntrinsicDescendant(root)
-                        if *root != NativeIntrinsic::UnknownGlobalValue
-                )
-            });
+            let contradiction = roots
+                .iter()
+                .filter_map(NativeReceiverRoot::intrinsic_root)
+                .any(|root| root != NativeIntrinsic::UnknownGlobalValue);
             if contradiction {
                 self.value_input_errors.push(format!(
                     "{request} contradicts a recognized native/global initializer in this prepared AST"
                 ));
                 continue;
             }
-            if !roots.iter().any(|root| {
-                matches!(
-                    root,
-                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue)
-                )
-            }) {
+            if !roots.contains(&NativeReceiverRoot::Intrinsic(
+                NativeIntrinsic::UnknownGlobalValue,
+            )) {
                 self.value_input_errors.push(format!(
                     "{request} cannot refine this binding because source-only analysis did not establish an existing unknown-global receiver root"
                 ));
@@ -9579,7 +9573,7 @@ impl Visit for ExecutionIndex {
             let (name, primitive_value) = match property.as_ref() {
                 Prop::KeyValue(pair) => (
                     static_property_name(&pair.key),
-                    primitive_literal(&pair.value),
+                    js_ast::is_primitive_literal(pair.value.unwrap_parens()),
                 ),
                 Prop::Shorthand(ident) => (Some(ident.sym.to_string()), false),
                 Prop::Assign(assign) => (Some(assign.key.sym.to_string()), false),
@@ -10039,7 +10033,10 @@ impl Visit for ExecutionIndex {
                 .as_ref()
                 .is_some_and(|body| match body.stmts.as_slice() {
                     [] => true,
-                    [Stmt::Return(ret)] => ret.arg.as_deref().is_none_or(primitive_literal),
+                    [Stmt::Return(ret)] => ret
+                        .arg
+                        .as_deref()
+                        .is_none_or(|expr| js_ast::is_primitive_literal(expr.unwrap_parens())),
                     _ => false,
                 })
         {
@@ -10400,7 +10397,10 @@ impl Visit for ExecutionIndex {
             }
             if self.direct_top_level_const_declaration
                 && direct_top_level
-                && declarator.init.as_deref().is_some_and(primitive_literal)
+                && declarator
+                    .init
+                    .as_deref()
+                    .is_some_and(|expr| js_ast::is_primitive_literal(expr.unwrap_parens()))
             {
                 self.direct_primitive_const_bindings
                     .insert(binding.id.to_id());
@@ -10421,7 +10421,7 @@ impl Visit for ExecutionIndex {
                     primitive_literal_initializer: declarator
                         .init
                         .as_deref()
-                        .is_some_and(primitive_literal),
+                        .is_some_and(|expr| js_ast::is_primitive_literal(expr.unwrap_parens())),
                     set_from_primitive_array_aliases: declarator
                         .init
                         .as_deref()
@@ -12041,21 +12041,8 @@ impl PreparedCallableCapabilities {
             .known_array_iterator_protocol_mutation_with(integrity)
     }
 
-    pub(crate) fn locate_value_inputs(
-        &mut self,
-        source: Option<&(String, js_ast::SourceLineIndex)>,
-    ) {
-        let locate = |span: Span| {
-            let (path, index) = source?;
-            let (start_line, end_line, start_column) =
-                index.line_range_and_start_column_for_span(span)?;
-            Some(crate::execution_evidence::SourceLocation {
-                source_path: path.clone(),
-                start_line,
-                end_line,
-                start_column: Some(start_column),
-            })
-        };
+    pub(crate) fn locate_value_inputs(&mut self, source: Option<SourceLocator<'_>>) {
+        let locate = |span| source?.span(span);
         for input in &mut self.index.resolved_value_inputs {
             input.evidence.declaration_location = locate(input.declaration_span);
             input.evidence.initializer_location = locate(input.initializer_span);
@@ -12080,21 +12067,8 @@ impl PreparedCallableCapabilities {
         }
     }
 
-    pub(crate) fn locate_native_operation_inputs(
-        &mut self,
-        source: Option<&(String, js_ast::SourceLineIndex)>,
-    ) {
-        let locate = |span: Span| {
-            let (path, index) = source?;
-            let (start_line, end_line, start_column) =
-                index.line_range_and_start_column_for_span(span)?;
-            Some(crate::execution_evidence::SourceLocation {
-                source_path: path.clone(),
-                start_line,
-                end_line,
-                start_column: Some(start_column),
-            })
-        };
+    pub(crate) fn locate_native_operation_inputs(&mut self, source: Option<SourceLocator<'_>>) {
+        let locate = |span| source?.span(span);
         for input in &mut self.index.resolved_native_operation_inputs {
             input.evidence.declaration_location = locate(input.declaration_span);
             input.evidence.initializer_location = locate(input.call_span);
@@ -12107,21 +12081,10 @@ impl PreparedCallableCapabilities {
     pub(crate) fn locate_native_writes(
         &mut self,
         chunk_id: &str,
-        source: Option<&(String, js_ast::SourceLineIndex)>,
+        source: Option<SourceLocator<'_>>,
     ) {
         self.index.source_chunk_id = Some(chunk_id.to_owned());
-        let source_location = |span| {
-            source.and_then(|(path, index)| {
-                let (start_line, end_line, start_column) =
-                    index.line_range_and_start_column_for_span(span)?;
-                Some(SourceLocation {
-                    source_path: path.clone(),
-                    start_line,
-                    end_line,
-                    start_column: Some(start_column),
-                })
-            })
-        };
+        let source_location = |span| source?.span(span);
         let locate = |witness: &mut NativeMutationWitness| {
             if witness.receiver_roots.is_empty() {
                 return;

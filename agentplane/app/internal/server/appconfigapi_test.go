@@ -21,12 +21,13 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 	fixture := testauth.New(t)
 	authentication := fixture.Auth
 
+	// Nil slices (HARNESS_CLAUDE models, the preset's PolicySets) must reach the browser as [], not null.
 	config := settings.Config{
 		Models: runtimeconfig.ModelCatalog{
 			Models: []runtimeconfig.ModelOption{{Model: "model-a", DisplayName: "Model A", ReasoningEfforts: []string{"low", "high"}}},
 			Harnesses: map[string][]string{
 				"HARNESS_CODEX":  {"model-a"},
-				"HARNESS_CLAUDE": {},
+				"HARNESS_CLAUDE": nil,
 			},
 		},
 		FrontendConfig: settings.FrontendConfig{
@@ -43,9 +44,9 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 			"default": {Harness: "HARNESS_CODEX", Model: "model-a", CWD: "/workspace", Instructions: "", SetupScript: ""},
 		},
 		SandboxPresets: map[string]settings.SandboxPreset{
-			"work": {Title: "Work", Template: "linux", PolicySets: []string{}, InboxTags: []string{"team"}, ThreadPreset: "default"},
+			"work": {Title: "Work", Template: "linux", PolicySets: nil, InboxTags: []string{"team"}, ThreadPreset: "default"},
 		},
-		NewSandboxDefaults: settings.NewSandboxDefaults{WakeOnSend: true, IdleSuspendAfterSeconds: appConfigInt64Pointer(900)},
+		NewSandboxDefaults: settings.NewSandboxDefaults{WakeOnSend: true, IdleSuspendAfterSeconds: new(int64(900))},
 	}
 	server := newHTTPServer(authentication)
 	policySets := &appConfigPolicySetNames{names: []string{"alpha", "zeta"}}
@@ -124,8 +125,6 @@ func (r *appConfigPolicySetNames) ListPolicySetNames(context.Context, *policypb.
 	}
 	return &policypb.ListPolicySetNamesResponse{Names: r.names}, nil
 }
-
-func appConfigInt64Pointer(value int64) *int64 { return &value }
 
 func TestSandboxFormReturnsUnavailableWhenPolicyServiceFails(t *testing.T) {
 	fixture := testauth.New(t)

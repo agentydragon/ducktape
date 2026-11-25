@@ -10,7 +10,6 @@ import pytest_bazel
 from agentplane.app.testing import thread_browser
 
 
-@pytest.mark.asyncio
 async def test_cdp_deadline_does_not_wait_for_resistant_cancellation() -> None:
     loop = asyncio.get_running_loop()
     prior_handler = loop.get_exception_handler()

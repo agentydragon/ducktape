@@ -227,15 +227,38 @@ class ExecutionLimits(_RuntimeConfigModel):
     codex: CodexProtocolLimits | None = None
 
 
+class CompanionExecutorOwner(_RuntimeConfigModel):
+    kind: Literal["companion"] = "companion"
+    socket: str
+
+    @field_validator("socket")
+    @classmethod
+    def absolute_socket(cls, value: str) -> str:
+        if not Path(value).is_absolute():
+            raise ValueError("companion ownership socket must be absolute")
+        return value
+
+
+class SystemdExecutorOwner(_RuntimeConfigModel):
+    kind: Literal["systemd"] = "systemd"
+
+
 class Executor(_RuntimeConfigModel):
     url: str
+    owner: Annotated[CompanionExecutorOwner | SystemdExecutorOwner, Field(discriminator="kind")]
+    placement: Literal["direct", "systemd"]
     implementation: Literal["native", "codex"] = "native"
     limits: ExecutionLimits | None = None
 
     @model_validator(mode="after")
-    def native_limits_only(self) -> Self:
+    def valid_execution(self) -> Self:
         if self.implementation == "codex" and self.limits is not None:
             raise ValueError("execution limits require the native implementation")
+        if self.placement == "systemd":
+            if self.implementation != "native":
+                raise ValueError("systemd executor placement requires the native implementation")
+            if not isinstance(self.owner, SystemdExecutorOwner):
+                raise ValueError("systemd executor placement requires a systemd owner")
         return self
 
     @field_validator("url")
@@ -258,52 +281,32 @@ class Executor(_RuntimeConfigModel):
         return value
 
 
-class ContainerExecutor(Executor):
-    socket: str
-    placement: Literal["direct"]
-
-    @field_validator("socket")
-    @classmethod
-    def absolute_socket(cls, value: str) -> str:
-        if not Path(value).is_absolute():
-            raise ValueError("container executor socket must be absolute")
-        return value
-
-
-type VMExecutorPlacement = Literal["direct", "systemd"]
-
-
-class VMExecutor(Executor):
-    """Loopback exec-server endpoint supervised by the guest systemd manager."""
-
-    placement: VMExecutorPlacement
+class PID1Environment(_RuntimeConfigModel):
+    supervision: Literal["pid1"]
+    executor: Executor | None = None
 
     @model_validator(mode="after")
-    def systemd_requires_native(self) -> Self:
-        if self.placement == "systemd" and self.implementation != "native":
-            raise ValueError("systemd executor placement requires the native implementation")
+    def valid_executor_owner(self) -> Self:
+        if self.executor is not None and not isinstance(self.executor.owner, CompanionExecutorOwner):
+            raise ValueError("PID 1 environment supervision requires a companion executor owner")
         return self
 
 
-class PodEnvironment(_RuntimeConfigModel):
-    kind: Literal["pod"] = "pod"
-    supervision: Literal["pid1"]
-    executor: ContainerExecutor | None = None
-
-
-class VMEnvironment(_RuntimeConfigModel):
-    kind: Literal["vm"] = "vm"
+class SystemdEnvironment(_RuntimeConfigModel):
+    supervision: Literal["systemd"]
     resources: GuestResources
     console_autologin: bool = False
     agent_uid: int = Field(ge=1, le=4_294_967_295)
     agent_gid: int = Field(ge=1, le=4_294_967_295)
     block_devices: Sequence[str] = Field(min_length=1)
-    executor: VMExecutor | None = None
+    executor: Executor | None = None
 
     @model_validator(mode="after")
-    def valid_supervision(self) -> VMEnvironment:
+    def valid_supervision(self) -> SystemdEnvironment:
         if any(not Path(path).is_absolute() for path in self.block_devices):
             raise ValueError("block-device paths must be absolute")
+        if self.executor is not None and not isinstance(self.executor.owner, SystemdExecutorOwner):
+            raise ValueError("systemd environment supervision requires a systemd executor owner")
         if (self.executor is None) != (self.resources.executor is None):
             raise ValueError("executor endpoint and resource budget must be supplied together")
         systemd_placement = self.executor is not None and self.executor.placement == "systemd"
@@ -331,7 +334,7 @@ class CodexReadiness(_RuntimeConfigModel):
 class Configuration(_RuntimeConfigModel):
     """All Environment Runtime policy supplied by its template, separate from Sandbox launch identity."""
 
-    version: Literal[2]
+    version: Literal[3]
     log_level: Literal["debug", "info", "warn", "error"] | None = Field(
         default=None,
         description="Runtime log threshold; omission keeps info. Debug includes journal failure caller stacks.",
@@ -355,7 +358,7 @@ class Configuration(_RuntimeConfigModel):
     claude: Harness | None = None
     codex: Codex | None = None
     codex_readiness: CodexReadiness | None = None
-    environment: Annotated[PodEnvironment | VMEnvironment, Field(discriminator="kind")]
+    environment: Annotated[PID1Environment | SystemdEnvironment, Field(discriminator="supervision")]
     debug_checkpoint: DebugCheckpoint | None = None
 
     @model_validator(mode="after")

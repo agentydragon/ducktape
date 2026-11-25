@@ -38,8 +38,6 @@ Each refusal keeps the built rule: `NotFound` where the caller cannot read the t
   [`CROSS_IDENTITY_SESSION_BINDING`](task_dag.md#cross_identity_session_binding--binding-a-session-to-another-identitys-environment).
 - **Acting on another Identity's Session**, the first step of admitting a binding:
   [`SESSION_CROSS_IDENTITY_AUTHORITY`](task_dag.md#session_cross_identity_authority--acting-on-another-identitys-sessions).
-- **A Runtime surface about native Sessions only:**
-  [`ENVIRONMENT_RUNTIME_NATIVE_SURFACE`](task_dag.md#environment_runtime_native_surface--an-environment-runtime-surface-unmistakably-about-native-sessions).
 - **`orchestration_v1` on these grants:** `ORCHESTRATION_V1_BACKEND_GRANTS` makes its executor call
   as the caller; a launch's launcher grant becomes an owned `PolicySet` whose `environment` rule names
   the new Sandbox by UID, with its `boundIdentity`, for `resume` and `bind_session`, replacing the

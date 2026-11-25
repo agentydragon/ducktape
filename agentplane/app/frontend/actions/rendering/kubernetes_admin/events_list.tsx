@@ -3,7 +3,7 @@ import { Badge, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import { parseDocument } from "yaml";
 import { z } from "zod";
 
-import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
+import { type ActionPresentation, expandsForDetails } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { defineResultPreview } from "../result_entry";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
@@ -119,8 +119,8 @@ const eventsResult = defineResultPreview(
 
 export const eventsListPresentation: ActionPresentation = {
   label: eventsListLabel,
-  pane: { collapsed: eventsListPane },
+  pane: { collapsed: null, opened: eventsListPane },
   details: { arguments: eventsListPane, result: eventsResult },
   offersCardDecisionButtons: offersCardDecisionButtonsEventsList,
-  compactCardExpands: expandsForRejectedArguments(eventsListArguments),
+  compactCardExpands: expandsForDetails(eventsListArguments, (args) => args.fieldSelector !== undefined),
 };

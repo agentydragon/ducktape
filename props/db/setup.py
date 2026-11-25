@@ -11,13 +11,12 @@ from contextlib import ExitStack, closing
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from alembic import command
-from alembic.config import Config
 from opentelemetry import trace
 from psycopg2 import sql
 from sqlalchemy import Engine, create_engine, inspect, text
 
 from props.db.models import Base
+from util.alembic_upgrade import upgrade
 
 if TYPE_CHECKING:
     from props.db.config import DatabaseConfig
@@ -50,12 +49,8 @@ def upgrade_database(engine: Engine) -> None:
     and only applies pending migrations.
     """
     logger.info("Running Alembic migrations...")
-    config = Config()
-    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-
     with engine.begin() as conn:
-        config.attributes["connection"] = conn
-        command.upgrade(config, "head")
+        upgrade(conn, Path(__file__).parent / "migrations")
 
     logger.info("Alembic migrations complete")
 
@@ -83,13 +78,12 @@ def ensure_evaluator_role(db_config: DatabaseConfig) -> None:
     password = os.environ.get("PROPS_EVALUATOR_PASSWORD")
     if not password:
         return
-    engine = create_engine(db_config.url, isolation_level="AUTOCOMMIT")
-    try:
+    with ExitStack() as cleanup:
+        engine = create_engine(db_config.url, isolation_level="AUTOCOMMIT")
+        cleanup.callback(engine.dispose)
         with engine.connect() as conn:
             conn.execute(text("ALTER ROLE evaluator PASSWORD :pw"), {"pw": password})
         logger.info("Evaluator role password synced")
-    finally:
-        engine.dispose()
 
 
 def _drop_all(engine: Engine) -> None:

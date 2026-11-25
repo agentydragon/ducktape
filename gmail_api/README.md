@@ -1,7 +1,8 @@
 # gmail_api
 
-Shared Gmail resource models used by `gmail_archiver/` and `x/google_mcp_server/` live in
-`labels.py`, `filters.py`, and `messages.py`.
+The archiver and Google MCP server share Gmail label models, filter criteria and message headers.
+The archiver requires known criteria when replaying filters, treats absent action label lists as empty,
+and reads metadata-only messages. Its response models live in `gmail_archiver/gmail_api_models.py`.
 
 `service.py` builds Gmail clients for the archiver from google-auth authorized-user OAuth token
 files, which google-auth refreshes. The remote `x/google_mcp_server/` instead builds bearer-only

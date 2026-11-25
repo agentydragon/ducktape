@@ -3,6 +3,7 @@ use crate::emit_report;
 use analysis_model::DepKind;
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
+use command_output::infallible;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::plan::ExplainSession;
 use peel::{
@@ -405,10 +406,7 @@ pub(super) fn run_describe(
             output,
             args.format,
             &results[0],
-            |result, out| {
-                render_explain_text(result, out);
-                Ok(())
-            },
+            infallible(render_explain_text),
             "writing describe output",
         );
     }
@@ -592,17 +590,8 @@ pub(super) fn run_inspect_source(
         }
     }
     let format = OutputFormat::resolve(args.format);
-    bound_report(&mut report, format, args.max_output_bytes)?;
-    emit_report(
-        output,
-        Some(format),
-        &report,
-        |report, out| {
-            render_inspect_source_text(report, out);
-            Ok(())
-        },
-        "writing inspect-source output",
-    )
+    let bytes = render_bounded_report(&mut report, format, args.max_output_bytes)?;
+    command_output::write_rendered(output, &bytes).context("writing inspect-source output")
 }
 
 fn append_file(
@@ -791,31 +780,17 @@ fn clip_source_lines(source: &str, max_line_bytes: usize) -> String {
     clipped
 }
 
-fn report_size(report: &InspectSourceReport, format: OutputFormat) -> Result<usize> {
-    let size = match format {
-        OutputFormat::Text => {
-            let mut output = String::new();
-            render_inspect_source_text(report, &mut output);
-            output.len() + usize::from(!output.ends_with('\n'))
-        }
-        OutputFormat::Json => serde_json::to_string_pretty(report)?.len() + 1,
-        OutputFormat::Ndjson => serde_json::to_string(report)?.len() + 1,
-    };
-    Ok(size)
-}
-
-fn bound_report(
+fn render_bounded_report(
     report: &mut InspectSourceReport,
     format: OutputFormat,
     max_bytes: usize,
-) -> Result<()> {
-    if max_bytes == 0 {
-        return Ok(());
-    }
+) -> Result<Vec<u8>> {
     loop {
-        let size = report_size(report, format)?;
-        if size <= max_bytes {
-            return Ok(());
+        let bytes =
+            command_output::render_report(report, format, infallible(render_inspect_source_text))?;
+        let size = bytes.len();
+        if max_bytes == 0 || size <= max_bytes {
+            return Ok(bytes);
         }
         let Some(file) = report
             .files
@@ -832,9 +807,6 @@ fn bound_report(
             continue;
         }
         let mut end = statement.source.len().saturating_sub(size - max_bytes);
-        if end == statement.source.len() {
-            end -= 1;
-        }
         while !statement.source.is_char_boundary(end) {
             end -= 1;
         }
@@ -999,10 +971,7 @@ pub(super) fn run_atoms(args: AtomicGroupsArgs, output: &mut dyn std::io::Write)
         output,
         args.format,
         &report,
-        |report, out| {
-            render_atomic_groups_text(report, out);
-            Ok(())
-        },
+        infallible(render_atomic_groups_text),
         "writing atoms output",
     )
 }
@@ -1020,10 +989,7 @@ pub(super) fn run_coverage(
         output,
         args.format,
         &report,
-        |report, out| {
-            render_patch_plan_text(report, out);
-            Ok(())
-        },
+        infallible(render_patch_plan_text),
         "writing coverage output",
     )
 }
@@ -1037,10 +1003,7 @@ pub(super) fn run_graph_summary(
         output,
         args.format,
         &report,
-        |report, out| {
-            render_graph_summary_text(report, out);
-            Ok(())
-        },
+        infallible(render_graph_summary_text),
         "writing graph-summary output",
     )
 }

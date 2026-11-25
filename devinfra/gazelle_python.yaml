@@ -73,7 +73,6 @@ manifest:
     cyclopts: cyclopts
     dateutil: python_dateutil
     dbus_fast: dbus_fast
-    dbus_next: dbus_next
     debugpy: debugpy
     defusedxml: defusedxml
     distro: distro
@@ -387,7 +386,6 @@ manifest:
     starlette: starlette
     statsmodels: statsmodels
     structlog: structlog
-    svg: svg_py
     syrupy: syrupy
     tabulate: tabulate
     tenacity: tenacity
@@ -432,4 +430,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 1e9a00c8f02988e1ed58eff1b64541c84084cd25ffa6c71aa125897adfe24513
+integrity: b8075382547a79ffab67c095a60b75b8bf5b4a5c60e0784a5a874b27586cbd77

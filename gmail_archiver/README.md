@@ -13,15 +13,25 @@ Gmail API commands require a Google authorized-user OAuth token. By default, the
 gmail-archiver autoclean-inbox              # Preview (dry-run)
 gmail-archiver autoclean-inbox --no-dry-run # Archive for real
 gmail-archiver filters sync filters.yaml    # Sync filters to Gmail
+gmail-archiver filters upload filters.yaml  # Create missing filters and keep existing filters
 gmail-archiver filters diff filters.yaml    # Preview filter changes
 gmail-archiver filters list                # Find a Gmail filter ID
 gmail-archiver filters apply FILTER_ID     # Apply that filter to existing emails
 gmail-archiver filters download             # Export Gmail filters to YAML
+gmail-archiver labels list                  # Show user labels and whether filters use them
+gmail-archiver labels prune --dry-run       # Preview labels eligible for removal
 ```
+
+The filter and label commands that apply changes prompt by default. Use `--dry-run` to
+preview or `--no-dry-run` to skip the confirmation. `autoclean-inbox` previews by default.
+
+`labels prune` protects system labels and user labels used by filters, including filter
+actions that remove a label. Gmail removes a pruned label from every message and thread it
+was applied to. [Gmail label deletion reference](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.labels/delete)
 
 ### Cleanup Rules
 
-`autoclean_inbox` in <gmail_archiver/main.py> registers every cleanup planner; each holds its Gmail query and archive rule.
+`autoclean_inbox` in <main.py> registers every cleanup planner; each holds its Gmail query and archive rule.
 
 Archived emails leave the inbox and get a label under `gmail-archiver/`: `gmail-archiver/inbox-auto-cleaned` unless the planner sets its own.
 

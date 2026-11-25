@@ -40,7 +40,6 @@ oci_image(
 py_library(
     name = "runtime",
     srcs = ["runtime.py"],
-    visibility = ["//agentplane/system_tests/deployment:__pkg__"],
     deps = [
         "//agentplane/system_tests/deployment:virtualization",
         "//agentplane/system_tests/k3s:baseline",
@@ -49,6 +48,18 @@ py_library(
         "@pypi//kubernetes",
         "@pypi//pyyaml",
         "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "pytest_plugin",
+    srcs = ["pytest_plugin.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [
+        ":runtime",
+        "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/deployment:virtualization",
+        "@pypi//pytest",
     ],
 )
 

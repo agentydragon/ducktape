@@ -96,7 +96,7 @@ func TestStartupFailurePreservesCancellation(t *testing.T) {
 }
 
 func TestOwnershipCommandParsesMaintenanceModesBeforeOpeningDatabase(t *testing.T) {
-	t.Setenv(ownershipDatabaseURLEnv, "")
+	t.Setenv(samplerDatabaseURLEnv, "")
 	tests := []struct {
 		args []string
 		want string
@@ -120,5 +120,26 @@ func TestOwnershipCommandParsesMaintenanceModesBeforeOpeningDatabase(t *testing.
 				t.Fatalf("invalid maintenance command wrote stdout: %q", output.String())
 			}
 		})
+	}
+}
+
+func TestCompactJournalRequiresScopeAndMode(t *testing.T) {
+	t.Setenv(samplerDatabaseURLEnv, "")
+	for _, args := range [][]string{
+		{},
+		{"--all"},
+		{"--apply"},
+		{"--all", "--session", "one", "--dry-run"},
+		{"--session", "one", "--apply", "--dry-run"},
+		{"--all", "--apply", "extra"},
+	} {
+		if err := runCompactJournal(t.Context(), args); err == nil || !strings.Contains(err.Error(), "select exactly one") {
+			t.Errorf("compact-journal %v: got %v, want scope/mode error", args, err)
+		}
+	}
+	for _, args := range [][]string{{"--session", "one", "--dry-run"}, {"--all", "--apply"}} {
+		if err := runCompactJournal(t.Context(), args); err == nil || !strings.Contains(err.Error(), samplerDatabaseURLEnv) {
+			t.Errorf("compact-journal %v: got %v, want missing database URL", args, err)
+		}
 	}
 }

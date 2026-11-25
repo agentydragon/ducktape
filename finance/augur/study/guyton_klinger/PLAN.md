@@ -1,23 +1,10 @@
 # Guyton–Klinger experiment implementation
 
-Proposed STUDY consumer, not an implemented reproduction. The
-[source contract](README.md) owns primary evidence, study versions,
-the declared three-sleeve adaptation and remaining convention decisions. This plan
-owns the proposed code and leaves as its slices land; the [Augur plan](../../PLAN.md) owns
-cross-component dependencies.
-
-## Composition on current Augur primitives
-
-- <run.py> drives the annual windows of <paths.py> through a fresh <policy.py>
-  `Policy` per run and per selected replay, and its CLI writes each path's
-  `YearRecord`s. Trinity's sales-only funding, coupon cash and success boundary
-  are **not** GK defaults.
-- <../../sim/observations.py> supplies current lots/prices/basis, cash, CPI and typed
-  receipts; exact sell/buy/consume actions own canonical settlement. Policies
-  see observations, never the prepared future path arrays.
-- <../../sim/results.py> retains compact payments/holdings and selected detailed
-  receipts/books. <../../x/joint_spending_allocation/policy.py> demonstrates separate
-  author-owned intention records; study measurements must not replay accounting.
+The declared three-sleeve replay is implemented (<run.py>, <paths.py>, <policy.py>) but is not a
+reproduction. The [source contract](README.md) owns primary evidence, study versions, the
+adaptation and remaining convention decisions. This plan owns the slices below and leaves as they
+land; the [Augur plan](../../PLAN.md) owns cross-component dependencies. Trinity's sales-only
+funding, coupon cash and success boundary are **not** GK defaults.
 
 ## Next independently reviewable slices
 

@@ -125,9 +125,6 @@ func (c *Child) signal(signal syscall.Signal) {
 // WaitReaped returns the replayable leader exit result. A canceled observation
 // never cancels the process-lifetime reaper or releases child ownership.
 func (c *Child) WaitReaped(ctx context.Context) (Exit, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if err := ctx.Err(); err != nil {
 		return Exit{}, err
 	}
@@ -142,9 +139,6 @@ func (c *Child) WaitReaped(ctx context.Context) (Exit, error) {
 // WaitFenced waits for leader reaping and process-group disappearance.
 // Cancellation stops this observation only; a later call can continue waiting.
 func (c *Child) WaitFenced(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	exit, err := c.WaitReaped(ctx)
 	if err != nil {
 		return err
@@ -291,9 +285,6 @@ func directChildren() ([]int, error) {
 func (r *Reaper) FenceNamespace(ctx context.Context) error {
 	if os.Getpid() != 1 {
 		return errors.New("PID namespace fencing requires the caller to be PID 1")
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()

@@ -96,15 +96,6 @@ def _fqdn_matcher(host: str) -> CiliumNetworkPolicySpecEgressToFqdNs:
     return CiliumNetworkPolicySpecEgressToFqdNs(match_name=host)
 
 
-def _egress_to_fqdns(
-    hosts: Sequence[str], *, port: int, server_names: Sequence[str] | None
-) -> CiliumNetworkPolicySpecEgress:
-    return CiliumNetworkPolicySpecEgress(
-        to_fqd_ns=[_fqdn_matcher(host) for host in hosts],
-        to_ports=[_egress_ports([port], "TCP", server_names=server_names)],
-    )
-
-
 def _proxies_dns(rule: CiliumNetworkPolicySpecEgress) -> bool:
     return any(port_rule.rules is not None and port_rule.rules.dns for port_rule in rule.to_ports or [])
 
@@ -142,10 +133,14 @@ class EgressRule:
         return CiliumNetworkPolicySpecEgress(to_cidr=list(cidrs), to_ports=[_egress_ports(ports, "TCP")])
 
     @staticmethod
-    def to_fqdns(*hosts: str, port: int = 443) -> CiliumNetworkPolicySpecEgress:
-        """`hosts` over TLS on `port`, with the SNI pinned to the same names: a toFQDNs match alone
-        admits any SNI to an address one of them resolved to."""
-        return _egress_to_fqdns(hosts, port=port, server_names=hosts)
+    def to_fqdns(
+        *hosts: str, port: int = 443, protocol: Literal["TCP", "UDP"] = "TCP"
+    ) -> CiliumNetworkPolicySpecEgress:
+        """Allow the resolved addresses on one port. TLS over TCP also requires a matching SNI."""
+        return CiliumNetworkPolicySpecEgress(
+            to_fqd_ns=[_fqdn_matcher(host) for host in hosts],
+            to_ports=[_egress_ports([port], protocol, server_names=hosts if protocol == "TCP" else None)],
+        )
 
 
 class IngressRule:

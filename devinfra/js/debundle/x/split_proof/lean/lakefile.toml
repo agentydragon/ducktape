@@ -4,6 +4,9 @@ defaultTargets = ["EsmSplit", "render"]
 [[lean_lib]]
 name = "EsmSplit"
 
+[[lean_lib]]
+name = "FixtureRender"
+
 [[lean_exe]]
 name = "render"
 root = "Main"
@@ -13,16 +16,28 @@ name = "Experiments"
 
 [[lean_exe]]
 name = "lower"
-root = "Experiments.LowerMain"
+root = "EsmSplit.LowerMain"
 
 [[lean_exe]]
 name = "lowersplit"
-root = "Experiments.LowerSplit"
+root = "EsmSplit.LowerSplitMain"
 
 [[lean_exe]]
 name = "evalorder"
-root = "Experiments.EvalOrder"
+root = "EsmSplit.EvalOrder"
 
 [[lean_exe]]
 name = "translate"
-root = "Experiments.TranslateMain"
+root = "EsmSplit.TranslateMain"
+
+[[lean_exe]]
+name = "corejs"
+root = "EsmSplit.CoreJSMain"
+
+[[lean_exe]]
+name = "analysis_inventory"
+root = "AnalysisInventory"
+
+[[lean_exe]]
+name = "replicate_plan"
+root = "Experiments.ReplicatePlan"

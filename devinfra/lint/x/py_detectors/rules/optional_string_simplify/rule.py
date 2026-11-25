@@ -94,6 +94,7 @@ def find_detections(path: Path, tree: ast.AST, source: str) -> Iterable[Detectio
                     DET_NAME,
                     PROP,
                     path,
+                    source,
                     st.lineno,
                     st.lineno,
                     f"Optional[str] check '{nm} is None or {nm} == \"\"' → prefer 'if not {nm}' (safe-only)",

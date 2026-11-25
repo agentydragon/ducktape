@@ -46,6 +46,19 @@ func TestSettingsLoadFromTheFileAndRuntimeSecretWithTheirDefaults(t *testing.T) 
 	if c.Ingress.CompactDeltas {
 		t.Error("compaction must be explicitly enabled")
 	}
+	if c.Ingress.CompactExecutionEvidence {
+		t.Error("execution evidence compaction must be explicitly enabled after rollout")
+	}
+}
+
+func TestExecutionEvidenceCompactionIsExplicitInSettings(t *testing.T) {
+	c, err := loadTestConfig(t, strings.Replace(requiredFile, "ingress:\n", "ingress:\n  compact_execution_evidence: true\n", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Ingress.CompactExecutionEvidence {
+		t.Fatal("execution evidence compaction setting was ignored")
+	}
 }
 
 func TestServiceReaderAndDelegationTrustRequireExactSPIFFECallers(t *testing.T) {

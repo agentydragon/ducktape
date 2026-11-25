@@ -813,12 +813,9 @@ reports that the effect assessment was unavailable.
 `bindings assign --analysis <artifact>` uses the same final-candidate placement
 decision before writing. Its ordinary graph-only path remains available.
 
-`coverage.owner_coverage_refusals` counts typed reasons why an original
-owner's whole-initialization certificate was not sealed. Bounded examples
-include an optional refusal and existing source location for each endpoint;
-JSONL carries the same refusal inside each endpoint's opacity record. Reasons
-identify only the refused proof boundary, never source bindings or expressions.
-They explain the report and do not change the certificate or coverage.
+Whole-initialization proof refusals explain uncovered owners. The
+[translation-validation report format](docs/wire_format.md#translation-validation)
+defines `coverage.owner_coverage_refusals` and its bounded and JSONL evidence.
 
 Canonical runtime transfers additionally compose static global-property
 may-accesses into these reports, retaining lexical source-operation sites,
@@ -1126,6 +1123,8 @@ spread, aliases, qualified constructors, sequence/assignment wrappers, shadowed
 or replaced globals, and other shapes remain outside those forms; use another
 explicitly specified input form when applicable.
 
+## Querying a saved graph
+
 A command that combines a saved graph with current spec or source checks the
 recorded baseline before reading claims or writing edits. It refuses changed,
 added, deleted, or mismapped inputs and reports the mismatch with a regeneration
@@ -1172,6 +1171,21 @@ prefix before graph compatibility checks or graph loading. Accepted typed
 prefixes are `unit:`, `logical:` and `atomic:`. Existing module paths are checked
 before rejecting an unknown colon prefix because colons are legal in module
 filenames.
+
+`describe` returns at most 20 rows per report section by default. `--limit N`
+sets a positive per-section cap; `--all` returns every row and conflicts with
+`--limit`. Each section has `total`, `emitted`, and `truncated` values under
+`limits.sections`; `limits.limit` is the selected cap and is `0` for `--all`.
+Filtering by `--direction` or repeated `--reason` flags happens before section
+totals and limits are computed. Direction defaults to `both` and filters
+dependency, atomic-group, and module-quotient edges. Neighbor source units
+come from the remaining dependency edges. Reasons use serialized `DepKind` names:
+`eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
+`deferred_rebind`, `sequenced`, `co_declaration`, `co_location`, and
+`local_effect`. Repeated reasons are combined with OR. Rows have stable ID
+ordering, with the selected
+binding, source unit or atomic group kept first in its matching section before
+truncation.
 
 `describe --tree-config <file>` may query with `--modules` set to the full
 app-level modules tree. It checks the graph's captured config and resolves
@@ -1294,19 +1308,6 @@ Snapshot creation requires a graph produced by `run` from a tree-shaped spec.
 Embedded source and vendor-bundle paths must be relative to the configured
 source root, and all captured files must belong to declared relocatable roots.
 Unsupported inputs are refused before a worker directory is published.
-`describe` returns at most 20 rows per report section by default. `--limit N`
-sets a positive per-section cap; `--all` returns every row and conflicts with
-`--limit`. Each section has `total`, `emitted`, and `truncated` values under
-`limits.sections`; `limits.limit` is the selected cap and is `0` for `--all`.
-Filtering by `--direction` or repeated `--reason` flags happens before section
-totals and limits are computed. Direction filters dependency, atomic-group, and
-module-quotient edges. Reason values are the serialized `DepKind` names:
-`eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
-`deferred_rebind`, `sequenced`, `co_declaration`, `co_location`, and
-`local_effect`; repeated
-values are combined with OR. Rows have stable ID ordering, with the selected
-binding, source unit or atomic group kept first in its matching section before
-truncation.
 
 ## Import priorities
 
@@ -1391,7 +1392,7 @@ scoped to; several trees may name the same chunk, and their modules then share
 it as if authored in one tree.
 
 Tree specs also accept per-chunk `chunk_renames` with the flat-spec semantics;
-see the [tree authoring guide](README.md#getting-started) for its schema.
+see the [tree authoring example](docs/spec_editing.md#tree-spec-configuration).
 These names apply to bindings left in the chunk entry after module claims,
 without claiming or moving them. They do not change module-tree selector scope
 or graph-reported ownership. `chunk_renames` is the sole source for these names

@@ -56,6 +56,7 @@ py_test(
         "//agentplane/egress/testing:go_replica",
         "//agentplane/egress/testing:sidecar_process",
         "//agentplane/identity/auth:listener",
+        "//agentplane/net/peertls:config",
         "//agentplane/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",

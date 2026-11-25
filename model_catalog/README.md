@@ -15,6 +15,7 @@ own boundary.
   model in a picker, and choosing defaults are different decisions.
 - `nix.py`: wrapper choices and their model-only JSON projection for Nix Claude Code wrappers.
   Regenerate `claude-wrappers.json` with `bb run //model_catalog:generate_nix`.
+  [Remote generation recipe](../devinfra/buildbuddy/docs/remote.md#run-repository-writers-remotely-and-retrieve-a-patch).
 
 The ChatGPT subscription account uses the `chatgpt-sub/` route prefix. LiteLLM
 interprets `chatgpt/` as its built-in provider during request preprocessing,

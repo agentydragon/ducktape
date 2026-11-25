@@ -1,6 +1,6 @@
 """Build the recovery suite's deployment from explicit cdk8s additions."""
 
-from dataclasses import asdict, replace
+from dataclasses import asdict
 
 from agentplane.system_tests.deployment import fixture_chart, fixture_database
 from agentplane.system_tests.deployment.fixture_finalization import finalize_fixture
@@ -11,13 +11,14 @@ from agentplane.system_tests.deployment.rendered_fixture import (
     RenderedFixture,
     SandboxRuntime,
 )
+from cluster.cdk8s.agentplane.service_database import Database
 
 
 def render() -> RenderedFixture:
     models = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
-    routes = replace(fixture_chart.LOCAL_MODEL_ROUTES, central_sampler=(fixture_chart.GPT6_LUNA_RESPONSES,))
+    routes = fixture_chart.LOCAL_MODEL_ROUTES_WITH_SAMPLER
     operator_oidc = fixture_chart.operator_oidc()
-    central_sampler_props = fixture_chart.central_sampler_props(model=fixture_chart.GPT6_LUNA_RESPONSES)
+    central_sampler_props = fixture_chart.central_sampler_props(routes.central_sampler)
     actions_props = fixture_chart.actions_props(
         operator_oidc=None, oauth_secret_items=(), central_sampler_session_delegation=True
     )
@@ -31,9 +32,7 @@ def render() -> RenderedFixture:
     )
     chart = fixture_chart.new_chart(env)
     fixture_database.add_database(
-        chart,
-        namespace=env.namespace,
-        databases=(*fixture_chart.BACKEND_DATABASES, fixture_database.Database.CENTRAL_SAMPLER),
+        chart, namespace=env.namespace, databases=(*fixture_chart.BACKEND_DATABASES, Database.CENTRAL_SAMPLER)
     )
     fixture_chart.add_fixture_pki(chart, env, **asdict(PLACEHOLDERS))
     fixture_chart.add_native_test_client(chart, env)

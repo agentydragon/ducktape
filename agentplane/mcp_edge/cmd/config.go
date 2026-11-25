@@ -3,17 +3,15 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/url"
 	"os"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
-	"gopkg.in/yaml.v3"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -63,25 +61,19 @@ func loadConfig() (config, error) {
 	if path == "" {
 		return config{}, errors.New("MCP edge settings file path is required")
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return config{}, errors.New("could not read MCP edge settings file")
-	}
-	defer file.Close()
-	decoder := yaml.NewDecoder(file)
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&c); err != nil {
-		return config{}, errors.New("invalid MCP edge settings file")
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
+	if err := configfile.DecodeKnownFieldsFile(path, &c); err != nil {
+		var readError *os.PathError
+		if errors.As(err, &readError) {
+			return config{}, errors.New("could not read MCP edge settings file")
+		}
 		return config{}, errors.New("invalid MCP edge settings file")
 	}
 	if c.OAuthFile != "" {
 		if c.OAuth != nil {
 			return config{}, errors.New("oauth_file and inline oauth settings are mutually exclusive")
 		}
-		c.OAuth, err = loadOAuthSettings(c.OAuthFile)
-		if err != nil {
+		c.OAuth = new(oauthSettings)
+		if err := configfile.DecodeKnownFieldsFile(c.OAuthFile, c.OAuth); err != nil {
 			return config{}, errors.New("invalid MCP edge OAuth settings file")
 		}
 	}
@@ -90,24 +82,6 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("invalid MCP edge settings")
 	}
 	return c, nil
-}
-
-func loadOAuthSettings(path string) (*oauthSettings, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, errors.New("could not read MCP edge OAuth settings file")
-	}
-	defer file.Close()
-	decoder := yaml.NewDecoder(file)
-	decoder.KnownFields(true)
-	var settings oauthSettings
-	if err := decoder.Decode(&settings); err != nil {
-		return nil, errors.New("invalid MCP edge OAuth settings file")
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return nil, errors.New("invalid MCP edge OAuth settings file")
-	}
-	return &settings, nil
 }
 
 func (c config) validate() error {
@@ -142,10 +116,10 @@ func (c config) validate() error {
 	if err := auth.ValidateServiceCallers(c.OperatorServices); err != nil {
 		return fmt.Errorf("invalid operator_services: %w", err)
 	}
-	if len(c.OperatorServices) > 0 && (c.RPCTLS == nil || c.RPCTLS.ClientCAFile == "") {
+	if len(c.OperatorServices) > 0 && c.RPCTLS.ClientCAFile == "" {
 		return errors.New("operator_services requires rpc_tls.client_ca_file")
 	}
-	if c.RPCTLS != nil && c.RPCTLS.ClientCAFile != "" && len(c.OperatorServices) == 0 {
+	if c.RPCTLS.ClientCAFile != "" && len(c.OperatorServices) == 0 {
 		return errors.New("rpc_tls.client_ca_file requires operator_services")
 	}
 	if c.OAuth == nil {

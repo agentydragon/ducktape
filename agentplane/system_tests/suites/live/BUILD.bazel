@@ -31,14 +31,14 @@ py_test(
 )
 
 py_test(
-    name = "test_ollama_routes",
+    name = "test_tabbyapi_routes",
     timeout = "eternal",
-    srcs = ["test_ollama_routes.py"],
+    srcs = ["test_tabbyapi_routes.py"],
     env_inherit = [
         "HOME",
         "KUBECONFIG",
-        "OLLAMA_SMOKE_CASE",
-        "OLLAMA_SMOKE_HOLD_SECONDS",
+        "TABBYAPI_SMOKE_CASE",
+        "TABBYAPI_SMOKE_HOLD_SECONDS",
     ],
     tags = [
         "manual",
@@ -56,8 +56,8 @@ py_test(
         "//agentplane/system_tests:app_fixtures",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:agent",
-        "//agentplane/system_tests/driver:ollama_catalog",
         "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:tabbyapi_catalog",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",

@@ -1,8 +1,9 @@
-"""MAF middleware shims for props agents.
+"""MAF middleware shims shared by props agents.
 
-The only cross-cutting control behavior props needs at the middleware layer is
-"end the run as soon as a terminal tool fires", driven by the `submit` / `report_failure` /
-`report_success` tools. Budget is enforced server-side by props-llm-proxy, and tool
+`terminate_after_tools` ends the run as soon as a terminal tool fires, driven by the
+`submit` / `report_failure` / `report_success` tools. Agent-specific middleware lives beside
+its agent (`grader/notification_middleware.py`, `improve_termination_middleware` in
+`critic_dev/main.py`). Budget is enforced server-side by props-llm-proxy, and tool
 output size is bounded at the `exec` tool (`max_bytes`), so neither needs a middleware.
 """
 

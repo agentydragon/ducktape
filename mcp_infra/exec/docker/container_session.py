@@ -27,7 +27,7 @@ DOCKER_EXIT_GRACE_S = 5
 @dataclass
 class ContainerSessionState:
     docker_client: aiodocker.Docker
-    container_id: str | None
+    container_id: str
     opts: ContainerExecServerConfig
 
 
@@ -144,9 +144,6 @@ async def run_session_container(
 ) -> tuple[bytearray, bytearray, int | None, bool]:
     """Run command in per-session container using aiodocker exec."""
     container_id = session.container_id
-    if container_id is None:
-        raise RuntimeError("No per-session container available")
-
     logger.debug(f"Executing command in container {container_id[:12]}: {cmd!r} (timeout_ms={input.timeout_ms})")
 
     container_instance = await session.docker_client.containers.get(container_id)

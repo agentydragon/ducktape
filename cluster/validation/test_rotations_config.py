@@ -1,22 +1,18 @@
-"""The authentik-jwt-rotation roster's entries stay independent.
-
-The generator builds the roster (`cluster/cdk8s/authentik/jwt_rotation.py`'s `ROTATIONS`) from
-the rotator's own `Config`, so every entry satisfies the model by construction. What the model
-cannot express is cross-entry, and a violation would pass CI and fail hourly in the cluster
-instead, which is the wrong place to find out.
-
-Not a change detector: nothing here restates a value from the roster.
-"""
+"""Check the Authentik JWT roster for conflicting outputs and exercise its SOPS rules."""
 
 from __future__ import annotations
 
-import re
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any
 
 import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
-from cluster.cdk8s.authentik.jwt_rotation import ROTATIONS
+from cluster.cdk8s.authentik.jwt_roster import ROTATIONS
 
 _SOPS_CONFIG = "ducktape/.sops.yaml"
 
@@ -27,15 +23,9 @@ def test_names_are_unique() -> None:
     assert sorted(names) == sorted(set(names))
 
 
-def test_sops_files_are_unique() -> None:
-    """Two rotations sharing a sops_file silently couple their schedules.
-
-    `remaining_hours()` reads that file's `expires_unencrypted` stamp to decide
-    whether a mint is due, so a shared file makes whichever entry ran last
-    suppress the other's rotation -- and the suppressed token then expires with
-    nothing failing until it does.
-    """
-    paths = [r.sops_file for r in ROTATIONS.rotations]
+def test_output_paths_are_unique() -> None:
+    """A rotation must never overwrite another output, including a published Secret."""
+    paths = [path for rotation in ROTATIONS.rotations for path in rotation.output_paths]
     assert sorted(paths) == sorted(set(paths))
 
 
@@ -45,21 +35,33 @@ def test_published_secrets_are_unique() -> None:
     assert sorted(targets) == sorted(set(targets))
 
 
-def test_sops_files_have_creation_rules() -> None:
-    """A state file matching no creation_rule cannot be written at all.
+def test_rotation_outputs_encrypt_tokens(runfiles: Runfiles, tmp_path: Path) -> None:
+    """Exercise first-match rule selection and field encryption at each actual output path."""
+    shutil.copyfile(runfiles.root() / _SOPS_CONFIG, tmp_path / ".sops.yaml")
+    sops = runfiles.Rlocation(os.environ["SOPS_RLOCATION"])
+    assert sops
 
-    `sops --encrypt` refuses a path it has no recipients for, so the omission
-    surfaces as a failed hourly CronJob rather than as anything in CI. The
-    published k8s Secret paths are covered by the generic cluster deployment-secrets rule
-    and are checked here for the same reason.
-    """
-    config = yaml.safe_load((Runfiles.CreateOrRaise().root() / _SOPS_CONFIG).read_text())
-    patterns = [re.compile(rule["path_regex"]) for rule in config["creation_rules"]]
+    def encrypt(relative_path: Path, document: dict[str, Any]) -> dict[str, Any]:
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump(document))
+        result = subprocess.run([sops, "encrypt", relative_path], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
+        encrypted = yaml.safe_load(result.stdout)
+        assert isinstance(encrypted, dict), relative_path
+        return encrypted
 
-    paths = [str(r.sops_file) for r in ROTATIONS.rotations]
-    paths += [str(r.k8s_secret.path) for r in ROTATIONS.rotations if r.k8s_secret]
-    uncovered = [p for p in paths if not any(pat.search(p) for pat in patterns)]
-    assert not uncovered, f"no .sops.yaml creation_rule matches: {uncovered}"
+    for rotation in ROTATIONS.rotations:
+        state = encrypt(
+            rotation.sops_file, {rotation.token_field: "sample-token", "expires_unencrypted": "sample-expiry"}
+        )
+        assert state[rotation.token_field].startswith("ENC["), rotation.sops_file
+        assert state["expires_unencrypted"] == "sample-expiry", rotation.sops_file
+        if secret := rotation.k8s_secret:
+            manifest = encrypt(
+                secret.path, {"metadata": {"name": secret.name}, "stringData": {secret.token_key: "sample-token"}}
+            )
+            assert manifest["stringData"][secret.token_key].startswith("ENC["), secret.path
+            assert manifest["metadata"]["name"] == secret.name, secret.path
 
 
 if __name__ == "__main__":

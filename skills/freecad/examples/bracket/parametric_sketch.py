@@ -20,7 +20,7 @@ import FreeCAD
 import Part
 import Sketcher
 
-from skills.freecad.examples.freecad_helpers import init_gui, log, pump, run_gui_script, wait_for_view
+from skills.freecad.examples.freecad_helpers import init_gui, landscape_page, log, pump, run_gui_script, top_view
 
 outdir = os.environ.get("OUTDIR", ".")
 
@@ -159,29 +159,9 @@ def _main() -> None:
     doc.recompute()
 
     # === TechDraw Page ===
-    tmpl_path = os.path.join(FreeCAD.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg")  # noqa: PTH118
-    page = doc.addObject("TechDraw::DrawPage", "Page")
-    tmpl = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
-    tmpl.Template = tmpl_path
-    page.Template = tmpl
+    page = landscape_page(doc)
 
-    view = doc.addObject("TechDraw::DrawViewPart", "TopView")
-    page.addView(view)
-    view.Source = [feat]
-    view.Direction = FreeCAD.Vector(0, 0, 1)
-    view.Scale = 1.0
-    view.X = 150
-    view.Y = 120
-
-    log("recompute + wait_for_view (TechDraw HLR)")
-    doc.recompute(None, True, True)
-    wait_for_view(view, qapp)
-    doc.recompute(None, True, True)
-    pump(qapp, 0.5)
-
-    n_edges = len(view.getVisibleEdges())
-    log(f"TechDraw view: {n_edges} visible edges")
-    assert n_edges > 0, "TechDraw view has 0 edges — Qt event pump may have failed"
+    view = top_view(doc, page, feat, qapp)
 
     # === Dimensions ===
     # All dimensions use TechDraw entity references (Edge/Vertex) so they update

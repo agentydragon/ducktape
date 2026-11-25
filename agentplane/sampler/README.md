@@ -1,7 +1,7 @@
 # Sampler
 
 An independent, opt-in runner type backed by its own PostgreSQL database. The sampler owns the
-Responses, Chat Completions, and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.166.0** JavaScript host for many
+Responses, Chat Completions, and native Anthropic Messages loops and lazily starts one shared pinned **Codex 0.171.0** JavaScript host for many
 logical Sessions. `store()` / `load()` values persist across cells and idle turns in that host's
 memory. Each code-mode cell runs in a fresh V8 isolate with no JavaScript globals shared between
 cells, and provider continuation remains in the sampler. `notify()` outputs are queued durably and
@@ -73,6 +73,24 @@ For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
 `--migrate-only` as the sole argument. Normal service startup performs the same migration before
 it serves.
 
+Migration 21 adds the sampler journal's block table. With `event_block_writes` enabled, the
+writer seals completed 32-cursor windows in the append transaction. Each block compresses up to
+32 consecutive exact event frames and decodes to at most 2 MiB. The live tail, oversized frames,
+and groups that do not benefit from compression stay in standalone rows. The
+[historical packing Job](#historical-journal-packing) can pack earlier completed windows.
+The exporter and recovery read both forms.
+
+Deploy the block-capable image across all replicas with `event_block_writes` omitted before
+enabling it. To roll back block writes, remove the setting and roll the block-capable image
+again. Check sampler event follow, provider recovery, and History export checkpoints after the
+roll. Keep migration 21 and the block-capable reader as the rollback floor while blocks exist.
+
+`context_source_writes` enables sourced context entries. Deploy the reader to every sampler
+replica before enabling writes. With the setting omitted, the sampler reads both formats and
+writes bare native records. After enabling writes, keep a reader that understands sourced context
+entries as the rollback floor. Disabling writes and rolling that reader preserves existing
+entries and stops adding sources to new records.
+
 Migration 16 adds required durable provider-attempt metadata to every sampling and compaction intent.
 It preserves existing Sessions, conversations, raw evidence, and History export checkpoints, but the
 new constraint prevents an older sampler image from inserting provider intents. Staging uses its
@@ -102,7 +120,7 @@ environment variable. Gateway mode requires `gateway_target` and either a rotati
 local-test targets. It keeps one `OpenSession` gRPC stream to Runner and sends process and file
 operations as typed unary RPCs. Runner owns the connection to Codex's exec-server; the gRPC stream
 is not the Codex session itself. Closing the stream releases that adapter connection without
-sending a process-termination request. Pinned Codex 0.166.0 keeps a detached native session for up
+sending a process-termination request. Pinned Codex 0.171.0 keeps a detached native session for up
 to 30 seconds, then expires it and terminates processes still running in it. The adapter adds no
 durable session storage or new process policy. Unary request IDs correlate with the
 sampler's durable intent journal; they do not deduplicate or cache server results. Configure
@@ -166,6 +184,46 @@ when the shared host exits.
 TODO: Evaluate a stronger kernel-enforced isolation boundary for cells or Sessions if aggregate
 container limits stop meeting the production resource contract.
 
+## Historical journal packing
+
+The sampler image provides `compact-journal` for an online backfill of retained standalone rows.
+It takes `--session ID` or `--all`, and requires an explicit `--dry-run` or `--apply`. Run it
+after migration 21 and the rollout of block-capable readers to every sampler replica. The Job
+image must also contain the maintenance command. Backfill works independently of the live
+`event_block_writes` setting.
+
+From the repo root, create a staging Job using the deployed image and the existing sampler
+database Secret. This Bash function prints the Job name:
+
+```bash
+sampler_pack() (
+  set -euo pipefail
+  k=(kubectl -n agentplane-staging)
+  image=$("${k[@]}" get deployment central-sampler \
+    -o jsonpath='{.spec.template.spec.containers[?(@.name=="central-sampler")].image}')
+  "${k[@]}" create --dry-run=client -f agentplane/sampler/ops/compact-journal-job.yaml -o json |
+    jq --arg image "$image" --args '
+      .spec.template.spec.containers[0] |=
+        (.image = $image | .args = (["compact-journal"] + $ARGS.positional))
+    ' -- "$@" |
+    "${k[@]}" create -f - -o name
+)
+job=$(sampler_pack --all --dry-run)
+kubectl -n agentplane-staging logs -f "$job" --pod-running-timeout=5m
+kubectl -n agentplane-staging wait --for=condition=complete --timeout=1m "$job"
+```
+
+The per-Session summary counts the events and blocks selected, the existing stored frame bytes,
+and the packed payload bytes. Indexes, row overhead and released filesystem space are separate
+measurements. Preview a Session with `sampler_pack --session "$session_id" --dry-run`, then use
+`--apply` on the same scope. Use `sampler_pack --all --apply` for all Sessions. The command
+bounds each Session's pass by its starting cursor and leaves the incomplete tail for live writes.
+Progress logs report the current cursor during long sessions. Apply pauses 50 ms between changed
+windows. To stop it, delete the Job; a later run skips rows already moved into committed blocks.
+Watch CNPG free space,
+replication lag and WAL archival while it runs, especially if History maintenance shares the cluster.
+See the [staging Job template](ops/compact-journal-job.yaml).
+
 ## Agentplane opt in
 
 Staging selects the sampler service SVID for Gateway Executor and History export. History retains
@@ -176,14 +234,14 @@ client API until their separate retirement.
 
 - Gateway `central_sampler.tls` presents the Sessions role SVID and verifies the sampler server.
   The sampler's `gateway_tls` presents its own SVID and verifies the Gateway server for Executor calls.
-  The Gateway's `executor_service_callers` allowlist authorizes access to the same `Executor` API the Runner
-  serves inside the Sandbox. Default empty settings preserve native operation and do not enable the
-  new transport.
+  The Environments Runtime proxy's `environment_service.runtime_proxy.executor_callers` allowlist authorizes
+  access to the same `Executor` API the Runner serves inside the Sandbox. Default empty settings preserve
+  native operation and do not enable the new transport.
 - The sampler exports to History with either its rotating caller token or `history_tls` configured
   with the History server URI, trust bundle, and central sampler client SVID. History explicitly
   grants the sampler service in its ingress policy; it retains the distinct executor
   Sandbox identity. With
-  `ingress.sampler_identity_callers`, History also admits the sampler pushing a Session's journal
+  `ingress.sampler_service_actor`, History also admits the sampler pushing a Session's journal
   as a delegating actor for the Identity the Session executes as ([SPEC.md](SPEC.md#identity-and-admission)).
 - The app's `HARNESS_CENTRAL_SAMPLER` offer maps to the `central_sampler_v1` placement and offers
   **Central sampler** alongside Codex and Claude. App and Actions callers do not supply service names
@@ -275,6 +333,7 @@ nested tools, executor, effect journal and History export.
       "provider_model": "claude-haiku-5-5",
       "api": "anthropic_messages",
       "exec_encoding": "json",
+      "auto_compact_tokens": 160000,
       "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"],
       "anthropic_messages": {
         "max_tokens": 16384,
@@ -284,7 +343,7 @@ nested tools, executor, effect journal and History export.
         "per_message_effort": true,
         "strict_tool_input": true,
         "eager_input_streaming": true,
-        "compaction": { "max_tokens": 4096, "auto_compact_tokens": 160000, "keep_recent_turns": 1 }
+        "compaction": { "max_tokens": 4096, "keep_recent_turns": 1 }
       }
     }
   }
@@ -321,8 +380,10 @@ active context, leaving the append-only conversation and History intact. `keep_r
 summarizes all context; positive values preserve that many completed turns and any subsequent input.
 Boundaries move backward over an effort control to keep signed thinking valid. The signed summary
 goes first, followed directly by the unchanged suffix. Summarized effort is restored after the next
-new user message. Live cells and unanswered tools prevent compaction; failed compaction preserves
-old context. Background compaction and dynamic definitions remain in the [task DAG](../plans/task_dag.md).
+new user message. Compaction waits for model tool calls to be answered. Yielded cells keep running
+on their existing host. The next sample sees the current execution handles and any queued cell
+notifications. Failed compaction preserves old context. Background compaction and dynamic
+definitions remain in the [task DAG](../plans/task_dag.md).
 Langfuse export is an independent deferred follow-up; native exchanges are already retained in
 the sampler DB.
 
@@ -351,12 +412,15 @@ the central sampler for Qwen; existing sessions keep their harness. Backend mode
 Codex metadata remain available for existing sessions.
 
 Staging combines Agentplane-owned compatibility policy with shared model reasoning metadata.
-A model change within a Session must preserve connection, API, dialect and exec encoding; Anthropic
-also requires the same provider model and request options because signed continuation is bound to
-them. The target must
-allow the current reasoning effort. Treat a route's contract as fixed while its Sessions exist;
-use a new route ID to change it. Standard routes reject manual compaction, and reaching the
-configured automatic compaction threshold fails the turn before any private compaction request.
+A model change always preserves the API. An idle, settled ChatGPT Responses Lite Session can
+switch between models on the same Agentplane ingress connection with the same tool encoding.
+This includes model routes removed from configuration when retained provider requests establish
+the matching contract. The sampler replays the active conversation window, including any opaque
+compaction, and leaves the provider to handle incompatible reasoning.
+If a Chat Completions route is removed, an idle, settled Session can switch to another Chat
+Completions route and replay its retained messages and tool calls. Other switches require the
+original route contract. See [the continuation rules](SPEC.md#model-changes). Standard routes
+reject manual compaction at admission and automatic compaction settings at startup.
 Portable compaction is not implemented. Provider compatibility still needs live validation;
 scripted tests establish the sampler's protocol and execution behavior.
 

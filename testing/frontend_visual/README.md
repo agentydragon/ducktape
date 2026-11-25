@@ -4,8 +4,7 @@ Visual tests are ordinary async pytest tests that load a fixture and call the sh
 screenshot API, optionally driving Playwright interactions and asserting behavior. A
 mount-and-capture test is useful on its own: published before/after images in GitHub PR
 comments let reviewers see what a UI change looks like. Readiness checks help capture the
-intended state; behavioral assertions are additional coverage, not a prerequisite.
-There is no JSON/jq instruction interpreter and no browser-side test driver.
+intended state. Add behavioral assertions when the test also exercises a user flow.
 
 ## Responsibilities
 
@@ -23,7 +22,7 @@ deterministic contexts, render health, visual fixtures, and screenshot publicati
   selectors, clicks, waits, or capture instructions.
 - **`VisualHarness` / `VisualPage`** (`testing/frontend_visual/capture.py`) own browser lifecycle,
   render-health checks, screenshot mechanics and review publication.
-- **`py_visual_test`** owns Bazel runfiles, the Python entry point and the `visual` tag.
+- **`py_visual_test`** owns Bazel runfiles, the Python entry point, fixture registration and the `visual` tag.
 
 ## Example
 
@@ -34,8 +33,6 @@ from playwright.async_api import expect
 
 from testing.frontend_visual.capture import VisualHarness
 
-# gazelle:include_dep //testing/frontend_visual:fixtures
-pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -54,7 +51,9 @@ if __name__ == "__main__":
 Pass `test_module`, `test_srcs`, direct `test_deps`, bundled `harness`, `assets` and
 `title` to `py_visual_test`. Exclude macro-owned test sources from Gazelle so it does
 not create a second test target. Prefer one test source per target; put shared helpers in
-Gazelle-managed libraries rather than loading sibling test modules into one runner.
+Gazelle-managed libraries rather than loading sibling test modules into one runner. Standalone
+`py_test` targets that use these fixtures load `testing.frontend_visual.fixtures` through
+`pytest_plugins` and declare the corresponding Bazel dependency.
 
 `visual.open()` can load a harness without any fixture ID. For harnesses with callable
 setup APIs, configure the mocks and mount the component from Python before asserting
@@ -69,12 +68,6 @@ The shared pytest plugin also provides a per-test `view` yield fixture, with ord
 `viewport` and `color_scheme` fixtures that tests can override or parametrize. It opens
 an unnamed harness and closes its isolated browser context after the test. App-specific
 fixtures can depend on it to prepare reusable state without hiding test interactions.
-
-For a real server or an otherwise app-owned browser context, use
-`async with open_visual_page(context, test_outputs, title="...") as view:`. It creates
-and closes the page, records load errors before navigation, and optionally enables the
-shared trace policy with `trace=True`. The caller owns the context, cookies, routes,
-and navigation.
 
 The root pytest configuration provides `test_outputs`, a generic fixture bound to the full
 repository-relative pytest node ID, including parameter IDs. It can publish any output role via
@@ -130,9 +123,12 @@ where the page is served:
 - Mounted by a bundled harness: `VisualHarness.open()` or the `view` fixture
   (`testing/frontend_visual/fixtures.py`).
 - Served by a real server: `deterministic_browser_context(...)` plus
-  `with VisualPage(page, ...) as view:`, entered before navigating. Exiting the context checks
-  for uncaught page errors, including errors after the last screenshot. If another error is
-  already propagating, the page error is attached to it as a note.
+  `async with open_visual_page(context, test_outputs, title="...") as view:`. The helper owns
+  the page lifecycle and can enable the shared trace with `trace=True`. The caller owns
+  the context, cookies, routes, and navigation.
+- Given an existing deterministic page: enter `with VisualPage(page, ...) as view:` before
+  navigation. Both real-page entry points check uncaught page errors through teardown. If a
+  test failure is already propagating, the page errors are attached to it as a note.
 - Native UI such as GNOME Shell: use the `test_outputs` fixture and call its
   `publish` method, as `gnome/testing/session.py` does.
 
@@ -176,10 +172,6 @@ images can change once when adopting the pin, including font metrics and SVG edg
 [screenshot handler]: https://chromium.googlesource.com/chromium/src/+/151.0.7922.34/content/browser/devtools/protocol/page_handler.cc#1476
 
 Capture does not click, scroll, or move the pointer.
-
-Real-server tests may construct `VisualPage` before navigating an existing deterministic
-page, with their own server setup and network policy. Diagnostic screenshots need not be
-published as visual-review assets.
 
 Screenshots, diagnostics, and traces go to Bazel undeclared outputs as test-output records.
 See the [PR visual review policy](../../devinfra/pr_visuals/README.md#review-policy).

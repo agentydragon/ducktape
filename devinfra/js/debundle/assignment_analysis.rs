@@ -9,11 +9,10 @@ use thiserror::Error;
 use crate::report_builders::build_dependency_graph_report;
 use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
 use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
-use analysis::graph::build_module_quotient;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{
     BindingCatalogue, BindingScopeError, DependencyGraphReport, EntryDestination, ModuleId,
-    ModuleQuotient, PlannedModule, StructuralPlacementCheck,
+    PlannedModule, StructuralPlacementCheck,
 };
 use source_identity::SourceUnitId;
 
@@ -22,10 +21,10 @@ use crate::esm_schedule::{EsmImportSchedule, ImportScheduleError};
 use crate::realizability::CrossRebindEdge;
 use crate::realizability::{
     CandidateEmittedOrder, EffectConflictDiagnosticRow, EffectRelocationAssessment,
-    EffectTranslationValidationInputs, EffectTranslationValidationResult, RealizabilityVerdict,
-    SccRejection, TranslationValidationEvidenceReport, TranslationValidationReport,
-    TranslationValidationResult, check_realizability_with_schedule, effect_translation_assess,
-    translation_validate,
+    EffectTranslationValidationInputs, EffectTranslationValidationReport,
+    EffectTranslationValidationResult, RealizabilityVerdict, SccRejection,
+    TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
+    check_realizability_with_schedule, effect_translation_assess, translation_validate,
 };
 use crate::validation::{
     AssignmentReport, AssignmentValidation, validate_assignment_with_priority,
@@ -44,15 +43,13 @@ pub enum AssignmentAnalysisBuildError {
 }
 
 /// Per-chunk assignment analysis: the spec's assignment of the
-/// dependency graph, plus the realizability views derived from it
-/// (`module_quotient`, `import_order`, `assembly_conflicts`) and small
-/// caches downstream consumers consult on the hot path.
+/// dependency graph, atomic-group conflicts, and the concrete import schedule.
 ///
 /// Holds a reference to the [`AssignmentInputs`] it was built
 /// from (`inputs`); report emission and downstream emit code reach
 /// inputs (`bindings`, `planned_modules`, etc.) through `inputs()`.
 /// Fields are private so the assignment cannot change independently of its
-/// cached quotient, SCCs, and import order.
+/// cached realizability verdict and import schedule.
 #[derive(Debug, Clone)]
 pub struct AssignmentAnalysis {
     inputs: Arc<AssignmentInputs>,
@@ -72,11 +69,6 @@ pub struct AssignmentAnalysis {
     /// by construction; the materializer bails on these before
     /// emitting code.
     assembly_conflicts: Vec<AtomicGroupConflict>,
-    module_quotient: ModuleQuotient,
-    /// SCC partition of `module_quotient` in `tarjan_scc` reverse-
-    /// topological order. Precomputed at build time for
-    /// `report_builders::build_quotient_scc_reports`.
-    module_quotient_sccs: Vec<Vec<ModuleId>>,
     /// The author-supplied shared priority, retained exactly for reports/plans.
     import_priority: Vec<spec::ModulePath>,
     import_schedule: EsmImportSchedule,
@@ -217,17 +209,18 @@ impl<'a> CandidatePreflight<'a> {
                 )?
             }
         };
-        let candidate_assessment = CandidateRelocationAssessment {
-            placement: self.placement,
-            effect,
-        };
+        let candidate_assessment = CandidateRelocationAssessmentReport::new(
+            self.placement,
+            effect.assessment,
+            effect.report.legacy_gate_accepts,
+        );
         if let Some(audit) = audit {
             audit.finish(TvAuditRecord {
                 argv: std::env::args().collect(),
                 chunk_id: self.assignment_analysis.inputs.chunk_id(),
                 translation_validation: &translation_validation.report,
-                candidate: candidate_assessment.report(),
-                effect: &candidate_assessment.effect.report,
+                candidate: &candidate_assessment,
+                effect: &effect.report,
             });
         }
         Ok(CandidateEvaluation {
@@ -235,6 +228,7 @@ impl<'a> CandidatePreflight<'a> {
             legacy_validation: self.legacy_validation,
             translation_validation,
             candidate_assessment,
+            effect_validation: effect.report,
         })
     }
 }
@@ -248,7 +242,8 @@ pub struct CandidateEvaluation<'a> {
     assignment_analysis: &'a AssignmentAnalysis,
     legacy_validation: AssignmentValidation,
     translation_validation: TranslationValidationResult,
-    candidate_assessment: CandidateRelocationAssessment,
+    candidate_assessment: CandidateRelocationAssessmentReport,
+    effect_validation: EffectTranslationValidationReport,
 }
 
 impl<'a> CandidateEvaluation<'a> {
@@ -269,8 +264,16 @@ impl<'a> CandidateEvaluation<'a> {
         &self.translation_validation
     }
 
-    pub fn candidate_assessment(&self) -> &CandidateRelocationAssessment {
+    pub fn candidate_assessment(&self) -> &CandidateRelocationAssessmentReport {
         &self.candidate_assessment
+    }
+
+    pub fn into_candidate_assessment(self) -> CandidateRelocationAssessmentReport {
+        self.candidate_assessment
+    }
+
+    pub fn effect_validation(&self) -> &EffectTranslationValidationReport {
+        &self.effect_validation
     }
 
     pub fn into_validation(self) -> Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
@@ -359,15 +362,6 @@ pub struct SemanticOrderSccObligation {
     pub dependency_edges: Vec<usize>,
 }
 
-/// A same-assignment candidate result. The effect assessment and its report
-/// are retained together from one sweep, beside typed structural placement
-/// obligations derived from the validation that admitted this exact analysis.
-#[derive(Debug, Clone)]
-pub struct CandidateRelocationAssessment {
-    pub placement: StructuralPlacementAssessment,
-    pub effect: EffectTranslationValidationResult,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct CandidateRelocationAssessmentReport {
     #[serde(flatten)]
@@ -392,22 +386,26 @@ pub enum CandidateRelocationStatus {
     AcceptedWithinCheckedScope,
 }
 
-impl CandidateRelocationAssessment {
-    pub fn report(&self) -> CandidateRelocationAssessmentReport {
+impl CandidateRelocationAssessmentReport {
+    fn new(
+        placement: StructuralPlacementAssessment,
+        effect: EffectRelocationAssessment,
+        legacy_gate_accepts: bool,
+    ) -> Self {
         let effect_blocked = matches!(
-            self.effect.assessment.decision,
+            effect.decision,
             crate::realizability::EffectRelocationDecision::Conflict { .. }
         );
         let effect_accepted = matches!(
-            self.effect.assessment.decision,
+            effect.decision,
             crate::realizability::EffectRelocationDecision::Accepted { .. }
         );
         CandidateRelocationAssessmentReport {
-            status: candidate_relocation_status(effect_blocked, effect_accepted, &self.placement),
-            legacy_gate_accepts: self.effect.report.legacy_gate_accepts,
-            legacy_gate_ordering_veto: has_legacy_gate_ordering_veto(&self.placement),
-            effect: self.effect.assessment.clone(),
-            placement: self.placement.clone(),
+            status: candidate_relocation_status(effect_blocked, effect_accepted, &placement),
+            legacy_gate_accepts,
+            legacy_gate_ordering_veto: has_legacy_gate_ordering_veto(&placement),
+            effect,
+            placement,
         }
     }
 }
@@ -546,10 +544,6 @@ impl AssignmentAnalysis {
         &self.atomic_groups
     }
 
-    pub fn module_quotient(&self) -> &ModuleQuotient {
-        &self.module_quotient
-    }
-
     /// Canonical report path for a destination. Real output paths come from
     /// their `PlannedModule`; the entry keeps the historic report label at
     /// this serialization boundary without becoming a planned output.
@@ -599,12 +593,6 @@ impl AssignmentAnalysis {
         };
         let assignment = outcome.assignment;
         let assembly_conflicts = outcome.conflicts;
-        let module_quotient = build_module_quotient(&dependency_graph, &assignment);
-        // Cache the module-quotient SCC partition so downstream consumers
-        // (`report_builders::build_quotient_scc_reports`, the validator's
-        // verdict path) share one Tarjan walk instead of each
-        // recomputing it.
-        let module_quotient_sccs = module_quotient.sccs();
         let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,
             dependency_graph,
@@ -625,20 +613,10 @@ impl AssignmentAnalysis {
             assignment,
             atomic_groups,
             assembly_conflicts,
-            module_quotient,
-            module_quotient_sccs,
             import_priority: priority.to_vec(),
             import_schedule,
             realizability: OnceLock::from(validation.verdict),
         })
-    }
-
-    /// SCC partition of `module_quotient` (the module quotient), in
-    /// `tarjan_scc` reverse-topological order. Precomputed at build
-    /// time and shared with downstream consumers in lieu of a fresh
-    /// Tarjan walk.
-    pub fn module_quotient_sccs(&self) -> &[Vec<ModuleId>] {
-        &self.module_quotient_sccs
     }
 
     /// Concrete schedule retained by the gate, effect sweeps and emitter.
@@ -859,7 +837,7 @@ struct TvAuditRecord<'a> {
     argv: Vec<String>,
     chunk_id: &'a str,
     translation_validation: &'a TranslationValidationReport,
-    candidate: CandidateRelocationAssessmentReport,
+    candidate: &'a CandidateRelocationAssessmentReport,
     effect: &'a crate::realizability::EffectTranslationValidationReport,
 }
 

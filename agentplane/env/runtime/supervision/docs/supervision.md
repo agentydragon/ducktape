@@ -60,10 +60,14 @@ The NixOS guest and system-test guest share this hierarchy:
 agentplane.slice                         overall CPU, memory, swap and PID envelope
   agentplane-environment-runtime.service environment lifecycle, Sessions and Execution API
   agentplane-workloads.slice             aggregate harness/setup budget
-    agentplane-native-<owner>-<UUID>.service
+    agentplane-native-<scope-hash>-<UUID>.service
   agentplane-executors.slice             aggregate exec-server/tool budget
-    agentplane-native-<owner>-<UUID>.service
+    agentplane-native-<scope-hash>-<UUID>.service
+  agentplane-commands.slice              aggregate executor command budget (systemd placement)
+    agentplane-native-<scope-hash>-<UUID>.service
 ```
+
+`<scope-hash>` is the first 16 hex digits of a SHA-256 over the state directory, Sandbox UID and scope ID.
 
 The preflight helper applies the enclosing envelope before Runtime starts. Launchers configure
 slice and per-service budgets through D-Bus. Native services run as the configured unprivileged

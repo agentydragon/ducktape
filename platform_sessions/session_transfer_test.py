@@ -1,25 +1,24 @@
 import json
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from python.runfiles import runfiles
+from python.runfiles import Runfiles
 
 from platform_sessions.limits import MAX_SESSION_BYTES
 from platform_sessions.session_transfer import decode_json_request, encode_json
 
-
-def _session_transfer_examples() -> dict[str, list[dict[str, Any]]]:
-    files = runfiles.Create()
-    assert files is not None
-    path = files.Rlocation("ducktape/platform_sessions/testdata/session_transfer_examples.json")
-    assert path is not None
-    return cast(dict[str, list[dict[str, Any]]], json.loads(Path(path).read_text()))
+type TransferExamples = dict[str, list[dict[str, Any]]]
 
 
-def test_valid_envelope_examples():
-    for example in _session_transfer_examples()["valid_envelopes"]:
+@pytest.fixture(scope="module")
+def transfer_examples(runfiles: Runfiles) -> TransferExamples:
+    path = runfiles.root() / "ducktape/platform_sessions/testdata/session_transfer_examples.json"
+    return cast(TransferExamples, json.loads(path.read_text()))
+
+
+def test_valid_envelope_examples(transfer_examples: TransferExamples) -> None:
+    for example in transfer_examples["valid_envelopes"]:
         expected_provider = example["expected_provider"]
         envelope = example["envelope"]
         assert isinstance(expected_provider, str)
@@ -33,14 +32,14 @@ def test_valid_envelope_examples():
         assert decode_json_request(encoded_envelope.encode("utf-8"), expected_provider) == session
 
 
-def test_invalid_envelope_examples_are_rejected():
-    for example in _session_transfer_examples()["invalid_envelopes"]:
+def test_invalid_envelope_examples_are_rejected(transfer_examples: TransferExamples) -> None:
+    for example in transfer_examples["invalid_envelopes"]:
         with pytest.raises(ValueError, match="Invalid session export"):
             decode_json_request(json.dumps(example["envelope"]), example["expected_provider"])
 
 
-def test_non_json_examples_are_rejected():
-    for example in _session_transfer_examples()["invalid_json"]:
+def test_non_json_examples_are_rejected(transfer_examples: TransferExamples) -> None:
+    for example in transfer_examples["invalid_json"]:
         with pytest.raises(ValueError, match=r"\S"):
             decode_json_request(example["value"], "example-provider")
 

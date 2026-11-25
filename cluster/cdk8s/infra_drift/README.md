@@ -106,11 +106,10 @@ sparseCheckout: [cluster/k8s/, props/deploy/, tf/gitops/]
 
 `cluster/terraform/` is not among them, so the runner's checkout has no such
 directory and the plan dies with
-`terraform path not found: stat …/cluster/terraform/main`. That list cannot be
-extended: `cluster/k8s/flux/flux-system/gotk-sync.yaml` is flux-generated and marked
-DO NOT EDIT. Hence `infra-drift-source`, scoped to what this plan reads and
-nothing else, which also keeps the shared artifact every other Flux consumer
-pulls from growing.
+`terraform path not found: stat …/cluster/terraform/main`. The repository owns
+`gotk-sync.yaml` despite its generated header, but adding the directory there
+would enlarge the shared artifact. `infra-drift-source` is scoped to what this
+plan reads.
 
 It uses `ignore`, not `sparseCheckout`, because `sparseCheckout` takes
 directories and this root reads a repo-root **file** (`nebula-mesh.json`).
@@ -131,17 +130,11 @@ evaluated, in `locals` and in resource arguments alike. So the rule is not
 > every `file()`-family call in the root must resolve, however narrow
 > `spec.targets` is.
 
-All five call sites, and the file each needs:
-
-| Call                                    | Where                    | Reads                                                                   |
-| --------------------------------------- | ------------------------ | ----------------------------------------------------------------------- |
-| `nebula.tf:17` `jsondecode(file(…))`    | `locals`                 | `nebula-mesh.json` (repo root)                                          |
-| `talos-ccm.tf:14` `yamldecode(file(…))` | `locals`                 | `cluster/generated/talos-cloud-controller-manager/helmrelease.k8s.yaml` |
-| `flux.tf:23` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux/flux-system/gotk-components.yaml`                     |
-| `flux.tf:24` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux/flux-system/gotk-sync.yaml`                           |
-| `cilium.tf:44` `filesha256(…)`          | `null_resource` triggers | `cilium-values.yaml`, inside the root module                            |
-
-The `ignore` rules carry all of them. The rest of `cluster/k8s` (10 MB) is read
+Check the current calls with
+`rg -n '\b(file[a-z0-9]*|templatefile)\s*\(' cluster/terraform/main -g '*.tf'`.
+The [ignore rules](source.gitignore) include the root module, `nebula-mesh.json`,
+the generated Talos cloud-controller-manager HelmRelease, and Flux bootstrap files.
+The rest of `cluster/k8s` (10 MB) is read
 by nothing and stays out. `cluster/scripts/configure_game_mitigation.py` also
 stays out: it is interpolated into a `local-exec` command string, not read by a
 `file()` call, so nothing opens it at plan time.

@@ -99,7 +99,7 @@ func (s *Store) NoteWaking(ctx context.Context, id string, owner SessionOwner, i
 		}
 		// Persist uncertainty before the external wake call; cancellation must retain it.
 		result, err := tx.ExecContext(ctx, `UPDATE `+table+` SET wake_from_incarnation=COALESCE(wake_from_incarnation,$3),
-			wake_assessment=$5,updated_at=now() WHERE `+key+`=$1 AND session_id=$2 AND state=$4`,
+			wake_assessment=$5,updated_at=now() WHERE `+key+`=$1 AND session_id=$2 AND state_value=$4`,
 			id, owner.SessionID, value, waiting, assessmentBytes)
 		if err != nil {
 			return err
@@ -125,7 +125,7 @@ func (s *Store) NoteWakeRequestedAt(ctx context.Context, id string, owner Sessio
 		}
 		var requested time.Time
 		err = tx.QueryRowContext(ctx, `UPDATE `+table+` SET wake_requested_at=$3,updated_at=now()
-			WHERE `+key+`=$1 AND session_id=$2 AND state=$4 AND wake_requested_at IS NULL
+			WHERE `+key+`=$1 AND session_id=$2 AND state_value=$4 AND wake_requested_at IS NULL
 			RETURNING wake_requested_at`, id, owner.SessionID, requestedAt, waiting).Scan(&requested)
 		if err == nil {
 			result = &requested
@@ -136,7 +136,7 @@ func (s *Store) NoteWakeRequestedAt(ctx context.Context, id string, owner Sessio
 		}
 		var old sql.NullTime
 		err = tx.QueryRowContext(ctx, `SELECT wake_requested_at FROM `+table+`
-			WHERE `+key+`=$1 AND session_id=$2 AND state=$3`, id, owner.SessionID, waiting).Scan(&old)
+			WHERE `+key+`=$1 AND session_id=$2 AND state_value=$3`, id, owner.SessionID, waiting).Scan(&old)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -161,7 +161,7 @@ func (s *Store) ClearWakeState(ctx context.Context, id string, owner SessionOwne
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE `+table+` SET wake_from_incarnation=NULL,
 			wake_requested_at=NULL,updated_at=now() WHERE `+key+`=$1 AND session_id=$2
-			AND state=$3 AND (wake_from_incarnation IS NOT NULL OR wake_requested_at IS NOT NULL)`,
+			AND state_value=$3 AND (wake_from_incarnation IS NOT NULL OR wake_requested_at IS NOT NULL)`,
 			id, owner.SessionID, waiting)
 		if err != nil {
 			return err
@@ -211,7 +211,7 @@ func (s *Store) FailExpiredWake(
 		}
 		var requested time.Time
 		err = tx.QueryRowContext(ctx, `SELECT wake_requested_at FROM `+table+` WHERE `+key+`=$1
-			AND session_id=$2 AND state=$3 AND wake_requested_at IS NOT NULL FOR UPDATE`,
+			AND session_id=$2 AND state_value=$3 AND wake_requested_at IS NOT NULL FOR UPDATE`,
 			id, owner.SessionID, waiting).Scan(&requested)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -229,15 +229,15 @@ func (s *Store) FailExpiredWake(
 		}
 		remaining = 0
 		if isSession {
-			session, err = scanSession(tx.QueryRowContext(ctx, `UPDATE session SET state=$3,
+			session, err = scanSession(tx.QueryRowContext(ctx, `UPDATE session SET state_value=$3,
 				reason=$4,updated_at=$5,delivery_blocker=COALESCE($7,delivery_blocker),wake_assessment=$8
-				WHERE session_id=$1 AND session_id=$2 AND state=$6
+				WHERE session_id=$1 AND session_id=$2 AND state_value=$6
 				RETURNING `+sessionColumns, id, owner.SessionID, SessionFailedState, reason, now, waiting, blockerBytes, assessmentBytes))
 		} else {
-			dispatch, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=CASE WHEN delivery_attempted THEN 'UNKNOWN' ELSE $3 END,
+			dispatch, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state_value=CASE WHEN delivery_attempted THEN $9::integer ELSE $3::integer END,
 				reason=$4,updated_at=$5,delivery_blocker=COALESCE($7,delivery_blocker),wake_assessment=$8
-				WHERE command_id=$1 AND session_id=$2 AND state=$6
-				RETURNING `+dispatchColumns, id, owner.SessionID, FailedState, reason, now, QueueState, blockerBytes, assessmentBytes))
+				WHERE command_id=$1 AND session_id=$2 AND state_value=$6
+				RETURNING `+dispatchColumns, id, owner.SessionID, FailedState, reason, now, QueueState, blockerBytes, assessmentBytes, UnknownState))
 		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -257,9 +257,9 @@ func wakeTable(isSession bool) (table, key string) {
 	return "dispatch", "command_id"
 }
 
-func waitingState(isSession bool) string {
+func waitingState(isSession bool) int32 {
 	if isSession {
-		return SessionWaitingState
+		return int32(SessionWaitingState)
 	}
-	return QueueState
+	return int32(QueueState)
 }

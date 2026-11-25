@@ -15,6 +15,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ErrCompactionSessionBusy marks a lock timeout while acquiring the Session writer lock.
+var ErrCompactionSessionBusy = errors.New("history compaction Session is busy")
+
 // CompactionResult counts original entries and serialized bytes, excluding rows and indexes.
 // Skipped counts eligible ordinary entries inside existing blocks' cursor spans. These stay ordinary
 // because creating a nested block would violate the per-kind non-overlapping seek index.
@@ -31,7 +34,7 @@ func (s *Store) CompactHistory(ctx context.Context, sessionID uuid.UUID, apply b
 	if err := s.db.QueryRowContext(ctx, "SELECT last_cursor FROM session_history WHERE id=$1", sessionID).Scan(&through); err != nil {
 		return result, err
 	}
-	for _, kind := range compactKinds {
+	for _, kind := range historicalCompactionKinds(s.options) {
 		for after := uint64(0); after < through; {
 			batchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			batch, next, err := s.compactHistoryBatch(batchCtx, sessionID, kind, after, through, apply)
@@ -78,6 +81,10 @@ func (s *Store) compactHistoryBatch(ctx context.Context, sessionID uuid.UUID, ki
 				return err
 			}
 			if _, err := lockRow(ctx, tx, sessionID); err != nil {
+				var pgErr *pq.Error
+				if errors.As(err, &pgErr) && pgErr.Code == "55P03" { // lock_not_available
+					return fmt.Errorf("%w: %w", ErrCompactionSessionBusy, err)
+				}
 				return err
 			}
 		}

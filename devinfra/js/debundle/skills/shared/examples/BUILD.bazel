@@ -1,6 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Shipped standalone recipes import helpers from their examples directory.
+# gazelle:resolve py devinfra.js.debundle.skills.debundle_lane_worker.debundle_lane_worker_skill_spec //devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill_spec
 # gazelle:resolve py isolated_edit //devinfra/js/debundle/skills/shared/examples:isolated_edit
 
 exports_files(
@@ -12,25 +13,41 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
+_TOOLS = [
+    "//devinfra/js/debundle",
+    "@nodejs_linux_amd64//:bin/node",
+]
+
+_TOOL_ENV = {
+    "DEBUNDLE_ENGINE": "$(rlocationpath //devinfra/js/debundle)",
+    "DEBUNDLE_NODE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
+}
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill_spec",
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
+)
+
 py_test(
     name = "peel_more_test",
+    size = "medium",
     srcs = ["peel_more_test.py"],
-    data = glob(["fixture/**"]) + [
-        "//devinfra/js/debundle",
-        "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {
-        "DEBUNDLE_PEEL_ENGINE": "$(rlocationpath //devinfra/js/debundle)",
-        "DEBUNDLE_PEEL_NODE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
-        "DEBUNDLE_PEEL_SKILL": "$(rlocationpath //devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill)",
-    },
+    data = glob(["fixture/**"]) + _TOOLS,
+    env = _TOOL_ENV,
     deps = [
+        ":conftest",
+        ":contract_examples",
         ":isolated_edit",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -53,42 +70,30 @@ py_library(
 
 py_test(
     name = "isolated_edit_test",
+    size = "medium",
     srcs = ["isolated_edit_test.py"],
-    data = glob(["fixture/**"]) + [
-        "//devinfra/js/debundle",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {
-        "DEBUNDLE_HANDOFF_ENGINE": "$(rlocationpath //devinfra/js/debundle)",
-        "DEBUNDLE_HANDOFF_NODE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
-    },
+    data = glob(["fixture/**"]) + _TOOLS,
+    env = _TOOL_ENV,
     deps = [
+        ":conftest",
+        ":contract_examples",
         ":isolated_edit",
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
 py_test(
     name = "contract_examples_test",
     srcs = ["contract_examples_test.py"],
-    data = [
-        "//devinfra/js/debundle",
-        "//devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {
-        "DEBUNDLE_CONTRACT_ENGINE": "$(rlocationpath //devinfra/js/debundle)",
-        "DEBUNDLE_CONTRACT_NODE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
-        "DEBUNDLE_CONTRACT_SKILL": "$(rlocationpath //devinfra/js/debundle/skills/debundle_lane_worker:debundle_lane_worker_skill)",
-    },
+    data = _TOOLS,
+    env = _TOOL_ENV,
     deps = [
+        ":conftest",
         "//:conftest",
         "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )

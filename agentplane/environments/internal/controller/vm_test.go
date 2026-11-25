@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 var vmGuestContractRlocation string
@@ -165,6 +166,9 @@ func startVMI(t *testing.T, c client.Client, phase kubevirtv1.VirtualMachineInst
 		Labels:          vmi.Labels,
 		OwnerReferences: []metav1.OwnerReference{controllerRef("VirtualMachineInstance", vmi.Name, vmi.UID)},
 	}}
+	if phase == kubevirtv1.Running {
+		launcher.Spec.NodeName = "test-node"
+	}
 	if err := c.Create(ctx, launcher); err != nil {
 		t.Fatal(err)
 	}
@@ -331,6 +335,105 @@ func TestStopHaltsTheVMAndKeepsIt(t *testing.T) {
 	}
 	if getPVC(t, c) == nil {
 		t.Fatal("stopping deleted the state PVC")
+	}
+}
+
+func TestSuspendVMWithUnscheduledLauncher(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		legacyPublished    bool
+		scheduleBeforeStop bool
+		scheduleOnDelete   bool
+	}{
+		{name: "unpublished"},
+		{name: "scheduled while still unpublished", scheduleBeforeStop: true},
+		{name: "already published and quiescing", legacyPublished: true},
+		{name: "scheduler binds before deletion", legacyPublished: true, scheduleOnDelete: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
+			reconcileOnce(t, r)
+			vmi, launcher := startVMI(t, c, kubevirtv1.Scheduling)
+			reconcileOnce(t, r)
+			sandbox := getSandbox(t, c)
+			if sandbox.Status.Incarnation != nil {
+				t.Errorf("published the unscheduled launcher: %+v", sandbox.Status.Incarnation)
+			}
+			if tc.legacyPublished {
+				sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: launcher.Name, UID: string(launcher.UID)}
+				if !tc.scheduleOnDelete {
+					sandbox.Status.StopStage = sandboxapi.StopStageQuiescing
+					sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{
+						RunnerPodUID: string(launcher.UID), AttemptedAt: metav1.NewTime(testNow),
+					}
+				}
+				if err := c.Status().Update(ctx, sandbox); err != nil {
+					t.Fatal(err)
+				}
+			}
+			setRunning(t, c, false)
+			if tc.scheduleBeforeStop {
+				launcher.Spec.NodeName = "test-node"
+				if err := c.Update(ctx, launcher); err != nil {
+					t.Fatal(err)
+				}
+			}
+			quiescer := r.Quiescer.(*fakeQuiescer)
+			quiescer.err = errors.New("Environment Runtime unreachable")
+			if tc.scheduleOnDelete {
+				r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						options := (&client.DeleteOptions{}).ApplyOptions(opts)
+						if options.Preconditions == nil || options.Preconditions.UID == nil || *options.Preconditions.UID != launcher.UID {
+							t.Fatalf("launcher delete lacks its UID precondition: %+v", options.Preconditions)
+						}
+						launcher.Spec.NodeName = "test-node"
+						if err := c.Update(ctx, launcher); err != nil {
+							return err
+						}
+						return c.Delete(ctx, obj, opts...)
+					},
+				})
+				if _, err := r.Reconcile(ctx, request); !apierrors.IsConflict(err) {
+					t.Fatalf("reconcile after scheduler bind = %v, want conflict", err)
+				}
+				reconcileOnce(t, r)
+				if !runtimecredentials.VMRunning(getVM(t, c)) || quiescer.calls != 1 {
+					t.Fatalf("scheduler won: VM running=%v, quiesce calls=%d, want running and one call",
+						runtimecredentials.VMRunning(getVM(t, c)), quiescer.calls)
+				}
+				return
+			}
+			reconcileOnce(t, r)
+			if runtimecredentials.VMRunning(getVM(t, c)) || quiescer.calls != 0 {
+				t.Fatalf("VM running=%v, quiesce calls=%d, want Halted and no calls",
+					runtimecredentials.VMRunning(getVM(t, c)), quiescer.calls)
+			}
+			if tc.legacyPublished {
+				if err := c.Get(ctx, client.ObjectKeyFromObject(launcher), &corev1.Pod{}); !apierrors.IsNotFound(err) {
+					t.Fatalf("the published launcher can still be bound: get returned %v", err)
+				}
+			}
+			// KubeVirt removes the VMI after its launcher is gone.
+			if err := c.Delete(ctx, vmi); err != nil {
+				t.Fatal(err)
+			}
+			reconcileOnce(t, r)
+			status := getSandbox(t, c).Status
+			if status.StopStage != sandboxapi.StopStageStopped || status.QuiesceAttempt != nil || status.QuiescedIncarnation != nil {
+				t.Fatalf("stage=%q, attempt=%v, sealed=%v, want Stopped without a seal", status.StopStage, status.QuiesceAttempt, status.QuiescedIncarnation)
+			}
+			if tc.legacyPublished && (status.Incarnation == nil || status.Incarnation.UID != string(launcher.UID)) {
+				t.Fatalf("lost the previously published incarnation needed for journal recovery: %+v", status.Incarnation)
+			}
+			if !tc.legacyPublished && status.Incarnation != nil {
+				t.Fatalf("published a launcher while stopping: %+v", status.Incarnation)
+			}
+			if getPVC(t, c) == nil {
+				t.Fatal("suspend removed the state volume")
+			}
+		})
 	}
 }
 

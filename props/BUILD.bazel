@@ -67,7 +67,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//testing:otel_tracing",
-        "@pypi//opentelemetry_api",
+        "//testing:pytest_otel",
         "@pypi//pytest",
     ],
 )

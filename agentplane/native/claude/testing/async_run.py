@@ -20,13 +20,6 @@ class ClaudeEvents:
     async def next(self) -> wire.ClaudeFrame:
         return wire.parse_frame(await self._frames.next())
 
-    async def control_response(self, request_id: str) -> wire.ControlResponseFrame:
-        while True:
-            match await self.next():
-                case wire.ControlResponseFrame(response=wire.ControlResponseBody(request_id=received)) as frame:
-                    if received == request_id:
-                        return frame
-
     async def lifecycle(self, command_uuid: str, state: wire.CommandState) -> wire.CommandLifecycleFrame:
         while True:
             match await self.next():

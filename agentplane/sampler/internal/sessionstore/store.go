@@ -16,6 +16,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -25,6 +26,7 @@ import (
 const (
 	OutboxChannel = "central_sampler_outbox"
 	WorkChannel   = "central_sampler_work"
+	TurnChannel   = "central_sampler_turn"
 )
 
 type rowScanner interface {
@@ -33,14 +35,28 @@ type rowScanner interface {
 
 // Store owns the central sampler's durable conversation, Session and evidence records.
 type Store struct {
-	db               *sql.DB
-	operationTimeout time.Duration
+	db                         *sql.DB
+	operationTimeout           time.Duration
+	providerProgressCoalescing time.Duration
+	providerRetryMaxBackoff    time.Duration
+	eventBlockWrites           bool
+	contextSourceWrites        bool
 	// now dates the model-visible environment context.
 	now func() time.Time
 }
 
-func New(db *sql.DB, operationTimeout time.Duration) *Store {
-	return &Store{db: db, operationTimeout: operationTimeout, now: time.Now}
+// New uses the default provider timing when settings is nil.
+func New(db *sql.DB, operationTimeout time.Duration, settings *samplersettings.Settings) *Store {
+	if settings == nil {
+		settings = &samplersettings.Settings{}
+	}
+	return &Store{
+		db: db, operationTimeout: operationTimeout, now: time.Now,
+		providerProgressCoalescing: settings.ProviderProgressLeaseCoalescing(),
+		providerRetryMaxBackoff:    settings.ProviderRetryMaxBackoff(),
+		eventBlockWrites:           settings.EventBlockWrites,
+		contextSourceWrites:        settings.ContextSourceWrites,
+	}
 }
 
 func (s *Store) DB() *sql.DB { return s.db }
@@ -93,6 +109,8 @@ func decodePendingIntent(raw []byte) (*PendingIntent, error) {
 
 func loadConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
 	store := newContentDB(ctx, tx)
+	conversation.executionSnapshots = map[protocol.Context]*modelExecutionSnapshot{}
+	conversation.storedContexts = map[protocol.Context]contextCheckpoint{}
 	var err error
 	conversation.Transcript, err = conversation.loadNativeContext(store, conversation.API, conversation.transcriptContextID, conversation.transcriptControl)
 	if err != nil {
@@ -100,19 +118,6 @@ func loadConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conver
 	}
 	if len(conversation.activeControl) > 0 {
 		conversation.ActiveContext, err = conversation.loadNativeContext(store, conversation.API, conversation.activeContextID, conversation.activeControl)
-	}
-	if err == nil {
-		conversation.storedContexts = map[protocol.Context]contextCheckpoint{conversation.Transcript: {Head: conversation.transcriptContextID, Count: conversation.Transcript.RecordCount()}}
-		conversation.executionSnapshots = map[protocol.Context]*modelExecutionSnapshot{}
-		if err := conversation.restoreExecutionSnapshot(conversation.Transcript, conversation.transcriptControl); err != nil {
-			return err
-		}
-		if conversation.ActiveContext != nil {
-			conversation.storedContexts[conversation.ActiveContext] = contextCheckpoint{Head: conversation.activeContextID, Count: conversation.ActiveContext.RecordCount()}
-			if err := conversation.restoreExecutionSnapshot(conversation.ActiveContext, conversation.activeControl); err != nil {
-				return err
-			}
-		}
 	}
 	return err
 }
@@ -155,7 +160,6 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 	var (
 		conversation      Conversation
 		owner             sql.NullString
-		lease             sql.NullTime
 		pending           []byte
 		executor          sql.NullString
 		transcriptID      sql.NullString
@@ -167,7 +171,7 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 		shell             sql.NullString
 		environment       []byte
 	)
-	if err := row.Scan(&conversation.ID, &conversation.Generation, &owner, &lease, &pending,
+	if err := row.Scan(&conversation.ID, &conversation.Generation, &owner, &pending,
 		&conversation.Stopped, &executor, &transcriptID, &activeID, &transcriptControl, &activeControl, &instructions, &contextTokens, &shell, &environment, &conversation.API); err != nil {
 		return nil, err
 	}
@@ -182,9 +186,6 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 	}
 	if owner.Valid {
 		conversation.Owner = &owner.String
-	}
-	if lease.Valid {
-		conversation.LeaseUntil = &lease.Time
 	}
 	if executor.Valid {
 		conversation.ExecutorSession = &executor.String
@@ -207,10 +208,21 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 	return &conversation, nil
 }
 
-const conversationColumns = `id::text, generation, owner::text, lease_until, pending, stopped,
+const conversationColumns = `id::text, generation, owner::text, pending, stopped,
 	executor_session, transcript_context_id, active_context_id, transcript_control, active_control, instructions, context_tokens, executor_shell, environment_context, api`
 
 func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
+	row, err := lockOwnerWithContextRefs(ctx, tx, owner)
+	if err != nil {
+		return nil, err
+	}
+	if err := loadConversationItems(ctx, tx, row); err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+func lockOwnerWithContextRefs(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
 	row, err := scanConversation(tx.QueryRowContext(ctx,
 		`SELECT `+conversationColumns+` FROM sampler_conversation WHERE id=$1 FOR UPDATE`, owner.ConversationID))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -222,9 +234,6 @@ func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, err
 	if err := fenceOwner(ctx, tx, owner); err != nil {
 		return nil, err
 	}
-	if err := loadConversationItems(ctx, tx, row); err != nil {
-		return nil, err
-	}
 	return row, nil
 }
 
@@ -234,12 +243,11 @@ func lockOwnerHeader(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversatio
 	var (
 		conversation Conversation
 		currentOwner sql.NullString
-		leaseUntil   sql.NullTime
 		pending      []byte
 	)
-	err := tx.QueryRowContext(ctx, `SELECT id::text,generation,owner::text,lease_until,pending
+	err := tx.QueryRowContext(ctx, `SELECT id::text,generation,owner::text,pending
 		FROM sampler_conversation WHERE id=$1 FOR UPDATE`, owner.ConversationID).Scan(
-		&conversation.ID, &conversation.Generation, &currentOwner, &leaseUntil, &pending,
+		&conversation.ID, &conversation.Generation, &currentOwner, &pending,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, &LostOwnershipError{Reason: "conversation no longer exists"}
@@ -252,9 +260,6 @@ func lockOwnerHeader(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversatio
 	}
 	if currentOwner.Valid {
 		conversation.Owner = &currentOwner.String
-	}
-	if leaseUntil.Valid {
-		conversation.LeaseUntil = &leaseUntil.Time
 	}
 	if conversation.Pending, err = decodePendingIntent(pending); err != nil {
 		return nil, err
@@ -313,7 +318,7 @@ func scanSession(row rowScanner) (*Session, error) {
 	return &session, nil
 }
 
-func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *eventpb.Event) (*eventlogpb.EventEntry, error) {
+func (s *Store) appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *eventpb.Event) (*eventlogpb.EventEntry, error) {
 	session.Cursor++
 	event.At = timestamppb.Now()
 	entry := &eventlogpb.EventEntry{
@@ -331,6 +336,11 @@ func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *event
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_event(session_id,sequence,entry) VALUES($1,$2,$3)`, session.ID, session.Cursor, wire); err != nil {
 		return nil, err
+	}
+	if s.eventBlockWrites && session.Cursor%eventcodec.MaxBlockEntries == 0 {
+		if err := sealJournalWindow(ctx, tx, session.ID, session.Cursor); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE sampler_session SET cursor=$2 WHERE id=$1`, session.ID, session.Cursor); err != nil {
 		return nil, err

@@ -1,7 +1,5 @@
 # gazelle:ignore
 
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
-# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -23,6 +21,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:restic_backup",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",

@@ -21,37 +21,29 @@ BB_OUT_PREFIX = "bb-out/"
 
 @dataclasses.dataclass(frozen=True)
 class Release:
-    """One row of the release matrix.
-
-    Field names are the matrix keys release.yml reads — except `filenames`,
-    which both the planner and publishing job use.
-    """
+    """A release and its ordered (Bazel target, published filename) pairs."""
 
     pkg: str
-    targets: str
-    #: Each target's released asset name, aligned with `targets`. The name is a
-    #: contract: sync_pins.py derives every pin's download URL from it, and
-    #: release_assets.py refuses a built file that carries a different name.
-    filenames: str
-    tests: str
-    bazel_flags: str
-    release_metadata: str
-    metadata_platform: str
+    assets: tuple[tuple[str, str], ...]
+    tests: str = ""
+    bazel_flags: str = ""
+    release_metadata: bool = False
+    metadata_platform: str = ""
 
     @property
     def uses_default_config(self) -> bool:
         """Whether this row was built under the same Bazel config as bazel-ci."""
         return not self.bazel_flags
 
-    @property
-    def assets(self) -> list[tuple[str, str]]:
-        """(target, filename) pairs, aligned by position."""
-        return list(zip(self.targets.split(), self.filenames.split(), strict=True))
-
     def as_matrix_row(self) -> dict[str, str]:
-        row = dataclasses.asdict(self)
-        del row["filenames"]
-        return row
+        return {
+            "pkg": self.pkg,
+            "targets": " ".join(target for target, _ in self.assets),
+            "tests": self.tests,
+            "bazel_flags": self.bazel_flags,
+            "release_metadata": str(self.release_metadata).lower(),
+            "metadata_platform": self.metadata_platform,
+        }
 
 
 def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release]:
@@ -61,11 +53,10 @@ def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release
     rows = [
         Release(
             pkg=name,
-            targets=" ".join(pin["target"] for pin in owned),
-            filenames=" ".join(pin["filename"] for pin in owned),
+            assets=tuple((pin["target"], pin["filename"]) for pin in owned),
             tests=entry.get("tests", ""),
             bazel_flags=entry.get("bazelFlags", ""),
-            release_metadata=str(entry.get("releaseMetadata", False)).lower(),
+            release_metadata=entry.get("releaseMetadata", False),
             metadata_platform=entry.get("metadataPlatform", ""),
         )
         for name, entry in doc["releases"].items()
@@ -74,18 +65,7 @@ def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release
     # One release per deployable skill; skills/skills_registry.json is the SSOT.
     # Their `<name>_frontmatter_test` already runs in bazel-ci, so tests stays empty.
     skills = json.loads(skills_registry.read_text())["skills"]
-    rows.extend(
-        Release(
-            pkg=skill["pkg"],
-            targets=skill["target"],
-            filenames=skill["filename"],
-            tests="",
-            bazel_flags="",
-            release_metadata="false",
-            metadata_platform="",
-        )
-        for skill in skills
-    )
+    rows.extend(Release(pkg=skill["pkg"], assets=((skill["target"], skill["filename"]),)) for skill in skills)
     return rows
 
 
@@ -117,33 +97,55 @@ def release_paths(release: Release, by_label: Mapping[str, list[Output]]) -> lis
     return [resolve_asset(by_label, target, filename) for target, filename in release.assets]
 
 
+@dataclasses.dataclass(frozen=True)
+class _NixWheelInputs:
+    releases: list[str]
+    assets: dict[str, tuple[str, str]]
+
+    @classmethod
+    def load(cls, artifact_targets: Path) -> _NixWheelInputs:
+        doc = json.loads(artifact_targets.read_text())
+        gated = {name: release.get("nixPackage", False) for name, release in doc["releases"].items()}
+        return cls(
+            releases=[name for name, enabled in gated.items() if enabled],
+            assets={
+                name: (pin["target"], pin["filename"]) for name, pin in doc["pins"].items() if gated[pin["release"]]
+            },
+        )
+
+
 def nix_override_assets(artifact_targets: Path, by_label: Mapping[str, list[Output]]) -> list[tuple[str, Output]]:
     """(pin name, default output) for every pin whose release is in the nix PR gate."""
-    doc = json.loads(artifact_targets.read_text())
     return [
-        (name, resolve_asset_output(by_label, pin["target"], pin["filename"]))
-        for name, pin in doc["pins"].items()
-        if doc["releases"][pin["release"]].get("nixPackage")
+        (name, resolve_asset_output(by_label, target, filename))
+        for name, (target, filename) in _NixWheelInputs.load(artifact_targets).assets.items()
     ]
 
 
 def main(argv: list[str] | None = None) -> None:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--artifact-targets", type=Path, default=Path("devinfra/ci/artifact_targets.json"))
-    common.add_argument(
-        "--invocations",
-        required=True,
-        help="comma-separated invocation ids of the build that produced the assets "
-        "(a bb-remote step's bazel_invocation_ids output)",
-    )
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     paths_cmd = commands.add_parser(
         "release-paths", parents=[common], help="print one bb-out/ path per asset of --release, in SSOT order"
     )
+    paths_cmd.add_argument(
+        "--invocations",
+        required=True,
+        help="comma-separated invocation ids of the build that produced the assets "
+        "(a bb-remote step's bazel_invocation_ids output)",
+    )
     paths_cmd.add_argument("--release", required=True, help="release pkg name (a release.yml matrix row's pkg)")
     paths_cmd.add_argument("--skills-registry", type=Path, default=Path("skills/skills_registry.json"))
+    commands.add_parser("nix-wheel-inputs", parents=[common], help="print Bazel targets and Nix checks as step outputs")
     args = parser.parse_args(argv)
+    if args.command == "nix-wheel-inputs":
+        inputs = _NixWheelInputs.load(args.artifact_targets)
+        print("bazel_targets=" + " ".join(target for target, _ in inputs.assets.values()))
+        print("nix_checks=" + " ".join(f".#checks.x86_64-linux.artifact-{name}" for name in inputs.releases))
+        return
+
     merged = merge(read(invocation_id) for invocation_id in args.invocations.split(",") if invocation_id)
     if merged is None:
         raise SystemExit("--invocations is empty; the build step must expose its bazel_invocation_ids")

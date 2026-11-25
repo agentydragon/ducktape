@@ -138,7 +138,7 @@ let
   # for these units, would show.
   consoleAutologinIs =
     autologin:
-    "${pkgs.jq}/bin/jq 'if (.environment.kind == \"vm\" and .environment.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeConfigFile}";
+    "${pkgs.jq}/bin/jq 'if (.environment.supervision == \"systemd\" and .environment.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeConfigFile}";
   applyRunnerResourceLimits = pkgs.writeShellScript "agentplane-runner-resource-limits" (
     builtins.readFile ./systemd/apply-resource-limits
   );

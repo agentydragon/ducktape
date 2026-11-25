@@ -1,6 +1,7 @@
 -- aiquota-owned ClickHouse schema, applied by the API server at every start
 -- (ClickHouseSnapshotSink.apply_schema), one statement per request. Every
--- statement is CREATE/ALTER ... IF NOT EXISTS, so re-running it is safe. The
+-- statement is idempotent: CREATE/ADD COLUMN IF NOT EXISTS or a repeatable
+-- MODIFY QUERY. The
 -- `aiquota` database itself is bootstrapped once by ClickHouse admin
 -- (cluster/cdk8s/clickhouse/schema.sql) since database creation is outside the
 -- aiquota_ingest identity's grants.
@@ -11,6 +12,7 @@ CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER default
   schema_version UInt16,
   dataset LowCardinality(String),
   source LowCardinality(String),
+  account_id String DEFAULT '',
   observed_at DateTime64(3, 'UTC'),
   ingested_at DateTime64(3, 'UTC'),
   status_code UInt16,
@@ -50,6 +52,9 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (dataset, source, observed_at, event_id)
 TTL observed_at + INTERVAL 1 YEAR DELETE;
 
+ALTER TABLE aiquota.raw_http_observations ON CLUSTER default
+  ADD COLUMN IF NOT EXISTS account_id String DEFAULT '' AFTER source;
+
 -- Columns added after the table already existed; the CREATE above carries them
 -- for a fresh install, these ALTERs for an existing one.
 ALTER TABLE aiquota.raw_http_observations ON CLUSTER default
@@ -88,12 +93,35 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (provider, window_seconds, window_name, observed_at, event_id)
 TTL observed_at + INTERVAL 5 YEAR DELETE;
 
+ALTER TABLE aiquota.aiquota_windows ON CLUSTER default
+  ADD COLUMN IF NOT EXISTS account_id String DEFAULT '' AFTER provider;
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.aiquota_windows_mv ON CLUSTER default
 TO aiquota.aiquota_windows
 AS SELECT
   event_id,
   observed_at,
   source AS provider,
+  account_id,
+  w.window_name AS window_name,
+  w.used_percent AS used_percent,
+  w.remaining_percent AS remaining_percent,
+  w.reset_at AS reset_at,
+  w.reset_seconds AS reset_seconds,
+  w.window_seconds AS window_seconds,
+  w.extra_spend_enabled AS extra_spend_enabled,
+  w.extra_spend_limit_usd AS extra_spend_limit_usd,
+  w.extra_spend_used_usd AS extra_spend_used_usd,
+  w.extra_spend_utilization AS extra_spend_utilization
+FROM aiquota.raw_http_observations
+ARRAY JOIN quota_windows AS w;
+
+ALTER TABLE aiquota.aiquota_windows_mv ON CLUSTER default MODIFY QUERY
+SELECT
+  event_id,
+  observed_at,
+  source AS provider,
+  account_id,
   w.window_name AS window_name,
   w.used_percent AS used_percent,
   w.remaining_percent AS remaining_percent,
@@ -124,12 +152,27 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (provider, start_date, observed_at, event_id)
 TTL observed_at + INTERVAL 5 YEAR DELETE;
 
+ALTER TABLE aiquota.token_activity_daily ON CLUSTER default
+  ADD COLUMN IF NOT EXISTS account_id String DEFAULT '' AFTER provider;
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.token_activity_daily_mv ON CLUSTER default
 TO aiquota.token_activity_daily
 AS SELECT
   event_id,
   observed_at,
   source AS provider,
+  account_id,
+  t.start_date AS start_date,
+  t.tokens AS tokens
+FROM aiquota.raw_http_observations
+ARRAY JOIN token_activity AS t;
+
+ALTER TABLE aiquota.token_activity_daily_mv ON CLUSTER default MODIFY QUERY
+SELECT
+  event_id,
+  observed_at,
+  source AS provider,
+  account_id,
   t.start_date AS start_date,
   t.tokens AS tokens
 FROM aiquota.raw_http_observations
@@ -153,12 +196,30 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (provider, credit_id, observed_at, event_id)
 TTL observed_at + INTERVAL 5 YEAR DELETE;
 
+ALTER TABLE aiquota.reset_credits ON CLUSTER default
+  ADD COLUMN IF NOT EXISTS account_id String DEFAULT '' AFTER provider;
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.reset_credits_mv ON CLUSTER default
 TO aiquota.reset_credits
 AS SELECT
   event_id,
   observed_at,
   source AS provider,
+  account_id,
+  c.credit_id AS credit_id,
+  c.reset_type AS reset_type,
+  c.status AS status,
+  c.granted_at AS granted_at,
+  c.expires_at AS expires_at
+FROM aiquota.raw_http_observations
+ARRAY JOIN reset_credits AS c;
+
+ALTER TABLE aiquota.reset_credits_mv ON CLUSTER default MODIFY QUERY
+SELECT
+  event_id,
+  observed_at,
+  source AS provider,
+  account_id,
   c.credit_id AS credit_id,
   c.reset_type AS reset_type,
   c.status AS status,

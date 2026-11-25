@@ -10,7 +10,7 @@
 #     from third_party.containers import postgres_18
 
 load("@rules_oci//oci:defs.bzl", "oci_load")
-load("//devinfra/oci:defs.bzl", "oci_layout_py", "oci_layout_rloc")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library", "py_test")
 load(":images.bzl", "POSTGRES_18_TAG")
 
@@ -70,22 +70,6 @@ oci_layout_py(
     testonly = True,
     image = "@postgres_18_linux_amd64",
     visibility = ["//visibility:public"],
-)
-
-# The Go fixture passes these language-neutral layout pointers to the shared
-# Python loader. Python consumers use the generated descriptors directly.
-oci_layout_rloc(
-    name = "postgres_18_rloc",
-    testonly = True,
-    image = "@postgres_18_linux_amd64",
-    visibility = ["//agentplane:__subpackages__"],
-)
-
-oci_layout_rloc(
-    name = "ryuk_rloc",
-    testonly = True,
-    image = "@ryuk_linux_amd64",
-    visibility = ["//agentplane:__subpackages__"],
 )
 
 oci_layout_py(
@@ -153,8 +137,6 @@ oci_layout_py(
     visibility = ["//visibility:public"],
 )
 
-# Electric's original digest is absent from mirror.gcr.io and its upstream Docker Hub
-# repository is broken. The pin uses the published electricsql/electric-temp image.
 oci_layout_py(
     name = "electric_1_8_1",
     testonly = True,

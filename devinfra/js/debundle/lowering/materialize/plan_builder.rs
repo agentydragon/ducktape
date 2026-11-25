@@ -8,7 +8,6 @@ use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
 use crate::exports::PublicExportSurface;
 use crate::imports::{ArtifactSourceImportResolutionCache, resolve_imported_binding};
-use crate::ownership_subset::SelectedModule;
 use crate::plans::ModulePlan;
 use crate::util::target_file_for_request;
 use analysis::assignment_assembly::assemble_assignment_with_source_unit_claims;
@@ -24,6 +23,7 @@ use frontend_elaboration::MemberClaimProjection;
 use frontend_elaboration::chunk_ast::{SourceExportIdentity, TopLevelDecl, binding_declaration};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::{EsmImportOrder, EsmImportSchedule};
+use ownership_subset::SelectedModule;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
@@ -36,14 +36,6 @@ use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bin
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
-
-/// The module path of a `<chunk>::<path>` logical module id.
-fn logical_module_path(request_id: &str) -> String {
-    request_id
-        .split_once("::")
-        .map(|(_, path)| path.to_string())
-        .unwrap_or_else(|| panic!("logical module id {request_id:?} is not `<chunk>::<path>`"))
-}
 
 fn member_outcome(
     chunk_id: &str,
@@ -87,44 +79,39 @@ struct CoarseResidualBucket {
     export_surface: PublicExportSurface,
 }
 
-/// Declared names and syntax location of every dependency-graph source unit.
-struct SourceUnitIndex {
-    declared_names: HashMap<SourceUnitId, Vec<Id>>,
-    statements: HashMap<SourceUnitId, StatementId>,
+/// Borrow the graph and its layout after checking that every node has a syntax location.
+struct PlacementSourceUnits<'a> {
+    graph: &'a analysis::DependencyGraph,
+    layout: &'a SourceUnitLayout,
 }
 
-impl SourceUnitIndex {
+impl<'a> PlacementSourceUnits<'a> {
     fn new(
-        precomputed: &DependencyGraphAndAtomicGroups,
-        layout: &SourceUnitLayout,
+        precomputed: &'a DependencyGraphAndAtomicGroups,
+        layout: &'a SourceUnitLayout,
     ) -> Result<Self> {
-        let mut declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
-        let mut statements = HashMap::<SourceUnitId, StatementId>::new();
-        for node in precomputed.dependency_graph.iter_nodes() {
-            declared_names.insert(node.id, node.declared.iter().cloned().collect());
-            let location = layout.by_source_unit(node.id).with_context(|| {
+        let graph = &precomputed.dependency_graph;
+        for node in graph.iter_nodes() {
+            layout.by_source_unit(node.id).with_context(|| {
                 format!("source unit {} has no checked syntax location", node.id.0)
             })?;
-            statements.insert(node.id, location.statement);
         }
-        Ok(Self {
-            declared_names,
-            statements,
-        })
+        Ok(Self { graph, layout })
     }
 
-    fn declared_names(&self, source_unit: SourceUnitId) -> &[Id] {
-        self.declared_names
-            .get(&source_unit)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+    fn declared_names(&self, unit: SourceUnitId) -> &BTreeSet<Id> {
+        &self
+            .graph
+            .node(unit)
+            .expect("atomic groups contain graph nodes")
+            .declared
     }
 
-    fn statement(&self, source_unit: SourceUnitId) -> StatementId {
-        *self
-            .statements
-            .get(&source_unit)
+    fn statement(&self, unit: SourceUnitId) -> StatementId {
+        self.layout
+            .by_source_unit(unit)
             .expect("every graph node was checked against the source-unit layout")
+            .statement
     }
 }
 
@@ -645,35 +632,10 @@ impl ChunkPlanBuilder {
     }
 
     /// Claims what `resolution` resolved of `selectors`, and records every
-    /// other outcome.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn claim_resolution(
-        &mut self,
-        explicit_requests: &[LogicalRequest],
-        resolution: Resolution,
-        resolved_members: Vec<Vec<usize>>,
-        member_claims: &MemberClaimProjection,
-        chunk_top_level_mark: swc_common::Mark,
-        chunk_id: &str,
-        body: &[ModuleItem],
-        declaration_by_name: &HashMap<Id, Vec<StatementId>>,
-    ) -> Result<()> {
-        self.claim_resolution_at_offset(
-            0,
-            explicit_requests,
-            resolution,
-            resolved_members,
-            member_claims,
-            chunk_top_level_mark,
-            chunk_id,
-            body,
-            declaration_by_name,
-        )
-    }
-
-    /// Apply another independently resolved ownership layer to the existing
-    /// plans. Resolution indices and frontend claim indices stay local to that
-    /// layer; only concrete output-plan destinations receive the offset.
+    /// other outcome. A later, independently resolved ownership layer applies to
+    /// the existing plans: resolution indices and frontend claim indices stay
+    /// local to that layer; only concrete output-plan destinations receive
+    /// `module_offset`.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn claim_resolution_at_offset(
         &mut self,
@@ -823,7 +785,7 @@ impl ChunkPlanBuilder {
                 binding: binding.to_string(),
                 declaration,
                 claimed_by: EntityRef {
-                    logical_module: logical_module_path(&self.module_plans[plan_index].id),
+                    logical_module: self.module_plans[plan_index].target_path.clone(),
                     entity: export_name.map(Entity::Export),
                 },
             },
@@ -988,15 +950,12 @@ impl ChunkPlanBuilder {
         for (&statement, &module) in &self.whole_statement_assignment {
             let locations = layout.for_statement(statement);
             ensure!(
-                !locations.is_empty(),
+                locations.len() != 0,
                 "selected anonymous statement {} has no canonical source unit",
                 statement.0
             );
-            source_unit_claims.extend(
-                locations
-                    .into_iter()
-                    .map(|location| (location.source_unit, ModuleId(module))),
-            );
+            source_unit_claims
+                .extend(locations.map(|location| (location.source_unit, ModuleId(module))));
         }
         let assembled = assemble_assignment_with_source_unit_claims(
             &precomputed.dependency_graph,
@@ -1137,7 +1096,8 @@ impl ChunkPlanBuilder {
                 continue;
             };
             let module = ModuleId(plan_index);
-            for (name, id) in &decl.bindings {
+            for id in &decl.bindings {
+                let name = id.0.as_str();
                 let existing = owned_destination(&self.bindings_catalogue, id);
                 let already_adopted_here = self.module_plans[plan_index]
                     .anonymous_binding_statement_origins
@@ -1150,7 +1110,7 @@ impl ChunkPlanBuilder {
                     } else if existing == plan_index && already_adopted_here {
                         self.module_plans[plan_index]
                             .anonymous_binding_statement_origins
-                            .entry(name.clone())
+                            .entry(name.to_owned())
                             .or_default()
                             .insert(decl.statement);
                         continue;
@@ -1163,14 +1123,14 @@ impl ChunkPlanBuilder {
                     .contains_key(name);
                 self.module_plans[plan_index]
                     .bindings
-                    .entry(name.clone())
-                    .or_insert_with(|| name.clone());
+                    .entry(name.to_owned())
+                    .or_insert_with(|| name.to_owned());
                 self.bindings_catalogue
                     .insert(id.clone(), BindingKind::Owned { module });
                 if !has_explicit_claim {
                     self.module_plans[plan_index]
                         .anonymous_binding_statement_origins
-                        .entry(name.clone())
+                        .entry(name.to_owned())
                         .or_default()
                         .insert(decl.statement);
                 }
@@ -1240,7 +1200,7 @@ impl ChunkPlanBuilder {
         let unclaimed: Vec<_> = declarations
             .iter()
             .flat_map(|declaration| &declaration.bindings)
-            .filter(|(_, binding)| owned_destination(&self.bindings_catalogue, binding).is_none())
+            .filter(|binding| owned_destination(&self.bindings_catalogue, binding).is_none())
             .collect();
         let owner_index = match self
             .module_plans
@@ -1273,7 +1233,8 @@ impl ChunkPlanBuilder {
         };
         let owner_plan = &mut self.module_plans[owner_index];
         owner_plan.role = ModuleRole::Unassigned;
-        for (name, binding) in unclaimed {
+        for binding in unclaimed {
+            let name = binding.0.to_string();
             owner_plan
                 .bindings
                 .entry(name.clone())
@@ -1462,7 +1423,7 @@ impl ChunkPlanBuilder {
             return Ok(());
         }
 
-        let source_units = SourceUnitIndex::new(precomputed, layout)?;
+        let source_units = PlacementSourceUnits::new(precomputed, layout)?;
 
         let opted_in_owner_paths: BTreeSet<String> = opted_in_owner_paths.iter().cloned().collect();
         let mut atomic_groups: Vec<&BTreeSet<SourceUnitId>> = precomputed
@@ -1588,7 +1549,7 @@ impl ChunkPlanBuilder {
             return Ok(BTreeMap::new());
         }
 
-        let source_units = SourceUnitIndex::new(precomputed, layout)?;
+        let source_units = PlacementSourceUnits::new(precomputed, layout)?;
 
         let opted_in_owner_paths: BTreeSet<&str> =
             opted_in_owner_paths.iter().map(String::as_str).collect();
@@ -1684,7 +1645,7 @@ impl ChunkPlanBuilder {
         precomputed: &'a DependencyGraphAndAtomicGroups,
         layout: &SourceUnitLayout,
     ) -> Result<Vec<&'a BTreeSet<SourceUnitId>>> {
-        let source_units = SourceUnitIndex::new(precomputed, layout)?;
+        let source_units = PlacementSourceUnits::new(precomputed, layout)?;
 
         let residual_plan_index = self.residual_plan_index;
         let bindings_catalogue = &self.bindings_catalogue;
@@ -1758,21 +1719,6 @@ impl ChunkPlanBuilder {
             }
         }
 
-        let mut source_unit_export_surfaces = HashMap::<SourceUnitId, PublicExportSurface>::new();
-        for node in dependency_graph.iter_nodes() {
-            let location = layout.by_source_unit(node.id).with_context(|| {
-                format!("source unit {} has no checked syntax location", node.id.0)
-            })?;
-            let mut surface = PublicExportSurface::default();
-            for name in &node.declared {
-                surface.add_binding(name.0.to_string(), name.clone());
-            }
-            if let Some(exports) = source_exports_by_statement.get(&location.statement) {
-                surface.add_source_identities(exports);
-            }
-            source_unit_export_surfaces.insert(node.id, surface);
-        }
-
         let mut virtual_modules = BTreeSet::new();
         let mut candidate_modules =
             Vec::<(ModuleId, &BTreeSet<SourceUnitId>, PublicExportSurface)>::new();
@@ -1785,18 +1731,24 @@ impl ChunkPlanBuilder {
             virtual_modules.insert(module_id);
             let mut export_surface = PublicExportSurface::default();
             for source_unit in members.iter() {
-                let unit_surface =
-                    source_unit_export_surfaces
-                        .get(source_unit)
-                        .with_context(|| {
-                            format!("source unit {} has no export surface", source_unit.0)
-                        })?;
-                export_surface.merge(unit_surface);
-            }
-            candidate_modules.push((module_id, *members, export_surface));
-            for source_unit in members.iter() {
+                let node = dependency_graph.node(*source_unit).with_context(|| {
+                    format!("source unit {} has no export surface", source_unit.0)
+                })?;
+                let location = layout.by_source_unit(*source_unit).with_context(|| {
+                    format!(
+                        "source unit {} has no checked syntax location",
+                        source_unit.0
+                    )
+                })?;
+                for id in &node.declared {
+                    export_surface.add_binding(id.0.to_string(), id.clone());
+                }
+                if let Some(exports) = source_exports_by_statement.get(&location.statement) {
+                    export_surface.add_source_identities(exports);
+                }
                 source_unit_claims.push((*source_unit, module_id));
             }
+            candidate_modules.push((module_id, *members, export_surface));
         }
 
         let assignment = assemble_assignment_with_source_unit_claims(
@@ -1907,7 +1859,7 @@ impl ChunkPlanBuilder {
         path_prefix: &str,
         generated_residual: bool,
     ) -> Result<()> {
-        let source_units = SourceUnitIndex::new(precomputed, layout)?;
+        let source_units = PlacementSourceUnits::new(precomputed, layout)?;
 
         let residual_plan_index = self.residual_plan_index;
         for (idx, members) in groups.into_iter().enumerate() {

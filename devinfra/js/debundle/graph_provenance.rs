@@ -4,7 +4,7 @@
 //! the bytes returned to the parser, rather than reopening the path after analysis.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
@@ -140,28 +140,43 @@ fn read_json_header<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
         .with_context(|| format!("parsing header of {}", path.display()))
 }
 
-pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
-    let graph: ChunkGraphHeader = read_json_header(path)?;
-    let program: ProgramGraphHeader =
-        read_json_header(&program_graph_path(path, &graph.program_graph))?;
+/// Read the companion program graph and check it describes the chunk's selected owners.
+pub fn read_program_provenance(
+    path: &Path,
+    program_graph: &Path,
+    chunk_id: &str,
+    ownership_subset: Option<&[SelectedOwnershipModule]>,
+) -> Result<Option<GraphProvenance>> {
+    let program: ProgramGraphHeader = read_json_header(&program_graph_path(path, program_graph))?;
     if let Some(provenance) = &program.provenance {
-        let expected = provenance.selected_ownership_by_chunk.get(&graph.chunk_id);
+        let expected = provenance.selected_ownership_by_chunk.get(chunk_id);
         anyhow::ensure!(
-            graph.ownership_subset.as_ref() == expected,
+            ownership_subset == expected.map(Vec::as_slice),
             "dependency graph selected ownership for chunk {} does not match its program provenance",
-            graph.chunk_id
+            chunk_id
         );
     } else {
         anyhow::ensure!(
-            graph.ownership_subset.is_none(),
+            ownership_subset.is_none(),
             "dependency graph selected ownership has no program provenance"
         );
     }
+    Ok(program.provenance)
+}
+
+pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
+    let graph: ChunkGraphHeader = read_json_header(path)?;
+    let provenance = read_program_provenance(
+        path,
+        &graph.program_graph,
+        &graph.chunk_id,
+        graph.ownership_subset.as_deref(),
+    )?;
     Ok(GraphHeader {
         selected_ownership: graph.ownership_subset,
         chunk_id: graph.chunk_id,
         program_graph: graph.program_graph,
-        provenance: program.provenance,
+        provenance,
     })
 }
 
@@ -431,18 +446,6 @@ impl InputCapture {
             *slot.borrow_mut() = Some(state.clone());
             Ok(Self { state })
         })
-    }
-
-    pub fn set_source_root(&self, path: &Path) -> Result<()> {
-        let path = absolute(path)?;
-        self.state
-            .lock()
-            .expect("capture lock")
-            .as_mut()
-            .expect("capture started")
-            .roots
-            .source = path;
-        Ok(())
     }
 
     /// Record bytes already read by the caller so capture and parsing use the
@@ -763,7 +766,7 @@ impl GraphProvenance {
             .roots
             .packages
             .get_key_value(name)
-            .or_else(|| self.roots.packages.get_key_value("__packages_root__"))
+            .or_else(|| self.roots.packages.get_key_value(SHARED_PACKAGES_ROOT))
             .with_context(|| format!("missing captured root for package {name}"))?;
         if let Ok(relative) = absolute.strip_prefix(root) {
             return Ok((
@@ -915,7 +918,7 @@ impl GraphProvenance {
                     }
                     "--packages-root" => current
                         .packages
-                        .get("__packages_root__")
+                        .get(SHARED_PACKAGES_ROOT)
                         .map(PathBuf::as_path)
                         .map(absolute)
                         .transpose()?
@@ -1005,42 +1008,47 @@ impl GraphProvenance {
         chunk_id: Option<&str>,
     ) -> Result<Option<VerifiedGraphSourceContext>> {
         let (regenerate_command, regenerate_cwd) = self.regeneration_recipe(current)?;
-        let engine = engine_sha256()?;
-        if engine != self.engine_sha256 {
-            return Err(GraphMismatch::new(
-                GraphMismatchReason::Engine {
-                    expected: self.engine_sha256.clone(),
-                    actual: engine,
-                },
+        let mismatch = |reason| {
+            anyhow::Error::from(GraphMismatch::new(
+                reason,
                 regenerate_command.clone(),
                 Some(regenerate_cwd.clone()),
-            )
-            .into());
+            ))
+        };
+        let require_directory = |path: &Path| -> Result<()> {
+            if !path.is_dir() {
+                return Err(mismatch(GraphMismatchReason::Directory {
+                    path: path.to_owned(),
+                    expected: "directory".to_string(),
+                    actual: if path.exists() { "file" } else { "missing" }.to_string(),
+                }));
+            }
+            Ok(())
+        };
+        let engine = engine_sha256()?;
+        if engine != self.engine_sha256 {
+            return Err(mismatch(GraphMismatchReason::Engine {
+                expected: self.engine_sha256.clone(),
+                actual: engine,
+            }));
         }
-        let mut chunk_ids = std::collections::BTreeSet::new();
+        let mut sources_by_chunk = BTreeMap::new();
         for source in &self.chunk_sources {
             anyhow::ensure!(
-                chunk_ids.insert(source.chunk_id.as_str()),
+                sources_by_chunk
+                    .insert(source.chunk_id.as_str(), source)
+                    .is_none(),
                 "graph provenance has multiple source mappings for chunk {}",
                 source.chunk_id
             );
         }
         let source = if let Some(chunk_id) = chunk_id {
-            let mut matches = self
-                .chunk_sources
-                .iter()
-                .filter(|source| source.chunk_id == chunk_id);
-            let source = matches.next().with_context(|| {
+            let source = sources_by_chunk.get(chunk_id).copied().with_context(|| {
                 format!("graph provenance lacks source mapping for chunk {chunk_id}")
             })?;
-            anyhow::ensure!(
-                matches.next().is_none(),
-                "graph provenance has multiple source mappings for chunk {chunk_id}"
-            );
-            let matching_files = self.files.iter().filter(|file| {
+            let mut matching_files = self.files.iter().filter(|file| {
                 file.root == source.input_file.root && file.path == source.input_file.path
             });
-            let mut matching_files = matching_files;
             let input_file = matching_files.next().with_context(|| {
                 format!(
                     "captured source input {} is missing from graph fingerprints",
@@ -1060,51 +1068,24 @@ impl GraphProvenance {
         } else {
             None
         };
-        let mut verified_source_bytes = None;
+        let mut verified_source = None;
         let mut verified_tree_config = None;
         let mut verified_ownership_subset = None;
         for membership in &self.yaml_memberships {
             let dir = self.resolve(&membership.root, &membership.directory, current)?;
-            if !dir.is_dir() {
-                return Err(GraphMismatch::new(
-                    GraphMismatchReason::Directory {
-                        path: dir.clone(),
-                        expected: "directory".to_string(),
-                        actual: if dir.exists() { "file" } else { "missing" }.to_string(),
-                    },
-                    regenerate_command.clone(),
-                    Some(regenerate_cwd.clone()),
-                )
-                .into());
-            }
+            require_directory(&dir)?;
             let actual = collect_yaml(&dir)?;
             if actual != membership.members {
-                return Err(GraphMismatch::new(
-                    GraphMismatchReason::YamlMembership {
-                        directory: dir,
-                        expected: membership.members.clone(),
-                        actual,
-                    },
-                    regenerate_command.clone(),
-                    Some(regenerate_cwd.clone()),
-                )
-                .into());
+                return Err(mismatch(GraphMismatchReason::YamlMembership {
+                    directory: dir,
+                    expected: membership.members.clone(),
+                    actual,
+                }));
             }
         }
         for directory in &self.present_directories {
             let path = self.resolve(&directory.root, &directory.path, current)?;
-            if !path.is_dir() {
-                return Err(GraphMismatch::new(
-                    GraphMismatchReason::Directory {
-                        path: path.clone(),
-                        expected: "directory".to_string(),
-                        actual: if path.exists() { "file" } else { "missing" }.to_string(),
-                    },
-                    regenerate_command.clone(),
-                    Some(regenerate_cwd.clone()),
-                )
-                .into());
-            }
+            require_directory(&path)?;
         }
         for file in &self.files {
             let path = self.resolve(&file.root, &file.path, current)?;
@@ -1128,54 +1109,38 @@ impl GraphProvenance {
                         Some((absolute(&path)?, Arc::from(contents.as_slice())));
                 }
             }
-            if source.is_some_and(|(source, _)| {
-                source.input_file.root == file.root && source.input_file.path == file.path
-            }) {
-                verified_source_bytes = contents;
-            }
             if actual != file.sha256 {
-                return Err(GraphMismatch::new(
-                    GraphMismatchReason::File {
-                        path,
-                        expected: file.sha256.clone(),
-                        actual,
-                    },
-                    regenerate_command.clone(),
-                    Some(regenerate_cwd.clone()),
-                )
-                .into());
+                return Err(mismatch(GraphMismatchReason::File {
+                    path,
+                    expected: file.sha256.clone(),
+                    actual,
+                }));
+            }
+            // The selected fingerprint was checked against the chunk's digest
+            // above. Retain the same bytes we just hashed and their physical path.
+            if source.is_some_and(|(_, selected)| std::ptr::eq(selected, file)) {
+                verified_source = contents.map(|bytes| (path, bytes));
             }
         }
         for absent in &self.absent_files {
             let path = self.resolve(&absent.root, &absent.path, current)?;
             if path.exists() {
-                return Err(GraphMismatch::new(
-                    GraphMismatchReason::File {
-                        path,
-                        expected: "absent".to_string(),
-                        actual: "present".to_string(),
-                    },
-                    regenerate_command.clone(),
-                    Some(regenerate_cwd.clone()),
-                )
-                .into());
+                return Err(mismatch(GraphMismatchReason::File {
+                    path,
+                    expected: "absent".to_string(),
+                    actual: "present".to_string(),
+                }));
             }
         }
         let Some((source, _)) = source else {
             return Ok(None);
         };
-        let bytes = verified_source_bytes.with_context(|| {
+        let (input_file, bytes) = verified_source.with_context(|| {
             format!(
                 "verified graph input did not retain source bytes for chunk {}",
                 source.chunk_id
             )
         })?;
-        anyhow::ensure!(
-            sha256(&bytes) == source.sha256,
-            "verified source bytes do not match chunk {} digest",
-            source.chunk_id
-        );
-        let input_file = self.resolve(&source.input_file.root, &source.input_file.path, current)?;
         let modules_root = self
             .modules_directory
             .as_deref()
@@ -1267,6 +1232,27 @@ pub fn collect_yaml(root: &Path) -> Result<Vec<PathBuf>> {
     walk(root, root, &mut out)?;
     out.sort();
     Ok(out)
+}
+
+/// Key used for the shared package fallback in captured and relocated provenance roots.
+pub const SHARED_PACKAGES_ROOT: &str = "__packages_root__";
+
+pub fn capture_package_roots(
+    named: &HashMap<String, PathBuf>,
+    shared: Option<&Path>,
+) -> Result<BTreeMap<String, PathBuf>> {
+    anyhow::ensure!(
+        !named.contains_key(SHARED_PACKAGES_ROOT),
+        "package name {SHARED_PACKAGES_ROOT} is reserved for the shared packages root in graph provenance"
+    );
+    let mut packages = BTreeMap::new();
+    for (name, path) in named {
+        packages.insert(name.clone(), absolute(path)?);
+    }
+    if let Some(path) = shared {
+        packages.insert(SHARED_PACKAGES_ROOT.to_owned(), absolute(path)?);
+    }
+    Ok(packages)
 }
 
 pub fn absolute(path: &Path) -> Result<PathBuf> {

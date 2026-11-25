@@ -6,6 +6,8 @@
 use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use petgraph::algo::tarjan_scc;
+use petgraph::graphmap::DiGraphMap;
 use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
@@ -14,7 +16,7 @@ use analysis::reports::schema::{
     CallbackFactoryCallbackSourceReport, CallbackFactoryUseReport, CommutingStatementsReport,
     ImportedCallableSummaryReport, LineRange, ReturnedRecordUseReport,
 };
-use analysis::reports::{atomic_group_key, module_id_from_key, module_key, source_unit_key};
+use analysis::reports::{atomic_group_key, module_key, source_unit_key};
 use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
     BindingReport, CallbackFactoryBarrierRejection, CallbackFactoryBarrierReport,
@@ -41,20 +43,8 @@ pub(crate) fn build_dependency_graph_report(
     program_graph: std::path::PathBuf,
     author_inputs: &AuthorInputLocations<'_>,
 ) -> DependencyGraphReport {
-    // The three sub-reports below — `(quotient_nodes, quotient_edges)`,
-    // `nodes` + `edges`, and `atomic_graph` — share no mutable state
-    // and individually account for tens of seconds on chunks with
-    // thousands of source units. Run them concurrently via `rayon::join`
-    // so wall-clock collapses to roughly the slowest one. SCC
-    // construction depends on `quotient_edges`, so it runs after the
-    // join with the now-ready edge list.
-    let (quotient_pair, (nodes_edges, atomic_graph)) = rayon::join(
-        || {
-            rayon::join(
-                || build_quotient_node_reports(assignment_analysis),
-                || build_quotient_edge_reports(assignment_analysis),
-            )
-        },
+    let (quotient, (nodes_edges, atomic_graph)) = rayon::join(
+        || build_quotient_report(assignment_analysis),
         || {
             rayon::join(
                 || build_source_unit_nodes_and_edges(assignment_analysis, author_inputs),
@@ -62,7 +52,6 @@ pub(crate) fn build_dependency_graph_report(
             )
         },
     );
-    let (quotient_nodes, quotient_edges) = quotient_pair;
     let (mut nodes, edges) = nodes_edges;
     let purity_causes = collect_purity_causes(&mut nodes);
     let mut imported_callable_summaries = BTreeMap::<String, (Vec<_>, Option<_>)>::new();
@@ -100,8 +89,6 @@ pub(crate) fn build_dependency_graph_report(
             },
         )
         .collect();
-    let quotient_sccs =
-        build_quotient_scc_reports(assignment_analysis, &quotient_nodes, &quotient_edges);
     DependencyGraphReport {
         chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
         import_order: assignment_analysis.import_priority().to_vec(),
@@ -114,11 +101,7 @@ pub(crate) fn build_dependency_graph_report(
         commuting_statements: build_commuting_statements_reports(
             assignment_analysis.inputs().dependency_graph(),
         ),
-        quotient: ModuleQuotientReport {
-            nodes: quotient_nodes,
-            edges: quotient_edges,
-            sccs: quotient_sccs,
-        },
+        quotient,
         atomic_graph,
     }
 }
@@ -379,35 +362,19 @@ fn build_quotient_node_reports(assignment_analysis: &AssignmentAnalysis) -> Vec<
     for (_, module) in assignment_analysis.assignment().iter() {
         modules.insert(module);
     }
-    for (from, to) in assignment_analysis.module_quotient().all_edges() {
-        modules.insert(from);
-        modules.insert(to);
-    }
     modules
         .into_iter()
         .map(|id| module_entry(assignment_analysis, id))
         .collect()
 }
 
-fn build_quotient_edge_reports(
-    assignment_analysis: &AssignmentAnalysis,
-) -> Vec<QuotientEdgeReport> {
-    // Use a `HashMap` for the per-(from,to) accumulator — quotient
-    // edges count in the tens of thousands and `BTreeMap::entry` is
-    // `O(log n)` per insert. The output ordering still has to match
-    // the previous `BTreeMap` traversal (ascending `(from, to)`), so
-    // we sort once at the end. `kinds` likewise: build into a
-    // `BTreeSet` per pair (small — at most one entry per `DepKind`
-    // variant) so the final `edge_kinds: Vec<DepKind>` stays sorted
-    // without a per-pair sort.
+fn build_quotient_report(assignment_analysis: &AssignmentAnalysis) -> ModuleQuotientReport {
     let assignment = assignment_analysis.assignment();
     let dependency_graph = assignment_analysis.inputs().dependency_graph();
+    let mut graph = DiGraphMap::new();
     let mut accum: HashMap<(ModuleId, ModuleId), QuotientEdgeAccumulator> =
         HashMap::with_capacity(dependency_graph.num_edges());
-    let mut seen_side_effect_module_pairs: HashSet<(ModuleId, ModuleId)> = HashSet::new();
     for edge in dependency_graph.iter_edges() {
-        // Same assignment view every other quotient consumer uses; see
-        // `assignment_endpoints` invariant doc.
         let Some((from, to)) = analysis::graph::assignment_endpoints(
             edge,
             assignment,
@@ -415,30 +382,44 @@ fn build_quotient_edge_reports(
         ) else {
             continue;
         };
-        if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {
+        let entry = accum.entry((from, to)).or_insert_with(|| {
+            // Keep the first-seen order for Tarjan and its reported SCC IDs.
+            graph.add_edge(from, to, ());
+            QuotientEdgeAccumulator::default()
+        });
+        // Only the first sequenced edge contributes evidence for this pair,
+        // including when an author premise made that first edge inert.
+        if !entry.kinds.insert(edge.reason.kind) && edge.reason.is_sequenced() {
             continue;
         }
-        let entry = accum.entry((from, to)).or_default();
-        entry.kinds.insert(edge.reason.kind);
         entry.constrains_init_order |= edge.reason.constrains_init_order();
     }
-    let mut pairs: Vec<((ModuleId, ModuleId), QuotientEdgeAccumulator)> =
-        accum.into_iter().collect();
+    let mut pairs: Vec<_> = accum.into_iter().collect();
     pairs.sort_by_key(|((from, to), _)| (*from, *to));
-    pairs
+    let mut edge_indices_by_source = BTreeMap::<ModuleId, Vec<(ModuleId, usize)>>::new();
+    let edges: Vec<_> = pairs
         .into_iter()
         .enumerate()
-        .map(|(idx, ((from, to), entry))| QuotientEdgeReport {
-            id: format!("module_edge:{idx}"),
-            source: module_key(from),
-            target: module_key(to),
-            edge_kinds: entry.kinds.into_iter().collect(),
-            constrains_init_order: entry.constrains_init_order,
+        .map(|(idx, ((from, to), entry))| {
+            edge_indices_by_source
+                .entry(from)
+                .or_default()
+                .push((to, idx));
+            QuotientEdgeReport {
+                id: format!("module_edge:{idx}"),
+                source: module_key(from),
+                target: module_key(to),
+                edge_kinds: entry.kinds.into_iter().collect(),
+                constrains_init_order: entry.constrains_init_order,
+            }
         })
-        .collect()
+        .collect();
+    let nodes = build_quotient_node_reports(assignment_analysis);
+    let sccs = build_quotient_scc_reports(&graph, &nodes, &edges, &edge_indices_by_source);
+    ModuleQuotientReport { nodes, edges, sccs }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Default)]
 struct QuotientEdgeAccumulator {
     kinds: BTreeSet<DepKind>,
     constrains_init_order: bool,
@@ -588,22 +569,18 @@ fn build_atomic_graph_report(assignment_analysis: &AssignmentAnalysis) -> Atomic
 }
 
 fn build_quotient_scc_reports(
-    assignment_analysis: &AssignmentAnalysis,
+    graph: &DiGraphMap<ModuleId, ()>,
     quotient_nodes: &[ModuleEntry],
     quotient_edges: &[QuotientEdgeReport],
+    quotient_edges_by_source: &BTreeMap<ModuleId, Vec<(ModuleId, usize)>>,
 ) -> Vec<QuotientSccReport> {
-    let quotient_edges_by_source = quotient_edge_indices_by_source(quotient_edges);
     let mut sccs = Vec::new();
-    for scc in assignment_analysis.module_quotient_sccs() {
-        let is_cycle = scc.len() > 1
-            || (scc.len() == 1
-                && assignment_analysis
-                    .module_quotient()
-                    .contains_edge(scc[0], scc[0]));
-        if !is_cycle {
+    for scc in tarjan_scc(graph) {
+        // The projection excludes same-module edges, so there are no self-loops.
+        if scc.len() < 2 {
             continue;
         }
-        let in_scc: BTreeSet<ModuleId> = scc.iter().copied().collect();
+        let in_scc: BTreeSet<ModuleId> = scc.into_iter().collect();
         let mut module_edge_ids = Vec::new();
         let mut constraining_module_edge_ids = Vec::new();
         for &source in &in_scc {
@@ -628,7 +605,7 @@ fn build_quotient_scc_reports(
         sccs.push(QuotientSccReport {
             id: format!("scc:{}", sccs.len()),
             modules,
-            is_cycle,
+            is_cycle: true,
             module_edge_ids,
             constraining_module_edge_ids,
         });
@@ -651,22 +628,6 @@ fn build_quotient_scc_reports(
         }
     }
     sccs
-}
-
-fn quotient_edge_indices_by_source(
-    quotient_edges: &[QuotientEdgeReport],
-) -> BTreeMap<ModuleId, Vec<(ModuleId, usize)>> {
-    let mut by_source = BTreeMap::<ModuleId, Vec<(ModuleId, usize)>>::new();
-    for (idx, edge) in quotient_edges.iter().enumerate() {
-        let Some(source) = module_id_from_key(&edge.source) else {
-            continue;
-        };
-        let Some(target) = module_id_from_key(&edge.target) else {
-            continue;
-        };
-        by_source.entry(source).or_default().push((target, idx));
-    }
-    by_source
 }
 
 /// Preserve the disjoint entry identity and planned-output policy in the

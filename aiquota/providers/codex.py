@@ -19,6 +19,7 @@ import httpx
 from atomicwrites import atomic_write
 from pydantic import BaseModel, ConfigDict
 
+from aiquota.config import CodexSettings
 from aiquota.models import (
     FetchError,
     FetchSuccess,
@@ -48,11 +49,6 @@ OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 API_TIMEOUT_SECS = 5.0
 TOKEN_REFRESH_INTERVAL = timedelta(days=8)
 TOKEN_EXPIRY_SKEW_SECS = 30
-
-
-class CodexSettings(BaseModel):
-    enabled: bool = True
-    auth_path: Path = Path.home() / ".codex" / "auth.json"
 
 
 class _AuthTokens(BaseModel):

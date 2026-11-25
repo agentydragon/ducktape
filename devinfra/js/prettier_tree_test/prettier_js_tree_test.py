@@ -11,8 +11,7 @@ def _tree(runfiles: Runfiles, name: str) -> Path:
     return Path(location)
 
 
-def test_default_config_formats_the_complete_tree_and_preserves_other_bytes() -> None:
-    runfiles = Runfiles.CreateOrRaise()
+def test_default_config_formats_the_complete_tree_and_preserves_other_bytes(runfiles: Runfiles) -> None:
     output = _tree(runfiles, "ALL_TREE")
 
     assert (output / "outside.js").read_text() == "const outside = { answer: 42 };\n"
@@ -21,8 +20,7 @@ def test_default_config_formats_the_complete_tree_and_preserves_other_bytes() ->
     assert (output / "app" / "nested" / "note.txt").read_bytes() == bytes([0x68, 0x69, 0x00, 0xFE])
 
 
-def test_config_and_input_subdirectory_overrides_apply_to_the_selected_tree() -> None:
-    runfiles = Runfiles.CreateOrRaise()
+def test_config_and_input_subdirectory_overrides_apply_to_the_selected_tree(runfiles: Runfiles) -> None:
     output = _tree(runfiles, "APP_TREE")
 
     assert (output / "main.js").read_text() == "const message = 'hello'\nconsole.log(message)\n"

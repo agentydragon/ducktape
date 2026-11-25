@@ -12,7 +12,7 @@ from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.driver.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
+from agentplane.system_tests.driver.agent import Agent, scripted_turn_with_admission_and_history
 from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
@@ -89,17 +89,9 @@ async def _open_agent(
     view: environment_service_pb2.EnvironmentDescriptor,
     harness: session_pb2.Harness,
     model_name: str,
-    *,
-    cwd: str = WORKING_DIRECTORY,
 ) -> Agent:
     agent = await Agent.create(
-        client,
-        dispatcher,
-        sandbox=view.target.name,
-        sandbox_uid=view.target.uid,
-        harness=harness,
-        model=model_name,
-        cwd=cwd,
+        client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=model_name
     )
     await client.wait_for_thread_feed(agent.thread_id, timeout_s=REQUEST_SECONDS)
     return agent

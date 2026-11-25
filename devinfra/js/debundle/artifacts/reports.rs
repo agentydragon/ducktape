@@ -1,43 +1,16 @@
-//! Serialized report models and the shared JSON writer for artifact output.
+//! Serialized report models for artifact output.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::io::{BufWriter, Write};
-use std::path::Path;
 use std::sync::Arc;
 
 use analysis_model::DepKind;
 use analysis_model::StableExportValue;
-use anyhow::{Context, Result};
 use js_ast::ParsedGlobalUses;
 use serde::{Deserialize, Serialize};
 use swc_common::Span;
 
 use crate::FileRole;
 use crate::metrics::{DecompositionMetrics, OutputMetrics};
-
-/// Emit compact JSON for pipeline side outputs, creating parent directories.
-///
-/// These reports are usually consumed by tooling or `jq`; pretty printing is a
-/// measurable cost on large bundles.
-pub fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
-    let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    }
-    let writer = BufWriter::new(
-        fs::File::create(path).with_context(|| format!("creating {}", path.display()))?,
-    );
-    write_json_to(writer, path, data)
-}
-
-fn write_json_to(mut writer: impl Write, path: &Path, data: &impl Serialize) -> Result<()> {
-    serde_json::to_writer(&mut writer, data)
-        .with_context(|| format!("writing {}", path.display()))?;
-    writer
-        .flush()
-        .with_context(|| format!("flushing {}", path.display()))
-}
 
 /// Emission-set chunk records, serialized as `{ "chunks": [...] }` to the
 /// chunks report. Shared by `write_tree` and `emit_harness`.
@@ -54,50 +27,24 @@ pub struct PackageManifest {
     pub module_type: &'static str,
 }
 
-/// Per-chunk report serialized to `reports/tree/<chunk>/chunk.json` at write time.
-/// The analysis report is flattened so the serialized shape is the
-/// analysis fields followed by the decomposition/metrics fields —
-/// identical to the previous field-by-field copy.
-#[derive(Debug, Clone, Serialize)]
-pub struct ChunkManifest {
+/// Per-chunk view serialized to `reports/tree/<chunk>/chunk.json`.
+#[derive(Serialize)]
+pub struct ChunkManifest<'a> {
     #[serde(flatten)]
-    pub analysis: ChunkAnalysisReport,
-    pub validation: ChunkValidationSummary,
+    pub analysis: &'a ChunkAnalysisReport,
+    pub validation: &'a ChunkValidationSummary,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub logical_modules: Option<ChunkLogicalModulesSummary>,
-    pub selected_module_lowerings: Vec<SelectedModuleLowering>,
+    pub logical_modules: Option<&'a ChunkLogicalModulesSummary>,
+    pub selected_module_lowerings: &'a [SelectedModuleLowering],
     pub output_metrics: OutputMetrics,
 }
 
-impl ChunkManifest {
-    pub fn from_analysis(
-        analysis: &ChunkAnalysisReport,
-        decomposition: Option<&ChunkDecompositionOutput>,
-        output_metrics: OutputMetrics,
-    ) -> Self {
-        Self {
-            analysis: analysis.clone(),
-            validation: decomposition.map_or_else(
-                || ChunkValidationSummary {
-                    linker_order: Vec::new(),
-                },
-                |d| d.validation.clone(),
-            ),
-            logical_modules: decomposition.map(|d| d.logical_modules.clone()),
-            selected_module_lowerings: decomposition
-                .map(|d| d.selected_module_lowerings.clone())
-                .unwrap_or_default(),
-            output_metrics,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ArtifactManifest {
-    pub counts: ArtifactCounts,
-    pub chunks: Vec<ArtifactChunkRecord>,
+#[derive(Serialize)]
+pub struct ArtifactManifest<'a> {
+    pub counts: &'a ArtifactCounts,
+    pub chunks: &'a [ArtifactChunkRecord],
     pub logical_modules: RootLogicalModulesSummary,
-    pub selected_module_lowerings: Vec<SelectedModuleLowering>,
+    pub selected_module_lowerings: &'a [SelectedModuleLowering],
     pub output_metrics: OutputMetrics,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decomposition_metrics: Option<DecompositionMetrics>,
@@ -451,7 +398,7 @@ pub struct KeptTopLevelDeclarationRecord {
 
 /// The three top-level declaration variants we anchor extraction on.
 /// Mirrors the SWC `Decl` arms where `analyze_program_shallow` produces
-/// an `DeclarationRecord`.
+/// a `KeptTopLevelDeclarationRecord`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TopLevelDeclarationKind {
@@ -463,27 +410,7 @@ pub enum TopLevelDeclarationKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io;
     use strum::IntoEnumIterator;
-
-    struct FlushFailure;
-
-    impl Write for FlushFailure {
-        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Err(io::Error::other("flush failed"))
-        }
-    }
-
-    #[test]
-    fn compact_report_propagates_final_flush_failure() {
-        let error =
-            write_json_to(FlushFailure, Path::new("full.json"), &Vec::<u8>::new()).unwrap_err();
-        assert!(error.to_string().contains("flushing full.json"));
-    }
 
     #[test]
     fn interop_use_machine_codes_match_serde() {

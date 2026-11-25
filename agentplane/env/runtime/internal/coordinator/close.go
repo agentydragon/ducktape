@@ -72,7 +72,7 @@ func (r *Runtime) closeComponents(desired lifecycle.EnvironmentDesired) (error, 
 func (r *Runtime) waitCloseNativeStop(fenceCtx context.Context, generation uint64) error {
 	for {
 		changed := r.changesSince()
-		settled, err := r.closeNativeStopSettled(r.lifecycleContext, r.lifecycleState, generation, true, fenceCtx)
+		settled, err := r.closeNativeStopSettled(r.lifecycleContext, r.lifecycleState, generation, fenceCtx)
 		if settled || err != nil {
 			return err
 		}
@@ -86,10 +86,7 @@ func (r *Runtime) waitCloseNativeStop(fenceCtx context.Context, generation uint6
 
 // Read the exact-generation proof before checking its deadline, so a settled
 // observation remains usable even when the deadline expires during the read.
-func (r *Runtime) closeNativeStopSettled(ctx context.Context, reader controller.Reader, generation uint64, sessionsStarted bool, fenceCtx context.Context) (bool, error) {
-	if !sessionsStarted {
-		return true, nil
-	}
+func (r *Runtime) closeNativeStopSettled(ctx context.Context, reader controller.Reader, generation uint64, fenceCtx context.Context) (bool, error) {
 	settled, err := r.observeNativeStop(ctx, reader, generation, true)
 	if settled || err != nil {
 		return true, err

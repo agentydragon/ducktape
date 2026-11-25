@@ -54,9 +54,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0
 )
 
-// Direct dependencies for the Agentplane BFF HTTP API.
-require github.com/danielgtaylor/huma/v2 v2.39.1
-
 // Direct dependencies for the generated HTTP facades of agentplane services
 require github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 
@@ -69,6 +66,9 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3
 	github.com/invopop/jsonschema v0.14.0
 )
+
+// Direct dependency for JSON Schema patterns in Agentplane Action Service.
+require github.com/dlclark/regexp2/v2 v2.13.2
 
 // Direct dependencies for agentplane/action_service/internal/admission/policies
 require github.com/santhosh-tekuri/jsonschema/v6 v6.0.2

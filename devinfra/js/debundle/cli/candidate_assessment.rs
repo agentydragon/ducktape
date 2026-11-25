@@ -6,7 +6,7 @@
 //! staged artifact and the full tree transform context.
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use transform_command::{TransformContextArgs, TransformContextAuxArgs};
 
 use anyhow::{Context, Result, ensure};
@@ -24,7 +24,7 @@ pub enum EffectAssessmentUnavailable {
 
 /// Shared opt-in CLI flags used by graph-backed edits that can assess a full
 /// in-memory candidate through the canonical lowering path.
-#[derive(Debug, clap::Args, Clone, Default)]
+#[derive(Debug, clap::Args)]
 pub struct CandidateEffectAssessmentArgs {
     /// Full tree transform inputs used only with `--analysis`.
     #[command(flatten)]
@@ -38,7 +38,7 @@ pub struct CandidateEffectAssessmentArgs {
 /// config and module root arguments. The auxiliary transform inputs are the
 /// same shared group used by [`TransformContextArgs`]. The command registration
 /// decides whether source/output environment defaults are available.
-#[derive(Debug, clap::Args, Clone, Default)]
+#[derive(Debug, clap::Args)]
 pub struct CandidateEffectAssessmentExistingTreeArgs {
     /// Verified staged analysis artifact for the candidate effect assessment.
     #[arg(long)]
@@ -61,7 +61,7 @@ impl CandidateEffectAssessmentArgs {
     /// With no `--analysis`, all transform-context flags must remain absent,
     /// preserving the ordinary graph-only edit path.
     pub fn resolve<'a>(
-        &self,
+        self,
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
         analysis_engine_sha256: &'static str,
@@ -72,7 +72,7 @@ impl CandidateEffectAssessmentArgs {
     /// Callers use this only when they assess final candidate documents and
     /// enforce canonical placement before any write.
     pub fn resolve_for_verified_write<'a>(
-        &self,
+        self,
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
         analysis_engine_sha256: &'static str,
@@ -81,13 +81,13 @@ impl CandidateEffectAssessmentArgs {
     }
 
     fn resolve_with_write_policy<'a>(
-        &self,
+        self,
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
         allow_write: bool,
         analysis_engine_sha256: &'static str,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
-        let Some(analysis_path) = &self.analysis else {
+        let Some(analysis_path) = self.analysis else {
             ensure!(
                 self.transform.spec.is_none()
                     && self.transform.tree_config.is_none()
@@ -111,24 +111,25 @@ impl CandidateEffectAssessmentArgs {
             self.transform.tree_config.is_some() && self.transform.spec.is_none(),
             "candidate effect assessment currently requires the full --tree-config transform context"
         );
-        Ok(Some(ResolvedCandidateEffectAssessment {
-            transform: self.transform.clone().resolve()?,
-            analysis_path: analysis_path.clone(),
+        ResolvedCandidateEffectAssessment::new(
+            self.transform,
+            analysis_path,
             graph_source,
             analysis_engine_sha256,
-        }))
+        )
+        .map(Some)
     }
 }
 
 impl CandidateEffectAssessmentExistingTreeArgs {
     pub fn resolve_for_verified_write<'a>(
-        &self,
-        edit: &GraphEditArgs,
+        self,
+        modules_root: &Path,
         source_context: Option<&'a VerifiedGraphSourceContext>,
-        tree_config: Option<&std::path::Path>,
+        tree_config: Option<&Path>,
         analysis_engine_sha256: &'static str,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
-        let Some(analysis) = &self.analysis else {
+        let Some(analysis) = self.analysis else {
             ensure!(
                 !self.auxiliary.has_any_inputs(),
                 "transform context arguments require --analysis for candidate effect assessment"
@@ -137,26 +138,44 @@ impl CandidateEffectAssessmentExistingTreeArgs {
         };
         let tree_config = tree_config
             .context("candidate effect assessment requires the command's --tree-config")?;
-        let args = CandidateEffectAssessmentArgs {
-            transform: TransformContextArgs {
+        let graph_source = source_context
+            .context("candidate effect assessment requires a verified graph source context")?;
+        ResolvedCandidateEffectAssessment::new(
+            TransformContextArgs {
                 spec: None,
                 tree_config: Some(tree_config.to_path_buf()),
-                tree_modules: Some(edit.modules_root.clone()),
-                auxiliary: self.auxiliary.clone(),
+                tree_modules: Some(modules_root.to_path_buf()),
+                auxiliary: self.auxiliary,
             },
-            analysis: Some(analysis.clone()),
-        };
-        args.resolve_for_verified_write(edit, source_context, analysis_engine_sha256)
+            analysis,
+            graph_source,
+            analysis_engine_sha256,
+        )
+        .map(Some)
     }
 }
 
-impl ResolvedCandidateEffectAssessment<'_> {
+impl<'a> ResolvedCandidateEffectAssessment<'a> {
+    fn new(
+        transform: TransformContextArgs,
+        analysis_path: PathBuf,
+        graph_source: &'a VerifiedGraphSourceContext,
+        analysis_engine_sha256: &'static str,
+    ) -> Result<Self> {
+        Ok(Self {
+            transform: transform.resolve()?,
+            analysis_path,
+            graph_source,
+            analysis_engine_sha256,
+        })
+    }
+
     /// Assess this complete typed module candidate using the exact verified
     /// graph input and canonical staged analysis pipeline.
     pub fn assess(
         &self,
         stderr: &mut (dyn std::io::Write + Send),
-        edit_modules_root: &std::path::Path,
+        edit_modules_root: &Path,
         docs: &ModuleDocs,
         deleted: &BTreeSet<String>,
         import_order: &[spec::ModulePath],

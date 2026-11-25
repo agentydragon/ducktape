@@ -1,0 +1,38 @@
+# Upstream: packages/math/curve.ts (v0.18.1).
+source_matches:
+  - match: |
+      function curve(a, b, c, d) { return [a, b, c, d]; }
+      function gradient(f, t, s, delta = 1e-6) {
+        return [(f(t + delta, s) - f(t - delta, s)) / (2 * delta),
+                (f(t, s + delta) - f(t, s - delta)) / (2 * delta)];
+      }
+      function solve(f, t, s, tolerance = .001, iterLimit = 10) {
+        let error = 1 / 0, iterations = 0;
+        for (; error >= tolerance;) { STMT_LIST; }
+        return [t, s];
+      }
+    bindings: [curve, gradient, solve]
+  - match: |
+      var bezierEquation = (c, t) => pointFrom(
+        (1 - t) ** 3 * c[0][0] + 3 * (1 - t) ** 2 * t * c[1][0] + 3 * (1 - t) * t ** 2 * c[2][0] + t ** 3 * c[3][0],
+        (1 - t) ** 3 * c[0][1] + 3 * (1 - t) ** 2 * t * c[1][1] + 3 * (1 - t) * t ** 2 * c[2][1] + t ** 3 * c[3][1]
+      );
+    bindings: [bezierEquation]
+  - match: |
+      function curveIntersectLineSegment(c, l) {
+        let bounds = curveBounds(c);
+        if (rectangleIntersectLineSegment(rectangle(pointFrom(bounds[0], bounds[1]), pointFrom(bounds[2], bounds[3])), l).length === 0) return [];
+        STMT_LIST;
+      }
+    bindings: [curveIntersectLineSegment]
+  - match: |
+      function curveClosestPoint(c, p, tolerance = .001) { STMT_LIST; }
+      function curvePointDistance(c, p) {
+        let closest = curveClosestPoint(c, p);
+        return closest ? pointDistance(p, closest) : 0;
+      }
+      function curveBounds(c) {
+        let [a, b, c2, d] = c, xs = [a[0], b[0], c2[0], d[0]], ys = [a[1], b[1], c2[1], d[1]];
+        return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+      }
+    bindings: [curveClosestPoint, curvePointDistance, curveBounds]

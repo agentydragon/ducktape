@@ -38,7 +38,7 @@ type Server struct {
 	// Config reaches the API server as a cluster administrator.
 	Config    *rest.Config
 	Clientset kubernetes.Interface
-	// UserToken authenticates User, for the audiences WithUserAudiences names.
+	// UserToken authenticates User.
 	UserToken string
 
 	environment *envtest.Environment
@@ -53,12 +53,6 @@ func WithAPIServerFlag(name string, values ...string) Option {
 	return func(environment *envtest.Environment) {
 		environment.ControlPlane.GetAPIServer().Configure().Set(name, values...)
 	}
-}
-
-// WithUserAudiences lets UserToken authenticate for audiences. The API server reviews a token that
-// names no audience of its own, as a static token does not, only for the audiences it serves.
-func WithUserAudiences(audiences ...string) Option {
-	return WithAPIServerFlag("api-audiences", audiences...)
 }
 
 // WithCRDs also installs the CRDs at paths, files or directories, such as cert-manager's.

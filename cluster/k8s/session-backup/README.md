@@ -165,9 +165,9 @@ continues to hold only `.htpasswd` for the Rest Server.
 The deployment's SSO provider creates and reflects `ai-session-archive-oidc` into this namespace.
 Its Authentik application policy and the API's numeric subject check both restrict access to the
 owner. The CNPG app Secret supplies database credentials. Web and importer pods run the
-versioned migration image as an init container before starting, using a database migration lock
-to serialize concurrent runs. The CNPG database and reflected OIDC Secret must be ready before
-the web process can start.
+importer image with `--migrate-database` as an init container before starting, using a
+database migration lock to serialize concurrent runs. The CNPG database and reflected OIDC
+Secret must be ready before the web process can start.
 
 The import root arguments are `/.claude` and `/.codex`. The source service backs up relative
 `.claude` and `.codex` paths from each workstation home, and these are the roots present in the

@@ -16,8 +16,8 @@ use analysis_projection::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use artifact::{
-    ArtifactIndexes, ChunkBundle, chunk_runtime_entry, export_policies, normalized_chunk_ids,
-    prune_artifact_to_chunk_ids,
+    ArtifactIndexes, ChunkBundle, JsFile, chunk_runtime_entry, export_policies,
+    normalized_chunk_ids, prune_artifact_to_chunk_ids,
 };
 use binding_targets::binding_names;
 use graph_provenance::{ChunkSource, GraphProvenance};
@@ -48,10 +48,8 @@ pub struct FrontendChunkInput<'a> {
 pub struct FrontendChunk<'a> {
     pub chunk_id: String,
     pub chunk_id_interned: ChunkId,
-    pub target_file: String,
+    pub runtime_file: &'a JsFile,
     pub runtime_ast: &'a js_ast::ParsedJsModule,
-    pub header_lines: Vec<String>,
-    pub source_path: String,
     pub ast_analysis: ChunkAstAnalysis,
     pub requests: Vec<LogicalRequest>,
     pub explicit_requests: Vec<LogicalRequest>,
@@ -154,8 +152,7 @@ pub fn project_analysis(
     if !spec.materialize_logical_modules.target_dir.is_empty() {
         artifact::paths::normalize_module_path(&spec.materialize_logical_modules.target_dir)?;
     }
-    let chunk_ids =
-        normalized_chunk_ids(&spec.materialize_chunk_ids().into_iter().collect::<Vec<_>>())?;
+    let chunk_ids = normalized_chunk_ids(spec.materialize_chunk_ids())?;
     ensure!(
         !chunk_ids.is_empty(),
         "project_analysis requires at least one chunk_id"
@@ -214,28 +211,15 @@ pub fn elaborate<'a>(
             .all(|input| std::ptr::eq(input.artifact, prepared_artifact)),
         "frontend elaboration inputs must share one prepared artifact"
     );
-    let mut prepared = GLOBALS
-        .with(|globals| {
-            inputs
-                .into_par_iter()
-                .map(|input| GLOBALS.set(globals, || prepare_chunk(input, &spec)))
-                .collect::<Vec<_>>()
-        })
+    let solved = solve_selectors(
+        inputs,
+        spec.logical_modules,
+        spec.unassigned_mode,
+        &spec.placement_chunks,
+        spec.fail_fast,
+    )?;
+    let chunks = solved
         .into_iter()
-        .collect::<Result<Vec<_>>>()?;
-    let projected = prepared
-        .iter_mut()
-        .map(|chunk| {
-            chunk
-                .projected
-                .take()
-                .expect("prepared projection is present")
-        })
-        .collect();
-    let resolutions = spec_resolution::solve_projected_chunks(projected)?;
-    let chunks = prepared
-        .into_iter()
-        .zip(resolutions)
         .map(|(chunk, resolved)| {
             finish_frontend_chunk(
                 chunk,
@@ -894,42 +878,73 @@ fn select_one_source_declaration(
 struct PreparedChunk<'a> {
     chunk_id: String,
     chunk_id_interned: ChunkId,
-    target_file: String,
+    runtime_file: &'a JsFile,
     runtime_ast: &'a js_ast::ParsedJsModule,
-    header_lines: Vec<String>,
-    source_path: String,
     ast_analysis: ChunkAstAnalysis,
     requests: Vec<LogicalRequest>,
     explicit_requests: Vec<LogicalRequest>,
     projected: Option<ProjectedChunk<'a>>,
 }
 
+fn solve_selectors<'a>(
+    inputs: Vec<FrontendChunkInput<'a>>,
+    logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
+    unassigned_mode: &BTreeMap<String, UnassignedMode>,
+    placement_chunks: &BTreeSet<String>,
+    fail_fast: bool,
+) -> Result<Vec<(PreparedChunk<'a>, ResolvedChunk<'a>)>> {
+    let mut prepared = GLOBALS
+        .with(|globals| {
+            inputs
+                .into_par_iter()
+                .map(|input| {
+                    GLOBALS.set(globals, || {
+                        prepare_chunk(
+                            input,
+                            logical_modules,
+                            unassigned_mode,
+                            placement_chunks,
+                            fail_fast,
+                        )
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+    let projected = prepared
+        .iter_mut()
+        .map(|chunk| {
+            chunk
+                .projected
+                .take()
+                .expect("prepared projection is present")
+        })
+        .collect();
+    let resolutions = spec_resolution::solve_projected_chunks(projected)?;
+    Ok(prepared.into_iter().zip(resolutions).collect())
+}
+
 fn prepare_chunk<'a>(
     input: FrontendChunkInput<'a>,
-    spec: &FrontendSpecInputs<'_>,
+    logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
+    unassigned_mode: &BTreeMap<String, UnassignedMode>,
+    placement_chunks: &BTreeSet<String>,
+    fail_fast: bool,
 ) -> Result<PreparedChunk<'a>> {
     let FrontendChunkInput {
         artifact,
         chunk_id,
         file,
     } = input;
-    let chunk_unassigned_mode = spec
-        .unassigned_mode
-        .get(chunk_id)
-        .cloned()
-        .with_context(|| {
-            format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
-        })?;
-    let chunk_id_interned = artifact
-        .chunk_table
-        .get(chunk_id)
-        .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-    let (target_file, runtime_file, runtime_ast) =
-        chunk_runtime_entry(artifact, chunk_id, chunk_id_interned, file)?;
-    let source_path = runtime_file.metadata.source_path.clone();
+    let chunk_unassigned_mode = unassigned_mode.get(chunk_id).cloned().with_context(|| {
+        format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
+    })?;
+    let (chunk_id_interned, runtime_file, runtime_ast) =
+        chunk_runtime_entry(artifact, chunk_id, file)?;
     let ast_analysis = analyze_chunk_ast(&runtime_ast.module);
     let requests = logical_requests_for_chunk(
-        spec.logical_modules.get(chunk_id),
+        logical_modules.get(chunk_id),
         &chunk_unassigned_mode,
         chunk_id,
     )?;
@@ -954,7 +969,7 @@ fn prepare_chunk<'a>(
     let structural_analysis = analysis::facts::collect_chunk_source_facts(
         &runtime_ast.module,
         Some(SourceLocator {
-            source_path: &source_path,
+            source_path: &runtime_file.metadata.source_path,
             lines: &line_index,
         }),
     );
@@ -969,21 +984,19 @@ fn prepare_chunk<'a>(
         &ast_analysis,
         runtime_ast.top_level_mark,
         &runtime_ast.module.body,
-        spec.fail_fast,
+        fail_fast,
     )?;
     let projected = project_chunk(
         selectors,
         &explicit_requests,
         resolved_members,
-        spec.placement_chunks.contains(chunk_id),
+        placement_chunks.contains(chunk_id),
     )?;
     Ok(PreparedChunk {
         chunk_id: chunk_id.to_string(),
         chunk_id_interned,
-        target_file,
+        runtime_file,
         runtime_ast,
-        header_lines: runtime_file.header_lines.clone(),
-        source_path,
         ast_analysis,
         requests,
         explicit_requests,
@@ -1079,6 +1092,28 @@ fn validate_named_import_member(
     Ok(())
 }
 
+impl PreparedChunk<'_> {
+    fn claims(
+        &self,
+        resolution: &selector_resolve::Resolution,
+        resolved_members: &[Vec<usize>],
+        fail_fast: bool,
+        diagnostics: &analysis::diagnostics::Diagnostics,
+    ) -> Result<MemberClaimProjection> {
+        project_member_claims(MemberClaimInput {
+            chunk_id: &self.chunk_id,
+            requests: &self.explicit_requests,
+            resolution,
+            resolved_members,
+            ast: &self.ast_analysis,
+            top_level_mark: self.runtime_ast.top_level_mark,
+            body: &self.runtime_ast.module.body,
+            fail_fast,
+            diagnostics,
+        })
+    }
+}
+
 fn finish_frontend_chunk<'a>(
     prepared: PreparedChunk<'a>,
     resolved: ResolvedChunk<'a>,
@@ -1092,17 +1127,7 @@ fn finish_frontend_chunk<'a>(
         structural_analysis,
         placement_anchors,
     } = resolved;
-    let member_claims = project_member_claims(MemberClaimInput {
-        chunk_id: &prepared.chunk_id,
-        requests: &prepared.explicit_requests,
-        resolution: &resolution,
-        resolved_members: &resolved_members,
-        ast: &prepared.ast_analysis,
-        top_level_mark: prepared.runtime_ast.top_level_mark,
-        body: &prepared.runtime_ast.module.body,
-        fail_fast,
-        diagnostics,
-    })?;
+    let member_claims = prepared.claims(&resolution, &resolved_members, fail_fast, diagnostics)?;
     diagnostics.metrics().frontend_chunk();
     let (declared_assumptions, source_only_initializer_bindings, external_initializer_contracts) =
         collect_binding_contracts(
@@ -1116,10 +1141,8 @@ fn finish_frontend_chunk<'a>(
     Ok(FrontendChunk {
         chunk_id: prepared.chunk_id,
         chunk_id_interned: prepared.chunk_id_interned,
-        target_file: prepared.target_file,
+        runtime_file: prepared.runtime_file,
         runtime_ast: prepared.runtime_ast,
-        header_lines: prepared.header_lines,
-        source_path: prepared.source_path,
         ast_analysis: prepared.ast_analysis,
         requests: prepared.requests,
         explicit_requests: prepared.explicit_requests,
@@ -1738,3 +1761,9 @@ pub fn complete_analysis_spec(
         projection.native_operation_inputs.clone(),
     )
 }
+
+#[path = "resolved_ownership.rs"]
+mod resolved_ownership;
+pub use resolved_ownership::{
+    CanonicalOwnership, ClaimSelector, OwnershipClaim, resolve_ownership,
+};

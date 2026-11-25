@@ -330,6 +330,7 @@ py_library(
         "//agentplane/system_tests/deployment:fixture_database",
         "//agentplane/system_tests/deployment:fixture_finalization",
         "//agentplane/system_tests/deployment:rendered_fixture",
+        "//cluster/cdk8s/agentplane:service_database",
     ],
 )
 
@@ -341,6 +342,7 @@ py_library(
         "//agentplane/system_tests/deployment:fixture_database",
         "//agentplane/system_tests/deployment:fixture_finalization",
         "//agentplane/system_tests/deployment:rendered_fixture",
+        "//cluster/cdk8s/agentplane:service_database",
     ],
 )
 
@@ -353,6 +355,7 @@ py_library(
         "//agentplane/system_tests/deployment:fixture_finalization",
         "//agentplane/system_tests/deployment:mcp_fixture_chart",
         "//agentplane/system_tests/deployment:rendered_fixture",
+        "//cluster/cdk8s/agentplane:service_database",
     ],
 )
 

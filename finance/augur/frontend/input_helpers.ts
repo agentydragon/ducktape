@@ -215,7 +215,7 @@ export function rolloutCountFromSearch(searchString: string, bootstrap: Bootstra
 }
 
 // First rollout seed. Product projections and calibration runs consume the same seed-sequence
-// start; it's a fixed default (no longer user-tunable) so identical seeds reproduce identical
+// start; it's a fixed default, not user-tunable, so identical seeds reproduce identical
 // sampled exogenous paths across runs.
 export function firstSeedDefault(bootstrap: Bootstrap) {
   const override = bootstrap.product_input_defaults?.first_seed;

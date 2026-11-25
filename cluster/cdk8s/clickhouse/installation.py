@@ -9,6 +9,8 @@ and volume claim templates are untyped in the operator's CRD schema, so they are
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from clickhouse_installation_crds.com.altinity.clickhouse import (
@@ -52,12 +54,14 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling
+from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling, piraeus_storage
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
+from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
@@ -81,10 +85,6 @@ _KEEPER = ServiceRef(
 _METRICS = Port(name="metrics", number=9363)
 _INTERSERVER_PORT = 9009
 _CLICKHOUSE_UID = 101  # the images' `clickhouse` user
-_PIRAEUS_HDD_STORAGE_CLASS = "piraeus-hdd-local"
-_PIRAEUS_SSD_STORAGE_CLASS = "piraeus-ssd-local"
-_CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE = "clickhouse-piraeus-103656"
-_CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE = "clickhouse-piraeus-102453"
 _CLICKHOUSE_PIRAEUS_HDD_CLAIM = "data-piraeus-hdd"
 _ANY_ADDRESS = ["0.0.0.0/0", "::/0"]
 _HDD_NODE_SELECTOR = {**node_scheduling.HIL_OVH_NODE_SELECTOR, "storage.allegedly.works/tier": "hdd"}
@@ -101,18 +101,52 @@ _CONTAINER_SECURITY_CONTEXT = {
 _TCP = "TCP"
 
 
+@dataclass(frozen=True)
+class _Replica:
+    selector_name: str
+    host_name: str
+    pod_template: str
+    node: str
+
+
+# Selector names survive the full-node retirement. Host 0-3 replaced the interrupted 0-2 replica.
+_REPLICAS = (
+    _Replica(selector_name="1", host_name="0-1", pod_template="clickhouse-piraeus-103656", node="ovh-ns103656"),
+    _Replica(selector_name="2", host_name="0-3", pod_template="clickhouse-piraeus-102453", node="ovh-ns102453"),
+)
+
+
+def _replica_layout() -> ClickHouseInstallationSpecConfigurationClustersLayout:
+    return ClickHouseInstallationSpecConfigurationClustersLayout(
+        shards_count=1,
+        replicas_count=len(_REPLICAS),
+        replicas=[
+            ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name=replica.selector_name)
+            for replica in _REPLICAS
+        ],
+        shards=[
+            ClickHouseInstallationSpecConfigurationClustersLayoutShards(
+                name="0",
+                replicas_count=len(_REPLICAS),
+                replicas=[
+                    ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
+                        name=replica.host_name,
+                        templates=(
+                            ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
+                                pod_template=replica.pod_template,
+                                data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
+                            )
+                        ),
+                    )
+                    for replica in _REPLICAS
+                ],
+            )
+        ],
+    )
+
+
 def _password(secret: str) -> dict[str, object]:
     return {"valueFrom": {"secretKeyRef": {"name": secret, "key": client.PASSWORD_KEY}}}
-
-
-def _one_per_host(labels: dict[str, str]) -> dict[str, object]:
-    return {
-        "podAntiAffinity": {
-            "requiredDuringSchedulingIgnoredDuringExecution": [
-                {"labelSelector": {"matchLabels": labels}, "topologyKey": "kubernetes.io/hostname"}
-            ]
-        }
-    }
 
 
 def _claim_spec(storage: str, storage_class: str) -> dict[str, object]:
@@ -131,7 +165,7 @@ def _clickhouse_pod_template(
         metadata={"labels": client.LABELS},
         spec={
             "nodeSelector": node_selector,
-            "affinity": _one_per_host(client.LABELS),
+            "affinity": node_scheduling.one_per_host(client.LABELS),
             "terminationGracePeriodSeconds": 120,
             "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
             "containers": [
@@ -162,7 +196,7 @@ def _keeper_pod_template(
         spec={
             "nodeSelector": node_selector,
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
-            "affinity": _one_per_host(_KEEPER.pods.selector),
+            "affinity": node_scheduling.one_per_host(_KEEPER.pods.selector),
             "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
             "containers": [
                 {
@@ -220,7 +254,7 @@ def _users() -> dict[str, object]:
             "GRANT INSERT ON aiquota.raw_http_observations",
             # The materialized views execute under the inserting identity, so they
             # need only these source columns to normalize a raw observation.
-            "GRANT SELECT(event_id, observed_at, source, quota_windows, token_activity, reset_credits)"
+            "GRANT SELECT(event_id, observed_at, source, account_id, quota_windows, token_activity, reset_credits)"
             " ON aiquota.raw_http_observations",
             # Read/write on the materialized views' own target tables: creating a
             # view is validated against the creator's grants on its target, not
@@ -232,6 +266,7 @@ def _users() -> dict[str, object]:
             # the same pattern as the langfuse user above. The aiquota database itself stays admin-created
             # (cluster/cdk8s/clickhouse/schema.sql).
             "GRANT CREATE, DROP TABLE, DROP VIEW ON aiquota.*",
+            "GRANT ALTER VIEW MODIFY QUERY ON aiquota.*",
             "GRANT ALTER ADD COLUMN ON aiquota.*",
             # Required to execute `ON CLUSTER default` DDL, same as the langfuse
             # user above.
@@ -290,8 +325,7 @@ def clickhouse_chart(app: App) -> Chart:
     mint_bearer_secret(
         chart,
         "aiquota-history-password",
-        name=client.AIQUOTA_HISTORY_CREDENTIALS,
-        namespace=client.NAMESPACE,
+        target=SecretRef(namespace=client.NAMESPACE, name=client.AIQUOTA_HISTORY_CREDENTIALS).key(client.PASSWORD_KEY),
         description="Read-only access to typed AIQuota history; never mounted by a sandbox.",
     )
     pod_template = "clickhouse"
@@ -359,43 +393,7 @@ def clickhouse_chart(app: App) -> Chart:
                                 )
                             )
                         ),
-                        layout=ClickHouseInstallationSpecConfigurationClustersLayout(
-                            shards_count=1,
-                            replicas_count=2,
-                            # Preserve the existing StatefulSet selector labels after
-                            # removing the full-node host from the end of the layout.
-                            replicas=[
-                                ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name="1"),
-                                ClickHouseInstallationSpecConfigurationClustersLayoutReplicas(name="2"),
-                            ],
-                            shards=[
-                                ClickHouseInstallationSpecConfigurationClustersLayoutShards(
-                                    name="0",
-                                    replicas_count=2,
-                                    replicas=[
-                                        ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
-                                            name="0-1",
-                                            templates=(
-                                                ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
-                                                    pod_template=_CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
-                                                    data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
-                                                )
-                                            ),
-                                        ),
-                                        # Use a fresh identity after the interrupted 0-2 replica.
-                                        ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicas(
-                                            name="0-3",
-                                            templates=(
-                                                ClickHouseInstallationSpecConfigurationClustersLayoutShardsReplicasTemplates(
-                                                    pod_template=_CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE,
-                                                    data_volume_claim_template=_CLICKHOUSE_PIRAEUS_HDD_CLAIM,
-                                                )
-                                            ),
-                                        ),
-                                    ],
-                                )
-                            ],
-                        ),
+                        layout=_replica_layout(),
                     )
                 ],
             ),
@@ -408,16 +406,12 @@ def clickhouse_chart(app: App) -> Chart:
                 ),
             ),
             templates=ClickHouseInstallationSpecTemplates(
-                pod_templates=[
-                    _clickhouse_pod_template(pod_template, _HDD_NODE_SELECTOR),
+                pod_templates=[_clickhouse_pod_template(pod_template, _HDD_NODE_SELECTOR)]
+                + [
                     _clickhouse_pod_template(
-                        _CLICKHOUSE_PIRAEUS_103656_POD_TEMPLATE,
-                        {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns103656"},
-                    ),
-                    _clickhouse_pod_template(
-                        _CLICKHOUSE_PIRAEUS_102453_POD_TEMPLATE,
-                        {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": "ovh-ns102453"},
-                    ),
+                        replica.pod_template, {**_HDD_NODE_SELECTOR, "kubernetes.io/hostname": replica.node}
+                    )
+                    for replica in _REPLICAS
                 ],
                 volume_claim_templates=[
                     ClickHouseInstallationSpecTemplatesVolumeClaimTemplates(
@@ -425,7 +419,7 @@ def clickhouse_chart(app: App) -> Chart:
                         reclaim_policy=ClickHouseInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
                         # Raw responses are retained for one year; the generous HDD
                         # volume leaves headroom for MergeTree parts and future tenants.
-                        spec=_claim_spec("500Gi", storage_class=_PIRAEUS_HDD_STORAGE_CLASS),
+                        spec=_claim_spec("500Gi", storage_class=piraeus_storage.HDD_LOCAL),
                     )
                 ],
             ),
@@ -498,7 +492,7 @@ def keeper_chart(app: App) -> Chart:
                     ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplates(
                         name=data_claim,
                         reclaim_policy=ClickHouseKeeperInstallationSpecTemplatesVolumeClaimTemplatesReclaimPolicy.RETAIN,
-                        spec=_claim_spec("2Gi", storage_class=_PIRAEUS_SSD_STORAGE_CLASS),
+                        spec=_claim_spec("2Gi", storage_class=piraeus_storage.SSD_LOCAL),
                     )
                 ],
             ),
@@ -518,8 +512,7 @@ def service_chart(app: App) -> Chart:
             annotations={"description": "Stable client endpoint for the shared ClickHouse installation."},
         ),
         spec=k8s.ServiceSpec(
-            selector=client.HTTP.pods.selector,
-            ports=[client.HTTP.port.k8s_service_port(), client.NATIVE.port.k8s_service_port()],
+            selector=client.HTTP.pods.selector, ports=[client.HTTP.k8s_service_port(), client.NATIVE.k8s_service_port()]
         ),
     )
     return chart
@@ -571,12 +564,12 @@ def networkpolicy_chart(app: App) -> Chart:
                     ports=_ports(client.HTTP.pod_port, _METRICS.number),
                 ),
                 k8s.NetworkPolicyIngressRule(
-                    from_=_from_namespace("monitoring", {"app.kubernetes.io/name": "alloy"}),
+                    from_=_from_namespace(alloy_endpoints.CENTRAL.namespace, alloy_endpoints.CENTRAL.selector),
                     ports=_ports(client.HTTP.pod_port, _METRICS.number),
                 ),
                 # Scraped by the Alloy on each ClickHouse pod's node.
                 k8s.NetworkPolicyIngressRule(
-                    from_=_from_namespace("monitoring", {"app.kubernetes.io/name": "alloy-node"}),
+                    from_=_from_namespace(alloy_endpoints.NODE.namespace, alloy_endpoints.NODE.selector),
                     ports=_ports(_METRICS.number),
                 ),
                 k8s.NetworkPolicyIngressRule(
@@ -606,13 +599,13 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
     Secrets, pod exec, writes, or status-subresource mutation.
     """
     chart = Chart(app, "agent-diagnostics-rbac", disable_resource_name_hashes=True)
-    name = "agent-clickhouse-diagnostics-reader"
+    reader = access.role_ref("clickhouse-diagnostics")
     read = ["get", "list", "watch"]
     k8s.KubeRole(
         chart,
         "role",
         metadata=k8s.ObjectMeta(
-            name=name,
+            name=reader.name,
             namespace=client.NAMESPACE,
             annotations={"description": "Read-only ClickHouse operator and observability resource status."},
         ),
@@ -638,11 +631,11 @@ def agent_diagnostics_rbac_chart(app: App) -> Chart:
         chart,
         "binding",
         metadata=k8s.ObjectMeta(
-            name=name,
+            name=reader.name,
             namespace=client.NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to secret-free ClickHouse status."},
         ),
-        role_ref=access.role_ref("clickhouse-diagnostics"),
+        role_ref=reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("clickhouse-diagnostics")],
     )
     return chart
@@ -665,19 +658,13 @@ def clickhouse(
         timeout="20m",
         health_check_exprs=[
             KustomizationSpecHealthCheckExprs(
-                api_version="clickhouse-keeper.altinity.com/v1",
-                kind="ClickHouseKeeperInstallation",
+                api_version=gvk.api_version,
+                kind=gvk.kind,
                 current="status.status == 'Completed'",
                 failed="status.status == 'Aborted'",
                 in_progress="status.status != 'Completed' && status.status != 'Aborted'",
-            ),
-            KustomizationSpecHealthCheckExprs(
-                api_version="clickhouse.altinity.com/v1",
-                kind="ClickHouseInstallation",
-                current="status.status == 'Completed'",
-                failed="status.status == 'Aborted'",
-                in_progress="status.status != 'Completed' && status.status != 'Aborted'",
-            ),
+            )
+            for gvk in (ClickHouseKeeperInstallation.GVK, ClickHouseInstallation.GVK)
         ],
         depends_on=[
             flux_kustomization_depends_on(clickhouse_operator),

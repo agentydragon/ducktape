@@ -109,6 +109,7 @@ py_library(
         ":gmail_api_models",
         ":inbox",
         ":plan",
+        "//gmail_api:filters",
     ],
 )
 
@@ -120,6 +121,7 @@ py_library(
         ":filter_planner",
         ":gmail_api_models",
         ":gmail_yaml_filters_models",
+        "//gmail_api:filters",
         "//gmail_api:labels",
     ],
 )
@@ -128,7 +130,11 @@ py_library(
     name = "gmail_api_models",
     srcs = ["gmail_api_models.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//gmail_api:filters",
+        "//gmail_api:messages",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -242,6 +248,7 @@ py_test(
         ":inbox",
         ":models",
         "//:conftest",
+        "//gmail_api:messages",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//rich",

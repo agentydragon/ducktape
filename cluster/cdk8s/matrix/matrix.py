@@ -31,8 +31,9 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesBackendRefs,
 )
 
-from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s import namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -127,7 +128,7 @@ def _database(scope: Construct) -> None:
 
 def _media_claim(scope: Construct) -> None:
     volume_claim(
-        scope, "media", name=_MEDIA_CLAIM, namespace=NAMESPACE, storage_class="piraeus-ssd-2-autodiskful", size="5Gi"
+        scope, "media", name=_MEDIA_CLAIM, namespace=NAMESPACE, storage_class=piraeus_storage.SSD_REPLICATED, size="5Gi"
     )
 
 
@@ -294,21 +295,14 @@ def _element(scope: Construct) -> None:
                         k8s.Container(
                             name=_ELEMENT,
                             image="vectorim/element-web:v1.12.27",
-                            ports=[_ELEMENT_HTTP.port.k8s_container_port()],
+                            ports=[_ELEMENT_HTTP.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="config", mount_path="/app/config.json", sub_path="config.json", read_only=True
                                 )
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="64Mi", cpu_limit="200m", memory_limit="128Mi"
                             ),
                             liveness_probe=k8s.Probe(
                                 http_get=probe_action, initial_delay_seconds=10, period_seconds=30
@@ -329,7 +323,7 @@ def _element(scope: Construct) -> None:
         "element-service",
         metadata=k8s.ObjectMeta(name=_ELEMENT_HTTP.name, namespace=NAMESPACE, labels=_ELEMENT_HTTP.labels),
         spec=k8s.ServiceSpec(
-            type="ClusterIP", ports=[_ELEMENT_HTTP.port.k8s_service_port()], selector=_ELEMENT_HTTP.pods.selector
+            type="ClusterIP", ports=[_ELEMENT_HTTP.k8s_service_port()], selector=_ELEMENT_HTTP.pods.selector
         ),
     )
     https_route(
@@ -357,10 +351,9 @@ def chart(app: App) -> Chart:
 def matrix(
     chart: Chart, directory: RenderedDirectory, cnpg: Kustomization, seaweedfs_operator: Kustomization
 ) -> Kustomization:
-    name = "matrix"
     return flux_kustomization(
         chart,
-        name,
+        "matrix",
         directory,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

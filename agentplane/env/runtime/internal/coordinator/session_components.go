@@ -28,8 +28,8 @@ func (r *Runtime) initializeSessions() error {
 	r.harnessProcesses = r.processes.Scope(r.lifecycleContext, supervision.HarnessDomain, &r.sessionWorkers, r.fail)
 	if r.config.Codex != nil {
 		execURL := ""
-		if r.config.CodexExecServer != nil {
-			execURL = r.config.CodexExecServer.URL
+		if r.config.ExecutionBackend != nil {
+			execURL = r.config.ExecutionBackend.URL
 		}
 		r.codexAppServer, err = codexappserver.NewHost(*r.config.Codex, codexappserver.Dependencies{
 			Context: r.lifecycleContext, State: r.lifecycleState, Workers: &r.sessionWorkers,
@@ -93,7 +93,7 @@ func (r *Runtime) initializeSessions() error {
 
 func (r *Runtime) ensureWorkspace(ctx context.Context, cwd string) (string, error) {
 	config := workspace.Config{Root: r.config.WorkspaceRoot}
-	if r.config.VMProcessLauncher != nil {
+	if r.config.SystemdLauncher != nil {
 		config.LaunchHelper = func(ctx context.Context, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 			return r.launchSessionProcess(ctx, "workspace-helper", r.harnessSupervisor, processConfig)
 		}

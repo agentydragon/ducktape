@@ -19,12 +19,19 @@ go_library(
 go_test(
     name = "upgrade_integration_test",
     srcs = [
+        "enum_expansion_integration_test.go",
         "integration_testmain_test.go",
+        "numeric_consumer_integration_test.go",
+        "numeric_overlap_integration_test.go",
+        "numeric_retirement_integration_test.go",
         "upgrade_integration_test.go",
     ],
     embed = [":migrations"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
+        "//agentplane/session_dispatcher/internal/store",
         "//agentplane/testing/postgres",
         "@com_github_lib_pq//:pq",
     ],
@@ -41,7 +48,7 @@ py_test(
     name = "test_migrations",
     size = "medium",
     srcs = ["test_migrations.py"],
-    data = ["//agentplane/session_dispatcher/cmd:runner-gateway"],
+    data = ["//agentplane/session_dispatcher/cmd:sessions"],
     requires_docker = True,
     deps = [
         ":conftest",

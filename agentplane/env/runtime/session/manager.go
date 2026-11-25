@@ -194,7 +194,7 @@ func (m *Manager) Startup(ctx context.Context) error {
 	return nil
 }
 
-// reserveFresh serializes the durable write with first ownership of its
+// ReserveFresh serializes the durable write with first ownership of its
 // journal. The admission callback may hold the Runtime admission lock for the write but must
 // release it before returning, so publication never runs under that barrier.
 func (m *Manager) ReserveFresh(ctx context.Context, id string, reserve func() error) (*Session, error) {

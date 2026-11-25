@@ -110,10 +110,11 @@ takes 91.6 GiB, including a 51.8 GB n-gram table. Its runtime can read the
 table during generation, so storage matters beyond model load. Wyrm2's
 `/tmp` is HDD-backed and cleaned by tmpfiles.
 
-For a persistent cluster route, plan to grow wyrm2's existing Piraeus SSD
-backing disk from 150 to 300 GiB, then give the candidate its own 128 GiB
-`piraeus-ssd-local` PVC on wyrm2. That claim size covers one EXL3 package plus
-draft artifacts, filesystem overhead, and download staging. Download directly
+For a persistent cluster route, give the candidate its own 128 GiB
+`piraeus-ssd-local` PVC on wyrm2. On November 21, wyrm2's Piraeus SSD backing
+disk was grown from 150 to 600 GiB and its thin-data pool to 592 GiB. The claim
+size covers one EXL3 package plus draft artifacts, filesystem overhead, and
+download staging. Download directly
 into the claim and mount weights read-only in the serving pod. Before creating
 the claim, verify that the extra space is visible at each layer (Atlas zvol,
 guest block device and LVM PV, thin-data LV, and LINSTOR's free-space report).

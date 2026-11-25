@@ -89,5 +89,4 @@ boot or an end-to-end isolated tenant boundary; those require the live Pod accep
 
 Launcher configuration digests are domain-separated by implementation version. The size-record
 manifest replaces the earlier experimental content-digest format; old manifests are rejected
-rather than migrated. Replace the disposable proof Pod before using this format. This does not
-enable Firecracker in staging.
+rather than migrated. Replace the disposable proof Pod before using this format.

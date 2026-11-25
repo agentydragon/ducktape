@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import aclosing
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from functools import partial
 from typing import Any, cast
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
@@ -15,6 +16,7 @@ from zoneinfo import ZoneInfo
 import asyncpg
 import pytest
 import pytest_asyncio
+import pytest_bazel
 from sqlalchemy.exc import SQLAlchemyError
 
 from finance.plaid.spend import service
@@ -193,6 +195,35 @@ async def add_transaction(
     )
 
 
+_UTC_ZONE = ZoneInfo("UTC")
+# Every row `add_transaction` inserts has `pfc_primary` SHOPPING, so this rule counts it as flexible spend.
+_SHOPPING_RULE = Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)
+
+
+def _allowance_configuration(
+    *,
+    activation_at: date,
+    spending_account_ids: set[str],
+    time_zone: ZoneInfo = _UTC_ZONE,
+    monthly_minor_units: int = 10_000,
+    rules: Sequence[Rule] = (_SHOPPING_RULE,),
+    cards: Sequence[CardConfig] = (),
+    reversal_pairs: Sequence[ReversalPair] = (),
+) -> SpendConfiguration:
+    return SpendConfiguration(
+        time_zone=time_zone,
+        cards=list(cards),
+        allowance=AllowancePolicy(
+            monthly_minor_units=monthly_minor_units,
+            activation_at=activation_at,
+            spending_account_ids=spending_account_ids,
+            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
+            rules=list(rules),
+            reversal_pairs=list(reversal_pairs),
+        ),
+    )
+
+
 async def test_view_and_history_share_exact_accounting_and_refresh_on_ledger_change(
     connection: asyncpg.Connection, postgres_url: str
 ) -> None:
@@ -200,16 +231,10 @@ async def test_view_and_history_share_exact_accounting_and_refresh_on_ledger_cha
     await add_link(connection, "item-cache", synced=now)
     await add_account(connection, "account-cache", "item-cache", type="depository")
     await add_transaction(connection, "account-cache", "item-cache", "transaction-cache", now.date(), Decimal(7))
-    config = SpendConfiguration(
-        time_zone=ZoneInfo("UTC"),
-        cards=[],
-        allowance=AllowancePolicy(
-            monthly_minor_units=10_000,
-            activation_at=now.date(),
-            spending_account_ids={"account-cache"},
-            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#808080")},
-            rules=[Rule(condition=NameContains(field="name", substring="OTHER"), kind=Kind.FIXED)],
-        ),
+    config = _allowance_configuration(
+        activation_at=now.date(),
+        spending_account_ids={"account-cache"},
+        rules=[Rule(condition=NameContains(field="name", substring="OTHER"), kind=Kind.FIXED)],
     )
     spend_service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     with patch("finance.plaid.spend.allowance.prepare_accounting", wraps=prepare_accounting) as prepare:
@@ -238,11 +263,9 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
     await add_link(connection, "item-time", synced=now)
     await add_account(connection, "card-time", "item-time", type="credit")
     await add_liability(connection, "card-time", "item-time", activation - timedelta(days=1))
+    add = partial(add_transaction, connection, "card-time", "item-time")
     # A future posting date must not hide a purchase already authorized locally.
-    await add_transaction(
-        connection,
-        "card-time",
-        "item-time",
+    await add(
         "late-post",
         today + timedelta(days=2),
         Decimal("7.00"),
@@ -260,46 +283,26 @@ async def test_purchase_days_match_allowance_and_list_without_changing_statement
         },
     )
     # A posted charge authorized before activation informs pace but not allowance debt.
-    await add_transaction(
-        connection,
-        "card-time",
-        "item-time",
+    await add(
         "prior-purchase",
         today,
         Decimal("11.00"),
         raw_json={"authorized_date": (activation - timedelta(days=1)).isoformat()},
     )
-    await add_transaction(connection, "card-time", "item-time", "date-only", today, Decimal("9.00"))
-    await add_transaction(
-        connection,
-        "card-time",
-        "item-time",
-        "pending-time",
-        today,
-        Decimal("5.00"),
-        pending=True,
-        raw_json={"authorized_datetime": now.isoformat()},
-    )
-    await add_transaction(
-        connection,
-        "card-time",
-        "item-time",
+    await add("date-only", today, Decimal("9.00"))
+    await add("pending-time", today, Decimal("5.00"), pending=True, raw_json={"authorized_datetime": now.isoformat()})
+    await add(
         "replacement-time",
         today,
         Decimal("6.00"),
         pending_transaction_id="pending-time",
         raw_json={"authorized_datetime": now.isoformat()},
     )
-    config = SpendConfiguration(
+    config = _allowance_configuration(
         time_zone=zone,
+        activation_at=activation,
+        spending_account_ids={"card-time"},
         cards=[CardConfig(account_id="card-time", label="Example card", enabled=True)],
-        allowance=AllowancePolicy(
-            monthly_minor_units=10_000,
-            activation_at=activation,
-            spending_account_ids={"card-time"},
-            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
-            rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
-        ),
     )
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with service.lifespan():
@@ -401,7 +404,7 @@ async def test_read_view_uses_statement_cycle_and_normalizes_transactions(
             currency="CAD" if transaction_id == "other-currency" else "USD",
         )
     configuration = SpendConfiguration(
-        time_zone=ZoneInfo("UTC"),
+        time_zone=_UTC_ZONE,
         cards=[
             CardConfig(account_id=aid, label=aid, limit_minor_units=100_000, enabled=True)
             for aid in ("card-early", "card-late")
@@ -431,25 +434,16 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
     await add_link(connection, "item-new", synced=datetime.now(UTC))
     for account_id in ("card-first", "card-empty"):
         await add_account(connection, account_id, "item-new", type="credit")
-    await add_transaction(connection, "card-first", "item-new", "first", start, Decimal("10.00"))
-    await add_transaction(connection, "card-first", "item-new", "pending", today, Decimal("15.00"), pending=True)
-    await add_transaction(
-        connection, "card-first", "item-new", "posted", today, Decimal("17.00"), pending_transaction_id="pending"
-    )
-    await add_transaction(connection, "card-first", "item-new", "new", today, Decimal("12.00"))
-    await add_transaction(
-        connection,
-        "card-first",
-        "item-new",
-        "repayment",
-        today,
-        Decimal("30.00"),
-        category="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
-    )
+    add = partial(add_transaction, connection, "card-first", "item-new")
+    await add("first", start, Decimal("10.00"))
+    await add("pending", today, Decimal("15.00"), pending=True)
+    await add("posted", today, Decimal("17.00"), pending_transaction_id="pending")
+    await add("new", today, Decimal("12.00"))
+    await add("repayment", today, Decimal("30.00"), category="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT")
     service = SpendService(
         postgres_url,
         SpendConfiguration(
-            time_zone=ZoneInfo("UTC"),
+            time_zone=_UTC_ZONE,
             cards=[
                 CardConfig(account_id=aid, label=aid, limit_minor_units=10_000, enabled=True)
                 for aid in ("card-first", "card-empty")
@@ -481,16 +475,10 @@ async def test_card_without_statement_reports_observed_spend_not_a_statement_cyc
 
 
 def test_report_day_uses_configured_zone_for_card_and_allowance_dates() -> None:
-    config = SpendConfiguration(
+    config = _allowance_configuration(
         time_zone=ZoneInfo("America/Los_Angeles"),
-        cards=[],
-        allowance=AllowancePolicy(
-            monthly_minor_units=10_000,
-            activation_at=date(2026, 10, 5),
-            spending_account_ids={"example-card"},
-            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
-            rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
-        ),
+        activation_at=date(2026, 10, 5),
+        spending_account_ids={"example-card"},
     )
     service = SpendService("unused", config, dashboard_url="https://spend.example.test")
     assert service.report_day(datetime(2026, 10, 9, 6, 59, tzinfo=UTC)) == date(2026, 10, 8)
@@ -514,30 +502,25 @@ async def test_report_day_and_disabled_sustainability_use_zone_without_allowance
 
 
 def test_configuration_view_lists_one_off_rules_without_account_ids() -> None:
-    config = SpendConfiguration(
+    config = _allowance_configuration(
         time_zone=ZoneInfo("America/Los_Angeles"),
-        cards=[],
-        allowance=AllowancePolicy(
-            monthly_minor_units=10_000,
-            activation_at=date(2026, 10, 5),
-            spending_account_ids={"example-card"},
-            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
-            rules=[
-                Rule(
-                    condition=AllOf(
-                        conditions=[
-                            NameContains(field="name", substring="EXAMPLE FUND"),
-                            DateRange(start=date(2026, 9, 1), end=date(2026, 9, 2)),
-                        ]
-                    ),
-                    kind=Kind.EXCLUDED,
-                    scope=RuleScope.ONE_OFF,
-                    id="example-transfer-leg",
-                    description="Own-account transfer leg; confirmed by the owner 2026-10-09.",
+        activation_at=date(2026, 10, 5),
+        spending_account_ids={"example-card"},
+        rules=[
+            Rule(
+                condition=AllOf(
+                    conditions=[
+                        NameContains(field="name", substring="EXAMPLE FUND"),
+                        DateRange(start=date(2026, 9, 1), end=date(2026, 9, 2)),
+                    ]
                 ),
-                Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE),
-            ],
-        ),
+                kind=Kind.EXCLUDED,
+                scope=RuleScope.ONE_OFF,
+                id="example-transfer-leg",
+                description="Own-account transfer leg; confirmed by the owner 2026-10-09.",
+            ),
+            _SHOPPING_RULE,
+        ],
     )
     service = SpendService("unused", config, dashboard_url="https://spend.example.test")
     view = service.read_configuration()
@@ -556,17 +539,7 @@ async def test_allowance_account_coverage_and_freshness_gate(connection: asyncpg
         await add_link(connection, item_id, synced=now)
         await add_account(connection, account_id, item_id, type=type)
     await add_transaction(connection, "card-1", "item-card", "purchase", now.date(), Decimal("12.00"))
-    config = SpendConfiguration(
-        time_zone=ZoneInfo("UTC"),
-        cards=[],
-        allowance=AllowancePolicy(
-            monthly_minor_units=10_000,
-            activation_at=midnight.date(),
-            spending_account_ids={"card-1", "checking-1"},
-            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
-            rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
-        ),
-    )
+    config = _allowance_configuration(activation_at=midnight.date(), spending_account_ids={"card-1", "checking-1"})
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with service.lifespan():
         result = await service.read_view()
@@ -608,17 +581,7 @@ async def test_prior_purchases_are_queried_for_pace_but_not_balance(
     await add_account(connection, "card-1", "item-card", type="credit")
     await add_transaction(connection, "card-1", "item-card", "prior", now.date() - timedelta(days=1), Decimal("70.00"))
     await add_transaction(connection, "card-1", "item-card", "older", now.date() - timedelta(days=20), Decimal("30.00"))
-    config = SpendConfiguration(
-        time_zone=ZoneInfo("UTC"),
-        cards=[],
-        allowance=AllowancePolicy(
-            monthly_minor_units=10_000,
-            activation_at=now.date(),
-            spending_account_ids={"card-1"},
-            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#D97706")},
-            rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
-        ),
-    )
+    config = _allowance_configuration(activation_at=now.date(), spending_account_ids={"card-1"})
 
     service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with service.lifespan():
@@ -657,17 +620,12 @@ async def test_reversal_uses_old_retained_original_and_preserves_card_statement(
         original=AllOf(conditions=[DateRange(start=original_day, end=original_day), AmountExact(value="80")]),
         reversal=AllOf(conditions=[DateRange(start=reversal_day, end=reversal_day), AmountExact(value="-80")]),
     )
-    config = SpendConfiguration(
-        time_zone=ZoneInfo("UTC"),
+    config = _allowance_configuration(
+        activation_at=today - timedelta(days=20),
+        spending_account_ids={"card-reversal"},
+        monthly_minor_units=100_000,
         cards=[CardConfig(account_id="card-reversal", label="Example card", enabled=True)],
-        allowance=AllowancePolicy(
-            monthly_minor_units=100_000,
-            activation_at=today - timedelta(days=20),
-            spending_account_ids={"card-reversal"},
-            analysis_categories={"unclassified": AnalysisCategory(label="Unclassified", color="#777777")},
-            rules=[Rule(condition=CategoryExact(field="pfc_primary", value="SHOPPING"), kind=Kind.FLEXIBLE)],
-            reversal_pairs=[pair],
-        ),
+        reversal_pairs=[pair],
     )
     spend_service = SpendService(postgres_url, config, dashboard_url="https://spend.example.test")
     async with spend_service.lifespan():
@@ -1051,70 +1009,23 @@ async def test_read_sustainability_uses_postgres_transactions_for_each_window(
     item_id = "synthetic-spending-item"
     await add_link(connection, item_id, synced=now)
     await add_account(connection, spending_account_id, item_id, type="credit")
+    add = partial(add_transaction, connection, spending_account_id, item_id)
     # One old source record establishes that this account has transaction history.
-    await add_transaction(
-        connection,
-        spending_account_id,
-        item_id,
-        "synthetic-history-start",
-        date(today.year - 1, 1, 1),
-        Decimal("999.00"),
-        category="FIXED",
-    )
-    await add_transaction(
-        connection,
-        spending_account_id,
-        item_id,
-        "synthetic-90-day",
-        today - timedelta(days=40),
-        Decimal("20.00"),
-        category="FIXED",
-    )
-    await add_transaction(
-        connection,
-        spending_account_id,
-        item_id,
-        "synthetic-outside-30",
-        today - timedelta(days=31),
-        Decimal("7.00"),
-        category="FLEXIBLE",
-    )
-    await add_transaction(
-        connection,
-        spending_account_id,
-        item_id,
-        "synthetic-window-boundary",
-        today - timedelta(days=30),
-        Decimal("3.00"),
-        category="FIXED",
-    )
-    await add_transaction(
-        connection,
-        spending_account_id,
-        item_id,
-        "synthetic-pending",
-        yesterday,
-        Decimal("100.00"),
-        pending=True,
-        category="FLEXIBLE",
-    )
-    await add_transaction(
-        connection,
-        spending_account_id,
-        item_id,
+    await add("synthetic-history-start", date(today.year - 1, 1, 1), Decimal("999.00"), category="FIXED")
+    await add("synthetic-90-day", today - timedelta(days=40), Decimal("20.00"), category="FIXED")
+    await add("synthetic-outside-30", today - timedelta(days=31), Decimal("7.00"), category="FLEXIBLE")
+    await add("synthetic-window-boundary", today - timedelta(days=30), Decimal("3.00"), category="FIXED")
+    await add("synthetic-pending", yesterday, Decimal("100.00"), pending=True, category="FLEXIBLE")
+    await add(
         "synthetic-posted-replacement",
         yesterday,
         Decimal("12.00"),
         pending_transaction_id="synthetic-pending",
         category="FLEXIBLE",
     )
-    await add_transaction(
-        connection, spending_account_id, item_id, "synthetic-flexible", yesterday, Decimal("10.00"), category="FLEXIBLE"
-    )
-    await add_transaction(connection, spending_account_id, item_id, "synthetic-provisional", yesterday, Decimal("5.00"))
-    await add_transaction(
-        connection, spending_account_id, item_id, "synthetic-current-day", today, Decimal("999.00"), category="FIXED"
-    )
+    await add("synthetic-flexible", yesterday, Decimal("10.00"), category="FLEXIBLE")
+    await add("synthetic-provisional", yesterday, Decimal("5.00"))
+    await add("synthetic-current-day", today, Decimal("999.00"), category="FIXED")
     config = _sustainability_configuration(today, spending_account_id)
     expected_label = "Example Bank credit"
     if label_source == "private":
@@ -1193,24 +1104,9 @@ async def test_read_sustainability_fails_closed_for_unusable_spending_source(
     synced = now - timedelta(days=4) if source_state == "stale" else now
     await add_link(connection, item_id, synced=synced)
     await add_account(connection, account_id, item_id, type="credit")
-    await add_transaction(
-        connection,
-        account_id,
-        item_id,
-        "synthetic-source-history",
-        date(today.year - 1, 1, 1),
-        Decimal("25.00"),
-        category="FIXED",
-    )
-    await add_transaction(
-        connection,
-        account_id,
-        item_id,
-        "synthetic-recent-charge",
-        today - timedelta(days=1),
-        Decimal("10.00"),
-        category="FLEXIBLE",
-    )
+    add = partial(add_transaction, connection, account_id, item_id)
+    await add("synthetic-source-history", date(today.year - 1, 1, 1), Decimal("25.00"), category="FIXED")
+    await add("synthetic-recent-charge", today - timedelta(days=1), Decimal("10.00"), category="FLEXIBLE")
     if source_state == "inactive":
         await connection.execute("UPDATE public.links SET status = 'removed' WHERE item_id = $1", item_id)
     config = _sustainability_configuration(today, account_id)
@@ -1294,9 +1190,7 @@ async def test_event_stream_sends_initial_view_and_notification_update(
     await add_transaction(connection, "card-1", "item-1", "purchase", today, Decimal("10.00"))
     service = SpendService(
         postgres_url,
-        SpendConfiguration(
-            time_zone=ZoneInfo("UTC"), cards=[CardConfig(account_id="card-1", label="Test", enabled=True)]
-        ),
+        SpendConfiguration(time_zone=_UTC_ZONE, cards=[CardConfig(account_id="card-1", label="Test", enabled=True)]),
         dashboard_url="https://spend.example.test",
     )
     async with service.lifespan():
@@ -1312,6 +1206,4 @@ async def test_event_stream_sends_initial_view_and_notification_update(
 
 
 if __name__ == "__main__":
-    import pytest_bazel
-
     pytest_bazel.main()

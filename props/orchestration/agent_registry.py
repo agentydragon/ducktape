@@ -180,16 +180,13 @@ class AgentRegistry:
             model: asyncio.Semaphore(limit) for model, limit in (model_parallelism_limits or {}).items()
         }
 
-    async def close(self) -> None:
-        await self._executor.close()
-
     async def __aenter__(self) -> AgentRegistry:
         return self
 
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
-        await self.close()
+        await self._executor.close()
 
     @contextlib.asynccontextmanager
     async def _model_slot(self, model: str) -> AsyncIterator[None]:
@@ -269,7 +266,7 @@ class AgentRegistry:
         creds = await ensure_agent_role(self._db_config, agent_run_id)
         logger.info("Agent role ready: %s", creds.username)
 
-        # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
+        # OpenAI SDK sends api_key as Bearer token. The LLM proxy (`require_llm_access`)
         # accepts Bearer tokens containing base64-encoded username:password.
         api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
         env = {

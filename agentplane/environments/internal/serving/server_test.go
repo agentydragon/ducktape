@@ -25,6 +25,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -34,9 +35,6 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -98,12 +96,7 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, kubevirtv1.AddToScheme} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
+	scheme := testscheme.New(t)
 	objects, err := client.New(kube.Config, client.Options{Scheme: scheme})
 	if err != nil {
 		t.Fatal(err)

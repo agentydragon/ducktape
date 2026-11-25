@@ -1,13 +1,11 @@
-"""Provision Matrix users on Synapse: the provisioner admin + agent bots.
+"""Provision the Matrix admin and Public Coder Agent bot on Synapse.
 
 Idempotent. The password is set only on initial creation: setting it on an existing user
 deletes every device and access token, which would break the bot's live session.
 
-Mints no access token — each bot's own consumer logs in for itself, so it can replace its
-own token without waiting for this Job.
+The bot's consumer logs in directly and owns its access token.
 
-Requires: REGISTRATION_SECRET, ADMIN_PASSWORD, and one password environment variable per
-bot in BOT_SPECS.
+Requires REGISTRATION_SECRET, ADMIN_PASSWORD, and PUBLIC_CODER_AGENT_BOT_PASSWORD.
 """
 
 import hashlib
@@ -23,11 +21,7 @@ logger = logging.getLogger(__name__)
 SYNAPSE_URL = "http://matrix-synapse.matrix.svc.cluster.local:8008"
 ADMIN_USERNAME = "provisioner"
 ADMIN_DEVICE_ID = "matrix-user-provisioner"
-PUBLIC_CODER_AGENT_BOT_USERNAME = "public-coder-agent"
-PUBLIC_CODER_AGENT_BOT_DISPLAYNAME = "Public Coder Agent"
 SERVER_NAME = "allegedly.works"
-
-BOT_SPECS = ((PUBLIC_CODER_AGENT_BOT_USERNAME, PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "PUBLIC_CODER_AGENT_BOT_PASSWORD"),)
 
 
 def register_admin(client: httpx.Client, registration_secret: str, admin_password: str) -> None:
@@ -70,44 +64,28 @@ def admin_login(client: httpx.Client, admin_password: str) -> str:
     return str(resp.json()["access_token"])
 
 
-def _admin_user_url(encoded_mxid: str) -> str:
-    return f"{SYNAPSE_URL}/_synapse/admin/v2/users/{encoded_mxid}"
-
-
-def _bot_exists(client: httpx.Client, access_token: str, encoded_mxid: str) -> bool:
-    """Check if bot user already exists in Synapse."""
-    resp = client.get(_admin_user_url(encoded_mxid), headers={"Authorization": f"Bearer {access_token}"})
-    if resp.status_code == 404:
-        return False
-    resp.raise_for_status()
-    # Synapse returns the user object even for non-existent users but with
-    # no "name" field. A real user always has "name".
-    return "name" in resp.json()
-
-
 def upsert_bot(
     client: httpx.Client, admin_token: str, bot_password: str, *, bot_username: str, bot_displayname: str
 ) -> None:
     """Phase 2: Ensure the bot user exists via the admin API."""
     bot_mxid = f"@{bot_username}:{SERVER_NAME}"
-    encoded_mxid = urllib.parse.quote(bot_mxid)
+    url = f"{SYNAPSE_URL}/_synapse/admin/v2/users/{urllib.parse.quote(bot_mxid)}"
     auth = {"Authorization": f"Bearer {admin_token}"}
-    url = _admin_user_url(encoded_mxid)
 
-    if _bot_exists(client, admin_token, encoded_mxid):
-        # User exists — update displayname only. Do NOT include password:
-        # Synapse invalidates all access tokens on password change, even if
-        # the value is identical (bcrypt rehash triggers device purge), which
-        # would log the bot's own consumer out on every reconcile.
-        resp = client.put(url, json={"displayname": bot_displayname, "admin": False}, headers=auth)
-        resp.raise_for_status()
-        logger.info("Phase 2: Updated %s (displayname: %s)", bot_mxid, resp.json().get("displayname", "n/a"))
-    else:
-        resp = client.put(
-            url, json={"password": bot_password, "displayname": bot_displayname, "admin": False}, headers=auth
-        )
-        resp.raise_for_status()
-        logger.info("Phase 2: Created %s (displayname: %s)", bot_mxid, resp.json().get("displayname", "n/a"))
+    lookup = client.get(url, headers=auth)
+    # A missing user can also be represented by a successful response without a name.
+    exists = lookup.status_code != 404 and "name" in lookup.raise_for_status().json()
+    body = {"displayname": bot_displayname, "admin": False}
+    # Setting the password on an existing user purges their devices and access tokens.
+    if not exists:
+        body["password"] = bot_password
+    response = client.put(url, json=body, headers=auth).raise_for_status()
+    logger.info(
+        "Phase 2: %s %s (displayname: %s)",
+        "Updated" if exists else "Created",
+        bot_mxid,
+        response.json().get("displayname", "n/a"),
+    )
 
 
 def main() -> None:
@@ -118,14 +96,13 @@ def main() -> None:
         register_admin(client, registration_secret, admin_password)
         admin_token = admin_login(client, admin_password)
         logger.info("Logged in as @%s:%s", ADMIN_USERNAME, SERVER_NAME)
-        for bot_username, bot_displayname, password_env in BOT_SPECS:
-            upsert_bot(
-                client,
-                admin_token,
-                os.environ[password_env],
-                bot_username=bot_username,
-                bot_displayname=bot_displayname,
-            )
+        upsert_bot(
+            client,
+            admin_token,
+            os.environ["PUBLIC_CODER_AGENT_BOT_PASSWORD"],
+            bot_username="public-coder-agent",
+            bot_displayname="Public Coder Agent",
+        )
     logger.info("Done: all Matrix users provisioned")
 
 

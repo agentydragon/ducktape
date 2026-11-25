@@ -25,6 +25,11 @@ wt cp experiment-v2     # Copy current worktree (COW)
 wt path feature /src    # Get path in worktree
 ```
 
+With `hydrate_worktrees` enabled (the default), `wt cp` copies the source's working files into a new branch. Relative to
+that branch's starting commit, edits and deletions are unstaged and new files are untracked. The source keeps its staged
+changes. Run `wt cp new-name` from the main checkout or `wt cp main new-name` from another worktree to copy
+the main checkout. If `worktrees_dir` is inside it, the copy skips that entire directory and includes its siblings.
+
 Install shell function: `eval "$(python -m x.wt.shell.install)"`
 
 ## Architecture

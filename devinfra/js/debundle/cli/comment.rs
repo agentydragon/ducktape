@@ -122,8 +122,6 @@ pub struct CommentOutcome {
     pub comment: Option<String>,
     /// The comment operation that produced the outcome.
     pub action: CommentAction,
-    /// Absolute path of the YAML touched (or that would be touched).
-    pub path: PathBuf,
 }
 
 /// The distinct operations available in the binding and module comment flows.
@@ -227,7 +225,6 @@ pub fn apply_binding_comment(
         kind: OutcomeKind::Binding,
         comment,
         action,
-        path: file,
     })
 }
 
@@ -265,7 +262,6 @@ pub fn apply_module_comment(
         kind: OutcomeKind::Module,
         comment,
         action,
-        path: file,
     })
 }
 

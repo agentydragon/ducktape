@@ -176,17 +176,7 @@ def recording_proxy(
             self, capture_request_id: str, response: Any, headers: dict[str, str], *, disconnect_after_event: str | None
         ) -> None:
             if disconnect_after_event == "response_headers":
-                emit(
-                    ConnectionDroppedRecord(
-                        kind="connection_dropped",
-                        capture_request_id=capture_request_id,
-                        after_event=disconnect_after_event,
-                        time_ns=time.monotonic_ns(),
-                    )
-                )
-                with suppress(OSError):
-                    self.connection.shutdown(SHUT_RDWR)
-                self.connection.close()
+                self._drop(capture_request_id, disconnect_after_event)
                 return
             self._begin(response.status, headers)
             ordinal = 0
@@ -218,20 +208,23 @@ def recording_proxy(
                     if not relay_frame(frame):
                         return
                     if disconnect_after_event and _sse_packet_matches(frame, disconnect_after_event):
-                        emit(
-                            ConnectionDroppedRecord(
-                                kind="connection_dropped",
-                                capture_request_id=capture_request_id,
-                                after_event=disconnect_after_event,
-                                time_ns=time.monotonic_ns(),
-                            )
-                        )
-                        with suppress(OSError):
-                            self.connection.shutdown(SHUT_RDWR)
-                        self.connection.close()
+                        self._drop(capture_request_id, disconnect_after_event)
                         return
             if pending:
                 relay_frame(pending)
+
+        def _drop(self, capture_request_id: str, after_event: str) -> None:
+            emit(
+                ConnectionDroppedRecord(
+                    kind="connection_dropped",
+                    capture_request_id=capture_request_id,
+                    after_event=after_event,
+                    time_ns=time.monotonic_ns(),
+                )
+            )
+            with suppress(OSError):
+                self.connection.shutdown(SHUT_RDWR)
+            self.connection.close()
 
         def _relay_bytes(self, capture_request_id: str, status: int, body: bytes, headers: dict[str, str]) -> None:
             self._begin(status, headers)

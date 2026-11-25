@@ -25,8 +25,20 @@ import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/li
 import { useOptionalStreamStatus } from "../transport/stream_status";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
-import { PendingInputMessages, LocalControlCommands } from "./thread_commands";
+import {
+  PendingInputMessages,
+  LocalControlCommands,
+  OutstandingDispatchCommands,
+  inlineDispatches,
+  receiptProgress,
+  selectedHistoryCommands,
+  type LocalNotice,
+} from "./thread_commands";
 import { useThreadCommands } from "./command_delivery";
+import { sameCommand } from "./local_commands";
+import { useDispatchOriginals } from "./delivery_notice";
+import { isDeliveryIssue, matchingLocalIssue } from "./command_notice_attention";
+import type { ThreadDeliveryState } from "./thread_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
 import { timestampLabel } from "./thread_presentation";
@@ -34,6 +46,7 @@ import { isoTime } from "../ui/format_time";
 import { TimeAgo } from "../ui/time_ago";
 import { AUTOSUSPEND_BLOCKER_LABELS, autosuspendHint } from "./sandbox_autosuspend";
 import { NotificationStatus } from "../notifications/notification_status";
+import { DeliveryHistoryFallback } from "./command_delivery_history";
 import { TopbarActions } from "../shell/topbar";
 
 import { ThreadComposer } from "./composer";
@@ -193,9 +206,11 @@ interface ConversationBodyProps {
   canResumeSandbox: boolean;
   composerPlaceholder: string;
   onResumeSandbox: () => void;
+  onOpenDeliveryHistory: () => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
   sandbox?: EnvironmentDescriptor;
+  delivery: ThreadDeliveryState;
 }
 
 function ConversationBody({
@@ -208,9 +223,11 @@ function ConversationBody({
   canResumeSandbox,
   composerPlaceholder,
   onResumeSandbox,
+  onOpenDeliveryHistory,
   traceSearch,
   langfuseSearch,
   sandbox,
+  delivery,
 }: ConversationBodyProps): JSX.Element {
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
@@ -227,7 +244,7 @@ function ConversationBody({
   const activityAge = modelActivityAge(lastModelActivityAt, Math.max(clock, Date.now()));
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const sync = useThreadSync().useThread();
-  const commands = useThreadCommands(thread, entities);
+  const commands = useThreadCommands(thread, entities, delivery);
   const onInputEchoLoaded = useCallback(
     (commandId: string) => commands.store.acknowledgeEcho(commandId),
     [commands.store]
@@ -291,6 +308,9 @@ function ConversationBody({
       active = false;
     };
   }, [harness]);
+  const confirmedIds = new Set(
+    entities.flatMap((row) => (row.entity.case === "confirmedInput" ? row.entity.value.originCommandIds : []))
+  );
   const rows = historyRows(
     entities
       .filter(
@@ -299,11 +319,64 @@ function ConversationBody({
           row.entity.case === "confirmedInput" ||
           row.entity.case === "lifecycle" ||
           (row.entity.case === "command" &&
-            (pendingSentMessage(row) || row.entity.value.operation !== Operation.SUBMIT_INPUT))
+            ((pendingSentMessage(row) && !confirmedIds.has(row.entityId)) ||
+              row.entity.value.operation !== Operation.SUBMIT_INPUT))
       )
       .sort((left, right) => (left.cursor < right.cursor ? -1 : left.cursor > right.cursor ? 1 : 0))
   );
   const localCommands = commands.local.commands;
+  const deliveryAttention = delivery.attention;
+  const inline = inlineDispatches(delivery);
+  // Invite History to surface the older exact IDs before showing a second representation.
+  useThreadSync().useCommandRows(inline.map((item) => item.commandId));
+  const historyIds = selectedHistoryCommands(entities);
+  const localIds = new Set(localCommands.map(({ command }) => command.commandId));
+  // An older browser record may have a receipt without the current attempt flag.
+  const attemptedLocalIds = new Set(
+    localCommands.filter((value) => value.attempted || value.dispatch !== null).map(({ command }) => command.commandId)
+  );
+  const byCommand = new Map([...inline, ...deliveryAttention.issues].map((item) => [item.commandId, item]));
+  const uncertainLocalIds = localCommands.flatMap((command) => {
+    const id = command.command.commandId;
+    const issue = byCommand.get(id);
+    return attemptedLocalIds.has(id) &&
+      issue &&
+      isDeliveryIssue(issue.state) &&
+      !matchingLocalIssue(command, threadId, [issue])
+      ? [id]
+      : [];
+  });
+  const localOriginals = useDispatchOriginals(delivery.readReceipts, uncertainLocalIds);
+  const localNotice: LocalNotice = (command) => {
+    const id = command.command.commandId;
+    const exact = matchingLocalIssue(command, threadId, deliveryAttention.issues);
+    const item = exact ?? (delivery.workset.stale || !attemptedLocalIds.has(id) ? undefined : byCommand.get(id));
+    if (!item) return;
+    const original = localOriginals.commands?.get(id);
+    const verified =
+      exact !== undefined ||
+      (original?.command !== undefined &&
+        original.receiptVersion === item.receiptVersion &&
+        original.operation === item.operation &&
+        sameCommand(command.command, original.command));
+    if (deliveryAttention.acknowledged(item)) {
+      return { acknowledged: verified, hasDispatcherReceipt: true };
+    }
+    return {
+      acknowledged: false,
+      hasDispatcherReceipt: true,
+      failed: isDeliveryIssue(item.state),
+      progress: receiptProgress(delivery, item),
+    };
+  };
+  const projectedProgress = new Map(
+    inline
+      .filter((item) => isDeliveryIssue(item.state))
+      .map(
+        (item) =>
+          [item.commandId, deliveryAttention.acknowledged(item) ? null : receiptProgress(delivery, item)] as const
+      )
+  );
   const inputEchoes = new Map(commands.local.inputEchoes.map(({ commandId, text }) => [commandId, text]));
   for (const local of localCommands) {
     if (local.command.operation.case === "submitInput") {
@@ -320,6 +393,7 @@ function ConversationBody({
         errors={commands.errors}
         store={commands.store}
         deliver={commands.deliver}
+        localNotice={localNotice}
       />
       {localCommands.length > 0 && (
         <LocalControlCommands
@@ -328,8 +402,14 @@ function ConversationBody({
           store={commands.store}
           errors={commands.errors}
           deliver={commands.deliver}
+          localNotice={localNotice}
         />
       )}
+      <OutstandingDispatchCommands
+        delivery={delivery}
+        items={inline.filter((item) => !historyIds.has(item.commandId) && !localIds.has(item.commandId))}
+        onOpenDeliveryHistory={onOpenDeliveryHistory}
+      />
       <Stack className="agentplane-thread-tail-activity" gap={0}>
         <AutosuspendHint threadId={threadId} hint={sandboxAutosuspend} className="agentplane-thread-tail-autosuspend" />
         <ModelActivityHint
@@ -351,6 +431,7 @@ function ConversationBody({
           inputEchoes={inputEchoes}
           onInputEchoLoaded={onInputEchoLoaded}
           tail={commandTail}
+          projectedProgress={projectedProgress}
           running={running}
           activeTurn={activeTurn}
           history={history}
@@ -360,6 +441,14 @@ function ConversationBody({
             {operational.feedError.cursor === undefined
               ? `Projection failed: ${operational.feedError.message}. Showing verified history through event ${operational.lastVerifiedCursor}.`
               : `Rejected event ${operational.feedError.cursor}: ${operational.feedError.message}. Showing verified history through event ${operational.lastVerifiedCursor}.`}
+          </Text>
+        )}
+        {commands.local.dispatchWatchError && (
+          <Text role="alert" size="sm" c="red" style={{ overflowWrap: "anywhere" }}>
+            Command delivery updates disconnected. Queued or delivering states may be out of date while reconnecting.
+            <Text component="span" inherit display="block">
+              {commands.local.dispatchWatchError}
+            </Text>
           </Text>
         )}
         {commands.local.dispatchWatchCoverageLost && (
@@ -446,6 +535,7 @@ function ConversationBody({
                 <Menu.Item hiddenFrom="sm" onClick={() => setNotificationsOpen(true)}>
                   Notifications
                 </Menu.Item>
+                <Menu.Item onClick={onOpenDeliveryHistory}>Delivery history</Menu.Item>
                 <Menu.Item leftSection={<IconHistory size={15} />} onClick={() => openDebug()}>
                   Debug history
                 </Menu.Item>
@@ -507,9 +597,11 @@ export interface ThreadConversationProps {
   canResumeSandbox: boolean;
   composerPlaceholder: string;
   onResumeSandbox: () => void;
+  onOpenDeliveryHistory: () => void;
   traceSearch: TraceSearchSettings | null;
   langfuseSearch: LangfuseSearchSettings | null;
   sandbox?: EnvironmentDescriptor;
+  delivery: ThreadDeliveryState;
 }
 
 export function ThreadConversation({
@@ -520,16 +612,27 @@ export function ThreadConversation({
   canResumeSandbox,
   composerPlaceholder,
   onResumeSandbox,
+  onOpenDeliveryHistory,
   traceSearch,
   langfuseSearch,
   sandbox,
+  delivery,
 }: ThreadConversationProps): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
   useOptionalStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
   if (!shown) {
-    if (error) return <p role="alert">Thread sync failed: {error}</p>;
-    return <p role="status">Loading thread…</p>;
+    return (
+      <>
+        <DeliveryHistoryFallback onOpen={onOpenDeliveryHistory} />
+        {error ? <p role="alert">Thread sync failed: {error}</p> : <p role="status">Loading thread…</p>}
+        <OutstandingDispatchCommands
+          delivery={delivery}
+          items={inlineDispatches(delivery)}
+          onOpenDeliveryHistory={onOpenDeliveryHistory}
+        />
+      </>
+    );
   }
   return (
     <>
@@ -554,10 +657,12 @@ export function ThreadConversation({
         canQueueCommands={canQueueCommands}
         canResumeSandbox={canResumeSandbox}
         composerPlaceholder={composerPlaceholder}
+        onOpenDeliveryHistory={onOpenDeliveryHistory}
         onResumeSandbox={onResumeSandbox}
         traceSearch={traceSearch}
         langfuseSearch={langfuseSearch}
         sandbox={sandbox}
+        delivery={delivery}
       />
     </>
   );

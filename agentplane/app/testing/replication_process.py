@@ -345,14 +345,7 @@ class ReadyServer(uvicorn.Server):
 
 @asynccontextmanager
 async def oidc_provider(
-    directory: Path,
-    *,
-    client_id: str = "test-agentplane",
-    subject: str = "test-operator",
-    extra_claims: dict[str, object] | None = None,
-    id_failure: str | None = None,
-    reject_token_exchange: bool = False,
-    options: OIDCProviderOptions | None = None,
+    directory: Path, *, client_id: str = "test-agentplane", options: OIDCProviderOptions | None = None
 ) -> AsyncIterator[tuple[str, Path, str]]:
     provider_options = options or OIDCProviderOptions()
     certificate = browser_certificate(directory)
@@ -362,25 +355,13 @@ async def oidc_provider(
         issuer_path = "/application/o/agentplane/" if provider_options.authentik_compatible else ""
         url = f"https://127.0.0.1:{listener.getsockname()[1]}{issuer_path}"
         private, public = generate_rsa_keypair()
-        claims = {"preferred_username": "test-operator"} | (extra_claims or {})
-        failures: dict[str, tuple[str, object]] = {
-            "issuer": ("iss", "https://wrong-issuer.invalid"),
-            "audience": ("aud", "wrong-client"),
-            "azp": ("azp", "wrong-client"),
-            "expired": ("exp", 1),
-            "subject": ("sub", ""),
-        }
-        if id_failure == "signature":
-            _, public = generate_rsa_keypair()
-        elif id_failure is not None:
-            key, value = failures[id_failure]
-            claims[key] = value
+        subject = "test-operator"
         app = build_mock_oidc_app(
             issuer_url=url,
             private_key=private,
             public_key=public,
             subject=subject,
-            extra_id_token_claims=claims,
+            extra_id_token_claims={"preferred_username": subject},
             authentik_compatible=provider_options.authentik_compatible,
             exchange_token_audience=provider_options.exchange_token_audience,
             expected_exchange_client_id=provider_options.expected_exchange_client_id,
@@ -447,12 +428,6 @@ async def oidc_provider(
 
         app.routes.remove(token_route)
         app.routes.insert(0, Route(token_path, token, methods=["POST"]))
-        if reject_token_exchange:
-
-            async def reject(_request: Request) -> Response:
-                return Response(status_code=403)
-
-            app.routes.insert(0, Route("/token", reject, methods=["POST"]))
         ca = certificate.directory / "certificate.pem"
         now = int(time.time())
         operator_id_token = sign_jwt(
@@ -462,7 +437,7 @@ async def oidc_provider(
                 "aud": client_id,
                 "azp": client_id,
                 "sub": subject,
-                "preferred_username": cast(str, claims["preferred_username"]),
+                "preferred_username": subject,
                 "iat": now,
                 "exp": now + 3600,
             },

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
@@ -32,18 +33,9 @@ def chart(app: App) -> Chart:
             "deploymentAnnotations": {VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
             "replicas": 2,
             "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
-            "affinity": {
-                "podAntiAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "labelSelector": {
-                                "matchLabels": {"app.kubernetes.io/instance": NAME, "app.kubernetes.io/name": NAME}
-                            },
-                            "topologyKey": "kubernetes.io/hostname",
-                        }
-                    ]
-                }
-            },
+            "affinity": node_scheduling.one_per_host(
+                {"app.kubernetes.io/instance": NAME, "app.kubernetes.io/name": NAME}
+            ),
             # Talos-specific configuration
             "args": ["--kubelet-insecure-tls", "--kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname"],
             "resources": {"limits": {"cpu": "100m", "memory": "128Mi"}, "requests": {"cpu": "10m", "memory": "32Mi"}},

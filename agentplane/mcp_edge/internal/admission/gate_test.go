@@ -255,66 +255,23 @@ func TestValidOperatorReachesConnectionHandlerAndInvalidCredentialsDoNot(t *test
 		t.Fatal("valid operator did not reach the handler")
 	}
 
-	for name, call := range map[string]func() error{
-		"missing bearer": func() error {
-			_, err := s.connections.ListConnections(ctx, &pb.ListConnectionsRequest{})
-			return err
-		},
-		"multiple bearers": func() error {
-			request := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+valid, "authorization", "Bearer "+valid)
-			_, err := s.connections.ListConnections(request, &pb.ListConnectionsRequest{})
-			return err
-		},
-		"malformed bearer": func() error {
-			request := metadata.AppendToOutgoingContext(ctx, "authorization", "Basic "+valid)
-			_, err := s.connections.ListConnections(request, &pb.ListConnectionsRequest{})
-			return err
-		},
-		"workload bearer": func() error {
-			_, err := s.connections.ListConnections(bearer(ctx, workloadToken), &pb.ListConnectionsRequest{})
-			return err
-		},
-		"delegated scheme": func() error {
-			request := metadata.AppendToOutgoingContext(ctx, "authorization", auth.DelegatedScheme+" "+valid)
-			_, err := s.connections.ListConnections(request, &pb.ListConnectionsRequest{})
-			return err
-		},
-		"delegation envelope": func() error {
-			request := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+valid, auth.DelegationMetadataKey, "not-a-delegation")
-			_, err := s.connections.ListConnections(request, &pb.ListConnectionsRequest{})
-			return err
-		},
-		"wrong issuer": func() error {
-			_, err := s.connections.ListConnections(bearer(ctx, wrongIssuer), &pb.ListConnectionsRequest{})
-			return err
-		},
-		"wrong audience": func() error {
-			_, err := s.connections.ListConnections(bearer(ctx, wrongAudience), &pb.ListConnectionsRequest{})
-			return err
-		},
-		"multiple audiences": func() error {
-			_, err := s.connections.ListConnections(bearer(ctx, multipleAudiences), &pb.ListConnectionsRequest{})
-			return err
-		},
-		"wrong authorized party": func() error {
-			_, err := s.connections.ListConnections(bearer(ctx, otherParty), &pb.ListConnectionsRequest{})
-			return err
-		},
-		"blank subject": func() error {
-			_, err := s.connections.ListConnections(bearer(ctx, emptySubject), &pb.ListConnectionsRequest{})
-			return err
-		},
-		"expired token": func() error {
-			_, err := s.connections.ListConnections(bearer(ctx, expired), &pb.ListConnectionsRequest{})
-			return err
-		},
-		"missing authorized party": func() error {
-			_, err := s.connections.ListConnections(bearer(ctx, missingParty), &pb.ListConnectionsRequest{})
-			return err
-		},
+	for name, refused := range map[string]context.Context{
+		"missing bearer":           ctx,
+		"multiple bearers":         metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+valid, "authorization", "Bearer "+valid),
+		"malformed bearer":         metadata.AppendToOutgoingContext(ctx, "authorization", "Basic "+valid),
+		"workload bearer":          bearer(ctx, workloadToken),
+		"delegated scheme":         metadata.AppendToOutgoingContext(ctx, "authorization", auth.DelegatedScheme+" "+valid),
+		"delegation envelope":      metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+valid, auth.DelegationMetadataKey, "not-a-delegation"),
+		"wrong issuer":             bearer(ctx, wrongIssuer),
+		"wrong audience":           bearer(ctx, wrongAudience),
+		"multiple audiences":       bearer(ctx, multipleAudiences),
+		"wrong authorized party":   bearer(ctx, otherParty),
+		"blank subject":            bearer(ctx, emptySubject),
+		"expired token":            bearer(ctx, expired),
+		"missing authorized party": bearer(ctx, missingParty),
 	} {
 		t.Run(name, func(t *testing.T) {
-			err := call()
+			_, err := s.connections.ListConnections(refused, &pb.ListConnectionsRequest{})
 			wantCode(t, name, err, codes.Unauthenticated)
 			if got := status.Convert(err).Message(); got != "invalid bearer" {
 				t.Errorf("refusal message %q reveals why the operator token was refused", got)

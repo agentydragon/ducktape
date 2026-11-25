@@ -166,15 +166,6 @@ fn collect_decl_features(decl: &Decl, features: &mut BTreeSet<SelectorFeature>) 
                 function.function.params.len(),
             ));
         }
-        Decl::Class(class) => {
-            for member in &class.class.body {
-                if class_rest_hole_name(member).is_none()
-                    && let Some((label, _)) = class_member_label_span(member)
-                {
-                    features.insert(SelectorFeature::ClassMember(label));
-                }
-            }
-        }
         Decl::Var(var) => {
             features.insert(SelectorFeature::VarKind(var_kind(var.kind)));
         }
@@ -527,6 +518,7 @@ mod tests {
         assert_eq!(
             features(
                 r#"class Panel { render() {} mount() {} }
+export class Widget { ANYTHING_before; sync() {} }
 function combine(first, second) { return first.sum + 1; }
 const { foo: localName, bar } = source;"#
             ),
@@ -535,6 +527,10 @@ const { foo: localName, bar } = source;"#
                     SelectorFeature::TopLevelKind(TopLevelKind::ClassDeclaration),
                     SelectorFeature::ClassMember("render".to_string()),
                     SelectorFeature::ClassMember("mount".to_string()),
+                ]),
+                BTreeSet::from([
+                    SelectorFeature::TopLevelKind(TopLevelKind::ExportedClassDeclaration),
+                    SelectorFeature::ClassMember("sync".to_string()),
                 ]),
                 BTreeSet::from([
                     SelectorFeature::TopLevelKind(TopLevelKind::FunctionDeclaration),

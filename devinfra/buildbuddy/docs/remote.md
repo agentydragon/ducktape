@@ -5,8 +5,8 @@ runner. Bare source paths refer to the
 [BuildBuddy source](https://github.com/buildbuddy-io/buildbuddy).
 
 Configuration behavior was checked on 2026-10-30 against CLI **5.0.466**, the
-repo pin at the time. The repo now pins **5.0.500** (`nix/packages/bb.nix`);
-version-specific checks below have not been repeated on that release. The
+repo pin at the time. The repo now pins **5.0.500** (`nix/packages/bb.nix`).
+The remote-specific parser checks below still refer to 5.0.466. The
 upstream source was checked at commit
 [`d84e5dfd`](https://github.com/buildbuddy-io/buildbuddy/tree/d84e5dfd97439eeefbbf247681de47f3960adc11).
 CLI behavior and hosted-service behavior have separate versions; upstream server
@@ -31,7 +31,8 @@ Direct local `bb build` / `bb test` instead expand both `.bbrc` and Bazel rc
 files locally. In the 5.0.466 parser checked below, startup directives were
 forwarded and `--ignore_all_rc_files` was added to prevent Bazel loading those
 files a second time.
-The older startup-option loss is historical; see <bazelrc_startup.md>.
+See [the local startup probe](bazelrc_startup.md) for the check on 5.0.500
+and the historical startup-option loss.
 
 **bb remote flags**: `bb help remote` lists the current set. Two matter for
 git-state sync: `--skip_auto_checkout` skips the runner's automatic GitHub
@@ -411,15 +412,17 @@ A remote run produces two invocations:
 before the run and in the post-run summary. For scripting, either pass your
 own `--invocation_id=<uuid>` after the verb (adopted, not overridden) or use
 bbr's own `--invocation-id-file=PATH` flag, which writes the ID to that path
-before the run:
+before the run. If the task already has a scratch directory, set `scratch` to it.
 
 ```bash
-bbr --invocation-id-file=/tmp/bbr-inv test //foo:bar
-bbapi invocation "$(cat /tmp/bbr-inv)"
+scratch="${scratch:-${TMPDIR:-/tmp}/agents/$(date +%Y_%m_%d)/build-diagnosis}"
+bbr --invocation-id-file="$scratch/invocation-id" test //devinfra/buildbuddy/ci:test_live_test_status
+bbapi invocation "$(cat "$scratch/invocation-id")"
 ```
 
-`bbapi` commands take either ID (outer auto-resolves to children), but the
-inner one names the targets/logs/artifacts directly.
+Use the inner ID for a single Bazel invocation. With the outer ID,
+`bbapi artifact list` includes both the child Bazel outputs and any files
+the runner uploaded from its steps.
 
 **Rejected: reading the ID back from `--invocation_id_file`.** bb writes that
 file once, at the end of a successfully tracked run, and bbr pointed every run
@@ -441,12 +444,50 @@ Outputs fetched back by `--remote_download_outputs=toplevel` or
 our standard Linux x86_64 RBE builds. **There is NO
 `bb-out/bazel-bin/<pkg>/<name>` convenience symlink** — it exists only in
 local Bazel workspaces. Consumers of bb-remote-built artifacts (e.g.
-`publish-oci-image.yml`) must use the full path:
+`publish-oci-image.yml`) must use the full path. For a worked example, see the [Python lockfile workflow](../../docs/lockfiles.md#python-requirements).
+
+### Run repository writers remotely and retrieve a patch
+
+For generators that modify tracked workspace files, run them through `bbr --script`
+and upload a patch from `$BUILDBUDDY_ARTIFACTS_DIRECTORY`. This avoids downloading
+an entire executable runfiles tree. On 2026-11-21, `--run_remotely=false` built
+`//model_catalog:generate_nix` successfully but its downloaded Python runtime failed
+with `ModuleNotFoundError: No module named 'encodings'`; the remote script below
+completed both generators and returned a patch that applied locally.
+
+From the checkout, with the generator edits already present and generated files clean:
 
 ```bash
-bbr build //:requirements --remote_download_regex='.*requirements\.out'
-cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
+scratch="${TMPDIR:-/tmp}/agents/2026_11_21/model-rosters"
+mkdir -p "$scratch"
+bbr --script='set -eu
+bazelisk run //cluster/cdk8s:generate_manifests
+bazelisk run //model_catalog:generate_nix
+mkdir -p "$BUILDBUDDY_ARTIFACTS_DIRECTORY"
+git diff --binary -- cluster/generated cluster/k8s cluster/parked model_catalog/claude-wrappers.json > "$BUILDBUDDY_ARTIFACTS_DIRECTORY/model-manifests.patch"'
 ```
+
+Use the task's start date and scratch name. Set `invocation_id` to the **outer** invocation ID from
+`Streaming remote runner logs to:`. The script's Bazel invocations have separate IDs.
+Keep these generated files unchanged locally until applying the patch. The diff above
+captures tracked files only; a generator adding files also needs `git add -N` for those
+output paths on the remote runner before exporting the diff.
+
+After the script exits successfully, download the patch by its step label and filename.
+In Agentplane, check `agentplane egress rules` and set `BUILDBUDDY_API_KEY` to the
+reviewed `agentplane-credential-buildbuddy` placeholder for the local `bbapi` command.
+
+```bash
+bbapi artifact download "$invocation_id" 'steps[0]/model-manifests.patch' -o "$scratch/model-manifests.patch"
+git apply --check "$scratch/model-manifests.patch"
+git apply "$scratch/model-manifests.patch"
+bbr test //cluster/cdk8s:test_generate_manifests //model_catalog:test_nix
+```
+
+The script runs on BuildBuddy, where the runner supplies its own Bazel credentials.
+Do not pass Agentplane's literal credential placeholder as a Bazel `--remote_header`
+to that remote process: substitution happens at the Sandbox egress proxy, not on the
+remote runner.
 
 ### Checking a generated tree after download
 

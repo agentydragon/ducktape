@@ -30,7 +30,6 @@ py_library(
     name = "database_migrate",
     srcs = ["database_migrate.py"],
     data = ["//ai_session_archive/migrations:files"],
-    visibility = ["//ai_session_archive/migrations:__pkg__"],
     deps = [
         ":database",
         "//util:db_migrations",
@@ -50,30 +49,6 @@ py_binary(
     deps = [":migrate_cli"],
 )
 
-aspect_py_binary(
-    name = "migrate_image_bin",
-    main = "migrate_cli.py",
-    deps = [":migrate_cli"],
-)
-
-py_image_layer(
-    name = "migrate_image_layers",
-    binary = ":migrate_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "migrate_image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("migrate_image_bin"),
-    env = py_image_env(binary_name = "migrate_image_bin"),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":migrate_image_layers"],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-)
-
 py_test(
     name = "test_database_migrate",
     size = "medium",
@@ -84,7 +59,6 @@ py_test(
         ":database",
         ":database_migrate",
         "//:conftest",
-        "//testing:postgres",
         "//testing:postgres_fixtures",
         "@pypi//alembic",
         "@pypi//pytest",
@@ -253,7 +227,6 @@ py_test(
         "//ai_session_archive:ingest_test_image",
         "//devinfra/oci",
         "//testing:container_logs",
-        "//testing:postgres",
         "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -270,7 +243,6 @@ py_library(
         ":ingest",
         ":restic",
         ":source_paths",
-        "//testing:postgres",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],
@@ -348,67 +320,6 @@ py_test(
         ":source_paths",
         ":testing",
         ":version_queries",
-        "//:conftest",
-        "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_modified_version",
-    size = "medium",
-    srcs = ["test_modified_version.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":database",
-        ":models",
-        ":queries",
-        ":source_paths",
-        ":testing",
-        ":version_queries",
-        "//:conftest",
-        "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_truncated_deleted_version",
-    size = "medium",
-    srcs = ["test_truncated_deleted_version.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":database",
-        ":models",
-        ":queries",
-        ":source_paths",
-        ":testing",
-        ":version_queries",
-        "//:conftest",
-        "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_parentless_snapshot",
-    size = "medium",
-    srcs = ["test_parentless_snapshot.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":database",
-        ":models",
-        ":source_paths",
-        ":testing",
         "//:conftest",
         "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",

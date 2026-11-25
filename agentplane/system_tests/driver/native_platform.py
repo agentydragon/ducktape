@@ -54,11 +54,9 @@ class NativePlatformClients:
         )
         return SandboxRunner(self.control, destination, host_control=self.host_control)
 
-    async def ready_runner(
-        self, target: identity_pb2.EnvironmentTarget, *, timeout_s: float = RUNNER_READY_SECONDS
-    ) -> SandboxRunner:
+    async def ready_runner(self, target: identity_pb2.EnvironmentTarget) -> SandboxRunner:
         """Wait for this exact Runner using only retry-safe status reads."""
-        async with asyncio.timeout(timeout_s):
+        async with asyncio.timeout(RUNNER_READY_SECONDS):
             while True:
                 runner = self.runner(target)
                 try:
@@ -70,6 +68,24 @@ class NativePlatformClients:
                     if error.code != grpc.StatusCode.UNAVAILABLE:
                         raise
                 await asyncio.sleep(0.25)
+
+
+@asynccontextmanager
+async def native_history_client(
+    cluster: Cluster, credentials: grpc.ChannelCredentials | None = None
+) -> AsyncIterator[HistoryServiceClient]:
+    if credentials is None:
+        credentials = await service_svid_credentials(cluster, NATIVE_CLIENT_SVID_SECRET)
+    async with (
+        forward(cluster, f"service/{HISTORY_SERVICE}", remote_port=SERVICE_PORT) as target,
+        HistoryServiceClient(
+            target,
+            request_timeout_s=REQUEST_TIMEOUT_SECONDS,
+            channel_credentials=credentials,
+            server_name=f"{HISTORY_SERVICE}.{cluster.namespace}.svc.cluster.local",
+        ) as history,
+    ):
+        yield history
 
 
 @asynccontextmanager
@@ -98,16 +114,7 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
                 server_name=f"{DISPATCHER_SERVICE}.{cluster.namespace}.svc.cluster.local",
             )
         )
-        history_target = await opened.enter_async_context(
-            forward(cluster, f"service/{HISTORY_SERVICE}", remote_port=SERVICE_PORT)
-        )
-        history = HistoryServiceClient(
-            history_target,
-            request_timeout_s=REQUEST_TIMEOUT_SECONDS,
-            channel_credentials=credentials,
-            server_name=f"{HISTORY_SERVICE}.{cluster.namespace}.svc.cluster.local",
-        )
-        await opened.enter_async_context(history)
+        history = await opened.enter_async_context(native_history_client(cluster, credentials))
         yield NativePlatformClients(
             cluster=cluster,
             environment=environment,

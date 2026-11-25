@@ -89,13 +89,10 @@ The sections below hold details, not competing priority queues.
    selector edits are proved by the shared structural resolver; diagnostics
    remain suggestions, and the author decides what to apply. Keep
    gate-before-write, atomic writes and dry-run reporting.
-5. **Excalidraw smoke follow-up.** The public corpus, accepted
-   spec and self-hosted browser smoke landed (<excalidraw/README.md>); the
-   smoke loads swapped packages through an import map. The public canonical
-   spec check is `excalidraw:canonical_summary`
-   (<plans/convergence_landing.md>). Remaining per
-   <plans/excalidraw_live_smoke.md>: dynamic-import coverage after startup and
-   a published screenshot. The current smoke covers startup and drawing.
+5. **Excalidraw smoke coverage.** Exercise post-startup locale, font-subsetting
+   and file-system imports. Capture a representative editor state with
+   `VisualPage.capture()` for PR review. See the [public corpus and current
+   browser checks](excalidraw/README.md).
 6. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
    and alpha-binding snapshots before ownership redesign, indexes or undo logs.
    Preserve ordering/hygiene and the independent Node differential oracle.
@@ -112,14 +109,16 @@ The sections below hold details, not competing priority queues.
 ### Cyclic export-cell observation soundness
 
 - Cover future export-cell observations by arbitrary unknown execution.
-  The partial source-derived may-read path handles direct imported function
-  declarations and local aliases; it does not cover transitive calls,
-  re-export chains, namespace calls or host/global callees. The broad fence
-  tried in draft #16539 rejects the frozen Excalidraw spec (868-unit atomic
-  group). <debug/2026_11_14_cyclic_export_cells.md> records the reproduction,
-  exact checks, policy blockers and witness. Next lane: establish loader
-  reachability or transport the missing cell-access obligations without
-  weakening the gate. Close when the opaque observer counterexample is
+  The source-derived may-read path follows source-known calls and local
+  re-export aliases. Namespace calls and unresolved host/global callees remain open. The broad fence
+  tried during merged [PR #16539](https://github.com/agentydragon/ducktape/pull/16539)
+  rejected the frozen Excalidraw spec (868-unit atomic group).
+  <debug/2026_11_14_cyclic_export_cells.md> records the reproduction,
+  exact checks, policy blockers and witness. The remaining global-call case
+  is accepted by the ordinary gate on `devel` at `fc6336654b` without author
+  premises; see <docs/design.md#soundness-boundary-and-regressions>. Next lane:
+  establish loader reachability or transport the missing cell-access
+  obligations without weakening the gate. Close when the opaque observer counterexample is
   rejected and the unchanged canonical reconstruction passes.
 
 ### Architecture review follow-ups
@@ -233,16 +232,23 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   strategy needs ordinary-gate and original/emitted differential controls under
   <docs/design.md>; weakening constraints cannot supply missing emitter behavior.
 
-- **AR7 — Reconcile the documented soundness guarantee with executable behavior.**
-  <docs/design.md> promises observational equivalence, but its "Side effects we
-  can't see locally" section says accepted global-effect reorderings can change
-  behavior. This is a contract inconsistency, not a reproduced new soundness
-  bug. Check the claims against neutral CLI cases for global reads/writes,
-  imported-object mutation and refused dynamic scope, including the relevant
-  admitted host premises. Close by replacing stale claims with the verified
-  scope and regression references, or repairing any reproduced unsafe acceptance
-  conservatively before updating the contract. Expected rarity in bundled code
-  is not a soundness condition.
+- **AR7 — Finish the conditional soundness contract audit.**
+  <docs/design.md#soundness-boundary-and-regressions> now separates false author
+  premises from independent engine defects. The former can change behavior;
+  <e2e/commuting_statements_gate_test.rs> demonstrates an intentionally false
+  commutation promise and a modeled contradiction the gate rejects. The latter
+  occurred for foreign mutable-state reads without a premise; see
+  <debug/2026_11_09_l4c_discrepancy_audit.md#unsafe-legacy-acceptance>, its
+  repaired-gate fixture <e2e/foreign_cell_read_order_test.rs>, and the
+  accepted-output sweep <e2e/foreign_state_node_differential_sweep_test.rs>.
+  The current cyclic export-cell defect is separately tracked under
+  [Cyclic export-cell observation soundness](#cyclic-export-cell-observation-soundness).
+  Check remaining host and dynamic-scope assumptions against neutral CLI cases
+  and A1's admission rules. Record any newly reproduced ordinary-gate unsafe
+  acceptance with a minimal bundle/spec and repair it conservatively; do not
+  infer one from stale prose, `--emit-on-rejection`, or a report-only prototype.
+  Close when the documented preconditions and executable cases agree. Finite
+  fixtures and expected rarity do not prove universal soundness.
 
 - **AR8 — Separate qualified module identity from author spelling and output paths.**
   `ModulePath::parse` in <spec/spec.rs> folds case and accepts chunk-qualified

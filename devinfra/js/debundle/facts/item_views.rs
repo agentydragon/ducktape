@@ -118,12 +118,7 @@ pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSe
         }
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
             for spec in &import.specifiers {
-                let local = match spec {
-                    ImportSpecifier::Named(named) => named.local.sym.as_ref(),
-                    ImportSpecifier::Default(default) => default.local.sym.as_ref(),
-                    ImportSpecifier::Namespace(namespace) => namespace.local.sym.as_ref(),
-                };
-                try_shadow(local, &mut shadowed);
+                try_shadow(spec.local().sym.as_ref(), &mut shadowed);
             }
         }
     }

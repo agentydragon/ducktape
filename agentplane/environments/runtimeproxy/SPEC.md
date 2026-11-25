@@ -74,13 +74,20 @@ remain available while quiescing, and the controller's authorized `Quiesce` can 
 seal. Cache observation is asynchronous; this routing check does not make Kubernetes
 `deletionTimestamp` atomic with Runtime admission.
 
+### Managed Environment deletion
+
 For ordinary managed deletion, the receiver barrier is the exact incarnation's completed Runtime
 quiescence: every Session has closed final admission, sealed its journal and received History's seal
 acknowledgement before the controller removes the workload. A request already past proxy routing
 must still pass Runtime's admission gate. Runtime's initial lameduck permits exact-turn interrupts;
 its final Session cutoff refuses new command IDs, including interrupts. Existing command IDs retain
 journal reconciliation. Removing finalizers or using foreground deletion bypasses this managed
-protocol and supplies no such proof.
+protocol and supplies no such proof. The
+[deletion system test](../../system_tests/suites/test_session_deletion.py) holds an interrupt after
+routing, completes the seal, and verifies the receiver rejects it while preserving sealed History
+and fencing a same-name replacement.
+
+### Executor routing
 
 A fresh Executor `OpenSession` may omit `scope.expected_incarnation_uid`. After exact Sandbox
 resolution, the proxy verifies the current Runtime connection against the observed incarnation,

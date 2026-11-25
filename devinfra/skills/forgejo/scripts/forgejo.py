@@ -38,7 +38,6 @@ import json
 import netrc
 import os
 import statistics
-import sys
 import urllib.parse
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
@@ -184,12 +183,11 @@ def _configure_timing(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(func=_run_timing)
 
 
-def _run_timing(args: argparse.Namespace) -> int:
+def _run_timing(args: argparse.Namespace) -> None:
     auth = credentials(args.forgejo_url, args.user, args.password)
     tasks = recent_finished(fetch_tasks(args.forgejo_url, args.owner, args.repo, auth), args.limit)
     if not tasks:
-        print("no finished tasks with usable timestamps found", file=sys.stderr)
-        return 1
+        raise SystemExit("no finished tasks with usable timestamps found")
 
     if args.list:
         print(f"{'id':>7} {'job':<14} {'status':<9} {'dur':>7}")
@@ -204,7 +202,6 @@ def _run_timing(args: argparse.Namespace) -> int:
         print(f"{s.name:<14} {s.n:>4} {s.p_min:>5.0f}s {s.p50:>5.0f}s {s.p90:>5.0f}s {s.p_max:>5.0f}s")
     if dropped:
         print(f"\n{dropped} task(s) dropped as > {args.max_seconds:.0f}s outliers (queue wait / stuck rows)")
-    return 0
 
 
 def _response_text(response: httpx.Response) -> str:
@@ -483,7 +480,7 @@ def _configure_logs(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(func=_run_logs)
 
 
-def _run_logs(args: argparse.Namespace) -> int:
+def _run_logs(args: argparse.Namespace) -> None:
     with run_page_session(args) as (client, state):
         endpoint = state.log_endpoint(
             args.forgejo_url, select_job(run_view(state.initial_post_response).jobs, args.job)
@@ -492,7 +489,6 @@ def _run_logs(args: argparse.Namespace) -> int:
             _print_steps(extract_steps(fetch_job_state(client, endpoint)))
         for step in args.step or []:
             _print_logs(fetch_step_logs(client, endpoint, step), args.timestamps)
-        return 0
 
 
 def rerun_endpoint(forgejo_url: str, run_link: str, job_index: int | None) -> str:
@@ -509,7 +505,7 @@ def _configure_rerun(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(func=_run_rerun)
 
 
-def _run_rerun(args: argparse.Namespace) -> int:
+def _run_rerun(args: argparse.Namespace) -> None:
     with run_page_session(args) as (client, state):
         run = run_view(state.initial_post_response)
         if args.job is None:
@@ -525,19 +521,18 @@ def _run_rerun(args: argparse.Namespace) -> int:
             )
         _response_text(client.post(endpoint))
         print(f"re-run requested: {args.forgejo_url.rstrip('/')}{run.link} ({', '.join(job.name for job in targets)})")
-        return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="forgejo", description="Inspect and drive Forgejo Actions.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     _configure_timing(subparsers.add_parser("timing", help="per-job CI duration distribution"))
     _configure_logs(subparsers.add_parser("logs", help="fetch a run's step logs from the web UI"))
     _configure_rerun(subparsers.add_parser("rerun", help="re-run a run or one of its jobs via the web UI route"))
     args = parser.parse_args(argv)
-    func: Callable[[argparse.Namespace], int] = args.func
-    return func(args)
+    func: Callable[[argparse.Namespace], None] = args.func
+    func(args)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -25,7 +25,7 @@ from finance.augur.sim.money import Currency, NonNegativeCurrencyAmount
 class FilingStatus(StrEnum):
     """Federal/state filing status. Today only single-filer is wired through the tax + §121
     math; adding a new variant requires touching every place that branches on filing status
-    (bracket lookup keys in jurisdiction YAMLs, §121 cap table in `_apply_property_sale`,
+    (bracket lookup keys in jurisdiction YAMLs, §121 cap table in `_SECTION_121_EXCLUSION_BY_FILING_STATUS`,
     standard-deduction lookup, …). The enum makes this an explicit blocker on every
     callsite rather than a string typo silently falling through to a missing-key error."""
 
@@ -33,8 +33,7 @@ class FilingStatus(StrEnum):
 
 
 class TaxProfile(BaseModel):
-    """A taxed agent's tax-time configuration. At spike 1 only single filers are modeled;
-    later layers add MFJ / HoH and any filing-status-driven branching."""
+    """A taxed agent's tax-time configuration; only single filers are modeled (see `FilingStatus`)."""
 
     agent_id: AgentId
     filing_status: FilingStatus = FilingStatus.SINGLE

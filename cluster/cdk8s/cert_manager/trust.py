@@ -54,13 +54,7 @@ def chart(app: App) -> Chart:
             # Each replica serves the Bundle webhook. A leader lease serializes reconciliation.
             "replicaCount": 2,
             "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
-            "affinity": {
-                "podAntiAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": [
-                        {"labelSelector": {"matchLabels": {"app": NAME}}, "topologyKey": "kubernetes.io/hostname"}
-                    ]
-                }
-            },
+            "affinity": node_scheduling.one_per_host({"app": NAME}),
             "priorityClassName": "system-cluster-critical",
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
         },

@@ -1,0 +1,11 @@
+diff --git a/py/private/py_image_layer.bzl b/py/private/py_image_layer.bzl
+--- a/py/private/py_image_layer.bzl
++++ b/py/private/py_image_layer.bzl
+@@ -169,6 +169,7 @@
+             mtree = name + ".manifest.preprocessed",
+             owner = owner,
+             group = group,
++            **kwargs
+         )
+     else:
+         mtree_spec(

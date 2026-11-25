@@ -40,9 +40,6 @@
 # Usage (Claude Code web UI setup command):
 #   bash ducktape/devinfra/claude/web_setup.sh
 #
-# Historical --impl=<python|rust> arguments are accepted for compatibility, but
-# active sessions always install the Rust claude-hook implementation.
-#
 # CLEANUP(added 2026-04-19): this script runs TWICE per session — once as the
 # init script (no user-UI env vars) and once via the Setup hook
 # (web_setup_hook.sh, has UI env vars). Once the Setup hook is confirmed to
@@ -67,13 +64,11 @@ warn() {
   log "WARNING: $*" >&2
 }
 
-# Hook implementation is Rust-only. Keep parsing the old --impl setup arg so a
-# stale value does not break session startup.
-HOOK_IMPL="rust"
 # Install mode: "profile" (nix profile install) or "home-manager".
 MODE="${DUCKTAPE_WEB_SETUP_MODE:-profile}"
 for arg in "$@"; do
   case "$arg" in
+    # Kept only so a stale --impl value in an old Setup Command does not break startup.
     --impl=*) warn "Ignoring deprecated $arg; claude-hook is Rust-only" ;;
     --mode=*) MODE="${arg#--mode=}" ;;
   esac
@@ -263,7 +258,7 @@ else
   nix profile remove agent-haku 2>/dev/null || true
   NIX_PROFILE="/nix/var/nix/profiles/default"
   nix profile install --max-jobs auto "${FLAKE}#${WEB_SETUP_OUTPUT}"
-  log "Dev tools installed (impl=$HOOK_IMPL)."
+  log "Dev tools installed (${FLAKE}#${WEB_SETUP_OUTPUT})."
 fi
 
 # Symlink all Nix-installed binaries into /usr/local/bin so they're on PATH.

@@ -1,0 +1,58 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+)
+
+js_library(
+    name = "ast_assertions",
+    srcs = ["ast_assertions.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+)
+
+js_library(
+    name = "ast_generator",
+    srcs = ["ast_generator.mjs"],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
+        "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
+    ],
+)
+
+js_library(
+    name = "check_translation",
+    srcs = ["check_translation.mjs"],
+    deps = [
+        "//devinfra/js/debundle/x/split_proof/translation:frontend",
+        "//devinfra/js/debundle/x/split_proof/translation:pair",
+    ],
+)
+
+js_library(
+    name = "diagnostic_split",
+    srcs = ["diagnostic_split.mjs"],
+    deps = [
+        ":deployment_manifest",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+)
+
+js_library(
+    name = "lint_sources",
+    srcs = glob(["**/*.mjs"]),
+)
+
+js_library(
+    name = "deployment_manifest",
+    testonly = False,
+    srcs = ["deployment_manifest.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
+)

@@ -101,6 +101,7 @@ def find_detections(path: Path, tree: ast.AST, source: str) -> Iterable[Detectio
                 DET_NAME,
                 PROP,
                 path,
+                source,
                 node.lineno,
                 node.end_lineno,
                 f"Trivial passthrough '{node.name}' just calls '{called_name}'; consider using '{called_name}' directly.",

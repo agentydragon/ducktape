@@ -1,0 +1,11 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+js_library(
+    name = "cases",
+    testonly = True,
+    srcs = ["cases.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
+)

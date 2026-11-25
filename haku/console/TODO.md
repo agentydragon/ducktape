@@ -24,9 +24,3 @@ The browser login flow is fixed in #3516/#3519 except for:
 - **No sign-out affordance** (audit F6). `/auth/logout` exists and is exact-Origin gated, but
   nothing in the SPA calls it, and it clears only the console session — not Authentik's — so a
   manual logout silently re-logs-in on the next 401. Needs RP-initiated logout to be meaningful.
-
-## Retained `vector` extension
-
-Nothing at head uses pgvector, but the 0135 baseline still creates a `halfvec` column on a fresh
-database, so CNPG (`cluster/cdk8s/haku/database.py`) and the test fixtures keep provisioning it.
-Drop it, with the `agentplane/indexing:vector_type` import, when a new baseline replaces 0135.

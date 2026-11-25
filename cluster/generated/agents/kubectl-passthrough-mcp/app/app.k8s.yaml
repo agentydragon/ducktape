@@ -37,7 +37,7 @@ kind: Deployment
 metadata:
   annotations:
     description: containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is forwarded directly to kube-apiserver; server itself is unprivileged.
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "server", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "192Mi"}, "maxAllowed": {"cpu": "50m", "memory": "384Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "server", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "192Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
     goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/name: kubectl-passthrough-mcp

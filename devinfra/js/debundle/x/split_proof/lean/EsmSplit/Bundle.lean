@@ -9,8 +9,7 @@ All the splitter and the proof need from each statement is its *footprint*
 (what it declares, what it reads, which names it may assign, whether it has effects), plus its source text,
 which is copied verbatim and never inspected.
 
-Footprints come from the JavaScript front end (`extract/extract.mjs`, or `Experiments/Lower.lean`).
-That front end is the trusted boundary; everything below it is checked by Lean.
+The structural checker trusts the footprints from `EsmSplit/Lower.lean` and `EsmSplit/Effects.lean`.
 
 Every check below is stated declaratively (`∀ … ∈ …`) and decided by an indexed algorithm
 that is proved equal to the statement. The kernel and compiled code run the same algorithm.
@@ -48,6 +47,9 @@ structure Stmt where
   /-- Names, declared elsewhere, that the code of this statement assigns: while it runs, or in the function
       bodies it creates. Where this code sits matters for linking: an `import` is read-only. -/
   assigns : List Name := []
+  /-- What the statement publishes, if it is an `export`: each public name, with the top-level binding it stands
+      for (`none` for the value of `export default <expression>` and for a name re-exported from another module). -/
+  exports : List (Name × Option Name) := []
   /-- A `function` declaration: its binding exists before any code runs. -/
   hoisted : Bool := false
   /-- Touches the world: the environment, or code that is not known (a call into a library, a function it was handed).
@@ -69,9 +71,6 @@ theorem Bundle.toArray_getD (B : Bundle) (i : Nat) : B.toArray.getD i default = 
 
 /-- Statements that declare `u`. -/
 def Bundle.declarers (B : Bundle) (u : Name) : List Stmt := B.filter (·.defs.contains u)
-
-/-- First statement declaring `u`; `none` for globals such as `console`. -/
-def Bundle.ownerOf (B : Bundle) (u : Name) : Option Nat := B.findIdx? (·.defs.contains u)
 
 /-! ## The read closure
 

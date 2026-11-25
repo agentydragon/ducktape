@@ -30,16 +30,6 @@ type systemdObserver interface {
 	Observe(func(systemdops.Observation))
 }
 
-func systemdObservationFromHandle(observation systemdops.Observation) SystemdObservation {
-	return SystemdObservation{
-		Revision: observation.Revision, Unit: observation.Unit,
-		StartState: SystemdStartState(observation.StartState), StartError: observation.StartError,
-		ExpectedInvocationID: observation.ExpectedInvocationID, CapturedControlGroup: observation.CapturedControlGroup,
-		Snapshot: observation.Snapshot, Error: observation.Error,
-		ExitState: SystemdExitState(observation.ExitState), ExitCode: observation.ExitCode, ExitError: observation.ExitError,
-	}
-}
-
 // Launch publishes a native process attempt and waits for its start observation.
 // Admission and restart policy remain with the caller.
 func (h *Host) Launch(ctx context.Context, owner string, generation uint64, supervisor *Supervisor, config ProcessConfig) (*ManagedProcess, error) {
@@ -67,7 +57,7 @@ func (h *Host) Launch(ctx context.Context, owner string, generation uint64, supe
 			handle = started
 			if observer, ok := started.(systemdObserver); ok {
 				observer.Observe(func(observation systemdops.Observation) {
-					h.observeSystemd(p.id, systemdObservationFromHandle(observation))
+					h.observeSystemd(p.id, observation)
 				})
 			}
 		})

@@ -25,13 +25,3 @@ go_binary(
     pure = "on",
     visibility = ["//agentplane:__subpackages__"],
 )
-
-go_binary(
-    name = "export_schema_bin",
-    embed = [":cmd_lib"],
-    pure = "on",
-    visibility = [
-        "//agentplane/app:__pkg__",
-        "//agentplane/app:__subpackages__",
-    ],
-)

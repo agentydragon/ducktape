@@ -8,10 +8,9 @@ spec:
     containerPolicies:
       - containerName: app
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          memory: 240Mi
         minAllowed:
           memory: 224Mi
       - containerName: "*"

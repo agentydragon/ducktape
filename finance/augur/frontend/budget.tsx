@@ -43,7 +43,6 @@ type AdjustedBucketSeries = BucketSeries & {
   effectiveAvg: Decimal;
 };
 type ChartTooltip = { bucketId: string; label: string; amount: Decimal; month: string; left: number; top: number };
-type BucketDisplayEntry = AdjustedBucketSeries;
 type AdjustmentHandler = (bucketId: string, adjustment: Adjustment | null) => void;
 type LumpyItem = BudgetSnapshot["lumpy"][number];
 
@@ -404,7 +403,7 @@ function OverrideEditor({
   onAdjust,
   onClose,
 }: {
-  entry: BucketDisplayEntry;
+  entry: AdjustedBucketSeries;
   onAdjust: AdjustmentHandler;
   onClose: () => void;
 }) {
@@ -451,7 +450,7 @@ function BucketRow({
   selected,
   onAdjust,
 }: {
-  entry: BucketDisplayEntry;
+  entry: AdjustedBucketSeries;
   onSelect: (bucketId: string) => void;
   selected: boolean;
   onAdjust: AdjustmentHandler;

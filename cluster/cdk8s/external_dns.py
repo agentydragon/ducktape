@@ -35,13 +35,8 @@ def chart(app: App) -> Chart:
         vpa=VpaProfile(
             Vpa.INITIAL,
             (
-                ContainerPolicy(
-                    container_name=NAME,
-                    controlled_values=ControlledValues.REQUESTS_ONLY,
-                    controlled_resources=("memory",),
-                    # VPA admission can briefly use stale CPU recommendations after this policy changes.
-                    min_allowed={"cpu": _CPU_REQUEST, "memory": _MEMORY_REQUEST},
-                    max_allowed={"cpu": _CPU_REQUEST},
+                ContainerPolicy.cpu_and_memory_requests_only(
+                    NAME, cpu_floor=_CPU_REQUEST, memory_floor=_MEMORY_REQUEST
                 ),
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
             ),
@@ -103,11 +98,8 @@ def chart(app: App) -> Chart:
 def records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     """The static endpoints that do not come from HTTPRoutes."""
     chart = Chart(app, f"{NAME}-records", disable_resource_name_hashes=True)
-    public_nodes = mesh.public_kubernetes_nodes().values()
-    gateway_ips = sorted({ip for node in public_nodes if (ip := node.public_ip) is not None})
-    api_ips = sorted(
-        {ip for node in public_nodes if node.role == "control-plane" and (ip := node.public_ip) is not None}
-    )
+    gateway_ips = nebula_mesh.public_dns_targets(mesh.public_kubernetes_nodes())
+    api_ips = nebula_mesh.public_dns_targets(mesh.control_planes())
     DnsEndpoint(
         chart,
         "static-records",

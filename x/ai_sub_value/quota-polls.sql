@@ -6,11 +6,11 @@ WITH codex_plan AS (
     FROM aiquota.raw_http_observations
     WHERE source = 'codex' AND length(quota_windows) > 0
 )
-SELECT q.event_id, q.observed_at, q.provider, q.window_name, q.window_seconds,
+SELECT q.event_id, q.observed_at, q.provider, q.account_id, q.window_name, q.window_seconds,
        q.used_percent, q.reset_at, q.extra_spend_enabled, q.extra_spend_used_usd,
        if(q.provider = 'codex', ifNull(plan.reported_plan_type, ''), '') AS reported_plan_type
 FROM aiquota.aiquota_windows AS q
 LEFT JOIN codex_plan AS plan USING (event_id)
 WHERE q.observed_at <= now64(3)
-ORDER BY q.provider, q.window_seconds, q.window_name, q.observed_at
+ORDER BY q.provider, q.account_id, q.window_seconds, q.window_name, q.observed_at
 FORMAT JSONEachRow

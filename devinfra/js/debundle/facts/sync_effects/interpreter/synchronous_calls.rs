@@ -287,12 +287,6 @@ impl PreparedSynchronousCallIndex {
         let Expr::Array(entries) = argument.expr.unwrap_parens() else {
             return None;
         };
-        let primitive = |expr: &Expr| {
-            matches!(
-                expr.unwrap_parens(),
-                Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
-            )
-        };
         for entry in &entries.elems {
             let Some(entry) = entry else { return None };
             if entry.spread.is_some() {
@@ -306,8 +300,8 @@ impl PreparedSynchronousCallIndex {
             };
             if key.spread.is_some()
                 || value.spread.is_some()
-                || !primitive(&key.expr)
-                || !primitive(&value.expr)
+                || !js_ast::is_primitive_literal(key.expr.unwrap_parens())
+                || !js_ast::is_primitive_literal(value.expr.unwrap_parens())
             {
                 return None;
             }

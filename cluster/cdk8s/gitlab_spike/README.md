@@ -19,11 +19,11 @@ account and links its current Authentik UID before login; automatic account crea
 The human account receives the existing Forgejo SSH public keys for `atlas`, `iguana`,
 `rugged`, and `wyrm2`.
 
-Provider constraints in `tf/gitops/gitlab-spike/versions.tf.json` are generated from its
-`BUILD.bazel`: run `bb run //tf/gitops/gitlab-spike:gen-tf-versions` after changing them.
+Provider constraints are declared in both `tf/gitops/gitlab-spike/BUILD.bazel`
+(for Bazel) and `terraform.tf` (for the in-cluster OpenTofu root); update both together.
 
 Praefect manages three separate Gitaly PVCs with one local HDD copy each on distinct OVH
-workers. GitLab and Praefect use separate databases and login roles in one three-instance
+workers. GitLab and Praefect use separate databases and login roles in one two-instance
 CNPG cluster, with 25 GiB SSD storage per instance and one coordinated CNPG backup stream.
 Gitaly cgroup isolation is disabled pending validation of the writable cgroup mount on Talos.
 The experimental Praefect chart and beta Kubernetes topology remain evaluation constraints.
@@ -64,3 +64,18 @@ digests, placement and storage topology. The new comparison measures deployable 
 topologies: shared RWX Forgejo versus Gitaly replication over independent local volumes.
 It does not isolate application code from storage architecture. Record idle and loaded
 resource use, clone/fetch behavior and observed recovery alongside request latency.
+
+## OpenTofu controller handoff
+
+The Crossplane Workspace uses the existing `gitlab_spike` PostgreSQL schema
+and `default` workspace identity. The migration staged a suspended Terraform CR,
+then ran the Workspace in observe-only mode before enabling writes. Suspension
+does not stop an already-started Terraform run; never run both controllers at
+once. Preserve the state and confirm the old runner has exited before handoff.
+
+After activation, verify the Workspace is Synced and Ready, inspect its plan
+and reconciliation logs, and check the GitLab project, Flux source, runner,
+webhook and benchmark credentials without exposing their values. Keep the
+Terraform CR's resource-destruction setting disabled and preserve state. For
+rollback, pause the Workspace and confirm it is idle before restoring the old
+Terraform CR and its source artifact, then resuming the CR. Do not remove state or credentials to force reconciliation.

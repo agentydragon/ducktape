@@ -26,17 +26,17 @@ import (
 )
 
 const (
-	QueueState             = "QUEUED_IN_DISPATCHER"
-	DeliveringState        = "DELIVERING_TO_RUNNER"
-	AdmittedState          = "RUNNER_ADMITTED"
-	FailedState            = "FAILED"
-	CancelledState         = "CANCELLED_IN_DISPATCHER"
-	UnknownState           = "UNKNOWN"
-	SessionWaitingState    = "WAITING"
-	SessionInProgressState = "IN_PROGRESS"
-	SessionAcceptedState   = "ACCEPTED"
-	SessionFailedState     = "FAILED"
-	SessionUnknownState    = "UNKNOWN"
+	QueueState             = dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER
+	DeliveringState        = dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER
+	AdmittedState          = dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED
+	FailedState            = dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED
+	CancelledState         = dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER
+	UnknownState           = dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
+	SessionWaitingState    = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING
+	SessionInProgressState = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_IN_PROGRESS
+	SessionAcceptedState   = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_ACCEPTED
+	SessionFailedState     = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_FAILED
+	SessionUnknownState    = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_UNKNOWN
 	WakeLimit              = 10
 	WakeWindow             = time.Minute
 	WakeDeadline           = 10 * time.Minute
@@ -404,9 +404,10 @@ type Dispatch struct {
 	WakeCaller              *auth.Account
 	WakeFromIncarnation     *string
 	WakeRequestedAt         *time.Time
-	Operation               string
+	Operation               commandpb.Operation
 	Command                 *commandpb.Command
-	State, Reason           string
+	State                   dispatcherpb.DeliveryState
+	Reason                  string
 	Admission               *eventlogpb.EventEntry
 	DeliveryBlocker         *environmentpb.DeliveryBlocker
 	WakeAssessment          *environmentpb.WakeAssessment
@@ -434,7 +435,8 @@ type Session struct {
 	WakeRequestedAt      *time.Time
 	Spec                 *sessionpb.SessionSpec
 	SetupScript          *string
-	State, Reason        string
+	State                dispatcherpb.SessionStatus_Materialization
+	Reason               string
 	DeliveryBlocker      *environmentpb.DeliveryBlocker
 	WakeAssessment       *environmentpb.WakeAssessment
 	Traceparent          string
@@ -562,18 +564,18 @@ func lockLiveSandbox(ctx context.Context, tx *sql.Tx, sandboxUID string) error {
 	return nil
 }
 
-func operation(command *commandpb.Command) (string, error) {
+func operation(command *commandpb.Command) (commandpb.Operation, error) {
 	switch command.GetOperation().(type) {
 	case *commandpb.Command_SubmitInput:
-		return "submit_input", nil
+		return commandpb.Operation_OPERATION_SUBMIT_INPUT, nil
 	case *commandpb.Command_ChangeModel:
-		return "change_model", nil
+		return commandpb.Operation_OPERATION_CHANGE_MODEL, nil
 	case *commandpb.Command_ChangeReasoningEffort:
-		return "change_reasoning_effort", nil
+		return commandpb.Operation_OPERATION_CHANGE_REASONING_EFFORT, nil
 	case *commandpb.Command_InterruptTurn:
-		return "interrupt_turn", nil
+		return commandpb.Operation_OPERATION_INTERRUPT_TURN, nil
 	default:
-		return "", errors.New("not a stored command operation")
+		return 0, errors.New("not a stored command operation")
 	}
 }
 
@@ -617,7 +619,7 @@ func initialWakeAssessment() *environmentpb.WakeAssessment {
 
 const dispatchColumns = `position, command_id, session_id, sandbox_name, sandbox_uid::text,
 	wake_eligible, wake_caller_namespace, wake_caller_name, wake_from_incarnation,
-	wake_requested_at, operation, command, state, reason, admission, traceparent,
+	wake_requested_at, COALESCE(operation_value,0), command, COALESCE(state_value,0), reason, admission, traceparent,
 	actor_account_namespace, actor_account_name, actor_account_uid, actor_pod_name, actor_pod_uid,
 	effective_caller_account_namespace, effective_caller_account_name, effective_caller_account_uid,
 	action_request_id::text, action_execution_id::text, created_at, updated_at,
@@ -629,7 +631,7 @@ const dispatchColumns = `position, command_id, session_id, sandbox_name, sandbox
 
 const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sandbox_name, d.sandbox_uid::text,
 	d.wake_eligible, d.wake_caller_namespace, d.wake_caller_name, d.wake_from_incarnation,
-	d.wake_requested_at, d.operation, d.command, d.state, d.reason, d.admission, d.traceparent,
+	d.wake_requested_at, COALESCE(d.operation_value,0), d.command, COALESCE(d.state_value,0), d.reason, d.admission, d.traceparent,
 	d.actor_account_namespace, d.actor_account_name, d.actor_account_uid, d.actor_pod_name, d.actor_pod_uid,
 	d.effective_caller_account_namespace, d.effective_caller_account_name, d.effective_caller_account_uid,
 	d.action_request_id::text, d.action_execution_id::text, d.created_at, d.updated_at,
@@ -732,7 +734,7 @@ func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 }
 
 // EnqueueForCaller applies the Session's retained owner and target binding in the same transaction
-// that appends a command, including for Pod-bound privileged backends.
+// that appends a command, including for privileged service callers.
 func (s *Store) EnqueueForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *auth.Account, caller Caller) (*Dispatch, error) {
 	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, caller)
 }
@@ -800,7 +802,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 			return ErrSessionUnconfirmed
 		}
 		var count int
-		err = tx.QueryRowContext(ctx, "SELECT count(*) FROM dispatch WHERE session_id=$1 AND state=$2", sessionID, QueueState).Scan(&count)
+		err = tx.QueryRowContext(ctx, "SELECT count(*) FROM dispatch WHERE session_id=$1 AND state_value=$2", sessionID, QueueState).Scan(&count)
 		if err == nil && count >= s.QueueCap {
 			return fmt.Errorf("%w: session %s holds %d queued commands", ErrQueueFull, sessionID, count)
 		}
@@ -828,7 +830,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		arguments = append(arguments, serviceBytes)
 		result, err = scanDispatch(tx.QueryRowContext(ctx, `INSERT INTO dispatch
 			(command_id,session_id,sandbox_name,sandbox_uid,wake_eligible,wake_caller_namespace,wake_caller_name,
-			 operation,command,state,traceparent,actor_account_namespace,actor_account_name,actor_account_uid,actor_pod_name,actor_pod_uid,
+			 operation_value,command,state_value,traceparent,actor_account_namespace,actor_account_name,actor_account_uid,actor_pod_name,actor_pod_uid,
 			 effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,action_request_id,action_execution_id,
 			 created_at,updated_at,delivery_blocker,wake_assessment,
 			 actor_identity_name,actor_identity_uid,actor_identity_pod_name,actor_identity_pod_uid,
@@ -865,23 +867,20 @@ func (s *Store) GetDispatchForCaller(ctx context.Context, id string, caller Call
 	return d, err
 }
 
-// ListDispatchesForCaller returns Dispatches visible to caller in one Session or Sandbox, oldest first.
-// A non-empty commandIDs narrows the list to those commands.
-func (s *Store) ListDispatchesForCaller(ctx context.Context, sessionID, sandboxName string, commandIDs []string, caller Caller) ([]*Dispatch, error) {
-	if (sessionID == "") == (sandboxName == "") {
-		return nil, errors.New("exactly one dispatch scope is required")
+// ListDispatchesForCaller returns authorized current receipts in queue order.
+func (s *Store) ListDispatchesForCaller(ctx context.Context, filter *dispatcherpb.DispatchFilter, caller Caller) ([]*dispatcherpb.Dispatch, error) {
+	column, value := "session_id", filter.GetSessionId()
+	if filter.GetSandbox() != "" {
+		column, value = "sandbox_name", filter.GetSandbox()
 	}
-	column, value := "session_id", sessionID
-	if sandboxName != "" {
-		column, value = "sandbox_name", sandboxName
-	}
-	query := `SELECT ` + qualifiedDispatchColumns + ` FROM dispatch d
-		LEFT JOIN session o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
+	query := `SELECT d.version,d.command_id,d.session_id,d.sandbox_name,d.sandbox_uid::text,COALESCE(d.operation_value,0),COALESCE(d.state_value,0),d.reason,
+			d.admission,d.delivery_blocker,d.wake_assessment,d.created_at,d.updated_at,NULL::bytea,false
+		FROM dispatch d LEFT JOIN session o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 		WHERE d.` + column + "=$1"
 	arguments := []any{value}
-	if len(commandIDs) > 0 {
+	if len(filter.GetCommandIds()) > 0 {
 		query += " AND d.command_id = ANY($2)"
-		arguments = append(arguments, pq.Array(commandIDs))
+		arguments = append(arguments, pq.Array(filter.GetCommandIds()))
 	}
 	scope, scopeArguments := OwnerScope(caller, "o.", len(arguments)+1)
 	rows, err := s.DB.QueryContext(ctx, query+" AND "+scope+" ORDER BY d.position", append(arguments, scopeArguments...)...)
@@ -889,13 +888,13 @@ func (s *Store) ListDispatchesForCaller(ctx context.Context, sessionID, sandboxN
 		return nil, err
 	}
 	defer rows.Close()
-	var result []*Dispatch
+	var result []*dispatcherpb.Dispatch
 	for rows.Next() {
-		d, err := scanDispatch(rows)
+		change, err := scanDispatchChange(rows)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, d)
+		result = append(result, change.Dispatch)
 	}
 	return result, rows.Err()
 }
@@ -905,8 +904,8 @@ func (s *Store) CancelForCaller(ctx context.Context, id string, caller Caller) (
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		scope, arguments := OwnerScope(caller, "o.", 5)
 		var err error
-		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch d SET state=$1, reason='sender', updated_at=now()
-			WHERE d.command_id=$2 AND d.state=$3 AND NOT d.delivery_attempted AND ($4 OR EXISTS (
+		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch d SET state_value=$1, reason='sender', updated_at=now()
+			WHERE d.command_id=$2 AND d.state_value=$3 AND NOT d.delivery_attempted AND ($4 OR EXISTS (
 				SELECT 1 FROM session o WHERE o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 				AND `+scope+`))
 			RETURNING `+qualifiedDispatchColumns,
@@ -936,7 +935,7 @@ const sessionColumns = `session_id, sandbox_name, sandbox_uid::text, creator_acc
 	effective_caller_account_name, effective_caller_account_uid, creator_pod_name, creator_pod_uid,
 	action_request_id::text, action_execution_id::text, wake_eligible,
 	wake_caller_namespace, wake_caller_name, wake_from_incarnation, wake_requested_at,
-	spec, setup_script, state, reason, traceparent, created_at, updated_at,
+	spec, setup_script, COALESCE(state_value,0), reason, traceparent, created_at, updated_at,
 	delivery_blocker, wake_assessment, environment_deleted_at, execution_identity_name, execution_identity_uid::text,
 	creator_identity_name, creator_identity_uid, creator_identity_pod_name, creator_identity_pod_uid,
 	creator_delegator_account_namespace, creator_delegator_account_name, creator_delegator_account_uid,
@@ -1210,7 +1209,7 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		result, err = scanSession(tx.QueryRowContext(ctx, `INSERT INTO session
 			(session_id,sandbox_name,sandbox_uid,creator_account_namespace,creator_account_name,creator_account_uid,effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
 			 creator_pod_name,creator_pod_uid,action_request_id,action_execution_id,wake_eligible,wake_caller_namespace,wake_caller_name,
-			 spec,setup_script,state,traceparent,created_at,updated_at,delivery_blocker,wake_assessment,
+			 spec,setup_script,state_value,traceparent,created_at,updated_at,delivery_blocker,wake_assessment,
 			 execution_identity_name,execution_identity_uid,
 			 creator_identity_name,creator_identity_uid,creator_identity_pod_name,creator_identity_pod_uid,
 			 creator_delegator_account_namespace,creator_delegator_account_name,creator_delegator_account_uid,
@@ -1276,18 +1275,18 @@ func (s *Store) ListSessionsForCaller(ctx context.Context, after string, limit i
 // in-process queue never decides ordering or whether a Session is complete.
 func (s *Store) SessionHead(ctx context.Context, sessionID string) (*Session, *Dispatch, error) {
 	session, err := scanSession(s.DB.QueryRowContext(ctx,
-		"SELECT "+sessionColumns+" FROM session WHERE session_id=$1 AND state=$2", sessionID, SessionWaitingState))
+		"SELECT "+sessionColumns+" FROM session WHERE session_id=$1 AND state_value=$2", sessionID, SessionWaitingState))
 	if err == nil {
 		return session, nil, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, err
 	}
-	head, err := scanDispatch(s.DB.QueryRowContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch d WHERE d.session_id=$1 AND d.state=$2
+	head, err := scanDispatch(s.DB.QueryRowContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch d WHERE d.session_id=$1 AND d.state_value=$2
 		AND NOT EXISTS (SELECT 1 FROM dispatch earlier WHERE earlier.session_id=d.session_id
-			AND earlier.position<d.position AND earlier.state IN ($2,$3))
+			AND earlier.position<d.position AND earlier.state_value IN ($2,$3))
 		AND NOT EXISTS (SELECT 1 FROM session o WHERE o.session_id=d.session_id
-			AND o.state IN ($4,$5)) ORDER BY d.position LIMIT 1`, sessionID, QueueState, DeliveringState, SessionWaitingState, SessionInProgressState))
+			AND o.state_value IN ($4,$5)) ORDER BY d.position LIMIT 1`, sessionID, QueueState, DeliveringState, SessionWaitingState, SessionInProgressState))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, nil
 	}
@@ -1298,7 +1297,7 @@ func (s *Store) SessionHead(ctx context.Context, sessionID string) (*Session, *D
 func (s *Store) WakeCommands(ctx context.Context, sessionID, sandboxName, sandboxUID string) ([]*Dispatch, error) {
 	rows, err := s.DB.QueryContext(ctx, "SELECT "+dispatchColumns+` FROM dispatch
 		WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3
-		AND (state=$4 OR wake_from_incarnation IS NOT NULL) ORDER BY position`, sessionID, sandboxName, sandboxUID, QueueState)
+		AND (state_value=$4 OR wake_from_incarnation IS NOT NULL) ORDER BY position`, sessionID, sandboxName, sandboxUID, QueueState)
 	if err != nil {
 		return nil, err
 	}
@@ -1317,9 +1316,9 @@ func (s *Store) WakeCommands(ctx context.Context, sessionID, sandboxName, sandbo
 // SessionsWithPendingWork includes stranded in-flight work even when no lease row exists.
 func (s *Store) SessionsWithPendingWork(ctx context.Context) ([]*Session, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+sessionColumns+` FROM session o
-		WHERE o.state = ANY($1) OR EXISTS (
-			SELECT 1 FROM dispatch d WHERE d.session_id=o.session_id AND d.state = ANY($2))`,
-		pq.Array([]string{SessionWaitingState, SessionInProgressState}), pq.Array([]string{QueueState, DeliveringState}))
+		WHERE o.state_value = ANY($1) OR EXISTS (
+			SELECT 1 FROM dispatch d WHERE d.session_id=o.session_id AND d.state_value = ANY($2))`,
+		pq.Array([]dispatcherpb.SessionStatus_Materialization{SessionWaitingState, SessionInProgressState}), pq.Array([]dispatcherpb.DeliveryState{QueueState, DeliveringState}))
 	if err != nil {
 		return nil, err
 	}
@@ -1345,7 +1344,7 @@ func (s *Store) MarkDeliveryAttempt(ctx context.Context, id string, owner Sessio
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE dispatch SET delivery_attempted=true
-			WHERE command_id=$1 AND session_id=$2 AND state=$3`, id, owner.SessionID, DeliveringState)
+			WHERE command_id=$1 AND session_id=$2 AND state_value=$3`, id, owner.SessionID, DeliveringState)
 		if err != nil {
 			return err
 		}
@@ -1356,7 +1355,7 @@ func (s *Store) MarkDeliveryAttempt(ctx context.Context, id string, owner Sessio
 	return marked, err
 }
 
-func (s *Store) Settle(ctx context.Context, id string, owner SessionOwner, from []string, to, reason string, admission *eventlogpb.EventEntry) (*Dispatch, error) {
+func (s *Store) Settle(ctx context.Context, id string, owner SessionOwner, from []dispatcherpb.DeliveryState, to dispatcherpb.DeliveryState, reason string, admission *eventlogpb.EventEntry) (*Dispatch, error) {
 	var result *Dispatch
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
@@ -1372,9 +1371,9 @@ func (s *Store) Settle(ctx context.Context, id string, owner SessionOwner, from 
 				return err
 			}
 		}
-		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=CASE WHEN $3='FAILED' AND state='QUEUED_IN_DISPATCHER' AND delivery_attempted THEN 'UNKNOWN' ELSE $3 END, reason=$4, admission=$5, updated_at=now()
-			WHERE command_id=$1 AND session_id=$2 AND state = ANY($6) RETURNING `+dispatchColumns,
-			id, owner.SessionID, to, nullIfEmpty(reason), payload, pq.Array(from)))
+		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state_value=CASE WHEN $3::integer=$7 AND state_value=$8 AND delivery_attempted THEN $9::integer ELSE $3 END, reason=$4, admission=$5, updated_at=now()
+			WHERE command_id=$1 AND session_id=$2 AND state_value = ANY($6) RETURNING `+dispatchColumns,
+			id, owner.SessionID, to, nullIfEmpty(reason), payload, pq.Array(from), FailedState, QueueState, UnknownState))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -1396,17 +1395,17 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
-func (s *Store) SettleSession(ctx context.Context, id string, owner SessionOwner, from []string, to, reason string) (*Session, error) {
+func (s *Store) SettleSession(ctx context.Context, id string, owner SessionOwner, from []dispatcherpb.SessionStatus_Materialization, to dispatcherpb.SessionStatus_Materialization, reason string) (*Session, error) {
 	return s.settleSession(ctx, id, owner, from, to, reason, false)
 }
 
 // RejectSession records a proven placement-owner rejection and fails only commands that have
 // not left the queue. An older FAILED row alone cannot supply this evidence.
-func (s *Store) RejectSession(ctx context.Context, id string, owner SessionOwner, from []string, reason string) (*Session, error) {
+func (s *Store) RejectSession(ctx context.Context, id string, owner SessionOwner, from []dispatcherpb.SessionStatus_Materialization, reason string) (*Session, error) {
 	return s.settleSession(ctx, id, owner, from, SessionFailedState, reason, true)
 }
 
-func (s *Store) settleSession(ctx context.Context, id string, owner SessionOwner, from []string, to, reason string, rejectQueued bool) (*Session, error) {
+func (s *Store) settleSession(ctx context.Context, id string, owner SessionOwner, from []dispatcherpb.SessionStatus_Materialization, to dispatcherpb.SessionStatus_Materialization, reason string, rejectQueued bool) (*Session, error) {
 	var result *Session
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		// ownerMatch takes admission's Session lock before the lease row, so
@@ -1415,8 +1414,8 @@ func (s *Store) settleSession(ctx context.Context, id string, owner SessionOwner
 		if err != nil || !current {
 			return err
 		}
-		result, err = scanSession(tx.QueryRowContext(ctx, `UPDATE session SET state=$3,reason=$4,updated_at=now()
-			WHERE session_id=$1 AND session_id=$2 AND state = ANY($5) RETURNING `+sessionColumns,
+		result, err = scanSession(tx.QueryRowContext(ctx, `UPDATE session SET state_value=$3,reason=$4,updated_at=now()
+			WHERE session_id=$1 AND session_id=$2 AND state_value = ANY($5) RETURNING `+sessionColumns,
 			id, owner.SessionID, to, nullIfEmpty(reason), pq.Array(from)))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -1425,8 +1424,8 @@ func (s *Store) settleSession(ctx context.Context, id string, owner SessionOwner
 			return err
 		}
 		if rejectQueued {
-			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=CASE WHEN delivery_attempted THEN 'UNKNOWN' ELSE $3 END,reason='session_rejected',updated_at=now()
-				WHERE session_id=$1 AND session_id=$2 AND state=$4`, id, owner.SessionID, FailedState, QueueState); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state_value=CASE WHEN delivery_attempted THEN $5::integer ELSE $3::integer END,reason='session_rejected',updated_at=now()
+				WHERE session_id=$1 AND session_id=$2 AND state_value=$4`, id, owner.SessionID, FailedState, QueueState, UnknownState); err != nil {
 				return err
 			}
 		}
@@ -1445,13 +1444,13 @@ func (s *Store) RecoverSession(ctx context.Context, owner SessionOwner) (bool, e
 		if err != nil || !current {
 			return err
 		}
-		dispatches, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=$2, reason='dispatcher_restarted', updated_at=now()
-			WHERE session_id=$1 AND state=$3`, owner.SessionID, QueueState, DeliveringState)
+		dispatches, err := tx.ExecContext(ctx, `UPDATE dispatch SET state_value=$2, reason='dispatcher_restarted', updated_at=now()
+			WHERE session_id=$1 AND state_value=$3`, owner.SessionID, QueueState, DeliveringState)
 		if err != nil {
 			return err
 		}
-		sessions, err := tx.ExecContext(ctx, `UPDATE session SET state=$2, reason='dispatcher_restarted', updated_at=now()
-			WHERE session_id=$1 AND state=$3`, owner.SessionID, SessionWaitingState, SessionInProgressState)
+		sessions, err := tx.ExecContext(ctx, `UPDATE session SET state_value=$2, reason='dispatcher_restarted', updated_at=now()
+			WHERE session_id=$1 AND state_value=$3`, owner.SessionID, SessionWaitingState, SessionInProgressState)
 		if err != nil {
 			return err
 		}
@@ -1476,7 +1475,7 @@ func (s *Store) NoteWaiting(ctx context.Context, id string, owner SessionOwner, 
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE dispatch SET reason=$3,updated_at=now()
-			WHERE command_id=$1 AND session_id=$2 AND state=$4 AND reason IS DISTINCT FROM $3`,
+			WHERE command_id=$1 AND session_id=$2 AND state_value=$4 AND reason IS DISTINCT FROM $3`,
 			id, owner.SessionID, reason, QueueState)
 		if err != nil {
 			return err
@@ -1499,7 +1498,7 @@ func (s *Store) NoteSessionWaiting(ctx context.Context, id string, owner Session
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE session SET reason=$3,updated_at=now()
-			WHERE session_id=$1 AND session_id=$2 AND state=$4 AND reason IS DISTINCT FROM $3`,
+			WHERE session_id=$1 AND session_id=$2 AND state_value=$4 AND reason IS DISTINCT FROM $3`,
 			id, owner.SessionID, reason, SessionWaitingState)
 		if err != nil {
 			return err
@@ -1545,7 +1544,7 @@ func (s *Store) SetDeliveryAssessment(
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE `+table+` SET delivery_blocker=$3,wake_assessment=$4,updated_at=now()
-			WHERE `+key+`=$1 AND session_id=$2 AND state=$5
+			WHERE `+key+`=$1 AND session_id=$2 AND state_value=$5
 			AND (delivery_blocker IS DISTINCT FROM $3 OR wake_assessment IS DISTINCT FROM $4)`,
 			id, owner.SessionID, blockerBytes, assessmentBytes, waiting)
 		if err != nil {

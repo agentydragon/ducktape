@@ -1,6 +1,10 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//agentplane/app/frontend:visual_tests.bzl", "agentplane_visual_test")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+load(":visual_groups.bzl", "visual_group_tests")
+# gazelle:exclude test_visual_*.py
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
@@ -66,7 +70,6 @@ ts_library(
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:stream_reader",
         "//agentplane/app/frontend/transport:watch_stream",
@@ -78,15 +81,13 @@ ts_library(
     srcs = ["call.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_client",
         ":presentation",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/actions/rendering:index",
+        "//agentplane/app/frontend/actions/rendering:dispatch",
         "//agentplane/app/frontend/connections:service_accounts",
-        "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/ui:raw_switch",
         "//agentplane/app/frontend/ui:text_block",
         "//agentplane/app/frontend/ui:time_ago",
@@ -123,7 +124,6 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_client",
         ":presentation",
         ":requests",
         ":sidebar_css",
@@ -132,8 +132,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/actions/rendering:index",
-        "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/actions/rendering:dispatch",
         "//agentplane/app/frontend/ui:icons",
         "//agentplane/app/frontend/ui:text_block",
         "//util/frontend:resize_handle",
@@ -150,7 +149,6 @@ agentplane_vitest_test(
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
@@ -180,7 +178,6 @@ ts_library(
     srcs = ["detail.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_client",
         ":history",
         ":presentation",
         ":requests",
@@ -199,7 +196,6 @@ agentplane_vitest_test(
     name = "detail_test",
     srcs = ["detail.test.tsx"],
     deps = [
-        ":action_client",
         ":detail",
         ":requests",
         ":sidebar",
@@ -233,7 +229,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/actions/rendering:index",
+        "//agentplane/app/frontend/actions/rendering:dispatch",
         "//agentplane/app/frontend/shell:topbar",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:stream_reader",
@@ -292,12 +288,10 @@ agentplane_vitest_test(
     srcs = ["call_tool_result.test.tsx"],
     deps = [
         ":call_tool_result",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//util/frontend:react_test_utils",
     ],
 )
 
@@ -305,7 +299,6 @@ agentplane_vitest_test(
     name = "history_test",
     srcs = ["history.test.tsx"],
     deps = [
-        ":action_client",
         ":history",
         ":requests",
         "//:node_modules/@bufbuild/protobuf",
@@ -346,14 +339,12 @@ agentplane_vitest_test(
     deps = [
         ":policy",
         "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/transport:watch_stream",
+        "//util/frontend:react_test_utils",
     ],
 )
 
@@ -418,4 +409,16 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions/testing:proto_fixtures",
     ],
+)
+
+check_vitest_specs()
+
+visual_group_tests()
+
+agentplane_visual_test(
+    name = "visual_operation_presentation",
+    src = "test_visual_operation_presentation.py",
+    bundle = "//agentplane/app/frontend/actions/testing:operation_bundle",
+    index = "//agentplane/app/frontend/actions/testing:operation_index",
+    title = "Agentplane: shared Action presentation",
 )

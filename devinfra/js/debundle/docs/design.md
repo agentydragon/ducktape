@@ -1796,98 +1796,38 @@ reentry, and effect ordering still run through ordinary analysis. Factory timing
 requires its separate existing contract; privacy cannot defer an early invocation
 of a retained callback result.
 
-Nested audited factories retain the original callback through each returned
-graph. Invoking or publishing a result before the captured lexical cells are
-initialized reactivates the ordinary callback-read analysis. Namespace member
-contracts require an unmodified imported namespace target; reassigned or
-dynamic targets fall back to opaque calls. Their authors must audit the provider
-and every caller/runtime path supplying values used by admitted callbacks,
-establishing that listed factory members retain their identities and behavior
-through the analyzed chunk's synchronous initialization. That includes
-checking that provider or other namespace members and callback/ref/hook inputs
-cannot expose an alias that replaces a listed factory member. Direct static
-identifier-property namespace call results are treated as independent only
-under this explicit author assertion. The checker propagates explicit
-namespace provenance through assignments, local aliases, property values,
-returns, and call arguments. An unrelated call or constructor result with no
-such path is not treated as a namespace alias solely because its runtime value
-is unknown; the author audit asserts that values used by admitted callbacks
-cannot alias or replace listed members. Unsupported syntax and unsupported
-destructuring results remain possible namespace values, and that uncertainty
-follows a local binding to later publication or call-argument sinks. For a
-recognized local class, publication checks aggregate the retained static
-fields or instance fields for the class value or allocation. A member
-projection checks the whole receiver conservatively, so an unrelated sibling
-field can also make the receiver a possible namespace carrier. On the
-constructor surface, retained static fields are followed through a uniquely
-resolved local class superclass. Unknown, imported, reassigned, or non-class
-bases and superclass cycles remain conservative. Instance inheritance, static
-accessors, decorators, and unsupported class surfaces remain opaque. Method
-bodies keep their existing independent return and effect analysis. For
-call-argument checks, the checker follows namespace values in
-the supplied argument expressions and excludes the callee expression, which
-is not passed as an argument. A value from an unknown call or constructor
-used as a static or dynamic write receiver remains a possible namespace alias,
-including through local aliases and member projections, and disables the
-contract. The checker does not prove that arbitrary callback parameters or
-unrelated call results are disjoint from the namespace; that non-aliasing
-guarantee is part of the author audit. Computed, chained, and unknown member
-results remain conservative when used as write receivers.
+Nested audited factories retain the callback through each returned graph.
+Invoking or publishing the result before its captured lexical cells initialize
+reactivates ordinary callback-read analysis. S-chain ordering still treats
+calls as impure unless a separate purity contract applies.
 
-The receiver check exempts an adjacent run of assignments to declared own
-data fields after a fresh local base-class allocation. Retained class facts
-must prove that allocation runs no user code; each assignment must use that
-same binding, a known own field, and a value that runs no user code. The
-instance cannot escape or acquire an accessor during this run. Any intervening
-statement, unsupported class surface, or dynamic scope ends the proof and
-keeps the ordinary conservative write checks. Array iterator member values
-use A11's intrinsic integrity assumption.
+The [namespace-member contract](../SPEC.md#namespace-and-record-calls-without-synchronous-reentry)
+defines the provider and runtime audit, admitted lookup and callback-result
+shapes, and the fallback for unknown write receivers. The distinction matters
+for calls: only the argument expressions pass values to the callee, but the
+result of an unknown call can still alias the namespace when used as a write
+receiver. Unsupported destructuring results carry that uncertainty through
+later uses of the binding.
 
-A fresh top-level object literal that visibly contains the namespace and has
-verified static own data properties has an identity distinct from namespace
-values stored in those properties. The
-retained value of a one-hop property read supplies namespace provenance; the
-container still publishes any namespace value it contains when passed to a
-sink. Adjacent writes to existing own data properties use the private
-fresh-value proof. Accessors, computed keys, spreads, `__proto__`, and
-unsupported projections keep the conservative receiver checks. Literals with
-no explicit namespace path also keep those checks, because a later accessor
-could return the namespace.
+Class publication aggregates retained static fields for a class value and
+instance fields for an allocation. A member projection checks the whole
+receiver, so even a sibling field can carry the namespace. Static fields on
+the constructor surface also follow a uniquely resolved local superclass.
+Method bodies retain independent return and effect analysis.
 
-Unary, update, and
-non-logical binary expressions have primitive results on successful
-evaluation; their operand expressions remain in value flow so nested calls
-and unavailable reads are still analyzed. Conditional expressions and
-`&&`, `||`, and `??` retain both possible result values because they can
-return an object or callback. Receivers with no syntactic path to the
-namespace rely on the author's audited non-aliasing assertion; this is a
-trusted contract, not a proof that arbitrary callback parameters are
-disjoint from the namespace.
-The fresh-result guarantee also permits adjacent static property writes after
-a direct audited factory call with one inline callback. The receiver must stay
-private and the assigned value must run no user code; prototype writes and
-intervening statements end the proof. Namespace admission is recomputed after
-each removal, so a result from a rejected namespace factory cannot justify
-another namespace's admission. Other result writes keep the receiver fallback.
-Inside a literal traversed within an admitted inline callback, a direct static
-namespace member used as a call callee is not treated as a captured namespace
-value. The call's arguments and effects still flow through normal analysis;
-computed and chained callees remain conservative.
+The private-write exceptions in the spec rely on object identity. A verified
+own data field of a fresh base-class instance cannot call a setter while the
+instance stays private. A fresh ordinary literal can hold the namespace
+without being identical to it, yet passing that literal can still publish the
+namespace. The same distinction applies to a factory's fresh result.
+Recompute admission after removing a factory contract so its result cannot
+justify another namespace's admission. Array iterator member values rely on
+A11's intrinsic integrity assumption.
 
-Authors must also audit one-hop static namespace member reads used as callback
-result object data properties. The checker treats that direct shape as a
-deferred member value but cannot prove the member's runtime identity or inspect
-accessor, proxy, or callback behavior reachable through it. The object-literal
-`__proto__` prototype setter is not an ordinary data property and stays
-conservative. Computed reads, chains, calls, spreads, arrays, and other forms
-remain conservative. Direct namespace values and aliases remain rejected.
-Calls remain impure for S-chain ordering unless a separate purity contract
-applies.
-Without an author assertion, source inference recognizes only
-immutable exported function declarations with one simple identifier parameter.
-Their body must only return a zero-argument function or arrow that only calls
-that parameter with no arguments. Reassigned bindings and dynamic scopes stay
-opaque.
+Unary, update and non-logical binary expressions produce primitive results on
+successful evaluation. Their operands still contribute nested calls and reads.
+Conditional expressions, `&&`, `||` and `??` keep both candidate results
+because either can carry an object or callback.
 
 **Residual limitations.** Dynamic global/property stashes and values
 arriving from other chunks are outside the identity-based local flow
@@ -2639,13 +2579,8 @@ values and deterministic collection order. YAML authoring and JSON reports
 continue to use Serde. The projection formats have no cross-version
 compatibility guarantee.
 
-Facts cross the process boundary through explicit saved representations and
-`analysis_codec`. Each saved binding contains its symbol and a
-first-occurrence ordinal for its hygiene context in the re-parsed modules; the
-reader restores it against its own SWC `Globals`. The codec itself writes
-ordinary named MessagePack and zstd, with no tuple or integer identity
-heuristics. See `docs/lessons_learned/cross_process_stage_b.md` for why simpler
-binding encodings are wrong.
+The saved body uses named MessagePack with zstd compression. For the scope
+identity that makes bindings portable, see [saved binding contexts](wire_format.md#why-pre-filter-facts-statementfacts-are-absent-from-public-reports).
 
 The runtime `ProgramSummary`, `AnalysisArtifactBody`, `ChunkFactAnalysis` and
 `StatementFacts` do not implement Serde. `SavedAnalysisBody::snapshot` selects the
@@ -3197,7 +3132,7 @@ validation, and writing:
   and facades remain planned outputs. For browser output, prepare the HTML entry
   and preload targets, bootstrap, rewritten HTML, and asset destinations before
   final acceptance, including in dry runs.
-- **Validate.** Consume the final `ReconstructionPlan`, checking synthesized
+- **Validate.** Consume the finalized candidate, checking synthesized
   partial-swap consumers, duplicate public exports, unresolved claims, and
   source globals captured by emitted bindings. Return
   an immutable `ValidatedPlan` only on acceptance. These final checks supplement
@@ -4038,35 +3973,30 @@ the dep graph captures that read without special-case logic. If the spec also
 gives `mod_a` an at-init read of something in `mod_b`, the cycle is mutual and
 rejected.
 
-## AssignmentInputs + `AssignmentAnalysis`: dependency graph plus quotient
+## Assignment inputs and analysis
 
 The runtime data structures the validator and emitter both consume are a pair:
 the `gate` crate's per-chunk `AssignmentInputs` (inputs + IR, built from the
 spec-independent `DependencyGraphAndAtomicGroups`) and a
 `AssignmentAnalysis` wrapping it (assignment + derived realizability views).
-Together they carry the chunk's statement facts, the binding catalogue, the
-explicit logical modules, the dependency graph, and the module dep graph derived by
-quotienting that dependency graph under the spec assignment.
-
-Statement facts feed the dependency graph (stored on `AssignmentInputs`), and the
-module dep graph is a quotient of that dependency graph under the current spec
-assignment (stored on `AssignmentAnalysis`). ``AssignmentAnalysis`::inputs()`
-returns the shared inputs; `module_quotient()` and `module_quotient_sccs()` expose
-the derived module graph. `ValidatedAssignment::assignment_analysis()` retains
-the accepted analysis while lowering projects its emission placement.
+Statement facts feed the dependency graph, which `AssignmentInputs` stores
+along with the binding catalogue and explicit logical modules.
+`AssignmentAnalysis::inputs()` returns these shared inputs. Full graph reporting
+projects the dependency graph onto the spec assignment and computes the
+structural SCCs of that quotient. `ValidatedAssignment::assignment_analysis()`
+retains the accepted analysis while lowering projects its emission placement.
 
 `CandidatePreflight::prepare` computes the realizability validation, emitted
 order, and structural placement of one immutable assignment once; its
 `CandidateEvaluation` retains that validation beside the diagnostic sweeps and
 yields a `ValidatedAssignment` only when atomic-group, schedule, and
 cross-destination rebinding checks pass. Lowering requires this immutable borrow
-of the checked assignment. Assignment inputs and
-derived graph views are private and exposed only through immutable accessors, so
-callers cannot change the assignment independently of its retained concrete
-import schedule or quotient. Rejection reports remain available to diagnostics
-without constructing an emission capability. This checks the assignment and
-shared schedule; vendor consumer and final export checks still run on the
-emitted files.
+of the checked assignment. Assignment inputs and analysis are exposed through
+immutable accessors, so callers cannot change the assignment independently of
+its retained concrete import schedule. Rejection reports remain available to
+diagnostics without constructing an emission capability. This checks the
+assignment and shared schedule. Vendor consumer and final export checks still
+run on the emitted files.
 
 `BindingId` carries the interned source `ChunkId` together with the full SWC
 `Id` (symbol and `SyntaxContext`). `BindingCatalogue` stores that chunk identity
@@ -4148,34 +4078,47 @@ typed enum (`entry`, `module`, `runtime` in JSON via snake_case serde). Do not
 encode known roles as raw strings, generic maps, or compatibility-only JSON
 fields.
 
-## Known sharp edges
+## Soundness boundary and regressions
 
-### Side effects we can't see locally
+The guarantee in [Soundness over completeness](#soundness-over-completeness)
+is conditional on the spec's explicit author assertions and the declared host
+behavior being true for this input and runtime. `commuting_statements`, purity
+annotations, native identity inputs and host behavior are premises, not facts
+the validator can derive in every case. A false premise can authorize a
+behavior-changing reorder: the neutral CLI fixture in
+<../e2e/commuting_statements_gate_test.rs> refuses an opaque pair without the
+promise, then emits a changed trace when the author falsely asserts that the
+pair commutes. The validator still rejects a promise contradicted by modeled
+source facts, such as a known global-property write/read pair in the same
+test. The author must audit the remaining unproved behavior of each premise.
 
-`reads_at_init(S)` only catches local-name reads. These ordering
-constraints are real but invisible to the analyzer:
+The analyzer is separately responsible for every dependency it claims to
+infer. `reads_at_init` covers lexical reads, while global-property, heap and
+cross-chunk effect analyses cover other ordering hazards. Direct `eval` in a
+transformed chunk is refused; indirect `eval` and `Function` in a lazy body
+run in global scope as opaque calls (A1 and
+<../e2e/chunk_admission_test.rs>). A known global-property conflict rejects
+an asserted commutation (<../e2e/commuting_statements_gate_test.rs>).
 
-- `globalThis.X = ...` / `window.X = ...` writes that another
-  module reads via `globalThis.X`. Module A "sets" the value, B
-  "reads" it; the dep graph has no edge.
-- `eval(some_string)` running arbitrary code at init.
-- `new Function(...)` likewise.
-- Mutations to objects passed across imports
-  (`vendor.someConfig.foo = bar` — `vendor.someConfig` was
-  imported, the mutation is observable).
+For inferred dependencies, distinguish three kinds of evidence:
 
-The conservative `has_side_effect = true` for any function call
-catches _some_ of these cases (it forces a side-effect-order
-edge), but won't catch e.g. two pure-looking modules where one
-quietly writes a global and the other reads it. The validator
-will accept a spec that produces wrong observable behaviour at
-runtime.
+- **Fixed ordinary-gate defect:** a reader of another chunk's mutable state
+  could move before its writer. The [L4c audit](../debug/2026_11_09_l4c_discrepancy_audit.md#unsafe-legacy-acceptance)
+  explains the fix. The [order regression](../e2e/foreign_cell_read_order_test.rs)
+  checks refusal and shows the divergent output with `--emit-on-rejection`;
+  the [Node differential sweep](../e2e/foreign_state_node_differential_sweep_test.rs)
+  compares accepted splits of imported bindings, objects and collections.
+- **Report-only prototype:** the [statement-class audit](../debug/summary_effects/2026_11_10_statement_class_independent_audit.md)
+  records counterexamples to the prototype's classifications.
+- **Open ordinary-gate defect:** an opaque call can observe a cyclic peer's
+  exported `var` before initialization. The [cyclic export-cell investigation](../debug/2026_11_14_cyclic_export_cells.md#partial-source-derived-repair)
+  records the direct-call repair and the remaining normal-mode reproduction;
+  the [repair tracker](../TODO.md#cyclic-export-cell-observation-soundness) tracks the missing proof.
 
-Mitigation: the conservative side-effect classification is
-already there; bundled output rarely depends on these patterns,
-because bundlers can't preserve them across boundaries either.
-If a real spec ever exhibits this, the response is to surface it
-as a known spec-author-side limitation.
+These fixtures prove their tested cases, not universal equivalence. A newly
+reproduced ordinary-gate acceptance that changes behavior is an engine defect
+to repair conservatively, regardless of how common the input is. Remaining
+contract review is tracked in <../TODO.md> (AR7).
 
 ## Open design questions
 
@@ -4232,18 +4175,33 @@ contract is in <../SPEC.md>
 
 ## File references
 
-Entry points (the rest of the tree hangs off these; per-concern file
-rosters live in the directories, not here):
-
-- <../pipeline.rs> — fixed transform composition.
-- <../facts/> — `StatementFacts` analyzer (<../facts/analyze.rs>).
-- <../graph/> — dependency graph, `ModuleQuotient`, and the canonical I-graph
-  builders.
-- <../realizability/mod.rs> — the realizability gate (`check_realizability`).
-- <../validation.rs> — `validate_assignment`: renders the verdict as cycle
-  reports.
-- <../lowering/> — main splitting transform.
-- <../atomic_groups.rs> — source-unit hard colocation groups.
+- [`cli/mod.rs`](../cli/mod.rs) dispatches commands. [`transform_command.rs`](../transform_command.rs)
+  and [`analyze_command.rs`](../analyze_command.rs) turn CLI inputs into typed
+  requests.
+- [`pipeline.rs`](../pipeline.rs) composes the transform stages.
+  [`prepare_chunks.rs`](../prepare_chunks.rs) parses and indexes a
+  [`SourceProgram`](../artifacts/source_program.rs).
+- [`spec/spec_tree.rs`](../spec/spec_tree.rs) compiles the authoring tree.
+  [`spec_resolution.rs`](../spec_resolution.rs) projects claims into the shared
+  [selector resolver](../selectors/resolution/).
+- [`facts/analyze.rs`](../facts/analyze.rs) analyzes `StatementFacts`.
+  [`facts/sync_effects/execution_index.rs`](../facts/sync_effects/execution_index.rs)
+  collects synchronous execution facts with the adjacent value model and
+  interpreter. [`facts/abstract_domain/builtins.rs`](../facts/abstract_domain/builtins.rs)
+  models native operations.
+- [`graph/`](../graph/) builds dependency graphs and module quotients.
+  [`atomic_groups.rs`](../atomic_groups.rs) computes source-unit colocation
+  groups. [`peel/`](../peel/) searches residual placements.
+- [`assignment_assembly.rs`](../assignment_assembly.rs) assembles claims.
+  [`realizability/mod.rs`](../realizability/mod.rs) checks realizability and
+  [`validation.rs`](../validation.rs) reports assignment verdicts.
+- [`lowering/`](../lowering/) splits accepted assignments. [`vendor/`](../vendor/)
+  prepares substitutions. Finalized [`EmissionFiles`](../artifacts/emission_files.rs)
+  own the output files and indexes.
+- [`reconstruction.rs`](../reconstruction.rs) validates finalized files,
+  including exports, vendor consumers, and unresolved claims.
+  [`artifacts/write_tree.rs`](../artifacts/write_tree.rs) renders accepted scripts
+  from the resulting `ValidatedPlan` and writes output reports.
 
 ## Conventions for updating this doc
 

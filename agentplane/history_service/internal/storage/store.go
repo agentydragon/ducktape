@@ -154,8 +154,9 @@ type Store struct {
 
 // Options controls writes only. Every reader supports packed entries regardless of these flags.
 type Options struct {
-	SettleDeltas  bool
-	CompactDeltas bool
+	SettleDeltas             bool
+	CompactDeltas            bool
+	CompactExecutionEvidence bool
 }
 
 func NewStore(db *sql.DB, options Options) *Store {
@@ -475,7 +476,7 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 				return err
 			}
 			kind := observationNumber(entry)
-			compactable := s.options.CompactDeltas && len(payload) <= blockBytes/2 && slices.Contains(compactKinds, historypb.EventKind(kind))
+			compactable := len(payload) <= blockBytes/2 && liveCompactionEnabled(s.options, historypb.EventKind(kind))
 			if _, err := tx.ExecContext(ctx, "INSERT INTO session_event (session_id, cursor, payload, kind, compactable) VALUES ($1, $2, $3, $4, $5)",
 				sessionID, cursor, payload, kind, compactable); err != nil {
 				return err
@@ -496,8 +497,8 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 			}
 		}
 		if len(appended) > 0 {
-			if s.options.CompactDeltas {
-				if err := compactEvents(ctx, tx, sessionID); err != nil {
+			if s.options.CompactDeltas || s.options.CompactExecutionEvidence {
+				if err := compactEvents(ctx, tx, sessionID, s.options); err != nil {
 					return err
 				}
 			}

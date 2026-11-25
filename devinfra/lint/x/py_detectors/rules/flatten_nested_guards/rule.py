@@ -38,6 +38,7 @@ def find_detections(path: Path, tree: ast.AST, source: str) -> Iterable[Detectio
                     DET_NAME,
                     PROP,
                     path,
+                    source,
                     st.lineno,
                     inner.lineno,
                     "Nested trivial guards — consider 'if A and B:' to flatten nesting",

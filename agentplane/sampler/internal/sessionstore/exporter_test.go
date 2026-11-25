@@ -24,6 +24,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/historyexport"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -186,16 +187,60 @@ func TestExportSnapshotDescribesTheSameCursorItReturns(t *testing.T) {
 	}
 }
 
-func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testing.T) {
+func TestCommitCheckpointWhileConversationLocked(t *testing.T) {
 	store := newTestStore(t)
 	session := exportFixtureSession(t, store)
-	for i := 0; i < 40; i++ {
-		if err := admitExportEvent(t.Context(), store, session.ID, i); err != nil {
+	ownerTx, err := store.DB().BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ownerTx.Rollback()
+	var lockedID string
+	if err := ownerTx.QueryRowContext(t.Context(), `SELECT id FROM sampler_conversation WHERE id=$1 FOR UPDATE`,
+		session.ConversationID).Scan(&lockedID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Hold the row through the first insert, an advance and a late acknowledgement.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	const target = "history"
+	for _, cursor := range []uint64{1, 3, 2} {
+		if err := store.CommitCheckpoint(ctx, session.ID, target, cursor); err != nil {
+			t.Fatalf("commit checkpoint %d with conversation locked: %v", cursor, err)
+		}
+	}
+	checkpoint, err := store.Checkpoint(ctx, session.ID, target)
+	if err != nil || checkpoint == nil {
+		t.Fatalf("read checkpoint: cursor=%v err=%v", checkpoint, err)
+	}
+	if *checkpoint != 3 {
+		t.Fatalf("checkpoint after late acknowledgement=%d, want 3", *checkpoint)
+	}
+}
+
+func TestCommitCheckpointMissingSession(t *testing.T) {
+	store := newTestStore(t)
+	if err := store.CommitCheckpoint(t.Context(), uuid.NewString(), "history", 1); !errors.Is(err, protocol.ErrMissing) {
+		t.Fatalf("commit checkpoint for missing session: got %v, want ErrMissing", err)
+	}
+}
+
+func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testing.T) {
+	store := newTestStore(t)
+	store.eventBlockWrites = true
+	session := exportFixtureSession(t, store)
+	const sealAt = 2 * eventcodec.MaxBlockEntries
+	for cursor := session.Cursor; cursor < sealAt-1; cursor++ {
+		if err := admitExportEvent(t.Context(), store, session.ID, int(cursor)); err != nil {
 			t.Fatal(err)
 		}
 	}
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); count == 0 {
+		t.Fatal("export fixture produced no event blocks")
+	}
 	history := &fixtureHistory{entries: map[uint64]*eventlogpb.EventEntry{}, loseAcknowledgement: true, received: make(chan uint64, 1024)}
-	history.onEntry = func() error { return admitExportEvent(t.Context(), store, session.ID, 40) }
+	history.onEntry = func() error { return admitExportEvent(t.Context(), store, session.ID, sealAt) }
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
@@ -284,7 +329,7 @@ func TestHistoryExporterWakesForAnotherWriterAndListenerReconnect(t *testing.T) 
 			}
 		}
 		// A separate Store represents another replica committing during an idle or disconnected LISTEN.
-		writer := New(store.DB(), 30*time.Second)
+		writer := New(store.DB(), 30*time.Second, nil)
 		if err := admitExportEvent(ctx, writer, session.ID, i); err != nil {
 			t.Fatal(err)
 		}

@@ -84,7 +84,7 @@ func main() {
 	defer connection.Close()
 	proxy, err := typedproxy.New(ctx, executorpb.NewExecutorClient(connection), func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 		return accept(ctx)
-	}, nil)
+	})
 	if err != nil {
 		log.Fatal(err)
 	}

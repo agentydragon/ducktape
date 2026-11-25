@@ -1,85 +1,21 @@
 # Tana Search Materialization
 
-This tool re-executes search nodes from Tana JSON exports to analyze and compare their results.
-
-## Overview
-
-Tana exports contain search nodes with their results frozen at export time. This tool parses the search expressions and re-executes them against the node store to:
-
-- Understand search semantics
-- Compare stored vs current results
-- Debug search expressions
-- Analyze search criteria
-
-## Usage
+Compare a saved search's stored results with the results of evaluating its expression
+against the same Tana JSON export. These commands print to stdout and leave the export file intact.
 
 ```bash
-# List all search nodes in an export
 bb run //tana/export:materialize_searches_bin -- "$PWD/export.json" --list
-
-# Materialize a specific search
 bb run //tana/export:materialize_searches_bin -- "$PWD/export.json" --search-id SEARCH_ID
-
-# Process all searches
 bb run //tana/export:materialize_searches_bin -- "$PWD/export.json" --all
 ```
 
-## Features
+Use `--list` to find the ID. The report prints the parsed expression, both result counts,
+and up to ten missing and ten extra nodes. The comparison uses node IDs and ignores result
+ordering.
 
-### Search Expression Types
+The evaluator supports tags, field values, text, boolean expressions, and event and meeting types.
+It follows view-embedded search definitions, scopes results to the search context when available,
+and resolves a field value of `PARENT` to the containing node's name when present. Some Tana
+operators, including `DATE OVERLAPS` and `FROM CALENDAR`, return no matches.
 
-- **Tag searches**: Find nodes with specific tags (e.g., `#issue`)
-- **Field searches**: Match field values (e.g., `Status = "Open"`)
-- **Boolean logic**: AND, OR, NOT operators
-- **Type searches**: System types like events and meetings
-- **Nested expressions**: Complex boolean combinations
-
-### Special Features
-
-- **PARENT resolution**: Searches can use `PARENT` as a placeholder for the containing node
-- **Context searches**: Searches can be scoped to descendants of a specific node
-- **View-embedded searches**: Handles searches defined within view definitions
-
-## Example
-
-```bash
-$ bb run //tana/export:materialize_searches_bin -- "$PWD/tana_export.json" --search-id QJYSvmW5NdlY
-
-Search: Do next & Open
-ID: QJYSvmW5NdlY
-Expression: AND(
-  TagSearch(#issue),
-  FieldSearch(Status = "Open"),
-  FieldSearch(Hotlists = "Do next")
-)
-
-Stored results: 28
-Materialized results: 28
-✅ Stored and materialized results match!
-```
-
-## Architecture
-
-The implementation consists of:
-
-1. **Search Parser** (`tana/query/search/parser.py`)
-   - Extracts search expressions from metadata
-   - Parses boolean logic and search criteria
-   - Handles nested view definitions
-
-2. **Search Evaluator** (`tana/query/search/evaluator.py`)
-   - Executes parsed expressions
-   - Resolves PARENT references
-   - Applies boolean operators
-   - Filters by tags, fields, and types
-
-3. **Search Materializer** (`tana/query/search/materializer.py`)
-   - Combines parser and evaluator
-   - Compares stored vs re-executed results
-   - Provides analysis of differences
-
-## Limitations
-
-- Some Tana operators not yet supported (DATE OVERLAPS, FROM CALENDAR, etc.)
-- Search results may differ if nodes have been modified since export
-- Context-dependent searches require proper parent node resolution
+See the [search-node format notes](search_node_analysis.md) for stored fields and system IDs.

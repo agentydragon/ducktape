@@ -1,0 +1,35 @@
+# Upstream owner: packages/excalidraw/scene/Shape.ts (v0.18.1)
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        getDashArrayDashed = strokeWidth => [8, 8 + strokeWidth],
+        getDashArrayDotted = strokeWidth => [1.5, 6 + strokeWidth];
+    bindings:
+      - getDashArrayDashed
+      - getDashArrayDotted
+  - match: |
+      function adjustRoughness(element) {
+        let roughness = element.roughness,
+          maxSize = Math.max(element.width, element.height),
+          minSize = Math.min(element.width, element.height);
+        return EXPR ? roughness : Math.min(roughness / (maxSize < 10 ? 3 : 2), 2.5);
+      }
+    bindings:
+      - adjustRoughness
+  - match: |
+      var generateRoughOptions = (element, continuousPath = !1) => {
+        let options = {
+          seed: element.seed,
+          strokeLineDash: EXPR,
+          disableMultiStroke: element.strokeStyle !== "solid",
+          strokeWidth: EXPR,
+          fillWeight: element.strokeWidth / 2,
+          hachureGap: element.strokeWidth * 4,
+          roughness: adjustRoughness(element),
+          stroke: element.strokeColor,
+          preserveVertices: continuousPath || element.roughness < ROUGHNESS.cartoonist,
+        };
+        STMT_LIST;
+      };
+    bindings:
+      - generateRoughOptions

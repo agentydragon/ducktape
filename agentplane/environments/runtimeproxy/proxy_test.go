@@ -78,26 +78,8 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	harnesshostpb.RegisterHarnessHostServer(runtimeServer, host)
 	destination.target = grpcserver.Serve(t, runtimeServer)
 
-	observerContext, stopObserver := context.WithCancel(t.Context())
-	t.Cleanup(stopObserver)
-	observerDone := make(chan error, 1)
-	go func() { observerDone <- server.observeRuntime(observerContext, destination) }()
-	deadline := time.NewTimer(5 * time.Second)
-	defer deadline.Stop()
-	poll := time.NewTicker(time.Millisecond)
-	defer poll.Stop()
-	for {
-		if _, err := server.connections.holder(string(f.sandbox.UID)); err == nil {
-			break
-		}
-		select {
-		case err := <-observerDone:
-			t.Fatalf("Runtime observer stopped before connecting: %v", err)
-		case <-deadline.C:
-			t.Fatal("Runtime observer did not become callable")
-		case <-poll.C:
-		}
-	}
+	_, observerDone, _ := runObserver(t, server, destination)
+	awaitConnection(t, server, string(f.sandbox.UID), "proxy-test-boot", observerDone)
 
 	proxy := serveServer(t, server, server.RegisterProxy)
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(proxy)
@@ -364,12 +346,5 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	server.connections.remove(connection, errSupersededConnection)
 	if _, err := fencedWatch.Recv(); status.Code(err) != codes.Aborted {
 		t.Fatalf("invalidated HarnessHost watch = %v, want Aborted", err)
-	}
-
-	stopObserver()
-	select {
-	case <-observerDone:
-	case <-time.After(time.Second):
-		t.Fatal("Runtime observer did not stop")
 	}
 }

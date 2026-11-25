@@ -1,1 +1,6 @@
-from cluster.cdk8s.agentplane.testing.fixtures import catalog_manifests, identity_catalog_manifests, staging_manifests
+from cluster.cdk8s.agentplane.testing.fixtures import (
+    catalog_manifests,
+    identity_catalog_manifests,
+    staging_delivery_manifests,
+    staging_manifests,
+)

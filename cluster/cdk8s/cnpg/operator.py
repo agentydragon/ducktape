@@ -7,6 +7,7 @@ Namespace, the shared HelmRepository and both HelmReleases, which install their 
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
@@ -16,6 +17,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -45,6 +47,14 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.INITIAL)
     repository = https_helm_repository(chart, NAME, "flux-system", url="https://cloudnative-pg.github.io/charts")
+    # CNPG distributes both default query sources. The chart already supplies the ConfigMap.
+    queries_file = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/cnpg/table_sizes.yaml"
+    monitoring_queries = k8s.KubeSecret(
+        chart,
+        "table-sizes",
+        metadata=k8s.ObjectMeta(name="table-size-queries", namespace=NAMESPACE, labels={"cnpg.io/reload": ""}),
+        string_data={"queries": queries_file.read_text(encoding="utf-8")},
+    )
     helm_release(
         chart,
         NAME,
@@ -57,7 +67,7 @@ def chart(app: App) -> Chart:
             crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
         ),
         upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
-        values=_CRITICAL_VALUES,
+        values={**_CRITICAL_VALUES, "config": {"data": {"MONITORING_QUERIES_SECRET": monitoring_queries.name}}},
     )
     helm_release(
         chart,

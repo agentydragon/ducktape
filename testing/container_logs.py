@@ -9,17 +9,26 @@ import threading
 from pathlib import Path
 from types import TracebackType
 
+from docker.models.containers import Container
 from testcontainers.core.container import DockerContainer
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
-def _stream_logs(container, out_dir: Path) -> None:
-    """Stream combined container logs to disk. Runs in a daemon thread."""
-    with (out_dir / "container.log").open("wb") as f:
-        for chunk in container.logs(stream=True, follow=True, stdout=True, stderr=True):
-            f.write(chunk)
-            f.flush()
+def stream_container_logs(container: Container, path: Path) -> threading.Thread:
+    """Follow stdout and stderr to disk. Join the returned thread after stopping the container."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    output = path.open("wb")
+
+    def stream() -> None:
+        with output:
+            for chunk in container.logs(stream=True, follow=True, stdout=True, stderr=True):
+                output.write(chunk)
+                output.flush()
+
+    thread = threading.Thread(target=stream, daemon=True)
+    thread.start()
+    return thread
 
 
 class LoggedContainer(DockerContainer):
@@ -36,10 +45,8 @@ class LoggedContainer(DockerContainer):
 
     def __enter__(self):
         result = super().__enter__()
-        out_dir = undeclared_outputs_dir() / self._test_name
-        out_dir.mkdir(parents=True, exist_ok=True)
-        self._log_thread = threading.Thread(target=_stream_logs, args=(self._container, out_dir), daemon=True)
-        self._log_thread.start()
+        path = undeclared_outputs_dir() / self._test_name / "container.log"
+        self._log_thread = stream_container_logs(self.get_wrapped_container(), path)
         return result
 
     def __exit__(

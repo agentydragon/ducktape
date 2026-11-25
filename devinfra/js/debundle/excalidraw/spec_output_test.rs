@@ -25,6 +25,26 @@ fn claimed_modules_export_their_entry_points() {
             &["HelpDialog"][..],
         ),
         (
+            "editor/packages/excalidraw/utils.js",
+            &[
+                "viewportCoordsToSceneCoords",
+                "sceneCoordsToViewportCoords",
+                "getUpdatedTimestamp",
+                "arrayToMap",
+                "arrayToMapWithIndex",
+                "arrayToObject",
+            ],
+        ),
+        (
+            "editor/packages/excalidraw/constants.js",
+            &[
+                "APP_NAME",
+                "FONT_FAMILY",
+                "DEFAULT_GRID_STEP",
+                "ELEMENT_READY_TO_ERASE_OPACITY",
+            ][..],
+        ),
+        (
             "editor/packages/excalidraw/appState.js",
             &["getDefaultAppState"][..],
         ),

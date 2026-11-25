@@ -47,7 +47,7 @@ The cluster no longer provisions HCloud nodes, but the old server-type helper is
 kept for occasional bang/buck comparisons against OVH:
 
 ```bash
-python3 cluster/scripts/hcloud_server_types.py --location hil
+bb run //cluster/scripts:hcloud_server_types_bin -- --location hil
 ```
 
 This uses the `hcloud` CLI from the repo devShell. If the CLI requires a token,

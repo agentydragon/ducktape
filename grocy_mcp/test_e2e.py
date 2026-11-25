@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from fastmcp.client import Client
@@ -32,15 +33,20 @@ tracer = trace.get_tracer(__name__)
 
 
 @pytest.fixture
-async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
+async def grocy_http_client(grocy_base_url: str) -> AsyncGenerator[GrocyClient]:
+    async with GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as client:
+        yield client
+
+
+@pytest.fixture
+async def mcp_client(grocy_base_url: str, grocy_http_client: GrocyClient) -> AsyncGenerator[Client]:
     """Function-scoped MCP client exercising the full MCP protocol in-process."""
-    async with GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as http_client:
-        with tracer.start_as_current_span("build_mcp"):
-            mcp = build_mcp(
-                ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(http_client)
-            )
-        async with Client(FastMCPTransport(mcp)) as client:
-            yield client
+    with tracer.start_as_current_span("build_mcp"):
+        mcp = build_mcp(
+            ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(grocy_http_client)
+        )
+    async with Client(FastMCPTransport(mcp)) as client:
+        yield client
 
 
 @pytest.fixture
@@ -80,6 +86,8 @@ async def test_reference_data_crud(mcp_client: Client) -> None:
     assert list_results[0]["kind"] == "ok"
     shopping_lists = await call_tool(mcp_client, "shopping_lists_list", {"detail": "brief"})
     assert new_list_name in [sl["name"] for sl in shopping_lists]
+    shopping_list = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": new_list_name.lower()})
+    assert shopping_list == {"name": new_list_name, "description": "e2e fixture list", "items": []}
 
     # Locations
     new_loc_name = f"TestLoc-{suffix}"
@@ -145,31 +153,28 @@ async def test_products_create_requires_default_best_before_days(mcp_client: Cli
         )
 
 
-async def test_products_edit_preserves_default_best_before_days_when_omitted(
-    mcp_client: Client, ref_data: RefData
+async def test_products_edit_preserves_concurrent_shelf_life_change(
+    mcp_client: Client, grocy_base_url: str, grocy_http_client: GrocyClient, ref_data: RefData
 ) -> None:
-    """`products_edit` omitting `default_best_before_days` leaves it unchanged.
+    product_id = ref_data.product_ids[0]
+    path = f"/objects/products/{product_id}"
+    async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api") as other_writer:
 
-    Unlike `products_create` (which now requires the field explicitly),
-    omission on edit means "leave the existing value alone" — the two
-    endpoints must not share the same omission semantics.
-    """
-    product = ref_data.products[0]
+        async def change_shelf_life(request: httpx2.Request) -> None:
+            if request.method == "PUT" and request.url.path == f"/api{path}":
+                response = await other_writer.put(path, json={"default_best_before_days": 42})
+                response.raise_for_status()
 
-    edit = await call_tool(
-        mcp_client, "products_edit", {"items": [{"product": product, "default_best_before_days": 42}]}
-    )
-    assert edit[0]["kind"] == "ok", edit
-
-    # Edit an unrelated field, omitting default_best_before_days.
-    unrelated_edit = await call_tool(
-        mcp_client, "products_edit", {"items": [{"product": product, "description": "unrelated change"}]}
-    )
-    assert unrelated_edit[0]["kind"] == "ok", unrelated_edit
-
-    products = await call_tool(mcp_client, "products_list", {"detail": "full"})
-    our_product = next(p for p in products if p["name"] == product)
-    assert int(our_product["default_best_before_days"]) == 42
+        grocy_http_client.event_hooks["request"].append(change_shelf_life)
+        edit = await call_tool(
+            mcp_client, "products_edit", {"items": [{"product": product_id, "description": "New label"}]}
+        )
+        assert edit[0]["kind"] == "ok", edit
+        stored = await other_writer.get(path)
+        stored.raise_for_status()
+        product = stored.json()
+        assert product["description"] == "New label"
+        assert int(product["default_best_before_days"]) == 42
 
 
 async def test_products_edit_serializes_values_and_resolves_references(mcp_client: Client, ref_data: RefData) -> None:
@@ -219,6 +224,9 @@ async def test_products_edit_serializes_values_and_resolves_references(mcp_clien
     assert int(product["parent_product_id"]) == ref_data.product_ids[1]
     assert int(product["product_group_id"]) == int(product_group_id)
 
+    noop = await call_tool(mcp_client, "products_edit", {"items": [{"product": product_id}]})
+    assert noop == [{"kind": "ok", "object_id": product_id}]
+
     unrelated_edit = await call_tool(
         mcp_client,
         "products_edit",
@@ -265,76 +273,135 @@ async def test_products_edit_serializes_values_and_resolves_references(mcp_clien
     assert int(product["due_type"]) == 2
 
 
-async def test_entity_update_patch_semantics(mcp_client: Client, grocy_base_url: str, ref_data: RefData) -> None:
-    """Grocy's ``PUT /objects/{entity}/{objectId}`` is a partial update.
+async def test_entity_update_advertises_product_columns(mcp_client: Client, ref_data: RefData) -> None:
+    tool = next(tool for tool in await mcp_client.list_tools() if tool.name == "entity_update")
+    variants = tool.input_schema["properties"]["body"]["anyOf"]
+    product_schema = next(schema["properties"] for schema in variants if "qu_id_stock" in schema["properties"])
+    rows = await call_tool(
+        mcp_client, "entities_get", {"entity_type": "products", "object_ids": [ref_data.product_ids[0]]}
+    )
+    # The object API returns the product's columns and attaches userfields separately.
+    editable = rows[0]["data"].keys() - {"id", "row_created_timestamp", "userfields"}
+    assert editable <= product_schema.keys(), editable - product_schema.keys()
 
-    Locks in the three claims the ``entity_update`` tool description makes
-    to agents, so a future Grocy version that flipped the behavior (or a
-    misread of the server code) would break this test rather than silently
-    corrupting user data:
 
-      1. Omitted writable fields are preserved, not nulled.
-      2. Unknown / server-computed columns echoed back in the body are
-         silently dropped (no 400), so agents can safely round-trip
-         ``entities_get`` output.
-      3. Sending a nullable field with value ``null`` nulls it, without
-         affecting other omitted fields.
-    """
+async def test_entity_update_patch_semantics(mcp_client: Client, ref_data: RefData) -> None:
     product_id = ref_data.product_ids[0]
 
-    results = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
-    before = results[0]["data"]
-    # Fixture populates name, description, min_stock_amount, location_id, qu_id_stock.
-    assert before["description"] == "Test product for e2e"
-    assert float(before["min_stock_amount"]) == 1
+    async def product() -> dict:
+        rows = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
+        data = rows[0]["data"]
+        assert isinstance(data, dict)
+        return data
 
-    async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as http:
-        # (1) Partial: only `description` in body.
-        new_desc = f"patched-{ref_data.suffix}"
-        r = await http.put(f"/objects/products/{product_id}", json={"description": new_desc})
-        assert r.status_code < 400, f"partial PUT failed: {r.status_code} {r.text!r}"
+    target = {"entity": "products", "objectId": product_id}
+    before = await product()
+    changes = {
+        "description": "New label",
+        "quick_open_amount": 2.5,
+        "disable_open": 1,
+        "default_purchase_price_type": 3,
+    }
+    await mcp_client.call_tool("entity_update", {**target, "body": changes})
+    after = await product()
+    assert after["description"] == "New label"
+    assert float(after["quick_open_amount"]) == 2.5
+    assert int(after["disable_open"]) == 1
+    assert int(after["default_purchase_price_type"]) == 3
+    assert after["min_stock_amount"] == before["min_stock_amount"]
 
-        results = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
-        after = results[0]["data"]
-        assert after["description"] == new_desc
-        # Omitted writable fields preserved — the core PATCH claim.
-        assert after["name"] == before["name"]
-        assert float(after["min_stock_amount"]) == float(before["min_stock_amount"])
-        assert after["location_id"] == before["location_id"]
-        assert after["qu_id_stock"] == before["qu_id_stock"]
-
-        # (2) Echoing the full GET row back fails with 400: Grocy rejects
-        # server-computed columns (qu_factor_*, has_sub_products, etc.) on
-        # PUT. Agents must send only writable columns — this is why the
-        # docstring warns against blindly round-tripping `entities_get`.
-        echo_body = dict(after)
-        echo_body["description"] = f"echoed-{ref_data.suffix}"
-        r = await http.put(f"/objects/products/{product_id}", json=echo_body)
-        assert r.status_code == 400, f"Expected 400 when echoing computed columns back, got {r.status_code}: {r.text!r}"
-
-        # (3) Explicit null nulls the field; other omitted fields still preserved.
-        r = await http.put(f"/objects/products/{product_id}", json={"description": None})
-        assert r.status_code < 400, f"null PUT failed: {r.status_code} {r.text!r}"
-        results = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
-        after3 = results[0]["data"]
-        assert after3["description"] in (None, "")  # Grocy normalizes null→"" on some columns
-        assert after3["name"] == before["name"]
-        assert float(after3["min_stock_amount"]) == float(before["min_stock_amount"])
+    rejected = await mcp_client.call_tool("entity_update", {**target, "body": after}, raise_on_error=False)
+    assert rejected.is_error
+    await mcp_client.call_tool("entity_update", {**target, "body": {"description": None}})
+    cleared = await product()
+    assert cleared["description"] in (None, "")
+    assert cleared["name"] == before["name"]
+    assert cleared["disable_open"] == after["disable_open"]
 
 
-async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
+async def test_stock_get_reports_each_physical_location(mcp_client: Client, ref_data: RefData) -> None:
+    product, other = ref_data.products
+    pantry = ref_data.location
+    fridge = f"Fridge-{ref_data.suffix}"
+    [location] = await call_tool(mcp_client, "locations_create", {"items": [{"name": fridge}]})
+    fridge_id = location["created_object_id"]
+    [variant] = await call_tool(mcp_client, "products_edit", {"items": [{"product": other, "parent_product": product}]})
+    assert variant["kind"] == "ok", variant
+    for name, place, amount, due in (
+        (product, pantry, 2, "2030-03-05"),
+        (product, fridge, 1, "2030-04-10"),
+        (product, fridge, 2, "2030-04-02"),
+        (other, fridge, 4, "2031-01-01"),
+    ):
+        [purchase] = await call_tool(
+            mcp_client,
+            "stock_add",
+            {
+                "items": [
+                    {"product": name, "qu": ref_data.qu, "location": place, "amount": amount, "best_before_date": due}
+                ]
+            },
+        )
+        assert purchase["kind"] == "ok", purchase
+        if due == "2030-04-02":
+            [edit] = await call_tool(
+                mcp_client, "stock_entry_edit", {"items": [{"entry_id": purchase["entry_id"], "open": True}]}
+            )
+            assert edit["kind"] == "ok", edit
+
+    rows = await call_tool(mcp_client, "stock_get", {"products": [product]})
+    assert len(rows) == 2
+    assert {(r["location_name"], r["amount"], r["amount_opened"], r["best_before_date"]) for r in rows} == {
+        (pantry, 2, 0, "2030-03-05"),
+        (fridge, 3, 2, "2030-04-02"),
+    }
+    [filtered] = await call_tool(
+        mcp_client, "stock_get", {"products": [ref_data.product_ids[0]], "locations": [fridge_id]}
+    )
+    assert filtered == next(row for row in rows if row["location_name"] == fridge)
+    at_fridge = await call_tool(mcp_client, "stock_get", {"locations": [fridge]})
+    assert {(row["product_name"], row["amount"]) for row in at_fridge} == {(product, 3), (other, 4)}
+
+    await mcp_client.call_tool(
+        "entity_update", {"entity": "products", "objectId": ref_data.product_ids[1], "body": {"active": 0}}
+    )
+    assert await call_tool(mcp_client, "stock_get", {"products": [other]}) == []
+
+
+async def _create_pack_unit(http: GrocyClient, product_id: int, name: str, factor: int) -> int:
+    unit = await http.post("/objects/quantity_units", json={"name": name, "name_plural": f"{name}s"})
+    unit.raise_for_status()
+    unit_id = int(unit.json()["created_object_id"])
+    product = await http.get(f"/objects/products/{product_id}")
+    product.raise_for_status()
+    conversion = await http.post(
+        "/objects/quantity_unit_conversions",
+        json={
+            "product_id": product_id,
+            "from_qu_id": unit_id,
+            "to_qu_id": product.json()["qu_id_stock"],
+            "factor": factor,
+        },
+    )
+    conversion.raise_for_status()
+    return unit_id
+
+
+async def test_stock_operations(mcp_client: Client, grocy_http_client: GrocyClient, ref_data: RefData) -> None:
     """Add, consume, set stock; verify amounts via stock_get and stock_entries."""
     product = ref_data.products[0]
     qu = ref_data.qu
     loc = ref_data.location
 
-    # Add stock
+    # Each pack contains one stock unit. Journal amounts are still in stock units.
+    pack = f"SinglePack-{ref_data.suffix}"
+    pack_id = await _create_pack_unit(grocy_http_client, ref_data.product_ids[0], pack, factor=1)
     ops = await call_tool(
-        mcp_client, "stock_add", {"items": [{"product": product, "amount": 5, "qu": qu, "location": loc}]}
+        mcp_client, "stock_add", {"items": [{"product": product, "amount": 5, "qu": pack_id, "location": loc}]}
     )
-    assert ops[0]["kind"] == "ok"
-    assert ops[0]["new_amount"] == 5.0
-    assert ops[0]["qu_name"] == qu
+    assert ops[0]["kind"] == "ok", ops
+    assert (ops[0]["amount_delta"], ops[0]["new_amount"]) == (5, 5)
+    assert (ops[0]["qu_name"], ops[0]["stock_qu_name"]) == (pack, qu)
     assert ops[0]["location_name"] == loc
 
     # Get stock with product filter
@@ -377,6 +444,63 @@ async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
     # Verify edit landed via re-fetch
     entries = await call_tool(mcp_client, "stock_entries_list", {"entry_ids": [entry_id]})
     assert float(entries[0]["entry"]["price"]) == 9.99
+
+
+async def test_edit_compacting_two_lots_reports_success(
+    mcp_client: Client, grocy_http_client: GrocyClient, ref_data: RefData
+) -> None:
+    product_id = ref_data.product_ids[0]
+    path = f"/stock/products/{product_id}"
+    for amount, price in [(2, 1), (3, 2)]:
+        purchase = await grocy_http_client.post(
+            f"{path}/add", json={"amount": amount, "price": price, "best_before_date": "2035-01-31"}
+        )
+        purchase.raise_for_status()
+    lots = await grocy_http_client.get(f"{path}/entries")
+    lots.raise_for_status()
+    edited_id, survivor = sorted(row["id"] for row in lots.json())
+
+    receipt = await call_tool(mcp_client, "stock_entry_edit", {"items": [{"entry_id": edited_id, "price": 2}]})
+
+    after = await grocy_http_client.get(f"{path}/entries")
+    after.raise_for_status()
+    assert [(row["id"], row["amount"], row["price"]) for row in after.json()] == [(survivor, 5, 2)]
+    [saved] = receipt
+    assert saved["kind"] == "ok", saved
+    assert saved["entry_id"] == edited_id
+    assert saved.get("entry") is None
+    assert saved["changes"] == {"price": {"old": 1, "new": 2}}
+    journal = await grocy_http_client.get(f"/stock/transactions/{saved['transaction_id']}")
+    journal.raise_for_status()
+    assert {(row["transaction_type"], row["stock_row_id"]) for row in journal.json()} == {
+        ("stock-edit-old", edited_id),
+        ("stock-edit-new", edited_id),
+    }
+
+
+async def test_editing_stock_price_preserves_purchase_store(
+    mcp_client: Client, grocy_http_client: GrocyClient, ref_data: RefData
+) -> None:
+    stores = await call_tool(
+        mcp_client,
+        "entities_create",
+        {"items": [{"entity_type": "shopping_locations", "body": {"name": ref_data.suffix}}]},
+    )
+    store_id = stores[0]["created_object_id"]
+    purchase = await grocy_http_client.post(
+        f"/stock/products/{ref_data.product_ids[0]}/add", json={"amount": 4, "shopping_location_id": store_id}
+    )
+    purchase.raise_for_status()
+    entries = await call_tool(mcp_client, "stock_entries_list", {"products": [ref_data.product_ids[0]]})
+    entry_id = entries[0]["entry"]["entry_id"]
+
+    receipt = await call_tool(mcp_client, "stock_entry_edit", {"items": [{"entry_id": entry_id, "price": 8.5}]})
+    assert receipt[0]["kind"] == "ok", receipt
+    stored = await grocy_http_client.get(f"/stock/entry/{entry_id}")
+    stored.raise_for_status()
+    row = stored.json()
+    assert row["price"] == 8.5
+    assert row["shopping_location_id"] == store_id
 
 
 async def test_stock_entry_edit_serializes_partial_updates(mcp_client: Client, ref_data: RefData) -> None:
@@ -655,7 +779,7 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
     assert await _latest_bbd() == override.isoformat()
 
 
-async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -> None:
+async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData, grocy_http_client: GrocyClient) -> None:
     """Add items (product-linked, note-only, product+note), get list, edit item, remove item."""
     product = ref_data.products[0]
 
@@ -681,6 +805,11 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     assert all(r["kind"] == "ok" for r in sl_results)
     sl_item_id = sl_results[0]["item_id"]
 
+    # Choose a shopping unit that contains six stock units, as a user can in Grocy.
+    case_id = await _create_pack_unit(grocy_http_client, ref_data.product_ids[0], f"Case-{ref_data.suffix}", factor=6)
+    updated = await grocy_http_client.put(f"/objects/shopping_list/{sl_item_id}", json={"qu_id": case_id, "amount": 12})
+    updated.raise_for_status()
+
     # Get shopping list — verify items present
     sl_data = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": 1})
     assert "items" in sl_data
@@ -695,23 +824,152 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     assert exact[0]["entity_type"] == "shopping_list"
     assert exact[0]["object_id"] == sl_item_id
     assert int(exact[0]["data"]["id"]) == sl_item_id
-    assert float(exact[0]["data"]["amount"]) == 2
+    assert int(exact[0]["data"]["qu_id"]) == case_id
+    assert float(exact[0]["data"]["amount"]) == 12
+    assert exact[0]["shopping_item_names"]["unit_name"] == ref_data.qu
+    listed = next(item for item in our_items if item["item_id"] == sl_item_id)
+    assert (listed["amount"], listed["qu_name"]) == (12, ref_data.qu)
     assert exact[0]["shopping_item_names"]["product_name"] == product
     assert exact[0]["shopping_item_names"]["list_name"] == sl_data["name"]
 
     # Edit item — mark as done
     edit_sl = await call_tool(mcp_client, "shopping_list_item_edit", {"item_id": sl_item_id, "done": True})
-    assert edit_sl["kind"] == "ok"
+    assert (edit_sl["kind"], edit_sl["amount"], edit_sl["qu_name"]) == ("ok", 12, ref_data.qu)
+    edited = await call_tool(mcp_client, "entities_get", {"entity_type": "shopping_list", "object_ids": [sl_item_id]})
+    assert int(edited[0]["data"]["done"]) == 1
+    assert int(edited[0]["data"]["qu_id"]) == case_id
 
     # Remove item
     await call_tool(mcp_client, "shopping_list_items_remove", {"item_ids": [sl_item_id]})
 
 
-async def test_volatile_stock_queries(mcp_client: Client) -> None:
-    """Smoke test: expiring, below-minimum, expired queries don't error."""
-    await call_tool(mcp_client, "get_expiring_stock", {"days_ahead": 30})
+async def test_clear_shopping_list_keeps_list_and_other_lists_items(
+    mcp_client: Client, grocy_http_client: GrocyClient
+) -> None:
+    list_name = f"Clear-{uuid.uuid4().hex[:8]}"
+    [created] = await call_tool(mcp_client, "shopping_lists_create", {"items": [{"name": list_name}]})
+    list_id = created["created_object_id"]
+    for done in (0, 1):
+        response = await grocy_http_client.post(
+            "/objects/shopping_list", json={"shopping_list_id": list_id, "note": f"Done={done}", "done": done}
+        )
+        response.raise_for_status()
+    control = await grocy_http_client.post("/objects/shopping_list", json={"shopping_list_id": 1, "note": list_name})
+    control.raise_for_status()
+    control_id = control.json()["created_object_id"]
+
+    selected = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": list_name})
+    assert {(item["note"], item["done"]) for item in selected["items"]} == {("Done=0", False), ("Done=1", True)}
+
+    for ref in (list_name.lower(), list_id):
+        assert await call_tool(mcp_client, "shopping_list_clear", {"shopping_list": ref}) == {"kind": "ok"}
+        kept = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": list_id})
+        assert kept["name"] == list_name
+        assert kept["items"] == []
+
+    untouched = await grocy_http_client.get(f"/objects/shopping_list/{control_id}")
+    untouched.raise_for_status()
+    assert untouched.json()["note"] == list_name
+
+
+async def _add_dated_lot(
+    client: Client,
+    ref_data: RefData,
+    product: str,
+    due: date,
+    *,
+    amount: int = 3,
+    location: str | None = None,
+    price: int | None = None,
+) -> int:
+    [added] = await call_tool(
+        client,
+        "stock_add",
+        {
+            "items": [
+                {
+                    "product": product,
+                    "qu": ref_data.qu,
+                    "location": location or ref_data.location,
+                    "amount": amount,
+                    "price": price,
+                    "best_before_date": due.isoformat(),
+                }
+            ]
+        },
+    )
+    assert added["kind"] == "ok", added
+    return int(added["entry_id"])
+
+
+async def test_expiring_stock_returns_openable_lots_with_their_own_amounts_and_locations(
+    mcp_client: Client, ref_data: RefData
+) -> None:
+    today = datetime.now(UTC).date()
+    product = ref_data.products[0]
+    fridge = f"Fridge-{ref_data.suffix}"
+    [location] = await call_tool(mcp_client, "locations_create", {"items": [{"name": fridge}]})
+    assert location["kind"] == "ok", location
+    due = today + timedelta(days=1)
+    first = await _add_dated_lot(mcp_client, ref_data, product, due, amount=2, location=fridge, price=1)
+    second = await _add_dated_lot(mcp_client, ref_data, product, due, amount=3, location=fridge, price=2)
+    await _add_dated_lot(mcp_client, ref_data, product, today + timedelta(days=20), amount=5)
+
+    rows = await call_tool(mcp_client, "get_expiring_stock", {"days_ahead": 3})
+    lots = [r for r in rows if r["product_name"] == product]
+    assert len(lots) == 2
+    assert {(r["entry_id"], r["location_name"], r["amount"], r["best_before_date"]) for r in lots} == {
+        (first, fridge, 2, due.isoformat()),
+        (second, fridge, 3, due.isoformat()),
+    }
+    details = await call_tool(mcp_client, "stock_entries_list", {"entry_ids": [r["entry_id"] for r in lots]})
+    assert {r["entry"]["entry_id"]: r["entry"]["amount"] for r in details} == {first: 2, second: 3}
+
+
+async def test_expiring_stock_honors_window(mcp_client: Client, ref_data: RefData) -> None:
+    today = datetime.now(UTC).date()
+    soon, later = ref_data.products
+    await _add_dated_lot(mcp_client, ref_data, soon, today + timedelta(days=2))
+    await _add_dated_lot(mcp_client, ref_data, later, today + timedelta(days=12))
+
+    for window, expected in [(0, {}), (11, {soon: 2}), (12, {soon: 2, later: 12})]:
+        rows = await call_tool(mcp_client, "get_expiring_stock", {"days_ahead": window})
+        assert {
+            row["product_name"]: row["days_until_expiry"] for row in rows if row["product_name"] in ref_data.products
+        } == expected
+
+    await _add_dated_lot(mcp_client, ref_data, soon, today)
+    due_today = await call_tool(mcp_client, "get_expiring_stock", {"days_ahead": 0})
+    assert [row["days_until_expiry"] for row in due_today if row["product_name"] == soon] == [0]
+
+
+async def test_expired_stock_distinguishes_use_by_from_best_before(mcp_client: Client, ref_data: RefData) -> None:
+    best_before, use_by = ref_data.products
+    edited = await call_tool(mcp_client, "products_edit", {"items": [{"product": use_by, "due_type": 2}]})
+    assert edited[0]["kind"] == "ok", edited
+
+    past = datetime.now(UTC).date() - timedelta(days=2)
+    await _add_dated_lot(mcp_client, ref_data, best_before, past)
+    entry_id = await _add_dated_lot(mcp_client, ref_data, use_by, past)
+    await _add_dated_lot(mcp_client, ref_data, use_by, past + timedelta(days=5))
+    rows = await call_tool(mcp_client, "get_expired_stock", {})
+    assert best_before not in {row["product_name"] for row in rows}
+    assert [row for row in rows if row["product_name"] == use_by] == [
+        {
+            "product_id": ref_data.product_ids[1],
+            "entry_id": entry_id,
+            "product_name": use_by,
+            "amount": 3,
+            "qu_name": ref_data.qu,
+            "location_name": ref_data.location,
+            "best_before_date": past.isoformat(),
+            "days_overdue": 2,
+        }
+    ]
+
+
+async def test_stock_status_queries(mcp_client: Client) -> None:
     await call_tool(mcp_client, "get_below_minimum_stock", {})
-    await call_tool(mcp_client, "get_expired_stock", {})
     await call_tool(mcp_client, "get_db_changed_time", {})
 
 

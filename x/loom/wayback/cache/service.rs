@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use http::{HeaderMap, HeaderName, StatusCode};
 use log::warn;
-use prometheus::{Encoder, GaugeVec, Opts, Registry, TextEncoder};
+use prometheus::{GaugeVec, Opts, Registry};
 
 use crate::ia_client::{IaClient, UpstreamResponse};
 use crate::limiter::{AcquisitionOutcome, AdaptiveLimiter, LimiterConfig};
@@ -148,9 +148,7 @@ impl ArchiveService {
         registry.register(Box::new(self.metrics.acquisition_failures.clone()))?;
         registry.register(Box::new(self.metrics.upstream_fetch_duration.clone()))?;
         registry.register(Box::new(self.metrics.limiter_wait_duration.clone()))?;
-        let mut output = Vec::new();
-        TextEncoder::new().encode(&registry.gather(), &mut output)?;
-        String::from_utf8(output).context("prometheus text encoder emitted invalid UTF-8")
+        crate::metrics::encode(&registry)
     }
 
     pub async fn process_fill_request(&self, request: FillRequest) -> FillAttemptResult {

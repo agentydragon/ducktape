@@ -7,11 +7,13 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import grpc
+from tenacity import AsyncRetrying, retry_if_result, stop_after_delay, wait_fixed
 
 from agentplane.grpc.calls import ServiceError
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.session_events import SessionEventPages
-from agentplane.proto import session_pb2
+from agentplane.proto import event_pb2, session_pb2
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session
 from agentplane.system_tests.driver.tracing import tracer
@@ -41,6 +43,11 @@ class Session:
         self._environment.CopyFrom(environment)
         self._cursor = cursor
         self._history_attached = False
+
+    @property
+    def cursor(self) -> int:
+        """Last consumed History event, including the terminal event of a completed turn."""
+        return self._cursor
 
     @classmethod
     async def create(
@@ -112,6 +119,16 @@ class Session:
                 self._cursor = collector.cursor
         raise AssertionError("History pagination ended before the turn completed")
 
+    async def assert_completed_summary(self) -> None:
+        """Wait until History has folded the turn just consumed by this driver."""
+        summary: history_service_pb2.SessionSummary = await AsyncRetrying(
+            stop=stop_after_delay(30),
+            wait=wait_fixed(0.1),
+            retry=retry_if_result(lambda row: row.folded_through < self.cursor),
+        )(self._history.get_session_summary, str(self.session_id))
+        assert summary.committed_cursor >= self.cursor
+        assert summary.last_turn_status == event_pb2.TURN_STATUS_COMPLETED
+
     async def setup_output(self) -> tuple[str, str]:
         """Require successful setup and return its retained stdout/stderr, without App projection."""
         with tracer.start_as_current_span(
@@ -176,3 +193,35 @@ class Session:
 
 
 # gazelle:include_dep @pypi//protobuf
+
+
+async def run_session_setup_script(
+    dispatcher: SessionDispatcherClient,
+    history: HistoryServiceClient,
+    *,
+    sandbox_name: str,
+    sandbox_uid: str,
+    session_id: UUID,
+    harness: session_pb2.Harness,
+    model: str,
+    cwd: str,
+    setup_script: str,
+) -> tuple[str, str]:
+    """Create a Session on an existing Sandbox and return its successful setup script output."""
+    session = await Session.create(
+        dispatcher,
+        history,
+        session_id=session_id,
+        setup_script=setup_script,
+        spec=session_pb2.SessionSpec(
+            placement=session_pb2.SessionPlacement(
+                environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                    environment=session_pb2.ExactEnvironment(name=sandbox_name, uid=sandbox_uid), harness=harness
+                )
+            ),
+            cwd=cwd,
+            model=model,
+            reasoning_effort="low",
+        ),
+    )
+    return await session.setup_output()

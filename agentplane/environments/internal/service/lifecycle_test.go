@@ -23,6 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -30,7 +31,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -164,21 +164,6 @@ func serveEnvironmentService(
 	return connection
 }
 
-func testScheme(t *testing.T) *runtime.Scheme {
-	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := policyapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	return scheme
-}
-
 func suspendedSandbox(policy *sandboxapi.ResumePolicy, running bool, by sandboxapi.SuspendedBy, generation int64) *sandboxapi.Sandbox {
 	sandbox := &sandboxapi.Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: testSandbox, UID: types.UID(testSandboxUID)},
@@ -205,7 +190,7 @@ func testObjects(t *testing.T, sandbox *sandboxapi.Sandbox, executionUID string)
 			UID: sandbox.UID, Controller: &controller,
 		}},
 	}}
-	return clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sandbox, account).Build()
+	return clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(sandbox, account).Build()
 }
 
 func testIdentityObjects(t *testing.T, sandbox *sandboxapi.Sandbox, executionUID string) client.WithWatch {
@@ -989,7 +974,7 @@ func TestAutomaticWakeAuthorizesTheSandboxesOwnIdentity(t *testing.T) {
 				sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: tc.named}
 			}
 			identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "agent", UID: identityUID}}
-			objects := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sandbox, identity).Build()
+			objects := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(sandbox, identity).Build()
 			h := newHarness(t, objects, nil)
 			assessment, err := h.service.AssessAutomaticWake(t.Context(), target, tc.caller)
 			if err != nil || assessment.GetState() != tc.state || assessment.GetReason() != tc.reason {

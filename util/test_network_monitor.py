@@ -1,8 +1,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest_bazel
-from dbus_next import Message, Variant
-from dbus_next.constants import MessageType
+from dbus_fast import Message, Variant
+from dbus_fast.constants import MessageType
 
 from util.network_monitor import NetworkMonitor
 

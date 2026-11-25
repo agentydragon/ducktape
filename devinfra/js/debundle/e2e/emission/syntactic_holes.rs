@@ -832,7 +832,7 @@ export { actual };
 //
 // `ANYTHING` is a *run-absorbing* list hole in object-property,
 // object-pattern-property, class-member, and declarator position. In a
-// call/`new` argument position (`argument_list_hole_name` has no `ANYTHING`
+// call/`new` argument position (`is_run_hole_carrier` has no `ANYTHING`
 // fallback) and a block-statement position (`statement_list_hole_name` has no
 // `ANYTHING` fallback), a bare `ANYTHING` is a *single-node* hole — `EXPR`
 // resp. `STMT` — so it is NOT interchangeable with `ARGS` / `STMT_LIST`. A

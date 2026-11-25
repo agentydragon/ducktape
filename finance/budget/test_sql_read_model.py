@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.budget import sql_read_model
+from finance.budget.classified_transaction import ClassifiedTransaction
 from finance.budget.schema import (
     AccountCondition,
     AllOfCondition,
@@ -126,70 +127,45 @@ def _tx(
     )
 
 
+def _link(item_id: str, *, institution_id: str, institution_name: str, status: str) -> LinkRow:
+    return LinkRow(
+        item_id=item_id,
+        institution_id=institution_id,
+        institution_name=institution_name,
+        products_requested=["transactions"],
+        products_authorized=["transactions"],
+        products_billed=[],
+        status=status,
+        access_token_secret=f"{item_id}-token",
+    )
+
+
+def _account(account_id: str, *, item_id: str, name: str) -> AccountRow:
+    return AccountRow(
+        account_id=account_id,
+        item_id=item_id,
+        name=name,
+        type="depository",
+        subtype="checking",
+        iso_currency_code="USD",
+        raw_json={},
+    )
+
+
 async def _seed_budget_rows(session_factory: async_sessionmaker[AsyncSession]) -> None:
     async with session_factory() as session:
         session.add_all(
             [
-                LinkRow(
-                    item_id="item-budget",
-                    institution_id="ins_budget",
-                    institution_name="Budget Bank",
-                    label=None,
-                    products_requested=["transactions"],
-                    products_authorized=["transactions"],
-                    products_billed=[],
-                    status="active",
-                    access_token_secret="budget-token",
-                ),
-                LinkRow(
-                    item_id="item-revoked",
-                    institution_id="ins_revoked",
-                    institution_name="Revoked Bank",
-                    label=None,
-                    products_requested=["transactions"],
-                    products_authorized=["transactions"],
-                    products_billed=[],
-                    status="revoked",
-                    access_token_secret="revoked-token",
-                ),
+                _link("item-budget", institution_id="ins_budget", institution_name="Budget Bank", status="active"),
+                _link("item-revoked", institution_id="ins_revoked", institution_name="Revoked Bank", status="revoked"),
             ]
         )
         await session.flush()
         session.add_all(
             [
-                AccountRow(
-                    account_id="checking",
-                    item_id="item-budget",
-                    name="Checking",
-                    official_name=None,
-                    mask=None,
-                    type="depository",
-                    subtype="checking",
-                    iso_currency_code="USD",
-                    raw_json={},
-                ),
-                AccountRow(
-                    account_id="other-account",
-                    item_id="item-budget",
-                    name="Other account",
-                    official_name=None,
-                    mask=None,
-                    type="depository",
-                    subtype="checking",
-                    iso_currency_code="USD",
-                    raw_json={},
-                ),
-                AccountRow(
-                    account_id="revoked-account",
-                    item_id="item-revoked",
-                    name="Revoked account",
-                    official_name=None,
-                    mask=None,
-                    type="depository",
-                    subtype="checking",
-                    iso_currency_code="USD",
-                    raw_json={},
-                ),
+                _account("checking", item_id="item-budget", name="Checking"),
+                _account("other-account", item_id="item-budget", name="Other account"),
+                _account("revoked-account", item_id="item-revoked", name="Revoked account"),
             ]
         )
         await session.flush()
@@ -326,7 +302,7 @@ async def _custom_bucket_txns(
 
 async def _classified(
     session_factory: async_sessionmaker[AsyncSession], config: BudgetConfig
-) -> tuple[sql_read_model.ClassifiedRow, ...]:
+) -> tuple[ClassifiedTransaction, ...]:
     return await sql_read_model.read_all_classified(
         session_factory=session_factory, config=config, window_start=_WINDOW_START, window_end=_WINDOW_END
     )

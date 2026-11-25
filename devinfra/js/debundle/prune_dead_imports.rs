@@ -33,7 +33,7 @@
 //!   Imports that were ORIGINALLY bare (`import "x";`) are never touched — the
 //!   lowerer emits those intentionally.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::ops::ControlFlow;
 
 use artifact::ChunkBundle;
@@ -44,125 +44,41 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::VisitWith;
 
 pub fn prune_dead_import_specifiers(bundle: &mut ChunkBundle) {
-    let mut modules: Vec<_> = bundle
+    for file in bundle
         .chunks
         .iter_mut()
         .flat_map(|chunk| &mut chunk.js.files)
-        .filter_map(|file| {
-            let path = emitted_file_abs_path(&file.metadata.source_path, &file.path);
-            Some((path, &mut file.ast_mut()?.module))
-        })
-        .collect();
-    prune_imports(&mut modules);
-}
-
-/// Operate on a stable, flat list of ASTs; no chunk metadata or analysis reports
-/// participate in import liveness. Paths are rooted in the emitted output tree.
-fn prune_imports(modules: &mut [(String, &mut Module)]) {
-    // PASS 1: per file, trim dead named specifiers in place. Records every
-    // import that originally had named specifiers and is now empty, keyed by
-    // (file, item) so later passes can locate it by stable index — PASS
-    // 1 only edits specifier vectors, never the ModuleItem list.
-    let mut emptied: Vec<EmptiedImport> = Vec::new();
-    for (file_index, (importer_abs, module)) in modules.iter_mut().enumerate() {
-        let referenced = collect_referenced_syms(module);
-        let reexported = collect_local_reexport_origs(module);
-        for (item_index, item) in module.body.iter_mut().enumerate() {
-            let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-                continue;
-            };
-            // Originally-bare imports exist solely to evaluate the target;
-            // never touch them.
-            let had_named = import
-                .specifiers
-                .iter()
-                .any(|spec| matches!(spec, ImportSpecifier::Named(_)));
-            if !had_named {
-                continue;
-            }
-            import.specifiers.retain(|spec| match spec {
-                ImportSpecifier::Default(_) | ImportSpecifier::Namespace(_) => true,
-                ImportSpecifier::Named(named) => {
-                    let local = &named.local.sym;
-                    referenced.contains(local) || reexported.contains(local)
-                }
-            });
-            if import.specifiers.is_empty()
-                && let Some(src) = import.src.value.as_str()
-            {
-                emptied.push(EmptiedImport {
-                    file_index,
-                    item_index,
-                    target_abs: resolve_specifier(src, importer_abs),
-                });
-            }
+    {
+        let path = emitted_file_abs_path(&file.metadata.source_path, &file.path);
+        if let Some(ast) = file.ast_mut() {
+            prune_imports(&mut ast.module, &path);
         }
     }
-
-    if emptied.is_empty() {
-        return;
-    }
-
-    // PASS 2: in each touched file, walk imports in order. An emptied import
-    // whose target an earlier import of the same file still loads is a no-op
-    // request and is dropped; any other emptied import stays as a bare import
-    // and loads its target from here on.
-    let emptied: HashMap<(usize, usize), String> = emptied
-        .into_iter()
-        .map(|entry| ((entry.file_index, entry.item_index), entry.target_abs))
-        .collect();
-    for (file_index, (importer_abs, module)) in modules.iter_mut().enumerate() {
-        let mut loaded: HashSet<String> = HashSet::new();
-        let mut item_index = 0;
-        module.body.retain(|item| {
-            let key = (file_index, item_index);
-            item_index += 1;
-            let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
-                return true;
-            };
-            if let Some(target_abs) = emptied.get(&key) {
-                return loaded.insert(target_abs.clone());
-            }
-            if let Some(src) = import.src.value.as_str() {
-                loaded.insert(resolve_specifier(src, importer_abs));
-            }
-            true
-        });
-    }
 }
 
-/// One import that originally had named specifiers and was left empty by
-/// PASS 1, located by stable (file, item) index for PASS 3.
-struct EmptiedImport {
-    file_index: usize,
-    item_index: usize,
-    target_abs: String,
-}
-
-/// Local names re-exported by this body via `export { local … }` (no `from`).
-/// Such a name is the `orig` of a re-export shim whose import must be kept even
-/// when the local is otherwise unreferenced, or the export would be orphaned.
-fn collect_local_reexport_origs(module: &Module) -> HashSet<Atom> {
-    let mut origs = HashSet::new();
-    for item in &module.body {
-        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
-            continue;
+fn prune_imports(module: &mut Module, importer_abs: &str) {
+    let referenced = collect_referenced_syms(module);
+    let mut loaded = HashSet::new();
+    module.body.retain_mut(|item| {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            return true;
         };
-        if named.src.is_some() {
-            continue;
-        }
-        for spec in &named.specifiers {
-            if let ExportSpecifier::Named(n) = spec
-                && let ModuleExportName::Ident(ident) = &n.orig
-            {
-                origs.insert(ident.sym.clone());
-            }
-        }
-    }
-    origs
+        let was_bare = import.specifiers.is_empty();
+        import.specifiers.retain(|spec| match spec {
+            ImportSpecifier::Default(_) | ImportSpecifier::Namespace(_) => true,
+            ImportSpecifier::Named(named) => referenced.contains(&named.local.sym),
+        });
+        let first_request = import
+            .src
+            .value
+            .as_str()
+            .is_none_or(|src| loaded.insert(resolve_specifier(src, importer_abs)));
+        was_bare || !import.specifiers.is_empty() || first_request
+    });
 }
 
-/// Every symbol referenced (read or assigned) anywhere in a body, honoring shadowing.
+/// Symbols read or assigned in the body and names in export directives,
+/// including local bindings used only by re-export shims.
 fn collect_referenced_syms(module: &Module) -> HashSet<Atom> {
     let mut found = HashSet::new();
     let mut collector = ReferenceCollector::new(ExportReferences::AllNames, |id| {
@@ -191,11 +107,9 @@ mod tests {
                 )
             })
             .collect();
-        let mut views: Vec<_> = modules
-            .iter_mut()
-            .map(|(path, module)| (format!("c/{path}"), module))
-            .collect();
-        prune_imports(&mut views);
+        for (path, module) in &mut modules {
+            prune_imports(module, &format!("c/{path}"));
+        }
         modules
     }
 
@@ -298,7 +212,7 @@ mod tests {
             let modules = pruned_modules(&[
                 (
                     "late.js",
-                    "import { used } from \"./mod.js\";\nimport { dead } from \"./mod.js\";\nexport const x = used;\n",
+                    "import { used } from \"./mod.js\";\nimport { dead } from \"./sub/../mod.js\";\nexport const x = used;\n",
                 ),
                 (
                     "early.js",

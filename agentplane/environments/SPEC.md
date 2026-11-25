@@ -359,8 +359,9 @@ proxy's per-replica Runtime observation and callable connection.
 ## Status
 
 `status.incarnation` names the Pod the runner runs in and its UID: the Sandbox's Pod, or its VMI's
-virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunning`) or the VMI runs
-(`VMRunning`). Otherwise it is False, with reason `Stopped`, `Starting`, `PullingImage`, `Stopping`, `PodEnded`,
+virt-launcher Pod once Kubernetes assigns it a node. The `Running` condition is True while the Pod
+runs (`PodRunning`) or the VMI runs (`VMRunning`). Otherwise it is False, with reason `Stopped`,
+`Starting`, `PullingImage`, `Stopping`, `PodEnded`,
 `VMEnded`, `SuspendPending`, `Quiescing`, `Deleting`,
 `TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `VolumeLayoutMismatch`,
 `RunnerCredentialMissing`, `RunnerCredentialRequired`,
@@ -405,9 +406,11 @@ then retries after one second. Connectivity loss restarts and replaces nothing.
 
 A new leader discovers published incarnations from the initial cache list and opens new watches.
 No observation or idle elapsed time survives takeover. Suspension and deletion conservatively
-require sealing every published incarnation that has not already been recorded quiesced: empty
-memory cannot prove that a Runtime never admitted work. The last unsealed published incarnation
-remains in status when its Pod disappears, so deletion can restart a runner against retained journals.
+require sealing published incarnations that have not already been recorded quiesced. Controller
+memory cannot prove that a Runtime never admitted work. Suspension can skip sealing a
+previously published VM launcher when Kubernetes atomically accepts deletion of its exact
+unassigned version. The last unsealed published incarnation remains in status when its Pod
+disappears, so deletion can restart a runner against retained journals.
 A replacement route is published before calling its incarnation-fenced Quiesce. Persisted quiesce attempts and retry
 deadlines survive takeover; only a fresh matching quiesced snapshot or an acknowledged Quiesce RPC
 completes the seal. Pod UID and local watch generation fence replaced streams; a new boot ID or

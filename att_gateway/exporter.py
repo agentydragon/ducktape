@@ -23,7 +23,7 @@ from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily, Metri
 from prometheus_client.registry import Collector
 from pydantic import SecretStr
 
-from att_gateway.login import log_in
+from att_gateway.login import read_page
 from att_gateway.pages import (
     Broadband,
     Direction,
@@ -283,12 +283,6 @@ class GatewayCollector(Collector):
                     pass
 
 
-async def _fetch_parsed(client: httpx.AsyncClient, page: Page) -> Parsed:
-    response = await client.get(f"/cgi-bin/{page}.ha")
-    response.raise_for_status()
-    return _PARSERS[page](response.text)
-
-
 async def fetch_page(
     client: httpx.AsyncClient, page: Page, access_code: SecretStr | None, page_gap_seconds: float
 ) -> PageResult:
@@ -298,13 +292,7 @@ async def fetch_page(
     started = time.monotonic()
     parsed: Parsed | None
     try:
-        try:
-            parsed = await _fetch_parsed(client, page)
-        except ValueError:
-            if access_code is None:
-                raise
-            await log_in(client, access_code, page_gap_seconds)
-            parsed = await _fetch_parsed(client, page)
+        parsed = await read_page(client, page, _PARSERS[page], access_code, page_gap_seconds)
     except httpx.HTTPError, ValueError:
         logger.warning("fetching %s failed", page, exc_info=True)
         parsed = None

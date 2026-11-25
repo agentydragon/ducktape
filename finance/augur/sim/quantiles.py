@@ -1,4 +1,4 @@
-"""Exact currency percentile arithmetic shared by engine and app reductions."""
+"""Exact currency percentile arithmetic shared by the app's and experiments' reductions."""
 
 from __future__ import annotations
 

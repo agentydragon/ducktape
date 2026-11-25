@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"reflect"
@@ -13,29 +14,20 @@ import (
 	managementpb "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb"
 	"github.com/agentydragon/ducktape/agentplane/firecracker/workloadidentity"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
 func managementClient(t *testing.T, service managementpb.GuestManagementServer) managementpb.GuestManagementClient {
 	t.Helper()
-	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(maxManagementMessageBytes))
 	managementpb.RegisterGuestManagementServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	connection, err := grpc.NewClient("passthrough:///guest-management-test",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = connection.Close() })
-	return managementpb.NewGuestManagementClient(connection)
+	return managementpb.NewGuestManagementClient(grpcserver.ConnectInMemory(t, server))
 }
 
 func TestSynchronizeRepairsClockThenRefreshesCredentialsOnEveryThaw(t *testing.T) {
@@ -142,19 +134,10 @@ func TestSubscriberFollowsRotationAndRefreshesAfterSuspension(t *testing.T) {
 	}
 	assertCurrent := func(want *workload.X509SVIDResponse) {
 		t.Helper()
-		ticker := time.NewTicker(10 * time.Millisecond)
-		defer ticker.Stop()
-		for {
+		eventually.Within(t, 10*time.Second, func() (bool, string) {
 			got, err := subscriber.mirror.Snapshot()
-			if err == nil && reflect.DeepEqual(got.Svids[0].X509Svid, want.Svids[0].X509Svid) {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				t.Fatalf("did not receive current credential: %v", err)
-			case <-ticker.C:
-			}
-		}
+			return err == nil && reflect.DeepEqual(got.Svids[0].X509Svid, want.Svids[0].X509Svid), fmt.Sprintf("did not receive current credential: %v", err)
+		})
 	}
 	assertCurrent(first)
 	second := response()

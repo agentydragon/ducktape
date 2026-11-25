@@ -5,31 +5,31 @@ overlays and application payloads: [remainder backlog](../docs/cdk8s_remainder.m
 Remove entries when their acceptance conditions land; this is not a history of the
 conversion.
 
+## CI render diffs if manifests move to a separate branch
+
+Generated manifests are committed alongside cdk8s changes today, so review their PR diff.
+If cdk8s source and Flux manifests move to separate branches, consider rendering both
+revisions in PR CI and publishing a reviewable resource diff. Prefer the real Flux tools
+and controller behavior over a separate approximation; state what the comparison can and
+cannot establish about substitutions, secrets, external sources and live readiness.
+
 ## ESO store/consumer agreement
 
-`cluster/validation/checks.py` sees generated and hand-written resources together.
-Resolve each ExternalSecret's store, including ClusterExternalSecret target namespaces;
-check store namespace conditions and the ServiceAccount required by Kubernetes-provider
-referent authentication. Existing checks cover external credential ownership and the
-Forgejo image distribution convention, not this general relationship.
+The [rendered-tree check](../docs/cdk8s.md#sops-secrets-in-a-converted-directory) includes
+local Flux `targetNamespace` overrides. Report consumers it cannot resolve because their
+namespace or selector labels come from outside the render. Keep access grants explicit.
 
-The missing agreement has already caused denied Airlock/Forgejo-image consumers and a
-missing `external-creds-reader` ServiceAccount. Handle namespace selectors as well as
-literal lists where used. Derive paired fields from an explicitly approved grant when
-they have one owner; never grant access just because an ExternalSecret requests it.
-
-Done: synthetic cases catch denied namespaces and absent referent identities, while
-valid generated and hand-written consumers pass. No duplicate consumer/provider roster.
+Done: all resolvable consumers are checked and any unresolved cases are described without
+claiming the render proves live readiness or maintaining a duplicate provider roster.
 
 ## Fleet rule waivers
 
-Two `unpinned_https_egress` waivers remain, each at its write call:
+The active Agentplane egress proxy (`agentplane/generation.py`) is exempt by design:
+the interception proxy terminates TLS, so its allowlist is the egress PolicySets.
 
-- `github-api-proxy` (`x/github_api_proxy/proxy.py`) carries a `CLEANUP(added 2026-10-12)`
-  comment. Pin its `serverNames`, or keep the waiver with a comment saying why it is exempt
-  by design.
-- Agentplane's egress proxy (`agentplane/generation.py`) is exempt by design and documented
-  there: the interception proxy terminates TLS, so its allowlist is the egress PolicySets.
+The parked `github-api-proxy` (`x/github_api_proxy/proxy.py`) also carries a waiver and a
+`CLEANUP(added 2026-10-12)` comment. Before revival, pin its `serverNames` or document a
+by-design exemption.
 
 Synth fails on a waiver whose object passes, so a fix includes deleting it.
 
@@ -37,9 +37,10 @@ Done: no `CLEANUP(added 2026-10-12)` waiver remains except documented by-design 
 
 ## Fleet rule references
 
-`resolved_references` is a same-App kind-mismatch check, not missing-reference
-validation; it currently ignores namespace. Narrow its name/claims or strengthen its
-implementation. Whole-tree resolution must distinguish:
+`reference_kind_mismatches` is a same-App kind-mismatch check, not missing-reference
+validation. It skips unknown namespaces and suppresses a mismatch when the expected kind
+exists anywhere in the App, since external producers may also exist. Whole-tree resolution
+must distinguish:
 
 - Namespaced Secret/ConfigMap objects and controller-created targets (ESO, Certificate,
   CNPG, trust-manager), with their actual output semantics.

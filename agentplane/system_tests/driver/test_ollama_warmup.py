@@ -7,9 +7,9 @@ import pytest
 import pytest_bazel
 
 from agentplane.system_tests.driver.ollama_warmup import warm_ollama
-from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_128K
+from model_catalog.catalog import OLLAMA_CHAT_ROUTES
 
-QWEN = OLLAMA_QWEN_IQ4XS_128K.native
+MODEL = next(route for route in OLLAMA_CHAT_ROUTES if route.id == "ollama/olm-chat/gpt-oss-20b-128k")
 
 
 def ollama(loaded: list[str], seen: list[httpx.Request]) -> httpx.AsyncBaseTransport:
@@ -22,16 +22,16 @@ def ollama(loaded: list[str], seen: list[httpx.Request]) -> httpx.AsyncBaseTrans
 
 async def test_an_unloaded_model_is_loaded_with_its_context_size() -> None:
     seen: list[httpx.Request] = []
-    await warm_ollama(QWEN.id, transport=ollama([], seen))
+    await warm_ollama(MODEL.id, transport=ollama([], seen))
     assert [(request.method, request.url.path) for request in seen] == [("GET", "/api/ps"), ("POST", "/api/generate")]
     body = json.loads(seen[1].content)
-    assert (body["model"], body["prompt"], body["options"]) == (QWEN.upstream_model, "", {"num_ctx": QWEN.num_ctx})
+    assert (body["model"], body["prompt"], body["options"]) == (MODEL.upstream_model, "", {"num_ctx": MODEL.num_ctx})
 
 
 async def test_a_loaded_model_is_left_alone() -> None:
     seen: list[httpx.Request] = []
-    assert QWEN.upstream_model is not None
-    await warm_ollama(QWEN.id, transport=ollama([QWEN.upstream_model], seen))
+    assert MODEL.upstream_model is not None
+    await warm_ollama(MODEL.id, transport=ollama([MODEL.upstream_model], seen))
     assert [request.url.path for request in seen] == ["/api/ps"]
 
 
@@ -45,7 +45,7 @@ async def test_an_unreachable_ollama_does_not_fail_the_test(caplog: pytest.LogCa
     def refuse(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route", request=request)
 
-    await warm_ollama(QWEN.id, transport=httpx.MockTransport(refuse))
+    await warm_ollama(MODEL.id, transport=httpx.MockTransport(refuse))
     assert any(record.levelname == "WARNING" for record in caplog.records)
 
 

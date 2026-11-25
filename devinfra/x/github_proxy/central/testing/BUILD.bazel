@@ -8,6 +8,7 @@ package(
 py_library(
     name = "certificates",
     srcs = ["certificates.py"],
+    tags = ["manual"],
     deps = [
         "@pypi//cryptography",
         "@pypi//mitmproxy",

@@ -18,6 +18,7 @@ from agentplane.system_tests.deployment.rendered_fixture import (
 )
 from cluster.cdk8s.agentplane import environment_sandbox
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.service_database import Database
 
 
 @dataclass(frozen=True)
@@ -55,9 +56,9 @@ def begin_suite(*, runtime: SandboxRuntime, backend: Backend, include_mcp_edge: 
         mcp_edge=fixture_chart.mcp_edge_props(operator_oidc=operator_oidc, oauth_secret_name=None),
     )
     chart = fixture_chart.new_chart(env)
-    databases: tuple[fixture_database.Database, ...] = (*fixture_chart.BACKEND_DATABASES, fixture_database.Database.APP)
+    databases: tuple[Database, ...] = (*fixture_chart.BACKEND_DATABASES, Database.APP)
     if include_mcp_edge:
-        databases += (fixture_database.Database.MCP_EDGE,)
+        databases += (Database.MCP_EDGE,)
     fixture_database.add_database(chart, namespace=env.namespace, databases=databases)
     fixture_chart.add_fixture_pki(chart, env, **asdict(PLACEHOLDERS))
     fixture_chart.add_backend_services(

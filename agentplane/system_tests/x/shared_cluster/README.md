@@ -1,9 +1,10 @@
 # Shared test cluster (parked)
 
-**Parked.** The static Ubuntu KVM worker and per-action K3s fixture serve current CI. The prototype's
-node image is outside the CI roster and its chart is an inert reference under
-`agentplane/x/kube_in_kube/reference/`. See the [parking note](../../../x/kube_in_kube/README.md)
-and the archived [contract and rollout requirements](SPEC.md).
+**Parked.** The prototype's node image is outside the CI roster and its chart is an inert
+reference under `agentplane/x/kube_in_kube/reference/`. See the
+[parking note](../../../x/kube_in_kube/README.md) and the archived
+[contract and rollout requirements](SPEC.md). Current CI and open alternatives are in the
+[VM fixture options](../../deployment/vm_fixture_architecture.md).
 
 **Operator direction, 2026-11-19.** Keep the persistent-cluster prototype under `x/` while the
 end-to-end test architecture is open. Explore moving suitable behavior tests off Kubernetes.

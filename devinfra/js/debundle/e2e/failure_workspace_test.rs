@@ -66,7 +66,7 @@ fn staged_invocation_keeps_inputs_alive_after_the_original_owner_is_dropped() {
         catch_unwind(|| {
             let (staged, fixture) =
                 saved_analysis::staged(FixtureOpts::new("console.log(9);", vec![]));
-            let invocation = staged.run(&["--analysis", saved_analysis::path(&staged.artifact)]);
+            let invocation = staged.run_saved(&[]);
             drop(fixture);
             drop(staged);
             assert!(

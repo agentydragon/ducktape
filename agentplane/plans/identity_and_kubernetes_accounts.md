@@ -74,10 +74,14 @@ Deployed: [Environments SPEC § Identity](../environments/SPEC.md#identity) (adm
 ## Central Sessions with no environment
 
 Decoupling a central Session from any Sandbox, so it exists with none and attaches and detaches
-environments, is a purpose of this migration (operator, 2026-11-10). A central-sampler Session
-names its `Identity` at `CreateSession`; Dispatcher creates a Session-managed Identity or checks
-that the caller may use an existing one. Identity callers still cannot call `CreateSession`
-directly; caller-authorized child Sessions remain under `SESSION_SUBAGENT_DELEGATION`.
+environments, is an operator goal (2026-11-10). The
+[creation review](task_dag.md#central_session_creation_contract--opening-a-central-session-without-an-environment)
+covers how a central Session names an existing Identity independently of placement.
+[Session-managed provisioning](task_dag.md#session_identity_provisioning_design--session-scoped-identities)
+is a separate decision. Today Dispatcher admits an Identity caller at `CreateSession` for
+`environment_hosted` placement with a current `bind_session` grant. Central placement stays
+restricted to configured service callers and derives its Identity from the required executor
+([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#session-binding)).
 
 The central sampler already delegates its History and service calls, including the code-mode Action
 `tools` namespace, for the central Session as that Identity, authenticating with its own service

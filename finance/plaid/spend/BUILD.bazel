@@ -27,6 +27,7 @@ py_library(
         ":sustainability",
         "//util:oidc_login",
         "@pypi//fastapi",
+        "@pypi//starlette",
         "@pypi//uvicorn",
     ],
 )
@@ -222,7 +223,6 @@ py_test(
     name = "test_service",
     size = "medium",
     srcs = ["test_service.py"],
-    data = ["//finance/plaid/spend/ui:bundle"],
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
@@ -292,12 +292,7 @@ py_binary(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    deps = [
-        ":app",
-        ":service",
-        ":settings",
-        "@pypi//pydantic",
-    ],
+    deps = [":app"],
 )
 
 py_binary(

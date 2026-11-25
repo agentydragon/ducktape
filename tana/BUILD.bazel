@@ -10,8 +10,20 @@ py_test(
         "//tana/domain:nodes",
         "//tana/export:convert",
         "//tana/export:export_node_subset",
+        "//tana/export:tana_issues_to_tanapaste",
         "//tana/graph",
         "//tana/graph:loader",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_materialize_searches",
+    srcs = ["test_materialize_searches.py"],
+    deps = [
+        "//:conftest",
+        "//tana/export:materialize_searches",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

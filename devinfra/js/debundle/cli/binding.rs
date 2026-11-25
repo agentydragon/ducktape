@@ -751,7 +751,7 @@ pub fn run_bindings_assign(
     // Step 3: extract from the planning snapshot, preserving original indices.
     // A source-match claim may be split by selecting only some bindings; each
     // extracted binding keeps the shape and note of its original claim.
-    let mut extracted_members = take_members(
+    let mut extracted_members = take_indexed(
         &mut docs,
         plan.iter().filter_map(|p| match p.source_location {
             BindingLocation::Member { member_index } => {
@@ -759,6 +759,7 @@ pub fn run_bindings_assign(
             }
             BindingLocation::SourceMatch { .. } => None,
         }),
+        |doc| &mut doc.members,
     );
     let mut extracted_claims = take_source_match_bindings(
         &mut docs,
@@ -1096,11 +1097,13 @@ pub(crate) fn apply_doc_changes(
     Ok((files_written, files_deleted))
 }
 
-/// Extract by snapshot identity without null sentinels or repeated Vec removals.
-pub(crate) fn take_members(
+/// Extract entries of one per-module list (`list` selects it) by snapshot
+/// identity without null sentinels or repeated Vec removals.
+pub(crate) fn take_indexed<T>(
     docs: &mut ModuleDocs,
     identities: impl IntoIterator<Item = (String, usize)>,
-) -> BTreeMap<(String, usize), Member> {
+    list: impl Fn(&mut LogicalModule) -> &mut Vec<T>,
+) -> BTreeMap<(String, usize), T> {
     let mut by_module: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     for (module, index) in identities {
         by_module.entry(module).or_default().insert(index);
@@ -1108,11 +1111,12 @@ pub(crate) fn take_members(
     let mut taken = BTreeMap::new();
     for (module, indices) in by_module {
         let (_, doc) = docs.get_mut(&module).expect("resolved module is loaded");
-        for (index, member) in std::mem::take(&mut doc.members).into_iter().enumerate() {
+        let kept = list(doc);
+        for (index, item) in std::mem::take(kept).into_iter().enumerate() {
             if indices.contains(&index) {
-                taken.insert((module.clone(), index), member);
+                taken.insert((module.clone(), index), item);
             } else {
-                doc.members.push(member);
+                kept.push(item);
             }
         }
     }
@@ -1257,7 +1261,9 @@ pub fn run_bindings_unassign(
         }
     }
     // Step 3: remove members and their annotations from the snapshot.
-    for ((source_module, _), member) in take_members(&mut docs, plan.keys().cloned()) {
+    for ((source_module, _), member) in
+        take_indexed(&mut docs, plan.keys().cloned(), |doc| &mut doc.members)
+    {
         let (_, doc) = docs
             .get_mut(&source_module)
             .expect("resolved module is loaded");

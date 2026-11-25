@@ -35,7 +35,6 @@ py_library(
         ":config",
         ":progress_bar",
         ":tree",
-        "@pypi//more_itertools",
         "@pypi//rich",
     ],
 )
@@ -74,7 +73,6 @@ py_wheel(
     # SYNC: propagatedBuildInputs in nix/packages/default.nix (difftree).
     requires = [
         "click>=8.0",
-        "more-itertools",
         "rich",
         "unidiff>=0.7.0",
     ],
@@ -93,6 +91,7 @@ py_library(
         ":parser",
         ":progress_bar",
         ":tree",
+        "//testing:git_repo",
         "@pypi//pytest",
         "@pypi//rich",
     ],

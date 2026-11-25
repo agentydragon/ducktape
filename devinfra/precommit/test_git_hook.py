@@ -1,65 +1,74 @@
-"""E2E tests for git_hook worktree support."""
+"""Tests for Git hook tracing in ordinary checkouts and linked worktrees."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pygit2
+import pytest
 import pytest_bazel
+from opentelemetry.sdk.trace import TracerProvider
 
-from devinfra.precommit.git_hook import _setup_tracing
-
-
-def test_setup_tracing_writes_to_worktree_git_dir(tmp_path: Path) -> None:
-    """Traces go to the per-worktree git dir, not repo_root/.git."""
-    # Create a main repo with an initial commit.
-    main = tmp_path / "main"
-    main.mkdir()
-    repo = pygit2.init_repository(str(main))
-    repo.config["user.name"] = "Test"
-    repo.config["user.email"] = "test@test.com"
-    sig = pygit2.Signature("Test", "test@test.com")
-    (main / "file.txt").write_text("hello")
-    repo.index.add("file.txt")
-    repo.index.write()
-    tree = repo.index.write_tree()
-    repo.create_commit("refs/heads/main", sig, sig, "init", tree, [])
-    repo.set_head("refs/heads/main")
-
-    # Create a worktree.
-    wt_path = tmp_path / "wt"
-    repo.add_worktree("wt", str(wt_path))
-
-    wt_repo = pygit2.Repository(str(wt_path))
-
-    # .git in the worktree is a file, not a directory.
-    assert (wt_path / ".git").is_file(), ".git should be a file in a worktree"
-
-    # repo.path should point into main's .git/worktrees/wt/
-    wt_git_dir = Path(wt_repo.path)
-    assert "worktrees" in str(wt_git_dir)
-
-    # Run _setup_tracing — it should not crash and the trace file should be
-    # created under the worktree's git dir, not under wt_path/.git/.
-    _setup_tracing(wt_repo)
-
-    trace_file = wt_git_dir / "precommit-traces.jsonl"
-    # The exporter is lazy — file is created on first flush, not on init.
-    # But the parent directory must exist and be writable.
-    assert trace_file.parent.is_dir()
-    # Confirm it would NOT go to wt_path/.git/precommit-traces.jsonl
-    # (which would fail because .git is a file).
-    assert not (wt_path / ".git" / "precommit-traces.jsonl").exists()
+from devinfra.precommit import git_hook
+from devinfra.precommit.conftest import commit, stage
 
 
-def test_setup_tracing_works_in_normal_repo(tmp_path: Path) -> None:
-    """Traces go to .git/ in a normal (non-worktree) repo."""
-    repo = pygit2.init_repository(str(tmp_path))
-    _setup_tracing(repo)
+@pytest.mark.parametrize("linked", [False, True], ids=["checkout", "worktree"])
+@pytest.mark.parametrize("invalid", [False, True], ids=["valid", "invalid"])
+def test_pre_commit_reports_checks_and_writes_traces(
+    repo: pygit2.Repository,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    request: pytest.FixtureRequest,
+    linked: bool,
+    invalid: bool,
+) -> None:
+    git_dir = Path(repo.workdir) / ".git"
+    specimen = "props/specimens/sample"
+    frozen_code = f"{specimen}/code/file.py"
+    stage(repo, f"{specimen}/issues/example.yml")
+    stage(repo, frozen_code)
+    commit(repo)
+    if linked:
+        workspace = tmp_path / "wt"
+        repo.add_worktree("wt", str(workspace))
+        repo = pygit2.Repository(str(workspace))
+        git_dir = git_dir / "worktrees" / "wt"
 
-    trace_file = Path(repo.path) / "precommit-traces.jsonl"
-    assert trace_file.parent.is_dir()
-    assert trace_file.parent == tmp_path / ".git"
+    if invalid:
+        stage(repo, "bad-name.py")
+        stage(repo, frozen_code, "# changed")
+    else:
+        stage(repo, "good_name.py")
+
+    # The global OpenTelemetry provider is set only once per process.
+    def set_provider(provider: TracerProvider) -> None:
+        monkeypatch.setattr(git_hook, "tracer", provider.get_tracer(git_hook.__name__))
+        request.addfinalizer(provider.shutdown)
+
+    monkeypatch.setattr(git_hook.trace, "set_tracer_provider", set_provider)
+    monkeypatch.chdir(repo.workdir)
+    assert git_hook.main_pre_commit() == int(invalid)
+
+    output = capsys.readouterr()
+    checks = ("filename-conventions", "frozen-specimens")
+    for check in checks:
+        assert f"{check}: {'FAILED' if invalid else 'ok'}" in output.out
+    if invalid:
+        assert "bad-name.py" in output.err
+        assert frozen_code in output.err
+    else:
+        assert not output.err
+
+    records = {
+        record["name"]: record["status"]["status_code"]
+        for record in map(json.loads, (git_dir / "precommit-traces.jsonl").read_text().splitlines())
+    }
+    assert records.keys() == {*checks, "precommit"}
+    for check in checks:
+        assert records[check] == ("ERROR" if invalid else "UNSET")
 
 
 if __name__ == "__main__":

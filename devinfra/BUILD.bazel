@@ -6,12 +6,10 @@
 # gazelle:exclude x
 
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
-load("@npm_ducktape//:prettier/package_json.bzl", prettier_bin = "bin")
 load("@pypi//:requirements.bzl", "all_whl_requirements")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
-load("//devinfra:filter_wheels.bzl", "filter_system_packages")
 load("//devinfra/python:defs.bzl", "py_library")
 
 exports_files([
@@ -19,10 +17,21 @@ exports_files([
     "lockfile.json",
 ])
 
-# Extract import metadata from wheels for Gazelle's Python import resolution
+# These wheels need system libraries outside Bazel's Python toolchain.
+_GAZELLE_WHEEL_EXCLUSIONS = [
+    "dbus_python",  # dbus-1
+    "pycairo",  # cairo
+    "pygobject",  # girepository-2.0
+]
+
+# Extract import metadata from wheels for Gazelle's Python import resolution.
 modules_mapping(
     name = "modules_map",
-    wheels = filter_system_packages(all_whl_requirements),
+    wheels = [
+        wheel
+        for wheel in all_whl_requirements
+        if package_relative_label(wheel).package not in _GAZELLE_WHEEL_EXCLUSIONS
+    ],
 )
 
 # Generate gazelle_python.yaml manifest for Gazelle to resolve PyPI imports.
@@ -48,16 +57,6 @@ gazelle(
     name = "gazelle",
     data = [":gazelle_python_manifest"],
     gazelle = ":gazelle_python_binary",
-)
-
-prettier_bin.prettier_binary(
-    name = "prettier_bin",
-    data = ["//:prettierrc"],
-    fixed_args = [
-        "--config",
-        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:prettierrc)",
-    ],
-    visibility = ["//visibility:public"],
 )
 
 py_library(

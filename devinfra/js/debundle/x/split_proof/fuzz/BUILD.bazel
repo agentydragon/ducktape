@@ -1,0 +1,19 @@
+load("//devinfra/python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "render_fuzz",
+    srcs = ["fuzz.py"],
+    data = [
+        "//devinfra/js/debundle/x/split_proof:example/input/bundle.mjs",
+        "//devinfra/js/debundle/x/split_proof:example/spec.json",
+        "//devinfra/js/debundle/x/split_proof/lean:render",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "NODE_RUNFILE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
+        "RENDER_RUNFILE": "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:render)",
+    },
+    main = "fuzz.py",
+    tags = ["manual"],
+    deps = ["@rules_python//python/runfiles"],
+)

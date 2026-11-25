@@ -65,45 +65,6 @@ subjects:
     name: opentofu-forgejo-agentydragon-repos
     namespace: crossplane-system
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: opentofu-forgejo-agentydragon-repos
-  namespace: agents-infra
-rules:
-  - apiGroups:
-      - ""
-    resourceNames:
-      - forgejo-token-mint-codex-pod
-    resources:
-      - secrets
-    verbs:
-      - get
-      - update
-      - patch
-      - delete
-  - apiGroups:
-      - ""
-    resources:
-      - secrets
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: rolebindingc8fc95dca5cdb410f424a3c779032d77a9ee05c330
-  namespace: agents-infra
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: opentofu-forgejo-agentydragon-repos
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: opentofu-forgejo-agentydragon-repos
-    namespace: crossplane-system
----
 apiVersion: opentofu.upbound.io/v1beta1
 kind: ProviderConfig
 metadata:
@@ -138,9 +99,8 @@ spec:
     module: |
       # Forgejo repo access for agentydragon-owned source mirrors.
       #
-      # Provisions the `codex-pod` service user and its SSH push key, adopts the
-      # existing `agentydragon/{ducktape,gaffer-private}` repos under Terraform, and
-      # grants Haku read access. Provider wiring mirrors tf/gitops/forgejo-claude.
+      # Adopts the existing `agentydragon/{ducktape,gaffer-private}` repos under Terraform
+      # and grants Haku read access. Provider wiring mirrors tf/gitops/forgejo-claude.
       #
       # CONVENTION — agents are READ-only and open PRs via AGit. No agent gets write on
       # the upstream repos, so none can advance `devel`/`main` (branch protection can't
@@ -163,15 +123,6 @@ spec:
         host     = var.forgejo_url
         username = data.kubernetes_secret.forgejo_admin.data["username"]
         password = data.kubernetes_secret.forgejo_admin.data["password"]
-      }
-
-      locals {
-        forgejo_token_mint_users = {
-          codex-pod = {
-            username = forgejo_user.codex_pod.login
-            password = random_password.codex_pod.result
-          }
-        }
       }
 
       # --- Repo adoption (existing repos; import, do not create) ---
@@ -211,55 +162,6 @@ spec:
         id = "agentydragon/gaffer-private"
       }
 
-      # --- codex-pod (in-cluster Nix-image codex agent) ---
-      # Read-only + fork model, authenticating over SSH.
-      resource "random_password" "codex_pod" {
-        length  = 48
-        special = false
-      }
-
-      # Authenticates over SSH (key below); the password just satisfies the required field.
-      resource "forgejo_user" "codex_pod" {
-        login                = "codex-pod"
-        email                = "codex-pod@allegedly.works"
-        password             = random_password.codex_pod.result
-        must_change_password = false
-        visibility           = "private"
-      }
-
-      # codex-pod's git push key — the same id_ed25519 planted into the pod from the
-      # codex-bootstrap-identity Secret (cluster/k8s/agents/codex-pod). Inlined because
-      # the tofu-controller runs only this module path, so file() cannot read repo-root.
-      resource "forgejo_ssh_key" "codex_pod" {
-        user  = forgejo_user.codex_pod.login
-        key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHc/XFJXzEigh9Y7K70CcQHCpuQLDvAK5UsAFU/aPaFE codex-pod"
-        title = "codex-pod"
-      }
-
-      resource "forgejo_collaborator" "codex_pod_ducktape" {
-        repository_id = forgejo_repository.ducktape.id
-        user          = forgejo_user.codex_pod.login
-        permission    = "read"
-      }
-
-      # Source credentials for forgejo-token-rotation. The passwords still originate
-      # here; the rotator converts them into API tokens and tea configs for consumers.
-      resource "kubernetes_secret" "forgejo_token_mint" {
-        for_each = local.forgejo_token_mint_users
-
-        metadata {
-          name      = "forgejo-token-mint-${each.key}"
-          namespace = "agents-infra"
-        }
-
-        data = {
-          username     = each.value.username
-          password     = each.value.password
-          url          = "https://git.allegedly.works"
-          internal_url = var.forgejo_url
-        }
-      }
-
       # --- haku read collaboration ---
       # Read-only access lets Haku clone these in-cluster source mirrors with its
       # existing haku-forgejo-git basic-auth credential.
@@ -295,10 +197,6 @@ spec:
           kubernetes = {
             source  = "hashicorp/kubernetes"
             version = "~> 3.0"
-          }
-          random = {
-            source  = "hashicorp/random"
-            version = "~> 3.7"
           }
         }
       }

@@ -27,6 +27,7 @@ go_test(
         "discovery_test.go",
         "filesystem_test.go",
         "limits_test.go",
+        "shim_client_test.go",
         "shim_test.go",
     ],
     data = [
@@ -45,7 +46,10 @@ go_test(
 go_test(
     name = "retention_test",
     size = "small",
-    srcs = ["retention_test.go"],
+    srcs = [
+        "retention_test.go",
+        "shim_client_test.go",
+    ],
     embed = [":codexshim"],
     race = "on",
     deps = [

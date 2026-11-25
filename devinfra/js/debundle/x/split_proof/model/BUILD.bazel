@@ -1,0 +1,115 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+load("//devinfra/lint:linters.bzl", "eslint_test")
+
+js_library(
+    name = "to_core",
+    srcs = ["to_core.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    deps = [
+        "//:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+)
+
+# Include first-party runfile helpers as lint sources.
+js_library(
+    name = "lint_sources",
+    testonly = True,
+    srcs = glob(["*.mjs"]),
+)
+
+eslint_test(
+    name = "eslint_test",
+    srcs = [":lint_sources"],
+)
+
+_DIFFERENTIAL_DATA = [
+    "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    "cases.mjs",
+    "generate.mjs",
+    "module_cases.mjs",
+    "opaque_cases.mjs",
+    ":to_core",
+    "//devinfra/js/debundle/x/split_proof:seeded_random",
+    "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
+    "//devinfra/js/debundle/x/split_proof/translation:split_dump",
+    "//devinfra/js/debundle/x/split_proof/lean:corejs",
+    "//devinfra/js/debundle/x/split_proof/lean:evalorder",
+    "//devinfra/js/debundle/x/split_proof/lean:lower",
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+]
+
+_DIFFERENTIAL_ENV = {
+    "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
+    "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:evalorder)",
+    "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+    "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+}
+
+js_test(
+    name = "corejs_differential_test",
+    size = "medium",
+    args = [
+        "--count",
+        "2",
+        "--seed",
+        "1",
+        "--splits",
+        "0",
+    ],
+    data = _DIFFERENTIAL_DATA,
+    entry_point = "differential.mjs",
+    env = _DIFFERENTIAL_ENV,
+)
+
+js_test(
+    name = "corejs_inheritance_differential_test",
+    size = "medium",
+    args = [
+        "--inheritance-only",
+        "--count",
+        "24",
+        "--seed",
+        "1",
+        "--splits",
+        "0",
+    ],
+    data = _DIFFERENTIAL_DATA,
+    entry_point = "differential.mjs",
+    env = _DIFFERENTIAL_ENV,
+    shard_count = 2,
+)
+
+js_test(
+    name = "corejs_binding_differential_test",
+    size = "medium",
+    args = [
+        "--bindings-only",
+        "--count",
+        "12",
+        "--seed",
+        "1",
+        "--splits",
+        "0",
+    ],
+    data = _DIFFERENTIAL_DATA,
+    entry_point = "differential.mjs",
+    env = _DIFFERENTIAL_ENV,
+)
+
+js_test(
+    name = "corejs_differential_sweep_test",
+    size = "large",
+    args = [
+        "--count",
+        "40",
+        "--seed",
+        "1",
+        "--splits",
+        "150",
+    ],
+    data = _DIFFERENTIAL_DATA,
+    entry_point = "differential.mjs",
+    env = _DIFFERENTIAL_ENV,
+    tags = ["manual"],
+)

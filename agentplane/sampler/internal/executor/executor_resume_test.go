@@ -86,7 +86,7 @@ func TestExecutorContinuesAfterSameSandboxResumes(t *testing.T) {
 					if r.ProcessId == "old-process" {
 						t.Fatal("old process reached replacement executor")
 					}
-					return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+					return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: new(int32(0))}, nil
 				}
 				executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 				executor.environment = map[string]string{}
@@ -182,10 +182,7 @@ func TestExecutorDoesNotRebindWithoutMatchingSandboxEvidence(t *testing.T) {
 }
 
 func TestExecCommandExpectedIncarnationRejectsBeforeWorkspaceSetup(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	client := &execfake.Client{}
 	var opened *executorpb.OpenSessionRequest
 	starts := 0
@@ -235,10 +232,7 @@ func TestExecCommandExpectedIncarnationRejectsBeforeWorkspaceSetup(t *testing.T)
 }
 
 func TestExecCommandExpectedIncarnationFencesWorkspaceStartAtDispatch(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	client := &execfake.Client{}
 	starts, reads := 0, 0
 	var workspaceProcessID string
@@ -275,10 +269,7 @@ func TestExecCommandExpectedIncarnationFencesWorkspaceStartAtDispatch(t *testing
 }
 
 func TestExecCommandExpectedIncarnationKeepsMatchingRetainedSession(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	client := &execfake.Client{}
 	opens, starts := 0, 0
 	ready := false
@@ -300,7 +291,7 @@ func TestExecCommandExpectedIncarnationKeepsMatchingRetainedSession(t *testing.T
 		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus(), ProcessId: r.ProcessId}, nil
 	}
 	client.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
-		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: new(int32(0))}, nil
 	}
 	executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	executor.environment = map[string]string{}
@@ -325,10 +316,7 @@ func TestExecCommandExpectedIncarnationKeepsMatchingRetainedSession(t *testing.T
 }
 
 func TestExecCommandExpectedIncarnationReadFenceAbandonsWithoutReplay(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	client := &execfake.Client{}
 	starts, reads := 0, 0
 	client.OnStartProcess = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
@@ -408,10 +396,7 @@ func TestExecCommandExpectedIncarnationReadFenceAbandonsWithoutReplay(t *testing
 }
 
 func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	if err := store.RegisterModelProcess(t.Context(), owner, "old-process", 1234, false); err != nil {
 		t.Fatal(err)
 	}
@@ -452,7 +437,7 @@ func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *test
 	}
 	client.OnReadProcess = func(_ context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads++
-		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: new(int32(0))}, nil
 	}
 	executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	executor.environment = map[string]string{}
@@ -492,10 +477,7 @@ func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *test
 }
 
 func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	if err := store.RegisterModelProcess(t.Context(), owner, "old-process", 1234, false); err != nil {
 		t.Fatal(err)
 	}
@@ -634,7 +616,7 @@ func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testi
 	}
 	secondClient.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		secondReads++
-		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: new(int32(0))}, nil
 	}
 	secondExecutor := newFakeExecutor(t, store, owner, secondClient, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	secondExecutor.environment = map[string]string{}
@@ -652,10 +634,7 @@ func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testi
 }
 
 func TestExecCommandExpectedIncarnationDoesNotRevealUIDOnAuthorizationFailure(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	client := &execfake.Client{OnOpenSession: func(context.Context, *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		return nil, status.Error(codes.PermissionDenied, "target authorization denied")
 	}}
@@ -703,6 +682,17 @@ func resumedExecutorStore(t *testing.T, api protocol.APIStyle) (*sessionstore.St
 	}
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
+		t.Fatal(err)
+	}
+	return store, owner, request
+}
+
+// resumedStoreWithRetainedSession is resumedExecutorStore for the Responses API with the
+// "retained-executor" session already bound.
+func resumedStoreWithRetainedSession(t *testing.T) (*sessionstore.Store, sessionstore.Owner, *sessionconfig.Configuration) {
+	t.Helper()
+	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
+	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
 		t.Fatal(err)
 	}
 	return store, owner, request

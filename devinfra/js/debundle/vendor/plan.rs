@@ -27,7 +27,7 @@ use serde_json::Value;
 use swc_common::GLOBALS;
 
 use artifact::paths::{join_module_path, manifest_relative_path};
-use artifact::{ArtifactIndexes, ChunkBundle, get_chunk_entry_path};
+use artifact::{ArtifactIndexes, ChunkBundle};
 use js_ast::parse_js_module;
 use spec::{
     PartialSwapKind, PartialSwapPackage, PartialSwapSymbol, VendorLevel, VendorMark, WrapperShape,
@@ -40,7 +40,7 @@ use crate::export_surface::{
 use crate::manifests::{
     BundledPartialSwapBundleResolution, BundledPartialSwapPackageResolution,
     ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, PartialSwapPackageResolution,
-    VendorResolution,
+    VendorResolution, VendorSwapsReport,
 };
 use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
 use crate::validate::{
@@ -103,16 +103,11 @@ impl VendorResolutionPlan {
         })
     }
 
-    pub fn has_boundary_renames(&self) -> bool {
+    /// Whether any named reimport can change. Every full swap contributes a boundary plan.
+    pub fn rewrites_imports(&self) -> bool {
         !self.boundary_renames.is_empty()
-    }
-
-    pub fn has_partial_swaps(&self) -> bool {
-        !self.partial_swaps.is_empty()
-    }
-
-    pub fn has_bundled_partial_swaps(&self) -> bool {
-        !self.bundled_partial_swaps.is_empty()
+            || !self.partial_swaps.is_empty()
+            || !self.bundled_partial_swaps.is_empty()
     }
 
     /// Oracle answer for one named import of `imported_name` targeting
@@ -201,6 +196,14 @@ impl VendorResolutionPlan {
         self.full_swaps.iter().map(|swap| swap.chunk_id).collect()
     }
 
+    /// Whole chunks omitted from emission and their replacement packages.
+    pub fn full_swap_packages(&self) -> BTreeMap<ChunkId, &str> {
+        self.full_swaps
+            .iter()
+            .map(|swap| (swap.chunk_id, swap.resolution.package.as_str()))
+            .collect()
+    }
+
     /// Replacement package of every swapped chunk export, by chunk. Facts
     /// derived from those exports' bundled bodies rest on the swap's
     /// equivalence promise (SPEC.md § Vendor swap equivalence).
@@ -251,14 +254,60 @@ impl VendorResolutionPlan {
         })
     }
 
-    /// Wire-facing full-swap resolutions keyed by chunk path — the
-    /// `full` section of the combined vendor swaps report, projected
-    /// straight from the plan.
-    pub fn full_swap_resolutions(&self) -> BTreeMap<String, VendorResolution> {
-        self.full_swaps
+    /// Project finalized rewrite counts and all planned replacements into the wire manifest.
+    pub fn swaps_report(
+        &self,
+        rewrite_counts: &BTreeMap<(ChunkId, String), usize>,
+    ) -> Result<VendorSwapsReport> {
+        let full = self
+            .full_swaps
             .iter()
             .map(|swap| (swap.resolution.chunk_path.clone(), swap.resolution.clone()))
-            .collect()
+            .collect();
+        let mut partial: BTreeMap<String, ChunkPartialSwapResolution> = self
+            .partial_swaps
+            .values()
+            .map(|entry| {
+                (
+                    entry.resolution.chunk_path.clone(),
+                    entry.resolution.clone(),
+                )
+            })
+            .collect();
+        let mut bundled: BTreeMap<String, ChunkBundledPartialSwapResolution> = self
+            .bundled_partial_swaps
+            .values()
+            .map(|entry| {
+                (
+                    entry.resolution.chunk_path.clone(),
+                    entry.resolution.clone(),
+                )
+            })
+            .collect();
+        for ((chunk_id, chunk_export), count) in rewrite_counts {
+            let symbol_resolution = if let Some(entry) = self.partial_swaps.get(chunk_id) {
+                partial
+                    .get_mut(&entry.resolution.chunk_path)
+                    .and_then(|resolution| resolution.symbols.get_mut(chunk_export))
+            } else if let Some(entry) = self.bundled_partial_swaps.get(chunk_id) {
+                bundled
+                    .get_mut(&entry.resolution.chunk_path)
+                    .and_then(|resolution| resolution.symbols.get_mut(chunk_export))
+            } else {
+                bail!(
+                    "vendor rewrite counts reference `{chunk_export}` on chunk #{}, which has no partial-swap plan",
+                    chunk_id.0,
+                );
+            };
+            if let Some(symbol_resolution) = symbol_resolution {
+                symbol_resolution.references_rewritten += count;
+            }
+        }
+        Ok(VendorSwapsReport {
+            full,
+            partial,
+            bundled_partial: bundled,
+        })
     }
 
     /// Entry file of a whole-chunk `swap` — the only file
@@ -343,7 +392,6 @@ pub(crate) struct PlannedWrapper {
 }
 
 pub(crate) struct ChunkPartialSwapPlan {
-    pub(crate) chunk_path: String,
     pub(crate) entry_file: String,
     /// package_name → upstream coords (namespace, version, subpath).
     pub(crate) packages: BTreeMap<String, PartialSwapPackage>,
@@ -354,7 +402,6 @@ pub(crate) struct ChunkPartialSwapPlan {
 }
 
 pub(crate) struct ChunkBundledPartialSwapPlan {
-    pub(crate) chunk_path: String,
     pub(crate) entry_file: String,
     /// package_name → namespace + generated facade target.
     pub(crate) packages: BTreeMap<String, BundledPartialSwapPackageTarget>,
@@ -391,15 +438,18 @@ pub fn build_vendor_resolution_plan(
         let chunk_id = artifact.chunk_table.get(&chunk_name).with_context(|| {
             format!("vendor entry {chunk_path} targets unknown chunk: {chunk_name}")
         })?;
-        let entry_file = get_chunk_entry_path(artifact, chunk_id).with_context(|| {
-            format!("vendor entry {chunk_path} targets missing chunk (chunk_id={chunk_name})")
-        })?;
+        let entry_file = artifact
+            .find_chunk(chunk_id)
+            .and_then(|chunk| chunk.entry_path())
+            .with_context(|| {
+                format!("vendor entry {chunk_path} targets missing chunk (chunk_id={chunk_name})")
+            })?;
         resolved_chunks.insert(
             chunk_path.as_str(),
             ResolvedVendorChunk {
                 chunk_id,
                 chunk_name,
-                entry_file,
+                entry_file: entry_file.to_owned(),
             },
         );
     }
@@ -808,7 +858,6 @@ fn plan_partial_swaps(
         plans.insert(
             chunk.chunk_id,
             ChunkPartialSwapPlan {
-                chunk_path: chunk_path.clone(),
                 entry_file: chunk.entry_file.clone(),
                 packages: partial.packages.clone(),
                 symbols: partial.symbols.clone(),
@@ -929,7 +978,6 @@ fn plan_bundled_partial_swaps(
         plans.insert(
             chunk.chunk_id,
             ChunkBundledPartialSwapPlan {
-                chunk_path: chunk_path.clone(),
                 entry_file: chunk.entry_file.clone(),
                 packages: package_targets,
                 symbols: bundled.symbols.clone(),

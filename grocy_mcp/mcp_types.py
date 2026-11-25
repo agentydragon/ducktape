@@ -94,7 +94,7 @@ DUE_TYPE_DESC = (
 PARENT_PRODUCT_DESC = (
     "Parent product. Name or ID. Marks this product as a **variant / sub-product** of the "
     "parent — e.g. two brands of milk both sharing a generic `Milk` parent. This unlocks: "
-    "(a) stock aggregation — `stock_get` and the overview roll every variant's amount (with "
+    "(a) stock aggregation — Grocy's product overview rolls every variant's amount (with "
     "QU conversion) into the parent's row; (b) substitution on consume — `stock_consume` "
     "with `allow_subproduct_substitution=True` on the parent falls back to any variant "
     "when the parent itself is short (FIFO across variants); (c) shared low-stock rules "
@@ -140,7 +140,7 @@ class GetResultBase(BaseModel):
 class ShoppingItemNames(BaseModel):
     product_name: str | None = None
     list_name: str | None = None
-    unit_name: str | None = None
+    unit_name: str | None = Field(default=None, description="Product stock unit for the raw shopping-list amount.")
 
 
 class GetOk(GetResultBase):
@@ -155,11 +155,11 @@ class GetError(GetResultBase):
 
 
 class StockEntry(BaseModel):
-    """Compact stock overview entry. Names always included, no nested dicts."""
+    """On-hand stock for one product at one physical location."""
 
     product_id: int
     product_name: str
-    amount: float = Field(description="Total on-hand in the stock QU, including the opened subset.")
+    amount: float = Field(description="On-hand at this location in the stock QU, including the opened subset.")
     amount_opened: float = Field(description="Subset of `amount` already marked opened; do not add it to `amount`.")
     qu_name: str
     location_name: str
@@ -295,7 +295,13 @@ class StockEntryOk(BaseModel):
     entry: StockEntryDetail
 
 
-class StockEntryEditOk(StockEntryOk):
+class StockEntryEditOk(BaseModel):
+    kind: Literal["ok"] = "ok"
+    entry_id: int = Field(description="Original stock entry ID recorded by this edit.")
+    transaction_id: str
+    entry: StockEntryDetail | None = Field(
+        default=None, description="Current lot when readable. Grocy can merge matching lots during an edit."
+    )
     changes: dict[str, dict[str, Any]] | None = Field(
         default=None, description="For edits: {field: {old: ..., new: ...}} diff of changed fields."
     )

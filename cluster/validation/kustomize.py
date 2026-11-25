@@ -7,41 +7,38 @@ import os
 import shutil
 import tempfile
 from collections.abc import Sequence
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
+from pydantic import Field
 from python.runfiles import Runfiles
 
-from cluster.validation.k8s import K8sResource, parse_k8s_resources
+from cluster.validation.k8s import CamelCaseModel, K8sResource, load_k8s_resources
 
 KUSTOMIZATION_FILE_NAMES = ("kustomization.yaml", "kustomization.yml", "Kustomization")
 
 
-class _CamelCaseModel(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+class GeneratorInputs(CamelCaseModel):
+    files: list[str] = Field(default_factory=list)
+    envs: list[Path] = Field(default_factory=list)
 
 
-class ConfigMapGeneratorEntry(_CamelCaseModel):
-    name: str
-    files: list[Path] = []
-
-
-class PatchEntry(_CamelCaseModel):
+class PatchEntry(CamelCaseModel):
     path: Path | None = None
 
 
-class KustomizeFile(_CamelCaseModel):
+class KustomizeFile(CamelCaseModel):
     """Parsed kustomization.yaml — Pydantic coerces YAML string paths to Path objects."""
 
     path: Path = Field(
         description="Absolute path to the kustomization file itself (injected by parser), or where "
         "kustomize-controller writes the one it generates (`flux_generated_kustomization`)"
     )
-    resources: list[Path] = []
-    patches: list[PatchEntry] = []
-    config_map_generator: list[ConfigMapGeneratorEntry] = []
+    resources: list[Path] = Field(default_factory=list)
+    patches: list[PatchEntry] = Field(default_factory=list)
+    config_map_generator: list[GeneratorInputs] = Field(default_factory=list)
+    secret_generator: list[GeneratorInputs] = Field(default_factory=list)
+    configurations: list[Path] = Field(default_factory=list)
 
     def _resolve(self, rel: Path) -> Path:
         return (self.path.parent / rel).resolve()
@@ -51,35 +48,15 @@ class KustomizeFile(_CamelCaseModel):
         return [self._resolve(r) for r in self.resources]
 
     @property
-    def resolved_patches(self) -> list[Path]:
-        return [self._resolve(p.path) for p in self.patches if p.path]
-
-    @staticmethod
-    def _strip_configmap_key(p: Path) -> Path:
-        """Handle `key=filename` format in configMapGenerator files entries."""
-        name = str(p)
-        if "=" in name:
-            return Path(name.split("=", 1)[1])
-        return p
-
-    @property
-    def resolved_generator_files(self) -> list[Path]:
-        return [self._resolve(self._strip_configmap_key(f)) for entry in self.config_map_generator for f in entry.files]
-
-    @property
     def all_referenced_files(self) -> set[Path]:
-        result: set[Path] = set()
-        result.update(self.resolved_resources)
-        result.update(self.resolved_patches)
-        result.update(self.resolved_generator_files)
-        return result
-
-
-class KustomizeBuildResult(BaseModel):
-    """Successful kustomize build output for a single kustomization directory."""
-
-    kustomization_path: Path
-    resources: list[K8sResource] = []
+        referenced = set(self.resolved_resources)
+        referenced.update(self._resolve(patch.path) for patch in self.patches if patch.path)
+        referenced.update(self._resolve(path) for path in self.configurations)
+        for generator in (*self.config_map_generator, *self.secret_generator):
+            # Both generator kinds accept "key=path" or just "path" in files.
+            referenced.update(self._resolve(Path(file.split("=", 1)[-1])) for file in generator.files)
+            referenced.update(self._resolve(path) for path in generator.envs)
+        return referenced
 
 
 def has_kustomization_file(directory: Path) -> bool:
@@ -118,14 +95,6 @@ def parse_kustomize_file(kust_file: Path) -> KustomizeFile:
     return KustomizeFile.model_validate(doc | {"path": kust_file})
 
 
-class KustomizeBuildError(Exception):
-    """Raised when kustomize build fails."""
-
-    def __init__(self, kustomization_path: Path, error: str) -> None:
-        self.kustomization_path = kustomization_path
-        super().__init__(f"kustomize build failed for {kustomization_path.parent}: {error}")
-
-
 def stage_artifact_copies(repo_root: Path, artifact_root: Path, copies: Sequence[tuple[str, str]]) -> None:
     """Materialize source-watcher `@repo/...` copies under a temporary artifact root.
 
@@ -138,31 +107,25 @@ def stage_artifact_copies(repo_root: Path, artifact_root: Path, copies: Sequence
     repo_root = repo_root.resolve()
     artifact_root.mkdir(parents=True, exist_ok=True)
 
-    def relative_path(uri: str, prefix: str, *, directory_glob: bool = False) -> tuple[PurePosixPath, bool]:
+    artifact_root = artifact_root.resolve()
+
+    def resolve_copy_path(root: Path, uri: str, prefix: str, *, suffix: str = "") -> Path:
         if not uri.startswith(prefix):
             raise ValueError(f"artifact copy path must start with {prefix!r}: {uri!r}")
-        path = uri.removeprefix(prefix).rstrip("/")
-        is_glob = directory_glob and path.endswith("/**")
-        if is_glob:
-            path = path.removesuffix("/**")
-        if not path or any(part in {"", ".", ".."} for part in path.split("/")):
+        path = uri.removeprefix(prefix).rstrip("/").removesuffix(suffix)
+        if any(part in {"", ".", ".."} for part in path.split("/")):
             raise ValueError(f"artifact copy path must be a safe relative path: {uri!r}")
         if any(character in path for character in "*?[]{}"):
             raise ValueError(f"unsupported artifact copy pattern: {uri!r}")
-        return PurePosixPath(path), is_glob
+        resolved = (root / path).resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError(f"artifact copy path escapes {root}: {uri!r}")
+        return resolved
 
     for source_uri, destination_uri in copies:
-        source_rel, is_directory = relative_path(source_uri, "@repo/", directory_glob=True)
-        destination_rel, destination_has_glob = relative_path(destination_uri, "@artifact/")
-        if destination_has_glob:
-            raise ValueError(f"artifact destination cannot contain a glob: {destination_uri!r}")
-
-        source = (repo_root / Path(*source_rel.parts)).resolve()
-        destination = (artifact_root / Path(*destination_rel.parts)).resolve()
-        if not source.is_relative_to(repo_root):
-            raise ValueError(f"artifact source escapes repository root: {source_uri!r}")
-        if not destination.is_relative_to(artifact_root.resolve()):
-            raise ValueError(f"artifact destination escapes staging root: {destination_uri!r}")
+        is_directory = source_uri.rstrip("/").endswith("/**")
+        source = resolve_copy_path(repo_root, source_uri, "@repo/", suffix="/**")
+        destination = resolve_copy_path(artifact_root, destination_uri, "@artifact/")
 
         if is_directory:
             if not source.is_dir():
@@ -175,12 +138,10 @@ def stage_artifact_copies(repo_root: Path, artifact_root: Path, copies: Sequence
             shutil.copyfile(source, destination)
 
 
-def _kustomize_build_args(kust: KustomizeFile, scratch: Path) -> list[str | Path]:
-    """`kustomize build` arguments for `kust`. A generated one (no file at its path) is built
-    the way kustomize-controller builds it: written out, here into `scratch`, and built
-    without load restrictions."""
-    if kust.path.is_file():
-        return [kust.path.parent]
+def _kustomize_build_args(directory: Path, scratch: Path) -> list[str | Path]:
+    if has_kustomization_file(directory):
+        return [directory]
+    kust = flux_generated_kustomization(directory)
     generated = {
         "apiVersion": "kustomize.config.k8s.io/v1beta1",
         "kind": "Kustomization",
@@ -190,23 +151,20 @@ def _kustomize_build_args(kust: KustomizeFile, scratch: Path) -> list[str | Path
     return [scratch, "--load-restrictor", "LoadRestrictionsNone"]
 
 
-async def run_kustomize_build(kust: KustomizeFile) -> KustomizeBuildResult:
-    """Run kustomize build and parse the output. Raises KustomizeBuildError on failure."""
+async def run_kustomize_build(directory: Path) -> list[K8sResource]:
+    """Build an explicit or Flux-generated kustomization and parse its resources."""
     kustomize_bin = Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"
     with tempfile.TemporaryDirectory() as scratch:
         proc = await asyncio.create_subprocess_exec(
             kustomize_bin,
             "build",
-            *_kustomize_build_args(kust, Path(scratch)),
+            *_kustomize_build_args(directory, Path(scratch)),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
 
     if proc.returncode != 0:
-        raise KustomizeBuildError(kust.path, stderr.decode())
+        raise RuntimeError(f"kustomize build failed for {directory}: {stderr.decode()}")
 
-    output = stdout.decode()
-    resources = parse_k8s_resources(yaml.safe_load_all(output))
-
-    return KustomizeBuildResult(kustomization_path=kust.path, resources=resources)
+    return load_k8s_resources(stdout)

@@ -106,7 +106,7 @@ func (h *Handler) CreateSession(ctx context.Context, request *apppb.CreateSessio
 		Namespace: h.sandboxNamespace, Name: request.GetName(), Uid: request.GetSandboxUid(),
 	}})
 	if err != nil {
-		return nil, sessionRPCError(err)
+		return nil, sessionRPCError(err, "Environment service could not look up the Sandbox")
 	}
 	defaults, setupScript, err := sessionDefaults(h.sandboxPresets, h.threadPresets, sandbox, request.GetSetupScript() != nil, setupScript)
 	if err != nil {
@@ -131,12 +131,12 @@ func (h *Handler) CreateSession(ctx context.Context, request *apppb.CreateSessio
 			slog.ErrorContext(ctx, "Dispatcher session response did not confirm requested identity", "session_id", id, "error", err)
 			return nil, status.Errorf(codes.Unknown, "Dispatcher result for session %s was not confirmed; reconcile this identity", id)
 		}
-		return nil, sessionRPCError(err)
+		return nil, sessionRPCError(err, "Session Dispatcher could not confirm Thread creation; check this attempt before retrying")
 	}
 	return &apppb.CreateSessionResponse{Session: session}, nil
 }
 
-func sessionRPCError(err error) error {
+func sessionRPCError(err error, operation string) error {
 	var timeout *sessionclient.DispatcherRequestTimeoutError
 	var missing *sessionclient.SessionNotFoundError
 	var service *sessionclient.ServiceError
@@ -147,25 +147,25 @@ func sessionRPCError(err error) error {
 	case errors.As(err, &missing):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.As(err, &service):
-		return sessionUpstreamRPCError(service.Code, service.Details, err)
+		return sessionUpstreamRPCError(service.Code, service.Details, err, operation)
 	case errors.As(err, &refused):
 		return status.Error(refused.Code, refused.Details)
 	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, "Request canceled")
 	case errors.Is(err, context.DeadlineExceeded):
-		return sessionUpstreamRPCError(codes.DeadlineExceeded, "", err)
+		return sessionUpstreamRPCError(codes.DeadlineExceeded, "", err, operation)
 	}
 	if upstream, ok := status.FromError(err); ok {
-		return sessionUpstreamRPCError(upstream.Code(), upstream.Message(), err)
+		return sessionUpstreamRPCError(upstream.Code(), upstream.Message(), err, operation)
 	}
-	return sessionUpstreamRPCError(codes.Unavailable, "", err)
+	return sessionUpstreamRPCError(codes.Unavailable, "", err, operation)
 }
 
-func sessionUpstreamRPCError(code codes.Code, message string, cause error) error {
+func sessionUpstreamRPCError(code codes.Code, message string, cause error, operation string) error {
 	switch code {
 	case codes.Unknown, codes.DeadlineExceeded, codes.Unimplemented, codes.Internal, codes.Unavailable, codes.DataLoss:
-		slog.Error("Session dependency failed", "error", cause)
-		return status.Error(code, "Upstream service unavailable")
+		slog.Error("Session dependency failed", "operation", operation, "error", cause)
+		return status.Errorf(code, "%s (%s)", operation, code)
 	default:
 		if upstream, ok := status.FromError(cause); ok && upstream.Code() == code {
 			return upstream.Err()

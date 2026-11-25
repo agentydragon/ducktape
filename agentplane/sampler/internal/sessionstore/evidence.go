@@ -76,7 +76,7 @@ func (s *Store) recordEvidenceWithSources(ctx context.Context, tx *sql.Tx, conve
 		if end > len(encoded) {
 			end = len(encoded)
 		}
-		entry, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_BoundaryRecord{
+		entry, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_BoundaryRecord{
 			BoundaryRecord: &eventpb.BoundaryRecord{
 				Boundary: boundaryName(kind.String(), "KIND_"), Direction: boundaryName(phase.String(), "PHASE_"), Payload: append([]byte(nil), encoded[start:end]...),
 				MediaType: "application/json", CorrelationId: operationID, ParentId: parent,
@@ -88,7 +88,7 @@ func (s *Store) recordEvidenceWithSources(ctx context.Context, tx *sql.Tx, conve
 		}
 		sources = append(sources, entry.GetOrigin().GetSequence())
 	}
-	if _, err := appendEvent(ctx, tx, session, &eventpb.Event{
+	if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{
 		SourceSequences: sources,
 		Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{
 			OperationId: operationID, ParentId: parent, Kind: kind, Phase: phase,
@@ -107,7 +107,7 @@ func (s *Store) recordEvidenceWithSources(ctx context.Context, tx *sql.Tx, conve
 		if err != nil {
 			return nil, err
 		}
-		_, err = appendEvent(ctx, tx, session, &eventpb.Event{
+		_, err = s.appendEvent(ctx, tx, session, &eventpb.Event{
 			SourceSequences: sources,
 			Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
 				ItemId: callID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: protocol.DisplayText(string(output)), Succeeded: succeeded}},

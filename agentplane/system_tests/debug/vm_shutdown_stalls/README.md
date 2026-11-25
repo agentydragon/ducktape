@@ -55,9 +55,8 @@ and [the historical census](historical_census.md).
   after all owned userspace processes exited. The merged identity-checked
   release passed a real Ready-VM injected-error probe, preserving the original
   error and detaching both mappings. The managed boot and quiescence failure
-  and mixed-load comparison remain open. See [the mixed-pool capture](mixed_kvm_teardown_2026_11_17.md#managed-tcg-boot-timer-stall-quiescence-hold-then-loop-cleanup-failure),
-  [the storage qualification](raw_block_kernel_lease_2026_11_17.md)
-  and [the repeat command](../../x/vm_kvm/README.md#retained-failure-cleanup-qualification).
+  and mixed-load comparison remain open. See [the mixed-pool capture](mixed_kvm_teardown_2026_11_17.md#managed-tcg-boot-timer-stall-quiescence-hold-then-loop-cleanup-failure)
+  and [the failure-cleanup qualification and its repeat command](../../x/vm_kvm/README.md#retained-failure-cleanup-qualification).
 
 A transport or turn error can coexist with orderly guest shutdown. An outer
 BuildBuddy Firecracker failure can leave an empty test output tree. Check
@@ -109,10 +108,8 @@ and [the original outer-VM panic observations](https://github.com/agentydragon/d
   and [the 200-run job, commands and progress criteria](rbe_200_run_job.md).
   Passing controls exercise capture and ordinary shutdown. The historical
   census and passing batches do not yield a comparable fleet recurrence rate.
-- **Collection variants.** [Libvirt monitor capture](libvirt_monitor/README.md),
-  [proof-helper progress](standalone_kubevirt/proof_progress.md),
-  [watchdog receipt framing](watchdog_receipt_framing.md) and
-  [the overlength virtiofs tag startup failure](virtiofs_tag_limit.md).
+- **Collection variants.** [Libvirt monitor capture](libvirt_monitor/README.md)
+  and [proof-helper progress](standalone_kubevirt/proof_progress.md).
   The [original investigation record](https://github.com/agentydragon/ducktape/blob/4ecd9e8e1dc60442658710da96e31b0342f4a06c/agentplane/system_tests/debug/vm_shutdown_stalls/README.md)
   preserves the early observer trials, source and patch identities, original
   invocation links and negative results.

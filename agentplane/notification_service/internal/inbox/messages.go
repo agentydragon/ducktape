@@ -216,16 +216,14 @@ func (s *Store) SentMessage(ctx context.Context, sender IdentitySender, id uuid.
 
 func sentMessage(ctx context.Context, tx transaction.Tx, sender IdentitySender, id uuid.UUID) (SentMessage, error) {
 	sent := SentMessage{ID: id}
-	var inboxID uuid.UUID
 	err := tx.QueryRowContext(ctx, `
-		SELECT i.id, i.session_id, m.idempotency_key, e.created_at,
+		SELECT i.session_id, m.idempotency_key, e.created_at,
 			m.cursor <= i.covered, m.cursor <= i.acknowledged, i.retired
 		FROM message m JOIN inbox i ON i.id = m.inbox_id JOIN entry e ON e.inbox_id = m.inbox_id AND e.cursor = m.cursor
 		WHERE m.id = $1 AND m.sender_namespace = $2 AND m.sender_name = $3
 			AND m.sender_identity_name = $4 AND m.sender_identity_uid = $5`,
-		id, sender.Sandbox.Namespace, sender.Sandbox.Name, sender.Identity.Name, sender.Identity.UID).Scan(&inboxID,
-		&sent.SessionID, &sent.IdempotencyKey, &sent.AcceptedAt,
-		&sent.Covered, &sent.Acknowledged, &sent.InboxRetired)
+		id, sender.Sandbox.Namespace, sender.Sandbox.Name, sender.Identity.Name, sender.Identity.UID).Scan(&sent.SessionID,
+		&sent.IdempotencyKey, &sent.AcceptedAt, &sent.Covered, &sent.Acknowledged, &sent.InboxRetired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SentMessage{}, ErrNotFound
 	}

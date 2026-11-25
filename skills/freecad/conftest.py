@@ -57,8 +57,8 @@ def _write_fontconfig(conda_root: Path, freecad_home: Path) -> Path:
     return config_path
 
 
-def pytest_configure(config: pytest.Config) -> None:
-    configure_tracing(config)
+def pytest_configure() -> None:
+    configure_tracing()
 
 
 def _find_conda_root() -> Path:

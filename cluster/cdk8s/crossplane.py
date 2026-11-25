@@ -13,18 +13,24 @@ from crossplane_pkg_provider_crds.io.crossplane.pkg import (
     ProviderSpecPackagePullSecrets,
     ProviderSpecRuntimeConfigRef,
 )
+from external_secrets_crds.io.external_secrets import ExternalSecret
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecPostRenderers,
     HelmReleaseSpecPostRenderersKustomize,
     HelmReleaseSpecPostRenderersKustomizePatches,
     HelmReleaseSpecPostRenderersKustomizePatchesTarget,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDependsOn, KustomizationSpecHealthCheckExprs
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 
-from cluster.cdk8s import flux, namespaces, node_scheduling, opentofu_runtime
+from cluster.cdk8s import namespaces, node_scheduling, opentofu_runtime
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.forgejo_registry.chart import NAME as FORGEJO_IMAGES_KUSTOMIZATION_NAME
+from cluster.cdk8s.flux import (
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     SECRET_NAME as FORGEJO_PULL_SECRET,
     forgejo_images_creds_external_secret,
@@ -32,7 +38,12 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
-from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "crossplane"
 NAMESPACE = "crossplane-system"
@@ -45,14 +56,16 @@ OPENTOFU_PROVIDER_KUSTOMIZATION_NAME = "crossplane-provider-opentofu"
 OPENTOFU_PROVIDER_OUTPUT_DIR = f"{GENERATED_ROOT}/{OPENTOFU_PROVIDER_KUSTOMIZATION_NAME}"
 OPENTOFU_PROVIDER_PACKAGE = "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
 PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
-    api_version="pkg.crossplane.io/v1",
-    kind="Provider",
+    api_version=Provider.GVK.api_version,
+    kind=Provider.GVK.kind,
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
     failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
 )
+_CORE_CPU_REQUEST = "100m"
+_CORE_MEMORY_FLOOR = "256Mi"
 _FORGEJO_PULL_SECRET_HEALTH = KustomizationSpecHealthCheckExprs(
-    api_version="external-secrets.io/v1",
-    kind="ExternalSecret",
+    api_version=ExternalSecret.GVK.api_version,
+    kind=ExternalSecret.GVK.kind,
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')",
     failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Ready' && c.status == 'False')",
 )
@@ -61,6 +74,18 @@ _FORGEJO_PULL_SECRET_HEALTH = KustomizationSpecHealthCheckExprs(
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     core_selector = {"app": NAME, "release": NAME}
+    core_resource_policy = resource_policy_annotation(
+        # The RBAC manager uses the same container name and a fixed 100m limit.
+        ContainerPolicy(
+            container_name=NAME,
+            controlled_values=ControlledValues.REQUESTS_ONLY,
+            controlled_resources=("cpu", "memory"),
+            min_allowed={"cpu": _CORE_CPU_REQUEST, "memory": _CORE_MEMORY_FLOOR},
+            max_allowed={"cpu": "500m"},
+        ),
+        ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+        compact=True,
+    )
     namespaces.namespace(
         chart,
         "namespace",
@@ -74,8 +99,8 @@ def chart(app: App) -> Chart:
                     container_name="crossplane",
                     controlled_values=ControlledValues.REQUESTS_ONLY,
                     controlled_resources=("memory",),
-                    min_allowed={"cpu": Cpu.millis(100).amount, "memory": Size.mebibytes(256).as_string()},
-                    max_allowed={"cpu": Cpu.millis(100).amount},
+                    min_allowed={"cpu": _CORE_CPU_REQUEST, "memory": _CORE_MEMORY_FLOOR},
+                    max_allowed={"cpu": _CORE_CPU_REQUEST},
                 ),
                 # Current provider runtimes have no template requests or limits; size both requests.
                 ContainerPolicy(
@@ -112,14 +137,7 @@ def chart(app: App) -> Chart:
             "leaderElection": True,
             "affinity": k8s.Affinity(node_affinity=node_scheduling.zone_affinity(node_scheduling.HOME_AND_OVH_ZONES)),
             "topologySpreadConstraints": [
-                {
-                    "maxSkew": 1,
-                    "topologyKey": "kubernetes.io/hostname",
-                    "whenUnsatisfiable": "DoNotSchedule",
-                    "nodeTaintsPolicy": "Honor",
-                    "labelSelector": {"matchLabels": core_selector},
-                    "matchLabelKeys": ["pod-template-hash"],
-                },
+                node_scheduling.hostname_spread(core_selector, min_domains=None),
                 # Three replicas normally cover OVH and both home zones. With one zone left,
                 # allow replacements there on different hosts instead of blocking recovery.
                 k8s.TopologySpreadConstraint(
@@ -148,6 +166,7 @@ def chart(app: App) -> Chart:
                                   name: {NAME}
                                   annotations:
                                     {namespaces.VPA_UPDATE_MODE_LABEL}: {Vpa.AUTO}
+                                    {VPA_RESOURCE_POLICY_ANNOTATION}: '{core_resource_policy}'
                                 spec:
                                   template:
                                     spec:
@@ -198,7 +217,6 @@ def litellm_provider_chart(app: App) -> Chart:
         reader=reader,
         source_namespace="forgejo-images",
         source_secret=FORGEJO_PULL_SECRET,
-        consumer_namespace=NAMESPACE,
     )
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE, secret_store_name=store)
     Provider(
@@ -215,7 +233,11 @@ def litellm_provider_chart(app: App) -> Chart:
 
 
 def litellm_provider(
-    chart: Chart, directory: RenderedDirectory, crossplane: Kustomization, external_secrets_operator: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    crossplane: Kustomization,
+    external_secrets_operator: Kustomization,
+    forgejo_images: Kustomization,
 ) -> Kustomization:
     """Wait for the LiteLLM provider CRDs and controller before applying managed resources."""
     return flux_kustomization(
@@ -226,11 +248,7 @@ def litellm_provider(
         prune=False,
         wait=True,
         health_check_exprs=[_FORGEJO_PULL_SECRET_HEALTH, PROVIDER_HEALTH],
-        depends_on=[
-            flux_kustomization_depends_on(crossplane),
-            flux_kustomization_depends_on(external_secrets_operator),
-            KustomizationSpecDependsOn(name=FORGEJO_IMAGES_KUSTOMIZATION_NAME, namespace=flux.NAMESPACE),
-        ],
+        depends_on=flux_kustomization_depends_on_many(crossplane, external_secrets_operator, forgejo_images),
         description="Install the LiteLLM Upjet provider after Crossplane core; LiteLLM resources reconcile separately.",
     )
 

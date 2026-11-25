@@ -16,6 +16,24 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
+func (c *CompactionControl) Matches(other *CompactionControl) bool {
+	if c == nil || other == nil {
+		return c == other
+	}
+	return c.withDefaultReplacement() == other.withDefaultReplacement()
+}
+
+func (c CompactionControl) withDefaultReplacement() CompactionControl {
+	// Omitted Chat replacements in frozen requests mean the built-in wrapper.
+	// Compare their effective policy so explicitly configuring it preserves retries.
+	if c.ChatUserMessagesOnly && c.ReplacementRole == "" && c.ReplacementTemplate == "" {
+		replacement := chatcompletions.DefaultCompactionReplacement()
+		c.ReplacementRole = replacement.Role
+		c.ReplacementTemplate = replacement.Template
+	}
+	return c
+}
+
 func requestPreparationFor(preparation *providerrequest.Preparation) requestPreparation {
 	if preparation == nil {
 		return nil
@@ -145,7 +163,7 @@ func ProviderRequestIntent(kind PendingIntentKind, connection samplersettings.Co
 	if kind == PendingIntentCompaction {
 		request.ProjectionKey = providerrequest.ProjectionFor(config)
 		if config.API == protocol.APIStyleChatCompletions && config.ChatCompaction != nil {
-			request.CompactionControl = &CompactionControl{KeepRecentTurns: config.ChatCompaction.KeepRecentTurns}
+			request.CompactionControl = &CompactionControl{KeepRecentTokens: config.ChatCompaction.RecentTokenBudget(), ChatUserMessagesOnly: true}
 			if replacement := config.ChatCompaction.Replacement; replacement != nil {
 				request.CompactionControl.ReplacementRole = replacement.Role
 				request.CompactionControl.ReplacementTemplate = replacement.Template

@@ -5,7 +5,10 @@ helpers plus a library under `tana.export`.
 
 ```bash
 bb run //tana/export:convert_bin -- --help
+bb run //tana/export:export_node_subset_bin -- "$PWD/export.json" NODE_ID
 ```
+
+The subset command writes TanaPaste and the JSON nodes used to render it.
 
 - `domain/` — data models, constants, types.
 - `graph/` — `TanaGraph` workspace representation, structural helpers, JSON loader

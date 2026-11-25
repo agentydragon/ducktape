@@ -58,6 +58,7 @@ spec:
                 name: crossplane
                 annotations:
                   goldilocks.fairwinds.com/vpa-update-mode: auto
+                  goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"crossplane","controlledValues":"RequestsOnly","minAllowed":{"cpu":"100m","memory":"256Mi"},"maxAllowed":{"cpu":"500m"},"controlledResources":["cpu","memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
               spec:
                 template:
                   spec:

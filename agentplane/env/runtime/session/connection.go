@@ -176,24 +176,10 @@ func (c *nativeConnection) readStdout(process *supervision.ManagedProcess, recei
 		}
 		if err != nil {
 			if err == io.EOF {
-				lines := framer.Finish()
-				if len(lines) > 0 {
-					if e := c.deps.journal.WithBatch(c.deps.ctx, func(ctx context.Context) error {
-						for _, line := range lines {
-							if e := receive(ctx, line); e != nil {
-								return e
-							}
-						}
-						return nil
-					}); e != nil {
-						readErr = e
-					} else {
-						c.deps.afterBatch()
-						c.deliverReplies()
-					}
+				if lines := framer.Finish(); len(lines) > 0 {
+					readErr = c.receiveBatch(c.deps.ctx, lines, receive)
 				}
-			}
-			if err != io.EOF {
+			} else {
 				readErr = err
 			}
 			break

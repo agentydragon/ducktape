@@ -6,7 +6,7 @@ from __future__ import annotations
 from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -14,12 +14,12 @@ from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.seaweedfs.endpoints import S3_AUTHORITY
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "mimir"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/mimir"
 _CREDENTIALS_SECRET = "mimir-seaweedfs-credentials"
-_S3_ENDPOINT = "seaweedfs-s3.seaweedfs.svc:8333"
 # The chart's nginx gateway Service, named after the release: port 80 onto the Pods' 8080.
 GATEWAY = ServiceRef(
     name=f"{NAME}-gateway",
@@ -41,7 +41,7 @@ PUSH_URL = f"{GATEWAY_URL}/api/v1/push"
 def _s3(bucket: str) -> dict[str, object]:
     # Credentials injected via global.extraEnvFrom; expanded by -config.expand-env=true.
     return {
-        "endpoint": _S3_ENDPOINT,
+        "endpoint": S3_AUTHORITY,
         "bucket_name": bucket,
         "region": "us-east-1",
         "insecure": True,
@@ -145,36 +145,26 @@ def _values() -> dict[str, object]:
                 },
             }
         },
-        # --- Component replicas (minimal for small cluster) ---
         # All pinned to the OVH kimsufi workers. No CP tolerations — workers only.
         # No explicit limits — Goldilocks/VPA (mode: initial) manages them.
         "distributor": _component(1, "50m", "128Mi"),
         "ingester": {
             "replicas": 2,
-            "persistentVolume": {"storageClass": "piraeus-hdd-local", "size": "10Gi"},
+            "persistentVolume": {"storageClass": piraeus_storage.HDD_LOCAL, "size": "10Gi"},
             "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}},
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # 2 ingesters + RF=2 + RF=2 on the 2 kimsufi workers gives all-pairs
             # placement; zone-aware would just add a second StatefulSet and
             # rollout-operator coupling for no behavioural win at this scale.
             "zoneAwareReplication": {"enabled": False},
-            "affinity": {
-                "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
-                "podAntiAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "labelSelector": {
-                                "matchLabels": {
-                                    "app.kubernetes.io/component": "ingester",
-                                    "app.kubernetes.io/name": NAME,
-                                    "app.kubernetes.io/instance": NAME,
-                                }
-                            },
-                            "topologyKey": "kubernetes.io/hostname",
-                        }
-                    ]
+            "affinity": node_scheduling.one_per_host(
+                {
+                    "app.kubernetes.io/component": "ingester",
+                    "app.kubernetes.io/name": NAME,
+                    "app.kubernetes.io/instance": NAME,
                 },
-            },
+                node_affinity=node_scheduling.PREFER_WORKERS.node_affinity,
+            ),
         },
         "querier": _component(1, "50m", "128Mi"),
         "query_frontend": _component(1, "50m", "128Mi"),
@@ -194,7 +184,6 @@ def _values() -> dict[str, object]:
         # ServiceMonitor so TargetDown only covers real Mimir components.
         "gateway": _component(1, "10m", "32Mi", service={"labels": {"prometheus.io/service-monitor": "false"}}),
         "ruler": {"enabled": True, **_component(1, "50m", "128Mi")},
-        # --- Disabled components ---
         "alertmanager": {"enabled": False},
         "chunks-cache": {"enabled": False},
         "index-cache": {"enabled": False},

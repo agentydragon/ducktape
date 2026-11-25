@@ -167,7 +167,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
 
 EnvironmentService handlers, management and views live in [internal/service](internal/service/README.md).
 
-Runtime process, Session and lifecycle evidence is available through the App-only
+Runtime process and lifecycle evidence is available through the App-only
 `EnvironmentService.GetRuntimeDiagnostics` RPC and the App's authenticated generated facade at
 `GET /upstream/environments/v1/environments/{namespace}/{name}:runtime-diagnostics?target.uid={uid}`.
 The App reads this RPC over its existing EnvironmentService connection and App service SVID; the

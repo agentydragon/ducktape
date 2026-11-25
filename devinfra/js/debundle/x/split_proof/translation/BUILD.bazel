@@ -1,0 +1,819 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
+load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
+load("//devinfra/lint:linters.bzl", "eslint_test")
+load("//devinfra/python:defs.bzl", "py_test")
+load(":fuzz_test_rules.bzl", "seed_pair_tests")
+
+# These Python diagnostics remain hand-run tools, as they were under experiments/.
+# gazelle:exclude fuzz_mutate.py
+# gazelle:exclude obligations_report.py
+
+npm_link_all_packages(name = "node_modules")
+
+js_library(
+    name = "scope_metadata",
+    srcs = ["scope_metadata.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/lowering:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
+    ],
+)
+
+js_library(
+    name = "annotated_estree",
+    srcs = ["annotated_estree.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
+    ],
+    deps = [":scope_metadata"],
+)
+
+js_binary(
+    name = "module_io",
+    data = [
+        ":node_modules/astring",
+        ":parser",
+        ":print",
+        ":scope_metadata",
+    ],
+    entry_point = "module_io.mjs",
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/lean:__pkg__",
+    ],
+)
+
+# Include first-party runfile helpers as lint sources.
+js_library(
+    name = "lint_sources",
+    testonly = True,
+    srcs = glob(
+        ["**/*.mjs"],
+        exclude = ["fixtures/**"],
+    ),
+)
+
+eslint_test(
+    name = "eslint_test",
+    srcs = [
+        ":lint_sources",
+        "//devinfra/js/debundle/x/split_proof/translation/debug/generator_findings:cases",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:lint_sources",
+        "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
+    ],
+)
+
+_SEEDED_RANDOM = "//devinfra/js/debundle/x/split_proof:seeded_random"
+
+_SHIFT_FUZZ_DATA = [
+    "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    ":parser",
+    "shift_fuzz_worker.mjs",
+    ":shift_candidate",
+    ":syntax_inventory",
+    ":scope_metadata",
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+]
+
+seed_pair_tests(
+    [
+        (
+            "shift_fuzz_test",
+            [
+                "--seed",
+                "1",
+                "--count",
+                "128",
+            ],
+            [],
+        ),
+        (
+            "shift_fuzz_second_seed_test",
+            [
+                "--seed",
+                "2026",
+                "--count",
+                "128",
+            ],
+            ["manual"],
+        ),
+    ],
+    size = "medium",
+    data = _SHIFT_FUZZ_DATA,
+    entry_point = "shift_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+_TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
+
+_CHECKER_RUNFILES = [
+    ":frontend",
+    ":scope_metadata",
+    ":node_modules/acorn",
+    ":node_modules/eslint-scope",
+    _TRANSLATE,
+]
+
+# The fuzzer's generator, corpora, marker renderer and their imports.
+_FUZZ_SOURCES = [
+    "fuzz_support.mjs",
+    _SEEDED_RANDOM,
+    "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
+    ":node_modules/astring",
+    "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
+]
+
+js_test(
+    name = "fuzz_support_test",
+    data = _FUZZ_SOURCES,
+    entry_point = "fuzz_support_test.mjs",
+)
+
+js_test(
+    name = "fixtures_test",
+    data = [
+        "mutate.mjs",
+        ":pair",
+    ] + _CHECKER_RUNFILES + glob(
+        ["fixtures/**"],
+        allow_empty = False,
+    ),
+    entry_point = "test.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+js_test(
+    name = "identity_emission_test",
+    data = _CHECKER_RUNFILES + [
+        "fixtures/local_identity/bundle.js",
+        ":annotated_estree",
+        ":parser",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+    ],
+    entry_point = "identity_emission_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+_LOWER_CALLBACK_FUZZ_DATA = [
+    "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    ":parser",
+    ":scope_metadata",
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+]
+
+seed_pair_tests(
+    [
+        ("ast_emitter_fuzz_test", [], []),
+        (
+            "ast_emitter_fuzz_seed_2027_test",
+            ["2027"],
+            [],
+        ),
+    ],
+    size = "medium",
+    data = _LOWER_CALLBACK_FUZZ_DATA + [
+        _SEEDED_RANDOM,
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
+    ],
+    entry_point = "ast_emitter_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "lower_callback_fuzz_test",
+    size = "medium",
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        _SEEDED_RANDOM,
+    ],
+    entry_point = "lower_callback_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "lower_callback_fuzz_extended_test",
+    size = "medium",
+    args = ["64"],
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        _SEEDED_RANDOM,
+    ],
+    entry_point = "lower_callback_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    tags = ["manual"],
+)
+
+js_test(
+    name = "unary_literal_safety_test",
+    size = "medium",
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+    ],
+    entry_point = "unary_literal_safety_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "lower_exports_test",
+    size = "medium",
+    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/lean:lower"],
+    entry_point = "lower_exports_test.mjs",
+    env = {
+        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    },
+)
+
+js_test(
+    name = "lower_chunk_test",
+    size = "medium",
+    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions"],
+    entry_point = "lower_chunk_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "estree_printer_test",
+    size = "medium",
+    args = ["2026"],
+    data = _LOWER_CALLBACK_FUZZ_DATA + [
+        _SEEDED_RANDOM,
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
+    ],
+    entry_point = "estree_printer_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "nested_output_paths_test",
+    data = _LOWER_CALLBACK_FUZZ_DATA,
+    entry_point = "nested_output_paths_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "static_field_locality_test",
+    entry_point = "static_field_locality_test.mjs",
+)
+
+js_test(
+    name = "inert_escape_test",
+    data = [
+        "testdata/inert_escape/seed2026_round3.js.txt",
+        "testdata/inert_escape/seed2026_round8.js.txt",
+        ":frontend",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        _TRANSLATE,
+    ],
+    entry_point = "inert_escape_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+js_test(
+    name = "factory_emission_test",
+    data = [
+        ":frontend",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        _TRANSLATE,
+    ],
+    entry_point = "factory_emission_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+seed_pair_tests(
+    [
+        (
+            "ast_fuzz_test",
+            [
+                "--ast-corpus",
+                "--count",
+                "12",
+                "--seed",
+                "1",
+                "--trees",
+                "4",
+                "--jobs",
+                "4",
+                "--require-accepted",
+                "--require-ast-coverage",
+                "--require-updates",
+            ],
+            [],
+        ),
+        (
+            "ast_fuzz_second_seed_test",
+            [
+                "--ast-corpus",
+                "--count",
+                "12",
+                "--seed",
+                "2026",
+                "--trees",
+                "4",
+                "--jobs",
+                "4",
+                "--require-accepted",
+                "--require-ast-coverage",
+                "--require-updates",
+            ],
+            ["manual"],
+        ),
+    ],
+    size = "medium",
+    data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+seed_pair_tests(
+    [
+        (
+            "callback_fuzz_test",
+            [
+                "--callback-corpus",
+                "--count",
+                "16",
+                "--seed",
+                "1",
+                "--trees",
+                "2",
+                "--jobs",
+                "4",
+                "--require-accepted",
+            ],
+            [],
+        ),
+        (
+            "callback_fuzz_second_seed_test",
+            [
+                "--callback-corpus",
+                "--count",
+                "16",
+                "--seed",
+                "2026",
+                "--trees",
+                "2",
+                "--jobs",
+                "4",
+                "--require-accepted",
+            ],
+            ["manual"],
+        ),
+    ],
+    size = "medium",
+    data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+js_test(
+    name = "fuzz_test",
+    size = "medium",
+    args = [
+        "--count",
+        "40",
+        "--seed",
+        "3",
+        "--trees",
+        "4",
+        "--jobs",
+        "4",
+        "--require-accepted",
+    ],
+    data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+js_test(
+    name = "fuzz_leaks_test",
+    size = "medium",
+    args = [
+        "--leaks",
+        "--require-name-leak",
+        "--count",
+        "40",
+        "--seed",
+        "3",
+        "--trees",
+        "4",
+        "--jobs",
+        "4",
+        "--require-accepted",
+    ],
+    data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+js_test(
+    name = "ast_generator_validation_test",
+    data = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
+    ],
+    entry_point = "ast_generator_validation_test.mjs",
+)
+
+js_test(
+    name = "ast_write_mutation_test",
+    data = _CHECKER_RUNFILES + _FUZZ_SOURCES + [
+        "fuzz.mjs",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants/no_writes:translate",
+    ],
+    entry_point = "ast_write_mutation_test.mjs",
+    env = {
+        "NO_WRITES": "$(rootpath //devinfra/js/debundle/x/split_proof/lean/mutants/no_writes:translate)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+js_test(
+    name = "ast_indirect_callback_test",
+    args = [
+        "--ast-corpus",
+        "--count",
+        "16",
+        "--seed",
+        "17",
+        "--trees",
+        "2",
+        "--jobs",
+        "4",
+        "--require-accepted",
+        "--require-indirect-guided",
+    ],
+    data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+js_test(
+    name = "shift_script_fuzz_test",
+    size = "medium",
+    args = [
+        "--seed",
+        "1",
+        "--count",
+        "128",
+        "--script-grammar",
+    ],
+    data = _SHIFT_FUZZ_DATA,
+    entry_point = "shift_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "shift_modern_fuzz_test",
+    size = "medium",
+    args = [
+        "--seed",
+        "1",
+        "--count",
+        "96",
+        "--script-grammar",
+        "--modern-syntax",
+    ],
+    data = _SHIFT_FUZZ_DATA,
+    entry_point = "shift_fuzz_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_test(
+    name = "modern_syntax_test",
+    data = [
+        ":modern_syntax",
+        ":node_modules/acorn",
+    ],
+    entry_point = "modern_syntax_test.mjs",
+)
+
+_ANALYSIS_INVENTORY = "//devinfra/js/debundle/x/split_proof/lean:analysis_inventory"
+
+# Exercise the compiled analyzer and the generator coverage report.
+js_test(
+    name = "coverage_audit_test",
+    data = _FUZZ_SOURCES + [
+        "fuzz.mjs",
+        "intrinsics_probe.mjs",
+        ":analysis_inventory",
+        ":coverage_audit",
+        ":frontend",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":scope_metadata",
+        ":syntax_inventory",
+        _ANALYSIS_INVENTORY,
+    ],
+    entry_point = "coverage_audit_test.mjs",
+    env = {"ANALYSIS_INVENTORY": "$(rootpath " + _ANALYSIS_INVENTORY + ")"},
+)
+
+# The host inventory: which standard and host features a set of JavaScript files uses.
+js_test(
+    name = "host_inventory_test",
+    data = [":host_inventory"],
+    entry_point = "host_inventory_test.mjs",
+)
+
+# The footprint oracle: run a program unit by unit and compare what each binding reaches with `lower`'s footprints.
+js_test(
+    name = "footprint_oracle_test",
+    size = "medium",
+    data = [
+        "oracle_harness.mjs",
+        ":footprint_oracle",
+        ":frontend",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":scope_metadata",
+        ":syntax_inventory",
+        "//devinfra/js/debundle/x/split_proof/lean:lower",
+    ],
+    entry_point = "footprint_oracle_test.mjs",
+    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
+)
+
+# The generator of `testing/gen/`: every program parses, runs to the end, prints the same twice, and keeps its names consistent.
+js_test(
+    name = "gen_validity_test",
+    size = "medium",
+    data = [
+        ":node_modules/acorn",
+        ":syntax_inventory",
+        "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
+    ],
+    entry_point = "gen_validity_test.mjs",
+)
+
+# The end-to-end oracle on programs of `testing/gen/`: a tree the checker accepts must print what the bundle prints.
+js_test(
+    name = "full_fuzz_test",
+    size = "medium",
+    args = [
+        "--full-corpus",
+        "--count",
+        "16",
+        "--seed",
+        "1",
+        "--trees",
+        "3",
+        "--jobs",
+        "4",
+        "--require-accepted",
+    ],
+    data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+)
+
+# Delta debugging over the units of a program that the footprint oracle finds a wrong footprint in.
+js_test(
+    name = "footprint_reduce_test",
+    data = [
+        "oracle_harness.mjs",
+        ":footprint_oracle",
+        ":footprint_reduce",
+        ":frontend",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":scope_metadata",
+        ":syntax_inventory",
+    ],
+    entry_point = "footprint_reduce_test.mjs",
+)
+
+js_test(
+    name = "corejs_ast_lowering_test",
+    data = [
+        ":annotated_estree",
+        ":frontend",
+        ":parser",
+        ":scope_metadata",
+        ":split_dump",
+        "//devinfra/js/debundle/x/split_proof/lean:corejs",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/model:to_core",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    ],
+    entry_point = "corejs_ast_lowering_test.mjs",
+    env = {
+        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    },
+)
+
+js_binary(
+    name = "translation_fuzz",
+    testonly = True,
+    data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
+    entry_point = "fuzz.mjs",
+    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
+    tags = ["manual"],
+)
+
+# Keep this CLI next to the isolated parser links.
+js_binary(
+    name = "dump_ast",
+    data = [":parser"],
+    entry_point = "dump_ast.mjs",
+    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
+)
+
+js_library(
+    name = "parser",
+    srcs = ["parser.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/lowering:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
+    ],
+    deps = [
+        ":annotated_estree",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":scope_metadata",
+    ],
+)
+
+js_test(
+    name = "parser_dump_test",
+    data = [
+        ":annotated_estree",
+        ":parser",
+        ":scope_metadata",
+    ],
+    entry_point = "parser_dump_test.mjs",
+)
+
+py_test(
+    name = "test_stack_location",
+    size = "medium",
+    srcs = ["test_stack_location.py"],
+    data = ["//devinfra/js/debundle/x/split_proof/lean:lowersplit"],
+    env = {"LOWERSPLIT": "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    deps = [
+        "//:conftest",
+        "//testing/browser:launcher",
+        "@pypi//playwright",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+js_library(
+    name = "frontend",
+    srcs = ["frontend.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__"],
+    deps = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":scope_metadata",
+    ],
+)
+
+js_library(
+    name = "pair",
+    srcs = ["pair.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
+    ],
+    deps = [":frontend"],
+)
+
+js_library(
+    name = "print",
+    srcs = ["print.mjs"],
+    deps = [":node_modules/astring"],
+)
+
+js_library(
+    name = "modern_syntax",
+    srcs = ["modern_syntax.mjs"],
+)
+
+js_library(
+    name = "survey_source",
+    srcs = ["survey_source.mjs"],
+    deps = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+    ],
+)
+
+js_library(
+    name = "host_inventory",
+    srcs = ["host_inventory.mjs"],
+    deps = [
+        ":node_modules/globals",
+        ":survey_source",
+    ],
+)
+
+js_library(
+    name = "syntax_inventory",
+    srcs = ["syntax_inventory.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+    deps = [":node_modules/acorn"],
+)
+
+js_library(
+    name = "analysis_inventory",
+    srcs = ["analysis_inventory.mjs"],
+    deps = [
+        ":parser",
+        ":syntax_inventory",
+    ],
+)
+
+js_library(
+    name = "spawn_and_wait",
+    srcs = ["spawn_and_wait.mjs"],
+)
+
+js_library(
+    name = "shift_candidate",
+    srcs = ["shift_candidate.mjs"],
+    deps = [
+        ":modern_syntax",
+        ":node_modules/shift-codegen",
+        ":node_modules/shift-fuzzer",
+        ":syntax_inventory",
+        _SEEDED_RANDOM,
+    ],
+)
+
+js_library(
+    name = "coverage_audit",
+    srcs = ["coverage_audit.mjs"],
+    deps = [
+        ":analysis_inventory",
+        ":shift_candidate",
+        ":spawn_and_wait",
+        ":syntax_inventory",
+    ],
+)
+
+js_library(
+    name = "footprint_oracle",
+    srcs = ["footprint_oracle.mjs"],
+    deps = [
+        ":frontend",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":spawn_and_wait",
+        ":syntax_inventory",
+    ],
+)
+
+js_library(
+    name = "footprint_reduce",
+    srcs = ["footprint_reduce.mjs"],
+    deps = [":footprint_oracle"],
+)
+
+js_library(
+    name = "split_dump",
+    srcs = ["split_dump.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
+    ],
+    deps = [
+        ":annotated_estree",
+        ":parser",
+        ":scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/model:to_core",
+    ],
+)

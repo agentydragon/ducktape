@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { z } from "zod";
 
 import { TextBlock } from "../../../ui/text_block";
+import { useCompactPane } from "../entry";
 import type { ActionPresentation } from "../presentation";
 import { defineResultPreview, type ResultPreviewProps } from "../result_entry";
 import {
@@ -11,6 +12,7 @@ import {
   githubPresentation,
   GitHubItem,
   pageInput,
+  RepoSlug,
   RepoTarget,
   repoInput,
   ResultRows,
@@ -67,13 +69,21 @@ const codeSearch = searchBase.extend({ fields: z.array(z.string()).optional() })
 const repoSearch = searchBase.extend({ minimal_output: z.boolean().optional() });
 type SearchInput = z.infer<typeof searchBase>;
 function SearchScope({ args }: { args: SearchInput }): JSX.Element {
+  const compact = useCompactPane();
   return (
     <Stack gap={4}>
       <Field name="Query" value={args.query} />
-      <Field name="Page size" value={args.perPage} />
+      {!compact && (
+        <>
+          <Field name="Page" value={args.page} />
+          <Field name="Page size" value={args.perPage} />
+        </>
+      )}
     </Stack>
   );
 }
+
+const hasPagination = ({ page, perPage }: SearchInput): boolean => page !== undefined || perPage !== undefined;
 
 const searchResult = z.object({ total_count: z.int().optional(), incomplete_results: z.boolean().optional() });
 const code = z
@@ -184,11 +194,7 @@ export const discoveryRenderers: ReadonlyMap<string, ActionPresentation> = new M
     githubPresentation({
       label: "List GitHub repository collaborators",
       schema: repoInput.extend({ ...pageInput, affiliation: z.enum(["direct", "outside", "all"]).optional() }),
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} />
@@ -213,6 +219,7 @@ export const discoveryRenderers: ReadonlyMap<string, ActionPresentation> = new M
       request: SearchScope,
       compact: SearchScope,
       staticCard: true,
+      hasFoldedArguments: hasPagination,
       result: defineResultPreview(searchResult.extend({ items: z.array(code) }), ({ result }) => (
         <ResultRows
           count={result.items.length}
@@ -244,6 +251,7 @@ export const discoveryRenderers: ReadonlyMap<string, ActionPresentation> = new M
       request: SearchScope,
       compact: SearchScope,
       staticCard: true,
+      hasFoldedArguments: hasPagination,
       result: defineResultPreview(searchResult.extend({ items: z.array(repo) }), ({ result }) => (
         <ResultRows
           count={result.items.length}
@@ -278,6 +286,7 @@ export const discoveryRenderers: ReadonlyMap<string, ActionPresentation> = new M
       request: SearchScope,
       compact: SearchScope,
       staticCard: true,
+      hasFoldedArguments: hasPagination,
       result: defineResultPreview(searchResult.extend({ items: z.array(user) }), ({ result }) => (
         <ResultRows
           count={result.items.length}

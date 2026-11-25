@@ -100,9 +100,9 @@ done
 ls -la /proc/$BC/fd/{1,2}
 lsof -p $BC | grep -E "PIPE|sock"
 
-# Did the bazel command_log file get any output recently?
-ls -la ~/.cache/bazel/_bazel_*/<output_base>/command.log
-tail -20 ~/.cache/bazel/_bazel_*/<output_base>/command.log
+# Did the bazel command_log file get any output recently? (per-session output base)
+ls -la ~/.claude/session-env/<session_id>/bazel-output-base/command.log
+tail -20 ~/.claude/session-env/<session_id>/bazel-output-base/command.log
 
 # Are there active gRPC connections from the server?
 ss -tnp | grep $BS

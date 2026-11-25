@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
@@ -79,15 +80,7 @@ func (g *State) completeCommit(ctx context.Context, lease RefreshLease, fences [
 		if !ok || commit.Event != event {
 			return errors.New("commit refresh lease does not match its observation resource")
 		}
-		baseFence := false
-		for _, fence := range fences {
-			if fence.Key.AppID == commit.AppID && fence.Key.InstallationID == commit.InstallationID &&
-				fence.Key.RepositoryID == commit.Subject.RepositoryID {
-				baseFence = true
-				break
-			}
-		}
-		if !baseFence {
+		if !hasBaseFence(fences, commit.AppID, commit.InstallationID, commit.Subject) {
 			return errors.New("a commit observation refresh requires its pull request repository access fence")
 		}
 		parentGeneration, headSHA, err := githubCommitParent(ctx, tx, commit)
@@ -98,13 +91,7 @@ func (g *State) completeCommit(ctx context.Context, lease RefreshLease, fences [
 			return &RefreshDeferredError{Until: now()}
 		}
 		at := now()
-		table, where, args := refreshWhere(lease.Key)
-		successPlaceholder := len(args) + 1
-		query := fmt.Sprintf("UPDATE %s SET last_success_at = $%d, error_kind = NULL, error = NULL, "+
-			"error_since = NULL, error_observed_at = NULL, next_attempt = NULL WHERE %s",
-			table, successPlaceholder, where)
-		updateArgs := append(append([]any(nil), args...), at)
-		if _, err := tx.ExecContext(ctx, query, updateArgs...); err != nil {
+		if err := settleRefresh(ctx, tx, lease.Key, at); err != nil {
 			return err
 		}
 		changed := false
@@ -153,6 +140,21 @@ func (g *State) completeCommit(ctx context.Context, lease RefreshLease, fences [
 	})
 }
 
+// hasBaseFence reports whether fences hold the installation's grant on the pull request's own repository, which
+// every refresh of the pull request's CI and review facts reads through.
+func hasBaseFence(fences []AccessFence, appID, installationID int64, subject SubjectKey) bool {
+	key := AccessKey{AppID: appID, InstallationID: installationID, RepositoryID: subject.RepositoryID}
+	return slices.ContainsFunc(fences, func(fence AccessFence) bool { return fence.Key == key })
+}
+
+// settleRefresh records a successful refresh of the row at `at`, clearing its failure and retry.
+func settleRefresh(ctx context.Context, tx transaction.Tx, key RefreshKey, at time.Time) error {
+	table, where, args := refreshWhere(key)
+	_, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET last_success_at = $%d, error_kind = NULL, error = NULL,
+		error_since = NULL, error_observed_at = NULL, next_attempt = NULL WHERE %s`, table, len(args)+1, where), append(args, at)...)
+	return err
+}
+
 // CompleteReviews commits the current submitted and dismissed reviews under their independent refresh lease.
 func (g *State) CompleteReviews(ctx context.Context, lease RefreshLease, fences []AccessFence, reviews []githubmodel.ReviewObservation) error {
 	return g.completeRefresh(ctx, lease, fences, func(tx transaction.Tx) error {
@@ -160,15 +162,7 @@ func (g *State) CompleteReviews(ctx context.Context, lease RefreshLease, fences 
 		if !ok {
 			return errors.New("reviews require a review refresh lease")
 		}
-		baseFence := false
-		for _, fence := range fences {
-			if fence.Key.AppID == review.AppID && fence.Key.InstallationID == review.InstallationID &&
-				fence.Key.RepositoryID == review.Subject.RepositoryID {
-				baseFence = true
-				break
-			}
-		}
-		if !baseFence {
+		if !hasBaseFence(fences, review.AppID, review.InstallationID, review.Subject) {
 			return errors.New("a review refresh requires its pull request repository access fence")
 		}
 		parentGeneration, exists, err := githubReviewParent(ctx, tx, review)
@@ -194,10 +188,7 @@ func (g *State) CompleteReviews(ctx context.Context, lease RefreshLease, fences 
 				return err
 			}
 		}
-		table, where, args := refreshWhere(lease.Key)
-		settledArgs := append(append([]any(nil), args...), at)
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET last_success_at = $%d, error_kind = NULL,
-				error = NULL, error_since = NULL, error_observed_at = NULL, next_attempt = NULL WHERE %s`, table, len(args)+1, where), settledArgs...); err != nil {
+		if err := settleRefresh(ctx, tx, lease.Key, at); err != nil {
 			return err
 		}
 		if changed {
@@ -227,11 +218,7 @@ func (g *State) CompleteSubject(ctx context.Context, lease RefreshLease, fences 
 			}
 		}
 		at := now()
-		table, where, args := refreshWhere(lease.Key)
-		settledArgs := append(append([]any(nil), args...), at)
-		settled := fmt.Sprintf(`last_success_at = $%d, error_kind = NULL, error = NULL, error_since = NULL,
-   error_observed_at = NULL, next_attempt = NULL`, len(args)+1)
-		if _, err := tx.ExecContext(ctx, "UPDATE "+table+" SET "+settled+" WHERE "+where, settledArgs...); err != nil {
+		if err := settleRefresh(ctx, tx, lease.Key, at); err != nil {
 			return err
 		}
 		if observation.PullRequest != nil {

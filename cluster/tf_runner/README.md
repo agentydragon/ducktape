@@ -17,10 +17,9 @@ in the cluster downloads nothing.
 
 ## Rollout
 
-`devinfra/ci/image_targets.json` publishes it to `ghcr.io/agentydragon/tf-runner` (GHCR, not
-Forgejo: the runner provisions Forgejo's registry credentials, so it cannot depend on them).
-The HelmRelease's `runner.image` in `cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml`
-is pinned independently of image automation. Publish the runner based on the new upstream
+`devinfra/ci/image_targets.json` publishes it to `ghcr.io/agentydragon/tf-runner` (GHCR).
+The HelmRelease in [tofu_controller_release.py](../cdk8s/tofu_controller_release.py)
+pins `runner.image` alongside the chart version. Publish the runner based on the new upstream
 release first, then set its published tag alongside the chart version change. Before the
 switch, suspend Terraform reconciliations and wait for in-flight work and old runner pods
 to finish; otherwise a runner with the current TLS secret can be reused across the

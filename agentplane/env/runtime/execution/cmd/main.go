@@ -1,14 +1,13 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
@@ -48,17 +47,13 @@ func runCompanion(args []string) int {
 		fmt.Fprintln(os.Stderr, invalidCompanionUsage)
 		return 64
 	}
-	if err := codexexecserver.ValidateURL(*listen); err != nil {
+	if err := backend.ValidateURL(*listen); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 64
 	}
 	if err := companion.Run(companion.Config{
 		Socket: *socket, Listen: *listen, Binary: *binary, HealthListen: *healthListen, CodexBinary: *codexBinary,
 	}); err != nil {
-		if errors.Is(err, companion.ErrNotPID1) {
-			fmt.Fprintln(os.Stderr, invalidCompanionUsage)
-			return 64
-		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

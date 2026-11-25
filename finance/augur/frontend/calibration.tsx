@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CategoricalPanel } from "./categorical_chart";
 import { CleanTable, SurfacedTable } from "./calibration_tables";

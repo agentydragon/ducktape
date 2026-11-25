@@ -2,22 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
-
-import pytest
-from opentelemetry import trace
-
 from grocy_mcp.grocy_fixtures import grocy_base_url, grocy_container
 from testing.otel_tracing import configure_tracing
+from testing.pytest_otel import pytest_runtest_protocol
 
 
-def pytest_configure(config: pytest.Config) -> None:
-    configure_tracing(config)
-
-
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_protocol(item: pytest.Item) -> Generator[None]:
-    """Create a root span for each test for hierarchical traces."""
-    tracer = trace.get_tracer(__name__)
-    with tracer.start_as_current_span(f"test: {item.nodeid}"):
-        yield
+def pytest_configure() -> None:
+    configure_tracing()

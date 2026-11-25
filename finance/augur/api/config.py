@@ -24,6 +24,7 @@ from pydantic import Field, HttpUrl, NonNegativeInt, PositiveInt, model_validato
 from finance.augur.api.portfolio_source_config import PortfolioSourcesConfig
 from finance.augur.api.schemas import ID_PATTERN, ApiModel, duplicates
 from finance.augur.api.wire import ActorRole, ProductInputDefaults
+from finance.augur.config_paths import config_relative_path
 from finance.augur.model.series import LocationId, SecuritySymbol
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
 from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
@@ -263,60 +264,42 @@ def load_augur_config(path: Path) -> Config:
     config = Config.model_validate(yaml.load(path.read_text(encoding="utf-8"), Loader=DecimalSafeLoader))
     # Anchor deployment paths to the resolved config file, including when it is a Bazel runfile.
     base_dir = Path(str(path)).parent
-    config = _anchor_property_source_paths(config, base_dir=base_dir)
-    config = _anchor_model_paths(config, base_dir=base_dir)
-    return _anchor_calibration_catalog_paths(config, base_dir=base_dir)
-
-
-def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:
-    catalog = config.calibration_catalog
-    updates: dict[str, Path] = {}
-    if not catalog.catalog_path.is_absolute():
-        updates["catalog_path"] = (base_dir / catalog.catalog_path).resolve()
-    if catalog.sample_sanity_path is not None and not catalog.sample_sanity_path.is_absolute():
-        updates["sample_sanity_path"] = (base_dir / catalog.sample_sanity_path).resolve()
-    if not updates:
-        return config
-    return config.model_copy(update={"calibration_catalog": catalog.model_copy(update=updates)})
-
-
-def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
     source = config.property_source
-    properties_path = source.properties_path
-    if not properties_path.is_absolute():
-        properties_path = (base_dir / properties_path).resolve()
-    asset_dir = source.asset_dir
-    if asset_dir is not None and not asset_dir.is_absolute():
-        asset_dir = (base_dir / asset_dir).resolve()
-    if properties_path == source.properties_path and asset_dir == source.asset_dir:
-        return config
+    catalog = config.calibration_catalog
     return config.model_copy(
         update={
-            "property_source": source.model_copy(update={"properties_path": properties_path, "asset_dir": asset_dir})
+            "property_source": source.model_copy(
+                update={
+                    "properties_path": config_relative_path(source.properties_path, base_dir),
+                    "asset_dir": config_relative_path(source.asset_dir, base_dir)
+                    if source.asset_dir is not None
+                    else None,
+                }
+            ),
+            "calibration_catalog": catalog.model_copy(
+                update={
+                    "catalog_path": config_relative_path(catalog.catalog_path, base_dir),
+                    "sample_sanity_path": config_relative_path(catalog.sample_sanity_path, base_dir)
+                    if catalog.sample_sanity_path is not None
+                    else None,
+                }
+            ),
+            "models": {
+                key: _anchor_provider_paths(provider, base_dir=base_dir) for key, provider in config.models.items()
+            },
         }
     )
 
 
-def _anchor_model_paths(config: Config, *, base_dir: Path) -> Config:
-    anchored = {
-        preset_id: _anchor_provider_paths(provider, base_dir=base_dir) for preset_id, provider in config.models.items()
-    }
-    if anchored == dict(config.models):
-        return config
-    return config.model_copy(update={"models": anchored})
-
-
 def _anchor_provider_paths(provider: ProviderConfig, *, base_dir: Path) -> ProviderConfig:
     if isinstance(provider, TrainedPrivateEquityProviderConfig):
-        trained_model_path = provider.trained_model_path
-        if trained_model_path.is_absolute():
-            return provider
-        return provider.model_copy(update={"trained_model_path": (base_dir / trained_model_path).resolve()})
+        return provider.model_copy(
+            update={"trained_model_path": config_relative_path(provider.trained_model_path, base_dir)}
+        )
     if isinstance(provider, StateSpaceProviderConfig):
-        trained_artifact_path = provider.trained_artifact_path
-        if trained_artifact_path.is_absolute():
-            return provider
-        return provider.model_copy(update={"trained_artifact_path": (base_dir / trained_artifact_path).resolve()})
+        return provider.model_copy(
+            update={"trained_artifact_path": config_relative_path(provider.trained_artifact_path, base_dir)}
+        )
     if isinstance(provider, MirroringProviderConfig):
         model = _anchor_provider_paths(provider.model, base_dir=base_dir)
         if model == provider.model:

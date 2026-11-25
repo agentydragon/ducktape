@@ -34,6 +34,8 @@ class Flag(StrEnum):
     ENTITY_SEGMENTS_WITHHELD = "entitySegmentsWithheld"
     THREAD_SCOPE_UNAVAILABLE = "threadScopeUnavailable"
     COMMAND_ADMISSION_TIMED_OUT = "commandAdmissionTimedOut"
+    COMMAND_SUBMISSION_REFUSED = "commandSubmissionRefused"
+    DISPATCH_WATCH_UNAVAILABLE = "dispatchWatchUnavailable"
     PENDING_ACTIONS = "pendingActions"
     # Two opted-in reads ahead of PENDING_ACTIONS: a queue that overflows the attention strip even
     # after one decision.
@@ -72,6 +74,7 @@ class Scene(StrEnum):
     AUTOSUSPEND_BUSY = "autosuspendBusy"
     AUTOSUSPEND_STARTING = "autosuspendStarting"
     SHELL_CALLS = "shellCalls"
+    WRAPPED_OUTPUT_HISTORY = "wrappedOutputHistory"
     COLLAPSIBLE_COMMAND_HISTORY = "collapsibleCommandHistory"
     MID_THREAD_COMMAND_HISTORY = "midThreadCommandHistory"
     MARKDOWN_CODE_FENCE = "markdownCodeFence"
@@ -81,6 +84,11 @@ class Scene(StrEnum):
     PENDING_COMMANDS = "pendingCommands"
     PENDING_INPUT_ECHO = "pendingInputEcho"
     COMMAND_OUTCOMES = "commandOutcomes"
+    REMEMBER_LEGACY_INPUT = "rememberLegacyInput"
+    DISPATCH_WORKSET = "dispatchWorkset"
+    OUTSTANDING_COMMAND_CONVERSATION = "outstandingCommandConversation"
+    VERSIONED_DISPATCH_WORKSET = "versionedDispatchWorkset"
+    SAVED_DELIVERY_ISSUE_OUTSIDE_WORKSET = "savedDeliveryIssueOutsideWorkset"
     REMEMBER_PENDING_INPUT = "rememberPendingInput"
     REMEMBER_INPUT_ECHO = "rememberInputEcho"
     REMEMBER_SETTLED_COMMANDS = "rememberSettledCommands"
@@ -268,5 +276,5 @@ class AgentplaneFixture:
     async def remember_short_refused_wake(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.rememberShortRefusedWake()")
 
-    async def remember_failed_dispatch(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.rememberFailedDispatch()")
+    async def remember_failed_and_unknown_dispatches(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.rememberFailedAndUnknownDispatches()")

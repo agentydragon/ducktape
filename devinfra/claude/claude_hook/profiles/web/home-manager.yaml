@@ -15,20 +15,6 @@ startup_env_script: devinfra/secrets/web_env.sh
 
 idle_watchdog: false
 
-# CLEANUP(added 2026-05-30): the keys below were removed because the Rust `claude-hook`
-# daemon IGNORES them — serde drops unknown fields (see config.rs), so they were
-# honored only by the retired Python daemon. Leaving them implied behavior that
-# does not happen: `setup_docker: true` did NOT start Docker (confirmed by the
-# web_selfcheck W5 finding on 2026-05-30). Removed:
-#   otel:            { endpoint: https://alloy-otlp.allegedly.works/v1/traces }
-#   setup_tmpfs:     true
-#   setup_docker:    true
-#   bazel_bes_proxy: { target: remote.buildbuddy.io:443 }
-# Restore a key (with a ProfileConfig field + test) when the Rust daemon
-# implements it. Revisit this note when the Rust profile follow-ups in
-# devinfra/claude/TODO.md are implemented or explicitly closed.
-# NOTE: DUCKTAPE_OTEL_BEARER_TOKEN is still exported by web_env.sh, independent
-# of the removed `otel:` key.
 env_exports: |
   # Pull the full home-manager session environment into the agent's Bash tool
   # env — PATH (nix-profile bin, placed ahead of /opt/node22 so the nix devtools

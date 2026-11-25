@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//agentplane/env:__subpackages__"])
 
@@ -10,4 +10,11 @@ go_library(
         "//agentplane/env/runtime/execution/codexshim",
         "//agentplane/env/runtime/execution/native",
     ],
+)
+
+go_test(
+    name = "settings_test",
+    srcs = ["settings_test.go"],
+    embed = [":settings"],
+    deps = ["//agentplane/env/runtime/execution/native"],
 )

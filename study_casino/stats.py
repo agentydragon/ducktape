@@ -26,7 +26,6 @@ class WagerBucketStats(BaseModel):
     wagered: int
     returned: int
     net: int
-    expected_returned: float | None = None
     expected_net: float | None = None
     payout_rate: float | None
     rtp: float | None
@@ -92,8 +91,6 @@ class BlackjackSummary(BaseModel):
     wins: int
     losses: int
     pushes: int
-    blackjacks: int
-    busts: int
     # W / (W + L) — excludes pushes from the denominator, unlike the legacy
     # `payout_rate` which counted any returned-stake outcome as a win.
     win_rate_excl_push: float | None

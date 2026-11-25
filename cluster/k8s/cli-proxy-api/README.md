@@ -25,37 +25,65 @@ LiteLLM pod (ESO-mirrored into `litellm`).
 Reasoning effort is driven by Claude Code's `effortLevel` setting and forwarded to Codex
 `reasoning.effort` (not a model-slug suffix).
 
-The deployed CLIProxyAPI v7.2.135 discovered `gpt-6-astra` and completed live
+On 2026-09-05, CLIProxyAPI v7.2.135 discovered `gpt-6-astra` and completed live
 tool-call probes on both `/v1/responses` (`function_call`) and `/v1/messages`
-(`tool_use`) on 2026-09-05. Its remote model catalog makes Astra usable even
-though that binary predates the model's release.
+(`tool_use`): its remote model catalog made Astra usable although that binary
+predated the model's release.
 
-## One-time setup: Codex OAuth login
+## Remote recovery (SSO-gated web UI)
 
-CLIProxyAPI needs its own Codex session. Once per PVC (the token is refreshed in place
-afterward), run the device login against the running pod:
+Use the [management UI](https://cli-proxy-api-admin.allegedly.works/management.html)
+to add or renew a Codex, Claude or Antigravity OAuth session from a browser.
+
+1. Choose **Sign in with SSO**, then open **OAuth Login**.
+2. Choose **Start Codex Login**, **Start Anthropic Login** or **Start Antigravity Login**.
+   Open the authorization link and complete sign-in in the provider's tab.
+3. When the provider redirects to a localhost URL, copy that full URL from the address
+   bar back into the management UI and choose **Submit Callback URL**.
+4. Wait for authentication to succeed, then verify the account appears in **Auth Files**.
+
+The Gateway routes the admin host directly to CLIProxyAPI. Authentik policy and the
+backend subject allowlist restrict sign-in to `agentydragon`. The browser session
+authenticates same-origin `/v8/management` requests. The
+[OIDC configuration](../../../third_party/cli_proxy_api/README.md#oidc-configuration)
+documents session expiry, logout and management-key authentication.
+
+The confidential provider and reflected `cli-proxy-api-admin-oidc` Secret are owned
+by [the Authentik Terraform configuration](../../../tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf).
+It uses the owner's numeric Authentik ID as the subject and registers
+`https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback`
+for SSO sign-in. The provider redirect pasted in step 3 belongs to the separate
+subscription OAuth flow.
+
+AIQuota calls the in-cluster `/v0/management` API with `MANAGEMENT_PASSWORD`. Its
+`/api-call` requests use the opaque `auth_index` for `$TOKEN$` substitution.
+The `cli-proxy-api.allegedly.works` hostname only routes `/v1` model requests.
+
+## Login with kubectl
+
+Use these commands when you have cluster access and need to log in from the running
+pod. The server watches `/data/auth` on the state PVC and refreshes the saved
+credentials. Verify the account in **Auth Files**. The packaged image is
+distroless, so shell commands such as `sh` and `find` are unavailable.
+
+### Codex device login
 
 ```bash
 kubectl -n cli-proxy-api exec -it deploy/cli-proxy-api -- \
   ./CLIProxyAPI -codex-device-login -no-browser -config /config/config.yaml
 ```
 
-Open the printed URL, enter the code, approve with the ChatGPT account. CLIProxyAPI writes
-`/data/auth/auth.json` (PVC) and its file watcher loads it without a restart. The PVC
-persists the token across pod restarts; the auto-refresh worker (15m) keeps it valid.
+Open the printed URL, enter the device code and approve with the ChatGPT account.
 
-## One-time setup: Claude OAuth login
+### Claude OAuth login
 
-Run this only when adding or re-authenticating the Claude subscription. Keep the
-callback local: do not publish port `54545` through the Service or public route.
-
-In one terminal, forward the callback port to the pod:
+Forward the callback port locally. Keep port `54545` off the Service and public route.
 
 ```bash
 kubectl -n cli-proxy-api port-forward deploy/cli-proxy-api 54545:54545
 ```
 
-In a second terminal, start the one-shot login process:
+In a second terminal, start the one-shot login process.
 
 ```bash
 kubectl -n cli-proxy-api exec -it deploy/cli-proxy-api -- \
@@ -63,52 +91,9 @@ kubectl -n cli-proxy-api exec -it deploy/cli-proxy-api -- \
   -oauth-callback-port 54545 -config /config/config.yaml
 ```
 
-Open the printed Anthropic authorization URL in the local browser and finish
-the login. Anthropic redirects to `http://localhost:54545/callback`; the
-port-forward delivers that callback to the process in the pod. CLIProxyAPI
-writes the Claude auth file, including its refresh token, under `/data/auth`.
-The normal server process watches that directory and then owns future refreshes.
-
-Verify the new account appears in the management UI's auth-file list. The packaged
-image is distroless, so shell commands such as `sh` and `find` are unavailable.
-
-AIQuota has no fallback token path; this keeps the quota service from
-maintaining two Claude credential owners.
-
-AIQuota uses the management API's opaque `auth_index` only because the current
-`/api-call` contract requires it for `$TOKEN$` substitution. It never reads or
-stores the auth file or either OAuth token.
-
-## Remote recovery (SSO-gated web UI)
-
-The Codex/Claude OAuth sessions above periodically die (OpenAI/Anthropic invalidate the
-refresh token) and previously could only be recovered by the interactive `kubectl exec`
-device-login flow, which needs a machine with cluster access — not a phone. CLIProxyAPI's
-own [management API](https://help.router-for.me/management/api) already covers this:
-`GET /v0/management/{codex,anthropic,antigravity}-auth-url` returns a provider login URL
-plus a `state`; `GET /v0/management/get-auth-status?state=...` polls it; `GET`/`POST
-/v0/management/oauth-callback` completes it (unauthenticated, since it only carries the
-provider's redirect). The rest of the management API and the bundled web UI it serves at
-`/management.html` on the same port ride along.
-
-Open [the management UI](https://cli-proxy-api-admin.allegedly.works/management.html)
-and choose **Sign in with SSO**. The Gateway routes directly to CLIProxyAPI, which
-uses Authentik OIDC and a secure browser session cookie. Both the Authentik
-application policy and the backend subject allowlist restrict access to
-`agentydragon`. No management key needs to be copied into the browser.
-
-The confidential provider and reflected `cli-proxy-api-admin-oidc` Secret are owned
-by `tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf`. The provider uses
-`sub_mode = "user_id"`, so the backend allowlist contains the owner's numeric
-Authentik ID. Its strict callback is
-`https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback`.
-
-Sessions are process-local, so restarting the single replica revokes them. Lifetime and
-logout behavior: <../../../third_party/cli_proxy_api/README.md> § "OIDC configuration".
-
-`MANAGEMENT_PASSWORD` remains enabled for AIQuota's direct management-key access.
-The existing client key protects model requests, including direct LiteLLM traffic.
-The `cli-proxy-api.allegedly.works` hostname only routes `/v1` model requests.
+Open the printed Anthropic authorization URL in the local browser and finish login.
+The port-forward delivers the provider redirect at `http://localhost:54545/callback`
+to the login process in the pod.
 
 ## Patched image
 
@@ -140,5 +125,5 @@ Rotate the client key: generate a new value and update `client-key.sops.yaml` on
 CLIProxyAPI holds and refreshes **dedicated** Claude and Codex OAuth sessions. LiteLLM owns no
 subscription OAuth credential or auth PVC: its `chatgpt-sub/*` routes proxy model traffic to
 CLIProxyAPI with an API key, while its `anthropic-api/*` routes use the separate Anthropic API
-key and its `anthropic-max20/*` routes use the Claude subscription session. This keeps AIQuota
-from mounting or writing the CLIProxyAPI PVC.
+key and its `anthropic-max20/*` routes use the Claude subscription session. AIQuota uses
+the management client for quota reads and holds no provider OAuth credentials.

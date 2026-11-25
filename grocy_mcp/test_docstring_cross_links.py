@@ -14,7 +14,6 @@ from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
 from grocy_mcp.client import GrocyClient
-from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.request_scoped_openapi import borrowed_http_client_provider
 from grocy_mcp.server import build_mcp
@@ -39,9 +38,6 @@ _RESIDUAL_TOKENS: set[str] = {
     # OpenAPI-generated tokens not in our models
     "force_serve_as",
     "picture",
-    # Server-computed columns referenced by the entity_update warning
-    # (named in the "don't round-trip these" list — not writable).
-    "has_sub_products",
     # Literal string/boolean values used as parameter values in descriptions
     "brief",
     "full",
@@ -71,11 +67,7 @@ async def test_docstring_cross_links_resolve() -> None:
 
     actual_names = {t.name for t in tools}
     tool_ref_re = re.compile(r"`([a-z][a-z0-9_]*)`")
-    known_non_tools = (
-        PRODUCT_WRITABLE_FIELDS
-        | _RESIDUAL_TOKENS
-        | _schema_tokens([[tool.input_schema, tool.output_schema] for tool in tools])
-    )
+    known_non_tools = _RESIDUAL_TOKENS | _schema_tokens([[tool.input_schema, tool.output_schema] for tool in tools])
 
     def _refs_in(text: str) -> set[str]:
         return {tok for tok in tool_ref_re.findall(text) if tok not in known_non_tools}

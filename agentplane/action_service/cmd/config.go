@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"regexp"
@@ -13,11 +11,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	"github.com/go-viper/mapstructure/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -94,18 +92,10 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("action_groups: %w", err)
 	}
 	// The errors name no value: a setting can be a Secret.
-	decodeHook := mapstructure.ComposeDecodeHookFunc(
-		mapstructure.TextUnmarshallerHookFunc(),
-		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
-	)
 	// Keep Viper's weak scalar conversions for compatibility with existing settings files.
-	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result: &c, TagName: "mapstructure", ErrorUnused: true, WeaklyTypedInput: true, DecodeHook: decodeHook,
-	})
-	if err != nil {
-		return config{}, fmt.Errorf("invalid Action Service settings: %w", err)
-	}
-	if err := decoder.Decode(file.Others); err != nil {
+	if err := configfile.DecodeMapstructure(file.Others, &c, configfile.MapstructureOptions{
+		DecodeHook: listener.AuthenticationDecodeHook, WeaklyTypedInput: true,
+	}); err != nil {
 		return config{}, errors.New("invalid Action Service settings")
 	}
 	c.DatabaseURL = os.Getenv(databaseURLSecretEnv)
@@ -291,18 +281,16 @@ type settingsFile struct {
 
 func readSettingsFile(path string) (settingsFile, error) {
 	var file settingsFile
-	document, err := os.ReadFile(path)
-	if err != nil {
-		return file, errors.New("could not read Action Service settings file")
-	}
-	decoder := yaml.NewDecoder(bytes.NewReader(document))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&file); err != nil {
-		return file, fmt.Errorf("settings file: %w", withoutValues(err))
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return file, errors.New("Action Service settings file must contain exactly one YAML document")
+	if err := configfile.DecodeKnownFieldsFile(path, &file); err != nil {
+		var readError *os.PathError
+		switch {
+		case errors.As(err, &readError):
+			return file, errors.New("could not read Action Service settings file")
+		case errors.Is(err, configfile.ErrMultipleDocuments), errors.Is(err, configfile.ErrTrailingYAML):
+			return file, errors.New("Action Service settings file must contain exactly one YAML document")
+		default:
+			return file, fmt.Errorf("settings file: %w", withoutValues(err))
+		}
 	}
 	return file, nil
 }

@@ -14,8 +14,9 @@ use crate::paths::{
     join_module_path, module_path_child_of, module_path_directory_ancestors, module_path_dirname,
     module_path_first_segment, module_path_is_within,
 };
-use crate::reports::{ChunkDecompositionOutput, ModuleRef, SelectedModuleLowering, write_json};
+use crate::reports::{ChunkDecompositionOutput, ModuleRef, SelectedModuleLowering};
 use output_layout::{report_path_for_directory, report_path_for_file};
+use report_io::write_json;
 use source_identity::ChunkId;
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,13 +68,12 @@ pub struct OutputFileMetric {
 
 impl OutputMetrics {
     /// Build aggregate metrics from the files rendered by the output writer.
-    pub fn from_file_metrics(metrics: impl IntoIterator<Item = OutputFileMetric>) -> Self {
-        let metrics = metrics.into_iter().collect::<Vec<_>>();
+    pub fn from_file_metrics(metrics: &[OutputFileMetric], path_prefix: &str) -> Self {
         let total = OutputSize::sum(metrics.iter());
-        let top_level_entry = size_for_role(&metrics, OutputRole::TopLevelEntry);
-        let named_modules = size_for_role(&metrics, OutputRole::NamedModule);
-        let residual_modules = size_for_role(&metrics, OutputRole::ResidualModule);
-        let other_files = size_for_role(&metrics, OutputRole::Other);
+        let top_level_entry = size_for_role(metrics, OutputRole::TopLevelEntry);
+        let named_modules = size_for_role(metrics, OutputRole::NamedModule);
+        let residual_modules = size_for_role(metrics, OutputRole::ResidualModule);
+        let other_files = size_for_role(metrics, OutputRole::Other);
         OutputMetrics {
             named_module_fraction: output_fraction(&named_modules, &total),
             residual_module_fraction: output_fraction(&residual_modules, &total),
@@ -83,7 +83,7 @@ impl OutputMetrics {
             named_modules,
             residual_modules,
             other_files,
-            largest_files_by_bytes: largest_files_by_bytes(metrics),
+            largest_files_by_bytes: largest_files_by_bytes(metrics, path_prefix),
         }
     }
 }
@@ -502,8 +502,6 @@ impl DirectoryAccumulator {
     }
 
     fn into_manifest(self, path: String) -> DirectoryManifestIndex {
-        let incoming = self.incoming.into_summary().into();
-        let outgoing = self.outgoing.into_summary().into();
         DirectoryManifestIndex {
             path,
             directories: self.directories.into_iter().collect(),
@@ -512,18 +510,15 @@ impl DirectoryAccumulator {
             modules: self.modules.into_iter().collect(),
             defined_symbols: self.defined_symbols,
             loc: self.loc,
-            incoming,
-            outgoing,
+            incoming: self.incoming.into_summary(),
+            outgoing: self.outgoing.into_summary(),
         }
     }
 }
 
 #[derive(Default)]
 struct DirectionalDirectoryAccumulator {
-    edge_count: usize,
-    edge_count_by_kind: BTreeMap<String, usize>,
-    symbols: BTreeMap<String, usize>,
-    external_files: BTreeMap<String, usize>,
+    counts: BoundaryCounts,
     edges: BTreeMap<(String, String), DirectoryEdgeAccumulator>,
 }
 
@@ -539,36 +534,30 @@ struct DirectionalDirectoryFact<'a> {
 
 impl DirectionalDirectoryAccumulator {
     fn add_fact(&mut self, fact: DirectionalDirectoryFact<'_>) {
-        let kind: &'static str = fact.edge_kind.into();
-        self.edge_count += 1;
-        *self.edge_count_by_kind.entry(kind.to_string()).or_default() += 1;
-        if let Some(symbol) = fact.symbol {
-            *self.symbols.entry(symbol.to_string()).or_default() += 1;
-        }
-        *self
-            .external_files
-            .entry(fact.external_file.to_string())
-            .or_default() += 1;
+        self.counts
+            .add_fact(fact.external_file, fact.edge_kind, fact.symbol);
         self.edges
-            .entry((fact.source_dir.clone(), fact.target_dir.clone()))
-            .or_insert_with(|| DirectoryEdgeAccumulator {
-                source_dir: fact.source_dir,
-                target_dir: fact.target_dir,
-                ..Default::default()
-            })
-            .add_fact(fact.source_file, fact.target_file, kind, fact.symbol);
+            .entry((fact.source_dir, fact.target_dir))
+            .or_default()
+            .add_fact(
+                fact.source_file,
+                fact.target_file,
+                fact.edge_kind.into(),
+                fact.symbol,
+            );
     }
 
-    fn into_summary(self) -> DirectionalSummary {
-        DirectionalSummary {
-            edge_count: self.edge_count,
-            edge_count_by_kind: self.edge_count_by_kind,
-            symbols: self.symbols,
-            external_files: self.external_files,
+    fn into_summary(self) -> DirectoryBoundarySummary {
+        let counts = self.counts.into_file_summary();
+        DirectoryBoundarySummary {
+            edge_count: counts.edge_count,
+            edge_count_by_kind: counts.edge_count_by_kind,
+            symbols: counts.symbols,
+            files: counts.files,
             edges: self
                 .edges
-                .into_values()
-                .map(|edge| edge.into_manifest())
+                .into_iter()
+                .map(|((source, target), edge)| edge.into_manifest(source, target))
                 .collect(),
         }
     }
@@ -576,9 +565,6 @@ impl DirectionalDirectoryAccumulator {
 
 #[derive(Default)]
 struct DirectoryEdgeAccumulator {
-    source_dir: String,
-    target_dir: String,
-    edge_count: usize,
     edge_count_by_kind: BTreeMap<String, usize>,
     symbols: BTreeMap<String, usize>,
     source_files: BTreeMap<String, usize>,
@@ -587,7 +573,6 @@ struct DirectoryEdgeAccumulator {
 
 impl DirectoryEdgeAccumulator {
     fn add_fact(&mut self, source_file: &str, target_file: &str, kind: &str, symbol: Option<&str>) {
-        self.edge_count += 1;
         *self.edge_count_by_kind.entry(kind.to_string()).or_default() += 1;
         *self
             .source_files
@@ -602,10 +587,14 @@ impl DirectoryEdgeAccumulator {
         }
     }
 
-    fn into_manifest(self) -> DirectoryDependencyEdgeManifest {
+    fn into_manifest(
+        self,
+        source_dir: String,
+        target_dir: String,
+    ) -> DirectoryDependencyEdgeManifest {
         DirectoryDependencyEdgeManifest {
-            source_dir: self.source_dir,
-            target_dir: self.target_dir,
+            source_dir,
+            target_dir,
             edge_count_by_kind: histogram_into_pairs(self.edge_count_by_kind),
             symbols: histogram_into_pairs(self.symbols),
             source_files: histogram_into_pairs(self.source_files),
@@ -622,41 +611,21 @@ fn histogram_into_pairs(map: BTreeMap<String, usize>) -> EdgeHistogram {
     map.into_iter().collect()
 }
 
-struct DirectionalSummary {
-    edge_count: usize,
-    edge_count_by_kind: BTreeMap<String, usize>,
-    symbols: BTreeMap<String, usize>,
-    external_files: BTreeMap<String, usize>,
-    edges: Vec<DirectoryDependencyEdgeManifest>,
-}
-
-impl From<DirectionalSummary> for DirectoryBoundarySummary {
-    fn from(summary: DirectionalSummary) -> Self {
-        Self {
-            edge_count: summary.edge_count,
-            edge_count_by_kind: histogram_into_pairs(summary.edge_count_by_kind),
-            symbols: histogram_into_pairs(summary.symbols),
-            files: histogram_into_pairs(summary.external_files),
-            edges: summary.edges,
-        }
-    }
-}
-
 #[derive(Default)]
 struct FileAccumulator {
-    incoming: DirectionalFileAccumulator,
-    outgoing: DirectionalFileAccumulator,
+    incoming: BoundaryCounts,
+    outgoing: BoundaryCounts,
 }
 
 #[derive(Default)]
-struct DirectionalFileAccumulator {
+struct BoundaryCounts {
     edge_count: usize,
     edge_count_by_kind: BTreeMap<String, usize>,
     symbols: BTreeMap<String, usize>,
     files: BTreeMap<String, usize>,
 }
 
-impl DirectionalFileAccumulator {
+impl BoundaryCounts {
     fn add_fact(&mut self, external_file: &str, edge_kind: DepKind, symbol: Option<&str>) {
         let kind: &'static str = edge_kind.into();
         self.edge_count += 1;
@@ -688,15 +657,25 @@ fn size_for_role(files: &[OutputFileMetric], role: OutputRole) -> OutputSize {
     OutputSize::sum(files.iter().filter(|file| file.role == role))
 }
 
-fn largest_files_by_bytes(files: Vec<OutputFileMetric>) -> Vec<OutputFileMetric> {
-    let mut sorted = files;
-    sorted.sort_by(|left, right| {
-        right
-            .bytes
-            .cmp(&left.bytes)
-            .then_with(|| left.file.cmp(&right.file))
-    });
-    sorted.into_iter().take(20).collect()
+fn largest_files_by_bytes(files: &[OutputFileMetric], path_prefix: &str) -> Vec<OutputFileMetric> {
+    let mut ranked: Vec<_> = files
+        .iter()
+        .map(|file| {
+            (
+                file.file.strip_prefix(path_prefix).unwrap_or(&file.file),
+                file,
+            )
+        })
+        .collect();
+    ranked.sort_by_key(|(path, file)| (std::cmp::Reverse(file.bytes), *path));
+    ranked
+        .into_iter()
+        .take(20)
+        .map(|(path, file)| OutputFileMetric {
+            file: path.to_owned(),
+            ..file.clone()
+        })
+        .collect()
 }
 
 fn fraction(part: usize, total: usize) -> f64 {

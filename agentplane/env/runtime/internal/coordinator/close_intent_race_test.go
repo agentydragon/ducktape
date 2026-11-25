@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -119,7 +119,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	successor := &heldCloseExecution{started: make(chan struct{}), release: make(chan struct{})}
 	config.deps.startExecution = func(_ context.Context, _ Config, uid string) (executionHandle, error) {
@@ -159,10 +159,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	if successor.fences.Load() != 0 {
 		t.Fatal("Execution fence started before the Session component completed native shutdown")
 	}
-	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("environment owner released while Running preparation was unsettled")
-	}
+	requireOwnerRetained(t, config.StateDir, "environment owner released while Running preparation was unsettled")
 	releaseDemand.Do(func() { close(store.release) })
 	waitSignal(t, successor.started, "successor Execution fence did not start")
 	select {
@@ -170,10 +167,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 		t.Fatalf("Close returned before Execution fence completed: %v", err)
 	default:
 	}
-	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("environment owner released before Execution fence")
-	}
+	requireOwnerRetained(t, config.StateDir, "environment owner released before Execution fence")
 	releaseFence.Do(func() { close(successor.release) })
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close after preparation and fence settled: %v", err)
@@ -184,13 +178,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	if got := successor.fences.Load(); got != 1 {
 		t.Fatalf("successor Execution fence attempts = %d, want 1", got)
 	}
-	owner, err := openTestRuntimeStore(config.StateDir)
-	if err != nil {
-		t.Fatalf("environment owner retained after successful Close: %v", err)
-	}
-	if err := owner.Close(); err != nil {
-		t.Fatal(err)
-	}
+	requireOwnerReleased(t, config.StateDir, "environment owner retained after successful Close")
 }
 
 type blockedSuccessorClose struct {
@@ -209,7 +197,7 @@ func startBlockedSuccessorClose(t *testing.T, failWatch <-chan struct{}) *blocke
 	}
 	workspace := t.TempDir()
 	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
-	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	config.expectCloseError = true
 	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {

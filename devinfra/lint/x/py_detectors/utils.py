@@ -8,14 +8,16 @@ EXCLUDES = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__
 
 
 def iter_py_files(root: Path) -> Iterable[Path]:
-    for p in root.rglob("*.py"):
-        parts = set(p.parts)
-        if parts & EXCLUDES:
-            continue
-        yield p
+    if EXCLUDES.intersection(root.parts):
+        return
+    for directory, subdirs, filenames in root.walk():
+        subdirs[:] = [name for name in subdirs if name not in EXCLUDES]
+        for name in filenames:
+            if name.endswith(".py"):
+                yield directory / name
 
 
-def parse_python_file(path: Path) -> tuple[ast.AST, str] | None:
+def parse_python_file(path: Path) -> tuple[ast.Module, str] | None:
     """Read and parse a Python file, returning (tree, source) or None if unparseable."""
     try:
         text = path.read_text(encoding="utf-8")
@@ -30,17 +32,3 @@ def is_broad_exception(handler: ast.ExceptHandler) -> bool:
     if handler.type is None:
         return True
     return isinstance(handler.type, ast.Name) and handler.type.id in {"Exception", "BaseException"}
-
-
-def read_snippet(path: Path, start: int, end: int | None, context: int = 0) -> str:
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        # File unreadable - return empty snippet
-        return ""
-    lines = text.splitlines()
-    s = max(1, start - context)
-    e = min(len(lines), (end or start) + context)
-    # 1-based indexing for display
-    out = [f"{i:>5}: {lines[i - 1]}" for i in range(s, e + 1)]
-    return "\n".join(out)

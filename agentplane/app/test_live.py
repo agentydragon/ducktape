@@ -348,8 +348,7 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
         thread_id = uuid4()
         await ThreadHTTP(http).rename(thread_id, "Metadata during listener gap")
         reconnect.set()
-        recovered = await _wait_updates_connected(stream, connected=True)
-        assert recovered["updatesConnected"] is True
+        await _wait_updates_connected(stream, connected=True)
         page = (await http.get("/upstream/app/v1/threads")).json()
         assert [thread["threadId"] for thread in page["threads"]] == [str(thread_id)]
 

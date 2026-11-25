@@ -12,6 +12,7 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/EsmSplit"
 for f in Bundle Plan Semantics Correct Fast Split; do
   sed -e 's/^abbrev Name := String/abbrev Name := Nat/' -e 's/^abbrev ModName := String/abbrev ModName := Nat/' \
+    -e 's/^def aliasName .*/def aliasName (u : Name) (k : Nat) : Name := u + k/' \
     "$lean/EsmSplit/$f.lean" >"$work/EsmSplit/$f.lean"
 done
 cp "$lean/lean-toolchain" "$work/"

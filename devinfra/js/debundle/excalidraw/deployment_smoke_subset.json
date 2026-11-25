@@ -1,0 +1,594 @@
+{
+  "modules": [
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/constants",
+      "bindings": [
+        "APP_NAME",
+        "TEXT_AUTOWRAP_THRESHOLD",
+        "DRAGGING_THRESHOLD",
+        "LINE_CONFIRM_THRESHOLD",
+        "ELEMENT_SHIFT_TRANSLATE_AMOUNT",
+        "ELEMENT_TRANSLATE_AMOUNT",
+        "TEXT_TO_CENTER_SNAP_THRESHOLD",
+        "SHIFT_LOCKING_ANGLE",
+        "DEFAULT_LASER_COLOR",
+        "CURSOR_TYPE",
+        "POINTER_BUTTON",
+        "POINTER_EVENTS",
+        "YOUTUBE_STATES",
+        "ENV",
+        "CLASSES",
+        "CJK_HAND_DRAWN_FALLBACK_FONT",
+        "WINDOWS_EMOJI_FALLBACK_FONT",
+        "FONT_FAMILY",
+        "FONT_FAMILY_FALLBACKS",
+        "getFontFamilyFallbacks",
+        "THEME",
+        "FRAME_STYLE",
+        "MIN_FONT_SIZE",
+        "DEFAULT_FONT_SIZE",
+        "DEFAULT_FONT_FAMILY",
+        "DEFAULT_TEXT_ALIGN",
+        "DEFAULT_VERTICAL_ALIGN",
+        "DEFAULT_TRANSFORM_HANDLE_SPACING",
+        "SIDE_RESIZING_THRESHOLD",
+        "EPSILON",
+        "DEFAULT_COLLISION_THRESHOLD",
+        "COLOR_WHITE",
+        "COLOR_CHARCOAL_BLACK",
+        "COLOR_VOICE_CALL",
+        "DEFAULT_GRID_SIZE",
+        "DEFAULT_GRID_STEP",
+        "IMAGE_MIME_TYPES",
+        "EXPORT_IMAGE_TYPES",
+        "EXPORT_DATA_TYPES",
+        "IMAGE_RENDER_TIMEOUT",
+        "TAP_TWICE_TIMEOUT",
+        "TOUCH_CTX_MENU_TIMEOUT",
+        "SCROLL_TIMEOUT",
+        "ZOOM_STEP",
+        "MIN_ZOOM",
+        "MAX_ZOOM",
+        "HYPERLINK_TOOLTIP_DELAY",
+        "THEME_FILTER",
+        "DEFAULT_UI_OPTIONS",
+        "MQ_MAX_WIDTH_PORTRAIT",
+        "MQ_MAX_WIDTH_LANDSCAPE",
+        "MQ_MAX_HEIGHT_LANDSCAPE",
+        "MQ_RIGHT_SIDEBAR_MIN_WIDTH",
+        "MAX_DECIMALS_FOR_SVG_EXPORT",
+        "EXPORT_SCALES",
+        "DEFAULT_EXPORT_PADDING",
+        "DEFAULT_MAX_IMAGE_WIDTH_OR_HEIGHT",
+        "MAX_ALLOWED_FILE_BYTES",
+        "SVG_NS",
+        "VERSIONS",
+        "BOUND_TEXT_PADDING",
+        "ARROW_LABEL_WIDTH_FRACTION",
+        "ARROW_LABEL_FONT_SIZE_TO_MIN_WIDTH_RATIO",
+        "VERTICAL_ALIGN",
+        "TEXT_ALIGN",
+        "ELEMENT_READY_TO_ERASE_OPACITY",
+        "DEFAULT_PROPORTIONAL_RADIUS",
+        "DEFAULT_ADAPTIVE_RADIUS",
+        "ROUNDNESS",
+        "ROUGHNESS",
+        "STROKE_WIDTH",
+        "LIBRARY_SIDEBAR_TAB",
+        "CANVAS_SEARCH_TAB",
+        "DEFAULT_SIDEBAR",
+        "TOOL_TYPE",
+        "EDITOR_LS_KEYS",
+        "DEFAULT_FILENAME",
+        "STATS_PANELS",
+        "MIN_WIDTH_OR_HEIGHT",
+        "ARROW_TYPE",
+        "DEFAULT_REDUCED_GLOBAL_ALPHA",
+        "ELEMENT_LINK_KEY"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/utils",
+      "bindings": ["clamp", "round", "roundToStep", "average", "isFiniteNumber", "isCloseTo"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/angle",
+      "bindings": ["normalizeRadians", "degreesToRadians", "radiansToDegrees", "isRightAngleRads"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/vector",
+      "bindings": [
+        "vector",
+        "vectorFromPoint",
+        "vectorCross",
+        "vectorDot",
+        "vectorAdd",
+        "vectorSubtract",
+        "vectorScale",
+        "vectorMagnitudeSq",
+        "vectorMagnitude",
+        "vectorNormalize"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/point",
+      "bindings": [
+        "pointFrom",
+        "pointFromArray",
+        "pointFromVector",
+        "isPoint",
+        "pointsEqual",
+        "pointRotateRads",
+        "pointTranslate",
+        "pointCenter",
+        "pointDistance",
+        "pointDistanceSq",
+        "pointScaleFromOrigin",
+        "isPointWithinBounds"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/typechecks",
+      "bindings": [
+        "isInitializedImageElement",
+        "isImageElement",
+        "isEmbeddableElement",
+        "isIframeElement",
+        "isIframeLikeElement",
+        "isTextElement",
+        "isFrameElement",
+        "isMagicFrameElement",
+        "isFrameLikeElement",
+        "isFreeDrawElement",
+        "isFreeDrawElementType",
+        "isLinearElement",
+        "isLinearElementType",
+        "isArrowElement",
+        "isElbowArrow",
+        "isBindingElement",
+        "isBindingElementType",
+        "isBindableElement",
+        "isRectanguloidElement",
+        "isTextBindableContainer",
+        "isExcalidrawElement",
+        "isFlowchartNodeElement",
+        "hasBoundTextElement",
+        "isBoundToContainer",
+        "isUsingAdaptiveRadius",
+        "isUsingProportionalRadius",
+        "canApplyRoundnessTypeToElement",
+        "getDefaultRoundnessTypeForElement",
+        "isFixedPointBinding"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/heading",
+      "bindings": [
+        "HEADING_RIGHT",
+        "HEADING_DOWN",
+        "HEADING_LEFT",
+        "HEADING_UP",
+        "headingForDiamond",
+        "vectorToHeading",
+        "headingForPoint",
+        "compareHeading",
+        "flipHeading"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/textmeasurements",
+      "bindings": ["getMinTextElementWidth", "getApproxMinLineHeight"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/collision",
+      "bindings": ["shouldTestInside", "hitElementBoundingBoxOnly", "hitElementBoundText"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/cropelement",
+      "bindings": ["getFlipAdjustedCropPosition"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/renderer/renderelement",
+      "bindings": [
+        "isPendingImageElement",
+        "shouldResetImageFilter",
+        "getCanvasPadding",
+        "getRenderOpacity",
+        "cappedElementCanvasSize",
+        "renderSelectionElement"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/scene/comparisons",
+      "bindings": [
+        "hasBackground",
+        "hasStrokeColor",
+        "hasStrokeWidth",
+        "hasStrokeStyle",
+        "toolIsArrow",
+        "canHaveArrowheads"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/bounds",
+      "bindings": [
+        "getBezierValueForT",
+        "solveQuadratic",
+        "getCubicBezierCurveBound",
+        "getMinMaxXYFromCurvePathOps",
+        "generateLinearElementShape",
+        "getVisibleSceneBounds",
+        "doBoundsIntersect"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/scene/scroll",
+      "bindings": ["isOutsideViewPort", "centerScrollOn"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/scene/normalize",
+      "bindings": ["getNormalizedZoom", "getNormalizedGridSize", "getNormalizedGridStep"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/groups",
+      "bindings": [
+        "isSelectedViaGroup",
+        "getSelectedGroupForElement",
+        "getSelectedGroupIds",
+        "editGroupForSelectedElement",
+        "getSelectedGroupIdForElement",
+        "getNewGroupIdsForDuplication",
+        "addToGroup",
+        "removeFromSelectedGroups",
+        "isInGroup"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/snapping",
+      "bindings": [
+        "isGridModeEnabled",
+        "isSnappingEnabled",
+        "areRoughlyEqual",
+        "getPointSnaps",
+        "dedupePoints",
+        "isActiveToolNonLinearSnappable"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/newelement",
+      "bindings": ["getTextElementPositionOffsets", "_deepCopyElement", "deepCopyElement", "regenerateId"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/emitter",
+      "bindings": ["Emitter"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/store",
+      "bindings": ["hiddenObservedAppStateProp", "isObservedAppState", "CaptureUpdateAction", "StoreIncrementEvent"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/renderer/staticsvgscene",
+      "bindings": ["roughSVGDrawWithPrecision", "maybeWrapNodesInFrameClipPath"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/data/json",
+      "bindings": [
+        "filterOutDeletedFiles",
+        "saveAsJSON",
+        "loadFromJSON",
+        "isValidExcalidrawData",
+        "isValidLibrary",
+        "serializeLibraryAsJSON",
+        "saveLibraryAsJSON"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/renderer/staticscene",
+      "bindings": ["GridLineColor", "strokeGrid", "frameClip", "linkIconCanvasCache"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/data/restore",
+      "bindings": [
+        "AllowedExcalidrawActiveTools",
+        "getFontFamilyByName",
+        "repairContainerElement",
+        "repairBoundElement",
+        "repairFrameMembership",
+        "coalesceAppStateValue",
+        "LegacyAppStateMigrations",
+        "restoreAppState",
+        "restore",
+        "restoreLibraryItem",
+        "restoreLibraryItems"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/clipboard",
+      "bindings": [
+        "clipboardContainsElements",
+        "createPasteEvent",
+        "serializeAsClipboardJSON",
+        "copyToClipboard",
+        "parseHTMLTree",
+        "maybeParseHTMLPaste",
+        "parseClipboardEventTextData",
+        "copyBlobToClipboardAsPng"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/data/blob",
+      "bindings": [
+        "isImageFileHandleType",
+        "parseLibraryJSON",
+        "getDataURL",
+        "dataURLToFile",
+        "SVGStringToFile",
+        "ImageURLToFile",
+        "getFileFromEvent",
+        "getFileHandle",
+        "getActualMimeTypeFromImage"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/data/encode",
+      "bindings": ["byteStringToArrayBuffer", "byteStringToString"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/textwrapping",
+      "bindings": ["COMMON", "EMOJI"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/colors",
+      "bindings": ["ELEMENTS_PALETTE_SHADE_INDEXES", "getSpecificColorShades"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/random",
+      "bindings": ["testIdBase", "randomId"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/scene/shape",
+      "bindings": ["getDashArrayDashed", "getDashArrayDotted", "adjustRoughness", "generateRoughOptions"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/utils",
+      "bindings": [
+        "mockDateTime",
+        "getDateTime",
+        "capitalizeString",
+        "isToolIcon",
+        "isInputLike",
+        "isInteractive",
+        "isWritableElement",
+        "getFontFamilyString",
+        "getFontString",
+        "debounce",
+        "throttleRAF",
+        "easeOut",
+        "easeOutInterpolate",
+        "easeToValuesRAF",
+        "chunk",
+        "distance",
+        "updateActiveTool",
+        "getShortcutKey",
+        "viewportCoordsToSceneCoords",
+        "sceneCoordsToViewportCoords",
+        "getGlobalCSSVariable",
+        "RS_LTR_CHARS",
+        "RS_RTL_CHARS",
+        "tupleToCoors",
+        "muteFSAbortError",
+        "findIndex",
+        "findLastIndex",
+        "isTransparent",
+        "isBindingFallthroughEnabled",
+        "resolvablePromise",
+        "getNearestScrollableContainer",
+        "focusNearestParent",
+        "bytesToHexString",
+        "getUpdatedTimestamp",
+        "arrayToMap",
+        "arrayToMapWithIndex",
+        "arrayToObject",
+        "arrayToList",
+        "isTestEnv",
+        "isDevEnv",
+        "isServerEnv",
+        "wrapEvent",
+        "updateObject",
+        "getFrame",
+        "isPromiseLike",
+        "queryFocusableElements",
+        "_defaultIsShallowComparatorFallback",
+        "isShallowEqual",
+        "composeEventHandlers",
+        "assertNever",
+        "invariant",
+        "memoize",
+        "isMemberOf",
+        "cloneJSON",
+        "updateStable",
+        "addEventListener",
+        "getSvgPathFromStroke",
+        "normalizeEOL",
+        "promiseTry",
+        "isAnyTrue",
+        "escapeDoubleQuotes",
+        "castArray"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/utils/geometry/shape",
+      "bindings": ["getCurvePathOps"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/sizehelpers",
+      "bindings": ["isElementCompletelyInViewport", "getPerfectElementSize"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/resizetest",
+      "bindings": ["isInsideTransformHandle", "RESIZE_CURSORS", "rotateResizeCursor", "getCursorForResizingElement"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/change",
+      "bindings": ["Delta"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/line",
+      "bindings": ["line", "linesIntersectAt"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/segment",
+      "bindings": ["lineSegment", "pointOnLineSegment", "distanceToLineSegment", "lineSegmentIntersectionPoints"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/rectangle",
+      "bindings": ["rectangle", "rectangleIntersectLineSegment"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/curve",
+      "bindings": [
+        "curve",
+        "gradient",
+        "solve",
+        "curveBounds",
+        "bezierEquation",
+        "curveIntersectLineSegment",
+        "curveClosestPoint",
+        "curvePointDistance"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/utils",
+      "bindings": ["deconstructRectanguloidElement"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/transformhandles",
+      "bindings": [
+        "transformHandleSizes",
+        "ROTATION_RESIZE_HANDLE_GAP",
+        "DEFAULT_OMIT_SIDES",
+        "OMIT_SIDES_FOR_LINE_SLASH",
+        "OMIT_SIDES_FOR_LINE_BACKSLASH",
+        "generateTransformHandle",
+        "getTransformHandlesFromCoords",
+        "getTransformHandles",
+        "shouldShowBoundingBox"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "module": "packages/math/polygon",
+      "chunk": "editor",
+      "bindings": [
+        "polygon",
+        "polygonFromPoints",
+        "polygonIncludesPoint",
+        "pointOnPolygon",
+        "polygonClose",
+        "polygonIsClosed"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "module": "packages/math/ellipse",
+      "chunk": "editor",
+      "bindings": ["ellipse", "ellipseDistanceFromPoint", "ellipseLineIntersectionPoints"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/triangle",
+      "bindings": ["triangleIncludesPoint"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "main",
+      "module": "packages/excalidraw/renderer/interactivescene",
+      "bindings": ["strokeEllipseWithRotation"],
+      "anonymous_statements": []
+    }
+  ]
+}

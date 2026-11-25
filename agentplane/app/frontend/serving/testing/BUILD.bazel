@@ -7,6 +7,5 @@ package(
 
 oci_layout_py(
     name = "image",
-    testonly = True,
     image = "//agentplane/app/frontend/serving:static_image",
 )

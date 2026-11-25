@@ -6,7 +6,8 @@ Uses the [Atmotube IAQI method](https://atmotube.com/atmocube-support/indoor-air
 
 ## Installation
 
-1. Copy `custom_components/indoor_aqi` directory to your Home Assistant configuration
+1. Copy `custom_components/indoor_aqi` to `<config>/custom_components/indoor_aqi`, where
+   `<config>` is your Home Assistant configuration directory.
 2. Add to your `configuration.yaml`:
 
    ```yaml
@@ -31,22 +32,18 @@ Uses the [Atmotube IAQI method](https://atmotube.com/atmocube-support/indoor-air
 
 3. Restart Home Assistant.
 
-[`configuration_snippet.yaml`](configuration_snippet.yaml) has the current local example. [`dashboard_examples.yaml`](dashboard_examples.yaml) shows dashboard use, including `bottleneck_string` (components within 5 points of the minimum, with values and units) and per-pollutant `iaqi_*` attributes; [`sensor.py`](custom_components/indoor_aqi/sensor.py) owns the complete emitted attribute set.
+The `indoor_aqi` block at the top of the [retained room package](../packages/rai/sensors.yaml)
+records the legacy monitor ID and sensor mappings. Copy just that block to reproduce the
+room monitor on a compatible instance. Each monitor can override the top-level `stale_time`.
+
+[`dashboard_examples.yaml`](dashboard_examples.yaml) shows dashboard use, including `bottleneck_string` (components within 5 points of the minimum, with values and units) and per-pollutant `iaqi_*` attributes; [`sensor.py`](custom_components/indoor_aqi/sensor.py) owns the complete emitted attribute set.
 
 ## Development & Testing
 
-### Test Setup with pytest_homeassistant_custom_component
+The Home Assistant pytest plugin installs a `custom_components` namespace rooted in its own
+test configuration. The [fixture](custom_components/indoor_aqi/conftest.py) adds the integration
+directory from this checkout so Home Assistant can discover `indoor_aqi` under Bazel.
 
-The tests use `pytest_homeassistant_custom_component` for Home Assistant fixtures (`hass`, `enable_custom_integrations`, etc.). Running these tests under Bazel requires a workaround in `conftest.py`:
-
-**Custom component discovery path**
-
-The plugin includes its own `custom_components` namespace package. When it loads, `custom_components.__path__` only points to the plugin's `testing_config/custom_components/` directory. HA's loader uses this path to discover integrations, so without intervention, it can't find `indoor_aqi`.
-
-Fix: The `auto_enable_custom_integrations` fixture adds our `custom_components` directory to `custom_components.__path__`:
-
-```python
-cc_path = str(config_dir / "custom_components")
-if cc_path not in custom_components.__path__:
-    custom_components.__path__.insert(0, cc_path)
+```sh
+bbr test //homeassistant/iaqi/...
 ```

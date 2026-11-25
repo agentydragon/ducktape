@@ -101,18 +101,17 @@ pub fn update_chunk_import_order(
 
 fn parse_authoring_config(bytes: &[u8]) -> Result<(AuthoringConfig, serde_yaml::Value)> {
     let value: serde_yaml::Value = serde_yaml::from_slice(bytes)?;
-    let config = serde_yaml::from_value(value.clone()).context("parsing authoring config")?;
+    let config = AuthoringConfig::deserialize(&value).context("parsing authoring config")?;
     Ok((config, value))
 }
 
 /// Read routing policy from provenance-verified authoring configuration bytes.
 /// Uses the same schema as compilation, without reopening an unchecked file.
 pub fn unassigned_mode_from_config(bytes: &[u8], chunk_id: &str) -> Result<UnassignedMode> {
-    let (config, _) = parse_authoring_config(bytes)?;
+    let (mut config, _) = parse_authoring_config(bytes)?;
     config
         .unassigned_mode
-        .get(chunk_id)
-        .cloned()
+        .remove(chunk_id)
         .with_context(|| format!("tree config has no unassigned_mode for graph chunk {chunk_id:?}"))
 }
 
@@ -131,33 +130,15 @@ impl ModuleTreeScope {
     /// roots are configured; `main_chunk_id` does not implicitly add a
     /// separate scope.
     pub fn configured_chunk_ids(config_path: &Path) -> Result<BTreeSet<String>> {
-        let config: AuthoringConfig = read_yaml(config_path)?;
-        validate_module_roots(&config.module_roots)?;
-        Ok(if config.module_roots.is_empty() {
-            [config.main_chunk_id].into_iter().collect()
-        } else {
-            config.module_roots.into_values().collect()
-        })
+        Ok(graph_module_roots(config_path)?.into_keys().collect())
     }
 
     pub fn from_config(config_path: &Path, chunk_id: &str) -> Result<Self> {
-        let config: AuthoringConfig = read_yaml(config_path)?;
-        validate_module_roots(&config.module_roots)?;
-        let roots = if config.module_roots.is_empty() {
-            if config.main_chunk_id != chunk_id {
-                bail!("tree config has no module root for graph chunk {chunk_id:?}");
-            }
-            vec![PathBuf::new()]
-        } else {
-            config
-                .module_roots
-                .into_iter()
-                .filter_map(|(root, chunk)| (chunk == chunk_id).then_some(root))
-                .collect::<Vec<_>>()
-        };
-        if roots.is_empty() {
-            bail!("tree config has no module root for graph chunk {chunk_id:?}");
-        }
+        let roots = graph_module_roots(config_path)?
+            .remove(chunk_id)
+            .with_context(|| {
+                format!("tree config has no module root for graph chunk {chunk_id:?}")
+            })?;
         Ok(Self { roots })
     }
 
@@ -283,13 +264,6 @@ struct VendorPackageSource {
     bundle_export: Option<String>,
 }
 
-struct ModuleSource {
-    chunk_id: String,
-    tree: PathBuf,
-    path: String,
-    module: LogicalModule,
-}
-
 pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSpec> {
     Ok(compile_spec_tree_with_roots(options)?.0)
 }
@@ -308,11 +282,7 @@ pub fn compile_spec_tree_with_roots(
         .embedded_loaders_path
         .map(|path| source_path(source_root, path));
     let layout = DebundleOutputLayout::new(&options.out_root);
-    let module_sources = load_module_sources(
-        &options.modules_root,
-        &config.main_chunk_id,
-        &config.module_roots,
-    )?;
+    let logical_modules = load_logical_modules(&options.modules_root, &roots)?;
     let spec = TransformSpec {
         host_behavior: config.host_behavior,
         program_premises: config.program_premises,
@@ -325,7 +295,7 @@ pub fn compile_spec_tree_with_roots(
             read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks,
             source_root,
         )?,
-        logical_modules: logical_modules_map(module_sources)?,
+        logical_modules,
         chunk_renames: config.chunk_renames,
         import_order: config.import_order,
         unassigned_mode: config.unassigned_mode,
@@ -420,30 +390,47 @@ fn read_yaml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
     serde_yaml::from_str(&yaml).with_context(|| format!("parsing {}", path.display()))
 }
 
-fn load_module_sources(
+fn load_logical_modules(
     modules_root: &Path,
-    main_chunk_id: &str,
-    module_roots: &BTreeMap<PathBuf, String>,
-) -> Result<Vec<ModuleSource>> {
-    if module_roots.is_empty() {
-        return load_chunk_modules(modules_root, Path::new(""), main_chunk_id);
+    roots_by_chunk: &BTreeMap<String, Vec<PathBuf>>,
+) -> Result<BTreeMap<String, BTreeMap<String, LogicalModule>>> {
+    let mut out = BTreeMap::new();
+    for (chunk, roots) in roots_by_chunk {
+        let mut modules = BTreeMap::new();
+        for tree in roots {
+            let mut directory = modules_root.to_owned();
+            directory.extend(tree.components());
+            let files = collect_module_files(&directory).with_context(|| {
+                format!(
+                    "loading module root {} for chunk {chunk:?}",
+                    directory.display()
+                )
+            })?;
+            for file in files {
+                let path = module_path_from_file(&file, &directory);
+                let module = read_module_file(&file)?;
+                if let Some((first, _)) = modules.insert(path.clone(), (tree, module)) {
+                    bail!(
+                        "module_roots entries `{}` and `{}` both define module `{}` of chunk `{}`",
+                        first.display(),
+                        tree.display(),
+                        path,
+                        chunk,
+                    );
+                }
+            }
+        }
+        if !modules.is_empty() {
+            out.insert(
+                chunk.clone(),
+                modules
+                    .into_iter()
+                    .map(|(path, (_, module))| (path, module))
+                    .collect(),
+            );
+        }
     }
-
-    validate_module_roots(module_roots)?;
-    let mut active = Vec::new();
-    for (relative_root, chunk_id) in module_roots {
-        active.extend(
-            load_chunk_modules(&modules_root.join(relative_root), relative_root, chunk_id)
-                .with_context(|| {
-                    format!(
-                        "loading module_roots entry `{}` for chunk `{chunk_id}`",
-                        relative_root.display()
-                    )
-                })?,
-        );
-    }
-    active.sort_by(|left, right| (&left.chunk_id, &left.path).cmp(&(&right.chunk_id, &right.path)));
-    Ok(active)
+    Ok(out)
 }
 
 /// Roots are normalized relative paths and no tree contains another, so a
@@ -468,41 +455,20 @@ fn validate_module_roots(module_roots: &BTreeMap<PathBuf, String>) -> Result<()>
             );
         }
     }
-    let roots = module_roots.keys().collect::<Vec<_>>();
-    for (index, left) in roots.iter().enumerate() {
-        for right in &roots[index + 1..] {
-            if left.starts_with(right) || right.starts_with(left) {
-                bail!(
-                    "module_roots entries `{}` and `{}` overlap",
-                    left.display(),
-                    right.display()
-                );
-            }
+    for root in module_roots.keys() {
+        if let Some(parent) = root
+            .ancestors()
+            .skip(1)
+            .find(|ancestor| module_roots.contains_key(*ancestor))
+        {
+            bail!(
+                "module_roots entries `{}` and `{}` overlap",
+                parent.display(),
+                root.display()
+            );
         }
     }
     Ok(())
-}
-
-/// The modules of the tree at `modules_root`, scoped to `chunk_id`; `tree`
-/// is its `module_roots` entry (empty without `module_roots`).
-fn load_chunk_modules(
-    modules_root: &Path,
-    tree: &Path,
-    chunk_id: &str,
-) -> Result<Vec<ModuleSource>> {
-    let mut active = Vec::new();
-    for path in collect_module_files(modules_root)? {
-        let module_path = module_path_from_file(&path, modules_root);
-        let data = read_module_file(&path)?;
-        active.push(ModuleSource {
-            chunk_id: chunk_id.to_string(),
-            tree: tree.to_path_buf(),
-            path: module_path,
-            module: data,
-        });
-    }
-    active.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(active)
 }
 
 fn vendor_map(
@@ -536,7 +502,7 @@ fn vendor_map(
 }
 
 impl VendorMarkSource {
-    fn into_vendor_level(self, source_root: Option<&Path>) -> Result<VendorLevel> {
+    fn into_vendor_level(mut self, source_root: Option<&Path>) -> Result<VendorLevel> {
         match self.level {
             VendorLevelSource::Swap => {
                 self.ensure_no_partial_swap_payload()?;
@@ -556,89 +522,63 @@ impl VendorMarkSource {
             }
             VendorLevelSource::PartialSwap => {
                 self.ensure_no_swap_payload()?;
-                let packages = self.packages.clone().with_context(|| {
-                    format!(
-                        "vendor mark {} (partial_swap) missing `packages`",
-                        self.chunk_path
-                    )
-                })?;
-                let symbols = self.symbols.clone().with_context(|| {
-                    format!(
-                        "vendor mark {} (partial_swap) missing `symbols`",
-                        self.chunk_path
-                    )
-                })?;
-                self.ensure_symbols_reference_known_packages("partial_swap", &packages, &symbols)?;
+                let (packages, symbols) = self.into_partial_tables(
+                    "partial_swap",
+                    VendorPackageSource::into_partial_swap_package,
+                )?;
                 Ok(VendorLevel::PartialSwap(PartialSwapMark {
-                    packages: packages
-                        .into_iter()
-                        .map(|(name, package)| {
-                            Ok((name, package.into_partial_swap_package(&self.chunk_path)?))
-                        })
-                        .collect::<Result<_>>()?,
+                    packages,
                     symbols,
                 }))
             }
             VendorLevelSource::BundledPartialSwap => {
                 self.ensure_no_swap_payload()?;
-                let bundle = self.bundle.clone().with_context(|| {
+                let bundle = self.bundle.take().with_context(|| {
                     format!(
                         "vendor mark {} (bundled_partial_swap) missing `bundle`",
                         self.chunk_path
                     )
                 })?;
-                let packages = self.packages.clone().with_context(|| {
-                    format!(
-                        "vendor mark {} (bundled_partial_swap) missing `packages`",
-                        self.chunk_path
-                    )
-                })?;
-                let symbols = self.symbols.clone().with_context(|| {
-                    format!(
-                        "vendor mark {} (bundled_partial_swap) missing `symbols`",
-                        self.chunk_path
-                    )
-                })?;
-                self.ensure_symbols_reference_known_packages(
+                let (packages, symbols) = self.into_partial_tables(
                     "bundled_partial_swap",
-                    &packages,
-                    &symbols,
+                    VendorPackageSource::into_bundled_partial_swap_package,
                 )?;
                 Ok(VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
                     bundle: BundledPartialSwapBundle {
                         path: source_path(source_root, bundle.path),
                     },
-                    packages: packages
-                        .into_iter()
-                        .map(|(name, package)| {
-                            Ok((
-                                name,
-                                package.into_bundled_partial_swap_package(&self.chunk_path)?,
-                            ))
-                        })
-                        .collect::<Result<_>>()?,
+                    packages,
                     symbols,
                 }))
             }
         }
     }
 
-    fn ensure_symbols_reference_known_packages(
-        &self,
+    fn into_partial_tables<P>(
+        self,
         level: &str,
-        packages: &BTreeMap<String, VendorPackageSource>,
-        symbols: &BTreeMap<String, PartialSwapSymbol>,
-    ) -> Result<()> {
-        for (chunk_export, symbol) in symbols {
+        compile_package: fn(VendorPackageSource, &str) -> Result<P>,
+    ) -> Result<(BTreeMap<String, P>, BTreeMap<String, PartialSwapSymbol>)> {
+        let path = &self.chunk_path;
+        let packages = self
+            .packages
+            .with_context(|| format!("vendor mark {path} ({level}) missing `packages`"))?;
+        let symbols = self
+            .symbols
+            .with_context(|| format!("vendor mark {path} ({level}) missing `symbols`"))?;
+        for (chunk_export, symbol) in &symbols {
             if !packages.contains_key(&symbol.package) {
                 bail!(
-                    "vendor mark {} ({level}) symbol {chunk_export} references unknown package `{}`",
-                    self.chunk_path,
+                    "vendor mark {path} ({level}) symbol {chunk_export} references unknown package `{}`",
                     symbol.package
                 );
             }
         }
-        Ok(())
+        let packages = packages
+            .into_iter()
+            .map(|(name, package)| Ok((name, compile_package(package, path)?)))
+            .collect::<Result<_>>()?;
+        Ok((packages, symbols))
     }
 
     fn ensure_no_swap_payload(&self) -> Result<()> {
@@ -697,31 +637,6 @@ impl VendorPackageSource {
             namespace: self.namespace,
         })
     }
-}
-
-fn logical_modules_map(
-    sources: Vec<ModuleSource>,
-) -> Result<BTreeMap<String, BTreeMap<String, LogicalModule>>> {
-    let mut out = BTreeMap::new();
-    let mut trees = BTreeMap::<(String, String), PathBuf>::new();
-    for source in sources {
-        if let Some(first) = trees.insert(
-            (source.chunk_id.clone(), source.path.clone()),
-            source.tree.clone(),
-        ) {
-            bail!(
-                "module_roots entries `{}` and `{}` both define module `{}` of chunk `{}`",
-                first.display(),
-                source.tree.display(),
-                source.path,
-                source.chunk_id,
-            );
-        }
-        out.entry(source.chunk_id)
-            .or_insert_with(BTreeMap::new)
-            .insert(source.path, source.module);
-    }
-    Ok(out)
 }
 
 #[cfg(test)]

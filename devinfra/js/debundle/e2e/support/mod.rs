@@ -15,6 +15,7 @@ pub mod process;
 mod runtime;
 pub mod saved_analysis;
 mod serialized;
+pub mod source_record_namespace;
 mod tree_assertions;
 mod unescaped_local_callable;
 mod workspace;
@@ -38,8 +39,8 @@ pub use fixture_spec::{
     BindingGroup, ChunkExportPurityBuilder, FixtureOpts, LogicalModuleEntry, Member,
     OPAQUE_TRACE_CYCLE_INSTALL, OPAQUE_TRACE_CYCLE_OUTPUT, OPAQUE_TRACE_CYCLE_SOURCE,
     anonymous_source_unit, binding_members, bundled_vendor_mark, commuting_pair,
-    composed_global_access_fixture, declared_source_unit, logical_module, logical_module_with_anon,
-    logical_module_with_anon_alpha, logical_module_with_anon_comment,
+    composed_global_access_fixture, declared_source_unit, import_priority_fixture, logical_module,
+    logical_module_with_anon, logical_module_with_anon_alpha, logical_module_with_anon_comment,
     logical_module_with_binding_groups, logical_module_with_comment, member_source_unit,
     mixed_selector_failure_fixture, opaque_trace_cycle_fixture, source_match_module_yaml,
     source_match_selector, source_sha256, unassigned_mode_catchall_file,
@@ -949,17 +950,6 @@ pub(crate) struct BrowserHarnessFixture {
     pub(crate) out_dir: PathBuf,
 }
 
-#[derive(Serialize)]
-struct AssetSummaryFixture<'a> {
-    #[serde(rename = "entryPoints")]
-    entry_points: AssetSummaryEntryPoints<'a>,
-}
-
-#[derive(Serialize)]
-struct AssetSummaryEntryPoints<'a> {
-    html: &'a str,
-}
-
 fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
     let root = CaseWorkspace::default();
     let extracted_root = root.path().join("extracted");
@@ -983,10 +973,7 @@ fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
         let asset_summary_path = extracted_root.join("asset-summary.json");
         write_text_file(
             &asset_summary_path,
-            &serde_json::to_string(&AssetSummaryFixture {
-                entry_points: AssetSummaryEntryPoints { html: "index.html" },
-            })
-            .unwrap(),
+            r#"{"entryPoints":{"html":"index.html"}}"#,
         );
         BrowserHarnessFixture {
             asset_summary_path,
@@ -1167,7 +1154,8 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> T {
 }
 
 pub fn read_gzip_json<T: DeserializeOwned>(path: &Path) -> T {
-    read_gzip_json_with_stderr(path, None)
+    report_io::read_json_gzip(path)
+        .unwrap_or_else(|err| panic!("parse gzip JSON report {}: {err}", path.display()))
 }
 
 fn read_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>) -> T {
@@ -1178,20 +1166,16 @@ fn read_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>)
         .unwrap_or_else(|err| panic!("parse JSON report {}: {err}{context}", path.display()))
 }
 
-fn read_gzip_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>) -> T {
-    let context = stderr
-        .map(|stderr| format!("\ndebundler stderr:\n{stderr}"))
-        .unwrap_or_default();
-    report_io::read_json_gzip(path)
-        .unwrap_or_else(|err| panic!("parse gzip JSON report {}: {err}{context}", path.display()))
-}
-
 pub fn debundler_path() -> PathBuf {
     tool_path("DEBUNDLE_TEST_DEBUNDLER")
 }
 
 pub fn analyzer_path() -> PathBuf {
     tool_path("DEBUNDLE_TEST_ANALYZER")
+}
+
+pub fn resolver_path() -> PathBuf {
+    tool_path("DEBUNDLE_TEST_RESOLVER")
 }
 
 pub fn projector_path() -> PathBuf {

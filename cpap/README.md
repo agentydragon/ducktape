@@ -6,7 +6,7 @@ private Forgejo repo `cpap-data/cpap-data`, plus the `cpap` analysis skill
 
 For direct AirSense 11 Bluetooth access from wyrm2, see [Bluetooth pairing](bluetooth.md).
 
-## Status
+## Gateway and scheduled sync
 
 The CronJob runs on the always-on `optiplex` Talos worker. KubeVirt runs a small
 gateway VM there too, with the USB WiFi stick passed through from the host. The
@@ -34,8 +34,8 @@ failed attempts retry every five checks. A different card advertising `ez Share`
 does not trigger recovery. MAC checks prevent accidental recovery of another
 card; they cannot authenticate hardware against deliberate MAC spoofing.
 
-On the first run after this migration, the fresh repo is re-seeded with the card's
-full history (~17+ min over the card's WiFi; the old PVC-era data was discarded).
+The first run against an empty repo re-seeds the card's full history (~17+ min over the
+card's WiFi).
 
 ## Background
 
@@ -44,7 +44,10 @@ full history (~17+ min over the card's WiFi; the old PVC-era data was discarded)
 - Card firmware: `LZ1801EDPG:1.0.0`, XML API at `/client?command=...` + `/download?file=` (8.3 short filenames)
 - Data: `STR.EDF` (daily summary) + `DATALOG/<date>/*.edf` (~2.5 MB/night)
 - WiFi stick: MediaTek MT7921U passed through to the KubeVirt gateway VM on OptiPlex (2.4 GHz USB adapter)
-- Card WiFi credentials: SOPS at `secrets/shared/cpap-ezshare.yaml`
+- The gateway's secret disk uses [the cluster's SOPS Secret](../cluster/k8s/cpap-sync/cpap-ezshare.sops.yaml).
+  The separate [wyrm2 NetworkManager profile](../nix/nixos/hosts/wyrm2/default.nix)
+  reads [the host's SOPS file](../secrets/shared/cpap-ezshare.yaml). Restart the gateway
+  VM after rotating its Secret so the guest reads the updated disk at boot.
 - The card has reverted to the factory SSID and password at least once (2026-10-28) with no
   deliberate reset, and the cause was never established. The vendor manual (Q7) resets them by
   deleting the root `ezshare.cfg`. A zero-byte `ezshare.cfg` with timestamp 1231858834 is normal on
@@ -63,17 +66,16 @@ full history (~17+ min over the card's WiFi; the old PVC-era data was discarded)
   keeps the nightly transfer at KBs + the new files.
 - `sync.py` — the policy: clone, read the committed `sync_meta.json` manifest
   (path → size + card timestamp), download card entries that don't match their
-  manifest entry, then commit + push if anything changed. Direct WiFi
-  association remains available for manual laptop runs; the cluster passes an
-  empty `--wifi-interface` and uses the in-cluster gateway VM. The manifest replaces the
-  PVC-era stat check (git discards mtimes); recording the _stored_ byte count
+  manifest entry, then commit + push if anything changed. It never touches a
+  network interface: the cluster reaches the card through the gateway VM's
+  `cpap-card` Service, and a laptop run must already be on the card's WiFi. The manifest
+  replaces the PVC-era stat check (git discards mtimes); recording the _stored_ byte count
   makes mid-write downloads self-heal on the next run.
 - Image: `git.allegedly.works/ducktape-ci/cpap-sync` (`//cpap:image`,
-  `debian:trixie-slim` + `wpa_supplicant` + `iw` + `iproute2` + `dhclient` + `git` + `ca-certificates` via
-  apt manifest), built by `push-images.yml`, tagged `devel-*` for Flux image
-  automation.
-- Cluster: `cluster/k8s/cpap-sync/` — CronJob and KubeVirt gateway VM on
-  `optiplex`, a selector-backed `cpap-card` Service, and a Cilium egress policy
+  `debian:trixie-slim` + `git` from the apt manifest), built by `push-images.yml`,
+  tagged `devel-*` for Flux image automation.
+- [Cluster resources](../cluster/cdk8s/cpap_sync.py) — CronJob and KubeVirt gateway
+  VM on `optiplex`, a selector-backed `cpap-card` Service, and a Cilium egress policy
   that grants the sync workload only DNS, the card bridge, and Forgejo's
   cluster-facing ports. The WiFi credential is consumed only by the gateway VM's
   NetworkManager bootstrap service.
@@ -89,26 +91,22 @@ namespace, which ESO copies into `cpap-sync`:
 - `cpap-data-git-read` — for analysis (Claude Code); reflected into
   `claude-sandbox`. See `skill/SKILL.md` for clone recipes.
 
-## Manual run (laptop near the CPAP)
+## Manual sync or reseed
+
+Use a laptop with Forgejo write access and routes to both the archive and the card.
+For a direct connection, join the card's WiFi before running the command. The CLI defaults
+to `http://192.168.4.1`. Set `--base-url` to use a different HTTP endpoint. Use the `username`, `password`, and `repo_url` values from the
+`cpap-sync/cpap-data-git-write` Secret through your existing authorized access.
 
 ```bash
-kubectl -n cpap-sync get secret cpap-data-git-write -o jsonpath='{.data.username}' | base64 -d  # etc.
-GIT_USERNAME=cpap-data GIT_PASSWORD=... bazelisk run //cpap:sync_bin -- \
-  --git-url https://git.allegedly.works/cpap-data/cpap-data.git \
-  --wifi-interface ''   # '' = already on the card's WiFi; otherwise CPAP_WIFI_PASSWORD is required
+GIT_USERNAME=cpap-data GIT_PASSWORD=... bb run //cpap:sync_bin -- \
+  --git-url https://git.allegedly.works/cpap-data/cpap-data.git
 ```
 
-Useful if the in-cluster initial seed push ever fails: any machine on the
-card's WiFi with write creds can do the re-seed.
+The manual run uses the same archive and manifest as the CronJob. It can seed an
+empty archive if the initial scheduled push fails.
 
-## Future
+## Future work
 
-- **USB stick placement**: the WiFi stick is physically attached to OptiPlex;
-  Talos exposes it to KubeVirt and the gateway VM owns the userspace
-  association. Restart the VM after rotating `cpap-ezshare`, since the secret
-  disk is consumed during boot.
-- **Roaming devices**: with the PVC gone, the sync can run from any machine
-  near the CPAP (see `cluster/docs/plan.md`).
-- **Listing efficiency**: the card's `GETFILELIST` walk enumerates every
-  directory each run; if listing ever gets slow, the `date` field in
-  `FileEntry` could skip old `DATALOG` directories entirely.
+The card's `GETFILELIST` walk enumerates every directory on each run. If listing
+becomes slow, investigate using `FileEntry.date` to skip old DATALOG directories.

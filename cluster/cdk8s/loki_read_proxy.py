@@ -15,6 +15,7 @@ from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import loki_endpoints
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -93,9 +94,9 @@ def _deployment(chart: Chart) -> None:
             namespace=NAME,
             labels=SERVICE.pods.selector,
             annotations={
-                **namespaces.initial_memory_request_annotations(
-                    ContainerPolicy.memory_requests_only(
-                        "proxy", cpu_request="50m", memory_floor="128Mi", memory_limit="160Mi"
+                **namespaces.initial_request_annotations(
+                    ContainerPolicy.cpu_and_memory_requests_only(
+                        "proxy", cpu_floor="50m", memory_floor="128Mi", memory_ceiling="160Mi"
                     )
                 ),
                 "description": (
@@ -131,21 +132,12 @@ def _deployment(chart: Chart) -> None:
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
-                            ports=[
-                                k8s.ContainerPort(
-                                    name=SERVICE.port.name, container_port=SERVICE.pod_port, protocol="TCP"
-                                )
-                            ],
+                            ports=[SERVICE.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="NAMESPACE_ALLOWLIST", value=",".join(NAMESPACE_ALLOWLIST)),
-                                # Points at loki-read directly, bypassing loki-gateway's nginx —
-                                # matches how Grafana's own datasource reaches Loki. nginx's DNS
-                                # resolver can get permanently pinned to a dead CoreDNS pod IP
-                                # after CoreDNS reschedules (ducktape#4750); this proxy only
-                                # ever queries, so it never needed gateway's read/write path
-                                # routing in the first place. Must stay in sync with the egress
-                                # rule below, which only allows loki-read.
-                                k8s.EnvVar(name="UPSTREAM_URL", value="http://loki-read.loki.svc:3100"),
+                                # Query loki-read directly: the gateway's nginx can stay pinned to a dead
+                                # CoreDNS Pod after it reschedules (#4750).
+                                k8s.EnvVar(name="UPSTREAM_URL", value=loki_endpoints.READ_URL),
                                 # The pod mounts no ServiceAccount token (bearer requests are
                                 # authorized with the caller's own token), so the apiserver CA
                                 # comes from the kube-root-ca.crt ConfigMap volume below.
@@ -179,18 +171,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAME, labels=SERVICE.labels),
-        spec=k8s.ServiceSpec(
-            selector=SERVICE.pods.selector,
-            ports=[
-                k8s.ServicePort(
-                    name=SERVICE.port.name,
-                    port=SERVICE.port.number,
-                    target_port=k8s.IntOrString.from_number(SERVICE.pod_port),
-                    protocol="TCP",
-                )
-            ],
-            type="ClusterIP",
-        ),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.k8s_service_port()], type="ClusterIP"),
     )
     # Who may reach the proxy at all. Anonymous requests are authorized only by the proxy's
     # static allowlist, so this ingress fence is their access control; token-bearing requests
@@ -218,15 +199,7 @@ def chart(app: App) -> Chart:
         egress=[
             # kube-dns (resolve loki-read.loki.svc)
             cilium.dns_egress(),
-            # loki-read (UPSTREAM_URL) — bypasses loki-gateway's nginx entirely (ducktape#4750).
-            EgressRule.to_endpoints(
-                {
-                    "app.kubernetes.io/name": "loki",
-                    "app.kubernetes.io/component": "read",
-                    "k8s:io.kubernetes.pod.namespace": "loki",
-                },
-                3100,
-            ),
+            loki_endpoints.READ.egress(),
             # kube-apiserver: SelfSubjectAccessReview with the caller's bearer token.
             EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443]),
         ],

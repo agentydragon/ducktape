@@ -149,13 +149,6 @@ func lockEnrollmentWhere(ctx context.Context, tx *sql.Tx, column string, value a
 			return e, fmt.Errorf("%w: enrollment %s allows no Connection", errStored, e.id)
 		}
 	}
-	if identity == nil && caller != nil && e.allowed == nil {
-		// Retain this legacy authorization as historical state, but it cannot be activated as an Identity grant.
-		_, err := decodeAccount(caller)
-		if err != nil {
-			return e, err
-		}
-	}
 	return e, nil
 }
 

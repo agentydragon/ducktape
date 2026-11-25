@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"encoding/json"
+	"path"
 	"regexp"
 	"strings"
 	"sync"
@@ -25,6 +26,10 @@ type gmailPreviewProvider interface {
 
 // IntegrationPreviews binds operator lookups to the configured providers.
 type IntegrationPreviews struct {
+	GitHub interface {
+		GitHubLabelSummaries(context.Context, string, string, []string) []*operator_action_servicepb.GitHubLabelSummary
+		GitHubPushFilesPreview(ctx context.Context, owner, repo, branch string, paths []string) *operator_action_servicepb.GetGitHubPushFilesPreviewResponse
+	}
 	GoogleCalendar interface {
 		GoogleCalendarEventPreview(context.Context, string, string) *operator_action_servicepb.GoogleCalendarEventPreview
 		GoogleCalendarSummary(context.Context, string) *operator_action_servicepb.GoogleCalendarSummary
@@ -195,6 +200,109 @@ func gmailReadLabelIDs(receipt store.ActionRequest, id string, thread bool) []st
 		}
 	}
 	return previewIDs(ids)
+}
+
+func (s *OperatorService) GetGitHubLabelSummaries(ctx context.Context, request *operator_action_servicepb.GetGitHubLabelSummariesRequest) (*operator_action_servicepb.GetGitHubLabelSummariesResponse, error) {
+	receipt, err := s.previewRequest(ctx, request.GetRequestId())
+	if err != nil {
+		return nil, err
+	}
+	if receipt.Action.Group != "github" || receipt.Action.Name != "issue_write" {
+		return nil, invalidRequest("request has no matching GitHub preview")
+	}
+	var args struct {
+		Owner       string   `json:"owner"`
+		Repo        string   `json:"repo"`
+		Method      string   `json:"method"`
+		IssueNumber int      `json:"issue_number"`
+		Labels      []string `json:"labels"`
+	}
+	if json.Unmarshal(receipt.Arguments, &args) != nil || args.Method != "update" || args.IssueNumber < 1 || args.Owner == "" || args.Repo == "" {
+		return nil, invalidRequest("invalid GitHub preview arguments")
+	}
+	response := &operator_action_servicepb.GetGitHubLabelSummariesResponse{}
+	if s.previews.GitHub != nil {
+		seen := make(map[string]bool)
+		var names []string
+		for _, name := range args.Labels {
+			if name != "" && len(name) <= 256 && !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+			if len(names) == 8 {
+				break
+			}
+		}
+		response.Labels = s.previews.GitHub.GitHubLabelSummaries(ctx, args.Owner, args.Repo, names)
+	}
+	return response, nil
+}
+
+var githubRepositoryComponent = regexp.MustCompile(`^[A-Za-z0-9_.-]*[A-Za-z0-9_-][A-Za-z0-9_.-]*$`)
+
+func (s *OperatorService) GetGitHubPushFilesPreview(ctx context.Context, request *operator_action_servicepb.GetGitHubPushFilesPreviewRequest) (*operator_action_servicepb.GetGitHubPushFilesPreviewResponse, error) {
+	receipt, err := s.previewRequest(ctx, request.GetRequestId())
+	if err != nil {
+		return nil, err
+	}
+	if receipt.Action.Group != "github" || receipt.Action.Name != "push_files" {
+		return nil, invalidRequest("request has no matching GitHub push preview")
+	}
+	empty := &operator_action_servicepb.GetGitHubPushFilesPreviewResponse{}
+	provider := s.previews.GitHub
+	if receipt.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING || provider == nil {
+		return empty, nil
+	}
+	var args struct {
+		Owner  string
+		Repo   string
+		Branch string
+		Files  []struct{ Path, Content string }
+	}
+	if json.Unmarshal(receipt.Arguments, &args) != nil {
+		return nil, invalidRequest("invalid GitHub push preview arguments")
+	}
+	if !githubRepositoryComponent.MatchString(args.Owner) || !githubRepositoryComponent.MatchString(args.Repo) ||
+		!githubPreviewPath(args.Branch) {
+		return empty, nil
+	}
+	// A duplicate path has no unambiguous proposed content. Limit the payload and the
+	// number of provider calls even when the saved request contains a large push.
+	counts := make(map[string]int)
+	for _, file := range args.Files {
+		counts[file.Path]++
+	}
+	paths := make([]string, 0, min(len(args.Files), 8))
+	for _, file := range args.Files {
+		if counts[file.Path] == 1 && githubPreviewPath(file.Path) && len(file.Content) <= 64*1024 && !strings.ContainsRune(file.Content, 0) {
+			paths = append(paths, file.Path)
+			if len(paths) == cap(paths) {
+				break
+			}
+		}
+	}
+	if len(paths) == 0 {
+		return empty, nil
+	}
+	preview := provider.GitHubPushFilesPreview(ctx, args.Owner, args.Repo, args.Branch, paths)
+	if preview == nil {
+		return empty, nil
+	}
+	current, err := s.previewRequest(ctx, request.GetRequestId())
+	if err != nil {
+		return nil, err
+	}
+	if current.State != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING || current.Version != receipt.Version {
+		return empty, nil
+	}
+	return preview, nil
+}
+
+// Keep preview targets literal across MCP and GitHub HTTP paths. Other saved targets still
+// render as supplied and can be decided without a comparison.
+func githubPreviewPath(value string) bool {
+	return value != "" && value != "." && value != ".." && !strings.HasPrefix(value, "/") &&
+		!strings.HasPrefix(value, "../") && path.Clean(value) == value && !strings.ContainsAny(value, "\\?#%\x00")
 }
 
 func (s *OperatorService) GetTanaNodeSummaries(ctx context.Context, request *operator_action_servicepb.GetTanaNodeSummariesRequest) (*operator_action_servicepb.GetTanaNodeSummariesResponse, error) {

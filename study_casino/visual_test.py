@@ -7,22 +7,18 @@ See `devinfra/pr_visuals/README.md` for the review policy.
 
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 from playwright.async_api import Playwright, ViewportSize
-from python.runfiles import Runfiles
 
 from devinfra.testing.output_writer import BoundTestOutputs
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
+from study_casino.conftest import post_json
 from testing.asgi import serve_app_sync
 from testing.frontend_visual.capture import VisualPage, open_visual_page
 from testing.frontend_visual.context import deterministic_browser_context
@@ -62,14 +58,12 @@ async def view(
 
 
 @pytest.fixture(scope="module")
-def casino_server(request: pytest.FixtureRequest, casino_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
+def casino_server(
+    request: pytest.FixtureRequest, casino_database_template: PostgresDatabaseTemplate, frontend_dist: Path
+) -> Iterator[str]:
     """uvicorn-backed casino server with a writable database for the visual suite."""
     db_name = DatabaseNames(request.node.nodeid)()
     with casino_database_template.clone(db_name) as db_url:
-        frontend_dist = Path(
-            str(Runfiles.CreateOrRaise().root() / "ducktape/study_casino/frontend/dist/index.html")
-        ).parent
-
         # The rendered views want a non-empty UI for prizes/stats. Seed a few
         # sessions and a token balance via the server's own action endpoints
         # right after startup, before the screenshots run.
@@ -86,7 +80,7 @@ def _seed_fixture_state(origin: str) -> None:
     converts a chunk to tokens (so the Vault shows redeemable balance + the
     casino games have credits to wager).
     """
-    _post(
+    post_json(
         origin,
         "/actions/session/add-past",
         {
@@ -96,7 +90,7 @@ def _seed_fixture_state(origin: str) -> None:
             "ended_at_ms": FROZEN_NOW_MS - 6 * 3600 * 1000,
         },
     )
-    _post(
+    post_json(
         origin,
         "/actions/session/add-past",
         {
@@ -106,24 +100,12 @@ def _seed_fixture_state(origin: str) -> None:
             "ended_at_ms": FROZEN_NOW_MS - 2 * 3600 * 1000,
         },
     )
-    _post(origin, "/actions/convert", {"client_action_id": "visual-seed-convert", "amount": 100})
+    post_json(origin, "/actions/convert", {"client_action_id": "visual-seed-convert", "amount": 100})
     # Ack the changelog so the "what's new" modal doesn't cover every view;
     # the modal has its own harness-based visual test (//study_casino/frontend:visual, scenario `changelog`).
-    _post(
+    post_json(
         origin, "/actions/changelog/ack", {"client_action_id": "visual-seed-changelog", "last_id": LATEST_CHANGELOG_ID}
     )
-
-
-def _post(origin: str, path: str, payload: dict) -> None:
-    request = urllib.request.Request(
-        f"{origin}{path}",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        if response.status != 200:
-            raise RuntimeError(f"seed {path} failed: HTTP {response.status}")
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP_VIEWPORT, MOBILE_VIEWPORT], ids=["desktop", "mobile"])

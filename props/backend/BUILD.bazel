@@ -1,4 +1,4 @@
-"""Props backend - FastAPI unified server (dashboard, proxies, eval APIs)."""
+"""Props backend - FastAPI server (dashboard, run and ground-truth APIs)."""
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
@@ -65,18 +65,28 @@ py_test(
 )
 
 py_library(
-    name = "app",
-    srcs = ["app.py"],
-    visibility = ["//:__subpackages__"],
+    name = "api",
+    srcs = ["api.py"],
     deps = [
-        ":oidc",
-        "//props:config",
         "//props/backend/routes:agent_definitions",
         "//props/backend/routes:auth_routes",
         "//props/backend/routes:ground_truth",
         "//props/backend/routes:model_metadata",
         "//props/backend/routes:runs",
         "//props/backend/routes:stats",
+        "@pypi//fastapi",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":api",
+        ":oidc",
+        "//props:config",
         "//props/core:oci_utils",
         "//props/db:config",
         "//props/db:database",
@@ -110,11 +120,7 @@ py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
     visibility = ["//:__subpackages__"],
-    deps = [
-        ":app",
-        "//props:config",
-        "//props/core:oci_utils",
-    ],
+    deps = [":api"],
 )
 
 py_library(
@@ -147,10 +153,14 @@ py_test(
     name = "test_oidc",
     srcs = ["test_oidc.py"],
     deps = [
+        ":app",
         ":conftest",
         ":oidc",
         "//:conftest",
+        "//props:config",
         "//props:conftest",
+        "//props/core:oci_utils",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

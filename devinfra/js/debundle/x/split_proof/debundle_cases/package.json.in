@@ -1,0 +1,8 @@
+{
+  "name": "debundle-cases-adapter",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "yaml": "2.8.1"
+  }
+}

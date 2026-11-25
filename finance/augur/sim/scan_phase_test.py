@@ -11,24 +11,16 @@ import pytest_bazel
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.ids import CHECKING, AccountId, AgentId
+from finance.augur.sim.ids import CHECKING, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.schedule import Recurring
+from finance.augur.sim.testing.accounts import account, ref
 from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
-
-
-def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=account_id)
-
-
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return ref(agent_id), USD.quanta(balance)
 
 
 def world_for(*accounts: tuple[AccountRef, int], horizon_months: int) -> World:

@@ -1,6 +1,6 @@
 """Convert a JSON Schema document file into TypeScript declarations."""
 
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load(":schema_declarations.bzl", "schema_declarations")
 
 def json_schema_js_library(name, schema, out = None, schema_files = [], visibility = None):
     """Generate declarations from a declared JSON Schema file.
@@ -12,27 +12,12 @@ def json_schema_js_library(name, schema, out = None, schema_files = [], visibili
     declarations through `JsInfo`; the generated file is also available by its
     `out` label, which defaults to `<name>.d.ts`.
     """
-    if out == None:
-        out = name + ".d.ts"
-
-    schema_label = str(schema)
-
-    generated_name = "_{}_generate".format(name)
-    js_run_binary(
-        name = generated_name,
-        srcs = [schema] + schema_files,
-        outs = [out],
-        args = [
-            "$(location {})".format(schema_label),
-            "$(location :{})".format(out),
-        ],
-        chdir = "../../../",
-        tool = "//devinfra/js:json_schema_typescript_codegen",
-        visibility = visibility,
-    )
-
-    js_library(
+    schema_declarations(
         name = name,
-        srcs = [schema] + schema_files + [":" + generated_name],
+        schema = schema,
+        schema_files = schema_files,
+        out = out,
+        tool = "//devinfra/js:json_schema_typescript_codegen",
+        publish_schema = True,
         visibility = visibility,
     )

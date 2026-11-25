@@ -85,7 +85,7 @@ from study_casino.models import BalanceRow, BlackjackHandRow, HandStatus, PrizeL
 from study_casino.rng import ActionRngFactory, AuditedRandom
 from study_casino.state import AdminUsersResponse, DeploymentInfo, HealthResponse, MeResponse, StateDump
 from study_casino.stats import CasinoStats
-from study_casino.store import ActionMutation, ActionRejectedError, ServerActionMutator, SqlStore, locked_balance
+from study_casino.store import ActionMutation, ActionRejectedError, ServerActionMutator, SqlStore
 from util.oidc_login import current_session, install_login_routes
 
 # SQLAlchemy loads the psycopg dialect at runtime via the `postgresql+psycopg://`
@@ -147,18 +147,15 @@ class _CasinoStaticFiles(StaticFiles):
         return super().file_response(full_path, stat_result, scope, status_code=status_code)
 
 
-def _debit_wager(s: Session, username: str, wager_credits: int) -> BalanceRow:
-    """Validate and debit a whole-credit wager (balance stores millicredits);
-    returns the locked balance row for any follow-up settlement credit."""
+def _debit_wager(balance: BalanceRow, wager_credits: int) -> None:
+    """Validate a whole-credit wager and debit the locked balance in millicredits."""
     if wager_credits <= 0:
         raise ActionRejectedError("invalid_wager", "wager must be positive")
-    balance = locked_balance(s, username)
     if balance.credits < wager_credits * MILLIS_PER_CREDIT:
         raise ActionRejectedError(
             "insufficient_credits", f"need {wager_credits} credits; have {balance.credits / MILLIS_PER_CREDIT:g}"
         )
     balance.credits -= wager_credits * MILLIS_PER_CREDIT
-    return balance
 
 
 def _session_millis(seconds: int) -> int:
@@ -171,9 +168,9 @@ def _blackjack_hand_id(username: str, client_action_id: str) -> str:
 
 
 def _mutate_blackjack_step(
-    s: Session, username: str, hand_id: str, move: Literal["hit", "stand", "double"], now_ms: int
+    s: Session, balance: BalanceRow, hand_id: str, move: Literal["hit", "stand", "double"], now_ms: int
 ) -> ActionMutation:
-    row = s.get(BlackjackHandRow, (username, hand_id))
+    row = s.get(BlackjackHandRow, (balance.user_id, hand_id))
     if row is None or row.status != "playing":
         raise ActionRejectedError("blackjack_hand", "active blackjack hand not found")
     shoe = load_cards(row.shoe_json)
@@ -197,7 +194,7 @@ def _mutate_blackjack_step(
         case "double":
             if len(player) != 2:
                 raise ActionRejectedError("blackjack_double", "double is only available on the first two cards")
-            _debit_wager(s, username, current_wager)
+            _debit_wager(balance, current_wager)
             current_wager *= 2
             drawn, shoe = draw_cards(shoe, 1)
             player = [*player, *drawn]
@@ -207,7 +204,7 @@ def _mutate_blackjack_step(
 
     status: HandStatus = "done" if settlement is not None else "playing"
     if settlement is not None and settlement.payout_tokens:
-        locked_balance(s, username).tokens += settlement.payout_tokens
+        balance.tokens += settlement.payout_tokens
 
     row.status = status
     row.updated_at_ms = now_ms
@@ -309,12 +306,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail={"rule": e.rule, "message": e.message}) from e
 
         await ws_manager.push(username, {"type": "state_changed"})
-        return ActionResponse(
-            client_action_id=body.client_action_id,
-            event=result.event,
-            result=result.result,
-            game_event=result.game_event,
-        )
+        return ActionResponse(client_action_id=body.client_action_id, result=result)
 
     @app.get("/healthz")
     def healthz() -> HealthResponse:
@@ -367,13 +359,13 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def complete_session(
         body: SessionCompleteRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
+        def mutate(s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
             session_id = body.session_id or f"session-{uuid.uuid4()}"
-            if s.get(SessionRow, (username, session_id)) is not None:
+            if s.get(SessionRow, (balance.user_id, session_id)) is not None:
                 raise ActionRejectedError("session_id", "session id already exists")
             seconds = max(0, (body.ended_at_ms - body.start_time_ms - body.paused_duration_ms) // 1000)
             if seconds <= 0:
-                state = get_or_create_credit_state(s, username)
+                state = get_or_create_credit_state(s, balance.user_id)
                 return ActionMutation(
                     result=SessionCompleteResult(
                         session_id=session_id,
@@ -386,14 +378,18 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 )
             s.add(
                 SessionRow(
-                    id=session_id, user_id=username, subject=body.subject, seconds=seconds, ended_at_ms=body.ended_at_ms
+                    id=session_id,
+                    user_id=balance.user_id,
+                    subject=body.subject,
+                    seconds=seconds,
+                    ended_at_ms=body.ended_at_ms,
                 )
             )
             # Flush so award_live_session's day-total query sees this session.
             s.flush()
-            award = award_live_session(s, username, seconds=seconds, ended_at_ms=body.ended_at_ms)
+            award = award_live_session(s, balance.user_id, seconds=seconds, ended_at_ms=body.ended_at_ms)
             if award.total_millis:
-                locked_balance(s, username).credits += award.total_millis
+                balance.credits += award.total_millis
             return ActionMutation(
                 result=SessionCompleteResult(
                     session_id=session_id,
@@ -412,14 +408,14 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def add_past_session(
         body: AddPastSessionRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
+        def mutate(s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
             session_id = body.session_id or f"manual-{uuid.uuid4()}"
-            if s.get(SessionRow, (username, session_id)) is not None:
+            if s.get(SessionRow, (balance.user_id, session_id)) is not None:
                 raise ActionRejectedError("session_id", "session id already exists")
             s.add(
                 SessionRow(
                     id=session_id,
-                    user_id=username,
+                    user_id=balance.user_id,
                     subject=body.subject,
                     seconds=body.seconds,
                     ended_at_ms=body.ended_at_ms,
@@ -427,12 +423,12 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             )
             # Backfilled sessions earn multiplied credits but never advance
             # streak or daily-bonus state (only live sessions qualify).
-            state = get_or_create_credit_state(s, username)
+            state = get_or_create_credit_state(s, balance.user_id)
             earned_millis = millis_from_credits(
                 base_session_credits(body.seconds) * streak_multiplier(state.streak_days)
             )
             if earned_millis:
-                locked_balance(s, username).credits += earned_millis
+                balance.credits += earned_millis
             return ActionMutation(
                 result=SessionAddPastResult(session_id=session_id, credits_earned_millis=earned_millis),
                 details={"subject": body.subject, "seconds": body.seconds},
@@ -444,8 +440,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def edit_session(
         body: EditSessionRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            row = s.get(SessionRow, (username, body.session_id))
+        def mutate(s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
+            row = s.get(SessionRow, (balance.user_id, body.session_id))
             if row is None:
                 raise ActionRejectedError("session", "completed session not found")
             old_millis = _session_millis(row.seconds)
@@ -457,7 +453,6 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             # awarded multipliers are not retroactively unwound.
             delta_millis = _session_millis(row.seconds) - old_millis
             if delta_millis:
-                balance = locked_balance(s, username)
                 balance.credits = max(0, balance.credits + delta_millis)
             return ActionMutation(
                 result=SessionCreditsDeltaResult(session_id=body.session_id, credits_delta_millis=delta_millis),
@@ -470,13 +465,12 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def delete_session(
         body: DeleteSessionRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            row = s.get(SessionRow, (username, body.session_id))
+        def mutate(s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
+            row = s.get(SessionRow, (balance.user_id, body.session_id))
             if row is None:
                 raise ActionRejectedError("session", "completed session not found")
             delta_millis = -_session_millis(row.seconds)
             s.delete(row)
-            balance = locked_balance(s, username)
             balance.credits = max(0, balance.credits + delta_millis)
             return ActionMutation(
                 result=SessionCreditsDeltaResult(session_id=body.session_id, credits_delta_millis=delta_millis)
@@ -486,8 +480,9 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
 
     @app.post("/actions/convert")
     async def convert(body: ConvertRequest, username: Annotated[str, Depends(current_user_dep)]) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            _debit_wager(s, username, body.amount).tokens += body.amount
+        def mutate(_s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
+            _debit_wager(balance, body.amount)
+            balance.tokens += body.amount
             return ActionMutation(result=ConvertResult(amount=body.amount))
 
         return await commit_action(username=username, body=body, action_type="convert", mutator=mutate)
@@ -496,20 +491,16 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def create_prize(
         body: PrizeCreateRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        # commit_action runs the mutator under run_server_action, which
-        # calls _ensure_user(owner) at the top of the same transaction —
-        # no separate pre-seed needed (which would also be a blocking
-        # call on the event loop).
         owner = resolve_prize_owner(username, body.target_user)
 
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
+        def mutate(s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
             prize_id = body.prize_id or f"p{uuid.uuid4().hex[:12]}"
-            if s.get(PrizeRow, (owner, prize_id)) is not None:
+            if s.get(PrizeRow, (balance.user_id, prize_id)) is not None:
                 raise ActionRejectedError("prize_id", "prize id already exists")
-            s.add(PrizeRow(id=prize_id, user_id=owner, name=body.name, cost=body.cost))
+            s.add(PrizeRow(id=prize_id, user_id=balance.user_id, name=body.name, cost=body.cost))
             return ActionMutation(
-                result=PrizeCreateResult(prize_id=prize_id, name=body.name, cost=body.cost, user=owner),
-                details={"name": body.name, "cost": body.cost, "target_user": owner, "by": username},
+                result=PrizeCreateResult(prize_id=prize_id, name=body.name, cost=body.cost, user=balance.user_id),
+                details={"name": body.name, "cost": body.cost, "target_user": balance.user_id, "by": username},
             )
 
         # commit_action pushes state_changed to `owner` — no extra push needed for cross-user admin actions.
@@ -521,14 +512,14 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     ) -> ActionResponse:
         owner = resolve_prize_owner(username, body.target_user)
 
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            row = s.get(PrizeRow, (owner, body.prize_id))
+        def mutate(s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
+            row = s.get(PrizeRow, (balance.user_id, body.prize_id))
             if row is None:
                 raise ActionRejectedError("prize", "prize not found")
             s.delete(row)
             return ActionMutation(
-                result=PrizeDeleteResult(prize_id=body.prize_id, user=owner),
-                details={"name": row.name, "cost": row.cost, "target_user": owner, "by": username},
+                result=PrizeDeleteResult(prize_id=body.prize_id, user=balance.user_id),
+                details={"name": row.name, "cost": row.cost, "target_user": balance.user_id, "by": username},
             )
 
         return await commit_action(username=owner, body=body, action_type="prize.delete", mutator=mutate)
@@ -539,8 +530,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     ) -> ActionResponse:
         owner = resolve_prize_owner(username, body.target_user)
 
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            row = s.get(PrizeRow, (owner, body.prize_id))
+        def mutate(s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
+            row = s.get(PrizeRow, (balance.user_id, body.prize_id))
             if row is None:
                 raise ActionRejectedError("prize", "prize not found")
             previous_name = row.name
@@ -549,7 +540,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             row.cost = body.cost
             return ActionMutation(
                 result=PrizeUpdateResult(
-                    prize_id=body.prize_id, name=row.name, cost=row.cost, user=owner, updated=True
+                    prize_id=body.prize_id, name=row.name, cost=row.cost, user=balance.user_id, updated=True
                 ),
                 details={
                     "prize_id": body.prize_id,
@@ -557,7 +548,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                     "previous_cost": previous_cost,
                     "name": row.name,
                     "cost": row.cost,
-                    "target_user": owner,
+                    "target_user": balance.user_id,
                     "by": username,
                 },
             )
@@ -568,20 +559,19 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def redeem_prize(
         body: PrizeRedeemRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, now_ms: int) -> ActionMutation:
-            prize = s.get(PrizeRow, (username, body.prize_id))
+        def mutate(s: Session, balance: BalanceRow, now_ms: int) -> ActionMutation:
+            prize = s.get(PrizeRow, (balance.user_id, body.prize_id))
             if prize is None:
                 raise ActionRejectedError("prize", "prize not found")
             cost = prize.cost
             if cost <= 0:
                 raise ActionRejectedError("prize", "prize cost must be positive")
-            balance = locked_balance(s, username)
             if balance.tokens < cost:
                 raise ActionRejectedError("insufficient_tokens", f"need {cost} tokens; have {balance.tokens}")
             balance.tokens -= cost
 
             redemption_id = f"r-{uuid.uuid4()}"
-            s.add(PrizeLogRow(id=redemption_id, user_id=username, name=prize.name, cost=cost, at_ms=now_ms))
+            s.add(PrizeLogRow(id=redemption_id, user_id=balance.user_id, name=prize.name, cost=cost, at_ms=now_ms))
             return ActionMutation(
                 result=PrizeRedeemResult(redemption_id=redemption_id, prize_id=body.prize_id, cost=cost),
                 details={"name": prize.name},
@@ -593,10 +583,10 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def ack_changelog(
         body: ChangelogAckRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
+        def mutate(s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
             if body.last_id > LATEST_CHANGELOG_ID:
                 raise ActionRejectedError("changelog", f"unknown changelog id {body.last_id}")
-            ack = get_or_create_ack(s, username)
+            ack = get_or_create_ack(s, balance.user_id)
             # Acks only move forward — a stale tab acking an older id is a no-op.
             ack.last_acked_id = max(ack.last_acked_id, body.last_id)
             return ActionMutation(result=ChangelogAckResult(acked_through=ack.last_acked_id))
@@ -605,8 +595,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
 
     @app.post("/actions/import")
     async def import_data(body: ImportRequest, username: Annotated[str, Depends(current_user_dep)]) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            store.replace_state_for_import(s, username, body.data)
+        def mutate(s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
+            store.replace_state_for_import(s, balance, body.data)
             return ActionMutation(result=ImportResult(imported=True))
 
         return await commit_action(
@@ -615,8 +605,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
 
     @app.post("/actions/reset")
     async def reset_data(body: ResetRequest, username: Annotated[str, Depends(current_user_dep)]) -> ActionResponse:
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            store.replace_state_for_reset(s, username)
+        def mutate(s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
+            store.replace_state_for_reset(s, balance)
             return ActionMutation(result=ResetResult(reset=True))
 
         return await commit_action(
@@ -627,9 +617,9 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def slots_spin(body: SlotsSpinRequest, username: Annotated[str, Depends(current_user_dep)]) -> ActionResponse:
         action_type = "casino.slots.spin"
 
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            balance = _debit_wager(s, username, body.wager_credits)
-            rng = action_rng(username=username, body=body, action_type=action_type)
+        def mutate(_s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
+            _debit_wager(balance, body.wager_credits)
+            rng = action_rng(username=balance.user_id, body=body, action_type=action_type)
             settlement = spin_slots(body.wager_credits, rng)
             balance.tokens += settlement.payout_tokens
             return ActionMutation(
@@ -653,9 +643,9 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     ) -> ActionResponse:
         action_type = "casino.roulette.spin"
 
-        def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            balance = _debit_wager(s, username, body.wager_credits)
-            rng = action_rng(username=username, body=body, action_type=action_type)
+        def mutate(_s: Session, balance: BalanceRow, _now_ms: int) -> ActionMutation:
+            _debit_wager(balance, body.wager_credits)
+            rng = action_rng(username=balance.user_id, body=body, action_type=action_type)
             try:
                 settlement = spin_roulette(body.wager_credits, body.bet_type, body.bet_number, rng)
             except ValueError as e:
@@ -682,9 +672,9 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     ) -> ActionResponse:
         action_type = "blackjack.deal"
 
-        def mutate(s: Session, now_ms: int) -> ActionMutation:
-            balance = _debit_wager(s, username, body.wager_credits)
-            rng = action_rng(username=username, body=body, action_type=action_type)
+        def mutate(s: Session, balance: BalanceRow, now_ms: int) -> ActionMutation:
+            _debit_wager(balance, body.wager_credits)
+            rng = action_rng(username=balance.user_id, body=body, action_type=action_type)
             shoe = make_shoe(rng)
             p1, shoe = draw_cards(shoe, 1)
             d1, shoe = draw_cards(shoe, 1)
@@ -694,7 +684,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             dealer = [*d1, *d2]
             credits_after_wager = balance.credits
             tokens_before_settle = balance.tokens
-            hand_id = _blackjack_hand_id(username, body.client_action_id)
+            hand_id = _blackjack_hand_id(balance.user_id, body.client_action_id)
             status: HandStatus = "playing"
             settlement: GameSettlement[BlackjackSettlementOutcome] | None = None
             if is_blackjack(player) or is_blackjack(dealer):
@@ -704,7 +694,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 status = "done"
             row = BlackjackHandRow(
                 id=hand_id,
-                user_id=username,
+                user_id=balance.user_id,
                 created_at_ms=now_ms,
                 updated_at_ms=now_ms,
                 status=status,
@@ -752,8 +742,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def blackjack_hit(
         body: BlackjackHandRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, now_ms: int) -> ActionMutation:
-            return _mutate_blackjack_step(s, username, body.hand_id, "hit", now_ms)
+        def mutate(s: Session, balance: BalanceRow, now_ms: int) -> ActionMutation:
+            return _mutate_blackjack_step(s, balance, body.hand_id, "hit", now_ms)
 
         return await commit_action(username=username, body=body, action_type="blackjack.hit", mutator=mutate)
 
@@ -761,8 +751,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def blackjack_stand(
         body: BlackjackHandRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, now_ms: int) -> ActionMutation:
-            return _mutate_blackjack_step(s, username, body.hand_id, "stand", now_ms)
+        def mutate(s: Session, balance: BalanceRow, now_ms: int) -> ActionMutation:
+            return _mutate_blackjack_step(s, balance, body.hand_id, "stand", now_ms)
 
         return await commit_action(username=username, body=body, action_type="blackjack.stand", mutator=mutate)
 
@@ -770,8 +760,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def blackjack_double(
         body: BlackjackHandRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        def mutate(s: Session, now_ms: int) -> ActionMutation:
-            return _mutate_blackjack_step(s, username, body.hand_id, "double", now_ms)
+        def mutate(s: Session, balance: BalanceRow, now_ms: int) -> ActionMutation:
+            return _mutate_blackjack_step(s, balance, body.hand_id, "double", now_ms)
 
         return await commit_action(username=username, body=body, action_type="blackjack.double", mutator=mutate)
 

@@ -50,6 +50,24 @@ pub fn bundled_vendor_mark(bundle_path: std::path::PathBuf, exports: &[&str]) ->
     }
 }
 
+/// A three-owner ESM cycle whose initialization is valid only under some priorities.
+pub fn import_priority_fixture(priority: &[&str]) -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        r#"const hub = () => [a, b];
+const a = { dependency: hub, lazy: () => b };
+const b = { dependency: hub };
+console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
+"#,
+        vec![
+            logical_module("hub", &[Member::new("hub")]),
+            logical_module("a", &[Member::new("a")]),
+            logical_module("b", &[Member::new("b")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_import_order(priority)
+}
+
 /// Nested return-value calls and repeated source evaluation exercise the
 /// operation ledger, including a native guard's proof dependency.
 pub fn composed_global_access_fixture() -> FixtureOpts<'static> {

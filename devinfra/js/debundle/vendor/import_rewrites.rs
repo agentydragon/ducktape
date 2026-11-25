@@ -28,6 +28,17 @@ pub struct VendorImportRewrites {
 }
 
 impl VendorImportRewrites {
+    /// Apply the replacements collected from this file's import directives.
+    pub fn finish(mut self, body: &mut Vec<ModuleItem>) -> BTreeMap<(ChunkId, String), usize> {
+        if !self.body_rewrites.is_empty() {
+            body.visit_mut_with(&mut PartialSwapIdentRewriter {
+                bindings: &self.body_rewrites,
+                references_by_symbol: &mut self.references_rewritten,
+            });
+        }
+        self.references_rewritten
+    }
+
     /// Construct replacement directives without choosing their position in the file.
     /// Facade paths are resolved in the caller's output-file coordinate system.
     pub fn materialize(
@@ -37,8 +48,8 @@ impl VendorImportRewrites {
         chunk: ChunkId,
         chunk_export: String,
         facade_source: impl Fn(&str) -> String,
-    ) -> Vec<DeferredImport> {
-        let mut imports = Vec::new();
+    ) -> Option<DeferredImport> {
+        let mut directive = None;
         match action {
             VendorImportAction::PackageMember {
                 package,
@@ -67,14 +78,14 @@ impl VendorImportRewrites {
                     .emitted_shared_import_for
                     .insert(format!("package:{package}"))
                 {
-                    imports.push(DeferredImport::Namespace {
+                    directive = Some(DeferredImport::Namespace {
                         source: package,
                         local: namespace,
                     });
                 }
             }
             VendorImportAction::PackageNamespace { package } => {
-                imports.push(DeferredImport::Namespace {
+                directive = Some(DeferredImport::Namespace {
                     source: package,
                     local: local_id.0.to_string(),
                 });
@@ -84,7 +95,7 @@ impl VendorImportRewrites {
                     .or_insert(0) += 1;
             }
             VendorImportAction::PackageDefault { package } => {
-                imports.push(DeferredImport::Default {
+                directive = Some(DeferredImport::Default {
                     source: package,
                     local: local_id.0.to_string(),
                 });
@@ -104,7 +115,7 @@ impl VendorImportRewrites {
                 } else {
                     local_id.0.to_string()
                 };
-                imports.push(DeferredImport::Named {
+                directive = Some(DeferredImport::Named {
                     source: package,
                     local: local.clone(),
                     upstream_export,
@@ -150,7 +161,7 @@ impl VendorImportRewrites {
                     .emitted_shared_import_for
                     .insert(format!("facade:{package}"))
                 {
-                    imports.push(DeferredImport::Default {
+                    directive = Some(DeferredImport::Default {
                         source,
                         local: namespace,
                     });
@@ -158,7 +169,7 @@ impl VendorImportRewrites {
             }
             VendorImportAction::FacadeDefault { facade_app_path } => {
                 let source = facade_source(&facade_app_path);
-                imports.push(DeferredImport::Default {
+                directive = Some(DeferredImport::Default {
                     source,
                     local: local_id.0.to_string(),
                 });
@@ -168,7 +179,7 @@ impl VendorImportRewrites {
                     .or_insert(0) += 1;
             }
         }
-        imports
+        directive
     }
 }
 
@@ -483,33 +494,31 @@ mod tests {
         };
         let mut rewrites = VendorImportRewrites::default();
         let resolve = |path: &str| format!("../{path}");
-        assert_eq!(
+        assert!(
             rewrites
                 .materialize(package(), local("a"), ChunkId(0), "a".into(), resolve)
-                .len(),
-            1
+                .is_some()
         );
         assert!(
             rewrites
                 .materialize(package(), local("b"), ChunkId(0), "b".into(), resolve)
-                .is_empty()
+                .is_none()
         );
         let imports = rewrites.materialize(facade(), local("c"), ChunkId(1), "c".into(), resolve);
         assert!(
-            matches!(&imports[..], [DeferredImport::Default { source, local }] if source == "../facades/pkg.js" && local == "facade_ns")
+            matches!(&imports, Some(DeferredImport::Default { source, local }) if source == "../facades/pkg.js" && local == "facade_ns")
         );
         assert!(
             rewrites
                 .materialize(facade(), local("d"), ChunkId(1), "d".into(), resolve)
-                .is_empty()
+                .is_none()
         );
         assert_eq!(rewrites.body_rewrites.len(), 4);
         assert!(rewrites.references_rewritten.is_empty());
-        assert_eq!(
+        assert!(
             VendorImportRewrites::default()
                 .materialize(package(), local("a"), ChunkId(0), "a".into(), resolve)
-                .len(),
-            1
+                .is_some()
         );
     }
 
@@ -529,7 +538,7 @@ mod tests {
                 |_| unreachable!(),
             );
             assert!(
-                matches!(&imports[..], [DeferredImport::Named { source, local, upstream_export }] if source == "pkg" && local == "value" && upstream_export == "value")
+                matches!(&imports, Some(DeferredImport::Named { source, local, upstream_export }) if source == "pkg" && local == "value" && upstream_export == "value")
             );
         }
         assert_eq!(

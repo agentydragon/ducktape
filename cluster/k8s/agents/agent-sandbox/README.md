@@ -10,7 +10,6 @@ janitor, and image pin have been retired. No `SandboxClaim` pool is deployed the
 Agentplane's `Sandbox` API and controller are separate; see
 <../../../../agentplane/environments/README.md>.
 
-The `cluster/images/agent-workspace/` image and `devinfra/ws` client remain available
-for a future pool. The image is built by
-`.github/workflows/agent-workspace-image.yml`; no deployed template currently consumes
-it.
+The `cluster/images/agent-workspace/` Dockerfile and `devinfra/ws` client remain available
+for a future pool. CI no longer builds or publishes the image; a revival restores
+`.github/workflows/agent-workspace-image.yml` from `ca1ec04d75`.

@@ -57,13 +57,14 @@ func (s *Store) FailProviderCommand(ctx context.Context, owner Owner, sessionID,
 		}
 
 		var status, failureClass, suppressed string
+		var kind PendingIntentKind
 		var attemptNo, budget int
 		var providerCommand sql.NullString
-		err = tx.QueryRowContext(ctx, `SELECT result->>'status',COALESCE(result->>'failure_class',''),
+		err = tx.QueryRowContext(ctx, `SELECT request->>'kind',result->>'status',COALESCE(result->>'failure_class',''),
 			COALESCE(result->>'provider_retry_suppressed',''),provider_attempt_no,provider_attempt_budget,provider_command_id
 			FROM sampler_intent i WHERE i.id=$1 AND i.conversation_id=$2 AND i.request->>'kind' IN ('sampling','compaction')
 				AND i.result->>'status'='abandoned' AND NOT EXISTS(SELECT 1 FROM sampler_intent n WHERE n.previous_provider_intent_id=i.id)
-			FOR UPDATE`, intentID, owner.ConversationID).Scan(&status, &failureClass, &suppressed, &attemptNo, &budget, &providerCommand)
+			FOR UPDATE`, intentID, owner.ConversationID).Scan(&kind, &status, &failureClass, &suppressed, &attemptNo, &budget, &providerCommand)
 		if errors.Is(err, sql.ErrNoRows) {
 			return protocol.ErrPrecondition
 		}
@@ -81,7 +82,12 @@ func (s *Store) FailProviderCommand(ctx context.Context, owner Owner, sessionID,
 			failureClass != "" && failureClass != string(ProviderAttemptPermanent) && failureClass != string(ProviderAttemptTransient) {
 			return protocol.ErrPrecondition
 		}
-		unresolved, err := hasUnresolvedIntent(ctx, tx, conversation.ID, "")
+		var unresolved bool
+		if kind == PendingIntentCompaction {
+			unresolved, err = hasCompactionBlockingWork(ctx, tx, owner)
+		} else {
+			unresolved, err = hasUnresolvedIntent(ctx, tx, conversation.ID, "")
+		}
 		if err != nil {
 			return err
 		}
@@ -98,7 +104,7 @@ func (s *Store) FailProviderCommand(ctx context.Context, owner Owner, sessionID,
 		// Input confirmation has already settled the command as effected in History.
 		// Preserve that receipt while failing the sampler run and its turn.
 		if !confirmedInput {
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
 				CommandFailed: &eventpb.CommandFailed{CommandId: commandID, Reason: reason},
 			}}); err != nil {
 				return err
@@ -108,20 +114,20 @@ func (s *Store) FailProviderCommand(ctx context.Context, owner Owner, sessionID,
 			if err := settleTurnInterrupts(ctx, tx, session, TurnFailed); err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{
 				TurnCompleted: &eventpb.TurnCompleted{TurnId: commandID, Status: eventpb.TurnStatus_TURN_STATUS_FAILED, Error: reason},
 			}}); err != nil {
 				return err
 			}
 			session.ActiveTurn = nil
-		} else if err := appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
+		} else if err := s.appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
 			OperationId: commandID, Kind: eventpb.ExecutionProgress_KIND_COMMAND, Phase: eventpb.ExecutionProgress_PHASE_FAILED,
 		}); err != nil {
 			return err
 		}
 		session.ActiveCommand = nil
 		conversation.Stopped = false
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)

@@ -85,7 +85,8 @@ func fixture(t *testing.T, objects ...client.Object) (policyClients, *serviceTes
 	return fixtureWithWriters(t, []string{peertls.AppURI}, objects...)
 }
 
-func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object) (policyClients, *serviceTestClient) {
+// newTestService is the PolicyService over a fake cluster holding objects, with its per-method admission rules.
+func newTestService(t *testing.T, readers, writers []string, objects ...client.Object) (*Service, auth.Methods, *serviceTestClient) {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, policyapi.AddToScheme, sandboxapi.AddToScheme, workloadapi.AddToScheme} {
@@ -94,7 +95,7 @@ func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object
 		}
 	}
 	kube := &serviceTestClient{WithWatch: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()}
-	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, []string{peertls.AppURI}, writers)
+	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, readers, writers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +103,12 @@ func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object
 	if err != nil {
 		t.Fatal(err)
 	}
+	return service, methods, kube
+}
+
+func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object) (policyClients, *serviceTestClient) {
+	t.Helper()
+	service, methods, kube := newTestService(t, []string{peertls.AppURI}, writers, objects...)
 	connection := grpcmethods.ServeTLSWithTimeout(t, time.Second, peertls.PolicyControllerURI, methods, func(server *grpc.Server) {
 		policypb.RegisterPolicyServiceServer(server, service)
 	}, peertls.AppURI, peertls.NotificationsURI)
@@ -113,22 +120,7 @@ func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object
 }
 
 func TestPolicyServicePeerTLSUsesSeparateReadAndWriteAllowlists(t *testing.T) {
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, policyapi.AddToScheme, sandboxapi.AddToScheme, workloadapi.AddToScheme} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
-	kube := &serviceTestClient{WithWatch: fake.NewClientBuilder().WithScheme(scheme).WithObjects(policySet("base")).Build()}
-	service, err := New("policies", []string{"policies", "fake-workloads"}, kube,
-		[]string{peertls.ActionsURI}, []string{peertls.EgressProxyURI})
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods, err := service.Methods()
-	if err != nil {
-		t.Fatal(err)
-	}
+	service, methods, _ := newTestService(t, []string{peertls.ActionsURI}, []string{peertls.EgressProxyURI}, policySet("base"))
 
 	for _, method := range grpcmethods.Of(policypb.PolicyService_ServiceDesc) {
 		ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))
@@ -221,9 +213,7 @@ func testContext(t *testing.T) context.Context {
 
 func tokenContext(t *testing.T, token string) context.Context {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	t.Cleanup(cancel)
-	return metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+token))
+	return metadata.NewOutgoingContext(testContext(t), metadata.Pairs("authorization", "Bearer "+token))
 }
 
 func binding(name, subject string, sets ...string) *policyapi.PolicyBinding {

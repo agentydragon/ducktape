@@ -8,7 +8,7 @@
     "haikuModel": "chatgpt-sub/ant-messages/gpt-6-luna",
     "maxContextTokens": 872000,
     "maxOutputTokens": 128000,
-    "model": "chatgpt-sub/ant-messages/gpt-6-astra"
+    "model": "chatgpt-sub/ant-messages/gpt-6.2-astra"
   },
   "gemini-claude": {
     "haikuModel": "google/goog-generate/gemini-3.5-flash-lite",

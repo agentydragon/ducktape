@@ -58,15 +58,7 @@ func (p *Proxy) decide(
 	ctx := req.Context()
 	who, err := p.authenticate(ctx, client, supplied)
 	if err != nil {
-		var rejection *identity.Rejection
-		if errors.As(err, &rejection) {
-			slog.Info("identity rejected", "method", req.Method, "host", host, "port", port, "reason", rejection.Reason,
-				"detail", rejection.Detail)
-			return outcome{decision: policy.Denied{Reason: rejection.Reason}}
-		}
-		slog.Warn("authentication failed; refusing", "method", req.Method, "host", host, "port", port,
-			"error", err)
-		return outcome{decision: policy.Denied{Reason: decision.Unavailable}}
+		return outcome{decision: policy.Denied{Reason: authenticationFailure(req, host, port, err)}}
 	}
 	refused := func(reason decision.Reason) outcome {
 		return outcome{decision: policy.Denied{Reason: reason}, caller: who}
@@ -110,6 +102,17 @@ func (p *Proxy) decide(
 		return refused(decision.Unavailable)
 	}
 	return outcome{decision: admitted, pin: pin, caller: who}
+}
+
+func authenticationFailure(req *http.Request, host string, port int, err error) decision.Reason {
+	var rejection *identity.Rejection
+	if errors.As(err, &rejection) {
+		slog.Info("identity rejected", "method", req.Method, "host", host, "port", port, "reason", rejection.Reason,
+			"detail", rejection.Detail)
+		return rejection.Reason
+	}
+	slog.Warn("authentication failed; refusing", "method", req.Method, "host", host, "port", port, "error", err)
+	return decision.Unavailable
 }
 
 // authenticate re-resolves the connection's SVID on every request. `supplied` is a

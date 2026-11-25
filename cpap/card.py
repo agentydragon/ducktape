@@ -59,7 +59,6 @@ DEFAULT_BASE = "http://192.168.4.1"
 class FileEntry:
     """A file or directory entry from GETFILELIST."""
 
-    name: str  # long filename, e.g. "20260419_040533_BRP.edf"
     size: int  # bytes (0 for directories)
     create_time: int  # unix timestamp
     img_url: str  # files: download URL; dirs: GETFILELIST URL for recursion
@@ -68,7 +67,6 @@ class FileEntry:
     @classmethod
     def _from_xml(cls, element: ET.Element) -> FileEntry:
         return cls(
-            name=element.findtext("name") or "",
             size=int(element.findtext("fileSize") or 0),
             create_time=int(element.findtext("createTime") or 0),
             img_url=element.findtext("imgURL") or "",

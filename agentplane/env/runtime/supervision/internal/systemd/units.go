@@ -110,7 +110,7 @@ func property[T any](properties map[string]any, name string, target *T) error {
 // start. Replacement-connection absence alone cannot settle an uncertain start.
 type UnitFence struct {
 	InvocationID, ControlGroup string
-	Ordered, RequireSuccess    bool
+	Ordered                    bool
 }
 
 type UnitManager interface {
@@ -166,9 +166,6 @@ func FenceUnitWith(ctx context.Context, manager UnitManager, name string, expect
 }
 
 func fenceUnit(ctx context.Context, manager UnitManager, name string, expected UnitFence, groupEmpty func(string) (bool, error)) error {
-	if expected.RequireSuccess && expected.InvocationID == "" {
-		return errors.New("successful systemd completion requires an exact expected invocation")
-	}
 	current, err := manager.Snapshot(ctx, name)
 	if err != nil {
 		return err
@@ -208,7 +205,7 @@ func fenceUnit(ctx context.Context, manager UnitManager, name string, expected U
 			// fences, the exact previously captured cgroup is still an independent
 			// proof of the old domain once both manager state and kernel state are
 			// quiescent. Never use a replacement object's cgroup for this proof.
-			if expected.RequireSuccess || !s.Stopped() || s.MainPID != 0 || s.ControlPID != 0 || s.JobID != 0 {
+			if !s.Stopped() || s.MainPID != 0 || s.ControlPID != 0 || s.JobID != 0 {
 				return false, fmt.Errorf("systemd unit %s lost invocation %s before a stopped, job-free state", name, expected.InvocationID)
 			}
 			if originalGroup == "" {
@@ -238,9 +235,6 @@ func fenceUnit(ctx context.Context, manager UnitManager, name string, expected U
 		// after recursive emptiness, retaining it for D-state leftovers. A stopped,
 		// loaded unit's explicitly cleared property is manager cleanup evidence.
 		// https://github.com/systemd/systemd/blob/v260.5/src/core/cgroup.c
-		if expected.RequireSuccess && (s.LoadState != "loaded" || s.InvocationID != expected.InvocationID || s.Result != "success") {
-			return false, fmt.Errorf("systemd unit %s invocation %s has no successful completion evidence (load=%s, invocation=%s, result=%s, code=%d, status=%d)", name, expected.InvocationID, s.LoadState, s.InvocationID, s.Result, s.ExecMainCode, s.ExecMainStatus)
-		}
 		return true, nil
 	}
 	if done, err := observe(current); done || err != nil {
@@ -261,7 +255,7 @@ func fenceUnit(ctx context.Context, manager UnitManager, name string, expected U
 			return errors.Join(jobErr, err)
 		}
 		if done, err := observe(current); done || err != nil {
-			if done && !expected.RequireSuccess {
+			if done {
 				return nil
 			}
 			return errors.Join(jobErr, err)

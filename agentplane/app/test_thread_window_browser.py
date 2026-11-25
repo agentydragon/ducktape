@@ -535,12 +535,7 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
         async with page.expect_event("requestfailed", predicate=lambda request: "/sync/entities?" in request.url):
             await thread_browser.ingress.drop_connections()
         latest = append_items(thread_browser, "offline-item", range(70))
-        async with asyncio.timeout(15):
-            while True:
-                scope = await thread_browser.content.session_summary(thread.id)
-                if scope is not None and scope.folded_through >= latest.cursor:
-                    break
-                await asyncio.sleep(0.01)
+        await thread_browser.history.service.folded(thread.id, latest.cursor)
         await expect(composer).to_have_value("Draft retained across a long offline gap")
         async with page.expect_response(lambda response: "/sync/entities?" in response.url and response.ok):
             await page.context.set_offline(False)

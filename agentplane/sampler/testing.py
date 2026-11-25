@@ -70,10 +70,8 @@ def settings(
     logs: Path,
     *,
     gateway_target: str | None = None,
-    gateway_token_file: Path | None = None,
     gateway_tls: ClientTLS | None = None,
     history_target: str | None = None,
-    history_token_file: Path | None = None,
     history_tls: ClientTLS | None = None,
 ) -> Settings:
     return Settings(
@@ -115,11 +113,9 @@ def settings(
         executor_codex=codex_binary,
         logs=logs,
         history_target=history_target,
-        history_token_file=history_token_file,
         history_tls=history_tls,
         gateway_target=gateway_target,
         gateway_tls=gateway_tls,
-        gateway_token_file=gateway_token_file,
         direct_executor_target=executor_target,
         direct_executor_insecure_localtest=executor_target is not None,
         max_live_sessions=2,
@@ -144,15 +140,8 @@ def create_request(cwd: Path) -> harness_host_pb2.CreateSessionRequest:
     )
 
 
-@dataclass(frozen=True)
-class SamplerEndpoint:
-    target: str
-    channel_credentials: grpc.ChannelCredentials
-    channel: grpc.aio.Channel
-
-
 @asynccontextmanager
-async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[SamplerEndpoint]:
+async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[SamplerTestClient]:
     """Run the Go binary with a verified service-SVID application listener."""
     await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
     binary = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/sampler/cmd/main_bin_/main_bin"
@@ -220,18 +209,15 @@ async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[Sampler
                 f"localhost:{bound.port}", client_credentials, options=(("grpc.ssl_target_name_override", "localhost"),)
             )
             async with channel:
-                yield SamplerEndpoint(f"localhost:{bound.port}", client_credentials, channel)
+                yield SamplerTestClient(
+                    harness_host_pb2_grpc.HarnessHostStub(channel), sampler_admin_pb2_grpc.SamplerAdminStub(channel)
+                )
 
 
 @asynccontextmanager
 async def service(config: Settings) -> AsyncIterator[SamplerTestClient]:
-    directory = config.logs / ("go-sampler-" + uuid4().hex)
-    directory.mkdir(parents=True)
-    async with go_sampler(config, directory) as endpoint:
-        yield SamplerTestClient(
-            harness_host_pb2_grpc.HarnessHostStub(endpoint.channel),
-            sampler_admin_pb2_grpc.SamplerAdminStub(endpoint.channel),
-        )
+    async with go_sampler(config, config.logs / ("go-sampler-" + uuid4().hex)) as stub:
+        yield stub
 
 
 async def follow_until(

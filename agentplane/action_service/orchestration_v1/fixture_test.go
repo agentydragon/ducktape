@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -20,14 +19,13 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -122,18 +120,9 @@ func newFixture(t *testing.T) fixture {
 // serve starts the registered in-memory services and returns a ready connection.
 func serve(t *testing.T, register func(*grpc.Server), serverOptions ...grpc.ServerOption) *grpc.ClientConn {
 	t.Helper()
-	listener := bufconn.Listen(1 << 20)
 	grpcServer := grpc.NewServer(serverOptions...)
 	register(grpcServer)
-	go grpcServer.Serve(listener)
-	t.Cleanup(grpcServer.Stop)
-	connection, err := grpc.NewClient("passthrough:///test-peer",
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
+	connection := grpcserver.ConnectInMemory(t, grpcServer)
 	connection.Connect()
 	readyCtx, cancelReady := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancelReady()

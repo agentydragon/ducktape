@@ -370,7 +370,7 @@ easy workflow tweaks substitute for investigating the dominant test work.
 When a selected workload emits spans, use them as the primary phase evidence before
 adding instrumentation. Consult the component's tracing documentation or producer
 code for artifact formats, clocks and fixture/scenario lifetimes. Use the execution
-system's artifact tooling (`buildbuddy_api` for BuildBuddy) to list the exact
+system's artifact tooling (`buildbuddy` for BuildBuddy) to list the exact
 invocation's outputs before downloading the relevant target and shard/run/attempt.
 Tie the trace to the tested source and a physical execution; do not infer a trace
 from a cached target summary.
@@ -491,7 +491,7 @@ unknown and overlapping intervals explicitly:
 3. **Bazel:** inner test/build invocation(s), startup, loading/analysis, execution,
    downloads/uploads, finalization. Inspect `command.profile.gz`, critical-path
    tool log, cache scorecard, target and execution records as needed (see the
-   `buildbuddy_api` skill). Distinguish analysis time from executed actions;
+   `buildbuddy` skill). Distinguish analysis time from executed actions;
    configured-target count or cache hit rate alone cannot diagnose analysis-cache
    reuse. Identify expensive actions/tests by label, frequency and _critical-path_
    contribution; include failures/retries and cache misses when relevant. Separate

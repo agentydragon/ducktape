@@ -12,16 +12,15 @@ import (
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	runtimeschema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	clienttesting "k8s.io/client-go/testing"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -71,20 +70,8 @@ func testTemplate(image string) *sandboxapi.SandboxTemplate {
 
 func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Reconciler, client.Client) {
 	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := policyapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := kubevirtv1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	addCredentialKinds(t, scheme)
+	scheme := testscheme.New(t)
+	addCertificateKind(scheme)
 	// A Sandbox acts as an Identity; the fixture's names a live one unless the test brings its own.
 	sandbox := &sandboxapi.Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-sandbox"},

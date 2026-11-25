@@ -14,7 +14,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
@@ -142,12 +141,7 @@ func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 		},
 	}
 	runtime := New(store, settings, fakeCodeHost(t))
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-		CommandId: "long-provider-turn",
-		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "keep making semantic progress"}},
-	}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	runtimetesting.AdmitInput(t, store, session.ID, "long-provider-turn", "keep making semantic progress")
 	cancel, done := startRuntimeForTest(t, runtime)
 	defer func() { cancel(); waitRuntimeDone(t, done) }()
 	runtime.Wake(session.ID)
@@ -202,17 +196,18 @@ func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 	if got := requestCount.Load(); got != 1 {
 		t.Fatalf("provider requests=%d, want one", got)
 	}
-	var finalLease time.Time
-	var leaseLive bool
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT provider_attempt_lease_until,provider_attempt_lease_until>clock_timestamp()
-		FROM sampler_intent WHERE provider_command_id=$1 AND request->>'kind'='sampling'`, "long-provider-turn").Scan(&finalLease, &leaseLive); err != nil {
+	var finalLease, checkedAt time.Time
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT provider_attempt_lease_until,clock_timestamp()
+		FROM sampler_intent WHERE provider_command_id=$1 AND request->>'kind'='sampling'`, "long-provider-turn").Scan(&finalLease, &checkedAt); err != nil {
 		t.Fatal(err)
 	}
-	// The initial lease includes the header phase (17s total here). A semantic renewal near
-	// the end of this 2.45s stream resets it to idle + two RPC budgets (11s), moving the
-	// deadline at least two seconds earlier than the initial deadline while still keeping it live.
-	if !finalLease.Before(initial.initialLease.Add(-2*time.Second)) || !leaseLive {
-		t.Fatalf("provider attempt lease was not renewed by semantic progress: initial=%s final=%s last_delta=%s live=%v", initial.initialLease, finalLease, last, leaseLive)
+	// The final progress event follows the entire buffered stream. Its lease covers
+	// the idle and RPC budgets, with less than one extra deadline bucket.
+	initialStart := initial.initialLease.Add(-settings.ProviderAttemptLease(settings.Models["fixture-model"]))
+	earliest := initialStart.Add(streamed + settings.ProviderProgressLease())
+	latest := checkedAt.Add(settings.ProviderProgressLease() + 30*time.Second)
+	if !finalLease.Equal(finalLease.Truncate(30*time.Second)) || finalLease.Before(earliest) || !finalLease.Before(latest) || !finalLease.After(checkedAt) {
+		t.Fatalf("final lease=%s, want a live 30s boundary between %s and %s (last delta %s)", finalLease, earliest, latest, last)
 	}
 
 	events, err := store.Events(t.Context(), session.ID, 0, 4096)
@@ -268,7 +263,7 @@ func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T)
 	settings.TurnTimeoutSeconds = &seconds
 	runtime, stop := startProviderSamplingRuntime(t, store, settings)
 	defer stop()
-	admitProviderSamplingCommand(t, store, session.ID, "limited-backoff", "start")
+	runtimetesting.AdmitInput(t, store, session.ID, "limited-backoff", "start")
 	runtime.Wake(session.ID)
 	waitProviderCommandOutcome(t, store, session.ID, "limited-backoff", samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED)
 	var attempts, due int
@@ -279,7 +274,7 @@ func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T)
 	if attempts != 1 || due != 0 || requests.Load() != 1 {
 		t.Fatalf("turn limit retried during backoff: attempts=%d due=%d requests=%d", attempts, due, requests.Load())
 	}
-	admitProviderSamplingCommand(t, store, session.ID, "after-limited-backoff", "continue")
+	runtimetesting.AdmitInput(t, store, session.ID, "after-limited-backoff", "continue")
 	runtime.Wake(session.ID)
 	waitProviderCommandOutcome(t, store, session.ID, "after-limited-backoff", samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
 	state, err := store.GetSession(t.Context(), session.ID, "")
@@ -316,9 +311,7 @@ func TestRuntimeUsesSelectedModelHeaderBudget(t *testing.T) {
 		Models:      map[string]samplersettings.ModelConfig{"fixture-model": {Connection: "provider", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"", "high"}, ResponseHeaderTimeoutSeconds: &extended}},
 	}
 	runtime := New(store, settings, fakeCodeHost(t))
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "route-header-budget", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "fixture"}}}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	runtimetesting.AdmitInput(t, store, session.ID, "route-header-budget", "fixture")
 	cancel, done := startRuntimeForTest(t, runtime)
 	defer func() { cancel(); waitRuntimeDone(t, done) }()
 	runtime.Wake(session.ID)

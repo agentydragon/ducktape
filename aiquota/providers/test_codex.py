@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 import respx
 
+from aiquota.config import CodexSettings
 from aiquota.models import (
     FetchError,
     FetchSuccess,
@@ -30,7 +31,6 @@ from aiquota.providers.codex import (
     TOKEN_URL,
     USAGE_URL,
     CodexProvider,
-    CodexSettings,
     _to_success,
     _UsageResponse,
 )

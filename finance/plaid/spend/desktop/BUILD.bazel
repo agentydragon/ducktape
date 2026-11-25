@@ -41,7 +41,7 @@ py_library(
         ":credentials",
         ":oauth",
         "//util:network_monitor",
-        "@pypi//dbus_next",
+        "@pypi//dbus_fast",
         "@pypi//httpx",
     ],
 )
@@ -54,7 +54,7 @@ py_library(
         "//finance/plaid/spend:models",
         "//finance/plaid/spend:pace_history_models",
         "@pypi//babel",
-        "@pypi//dbus_next",
+        "@pypi//dbus_fast",
         "@pypi//sparklines",
     ],
 )
@@ -144,7 +144,7 @@ py_wheel(
         "aiohttp>=3.13.5",
         "Babel>=2.15.0",
         "ducktape-network-monitor",
-        "dbus-next>=0.2.3",
+        "dbus-fast>=4.0.0",
         "httpx>=0.27.0",
         "httpx2>=2.13.0",
         "Authlib>=1.8.0",

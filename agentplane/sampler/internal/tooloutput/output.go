@@ -79,7 +79,7 @@ func formattedTruncateTextItems(items []protocol.ContentPart, maxTokens int) []p
 	}
 	// formatted_truncate_text
 	text := fmt.Sprintf("Warning: truncated output (original token count: %d)\nTotal output lines: %d\n\n%s",
-		approxTokenCount(combined), countLines(combined), TruncateTextWithTokenBudget(combined, maxTokens))
+		ApproxTokenCountBytes(len(combined)), countLines(combined), TruncateTextWithTokenBudget(combined, maxTokens))
 	return []protocol.ContentPart{{Type: "input_text", Text: text}}
 }
 
@@ -100,7 +100,7 @@ func truncateOutputItems(items []protocol.ContentPart, maxTokens int) ([]protoco
 				omittedText++
 				continue
 			}
-			if cost := approxTokenCount(item.Text); cost <= remaining {
+			if cost := ApproxTokenCountBytes(len(item.Text)); cost <= remaining {
 				out = append(out, protocol.ContentPart{Type: "input_text", Text: item.Text})
 				remaining -= cost
 			} else {
@@ -118,7 +118,7 @@ func truncateOutputItems(items []protocol.ContentPart, maxTokens int) ([]protoco
 			if err := json.Unmarshal(item.Raw, &audio); err != nil {
 				return nil, err
 			}
-			if cost := approxTokenCount(audio.AudioURL); cost <= remaining {
+			if cost := ApproxTokenCountBytes(len(audio.AudioURL)); cost <= remaining {
 				out = append(out, item)
 				remaining -= cost
 			} else {
@@ -135,11 +135,6 @@ func truncateOutputItems(items []protocol.ContentPart, maxTokens int) ([]protoco
 		out = append(out, protocol.ContentPart{Type: "input_text", Text: fmt.Sprintf("[omitted %d audio items ...]", omittedAudio)})
 	}
 	return out, nil
-}
-
-// Codex rust-v0.162.1 utils/string/src/truncate.rs approx_token_count.
-func approxTokenCount(text string) int {
-	return (len(text) + approxBytesPerToken - 1) / approxBytesPerToken
 }
 
 // countLines matches Rust str::lines: a trailing newline does not start another line.
@@ -162,17 +157,30 @@ func TruncateTextWithTokenBudget(text string, maxTokens int) string {
 		return text
 	}
 	if maxBytes == 0 {
-		return fmt.Sprintf("…%d tokens truncated…", approxTokenCount(text))
+		return fmt.Sprintf("…%d tokens truncated…", ApproxTokenCountBytes(len(text)))
 	}
+	marker := fmt.Sprintf("…%d tokens truncated…", ApproxTokenCountBytes(len(text)-maxBytes))
+	return truncateMiddle(text, maxBytes, marker)
+}
+
+// TruncateTextWithinTokenBudget includes the marker in its UTF-8 byte budget.
+// An empty result means the budget could not fit the marker.
+func TruncateTextWithinTokenBudget(text string, maxTokens int, marker string) string {
+	maxBytes := maxTokens * approxBytesPerToken
 	if len(text) <= maxBytes {
 		return text
 	}
-	left := maxBytes / 2
+	if maxBytes < len(marker) {
+		return ""
+	}
+	return truncateMiddle(text, maxBytes-len(marker), marker)
+}
+
+func truncateMiddle(text string, retainedBytes int, marker string) string {
+	left := retainedBytes / 2
 	prefixEnd := floorCharBoundary(text, left)
-	suffixStart := ceilCharBoundary(text, len(text)-(maxBytes-left))
-	// approx_tokens_from_byte_count of the removed byte count.
-	removed := (len(text) - maxBytes + approxBytesPerToken - 1) / approxBytesPerToken
-	return text[:prefixEnd] + fmt.Sprintf("…%d tokens truncated…", removed) + text[suffixStart:]
+	suffixStart := ceilCharBoundary(text, len(text)-(retainedBytes-left))
+	return text[:prefixEnd] + marker + text[suffixStart:]
 }
 
 func floorCharBoundary(text string, index int) int {

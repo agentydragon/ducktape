@@ -2,7 +2,7 @@ import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
+import { type ActionPresentation, expandsForDetails } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { podsLogOptions } from "../../schemas/kubernetes_admin/pods_log";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
@@ -24,7 +24,7 @@ function PodsLogLabel({ args }: { args: z.infer<typeof podsLogArguments> }): JSX
   return (
     <Text size="sm" fw={600}>
       View logs for <Code>{kubernetesTarget("Pod", args.name, args.namespace)}</Code>
-      {podsLogOptions(args)
+      {podsLogOptions({ container: args.container, previous: args.previous })
         .map((option) => `, ${option}`)
         .join("")}
     </Text>
@@ -32,11 +32,14 @@ function PodsLogLabel({ args }: { args: z.infer<typeof podsLogArguments> }): JSX
 }
 
 export const podsLogLabel: ArgumentsPreview = definePreview(podsLogArguments, PodsLogLabel);
-// The label carries every argument; direct previews preserve null as the slot suppression signal.
-export const podsLogPreview: ArgumentsPreview = { schema: podsLogArguments, render: () => null };
+const podsLogPreview = definePreview(podsLogArguments, ({ args }) => {
+  const [tail] = podsLogOptions({ tail: args.tail });
+  return tail ? <Text size="sm">Read {tail}</Text> : null;
+});
 
 export const podsLogPresentation: ActionPresentation = {
   label: podsLogLabel,
+  pane: { opened: podsLogPreview },
   details: {
     arguments: podsLogPreview,
     envelopeResult: kubernetesTextResult(
@@ -46,5 +49,5 @@ export const podsLogPresentation: ActionPresentation = {
     ),
   },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsLog,
-  compactCardExpands: expandsForRejectedArguments(podsLogArguments),
+  compactCardExpands: expandsForDetails(podsLogArguments, (args) => args.tail !== undefined),
 };

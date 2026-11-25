@@ -28,14 +28,13 @@ DebundleAnalysisInfo = provider(
 
 def _debundle_apply_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
-    plan = _spec_plan(ctx, out_dir.short_path)
+    plan = _spec_plan(ctx)
 
     saved = ctx.attr.analysis[DebundleAnalysisInfo]
-    analysis_files = saved.files
     analysis = saved.analysis
 
     output_groups = {
-        "analysis": analysis_files,
+        "analysis": saved.files,
         "debundler": depset([ctx.executable.debundler]),
         "projector": depset([saved.projector]),
         "native_inputs": depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
@@ -50,46 +49,97 @@ def _debundle_apply_impl(ctx):
             # analysis. Its apply inputs must be projected independently.
             inputs = plan.spec_inputs,
             outputs = [projection],
-            command = _shell_execroot_path(ctx.executable.debundler.path) + " " + " ".join(
-                ["spec", "project-apply"] + plan.spec_args +
-                ["--projection-root", "\"${OLDPWD}\"", "--out", shell.quote(projection.short_path)],
-            ),
+            args = ["spec", "project-apply"] + _spec_args(ctx, plan, out_dir.short_path) +
+                   ["--projection-root", "\"${OLDPWD}\"", "--out", shell.quote(projection.short_path)],
             mnemonic = "DebundleProjectApply",
             progress = "Projecting debundle apply inputs for %{label}",
         )
     output_groups["apply_projection"] = depset([projection])
-    _run_debundler(
-        ctx,
-        inputs = depset([analysis, projection] + ctx.files.ownership_subset, transitive = [plan.source_inputs]),
-        outputs = [out_dir],
-        command = _apply_command(ctx, plan, analysis, ["--apply-projection", shell.quote(projection.short_path), "--projection-root", "\"${OLDPWD}\""]),
-        mnemonic = "DebundleApply",
-        progress = "Applying debundle spec for %{label}",
-    )
+    _run_apply(ctx, plan, analysis, out_dir, projection = projection)
     if ctx.attr.split_dependency_graphs:
-        # Register an independent, on-demand export. DefaultInfo never reaches
-        # this action; it consumes the exact SAME Analyze artifact as Pipeline.
+        # Only the output group requests the full graph export.
         graphs_dir = ctx.actions.declare_directory(ctx.label.name + ".dependency_graphs")
-        graph_plan = _spec_plan(ctx, graphs_dir.short_path)
-        _run_debundler(
-            ctx,
-            inputs = depset([analysis] + ctx.files.ownership_subset, transitive = [graph_plan.inputs]),
-            outputs = [graphs_dir],
-            command = _apply_command(ctx, graph_plan, analysis, [
-                "--graphs",
-                "--reports-only",
-                shell.quote(graphs_dir.short_path),
-            ], allow_gate_rejection = True),
-            mnemonic = "DebundleExportGraphs",
-            progress = "Exporting full debundle graphs for %{label}",
-        )
+        _run_apply(ctx, plan, analysis, graphs_dir)
         output_groups["dependency_graphs"] = depset([graphs_dir])
     return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
+
+def _resolve_placement_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".json")
+    plan = _spec_plan(ctx)
+    subset = ctx.file.ownership_subset
+    canonical = ctx.outputs.canonical_out
+    if canonical and not subset:
+        fail("canonical_out requires ownership_subset")
+    fragment_files = []
+    extra_args = []
+    for target, owner in ctx.attr.proposal_fragments.items():
+        files = target[DefaultInfo].files.to_list()
+        if len(files) != 1:
+            fail("proposal fragment {} must supply exactly one file".format(target.label))
+        fragment_files.append(files[0])
+
+        # _run_debundler starts in the bin tree, not the execroot.
+        extra_args += ["--proposal-fragment", shell.quote(owner + "=") + _shell_execroot_path(files[0].path)]
+    if canonical:
+        extra_args += ["--canonical-out", shell.quote(canonical.short_path)]
+    _run_debundler(
+        ctx,
+        inputs = depset(ctx.files.ownership_subset + fragment_files, transitive = [plan.inputs]),
+        outputs = [out] + ([canonical] if canonical else []),
+        tool = ctx.executable.resolver,
+        args = _spec_args(ctx, plan, ctx.label.name + ".unused") + plan.package_args +
+               ["--chunk", shell.quote(ctx.attr.chunk), "--out", shell.quote(out.short_path)] +
+               (["--ownership-subset", _shell_execroot_path(subset.path)] if subset else []) + extra_args,
+        mnemonic = "DebundleResolvePlacement",
+        progress = "Resolving authored source-unit owners for %{label}",
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+def _resolve_placements_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".json")
+    plan = _spec_plan(ctx)
+    subset = ctx.file.ownership_subset
+    canonical = ctx.outputs.canonical_out
+    if not ctx.attr.chunks:
+        fail("chunks must contain at least one materialized chunk ID")
+    if len(ctx.attr.chunks) != len(depset(ctx.attr.chunks).to_list()):
+        fail("chunks must not contain duplicate IDs")
+    if canonical and not subset:
+        fail("canonical_out requires ownership_subset")
+
+    fragment_files = []
+    extra_args = []
+    for target, chunk_owner in ctx.attr.proposal_fragments.items():
+        files = target[DefaultInfo].files.to_list()
+        if len(files) != 1:
+            fail("proposal fragment {} must supply exactly one file".format(target.label))
+        fragment_files.append(files[0])
+
+        # _run_debundler starts in the bin tree, not the execroot.
+        extra_args += ["--proposal-fragment", shell.quote(chunk_owner + "=") + _shell_execroot_path(files[0].path)]
+    if canonical:
+        extra_args += ["--canonical-out", shell.quote(canonical.short_path)]
+    chunk_args = []
+    for chunk in ctx.attr.chunks:
+        chunk_args += ["--chunk", shell.quote(chunk)]
+    _run_debundler(
+        ctx,
+        inputs = depset(ctx.files.ownership_subset + fragment_files, transitive = [plan.inputs]),
+        outputs = [out] + ([canonical] if canonical else []),
+        tool = ctx.executable.resolver,
+        args = ["batch"] +
+               _spec_args(ctx, plan, ctx.label.name + ".unused") + plan.package_args +
+               chunk_args + ["--out", shell.quote(out.short_path)] +
+               (["--ownership-subset", _shell_execroot_path(subset.path)] if subset else []) + extra_args,
+        mnemonic = "DebundleResolvePlacements",
+        progress = "Resolving authored source-unit owners for %{label}",
+    )
+    return [DefaultInfo(files = depset([out]))]
 
 def _debundle_analysis_impl(ctx):
     if ctx.attr.analysis_threads < 0:
         fail("analysis_threads must be nonnegative, got {}".format(ctx.attr.analysis_threads))
-    plan = _spec_plan(ctx, ctx.label.name + ".analysis_output")
+    plan = _spec_plan(ctx)
 
     # Analysis is computed by its own action, keyed only by what it reads:
     # the projection, the sources and the package roots. An edit the
@@ -104,17 +154,14 @@ def _debundle_analysis_impl(ctx):
         ctx,
         inputs = plan.inputs,
         outputs = [projection, apply_projection],
-        command = _shell_execroot_path(ctx.executable.projector.path) + " " + " ".join(
-            plan.spec_args + plan.package_args +
-            [
-                "--out",
-                shell.quote(projection.short_path),
-                "--apply-out",
-                shell.quote(apply_projection.short_path),
-                "--projection-root",
-                "\"${OLDPWD}\"",
-            ],
-        ),
+        args = _spec_args(ctx, plan, ctx.label.name + ".analysis_output") + plan.package_args + [
+            "--out",
+            shell.quote(projection.short_path),
+            "--apply-out",
+            shell.quote(apply_projection.short_path),
+            "--projection-root",
+            "\"${OLDPWD}\"",
+        ],
         mnemonic = "DebundleProjectAnalysis",
         progress = "Projecting debundle analysis inputs for %{label}",
         tool = ctx.executable.projector,
@@ -123,14 +170,12 @@ def _debundle_analysis_impl(ctx):
         ctx,
         inputs = depset([projection], transitive = [plan.source_inputs]),
         outputs = [analysis],
-        command = "\"${{OLDPWD}}/{}\" ".format(ctx.executable.analyzer.path) + " ".join(
-            [
-                "--projection",
-                shell.quote(projection.short_path),
-                "--tree-source-root",
-                plan.source_root,
-            ] + plan.package_args + ["--out", shell.quote(analysis.short_path)],
-        ),
+        args = [
+            "--projection",
+            shell.quote(projection.short_path),
+            "--tree-source-root",
+            plan.source_root,
+        ] + plan.package_args + ["--out", shell.quote(analysis.short_path)],
         mnemonic = "DebundleAnalyze",
         progress = "Analyzing debundle input for %{label}",
         tool = ctx.executable.analyzer,
@@ -154,50 +199,62 @@ def _debundle_analysis_impl(ctx):
         ),
     ]
 
-def _apply_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = False):
-    run_flags = _run_flags(ctx, include_full_streams = "--reports-only" not in extra_flags)
+def _run_apply(ctx, plan, analysis, out_dir, projection = None):
+    graph_export = projection == None
+    run_flags = _run_flags(ctx, include_full_streams = not graph_export)
     if ctx.file.ownership_subset:
-        run_flags = run_flags + ["--ownership-subset", _shell_source_path(ctx.file.ownership_subset.path)]
-    if allow_gate_rejection and not ctx.attr.emit_on_rejection:
-        run_flags = run_flags + ["--emit-on-rejection"]
-    command = "\"${{OLDPWD}}/{}\" ".format(ctx.executable.debundler.path) + " ".join(
-        ["run"] + run_flags + plan.spec_args + plan.package_args +
-        ["--analysis", shell.quote(analysis.short_path)] + extra_flags,
+        run_flags += ["--ownership-subset", _shell_execroot_path(ctx.file.ownership_subset.path)]
+    if graph_export:
+        mnemonic = "DebundleExportGraphs"
+        progress = "Exporting full debundle graphs for %{label}"
+        if not ctx.attr.emit_on_rejection:
+            run_flags.append("--emit-on-rejection")
+        inputs = depset([analysis] + ctx.files.ownership_subset, transitive = [plan.inputs])
+        extra_flags = ["--graphs", "--reports-only", shell.quote(out_dir.short_path)]
+    else:
+        mnemonic = "DebundleApply"
+        progress = "Applying debundle spec for %{label}"
+        inputs = depset([analysis, projection] + ctx.files.ownership_subset, transitive = [plan.source_inputs])
+        extra_flags = ["--apply-projection", shell.quote(projection.short_path), "--projection-root", "\"${OLDPWD}\""]
+    _run_debundler(
+        ctx,
+        inputs = inputs,
+        outputs = [out_dir],
+        args = ["run"] + run_flags + _spec_args(ctx, plan, out_dir.short_path) + plan.package_args +
+               ["--analysis", shell.quote(analysis.short_path)] + extra_flags,
+        mnemonic = mnemonic,
+        progress = progress,
+        gate_marker = paths.join(out_dir.short_path, "GATE_REJECTED") if ctx.attr.emit_on_rejection or graph_export else None,
     )
-    if ctx.attr.emit_on_rejection or allow_gate_rejection:
-        # Reading output must have both the typed status and its marker.
-        return "{command} || {{ status=$?; [ \"$status\" -eq {gate} ] && [ -f {marker} ] || exit \"$status\"; }}".format(
-            command = command,
-            gate = _GATE_REJECTED_EXIT_CODE,
-            marker = shell.quote(paths.join(plan.out_root, "GATE_REJECTED")),
-        )
-    return command
 
-def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress, tool = None, analysis_threads = 0):
+def _run_debundler(ctx, inputs, outputs, args, mnemonic, progress, tool = None, analysis_threads = 0, gate_marker = None):
+    tool = tool or ctx.executable.debundler
+    command = _shell_execroot_path(tool.path) + " " + " ".join(args)
+    if gate_marker:
+        # Reading output must have both the typed status and its marker.
+        command += " || {{ status=$?; [ \"$status\" -eq {gate} ] && [ -f {marker} ] || exit \"$status\"; }}".format(
+            gate = _GATE_REJECTED_EXIT_CODE,
+            marker = shell.quote(gate_marker),
+        )
     action_env = {"BAZEL_BINDIR": ctx.bin_dir.path}
     if analysis_threads > 0:
         action_env["RAYON_NUM_THREADS"] = str(analysis_threads)
     ctx.actions.run_shell(
         inputs = inputs,
-        tools = [tool if tool else ctx.executable.debundler],
+        tools = [tool],
         outputs = outputs,
         command = "cd \"${{BAZEL_BINDIR}}\" && {command}".format(command = command),
         env = action_env,
         use_default_shell_env = True,
-        # The debundler asserts that each vendor package's resolved subpath
-        # canonicalizes to a location within the package root. Inside
-        # Bazel's linux-sandbox, package-dir entries are real directories
-        # but their leaf files are symlinks to the host execroot's bazel-bin
-        # — so `realpath(file)` lands outside `realpath(dir)` and the check
-        # spuriously fails. Disable sandboxing for these actions; inputs are
-        # declared via Bazel attrs, so reproducibility is preserved. The checks
-        # required before removing this: debug/2026_11_05_bazel_sandbox_package_roots.md.
+        # Local sandbox symlinks can put valid vendor files outside their
+        # canonical package root. Reproducer and criteria for restoring sandboxing:
+        # debug/2026_11_05_bazel_sandbox_package_roots.md.
         execution_requirements = {"no-sandbox": "1"},
         progress_message = progress,
         mnemonic = mnemonic,
     )
 
-def _run_flags(ctx, include_full_streams = True):
+def _run_flags(ctx, include_full_streams):
     # Each entry is a fully-rendered shell token (already quoted/escaped).
     run_flags = []
     if ctx.attr.fail_fast:
@@ -206,17 +263,24 @@ def _run_flags(ctx, include_full_streams = True):
         run_flags.append("--emit-on-rejection")
     if ctx.attr.full_report_chunks and not ctx.attr.full_reports:
         fail("full_report_chunks requires full_reports")
-    for report in ctx.attr.full_reports if include_full_streams else []:
+    if not include_full_streams:
+        return run_flags
+    for report in ctx.attr.full_reports:
         run_flags += ["--full-report", shell.quote(report)]
-    for chunk in ctx.attr.full_report_chunks if include_full_streams else []:
+    for chunk in ctx.attr.full_report_chunks:
         run_flags += ["--full-report-chunk", shell.quote(chunk)]
-    if include_full_streams and ctx.attr.effect_conflicts_jsonl:
+    if ctx.attr.effect_conflicts_jsonl:
         run_flags.append("--effect-conflicts-jsonl")
-    for chunk in ctx.attr.effect_conflicts_chunks if include_full_streams else []:
+    for chunk in ctx.attr.effect_conflicts_chunks:
         run_flags.extend(["--effect-conflicts-chunk", shell.quote(chunk)])
     return run_flags
 
-def _spec_plan(ctx, out_root):
+def _spec_args(ctx, plan, out_root):
+    if ctx.file.spec:
+        return plan.spec_args
+    return plan.spec_args + ["--out-root", shell.quote(out_root)]
+
+def _spec_plan(ctx):
     bin_dir = ctx.bin_dir.path
 
     has_flat = bool(ctx.file.spec)
@@ -231,7 +295,7 @@ def _spec_plan(ctx, out_root):
         fail("tree_config, tree_modules, and tree_vendor_marks must all be set together")
 
     if has_flat:
-        spec_args = ["--spec", _shell_source_path(ctx.file.spec.path)]
+        spec_args = ["--spec", _shell_execroot_path(ctx.file.spec.path)]
 
         # A flat spec's source paths resolve against the working directory.
         source_root = "\"${PWD}\""
@@ -240,17 +304,15 @@ def _spec_plan(ctx, out_root):
         source_root = _tree_source_root_arg(ctx)
         spec_args = [
             "--tree-config",
-            _shell_source_path(ctx.file.tree_config.path),
+            _shell_execroot_path(ctx.file.tree_config.path),
             "--tree-modules",
-            _shell_source_path(paths.join(pkg, ctx.attr.tree_modules)),
+            _shell_execroot_path(paths.join(pkg, ctx.attr.tree_modules)),
             "--tree-vendor-marks",
-            _shell_source_path(ctx.file.tree_vendor_marks.path),
+            _shell_execroot_path(ctx.file.tree_vendor_marks.path),
             # Source-relative paths embedded in the tree config YAML
             # (e.g. `inputs.js_list_path`) resolve against this root.
             "--tree-source-root",
             source_root,
-            "--out-root",
-            shell.quote(out_root),
         ]
 
     package_args = []
@@ -289,11 +351,10 @@ def _spec_plan(ctx, out_root):
         source_inputs = source_inputs,
         spec_inputs = spec_inputs,
         spec_identity = (
-            tuple(spec_args if has_flat else spec_args[:-2]),
+            tuple(spec_args),
             tuple(sorted([file.path for file in spec_inputs.to_list()])),
         ),
         inputs = inputs,
-        out_root = out_root,
     )
 
 def _tree_source_root_arg(ctx):
@@ -322,25 +383,14 @@ def _tree_source_root_arg(ctx):
             sorted(roots),
         ))
 
-    root = files[0].root.path
-    if not root:
-        # Source file: its root *is* the execroot.
-        return _shell_source_path(".")
-    return _shell_execroot_path(root)
+    # Source files have an empty root path: their root is the execroot itself.
+    return _shell_execroot_path(files[0].root.path or ".")
 
-def _shell_source_path(workspace_relative):
-    """Shell expression referencing a workspace-root-relative source path.
-
-    The action cd's into `${BAZEL_BINDIR}`; source-tree files live under
-    `${OLDPWD}` (= execroot). Absolute paths are passed through unchanged.
-    """
-    if workspace_relative.startswith("/"):
-        return shell.quote(workspace_relative)
-    return _shell_execroot_path(workspace_relative)
-
-def _shell_execroot_path(execroot_relative):
-    """Shell expression referencing an execroot-relative path."""
-    return "\"${{OLDPWD}}/{}\"".format(execroot_relative)
+def _shell_execroot_path(path):
+    """Quote a path for the action shell after its cd from the execroot to bazel-bin."""
+    if path.startswith("/"):
+        return shell.quote(path)
+    return '"${OLDPWD}"/' + shell.quote(path)
 
 _COMMON_ATTRS = {
     "spec": attr.label(
@@ -382,6 +432,44 @@ _COMMON_ATTRS = {
         doc = "Vendor package roots: label of the package's `:dir` filegroup -> package name. The first file's dirname is passed as `--package-root <name>=<dir>`.",
     ),
 }
+
+debundle_resolve_placement = rule(
+    implementation = _resolve_placement_impl,
+    attrs = dict(_COMMON_ATTRS, **{
+        "canonical_out": attr.output(doc = "Optional unfiltered JSON from the same solve as ownership_subset."),
+        "proposal_fragments": attr.label_keyed_string_dict(
+            allow_files = [".yaml"],
+            doc = "Selector-only YAML files mapped to canonical owners in chunk. New owners follow the shared priority.",
+        ),
+        "chunk": attr.string(mandatory = True),
+        "resolver": attr.label(
+            executable = True,
+            cfg = "exec",
+            default = Label("//devinfra/js/debundle:debundle_resolve_placement"),
+        ),
+        "ownership_subset": attr.label(allow_single_file = [".json"]),
+    }),
+    doc = "Export selector-resolved unit ownership for one chunk, before analysis, scheduling, gates or emission.",
+)
+
+debundle_resolve_placements = rule(
+    implementation = _resolve_placements_impl,
+    attrs = dict(_COMMON_ATTRS, **{
+        "canonical_out": attr.output(doc = "Optional unfiltered batch JSON from the same solve as ownership_subset."),
+        "chunks": attr.string_list(mandatory = True, doc = "Materialized chunk IDs to include, in output order."),
+        "proposal_fragments": attr.label_keyed_string_dict(
+            allow_files = [".yaml"],
+            doc = "Selector-only YAML files mapped to CHUNK::OWNER. New owners follow the shared tree priority within that chunk.",
+        ),
+        "resolver": attr.label(
+            executable = True,
+            cfg = "exec",
+            default = Label("//devinfra/js/debundle:debundle_resolve_placement"),
+        ),
+        "ownership_subset": attr.label(allow_single_file = [".json"]),
+    }),
+    doc = "Export selector-resolved unit ownership for several chunks using one shared source preparation and selector solve.",
+)
 
 debundle_analysis = rule(
     implementation = _debundle_analysis_impl,

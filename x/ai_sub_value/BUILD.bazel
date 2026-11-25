@@ -17,6 +17,7 @@ py_test(
     deps = [
         ":analyze",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -107,6 +108,10 @@ py_library(
 py_library(
     name = "langfuse_usage_extract",
     srcs = ["langfuse_usage_extract.py"],
+    data = [
+        "langfuse-usage-five-minute.sql",
+        "langfuse-usage-id-audit.sql",
+    ],
 )
 
 py_test(
@@ -115,6 +120,7 @@ py_test(
     deps = [
         ":langfuse_usage_extract",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

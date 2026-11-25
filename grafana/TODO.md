@@ -21,9 +21,10 @@ Reuse upstream capabilities where they cover these needs.
 
 ## D. Reliability and cost
 
-Diagnose visual-test timeouts during capture and after screenshots were written. Instrument
-browser and container startup, rendering and teardown so a timeout identifies where progress
-stopped. Measure setup costs, then evaluate sharing Grafana or a browser or combining
+Use the existing `grafana-stages.log` in Bazel undeclared outputs to locate stalls during
+startup and capture. Diagnose timeouts during capture and after screenshots were written.
+Add timings or teardown diagnostics where the existing stage markers leave a gap. Measure
+setup costs, then evaluate sharing Grafana or a browser or combining
 screenshots into one test, including effects on isolation, parallelism, caching and
 per-dashboard visual baselines. Explore reusing a running Grafana instance across
 BuildBuddy VMs, including whether networking and isolation make that practical.
@@ -36,26 +37,19 @@ representative output and query coverage. Exercising dashboard queries is appeal
 that approach on a more complex dashboard and account for Loki and ClickHouse. Choose one
 default approach and document any justified exceptions.
 
-## F. Dashboard declaration and cdk8s
-
-Prototype a Bazel dashboard declaration whose JSON can feed both cdk8s manifest generation
-and its visual test. Try a monitoring dashboard and a component-owned dashboard; keep Flux
-resource ownership and datasource wiring explicit. Evaluate whether it eliminates
-duplicated declarations without making customization or deployment less clear.
-
 ## G. Dashboard and fixture layout
 
-Choose and apply a consistent naming and placement convention for dashboard JSON, fixtures
-and test targets. Monitoring dashboards have named JSON files and `visual_fixtures/`, while
-GitHub and gateway dashboards have generic filenames beside their component generators.
-Decide how component ownership affects placement. Keep reusable test machinery under
-`//grafana/visual_tests` and dashboard-specific data with its owner.
+Choose a consistent naming and placement convention for fixtures and visual test targets.
+Monitoring fixtures use named files under `visual_fixtures/`. GitHub and gateway fixtures
+use generic filenames beside their component generators. Keep dashboard-specific data with
+its owner and reusable test machinery under `//grafana/visual_tests`. Dashboard JSON naming
+and build-output placement already come from `//grafana:dashboard.bzl`.
 
 ## I. Exact-base visual comparisons
 
-Make before-and-after images use the exact PR base and head with the same fixtures and
-capture settings, or clearly identify a fallback baseline. New targets currently have no
-before image until a baseline has been published. Track the remaining work in
+The [publisher](../devinfra/pr_visuals/docs/publisher.md#baseline-resolution) already prefers
+the exact base and labels fallback comparisons. Track the remaining work to obtain exact
+base/head captures with the same fixtures and settings in
 [issue #13556](https://github.com/agentydragon/ducktape/issues/13556).
 
 ## J. Manual live-data preview

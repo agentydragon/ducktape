@@ -36,7 +36,6 @@ from kyverno_validatingpolicy_crds.io.kyverno.policies import (
     ValidatingPolicySpecValidations,
 )
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/kyverno/policies"
@@ -348,17 +347,3 @@ CHARTS = (
     cleanup_controller_workloads_chart,
     cleanup_controller_sandboxes_chart,
 )
-
-
-def kyverno_policies(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "kyverno-policies",
-        directory,
-        depends_on=[
-            # Policies require Kyverno CRDs to be installed
-            flux_kustomization_depends_on(kyverno)
-        ],
-        interval="5m",
-        timeout="2m",
-    )

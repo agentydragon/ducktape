@@ -44,9 +44,9 @@ type Database struct {
 	clones int
 }
 
-// RunIntegrationTests starts the PostgreSQL fixture, then runs the package tests and closes the fixture.
+// runIntegrationTests starts the PostgreSQL fixture, then runs the package tests and closes the fixture.
 // Startup and migrations share a three-minute bound; tests run without that startup deadline.
-func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(*Database) int) int {
+func runIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(*Database) int) int {
 	ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
 	database, err := Start(ctx, migrate)
 	cancel()
@@ -65,18 +65,18 @@ func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(
 	return code
 }
 
-// RunIntegrationTestsWithDatabase sets the package fixture before running its tests.
-func RunIntegrationTestsWithDatabase(m *testing.M, migrate func(context.Context, *sql.DB) error, destination **Database) int {
-	return RunIntegrationTests(migrate, func(database *Database) int {
+// RunIntegrationTests sets the package fixture before running its tests.
+func RunIntegrationTests(run func() int, migrate func(context.Context, *sql.DB) error, destination **Database) int {
+	return runIntegrationTests(migrate, func(database *Database) int {
 		*destination = database
-		return m.Run()
+		return run()
 	})
 }
 
 // RunIntegrationTestsWithCloneTemplate snapshots the migrated database before running tests.
 // Use it when tests share the migrated database and also need pristine clones.
 func RunIntegrationTestsWithCloneTemplate(m *testing.M, migrate func(context.Context, *sql.DB) error, destination **Database) int {
-	return RunIntegrationTests(migrate, func(database *Database) int {
+	return runIntegrationTests(migrate, func(database *Database) int {
 		ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
 		err := database.prepareCloneTemplate(ctx)
 		cancel()
@@ -311,6 +311,20 @@ func Count(t testing.TB, db *sql.DB, query string, args ...any) int {
 		t.Fatal(err)
 	}
 	return count
+}
+
+// BackendPID returns the PID of the PostgreSQL backend that serves q, for WaitForBlocker. q must use
+// one connection: a transaction, a *sql.Conn, or a *sql.DB with SetMaxOpenConns(1).
+func BackendPID(t testing.TB, ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+},
+) int {
+	t.Helper()
+	var pid int
+	if err := q.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	return pid
 }
 
 // WaitForBlocker waits until PostgreSQL identifies blockerPID as blocking blockedPID.

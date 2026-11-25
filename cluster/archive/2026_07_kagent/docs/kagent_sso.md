@@ -15,14 +15,17 @@ Browser
   -> kagent-ui:8080
 ```
 
-- `../terraform/provider_kagent.tf` owned the Authentik OIDC provider,
+The files below were deleted from this archive; the [README](../README.md) names a
+commit that still holds them.
+
+- `terraform/provider_kagent.tf` owned the Authentik OIDC provider,
   `kagent` application, admin policy binding, oauth2-proxy cookie secret, and reflected
   Kubernetes Secret.
-- `../k8s/kagent/app/helmrelease.yaml` enabled the chart's oauth2-proxy and
+- `k8s/kagent/app/helmrelease.yaml` enabled the chart's oauth2-proxy and
   points it at Authentik's per-provider issuer.
-- `../k8s/kagent/app/httproute.yaml` routed the public hostname directly to
+- `k8s/kagent/app/httproute.yaml` routed the public hostname directly to
   `kagent-oauth2-proxy`; there is no Authentik outpost in the request path.
-- `../k8s/kagent/app/flux-kustomization.yaml` depended on
+- `k8s/kagent/app/flux-kustomization.yaml` depended on
   `sso-providers-tf`, so the reflected Secret exists before the chart reconciles.
 
 Authentik does not set `email_verified` for locally managed users. The deployment

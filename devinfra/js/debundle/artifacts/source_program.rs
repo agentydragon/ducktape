@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use super::paths::normalize_module_path;
 
 use super::indexed_files::IndexedFiles;
-use super::{ArtifactIndexes, ChunkBundle, JsFile, get_chunk_entry_path};
+use super::{ArtifactIndexes, ChunkBundle, JsFile};
 
 #[derive(Clone)]
 pub struct SourceProgram {
@@ -39,11 +39,7 @@ impl SourceProgram {
         emission_asts: &BTreeSet<String>,
     ) -> Result<Self> {
         let (indexed, ()) = self.indexed.update_file_bodies(|artifact, indexes| {
-            let closure = selected_static_import_closure(
-                artifact,
-                indexes,
-                &materialized.iter().cloned().collect::<Vec<_>>(),
-            )?;
+            let closure = selected_static_import_closure(artifact, indexes, materialized)?;
             for chunk in &mut artifact.chunks {
                 let name = artifact.chunk_table.name(chunk.chunk_id);
                 if emission_asts.contains(name) {
@@ -78,11 +74,13 @@ impl SourceProgram {
 }
 
 /// Chunk ids normalized, first occurrence kept.
-pub fn normalized_chunk_ids(chunk_ids: &[String]) -> Result<Vec<String>> {
+pub fn normalized_chunk_ids(
+    chunk_ids: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Result<Vec<String>> {
     let mut seen = BTreeSet::new();
     let mut normalized_ids = Vec::new();
     for chunk_id in chunk_ids {
-        let normalized = normalize_module_path(chunk_id)?;
+        let normalized = normalize_module_path(chunk_id.as_ref())?;
         if seen.insert(normalized.clone()) {
             normalized_ids.push(normalized);
         }
@@ -94,28 +92,29 @@ pub fn normalized_chunk_ids(chunk_ids: &[String]) -> Result<Vec<String>> {
 pub fn chunk_runtime_entry<'a>(
     artifact: &'a ChunkBundle,
     chunk_id: &str,
-    chunk_id_interned: ChunkId,
     file: Option<&str>,
-) -> Result<(String, &'a JsFile, &'a ParsedJsModule)> {
-    let target_file = file
-        .map(normalize_module_path)
-        .transpose()?
-        .or_else(|| get_chunk_entry_path(artifact, chunk_id_interned))
-        .with_context(|| {
-            format!(
-                "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
-            )
-        })?;
-    let runtime_file = artifact
-        .js_chunk(chunk_id_interned)?
-        .get_file(&target_file)
-        .with_context(|| {
-            format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
-        })?;
+) -> Result<(ChunkId, &'a JsFile, &'a ParsedJsModule)> {
+    let chunk_id_interned = artifact
+        .chunk_table
+        .get(chunk_id)
+        .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
+    let runtime_file = if let Some(file) = file {
+        let path = normalize_module_path(file)?;
+        artifact
+            .js_chunk(chunk_id_interned)?
+            .get_file(&path)
+            .with_context(|| {
+                format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
+            })?
+    } else {
+        artifact.find_chunk(chunk_id_interned)
+            .and_then(|chunk| chunk.js.get_file(chunk.entry_path()?))
+            .with_context(|| format!("materialize_logical_modules could not determine entry file for chunk: {chunk_id}"))?
+    };
     let runtime_ast = runtime_file.ast().with_context(|| {
         format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
     })?;
-    Ok((target_file, runtime_file, runtime_ast))
+    Ok((chunk_id_interned, runtime_file, runtime_ast))
 }
 
 pub fn prune_artifact_to_chunk_ids(artifact: &mut ChunkBundle, selected: &[String]) {
@@ -133,11 +132,12 @@ pub fn prune_artifact_to_chunk_ids(artifact: &mut ChunkBundle, selected: &[Strin
 pub fn selected_static_import_closure(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    selected_chunk_ids: &[String],
+    selected_chunk_ids: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> Result<BTreeSet<ChunkId>> {
     let mut closure = BTreeSet::new();
     let mut pending = Vec::new();
     for chunk_id in selected_chunk_ids {
+        let chunk_id = chunk_id.as_ref();
         let interned = artifact
             .chunk_table
             .get(chunk_id)

@@ -13,18 +13,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import math
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from types import MappingProxyType
-from typing import Literal
 
 from playwright.async_api import (
     CDPSession,
     Error as PlaywrightError,
-    FloatRect,
-    Locator,
     Page,
     Request,
     Route,
@@ -47,13 +43,6 @@ _LEDGER_QUIET_JS = """() => {
     const empty = window.__visualNetworkLedger__.pending.length === 0;
     window.__visualNetworkQuietPolls__ = empty ? window.__visualNetworkQuietPolls__ + 1 : 0;
     return window.__visualNetworkQuietPolls__ >= 3;
-}"""
-
-
-# The element's box in document coordinates, which is what a full-page clip is measured in.
-_ELEMENT_BOX_JS = """element => {
-    const { x, y, width, height } = element.getBoundingClientRect();
-    return { x: x + window.scrollX, y: y + window.scrollY, width, height };
 }"""
 
 
@@ -278,31 +267,3 @@ async def assert_network_settled(page: Page, *, context: str, timeout_ms: int = 
         raise
     if violations := await page.evaluate("window.__visualNetworkLedger__.violations"):
         raise AssertionError(f"{context}: network violations:\n  " + "\n  ".join(violations))
-
-
-async def screenshot_locator(
-    page: Page,
-    target: Locator,
-    *,
-    context: str,
-    scale: Literal["css", "device"] = "device",
-    animations: Literal["allow", "disabled"] = "allow",
-) -> bytes:
-    if (count := await target.count()) != 1:
-        raise ValueError(f"{context}: screenshot target must match exactly one element, got {count}")
-    box = await target.evaluate(_ELEMENT_BOX_JS)
-    x, y = _round_half_up(box["x"]), _round_half_up(box["y"])
-    clip: FloatRect = {
-        "x": x,
-        "y": y,
-        "width": _round_half_up(box["width"] + box["x"] - x),
-        "height": _round_half_up(box["height"] + box["y"] - y),
-    }
-    if clip["width"] == 0 or clip["height"] == 0:
-        raise ValueError(f"{context}: screenshot target has no visible extent: {clip=}")
-    return await page.screenshot(clip=clip, full_page=True, scale=scale, animations=animations)
-
-
-def _round_half_up(value: float) -> int:
-    # Half up, like JavaScript's Math.round; Python's round() goes to the even neighbour.
-    return math.floor(value + 0.5)

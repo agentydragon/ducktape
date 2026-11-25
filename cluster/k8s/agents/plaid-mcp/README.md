@@ -100,23 +100,10 @@ reach it (the `plaid-pgweb` network policy).
 
 ## Link And Sync
 
-Use `https://plaid-mcp.allegedly.works/link` to add or remove links. Pick the institution
-in the typeahead; the UI looks up what that institution supports and offers exactly the
-products this app can mirror, so Link is never opened requesting a product the bank
-lacks — which would fail the whole session.
-
-Plaid posts signed webhooks to `https://plaid-mcp.allegedly.works/webhooks/plaid`,
-on the same Gateway route as the Link UI. The app verifies Plaid's JWT signature
-and request-body hash, durably queues
-`TRANSACTIONS / SYNC_UPDATES_AVAILABLE`, then applies the `/transactions/sync`
-delta and cursor in the background. New Items receive the webhook URL through
-Link token creation; the next daily/manual sync updates existing Items.
-
-The `sync` CronJob runs daily as a missed-webhook catch-up and refreshes every
-active Item. It uses `/transactions/sync` for transaction deltas and retains
-date-window `/investments/transactions/get` for investment history. It does not
-call real-time balance endpoints; cached balances from product responses are
-snapshotted into Postgres.
+Add or remove links at `https://plaid-mcp.allegedly.works/link`. Plaid posts signed webhooks
+to `https://plaid-mcp.allegedly.works/webhooks/plaid`, on the same Gateway route; the daily
+`sync` CronJob is the missed-webhook catch-up. The Link UI, webhook verification, queued
+event kinds and sync reads are in <../../../../finance/plaid/link/README.md>.
 
 The app's `PLAID_MCP_WEBHOOK_URL` must match the public HTTPS Gateway route.
 The route and network policy are generated from

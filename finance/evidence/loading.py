@@ -318,8 +318,7 @@ def french_factors_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
     same file, and its rows look like plausible monthly returns (`29.44` for 1927). Appending
     them would add 99 outliers to 1200 observations and inflate every fitted volatility without
     producing a single malformed value. Rows are therefore taken only where the date field is
-    exactly six digits, and the count is asserted against the date span so a format change that
-    silently drops the monthly section fails here rather than downstream.
+    exactly six digits. The sorted monthly axis must contain one row per calendar month.
     """
 
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -357,12 +356,7 @@ def french_factors_frame(data: bytes, source: EvidenceSource) -> pl.DataFrame:
         schema={"month": pl.Date, "Mkt-RF": pl.Float64, "SMB": pl.Float64, "HML": pl.Float64, "RF": pl.Float64},
     ).sort("month")
 
-    span = (months[-1].year - months[0].year) * 12 + months[-1].month - months[0].month + 1
-    if frame.height != span:
-        raise ValueError(
-            f"{source.provenance_label} has {frame.height} monthly rows spanning {span} months "
-            f"({months[0]}..{months[-1]}); the series must be gapless"
-        )
+    require_contiguous_months(frame.get_column("month").to_list(), series_name=source.provenance_label)
     return frame
 
 
@@ -437,12 +431,7 @@ def french_international_market_frame(data: bytes, source: EvidenceSource) -> pl
             f"{source.provenance_label} marks {FRENCH_INTERNATIONAL_COLUMN} missing in "
             f"{months[percent.index(FRENCH_MISSING)]}"
         )
-    span = (months[-1].year - months[0].year) * 12 + months[-1].month - months[0].month + 1
-    if len(months) != span or any(later <= earlier for earlier, later in pairwise(months)):
-        raise ValueError(
-            f"{source.provenance_label} has {len(months)} monthly rows spanning {span} months "
-            f"({months[0]}..{months[-1]}); the series must be gapless and in order"
-        )
+    require_contiguous_months(months, series_name=source.provenance_label)
     return pl.DataFrame(
         {"month": months, "market_total_return": [value / 100.0 for value in percent]},
         schema={"month": pl.Date, "market_total_return": pl.Float64},

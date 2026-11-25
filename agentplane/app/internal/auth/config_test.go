@@ -77,16 +77,14 @@ func TestLoadOIDCRejectsInvalidStaticSettings(t *testing.T) {
 	for _, settings := range []*OIDCSettings{
 		{Issuer: "http://auth.example.test/", PublicBaseURL: "https://app.example.test"},
 		{Issuer: "https://auth.example.test/", PublicBaseURL: "https://app.example.test?tenant=x"},
-		{Issuer: "https://auth.example.test/", PublicBaseURL: "https://app.example.test", SessionIdleSeconds: intPointer(0)},
-		{Issuer: "https://auth.example.test/", PublicBaseURL: "https://app.example.test", TokenRenewBeforeSeconds: intPointer(-1)},
+		{Issuer: "https://auth.example.test/", PublicBaseURL: "https://app.example.test", SessionIdleSeconds: new(0)},
+		{Issuer: "https://auth.example.test/", PublicBaseURL: "https://app.example.test", TokenRenewBeforeSeconds: new(-1)},
 	} {
 		if config, err := LoadOIDC(settings); err == nil || config != nil {
 			t.Errorf("accepted invalid OIDC settings %+v: config=%+v err=%v", settings, config, err)
 		}
 	}
 }
-
-func intPointer(value int) *int { return &value }
 
 func TestLoadOIDCPinsKeysOnlyForTestIssuers(t *testing.T) {
 	clearOIDCSecretEnv(t)

@@ -26,7 +26,7 @@ from agentplane.system_tests.vm.configuration import SUPERVISION_TEMPLATE
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import Listener
 
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+pytest_plugins = ("agentplane.system_tests.vm.pytest_plugin",)
 pytestmark = [pytest.mark.vm_sandboxes, pytest.mark.scripted_model]
 
 _TASK_ROOT = Path("/run/k3s/containerd/io.containerd.runtime.v2.task/k8s.io")

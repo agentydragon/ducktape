@@ -630,7 +630,7 @@ def test_backend_server_pe_tender_sale_appears_as_holding_sale_event(server_url:
         "spend_index": "none",
         "pe_tender_policy": {"liquid_net_worth_floor": 5_000_000, "index_floor_to_inflation": False},
     }
-    # Request several seeds to maximize chance of hitting a tender event (λ≈1/year over 48mo).
+    # One fixed seed, so the run is deterministic; tender events arrive at λ≈1/year over 48mo.
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
     pe_sales = [
         event

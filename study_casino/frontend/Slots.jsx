@@ -1,14 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 
-import { COLORS, SectionTitle, WinBurst } from "./shared.jsx";
+import gameRules from "../game_rules.json";
+import { COLORS, SectionTitle, WagerInput, WagerPresets, WinBurst } from "./shared.jsx";
 
-const SLOT_SYMBOLS = [
-  { id: "seven", glyph: "7", color: "#e8b84a", weight: 1, payout: 50 },
-  { id: "star", glyph: "★", color: "#e8b84a", weight: 3, payout: 20 },
-  { id: "diamond", glyph: "◆", color: "#6fc4e8", weight: 5, payout: 10 },
-  { id: "spade", glyph: "♠", color: "#f5e8c7", weight: 9, payout: 5 },
-  { id: "club", glyph: "♣", color: "#f5e8c7", weight: 14, payout: 3 },
-];
+const { slot_symbols: symbols, slot_pair_multiplier: pairMultiplier } = gameRules;
 
 function SlotReel({ target, index, spinning }) {
   const [displayed, setDisplayed] = useState(target);
@@ -20,7 +15,7 @@ function SlotReel({ target, index, spinning }) {
     if (!spinning) return;
     setBlurred(true);
     const interval = setInterval(() => {
-      setDisplayed(SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)]);
+      setDisplayed(symbols[Math.floor(Math.random() * symbols.length)]);
     }, 60);
     const stopAt = 2500 + index * 700;
     const timeout = setTimeout(() => {
@@ -73,7 +68,7 @@ function SlotReel({ target, index, spinning }) {
 
 export function Slots({ offline, credits, spinSlots }) {
   const [bet, setBet] = useState(5);
-  const [targets, setTargets] = useState([SLOT_SYMBOLS[2], SLOT_SYMBOLS[3], SLOT_SYMBOLS[4]]);
+  const [targets, setTargets] = useState(symbols.slice(2, 5));
   const [spinning, setSpinning] = useState(false);
   const [lastResult, setLastResult] = useState(null);
   const [winBurst, setWinBurst] = useState(null);
@@ -93,7 +88,7 @@ export function Slots({ offline, credits, spinSlots }) {
     setSpinning(true);
     setLastResult(null);
 
-    const picks = serverResult.symbols.map((id) => SLOT_SYMBOLS.find((s) => s.id === id) || SLOT_SYMBOLS[0]);
+    const picks = serverResult.symbols.map((id) => symbols.find((s) => s.id === id) || symbols[0]);
     setTargets(picks);
 
     setTimeout(() => {
@@ -153,35 +148,20 @@ export function Slots({ offline, credits, spinSlots }) {
       <div>
         <div className="panel" style={{ padding: 20, marginBottom: 16 }}>
           <SectionTitle small>Your Bet</SectionTitle>
-          <input
-            type="number"
+          <WagerInput
+            credits={credits}
             value={bet}
-            onChange={(e) => setBet(Math.max(1, Math.min(credits, parseInt(e.target.value) || 0)))}
+            onChange={setBet}
             disabled={spinning}
-            min="1"
-            max={credits}
             style={{ width: "100%", marginBottom: 10 }}
           />
-          <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap" }}>
-            {[1, 5, 10, 25, 50].map((v) => (
-              <button
-                key={v}
-                onClick={() => setBet(Math.min(v, credits))}
-                disabled={spinning || credits < v}
-                style={{
-                  padding: "4px 10px",
-                  fontSize: 11,
-                  background: "transparent",
-                  color: COLORS.creamDim,
-                  border: `1px solid rgba(212,165,72,0.3)`,
-                  cursor: spinning || credits < v ? "not-allowed" : "pointer",
-                  opacity: spinning || credits < v ? 0.4 : 1,
-                }}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
+          <WagerPresets
+            credits={credits}
+            onChange={setBet}
+            disabled={spinning}
+            amounts={[1, 5, 10, 25, 50]}
+            style={{ marginBottom: 16 }}
+          />
 
           <button
             className="btn btn-primary"
@@ -205,7 +185,7 @@ export function Slots({ offline, credits, spinSlots }) {
           >
             Payouts
           </div>
-          {SLOT_SYMBOLS.map((s) => (
+          {symbols.map((s) => (
             <div
               key={s.id}
               style={{
@@ -247,7 +227,7 @@ export function Slots({ offline, credits, spinSlots }) {
           >
             <span style={{ color: COLORS.creamDim }}>Any pair</span>
             <span className="mono" style={{ color: COLORS.cream }}>
-              1.5×
+              {pairMultiplier}×
             </span>
           </div>
         </div>

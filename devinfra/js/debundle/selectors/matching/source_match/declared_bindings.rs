@@ -9,11 +9,7 @@ pub(crate) fn declared_bindings(item: &ModuleItem) -> Vec<ResolvedMemberBinding>
         ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
             .specifiers
             .iter()
-            .map(|specifier| match specifier {
-                ImportSpecifier::Named(named) => named.local.sym.to_string(),
-                ImportSpecifier::Default(default) => default.local.sym.to_string(),
-                ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
-            })
+            .map(|specifier| specifier.local().sym.to_string())
             .map(|binding_name| ResolvedMemberBinding { binding_name })
             .collect(),
         _ => Vec::new(),

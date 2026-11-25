@@ -4,8 +4,8 @@ import { parseDocument } from "yaml";
 import { z } from "zod";
 
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
-import { definePreview, type ArgumentsPreview } from "../entry";
-import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
+import { definePreview, type ArgumentsPreview, useCompactPane } from "../entry";
+import { type ActionPresentation, expandsForDetails, expandsForRejectedArguments } from "../presentation";
 import { defineResultPreview } from "../result_entry";
 import { parseKubernetesTable, resourceListResult } from "./list_result";
 import { resource } from "./resource_common";
@@ -48,8 +48,14 @@ function selectors(label?: string, field?: string): JSX.Element | null {
   );
 }
 
-const allPodsFilters = definePreview(podSelectors, ({ args }) => selectors(args.labelSelector, args.fieldSelector));
-const namespaceFilters = definePreview(namespaces, ({ args }) => selectors(undefined, args.fieldSelector));
+function ListFilters({ args }: { args: z.infer<typeof podSelectors> }): JSX.Element | null {
+  return useCompactPane() ? null : selectors(args.labelSelector, args.fieldSelector);
+}
+
+const allPodsFilters = definePreview(podSelectors, ListFilters);
+const namespaceFilters = definePreview(namespaces, ListFilters);
+const hasListSelectors = (args: z.infer<typeof podSelectors>): boolean =>
+  args.labelSelector !== undefined || args.fieldSelector !== undefined;
 
 function Label({ children }: { children: ReactNode }): JSX.Element {
   return (
@@ -64,14 +70,18 @@ const nodeLogLabel = definePreview(nodeLogs, ({ args }) => (
     View logs for Node <Code>{args.name}</Code>
   </Label>
 ));
-const nodeLogArguments = definePreview(nodeLogs, ({ args }) => (
-  <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-    Source <Code>{args.query}</Code>
-    {args.tailLines && args.tailLines > 0
-      ? ` · Last ${args.tailLines} ${args.tailLines === 1 ? "line" : "lines"}`
-      : " · No line limit requested"}
-  </Text>
-));
+const nodeLogArguments = definePreview(nodeLogs, function NodeLogArguments({ args }) {
+  const compact = useCompactPane();
+  return (
+    <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+      Source <Code>{args.query}</Code>
+      {!compact &&
+        (args.tailLines && args.tailLines > 0
+          ? ` · Last ${args.tailLines} ${args.tailLines === 1 ? "line" : "lines"}`
+          : " · No line limit requested")}
+    </Text>
+  );
+});
 
 const nodeStatsLabel = definePreview(node, ({ args }) => (
   <Label>
@@ -131,15 +141,17 @@ const nodesTopLabel = definePreview(nodesTop, ({ args }) =>
     "Read resource usage across nodes"
   )
 );
-const nodesTopFilters = definePreview(nodesTop, ({ args }) =>
-  args.name && args.label_selector ? (
-    <Text size="sm">
-      Capacity lookup selector <Code>{args.label_selector}</Code>
-    </Text>
-  ) : (
-    selectors(args.label_selector)
-  )
-);
+const nodesTopFilters = definePreview(nodesTop, function NodesTopFilters({ args }) {
+  const compact = useCompactPane();
+  if (args.name && args.label_selector) {
+    return (
+      <Text size="sm">
+        Capacity lookup selector <Code>{args.label_selector}</Code>
+      </Text>
+    );
+  }
+  return compact ? null : selectors(args.label_selector);
+});
 const podsTopLabel = definePreview(podsTop, ({ args }) => {
   const scope = args.namespace ? (
     <>
@@ -165,13 +177,17 @@ const podsTopLabel = definePreview(podsTop, ({ args }) => {
     </Label>
   );
 });
-const podsTopFilters = definePreview(podsTop, ({ args }) =>
-  args.name && args.label_selector ? (
-    <Text size="sm">The label selector does not apply to a named Pod.</Text>
-  ) : (
-    selectors(args.label_selector)
-  )
-);
+const podsTopFilters = definePreview(podsTop, function PodsTopFilters({ args }) {
+  const compact = useCompactPane();
+  if (args.name && args.label_selector) {
+    return (
+      <Text size="sm">
+        Label selector <Code>{args.label_selector}</Code> does not apply to the named Pod.
+      </Text>
+    );
+  }
+  return compact ? null : selectors(args.label_selector);
+});
 
 const metricsTable = z.string().transform((text, context) => {
   const rows = parseKubernetesTable(text);
@@ -283,9 +299,7 @@ const runArguments = definePreview(podRun, ({ args }) => (
       </Text>
     )}
     {args.port && args.port > 0 ? (
-      <Text size="sm">
-        Expose TCP port {args.port} through a ClusterIP Service. May also create an OpenShift Route where supported.
-      </Text>
+      <Text size="sm">Expose TCP port {args.port} through a ClusterIP Service.</Text>
     ) : (
       <Text size="sm">No Service port requested.</Text>
     )}
@@ -325,36 +339,45 @@ const scaleResult = defineResultPreview(
   )
 );
 
-function compact(
+function compact<S extends z.ZodType>(
   fallbackLabel: string,
-  schema: z.ZodType,
+  schema: S,
   details: NonNullable<ActionPresentation["details"]>,
-  label?: ArgumentsPreview
+  label?: ArgumentsPreview,
+  hasFoldedDetails?: (args: z.infer<S>) => boolean
 ): ActionPresentation {
   return {
     fallbackLabel,
     label,
-    pane: { collapsed: details.arguments },
+    pane: { collapsed: details.arguments, opened: hasFoldedDetails ? details.arguments : undefined },
     details,
     offersCardDecisionButtons: (args) => schema.safeParse(args).success,
-    compactCardExpands: expandsForRejectedArguments(schema),
+    compactCardExpands: hasFoldedDetails
+      ? expandsForDetails(schema, hasFoldedDetails)
+      : expandsForRejectedArguments(schema),
   };
 }
 
 export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, ActionPresentation]> = [
   [
     "pods_list",
-    compact("List Pods across all namespaces", podSelectors, {
-      arguments: allPodsFilters,
-      envelopeResult: resourceListResult,
-    }),
+    compact(
+      "List Pods across all namespaces",
+      podSelectors,
+      { arguments: allPodsFilters, envelopeResult: resourceListResult },
+      undefined,
+      hasListSelectors
+    ),
   ],
   [
     "namespaces_list",
-    compact("List Kubernetes namespaces", namespaces, {
-      arguments: namespaceFilters,
-      envelopeResult: resourceListResult,
-    }),
+    compact(
+      "List Kubernetes namespaces",
+      namespaces,
+      { arguments: namespaceFilters, envelopeResult: resourceListResult },
+      undefined,
+      hasListSelectors
+    ),
   ],
   [
     "projects_list",
@@ -376,7 +399,8 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
           /^The node \S+ has not logged any message yet or the log file is empty$/
         ),
       },
-      nodeLogLabel
+      nodeLogLabel,
+      (args) => args.tailLines !== undefined
     ),
   ],
   [
@@ -393,11 +417,23 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
   ],
   [
     "nodes_top",
-    compact("Read Node resource usage", nodesTop, { arguments: nodesTopFilters, result: metricsResult }, nodesTopLabel),
+    compact(
+      "Read Node resource usage",
+      nodesTop,
+      { arguments: nodesTopFilters, result: metricsResult },
+      nodesTopLabel,
+      (args) => !args.name && args.label_selector !== undefined
+    ),
   ],
   [
     "pods_top",
-    compact("Read Pod resource usage", podsTop, { arguments: podsTopFilters, result: metricsResult }, podsTopLabel),
+    compact(
+      "Read Pod resource usage",
+      podsTop,
+      { arguments: podsTopFilters, result: metricsResult },
+      podsTopLabel,
+      (args) => !args.name && args.label_selector !== undefined
+    ),
   ],
   [
     "configuration_view",
@@ -416,7 +452,7 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
     {
       fallbackLabel: "Run Kubernetes Pod",
       label: runLabel,
-      pane: { opened: runArguments },
+      pane: { collapsed: runArguments },
       details: { arguments: runArguments, result: kubernetesResourcesResult },
       outcome: (value) => {
         const parsed = kubernetesResourcesSchema.safeParse(value);
@@ -425,6 +461,7 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
           : undefined;
       },
       offersCardDecisionButtons: (args) => podRun.safeParse(args).success,
+      compactCardExpands: expandsForRejectedArguments(podRun),
     },
   ],
   [
@@ -432,9 +469,10 @@ export const additionalKubernetesRenderers: ReadonlyArray<readonly [string, Acti
     {
       fallbackLabel: "Read or set Kubernetes resource scale",
       label: scaleLabel,
-      pane: { opened: scaleArguments },
+      pane: { collapsed: scaleArguments },
       details: { arguments: scaleArguments, result: scaleResult },
       offersCardDecisionButtons: (args) => scale.safeParse(args).success,
+      compactCardExpands: expandsForRejectedArguments(scale),
     },
   ],
 ];

@@ -40,6 +40,10 @@ spec:
     liveness:
       isolationCheck:
         enabled: false
+  resources:
+    requests:
+      cpu: 250m
+      memory: 160Mi
   storage:
     resizeInUseVolumes: false
     size: 2Gi
@@ -119,6 +123,11 @@ spec:
         name: atuin-db-backups-s3-credentials
     wal:
       compression: gzip
+  instanceSidecarConfiguration:
+    resources:
+      requests:
+        cpu: 75m
+        memory: 192Mi
   retentionPolicy: 30d
 ---
 apiVersion: postgresql.cnpg.io/v1

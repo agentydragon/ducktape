@@ -1,0 +1,13 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    visibility = ["//tana/litellm_proxy:__pkg__"],
+    deps = [
+        "//tana/litellm_proxy:provider",
+        "@pypi_tana_litellm_proxy//litellm",
+    ],
+)

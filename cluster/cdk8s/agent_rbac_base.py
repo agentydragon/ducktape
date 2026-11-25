@@ -13,6 +13,7 @@ from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.container_resources import quantities, sandbox_limits
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.kyverno.janitor import ApiResource, janitor
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -26,10 +27,6 @@ _RBAC_GROUP = "rbac.authorization.k8s.io"
 _ADMIN_ROLE = "admin"
 _READ = ["get", "list", "watch"]
 _SANDBOX_USERS = "oidc-ksbx-groups:kubectl-sandbox-users"
-
-
-def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
 
 
 def _read(api_group: str, *resources: str) -> k8s.PolicyRule:
@@ -59,7 +56,7 @@ def _add_sandbox(chart: Chart) -> None:
         "quota",
         metadata=k8s.ObjectMeta(name="quota", namespace=NAMESPACE),
         spec=k8s.ResourceQuotaSpec(
-            hard=_quantities(
+            hard=quantities(
                 {
                     "requests.cpu": "8",
                     "requests.memory": "16Gi",
@@ -86,19 +83,7 @@ def _add_sandbox(chart: Chart) -> None:
         chart,
         "limits",
         metadata=k8s.ObjectMeta(name="limits", namespace=NAMESPACE),
-        spec=k8s.LimitRangeSpec(
-            limits=[
-                # Default limits for containers without specified limits
-                k8s.LimitRangeItem(
-                    type="Container",
-                    max=_quantities({"cpu": "4", "memory": "8Gi"}),
-                    min=_quantities({"cpu": "10m", "memory": "16Mi"}),
-                    default=_quantities({"cpu": "500m", "memory": "512Mi"}),
-                    default_request=_quantities({"cpu": "100m", "memory": "128Mi"}),
-                ),
-                k8s.LimitRangeItem(type="Pod", max=_quantities({"cpu": "8", "memory": "16Gi"})),
-            ]
-        ),
+        spec=sandbox_limits(max_pod_cpu="8", max_pod_memory="16Gi"),
     )
     k8s.KubeRole(
         chart,
@@ -301,7 +286,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def claude_rbac(flux_chart: Chart, directory: RenderedDirectory, kyverno_policies: Kustomization) -> Kustomization:
+def claude_rbac(
+    flux_chart: Chart,
+    directory: RenderedDirectory,
+    kyverno_policies: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
+) -> Kustomization:
     # TODO: migrate this live Flux object name to agent-rbac-base in a staged
     # change. Renaming it directly would delete the old Kustomization and may prune
     # its inventory before the replacement owns the same RBAC resources.
@@ -314,7 +305,7 @@ def claude_rbac(flux_chart: Chart, directory: RenderedDirectory, kyverno_policie
         wait=None,
         timeout="2m",
         depends_on=[flux_kustomization_depends_on(kyverno_policies)],
-        health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name=NAMESPACE)],
+        health_checks=health_checks,
         description=(
             "Lightweight base for agent RBAC. Claude sandbox namespace + shared "
             "ClusterRoles. Must not depend on service or database kustomizations."

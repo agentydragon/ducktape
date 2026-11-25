@@ -46,6 +46,16 @@ cdk8s_import(
     visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
+cdk8s_import(
+    name = "githubaccesstoken",
+    crd = "@external_secrets_crds_bundle//file",
+    crd_name = "githubaccesstokens.generators.external-secrets.io",
+    jsii_module_path = "io/external-secrets/generators",
+    module_name = "eso_github_access_token_crds",
+    module_path = "io/external_secrets/generators",
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
 # Same KeeperSecurity omission as clustersecretstore.
 cdk8s_import(
     name = "secretstore",

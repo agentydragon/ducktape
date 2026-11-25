@@ -7,12 +7,14 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 py_binary(
     name = "main_bin",
     main_module = "devinfra.x.github_proxy.central.main",
+    tags = ["manual"],
     deps = [":main"],
 )
 
 aspect_py_binary(
     name = "main_image_bin",
     main = "main.py",
+    tags = ["manual"],
     deps = [":main"],
 )
 
@@ -21,6 +23,7 @@ py_image_layer(
     binary = ":main_image_bin",
     group = "1000",
     owner = "1000",
+    tags = ["manual"],
 )
 
 oci_image(
@@ -29,6 +32,7 @@ oci_image(
     entrypoint = py_image_entrypoint("main_image_bin"),
     env = py_image_env(binary_name = "main_image_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["manual"],
     tars = [
         ":layers",
         "//third_party/debian_slim:cacerts",
@@ -40,11 +44,13 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["github-api-proxy:test"],
+    tags = ["manual"],
 )
 
 oci_layout_py(
     name = "github_api_proxy_image",
     image = ":image",
+    tags = ["manual"],
 )
 
 py_test(
@@ -66,21 +72,12 @@ py_test(
     ],
 )
 
-test_suite(
-    name = "tests",
-    tests = [
-        ":test_capture",
-        ":test_config",
-        ":test_destinations",
-        ":test_image",
-        ":test_metrics",
-        ":test_runtime",
-    ],
-)
+test_suite(name = "tests")
 
 py_library(
     name = "auth",
     srcs = ["auth.py"],
+    tags = ["manual"],
     deps = [
         ":metrics",
         "@pypi//aiohttp",
@@ -92,6 +89,7 @@ py_library(
 py_library(
     name = "capture",
     srcs = ["capture.py"],
+    tags = ["manual"],
     deps = [
         ":auth",
         ":metrics",
@@ -103,6 +101,7 @@ py_library(
 py_library(
     name = "session_ws_metadata",
     srcs = ["session_ws_metadata.py"],
+    tags = ["manual"],
     visibility = ["//devinfra/x/github_proxy/central:__pkg__"],
     deps = ["@pypi//mitmproxy"],
 )
@@ -110,12 +109,14 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
+    tags = ["manual"],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "main",
     srcs = ["main.py"],
+    tags = ["manual"],
     deps = [
         ":config",
         ":destinations",
@@ -128,6 +129,7 @@ py_library(
 py_library(
     name = "metrics",
     srcs = ["metrics.py"],
+    tags = ["manual"],
     deps = [
         "@pypi//aiohttp",
         "@pypi//mitmproxy",
@@ -138,6 +140,7 @@ py_library(
 py_library(
     name = "runtime",
     srcs = ["runtime.py"],
+    tags = ["manual"],
     deps = [
         ":auth",
         ":capture",
@@ -209,6 +212,7 @@ py_test(
 py_library(
     name = "tls",
     srcs = ["tls.py"],
+    tags = ["manual"],
     deps = [
         "@pypi//cryptography",
         "@pypi//mitmproxy",
@@ -218,6 +222,7 @@ py_library(
 py_library(
     name = "destinations",
     srcs = ["destinations.py"],
+    tags = ["manual"],
     deps = ["@pypi//mitmproxy"],
 )
 

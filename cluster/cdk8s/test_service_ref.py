@@ -1,13 +1,9 @@
-"""What a Service reference derives: the address a client dials names the Service port, while the
-Cilium rules on both ends name the Pods' port, which Cilium matches after socket-LB translation;
-and a `Port` renders one agreeing container port and Service port in both builder tiers."""
+"""Service references distinguish client-facing ports from Pod ports and preserve endpoint overrides."""
 
 import pytest_bazel
-from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
-from cdk8s_plus_34 import Deployment, Service, k8s
-from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor, ServiceMonitorSpecEndpoints
+from more_itertools import one
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints
 
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 _PODS = Pods(namespace="test-namespace", labels=(("app.kubernetes.io/name", "test-app"),))
@@ -16,88 +12,40 @@ _SERVICE = ServiceRef(name="test-app", port=Port(name="http", number=80), pods=_
 
 
 def test_client_addresses_dial_the_service_port() -> None:
+    assert _SERVICE.authority == "test-app.test-namespace.svc.cluster.local:80"
     assert _SERVICE.url == "http://test-app.test-namespace.svc:80"
     assert _SERVICE.fqdn == "test-app.test-namespace.svc.cluster.local"
 
 
-def test_cilium_rules_name_the_pods_port(scratch_chart: Chart) -> None:
-    client = Pods(namespace="test-client", labels=())
-    NetworkPolicy(
-        scratch_chart,
-        "policy",
-        metadata=ApiObjectMetadata(name="test-policy", namespace="test-namespace"),
-        endpoint_selector=_PODS.selector,
-        ingress=[client.admit(_SERVICE.pod_port)],
-        egress=[_SERVICE.egress()],
-    )
-    [policy] = Cdk8sTesting.synth(scratch_chart)
-    tcp_8080 = [{"ports": [{"port": "8080", "protocol": "TCP"}]}]
+def test_cilium_rules_name_the_pods_port() -> None:
+    ingress = Pods(namespace="test-client", labels=()).admit(_SERVICE.pod_port)
     # No labels admits the whole namespace.
-    assert policy["spec"]["ingress"] == [
-        {"fromEndpoints": [{"matchLabels": {"k8s:io.kubernetes.pod.namespace": "test-client"}}], "toPorts": tcp_8080}
-    ]
-    assert policy["spec"]["egress"] == [
-        {
-            "toEndpoints": [
-                {
-                    "matchLabels": {
-                        "k8s:io.kubernetes.pod.namespace": "test-namespace",
-                        "app.kubernetes.io/name": "test-app",
-                    }
-                }
-            ],
-            "toPorts": tcp_8080,
-        }
-    ]
+    assert one(ingress.from_endpoints or []).match_labels == {"k8s:io.kubernetes.pod.namespace": "test-client"}
+    assert one(one(ingress.to_ports or []).ports or []).port == "8080"
+    egress = _SERVICE.egress()
+    assert one(egress.to_endpoints or []).match_labels == {
+        "k8s:io.kubernetes.pod.namespace": "test-namespace",
+        "app.kubernetes.io/name": "test-app",
+    }
+    assert one(one(egress.to_ports or []).ports or []).port == "8080"
 
 
-def test_port_renders_one_container_and_service_port_in_both_tiers(scratch_chart: Chart) -> None:
-    port = Port(name="http", number=8080)
-    deployment = Deployment(scratch_chart, "deployment", metadata=ApiObjectMetadata(name="test-app"))
-    deployment.add_container(image="app.test.invalid/app", ports=[port.container_port()])
-    Service(
-        scratch_chart,
-        "service",
-        metadata=ApiObjectMetadata(name="test-app"),
-        selector=deployment,
-        ports=[port.service_port()],
-    )
-    k8s.KubePod(
-        scratch_chart,
-        "raw-pod",
-        metadata=k8s.ObjectMeta(name="test-raw"),
-        spec=k8s.PodSpec(
-            containers=[k8s.Container(name="app", image="app.test.invalid/app", ports=[port.k8s_container_port()])]
-        ),
-    )
-    k8s.KubeService(
-        scratch_chart,
-        "raw-service",
-        metadata=k8s.ObjectMeta(name="test-raw"),
-        spec=k8s.ServiceSpec(ports=[port.k8s_service_port()]),
-    )
-    rendered, service, raw_pod, raw_service = Cdk8sTesting.synth(scratch_chart)
-    container_port = {"name": "http", "containerPort": 8080, "protocol": "TCP"}
-    service_port = {"name": "http", "port": 8080, "targetPort": 8080, "protocol": "TCP"}
-    assert rendered["spec"]["template"]["spec"]["containers"][0]["ports"] == [container_port]
-    assert raw_pod["spec"]["containers"][0]["ports"] == [container_port]
-    assert service["spec"]["ports"] == [service_port]
-    assert raw_service["spec"]["ports"] == [service_port]
+def test_service_port_targets_the_pods_port() -> None:
+    port = _SERVICE.service_port()
+    assert port.port == 80
+    assert port.target_port == 8080
+    assert _SERVICE.container_port().number == 8080
+    assert _SERVICE.k8s_container_port().container_port == 8080
 
 
-def test_monitor_derives_service_selector_and_port_without_changing_custom_endpoints(scratch_chart: Chart) -> None:
-    ServiceMonitor(scratch_chart, "default-monitor", spec=_SERVICE.service_monitor_spec())
-    ServiceMonitor(
-        scratch_chart,
-        "custom-monitor",
-        spec=_SERVICE.service_monitor_spec(
-            ServiceMonitorSpecEndpoints(port="other-port", path="/custom-metrics", interval="37s")
-        ),
-    )
-    default, custom = Cdk8sTesting.synth(scratch_chart)
-    assert default["spec"]["selector"] == {"matchLabels": {"app.kubernetes.io/name": "test-app"}}
-    assert default["spec"]["endpoints"] == [{"port": "http", "path": "/metrics"}]
-    assert custom["spec"]["endpoints"] == [{"port": "other-port", "path": "/custom-metrics", "interval": "37s"}]
+def test_monitor_derives_service_selector_and_port_without_changing_custom_endpoints() -> None:
+    default = _SERVICE.service_monitor_spec()
+    assert default.selector.match_labels == {"app.kubernetes.io/name": "test-app"}
+    endpoint = one(default.endpoints)
+    assert endpoint.port == "http"
+    assert endpoint.path == "/metrics"
+    custom = ServiceMonitorSpecEndpoints(port="other-port", path="/custom-metrics", interval="37s")
+    assert _SERVICE.service_monitor_spec(custom).endpoints == [custom]
 
 
 if __name__ == "__main__":

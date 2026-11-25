@@ -29,7 +29,7 @@ func (s *Store) Create(ctx context.Context, api protocol.APIStyle, prompt string
 	if err != nil {
 		return "", err
 	}
-	if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}); err != nil {
+	if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}, protocol.RecordOrigin{}); err != nil {
 		return "", err
 	}
 	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
@@ -37,7 +37,7 @@ func (s *Store) Create(ctx context.Context, api protocol.APIStyle, prompt string
    executor_session,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,$2,NULL,$3)`, id, nullableString(instructions), api); err != nil {
 			return err
 		}
-		return updateConversation(ctx, tx, &Conversation{ID: id, API: api, Transcript: transcript})
+		return s.updateConversation(ctx, tx, &Conversation{ID: id, API: api, Transcript: transcript})
 	})
 	return id, err
 }
@@ -85,28 +85,13 @@ func (s *Store) pgError(err error) error {
 	return err
 }
 
-func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	store := newContentDB(ctx, tx)
-	transcriptID, err := conversation.storeContext(store, conversation.Transcript)
-	if err != nil {
-		return err
-	}
-	transcriptControl, err := conversation.contextControl(conversation.Transcript)
-	if err != nil {
+func (s *Store) updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
+	if err := s.checkpointConversationContexts(ctx, tx, conversation); err != nil {
 		return err
 	}
 	var activeControl any
-	var activeID string
-	if conversation.ActiveContext != nil {
-		activeID, err = conversation.storeContext(store, conversation.ActiveContext)
-		if err != nil {
-			return err
-		}
-		control, err := conversation.contextControl(conversation.ActiveContext)
-		if err != nil {
-			return err
-		}
-		activeControl = []byte(control)
+	if len(conversation.activeControl) != 0 {
+		activeControl = []byte(conversation.activeControl)
 	}
 	pending, err := marshal(conversation.Pending)
 	if err != nil {
@@ -123,9 +108,36 @@ func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversat
 	_, err = tx.ExecContext(ctx, `UPDATE sampler_conversation SET pending=$2,stopped=$3,executor_session=$4,
 		transcript_context_id=$5,active_context_id=$6,transcript_control=$7,active_control=$8,
 		context_tokens=$9,executor_shell=$10,environment_context=$11 WHERE id=$1`, conversation.ID,
-		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), nullableContextID(transcriptID), nullableContextID(activeID), []byte(transcriptControl), activeControl, contextTokens,
+		nullableJSON(pending), conversation.Stopped, nullableString(conversation.ExecutorSession), nullableContextID(conversation.transcriptContextID), nullableContextID(conversation.activeContextID), []byte(conversation.transcriptControl), activeControl, contextTokens,
 		nullableString(conversation.ExecutorShell), nullableJSON(environment))
 	return err
+}
+
+func (s *Store) checkpointConversationContexts(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
+	store := newContentDB(ctx, tx)
+	transcriptID, err := conversation.storeContext(store, conversation.Transcript, s.contextSourceWrites)
+	if err != nil {
+		return err
+	}
+	transcriptControl, err := conversation.contextControl(conversation.Transcript)
+	if err != nil {
+		return err
+	}
+	var activeControl []byte
+	var activeID string
+	if conversation.ActiveContext != nil {
+		activeID, err = conversation.storeContext(store, conversation.ActiveContext, s.contextSourceWrites)
+		if err != nil {
+			return err
+		}
+		activeControl, err = conversation.contextControl(conversation.ActiveContext)
+		if err != nil {
+			return err
+		}
+	}
+	conversation.transcriptContextID, conversation.transcriptControl = transcriptID, transcriptControl
+	conversation.activeContextID, conversation.activeControl = activeID, activeControl
+	return nil
 }
 
 func nullableJSON(value string) any {

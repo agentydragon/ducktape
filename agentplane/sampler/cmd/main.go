@@ -35,6 +35,8 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
+const samplerDatabaseURLEnv = "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL"
+
 type startupFailure struct {
 	stage string
 	err   error
@@ -101,17 +103,12 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	if err := os.MkdirAll(settings.Logs, 0700); err != nil {
 		return atStartupStage("logs_directory", err)
 	}
-	store := sessionstore.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
-	hub, err := wakeups.Listen(ctx, databaseURL, sessionstore.OutboxChannel, sessionstore.WorkChannel)
+	store := sessionstore.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second, &settings)
+	hub, err := wakeups.Listen(ctx, databaseURL, sessionstore.OutboxChannel, sessionstore.WorkChannel, sessionstore.TurnChannel)
 	if err != nil {
 		return atStartupStage("database_wakeups", err)
 	}
 	defer hub.Close()
-	work, unsubscribe, err := hub.Subscribe(sessionstore.WorkChannel)
-	if err != nil {
-		return atStartupStage("work_subscription", err)
-	}
-	defer unsubscribe()
 	var actionClient *actions.Client
 	if settings.Actions != nil {
 		actionClient, err = actions.Dial(ctx, settings.Actions.Target, settings.Actions.TLS, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
@@ -150,7 +147,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	}
 	defer tlsListener.Close()
 	running, runningCtx := errgroup.WithContext(ctx)
-	running.Go(func() error { return runtime.Run(runningCtx, work) })
+	running.Go(func() error { return runtime.Run(runningCtx, hub) })
 	if settings.HistoryTarget != "" {
 		running.Go(func() error {
 			return historyexport.Run(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, sessionstore.OutboxChannel, hub, settings.HistoryTLS)
@@ -174,9 +171,6 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		<-runningCtx.Done()
 		healthServer.Shutdown()
 		for _, server := range []*grpc.Server{healthOnlyServer, tlsServer} {
-			if server == nil {
-				continue
-			}
 			stopping, release := context.WithTimeout(context.Background(), 5*time.Second)
 			graceful.Stop(stopping, server)
 			release()
@@ -195,9 +189,16 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL", migrations.Up); handled {
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], samplerDatabaseURLEnv, migrations.Up); handled {
 		if err != nil {
 			slog.Error("central sampler migration stopped", startupLogAttrs(atStartupStage("migration_only", err))...)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "compact-journal" {
+		if err := runCompactJournal(ctx, os.Args[2:]); err != nil {
+			slog.Error("central sampler journal compaction stopped", "error", err)
 			os.Exit(1)
 		}
 		return

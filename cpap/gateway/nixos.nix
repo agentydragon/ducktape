@@ -1,12 +1,14 @@
 # CPAP ez Share WiFi gateway — a minimal KubeVirt VM pinned to the OptiPlex
 # that owns the physical USB WiFi adapter.
 {
+  config,
   cpap-gateway-health,
   lib,
   pkgs,
   ...
 }:
 let
+  cardProxyPort = 18080;
   secretDevice = "/dev/disk/by-id/virtio-cpapsecret";
   secretMount = "/run/cpap-secret";
   ssid = "Rai CPAP ez Share";
@@ -49,10 +51,12 @@ in
   };
   # The VMI guest reports its KubeVirt virtio pod interface as enp1s0. Restrict the
   # exporter to that ingress interface; the passed-through card WiFi stays closed.
-  networking.firewall.interfaces.enp1s0.allowedTCPPorts = [ 9100 ];
+  networking.firewall.interfaces.enp1s0.allowedTCPPorts = [
+    config.services.prometheus.exporters.node.port
+  ];
 
   networking.networkmanager.enable = true;
-  networking.firewall.allowedTCPPorts = [ 18080 ];
+  networking.firewall.allowedTCPPorts = [ cardProxyPort ];
   environment.systemPackages = with pkgs; [
     iproute2
     networkmanager
@@ -83,7 +87,7 @@ in
     description = "Expose the CPAP card HTTP API to the cluster";
     serviceConfig = {
       ExecStartPre = hasCardRoute;
-      ExecStart = "${pkgs.socat}/bin/socat TCP-LISTEN:18080,bind=0.0.0.0,reuseaddr,fork,keepalive TCP:192.168.4.1:80,keepalive";
+      ExecStart = "${pkgs.socat}/bin/socat TCP-LISTEN:${toString cardProxyPort},bind=0.0.0.0,reuseaddr,fork,keepalive TCP:192.168.4.1:80,keepalive";
       Restart = "always";
       RestartSec = 5;
       User = "nobody";

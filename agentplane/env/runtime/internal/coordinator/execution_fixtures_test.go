@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedproxy"
 	"google.golang.org/grpc"
@@ -20,13 +20,10 @@ type localExecutionHandle struct {
 }
 
 func (h *localExecutionHandle) Executor() executorpb.ExecutorServer { return h.adapter }
-func (h *localExecutionHandle) StopAndFence(ctx context.Context) error {
+func (h *localExecutionHandle) StopAndFence(context.Context) error {
 	h.mu.Lock()
 	h.expected = true
 	h.mu.Unlock()
-	if err := h.adapter.Drain(ctx); err != nil {
-		return err
-	}
 	if err := h.adapter.Close(); err != nil {
 		return err
 	}
@@ -58,7 +55,7 @@ func newExecutionRuntime(t *testing.T, url string, acquire func(context.Context)
 func executionRuntimeConfig(t *testing.T, url string, acquire func(context.Context) (string, error)) runtimeTestConfig {
 	t.Helper()
 	config := lifecycleConfig(t, "http://unused", t.TempDir(), nil, "/bin/false")
-	config.CodexExecServer = &codexexecserver.Config{URL: url}
+	config.ExecutionBackend = &backend.Config{URL: url}
 	config.HarnessEnvironment = map[string]string{}
 
 	config.deps.startExecution = func(_ context.Context, config Config, _ string) (executionHandle, error) {
@@ -77,7 +74,7 @@ func executionRuntimeConfig(t *testing.T, url string, acquire func(context.Conte
 		}
 		localAdapter, err := typedproxy.New(context.Background(), client, func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 			return accept(ctx)
-		}, nil)
+		})
 		if err != nil {
 			return nil, err
 		}

@@ -1,0 +1,416 @@
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { acorn, dump as dumpSource, eslintScope } from "./parser.mjs";
+import { dumpParsed } from "./annotated_estree.mjs";
+import { coreFromParsed } from "../model/to_core.mjs";
+import { bundleFromParsed } from "./frontend.mjs";
+import { parseModule } from "./scope_metadata.mjs";
+import { writeDeployment } from "./testing/deployment_manifest.mjs";
+import { coreOf } from "./split_dump.mjs";
+
+const dir = process.env.TEST_TMPDIR;
+function file(name, contents) {
+  const dest = path.join(dir, name);
+  writeFileSync(dest, contents);
+  return dest;
+}
+
+function reference(source) {
+  const { ids, tokens, exports } = coreOf(source);
+  return { entry: "main", modules: [{ name: "main", imports: [], ids, tokens, exports }] };
+}
+
+function run(programs, ast) {
+  const input = file(ast ? "asts.jsonl" : "programs.jsonl", programs.map((p) => JSON.stringify(p)).join("\n") + "\n");
+  return execFileSync(process.env.COREJS, [...(ast ? ["--ast"] : []), input], { encoding: "utf8" })
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+}
+
+async function nodeOutcome(url) {
+  try {
+    await import(url);
+    return ["normal", ""];
+  } catch (e) {
+    return ["throw", e instanceof Error ? e.name : e == null ? String(e) : `${typeof e}:${e}`];
+  }
+}
+
+// Each seed builds a fresh module and binding chain. Throwing the last value
+// makes precision, shadowing and initialization observable in Node and CoreJS.
+const literals = [
+  "null",
+  "true",
+  "false",
+  '"a\\nβ"',
+  "undefined",
+  "NaN",
+  "Infinity",
+  "5e-324",
+  "1.7976931348623157e308",
+  "1e400",
+];
+const sources = [
+  "let a; var b; export { a, b };",
+  "const before = later; let later = 2;",
+  "var before = later; var later = 2; throw before;",
+  'const undefined = "shadow"; throw undefined;',
+  "const nested = !(!(!false)); throw nested;",
+  "const nested = !(!(-2.5)); throw nested;",
+  "const negative = -2.5; throw negative;",
+  "const negativeZero = -0; throw negativeZero;",
+  "export const early = !late, late = -2;",
+];
+
+for (let seed = 0; seed < 48; seed++) {
+  const value = seed % 3 === 0 ? String((seed + 1) * 1.234567891234567e-13) : literals[seed % literals.length];
+  const declarations = [`export const first = ${value};`, "; debugger;"];
+  let last = "first";
+  for (let i = 0; i <= seed % 5; i++) {
+    const name = `v${i}`;
+    declarations.push(`${["var", "let", "const"][(seed + i) % 3]} ${name} = ${last};`);
+    last = name;
+  }
+  // A later initializer observes either the preceding binding, a hoisted var,
+  // or an uninitialized lexical binding in this same declaration list.
+  const group = Array.from({ length: 2 + (seed % 5) }, (_, i) => {
+    const operand = i > 0 ? `part${i - 1}` : seed % 2 ? "part1" : value;
+    const init = seed % 4 === 0 && i === 0 ? `-${seed}` : "!".repeat((seed + i) % 4) + operand;
+    return `part${i} = ${init}`;
+  });
+  sources.push(`export ${["var", "let", "const"][seed % 3]} ${group.join(", ")}; throw part1;`);
+  sources.push(`${declarations.join("\n")} export { ${last} as result }; throw ${last};`);
+}
+const actual = run(sources.map(dumpSource), true);
+assert.deepEqual(actual, run(sources.map(reference), false));
+for (const [i, source] of sources.entries()) {
+  assert.deepEqual(
+    [actual[i].end, actual[i].detail],
+    await nodeOutcome(`data:text/javascript,${encodeURIComponent(source)}#${i}`),
+    source
+  );
+}
+
+// The linked rules lower unary operators on any operand; Node observes the thrown value.
+const unarySources = ["-binding", "-true", "-Infinity", "+1", "~1"].map(
+  (e) => `const binding = 1, value = ${e}; throw value;`
+);
+const unary = run(unarySources.map(dumpSource), true);
+for (const [i, source] of unarySources.entries()) {
+  assert.deepEqual(
+    [unary[i].end, unary[i].detail],
+    await nodeOutcome(`data:text/javascript,${encodeURIComponent(source)}#unary-${i}`),
+    source
+  );
+}
+
+// The standalone AST path also needs the realm's template registry. Two
+// evaluations of the same site share one object; different sites stay distinct.
+const taggedSource =
+  "const tag = x => x; const site = () => tag`same`; throw site() === site() && site() !== tag`same`;";
+const [tagged] = run([dumpSource(taggedSource)], true);
+assert.deepEqual(
+  [tagged.end, tagged.detail],
+  await nodeOutcome(`data:text/javascript,${encodeURIComponent(taggedSource)}`)
+);
+
+// `corejs --ast` lowers under the recorded Node host: `console.log` output, the model's `Object`
+// functions, fresh symbols and undeclared names. Certification profiles still refuse these names.
+const hostSources = [
+  'console.log("a", 1 + 2, true);',
+  "const proto = { x: 1 }; const made = Object.create(proto); console.log(made.x, Object.getPrototypeOf(made) === proto);",
+  'const tag = Symbol("tag"); console.log(typeof tag, tag === Symbol("tag")); missing;',
+];
+// Node's ambient Symbol stays the intrinsic constructor throughout these runs.
+const host = run(
+  hostSources.map((source) => ({ ...dumpSource(source), symbolConstructor: true })),
+  true
+);
+for (const [i, source] of hostSources.entries()) {
+  const printed = spawnSync(process.execPath, ["--input-type=module", "-e", source], { encoding: "utf8" });
+  assert.deepEqual(host[i].out, printed.stdout.split("\n").slice(0, -1), source);
+  assert.deepEqual(
+    [host[i].end, host[i].detail],
+    await nodeOutcome(`data:text/javascript,${encodeURIComponent(source)}#host-${i}`),
+    source
+  );
+}
+
+// The line names its entry, so a provider can import the entry back.
+const cycleFiles = {
+  "main.mjs": 'import { read } from "./reader.mjs"; export const value = 7; console.log(read());',
+  "reader.mjs": 'import { value } from "./main.mjs"; export function read() { return value; }',
+};
+const cycleDir = path.join(dir, "cycle");
+mkdirSync(cycleDir, { recursive: true });
+for (const [name, text] of Object.entries(cycleFiles)) writeFileSync(path.join(cycleDir, name), text);
+const [cycle] = run(
+  [
+    {
+      ...dumpSource(cycleFiles["main.mjs"]),
+      entry: "main.mjs",
+      providers: { "reader.mjs": dumpSource(cycleFiles["reader.mjs"]) },
+    },
+  ],
+  true
+);
+const cycleNode = spawnSync(process.execPath, [path.join(cycleDir, "main.mjs")], { encoding: "utf8" });
+assert.equal(cycleNode.status, 0, cycleNode.stderr);
+assert.deepEqual([cycle.end, cycle.out], ["normal", cycleNode.stdout.split("\n").slice(0, -1)]);
+
+// Every assignment form on an imported binding reads it, then throws TypeError on the write.
+const frozenFiles = {
+  "main.mjs": [
+    'import { n, zero } from "./m.mjs";',
+    'try { n = 5; } catch (e) { console.log("assign", n); }',
+    'try { n++; } catch (e) { console.log("update", n); }',
+    'try { n += (console.log("right side runs"), 1); } catch (e) { console.log("compound", n); }',
+    "console.log(n ||= 7, n);",
+    'try { zero ||= 7; } catch (e) { console.log("logical", zero); }',
+  ].join("\n"),
+  "m.mjs": "export let n = 1; export let zero = 0;",
+};
+const frozenDir = path.join(dir, "frozen");
+mkdirSync(frozenDir, { recursive: true });
+for (const [name, text] of Object.entries(frozenFiles)) writeFileSync(path.join(frozenDir, name), text);
+const [frozen] = run(
+  [{ ...dumpSource(frozenFiles["main.mjs"]), providers: { "m.mjs": dumpSource(frozenFiles["m.mjs"]) } }],
+  true
+);
+const frozenNode = spawnSync(process.execPath, [path.join(frozenDir, "main.mjs")], { encoding: "utf8" });
+assert.equal(frozenNode.status, 0, frozenNode.stderr);
+assert.deepEqual([frozen.end, frozen.out], ["normal", frozenNode.stdout.split("\n").slice(0, -1)]);
+
+// Default imports and the four forms of `export default`, compared with Node on disk.
+const defaultFiles = {
+  "main.mjs":
+    'import f, { other } from "./f.mjs"; import value from "./value.mjs"; import Shape from "./shape.mjs";' +
+    ' import anonymous from "./anonymous.mjs";' +
+    ' throw f(1) + "," + other + "," + value + "," + new Shape().sides() + "," + anonymous() + "," +' +
+    ' f.name + "," + Shape.name + "," + anonymous.name;',
+  "f.mjs": "export default function named(x) { return x + 1; } export const other = 2;",
+  "value.mjs": "export default 6 * 7;",
+  "shape.mjs": "export default class { sides() { return 4; } }",
+  "anonymous.mjs": 'export default function () { return "anonymous"; }',
+};
+const defaultDir = path.join(dir, "defaults");
+mkdirSync(defaultDir, { recursive: true });
+for (const [name, text] of Object.entries(defaultFiles)) writeFileSync(path.join(defaultDir, name), text);
+const providers = Object.fromEntries(
+  Object.entries(defaultFiles)
+    .filter(([name]) => name !== "main.mjs")
+    .map(([name, text]) => [name, dumpSource(text)])
+);
+const [defaults] = run([{ ...dumpSource(defaultFiles["main.mjs"]), providers }], true);
+assert.deepEqual(
+  [defaults.end, defaults.detail],
+  await nodeOutcome(pathToFileURL(path.join(defaultDir, "main.mjs")).href)
+);
+
+function certifyFixture(directory) {
+  const out = path.join(directory, "out");
+  const manifest = writeDeployment(path.join(directory, "bundle.mjs"), path.join(directory, "spec.json"), out);
+  const result = spawnSync(process.env.LOWERSPLIT, [manifest, out], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.error?.message ?? result.stdout + result.stderr);
+  const verdict = JSON.parse(result.stdout.trim().split("\n").at(-1));
+  assert.equal(verdict.status, "certified", result.stdout + result.stderr);
+  return import(pathToFileURL(path.join(out, "entry.mjs")).href);
+}
+
+// A certified split keeps `export default` in the entry and moves the binding it reads.
+const defaultSplit = path.join(dir, "default-split");
+mkdirSync(defaultSplit, { recursive: true });
+writeFileSync(
+  path.join(defaultSplit, "bundle.mjs"),
+  'import value from "./value.mjs"; const doubled = value * 2; export default doubled;\n'
+);
+writeFileSync(path.join(defaultSplit, "value.mjs"), "export default 21;\n");
+writeFileSync(
+  path.join(defaultSplit, "spec.json"),
+  JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2"], "m.mjs": ["#1"] } })
+);
+assert.equal((await certifyFixture(defaultSplit)).default, 42);
+
+// Top-level blocks, loops and switches: a var binds a module cell; let and const stay in the block.
+// A function declaration in a top-level block is still refused (function_declaration_test).
+const blockSource = [
+  "{ let hidden = 1; var visible = hidden + 1; const made = () => visible; console.log(made()); }",
+  "console.log(visible, typeof hidden, typeof made);",
+  'let i = 0; while (i < 3) { i++; if (i === 2) continue; console.log("loop", i); }',
+  'switch (i) { case 3: console.log("three"); break; default: console.log("other"); }',
+].join("\n");
+const [blocks] = run([dumpSource(blockSource)], true);
+const blocksNode = spawnSync(process.execPath, ["--input-type=module", "-e", blockSource], { encoding: "utf8" });
+assert.equal(blocksNode.status, 0, blocksNode.stderr);
+assert.deepEqual([blocks.end, blocks.detail, blocks.out], ["normal", "", blocksNode.stdout.split("\n").slice(0, -1)]);
+
+// A certified split moves a top-level block that updates its module's binding to a worker.
+const blockSplit = path.join(dir, "block-split");
+mkdirSync(blockSplit, { recursive: true });
+writeFileSync(
+  path.join(blockSplit, "bundle.mjs"),
+  "let total = 1;\n{ const step = 2; total += step; }\nexport const result = total;\n"
+);
+writeFileSync(
+  path.join(blockSplit, "spec.json"),
+  JSON.stringify({
+    entry: "entry.mjs",
+    modules: { "worker.mjs": ["#0", "#1"], "entry.mjs": ["#2"] },
+    order: ["worker.mjs"],
+    sequential: true,
+  })
+);
+assert.equal((await certifyFixture(blockSplit)).result, 3);
+
+const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
+function split(source, args = []) {
+  const ast = file("bundle.json", JSON.stringify(dumpSource(source)));
+  return execFileSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(ast, spec, dir), dir, ...args], {
+    encoding: "utf8",
+  });
+}
+
+const source = "var a = 1, b = a;";
+// The checker obtains identities from Program.body even when presented with a
+// conflicting legacy table. A table on its own cannot stand in for a module.
+const program = dumpSource(source);
+assert.equal(program.type, "Program");
+assert.equal(program.body.length, 1);
+assert.equal(program.body[0].declarations.length, 2);
+const [fromBody, legacyOnly] = run([{ ...program, statements: [] }, { statements: [] }], true);
+assert.deepEqual(fromBody, run([reference(source)], false)[0]);
+assert.equal(legacyOnly.end, "malformed");
+
+// Acorn ranges count UTF-16 code units. Exercise both a supplementary
+// character before the declaration and one inside the first declarator.
+split('/*😀*/ export var a = "🌱", b = a;');
+const rendered = readFileSync(path.join(dir, "entry.mjs"), "utf8");
+assert.match(rendered, /export var a = "🌱";/);
+assert.match(rendered, /export var b = a;/);
+const badRange = dumpSource("/*😀*/ var a = 1, b = a;");
+badRange.body[0].declarations[0].start = 3;
+const invalid = file("bad-range.json", JSON.stringify(badRange));
+assert.throws(
+  () =>
+    execFileSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(invalid, spec, dir), dir], { stdio: "pipe" }),
+  /surrogate pair/
+);
+const moves = path.join(dir, "moves.json");
+assert.match(split(source, ["--move-report", moves]), /model diagnostic: order kept/);
+const nativeReport = JSON.parse(readFileSync(moves));
+assert.equal(nativeReport.footprintsOfSyntax, true);
+assert.equal(nativeReport.externallyLowered, 0);
+// A different model with the same binding footprint cannot replace the AST.
+const sidecar = file("other.json", JSON.stringify(reference("var a = 2, b = a;")));
+assert.match(split(source, ["--corejs", sidecar]), /FootprintsOfSyntax: against Lean ESTree lowering/);
+const unsupported = "var a = [], b = a;";
+assert.match(split(unsupported), /model diagnostic: none\..*statement 0: unsupported expression ArrayExpression/);
+const legacy = file("external.json", JSON.stringify(reference(unsupported)));
+assert.match(split(unsupported, ["--corejs", legacy]), /externally lowered statements: 1/);
+
+// External input may supply unsupported arrays, but cannot omit their initialization.
+const missing = file("missing.json", JSON.stringify(reference("")));
+assert.match(split(unsupported, ["--corejs", missing]), /model diagnostic: none\..*omits statement 0/);
+// A call has no declarations, so footprint agreement alone could mistake its missing unit for an empty block.
+file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "#1"] } }));
+assert.match(split("var a = 1; a();", ["--corejs", missing]), /model diagnostic: none\..*omits statement 1/);
+
+// Use both forms of the Lean placement spec. For each generated declaration list,
+// keep source order in one plan and move its final independent binding in the other.
+for (let width = 2; width <= 4; width++) {
+  const names = Array.from({ length: width }, (_, i) => `d${i}`);
+  const declarations = names
+    .map((name, i) => {
+      const number = i === 0 ? "-0" : `-${width + i}.5`;
+      return `${name} = ${"!".repeat(i)}${number}`;
+    })
+    .join(", ");
+  const code = `${["let", "const", "var"][width - 2]} ${declarations}; export const result = ${names[0]};`;
+  for (const moved of [0, width - 1]) {
+    const side = `side-${width}-${moved}.mjs`;
+    const modules = {
+      [side]: [names[moved]],
+      "entry.mjs": [...names.filter((_, i) => i !== moved), `#${width}`],
+    };
+    file("spec.json", JSON.stringify({ entry: "entry.mjs", modules }));
+    const log = split(code);
+    assert.match(log, /Declaration extraction: unsplit declaration lists and the checked CoreJS plan agree/);
+    assert.match(log, moved === 0 ? /all modeled outcomes/ : /normally terminating executions/);
+    const original = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+    const emitted = await import(`${pathToFileURL(path.join(dir, "entry.mjs")).href}?${width}-${moved}`);
+    assert.ok(Object.is(original.result, -0));
+    assert.ok(Object.is(emitted.result, original.result));
+  }
+}
+
+// This declaration-only AST is split without `--corejs`; the certificate also
+// covers a lexical read that throws in Node because the later declarator is in
+// its TDZ.
+file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["early", "late"] } }));
+const tdzDeclaration = "export const early = !late, late = -2;";
+const tdzLog = split(tdzDeclaration);
+assert.match(
+  tdzLog,
+  /Declaration extraction: unsplit declaration lists and the checked CoreJS plan agree on all modeled outcomes/
+);
+assert.match(tdzLog, /FootprintsOfSyntax: against Lean ESTree lowering/);
+assert.deepEqual(await nodeOutcome(`data:text/javascript,${encodeURIComponent(tdzDeclaration)}#tdz-declaration`), [
+  "throw",
+  "ReferenceError",
+]);
+assert.deepEqual(await nodeOutcome(`${pathToFileURL(path.join(dir, "entry.mjs")).href}?tdz-declaration`), [
+  "throw",
+  "ReferenceError",
+]);
+
+file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
+assert.match(split("var a; let b;"), /Declaration extraction: .*all modeled outcomes/);
+assert.match(split("export let a = b, b = 1;"), /Declaration extraction: .*all modeled outcomes/);
+assert.doesNotMatch(split(unsupported, ["--corejs", legacy]), /Declaration extraction:/);
+
+// Gaps in executable bodies still have source ordinals. Vary the width of an
+// exported list before a destructuring and an opaque closure so their IDs move.
+for (let width = 1; width <= 6; width++) {
+  const names = Array.from({ length: width }, (_, i) => `n${i}`);
+  const code = `import {bag} from "./dep.mjs";
+    export var ${names.map((n, i) => `${n} = ${i}`).join(", ")},
+      {value: x = n0} = bag, read = ({v}) => x + v;
+    export {x as renamed}; debugger; import "./side.mjs"; read;`;
+  const parsed = parseModule(code, acorn.parse, eslintScope);
+  const dump = dumpParsed(parsed);
+  const tree = bundleFromParsed(parsed);
+  const core = coreFromParsed(parsed, { external: true });
+  const bindings = [...names, "x", "read"];
+  assert.equal(dump.body.length, 6);
+  assert.equal(core.numbered, width + 7);
+  const declarators = dump.body[1].declaration.declarations;
+  assert.deepEqual(
+    declarators.map((d) => d.id.type),
+    [...names.map(() => "Identifier"), "ObjectPattern", "Identifier"]
+  );
+  assert.deepEqual(tree.program, dump);
+  assert.deepEqual(
+    core.exports.map(([name]) => name),
+    [...bindings, "renamed"]
+  );
+  assert.deepEqual(core.ids, [...bindings.map((_, i) => i + 1), width + 6]);
+  assert.deepEqual(
+    core.opaque.map((o) => o.id),
+    [width + 1, width + 2]
+  );
+  const destructuring = declarators[width];
+  assert.equal(destructuring.init.k, "V");
+  assert.equal(destructuring.id.properties[0].value.right.k, "T");
+  const closure = declarators[width + 1].init;
+  assert.equal(closure.body.left.k, "T");
+  assert.equal(closure.body.right.k, "L");
+  assert.equal(closure.body.right.b, closure.params[0].properties[0].value.b);
+  // Linked programs take their IDs from the caller's compact table (imports are linked separately).
+  const ids = Array.from({ length: width + 5 }, (_, i) => 100 + 2 * i);
+  const linked = coreFromParsed(parsed, { ids });
+  assert.deepEqual(linked.ids, [...ids.slice(0, bindings.length), ids.at(-1)]);
+}

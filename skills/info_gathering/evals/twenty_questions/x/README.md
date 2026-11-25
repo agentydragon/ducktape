@@ -40,6 +40,7 @@ bazel run //skills/info_gathering/evals/twenty_questions/x:compare_results_bin -
 - `shared/variants.py` — Variant definitions
 - `../result_types.py` — Pydantic models for results
 - `shared/cli.py` — Common CLI argument parsing
+- `shared/game_record.py` — Python framework game bookkeeping and transcript writing
 - `../prompts.py` — Prompt loading (references original files via Bazel runfiles)
 - `skills/eval_infra/docker_exec.py` — Lightweight Docker scratch container
 

@@ -59,9 +59,9 @@ Source lives under `agentplane/session_dispatcher/`: `cmd/` owns signal/log setu
 `rpc.listen_address` accepts a TCP address or an inherited `fd:N` as documented by
 [`agentplane/net/listener`](../net/listener/README.md).
 
-Build `//agentplane/session_dispatcher/cmd:runner-gateway` or `//agentplane/session_dispatcher:image`.
+Build `//agentplane/session_dispatcher/cmd:sessions` or `//agentplane/session_dispatcher:image`.
 The same binary embeds Goose migrations and applies them before request handling or workers start.
-`runner-gateway --migrate-only` initializes a database using the same lifecycle and
+`sessions --migrate-only` initializes a database using the same lifecycle and
 `AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL`. PostgreSQL session locks serialize simultaneous
 startup attempts. Integration tests exercise real PostgreSQL and queue-to-Runner delivery over
 the separate Environments mTLS receiver on RBE.
@@ -86,6 +86,76 @@ share one image; schema changes remain compatible with old replicas during rolli
 
 `//agentplane/session_dispatcher/migrations:test_migrations` covers fresh schema creation,
 idempotent application and concurrent migrations.
+
+### Enum storage rollout
+
+The Dispatcher is moving dispatch operation, delivery state, and Session materialization
+to the public protobuf enum numbers. The rollout covers live dispatches, deletion
+receipts, and Sessions. Their text columns retain the exact historical values through
+the compatibility phases.
+
+1. **Expand the schema.** Migration 00031 adds nullable integer shadows and mirrors
+   text writes. Existing readers and writers still use text. The migration installs
+   the procedure below without rewriting or backfilling the tables. Verify an old
+   Sessions binary can still start, write, and serve existing receipts before cutover.
+2. **Backfill, verify, and deploy SQL writer compatibility.** Run the backfill and
+   checks below before applying the migration that permits numeric writes. Verify both
+   writer generations update both representations, and build the numeric indexes
+   concurrently. Keep a tested backup and a rollback path to the text-reading binary.
+3. **Switch the Go store to numeric reads and writes.** Verify both deployed writer
+   generations, authorized reads, and watches resumed from pre-cutover tokens.
+   Legacy operation and Session spellings without a number still fail projection.
+   An unmappable legacy delivery state stays out of exact state filters and projects as
+   `UNKNOWN` where the old receipt projection did.
+
+4. **Retire the text representation (00034).** Ship this separately after every
+   replica and direct SQL client uses the numeric columns and the operator has closed
+   the rollback window for text-dependent binaries. Both counts in the preflight below
+   must be zero for every table. Resolve any nonzero count before proceeding, preserving
+   the underlying evidence. Take and verify a pre-cleanup backup in isolation.
+   Plan a maintenance window for table validation under exclusive locks. The migration rechecks all
+   rows under those locks and aborts before dropping columns if any values are missing,
+   unmapped or inconsistent.
+
+   The numeric binary from step 3 remains a rollback target after 00034. Goose has no
+   down migration for the text columns. Running a text-dependent binary again requires
+   restoring the earlier schema and data in isolation or a separately reviewed forward
+   repair. Restoring the old snapshot over the current database would lose later writes.
+
+#### Backfill and completeness
+
+After 00031, use a terminal with the Dispatcher database connection already configured.
+Run this as an autocommit statement. The procedure walks each primary key or version
+index in bounded batches, commits between batches, and can be rerun after interruption.
+It fills only the numeric shadows, preserving receipt versions, Session watch positions,
+and original text.
+
+```sql
+CALL backfill_dispatch_enum_values(1000);
+```
+
+Run the following query after backfill. All three `out_of_sync` counts must be zero
+before cutover. Review nonzero `unmappable` counts separately; their original text stays
+in place, with a NULL shadow. Exact stored `UNKNOWN` is a mapped value.
+
+```sql
+SELECT 'dispatch' AS relation,
+       count(*) FILTER (WHERE operation_value IS DISTINCT FROM dispatch_operation_value(operation)
+                          OR state_value IS DISTINCT FROM dispatch_state_value(state)) AS out_of_sync,
+       count(*) FILTER (WHERE operation_value IS NULL OR state_value IS NULL) AS unmappable
+FROM dispatch
+UNION ALL
+SELECT 'dispatch_tombstone',
+       count(*) FILTER (WHERE operation_value IS DISTINCT FROM dispatch_operation_value(operation)
+                          OR state_value IS DISTINCT FROM dispatch_state_value(state)),
+       count(*) FILTER (WHERE operation_value IS NULL OR state_value IS NULL)
+FROM dispatch_tombstone
+UNION ALL
+SELECT 'session',
+       count(*) FILTER (WHERE state_value IS DISTINCT FROM session_materialization_value(state)),
+       count(*) FILTER (WHERE state_value IS NULL)
+FROM session;
+```
 
 ## Optional central sampler
 

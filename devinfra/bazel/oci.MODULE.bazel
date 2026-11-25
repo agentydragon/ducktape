@@ -1,6 +1,15 @@
 # Python OCI image layering (aspect_rules_py)
 bazel_dep(name = "aspect_rules_py", version = "1.12.1")
 
+# The ownership mutation in py_image_layer drops the common rule attributes
+# forwarded to every other expanded target. Drop the patch when the pinned
+# rules pass tags through to that target.
+single_version_override(
+    module_name = "aspect_rules_py",
+    patch_strip = 1,
+    patches = ["//patches:aspect_rules_py_image_layer_tags.patch"],
+)
+
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "rules_distroless", version = "0.9.4")
@@ -108,7 +117,7 @@ oci.pull(
 oci.pull(
     name = "mcp_everything",
     digest = "sha256:96c4aa07420dd2a8dee0315763a8ea27de72fd054483c781894f6280cd3f56e7",
-    image = "docker.io/tzolov/mcp-everything-server",
+    image = "mirror.gcr.io/tzolov/mcp-everything-server",
     platforms = ["linux/amd64"],
 )
 
@@ -264,17 +273,10 @@ apt.install(
     ],
 )
 
-# CPAP sync: the Wi-Fi tooling cpap/sync.py runs (ip, iw, wpa_supplicant,
-# dhclient) + git (pushes to the cpap-data Forgejo repo) on debian:trixie-slim.
+# git on debian:trixie-slim for the CPAP sync, which pushes to the cpap-data Forgejo repo.
 apt.install(
     dependency_set = "trixie_cpap_sync",
-    packages = [
-        "git",
-        "iproute2",
-        "isc-dhcp-client",
-        "iw",
-        "wpasupplicant",
-    ],
+    packages = ["git"],
     suites = [
         "trixie",
         "trixie-security",
@@ -370,20 +372,6 @@ apt.install(
     ],
 )
 
-# Budget exporter image: git + ca-certificates on debian:trixie-slim so the
-# export_ledger CronJob can clone/commit/push the Beancount ledger repo.
-apt.install(
-    dependency_set = "trixie_budget_exporter",
-    packages = [
-        "ca-certificates",
-        "git",
-    ],
-    suites = [
-        "trixie",
-        "trixie-security",
-    ],
-)
-
 # wayback cache service: libssl + CA bundle on debian:trixie-slim for the
 # Rust runtime image.
 apt.install(
@@ -398,10 +386,13 @@ apt.install(
     ],
 )
 
-# Exercise wt's sourced shell function in Zsh without adding it to the RBE image.
+# Exercise wt's Zsh shell function and rsync copy without adding tools to the RBE image.
 apt.install(
     dependency_set = "wt_shell_test",
-    packages = ["zsh"],
+    packages = [
+        "rsync",
+        "zsh",
+    ],
     suites = [
         "trixie",
         "trixie-security",
@@ -445,7 +436,7 @@ apt.install(
         "trixie-updates",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_agentplane_firecracker", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_firecracker_guest", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
+use_repo(apt, "gnome_shell_test", "trixie_agentplane_firecracker", "trixie_authentik_rotation", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_firecracker_guest", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
 
 # CDviz collector, migration runner, and TimescaleDB test fixtures.
 oci.pull(

@@ -5,7 +5,6 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, Literal, Self, cast
 
 from openai import AsyncOpenAI
-from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
@@ -16,9 +15,7 @@ from openai.types.responses import (
 from openai.types.responses.response_reasoning_item import Content as SdkReasoningContent, ResponseReasoningItem
 from pydantic import BaseModel, ConfigDict, Field
 
-from openai_utils.api_shape import LLMApiShape
 from openai_utils.errors import translate_context_length
-from openai_utils.types import ReasoningEffort, ReasoningParams, build_reasoning_params
 
 
 class InputTokensDetails(BaseModel):
@@ -219,7 +216,6 @@ class ResponsesRequest(BaseModel):
     parallel_tool_calls: bool | None = None
     stream: bool = False
     store: bool | None = None
-    reasoning: ReasoningParams | None = None
     max_output_tokens: int | None = None
 
     # Allow unknown fields for forward-compat (timeouts, metadata, etc.)
@@ -335,43 +331,31 @@ class ResponsesResult(BaseModel):
         return cls(id=sdk_resp.id, usage=usage, output=out_items)
 
 
-type WireRequest = ResponsesRequest | CompletionCreateParamsNonStreaming
-
-
 class Model(ABC):
-    api_shape = LLMApiShape.RESPONSES
-
     @property
     @abstractmethod
     def model(self) -> str: ...
 
-    def prepare(self, request: ResponsesRequest) -> WireRequest:
+    def prepare(self, request: ResponsesRequest) -> ResponsesRequest:
         return request.model_copy(update={"model": self.model})
 
     @abstractmethod
-    async def sample(self, request: WireRequest) -> ResponsesResult: ...
+    async def sample(self, request: ResponsesRequest) -> ResponsesResult: ...
 
 
 class ResponsesModel(Model):
-    def __init__(self, *, client: AsyncOpenAI, model: str, reasoning_effort: ReasoningEffort | None = None) -> None:
+    def __init__(self, *, client: AsyncOpenAI, model: str) -> None:
         self._client = client
         self._model = model
-        self._reasoning_effort = reasoning_effort
 
     @property
     def model(self) -> str:
         return self._model
 
     def prepare(self, request: ResponsesRequest) -> ResponsesRequest:
-        kwargs = request.model_dump()
-        kwargs["model"] = self._model
-        if self._reasoning_effort and "reasoning" not in kwargs:
-            kwargs["reasoning"] = build_reasoning_params(effort=self._reasoning_effort)
-        return ResponsesRequest.model_validate(kwargs)
+        return ResponsesRequest.model_validate({**request.model_dump(), "model": self._model})
 
-    async def sample(self, request: WireRequest) -> ResponsesResult:
-        if not isinstance(request, ResponsesRequest):
-            raise TypeError("ResponsesModel expects a prepared Responses request")
+    async def sample(self, request: ResponsesRequest) -> ResponsesResult:
         create: Callable[..., Awaitable[Response]] = cast(
             Callable[..., Awaitable[Response]], self._client.responses.create
         )

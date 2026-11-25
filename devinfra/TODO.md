@@ -1,13 +1,5 @@
 # TODO
 
-## Orphaned test files
-
-- [ ] Consider detecting orphaned (unwired) test files mechanically: a `test_*.py` or
-      `*_test.py` that no `BUILD` file names never runs in CI, and nothing flags it.
-      `//devinfra/orphans:find_orphans_bin` already lists git-tracked files that no Bazel
-      target names, but no workflow runs it with `--check`. Open question: whether to
-      gate on that, on a narrower test-file-only check, or not at all.
-
 ## `@pytest.mark.asyncio` ban
 
 - [ ] Consider enforcing the existing `@pytest.mark.asyncio` ban (pytest-asyncio auto mode is on
@@ -16,19 +8,20 @@
 
 ## Pydantic definition registration (schema audit C)
 
-Register the supplemental CSV request and WebSocket frame schemas in
-`finance/augur/api/export_schema.py` and `study_casino/export_schema.py` without
-silently keeping or replacing incompatible names in FastAPI's component registry.
-Preserve each owner's schema mode. Verify that emitted references resolve, conflicts
-fail clearly, and frontend typechecks and representative wire payloads pass.
+Decide how Study Casino should represent its WebSocket invalidation signal. Its
+frontend currently consumes a supplemental schema from `study_casino/export_schema.py`.
+If retained, check schema mode, nested references and name conflicts. Verify frontend
+typechecking, cross-tab refresh, and malformed-frame handling.
 
 ## Generated Python import indexing (schema audit F)
 
-Derive Gazelle import-to-target mappings from `cdk8s_import` declarations instead of maintaining a
-second module roster in `cluster/cdk8s/BUILD.bazel`, provider BUILD files, and Agentplane BUILD files.
-Preserve package scope; repeated aliases are not automatically redundant. Done: generated bindings
-resolve from all current consumers, Gazelle converges, and adding an importer requires no second
-hand-maintained mapping. This belongs in generated-module indexing, not CRD schema conversion.
+Derive Gazelle import-to-target mappings from `cdk8s_import` declarations. The Python
+resolver indexes literal `srcs`, and the macro sets those only during Bazel evaluation.
+The cdk8s and Agentplane package trees still need explicit mappings for generated modules.
+Reuse inherited directives and preserve package scope when adding new mappings.
+
+Completion requires Gazelle to converge for all current consumers. A new binding
+should need only its `cdk8s_import` declaration, with no separate consumer mapping.
 
 ## Canonicalize Bazel image pin usage
 

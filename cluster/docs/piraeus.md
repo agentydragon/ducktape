@@ -71,8 +71,8 @@ Wyrm2 and Rugged also run LINSTOR satellites through the shared
 host-local pools are single-copy resources; they do not add independent replicas
 to the OVH replicated class.
 
-Wyrm2 is a Proxmox VM on Atlas. Its 150 GiB SSD and 500 GiB HDD pools use
-hotplugged disks with serials `piraeus-ssd` and `piraeus-hdd`; Proxmox backup and
+Wyrm2 is a Proxmox VM on Atlas. Its hotplugged 600 GiB SSD and 500 GiB HDD
+backing disks have serials `piraeus-ssd` and `piraeus-hdd`; Proxmox backup and
 replication are disabled for those disks. The
 [Terraform VM declaration](../terraform/main/proxmox-vms.tf) records their device
 identities and zvols: `rpool/data/vm-110-piraeus-ssd` and

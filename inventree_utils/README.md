@@ -8,4 +8,6 @@ See `inv --list`.
 
 ## Plugin deployment
 
-`rai_plugin` ships in the `inventree` CI image (`//inventree_utils/rai_plugin:image`, listed in `devinfra/ci/image_targets.json`). `cluster/parked/inventree/app` pulls that image and enables the plugin with `INVENTREE_PLUGINS_MANDATORY: raiplugin`.
+The [parked HelmRelease](../cluster/parked/inventree/app/helmrelease.yaml) enables
+`rai_plugin` with `INVENTREE_PLUGINS_MANDATORY: raiplugin`.
+[Image publishing and revival](../cluster/parked/inventree/TODO.md)

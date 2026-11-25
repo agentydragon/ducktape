@@ -68,10 +68,7 @@ type SessionCommandDelivery interface {
 
 type Service struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
-	Store *store.Store
-	// DispatcherCallers retain the explicit Pod-bound platform-component path. A ServiceAccount
-	// remains an authenticated actor, but never owns a Session by account identity.
-	DispatcherCallers  sets.Set[auth.Account]
+	Store              *store.Store
 	DispatcherServices sets.Set[string]
 	Sandboxes          SandboxReader
 	EnvironmentRules   *reader.Index[access.Rule]
@@ -140,6 +137,8 @@ func Methods(rule auth.Rule) auth.Methods {
 		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName:           rule,
 		dispatcherpb.SessionDispatcher_WatchDispatches_FullMethodName:       rule,
 		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName:        rule,
+		dispatcherpb.SessionDispatcher_BatchGetDispatches_FullMethodName:    rule,
+		dispatcherpb.SessionDispatcher_ListSessionDispatches_FullMethodName: rule,
 		dispatcherpb.SessionDispatcher_CancelDispatch_FullMethodName:        rule,
 	}
 }
@@ -164,7 +163,7 @@ func (s *Service) caller(ctx context.Context) (store.Caller, error) {
 	case auth.IdentityAdmission:
 		return identityCaller(identity.Caller)
 	}
-	return s.serviceAccountCaller(ctx)
+	return nil, status.Error(codes.Unauthenticated, "call not admitted")
 }
 
 func identityCaller(principal auth.IdentityPrincipal) (store.IdentityCaller, error) {
@@ -176,41 +175,6 @@ func identityCaller(principal auth.IdentityPrincipal) (store.IdentityCaller, err
 		proof.Pod = &store.PodIdentity{Name: principal.PodName, UID: principal.PodUID}
 	}
 	return store.IdentityCaller{Identity: &identitypb.Identity{Name: principal.Identity.Name, Uid: principal.Identity.UID}, Proof: proof}, nil
-}
-
-func (s *Service) serviceAccountCaller(ctx context.Context) (store.ServiceAccountCaller, error) {
-	effective, err := auth.EffectiveCaller(ctx)
-	if err != nil {
-		return store.ServiceAccountCaller{}, err
-	}
-	if effective == nil || effective.GetAccount() == nil || effective.GetAccount().GetNamespace() == "" ||
-		effective.GetAccount().GetName() == "" || effective.GetUid() == "" {
-		return store.ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "effective ServiceAccount identity is incomplete")
-	}
-	attribution := &store.AdmissionAttribution{Actor: effective, EffectiveCaller: effective}
-	privileged := false
-	admission, err := auth.Admitted(ctx)
-	if err != nil {
-		return store.ServiceAccountCaller{}, err
-	}
-	switch call := admission.(type) {
-	case auth.DirectAdmission:
-		direct := call
-		if direct.Pod != nil {
-			attribution.ActorPod = &store.PodIdentity{Name: direct.Pod.PodName, UID: direct.Pod.PodUID}
-			configured := s.DispatcherCallers.Has(auth.Account{Namespace: effective.GetAccount().GetNamespace(), Name: effective.GetAccount().GetName()})
-			privileged = configured && direct.Pod.IsPodBound()
-		}
-	default:
-		return store.ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "call not admitted")
-	}
-	if err := store.ValidateAttribution(attribution, nil); err != nil {
-		return store.ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "call attribution is invalid")
-	}
-	return store.ServiceAccountCaller{
-		ServiceAccountIdentity: effective,
-		Privileged:             privileged, Attribution: attribution,
-	}, nil
 }
 
 func (s *Service) executionIdentity(ctx context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
@@ -292,11 +256,6 @@ func (s *Service) requireLiveExecution(ctx context.Context, session *store.Sessi
 	switch c := caller.(type) {
 	case store.ServiceCaller:
 		return nil
-	case store.ServiceAccountCaller:
-		if c.Privileged {
-			return nil
-		}
-		return status.Error(codes.PermissionDenied, "caller does not own the Session")
 	case store.IdentityCaller:
 		return s.requireLiveIdentity(ctx, session, sandbox, c)
 	default:
@@ -409,7 +368,7 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, expectedSan
 	if err != nil {
 		return nil, apiError(err)
 	}
-	return store.DescribeDispatch(row)
+	return store.DescribeDispatch(row, false)
 }
 
 func (s *Service) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
@@ -524,9 +483,6 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		identity, identityFound, err := s.executionIdentity(ctx, current)
 		if err != nil {
 			return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
-		}
-		if accountCaller, ok := caller.(store.ServiceAccountCaller); ok && !accountCaller.Privileged {
-			return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
 		}
 		if !identityFound {
 			return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity unavailable")
@@ -656,7 +612,7 @@ func (s *Service) GetDispatch(ctx context.Context, request *dispatcherpb.GetDisp
 	if err != nil {
 		return nil, apiError(err)
 	}
-	dispatch, err := store.DescribeDispatch(row)
+	dispatch, err := store.DescribeDispatch(row, true)
 	if err != nil {
 		return nil, apiError(err)
 	}
@@ -692,52 +648,25 @@ func (s *Service) CancelDispatch(ctx context.Context, request *dispatcherpb.Canc
 	if err != nil {
 		return nil, apiError(err)
 	}
-	dispatch, err := store.DescribeDispatch(row)
+	dispatch, err := store.DescribeDispatch(row, false)
 	if err != nil {
 		return nil, apiError(err)
 	}
 	return &dispatcherpb.CancelDispatchResponse{Dispatch: dispatch}, nil
 }
 
-func (s *Service) list(ctx context.Context, filter *dispatcherpb.DispatchFilter) ([]*dispatcherpb.Dispatch, error) {
+func (s *Service) ListDispatches(ctx context.Context, request *dispatcherpb.ListDispatchesRequest) (*dispatcherpb.ListDispatchesResponse, error) {
 	caller, err := s.caller(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if filter == nil {
-		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required")
-	}
-	var session, sandbox string
-	switch scope := filter.GetScope().(type) {
-	case *dispatcherpb.DispatchFilter_SessionId:
-		session = scope.SessionId
-	case *dispatcherpb.DispatchFilter_Sandbox:
-		sandbox = scope.Sandbox
-	default:
-		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required")
-	}
-	if len(filter.GetCommandIds()) > maxFilterCommands {
-		return nil, status.Errorf(codes.InvalidArgument, "dispatch filter names more than %d commands", maxFilterCommands)
-	}
-	rows, err := s.Store.ListDispatchesForCaller(ctx, session, sandbox, filter.GetCommandIds(), caller)
-	if err != nil {
-		return nil, apiError(err)
-	}
-	result := make([]*dispatcherpb.Dispatch, 0, len(rows))
-	for _, row := range rows {
-		dispatch, err := store.DescribeDispatch(row)
-		if err != nil {
-			return nil, apiError(err)
-		}
-		result = append(result, dispatch)
-	}
-	return result, nil
-}
-
-func (s *Service) ListDispatches(ctx context.Context, request *dispatcherpb.ListDispatchesRequest) (*dispatcherpb.ListDispatchesResponse, error) {
-	rows, err := s.list(ctx, request.GetFilter())
+	filter, err := dispatchFilter(request.GetFilter())
 	if err != nil {
 		return nil, err
+	}
+	rows, err := s.Store.ListDispatchesForCaller(ctx, filter, caller)
+	if err != nil {
+		return nil, apiError(err)
 	}
 	return &dispatcherpb.ListDispatchesResponse{Dispatches: rows}, nil
 }

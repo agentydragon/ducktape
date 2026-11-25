@@ -235,7 +235,7 @@ def test_status_keeps_only_distinct_current_extra_enablement() -> None:
     assert views["extra"].monthly_extra_spend is not None
     assert views["extra_without_spend_row"].status == "Extra usage enabled"
     assert views["paid"].status is None
-    assert any(balance.label == "Paid credits" for balance in views["paid"].balances)
+    assert any(balance.value == "500 credits" and not balance.label for balance in views["paid"].balances)
     assert views["plain"].status is None
 
 
@@ -439,9 +439,9 @@ def test_normalized_credit_rows_keep_pools_organizations_and_restrictions_separa
     )
     view = to_view(_quotas(_provider("claude", result)), _NOW).providers[0]
     assert [(row.label, row.value, row.group) for row in view.balances] == [
-        ("Available balance", "$26", None),
-        ("Paid credits", "2,746 credits", None),
-        ("Available balance", "$123", "Main org"),
+        ("Balance", "$26", None),
+        ("", "2,746 credits", None),
+        ("Balance", "$123", "Main org"),
     ]
     assert [(row.label, row.remaining, row.scope, row.group) for row in view.grants] == [
         ("Promo grant", "$123", "restricted", "Main org")

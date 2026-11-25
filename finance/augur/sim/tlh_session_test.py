@@ -10,7 +10,7 @@ import pytest_bazel
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
-from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
+from finance.augur.sim.books import Book, TlhPortfolioState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.ids import CHECKING, AgentId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable, TransferIncomeCategory, Treasury
@@ -19,6 +19,7 @@ from finance.augur.sim.money import Currency
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.accounts import ref
 from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhOpeningCohort, TlhPortfolio
 from finance.augur.sim.world import Capture, World
@@ -32,10 +33,6 @@ OWNER = AgentId("owner")
 OTHER = AgentId("other")
 IRS = AgentId("irs")
 FEDERAL = JurisdictionId("federal_us")
-
-
-def ref(agent_id: AgentId) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
 def assumptions(*, harvest: bool) -> TlhAssumptions:

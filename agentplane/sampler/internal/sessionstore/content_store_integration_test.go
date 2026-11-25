@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
@@ -19,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
 	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
 
@@ -34,10 +34,7 @@ func openContentStoreSession(t *testing.T, store *Store, account string) (*Sessi
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	return session, owner
 }
 
@@ -104,21 +101,13 @@ func fixtureResponsesTool(name, description string, parameters string) []respons
 
 func contentRowCount(t *testing.T, store *Store, kind content.ContentKind) int {
 	t.Helper()
-	var count int
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sampler_content WHERE kind=$1`, string(kind)).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	return count
+	return postgres.Count(t, store.DB(), `SELECT COUNT(*) FROM sampler_content WHERE kind=$1`, string(kind))
 }
 
 func tableRowCount(t *testing.T, store *Store, table string) int {
 	t.Helper()
 	// The only callers pass fixed table names in this test file.
-	var count int
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM `+table).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	return count
+	return postgres.Count(t, store.DB(), `SELECT COUNT(*) FROM `+table)
 }
 
 func equivalentJSON(t *testing.T, got, want []byte) {

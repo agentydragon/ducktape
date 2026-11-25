@@ -26,9 +26,9 @@ in the inference run record.
   are estimated at 4.47 GiB across both GPUs. Alternate two distinct
   near-limit threads and check that both prefixes stay warm and each
   card retains prefill headroom.
-- **Simultaneous generations.** Test `max_batch_size: 2` after allowing
-  same-checkpoint streams to overlap safely while model switches wait for
-  active streams. Compare two overlapping cold prefills and a short
+- **Simultaneous generations.** Test `max_batch_size: 2`, including
+  same-checkpoint streams and switches while streams are active. Compare two
+  overlapping cold prefills and a short
   request arriving during a long run against the current serial queue.
   Measure per-request latency, aggregate throughput, and peak VRAM.
 - **Longer single window.** Try a 512K pool and sequence cap as a separate

@@ -33,7 +33,8 @@ is the model's only signal that a nested `exec_command` or `apply_patch` may hav
 The rest of this document covers the state that still waits for an operator: a Session blocked on
 the host that still serves it after an interrupt whose cleanup could not confirm every handle.
 It settles the same way once that host is replaced, or an operator recovers it earlier with
-`RecoverSession`. The same API also handles retained blocks from earlier sampler images.
+`RecoverSession`. The same API also handles retained blocks from earlier sampler images, including blocks with no
+remaining unresolved handles or intents after the operator reviews the recorded boundary evidence.
 
 The Code Mode host binding is independent of executor reachability. Attaching JavaScript does not
 open an executor stream or prepare the workspace; the sampler acquires execution when a command,

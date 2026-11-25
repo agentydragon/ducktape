@@ -20,17 +20,12 @@ func TestMain(m *testing.M) {
 	if runtimetesting.RunCodeModePeer() {
 		return
 	}
-	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))
+	os.Exit(postgres.RunIntegrationTests(m.Run, migrations.Up, &integrationDatabase))
 }
 
 func claimedExecutorStore(t *testing.T) (*sessionstore.Store, sessionstore.Owner) {
 	t.Helper()
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, _, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
 		t.Fatal(err)
 	}

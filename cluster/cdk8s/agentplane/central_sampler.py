@@ -18,8 +18,3 @@ def service(namespace: str) -> ServiceRef:
 
 def pods(namespace: str) -> Pods:
     return service(namespace).pods
-
-
-def target(namespace: str) -> str:
-    endpoint = service(namespace)
-    return f"{endpoint.fqdn}:{endpoint.pod_port}"

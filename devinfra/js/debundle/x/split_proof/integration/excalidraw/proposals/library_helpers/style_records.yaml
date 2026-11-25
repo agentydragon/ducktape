@@ -1,0 +1,19 @@
+# Upstream: packages/excalidraw/constants.ts, v0.18.1.
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        FONT_FAMILY_FALLBACKS = {
+          [CJK_HAND_DRAWN_FALLBACK_FONT]: 100,
+          [WINDOWS_EMOJI_FALLBACK_FONT]: 1e3
+        },
+        DECLARATORS_AFTER = null;
+    bindings:
+      - FONT_FAMILY_FALLBACKS
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        LIBRARY_SIDEBAR_TAB = "library",
+        CANVAS_SEARCH_TAB = "search",
+        DEFAULT_SIDEBAR = {name: "default", defaultTab: LIBRARY_SIDEBAR_TAB},
+        DECLARATORS_AFTER = null;
+    bindings:
+      - DEFAULT_SIDEBAR

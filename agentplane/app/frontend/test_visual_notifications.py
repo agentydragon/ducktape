@@ -9,7 +9,6 @@ from agentplane.app.frontend.testing.visual_assertions import _expect_notice_bad
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
 from testing.frontend_visual.capture import VisualPage
 
-pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -113,7 +112,7 @@ async def test_subscription_filter_shows_cancelled_only_on_request(view: VisualP
     await expect(
         page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · no current source error")
     ).to_be_visible()
-    cancelled = page.get_by_text("agentydragon/ducktape · pull request 42 · cancelled")
+    cancelled = page.get_by_text("test-owner/test-repository · pull request 42 · cancelled")
     await expect(cancelled).to_have_count(0)
 
     await page.get_by_role("combobox", name="Show subscriptions").click()

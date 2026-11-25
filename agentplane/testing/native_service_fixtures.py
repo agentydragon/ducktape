@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 from python.runfiles import Runfiles
 
-from agentplane.env.config import Endpoint, EnvironmentRuntimeControl, SVIDEndpoint
+from agentplane.env.config import Endpoint, EnvironmentRuntimeControl
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.fixtures import config, endpoint, model, spec, workspace
 from agentplane.env.e2e.testing.gateway import bind_incarnation
-from agentplane.env.e2e.testing.history_tunnel import history_tunnel
+from agentplane.env.e2e.testing.history_ingress import history_ingress
 from agentplane.env.e2e.testing.model_config import model_config
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container
 from agentplane.history_service.testing.fixtures import service_database_template, service_history_db_url
@@ -94,11 +94,8 @@ async def history_service(
 
 @pytest.fixture
 async def ingress(history_service: GoHistoryService) -> AsyncIterator[Endpoint]:
-    async with history_tunnel(history_service.ingress_target) as proxy:
-        yield Endpoint(
-            target=history_service.ingress_target,
-            svid=SVIDEndpoint(server_uri="spiffe://agentplane/history-ingress", proxy_address=proxy),
-        )
+    async with history_ingress(history_service.ingress_target) as history:
+        yield history
 
 
 @pytest.fixture

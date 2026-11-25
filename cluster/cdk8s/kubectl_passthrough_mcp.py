@@ -54,10 +54,8 @@ def _deployment(chart: Chart) -> None:
             namespace=NAME,
             labels=SERVICE.pods.selector,
             annotations={
-                **namespaces.initial_memory_request_annotations(
-                    ContainerPolicy.memory_requests_only(
-                        "server", cpu_request=_CPU_REQUEST, memory_floor=_MEMORY_REQUEST, memory_limit=_MEMORY_LIMIT
-                    )
+                **namespaces.initial_request_annotations(
+                    ContainerPolicy.cpu_and_memory_requests_only("server", memory_floor=_MEMORY_REQUEST)
                 ),
                 "description": (
                     "containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is"
@@ -84,7 +82,7 @@ def _deployment(chart: Chart) -> None:
                             # Config is public-only — the OAuth2 provider is public (PKCE),
                             # and passthrough mode does no token exchange, so no secrets needed.
                             args=[f"--config={_CONFIG_DIR}/{_CONFIG_FILE}"],
-                            ports=[SERVICE.port.k8s_container_port()],
+                            ports=[SERVICE.k8s_container_port()],
                             volume_mounts=[
                                 k8s.VolumeMount(
                                     name="public",
@@ -135,7 +133,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAME),
-        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()], type="ClusterIP"),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.k8s_service_port()], type="ClusterIP"),
     )
     # NOT behind the Authentik outpost — the MCP server drives the full OAuth dance
     # (DCR, PKCE, resource metadata) internally using containers/kubernetes-mcp-server's

@@ -64,7 +64,6 @@
 # gazelle:resolve py third_party.containers.timescaledb_pg18 //third_party/containers:timescaledb_pg18
 #
 # Bazel-provided libraries (not from PyPI)
-# gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
 # gazelle:resolve py python.runfiles @rules_python//python/runfiles
 # gazelle:resolve py pkg.private @rules_pkg//pkg/private:manifest
 #
@@ -83,7 +82,6 @@
 # gazelle:resolve py TechDrawGui @pypi//freecad_stubs
 #
 # Non-standard import paths (import name doesn't match directory structure)
-# gazelle:resolve py samplebooks_parts_data //inventree_utils/samplebooks_import:samplebooks_parts_data
 # haku/shared is a nested Bazel module (bazelignored), so Gazelle cannot index the library
 # that provides this namespace-package import; pin it to the module's label.
 # gazelle:resolve py haku.console.tool_calls @ducktape_haku//haku/console:tool_calls
@@ -115,7 +113,6 @@ npm_link_package(
 
 # Export workspace files for npm_translate_lock data tracking
 exports_files([
-    ".github/workflows/cancel-closed-pr-ci.yml",
     ".github/workflows/cancel-obsolete-pr-ci.yml",
     ".github/workflows/nix-images.yml",
     "MODULE.bazel",
@@ -135,15 +132,11 @@ filegroup(
     visibility = ["//cluster/validation:__pkg__"],
 )
 
-# The archive manifest test checks that this existing encrypted source is present in the checkout
-# and is mapped to the exact file path consumed by its Kustomize secretGenerator.
+# The Flux validation fixture stages the archive's encrypted input from its declared source.
 filegroup(
     name = "session_backup_sops_source",
     srcs = ["secrets/shared/session-backup.yaml"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
+    visibility = ["//cluster/validation:__pkg__"],
 )
 
 # Root conftest.py for shared pytest configuration
@@ -183,9 +176,7 @@ js_library(
     ],
 )
 
-# Prettier configuration as js_library
-# Makes the config and its plugins available to the prettier binary in //devinfra:prettier_bin
-# no-lint: This is a config file, not a target to lint
+# Prettier configuration for generated JavaScript trees.
 js_library(
     name = "prettierrc",
     srcs = [".prettierrc.cjs"],

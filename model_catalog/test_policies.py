@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 import pytest_bazel
 
-from model_catalog.catalog import GPT6_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES
+from model_catalog.catalog import GPT6_2_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES
 from model_catalog.policies import ModelLaneRoutes
 
 
@@ -17,7 +17,7 @@ def test_lane_cannot_authorize_an_unserved_route() -> None:
 
 def test_fallback_does_not_grant_access() -> None:
     with pytest.raises(ValueError, match="fallback routes outside its allowlist"):
-        ModelLaneRoutes(allowed=(GPT6_LUNA_MESSAGES,), fallbacks=(GPT6_ASTRA_MESSAGES,))
+        ModelLaneRoutes(allowed=(GPT6_LUNA_MESSAGES,), fallbacks=(GPT6_2_ASTRA_MESSAGES,))
 
 
 if __name__ == "__main__":

@@ -28,8 +28,8 @@ exclude: |
     props/specimens/[^/]+/[^/]+/code/.*
   )$
 repos:
-  # Upstream pre-commit-hooks comes from the flake-locked Nix precommit package.
-  # Keep upstream hook metadata when changing these local definitions.
+  # All hook commands come from the flake-locked Nix precommit package.
+  # Keep upstream pre-commit-hooks metadata when changing their local definitions.
   - repo: local
     hooks:
       # Safety guard: block direct commits on protected branches. Listing
@@ -94,21 +94,15 @@ repos:
         language: system
         types: [toml]
 
-      # TODO: enable check-json
-      # - id: check-json
+      - id: check-xml
+        name: check XML syntax
+        entry: check-xml
+        language: system
+        files: \.xml$
 
-      # TODO: maybe:
-      # https://github.com/pre-commit/pre-commit-hooks?tab=readme-ov-file#name-tests-test
-      # --pytest-test-first
-      # - check-shebang-scripts-are-executable
+      # TODO: Consider enabling check-json and check-shebang-scripts-are-executable.
 
-  # Ruff linter and formatter — ruff provided by devShell / web-session via Nix
-  - repo: local
-    hooks:
-      # Language-agnostic ordering for explicitly marked blocks. The binary is
-      # in `preCommitPackages`, exposed as `.#precommit` for CI and included in
-      # `devToolPackages` for Claude Code web.
-      #
+      # Language-agnostic ordering for explicitly marked blocks.
       # Blocks are opt-in, paired (`start`/`end` on their own lines, inside the
       # block) and meant for lists that are sets: allowlists, path filters,
       # package/command names, kustomize resources. Marking one is a claim that
@@ -136,18 +130,12 @@ repos:
         language: system
         types: [python]
 
-  # Nix formatter (RFC 166 style) — nixfmt provided by devShell / web-session via Nix
-  - repo: local
-    hooks:
       - id: nixfmt
         name: nixfmt
         entry: nixfmt
         language: system
         types: [nix]
 
-  # Statix - Nix anti-pattern linter — statix provided by devShell / web-session via Nix
-  - repo: local
-    hooks:
       - id: statix
         name: statix
         entry: statix check -c devinfra/statix.toml
@@ -155,37 +143,21 @@ repos:
         types: [nix]
         pass_filenames: false
 
-  # Markdown linting — markdownlint-cli2 provided by devShell / web-session via
-  # Nix (avoids a git clone of the hook's repo just to install it). Scoped to
-  # staged files via `files:` regex below; the markdownlint-cli2 config
-  # (.markdownlint-cli2.jsonc) has no globs of its own, so pre-commit's
-  # positional args (= staged files) are the only inputs.
-  - repo: local
-    hooks:
+      # The Markdown config uses only the paths supplied by pre-commit.
       - id: markdownlint-cli2
         name: markdownlint-cli2
         entry: markdownlint-cli2 --fix
         language: system
         files: ^(cluster|website)/.*\.md$
 
-  # NOTE: ESLint and TypeScript type checking are handled by Bazel:
-  # - ESLint: bazel build //... (lint aspects run by default)
-  # - TypeScript: ts_library targets type-check when built.
-
-  # Buildifier - Bazel/Starlark formatting and linting — buildifier provided by devShell / web-session via Nix
-  - repo: local
-    hooks:
       - id: buildifier
         name: buildifier
         entry: buildifier --lint=fix
         language: system
         files: "(BUILD|WORKSPACE|\\.bzl|\\.bazel)$"
 
-  # shfmt - Shell script formatting — shfmt provided by devShell / web-session via Nix
-  # Exclude .zsh: pre-commit's identify tags zsh as shell, but shfmt can't parse
-  # advanced zsh-specific syntax (e.g. p10k.zsh, zsh-init.zsh).
-  - repo: local
-    hooks:
+      # Exclude .zsh: pre-commit's identify tags zsh as shell, but shfmt can't parse
+      # advanced zsh-specific syntax (e.g. p10k.zsh, zsh-init.zsh).
       - id: shfmt
         name: shfmt
         entry: shfmt -w
@@ -193,30 +165,18 @@ repos:
         types: [shell]
         exclude: "\\.zsh$"
 
-  # rustfmt - Rust code formatting — rustfmt provided by devShell / web-session via Nix
-  - repo: local
-    hooks:
       - id: rustfmt
         name: rustfmt
         entry: rustfmt
         language: system
         types: [rust]
 
-  # gofumpt - Go code formatting — gofumpt provided by devShell / web-session via Nix
-  - repo: local
-    hooks:
       - id: gofumpt
         name: gofumpt
         entry: gofumpt -w
         language: system
         types: [go]
 
-  # ============================================================================
-  # LOCAL HOOKS
-  # ============================================================================
-
-  - repo: local
-    hooks:
       # Ansible syntax check: Fast validation for pre-commit
       # Pre-commit: Just runs ansible-playbook --syntax-check (fast, catches essential errors)
       # CI: Runs full ansible-lint with all rules (thorough, slower)
@@ -266,16 +226,12 @@ repos:
         always_run: true
         stages: [prepare-commit-msg]
 
-      # Kubernetes manifest validation (auto-installed via go install)
+      # Kubernetes manifest validation
       # CRD schemas from datreeio/CRDs-catalog cover Flux, cert-manager,
       # external-secrets, etc.; cluster/schemas/ holds the ones for this repo's
       # own CRDs (each file is its CRD's openAPIV3Schema, dumped by
-      # `bb run //agentplane/crds:generate_bin`). Niche third-party CRDs without catalog
-      # schemas (powerdns-operator, kagent) are skipped rather than failing.
-      # TODO: Run the datree CRD extractor against the live cluster to get
-      # schemas for niche CRDs (ClusterRRset, ClusterZone, Agent, ModelConfig,
-      # RemoteMCPServer), check them into cluster/schemas/, and drop
-      # -ignore-missing-schemas.
+      # `bb run //agentplane/crds:generate_bin`). Kinds with no schema in either
+      # place are skipped rather than failing (`-ignore-missing-schemas`).
       # gotk-components.yaml is excluded (auto-generated by Flux).
       # TODO: Derive Seaweed's schema from the pinned operator CRD and remove its
       # GVK skip below; the public catalog schema predates master.persistence.
@@ -305,16 +261,7 @@ repos:
           )$
         types: [yaml]
 
-  # ============================================================================
-  # CLUSTER-SPECIFIC HOOKS (external repos, scoped to cluster/ directory)
-  # ============================================================================
-
-  # Checkov security scanner for Terraform — checkov provided by devShell / web-session
-  # via Nix (pkgs.checkov). Local hook (not repo: github) so pre-commit needn't clone
-  # the checkov repo, which web sessions cannot fetch through the egress proxy.
-  # Mirrors the upstream checkov_diff hook: `entry: checkov` + pass_filenames with `-f`.
-  - repo: local
-    hooks:
+      # Checkov uses the same file-based invocation as its upstream hook.
       - id: checkov_diff
         name: checkov (terraform)
         language: system
@@ -323,18 +270,11 @@ repos:
         files: "^(cluster/terraform|tf)/.*\\.tf$"
         require_serial: true
 
-  # TFLint - Terraform linter — tflint provided by devShell / web-session via Nix
-  # Config: cluster/.tflint.hcl; plugins cached in ~/.tflint.d/plugins
-  # Wrapper groups changed files by directory and runs tflint --chdir=<dir> per directory
-  # (tflint always lints the whole module, not individual files)
-  - repo: local
-    hooks:
+      # Config: cluster/.tflint.hcl; plugins cached in ~/.tflint.d/plugins
+      # Wrapper groups changed files by directory and runs tflint --chdir=<dir> per directory
+      # (tflint always lints the whole module, not individual files)
       - id: tflint
         name: tflint (cluster)
         language: system
         entry: devinfra/precommit/run_tflint.sh
         files: "^(cluster/terraform|tf)/.*\\.tf$"
-
-  # NOTE: terraform_validate hook removed — Bazel rules_tf now covers all
-  # terraform modules via :validate and :lint targets with hermetic providers.
-  # See MODULE.bazel tf.download(mirror={...}) for provider configuration.

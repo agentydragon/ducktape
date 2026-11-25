@@ -2,7 +2,7 @@
 
 The pinned CRD comes from the same chart release. Flux applies it separately because Helm
 does not upgrade CRDs in a chart's crds directory. The runner image extends the matching
-upstream release with the cluster's provider mirror; `PINS_DIR` pins it for coordinated rollout.
+upstream release with the cluster's provider mirror. Pin it alongside the chart for coordinated rollout.
 
 `values` is an untyped dict: Helm values carry no schema for `cdk8s_import` to ingest.
 """
@@ -23,15 +23,14 @@ from python.runfiles import Runfiles
 from cluster.cdk8s import flux, terraform
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.providers.vpa.policy import requests_only_vpa
 
 NAME = "tofu-controller"
 NAMESPACE = "flux-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/tofu-controller"
-PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
-# GHCR, not the Forgejo registry: the Forgejo pull credential's user is created by a Terraform
-# this controller applies, so a Forgejo-hosted controller or runner could never start on a fresh
-# cluster.
+VPA_NAME = f"{NAME}-vpa"
+VPA_OUTPUT_DIR = f"{GENERATED_ROOT}/{VPA_NAME}"
 RUNNER_NAME = "tf-runner"
 RUNNER_IMAGE = "ghcr.io/agentydragon/tf-runner"
 _CRD = "tofu_controller_crd/file/crds.yaml"
@@ -62,6 +61,8 @@ def chart(app: App) -> Chart:
             # Gitops Terraform CRs read their module's `ExternalArtifact` in `flux.NAMESPACE`, not their own.
             "allowCrossNamespaceRefs": terraform.NAMESPACE != flux.NAMESPACE,
             "runner": {
+                # Upgrade the runner and chart together (cluster/tf_runner/README.md).
+                "image": {"repository": RUNNER_IMAGE, "tag": "devel-20261120070342-4f193ce"},
                 "grpc": {"maxMessageSize": 50},  # MB, default 4 — defense against repo growth
                 "serviceAccount": {"annotations": {"eks.amazonaws.com/role-arn": ""}},  # Not needed for on-prem
             },
@@ -81,4 +82,10 @@ def chart(app: App) -> Chart:
             spec=ImageRepositorySpec(image=RUNNER_IMAGE, interval="5m"),
         ),
     )
+    return chart
+
+
+def vpa_chart(app: App) -> Chart:
+    chart = Chart(app, VPA_NAME, disable_resource_name_hashes=True)
+    requests_only_vpa(chart, NAME, namespace=NAMESPACE, container_name=NAME, update_mode="Initial")
     return chart

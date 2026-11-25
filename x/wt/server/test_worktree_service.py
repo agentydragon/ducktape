@@ -1,11 +1,14 @@
 """Integration tests for WorktreeService with real git repositories."""
 
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
+from x.wt.server.git_manager import GitManager
+from x.wt.server.github_client import GitHubInterface
 from x.wt.server.worktree_service import WorktreeService
 
 
@@ -13,23 +16,24 @@ class TestWorktreeService:
     """Test the WorktreeService with real git repositories."""
 
     @pytest.fixture
-    def service(self, repo_factory, config_factory, service_builder):
-        repo_path = repo_factory.create_repo()
-        config = config_factory(repo_path).minimal(
+    def make_service(self, repo_factory, config_factory):
+        def make(repo_path=None, **minimal_kwargs):
+            if repo_path is None:
+                repo_path = repo_factory.create_repo()
+            config = config_factory(repo_path).minimal(**minimal_kwargs)
+            github = Mock(spec=GitHubInterface)
+            github.pr_list.return_value = []
+            github.pr_search.return_value = []
+            github.pr_view.return_value = None
+            return WorktreeService(GitManager(config=config), github), config
+
+        return make
+
+    @pytest.fixture
+    def service(self, make_service):
+        return make_service(
             branch_prefix="test/", upstream_branch="main", github_repo="test-user/test-repo", log_operations=True
         )
-
-        service = service_builder(config).with_real_git().with_mock_github().build_worktree_service()
-        return service, config
-
-    def _make_service(self, repo_factory, config_factory, repo_path=None, *, service_builder, **minimal_kwargs):
-        if repo_path is None:
-            repo_path = repo_factory.create_repo()
-        factory = config_factory(repo_path)
-        config = factory.minimal(**minimal_kwargs)
-
-        service = service_builder(config).with_real_git().with_mock_github().build_worktree_service()
-        return service, config
 
     def test_list_worktrees_empty_repo(self, service):
         """Test listing worktrees in empty repository."""
@@ -96,7 +100,7 @@ class TestWorktreeService:
         inside_path = config.worktrees_dir / "valid-worktree"
         assert worktree_service._is_managed_worktree(inside_path, config)
 
-    async def test_post_creation_script_execution(self, repo_factory, config_factory, service_builder):
+    async def test_post_creation_script_execution(self, repo_factory, make_service):
         """Test post-creation script runner executes and passes expected args."""
         repo_path = repo_factory.create_repo()
 
@@ -104,13 +108,7 @@ class TestWorktreeService:
         script_path.write_text((Runfiles.CreateOrRaise().root() / "ducktape/x/wt/testing/post_create.sh").read_text())
         script_path.chmod(0o755)
 
-        service, config = self._make_service(
-            repo_factory,
-            config_factory,
-            repo_path=repo_path,
-            service_builder=service_builder,
-            post_creation_script=str(script_path),
-        )
+        service, config = make_service(repo_path=repo_path, post_creation_script=str(script_path))
 
         worktree_path = service.create_worktree(config, "script-test")
 
@@ -126,35 +124,35 @@ class TestWorktreeService:
         assert f"--worktree_root={worktree_path}" in args_record
         assert f"--worktree_name={worktree_path.name}" in args_record
 
-    def test_copy_hydrates_when_enabled(self, repo_factory, config_factory, service_builder):
-        service, config = self._make_service(
-            repo_factory, config_factory, service_builder=service_builder, hydrate_worktrees=True
-        )
+    def test_copy_hydrates_when_enabled(self, make_service):
+        service, config = make_service(hydrate_worktrees=True)
         src = service.create_worktree(config, "src")
         (src / "untracked.txt").write_text("x")
         dst = service.create_worktree(config, "dst", source_worktree=src)
         assert (dst / "untracked.txt").exists()
 
-    def test_copy_skips_hydration_when_disabled(self, repo_factory, config_factory, service_builder):
-        service, config = self._make_service(
-            repo_factory, config_factory, service_builder=service_builder, hydrate_worktrees=False
-        )
+    def test_copy_source_cannot_be_the_managed_directory(self, repo_factory, make_service):
+        main = repo_factory.create_repo()
+        service, config = make_service(repo_path=main, worktrees_dir=str(main))
+        with pytest.raises(RuntimeError, match="Managed worktrees directory is the copy source"):
+            service.create_worktree(config, "destination", source_worktree=main)
+        assert not (main / "destination").exists()
+        assert not service.git_manager.branch_exists(f"{config.branch_prefix}destination")
+
+    def test_copy_skips_hydration_when_disabled(self, make_service):
+        service, config = make_service(hydrate_worktrees=False)
         src = service.create_worktree(config, "src")
         (src / "untracked.txt").write_text("x")
         dst = service.create_worktree(config, "dst", source_worktree=src)
         assert not (dst / "untracked.txt").exists()
 
-    def test_create_hydrates_when_enabled(self, repo_factory, config_factory, service_builder):
-        service, config = self._make_service(
-            repo_factory, config_factory, service_builder=service_builder, hydrate_worktrees=True
-        )
+    def test_create_hydrates_when_enabled(self, make_service):
+        service, config = make_service(hydrate_worktrees=True)
         dst = service.create_worktree(config, "dst")
         assert (dst / "README.md").exists()
 
-    def test_create_skips_hydration_when_disabled(self, repo_factory, config_factory, service_builder):
-        service, config = self._make_service(
-            repo_factory, config_factory, service_builder=service_builder, hydrate_worktrees=False
-        )
+    def test_create_skips_hydration_when_disabled(self, make_service):
+        service, config = make_service(hydrate_worktrees=False)
         dst = service.create_worktree(config, "dst")
         entries = [p for p in dst.iterdir() if p.name != ".git"]
         assert entries == []

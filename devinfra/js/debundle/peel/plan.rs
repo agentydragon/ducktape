@@ -352,6 +352,30 @@ pub struct LimitReport {
     pub sections: BTreeMap<&'static str, LimitSectionReport>,
 }
 
+impl LimitReport {
+    pub fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            sections: BTreeMap::new(),
+        }
+    }
+
+    /// Truncate a section and record its original and emitted row counts.
+    pub fn apply<T>(&mut self, section: &'static str, records: &mut Vec<T>) {
+        let total = records.len();
+        apply_limit(records, self.limit);
+        let emitted = records.len();
+        self.sections.insert(
+            section,
+            LimitSectionReport {
+                total,
+                emitted,
+                truncated: emitted < total,
+            },
+        );
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct LimitSectionReport {
     pub total: usize,
@@ -489,19 +513,19 @@ pub fn run_patch_plan_report(
             .count(),
         unknown_binding_count: rows.iter().map(|row| row.unknown_binding_ids.len()).sum(),
     };
-    let mut sections = BTreeMap::new();
-    apply_limit_with_metadata(&mut rows, args.limit, &mut sections, "rows");
+    let mut limits = LimitReport::new(args.limit);
+    limits.apply("rows", &mut rows);
     Ok(PatchPlanReport {
         rows,
         summary,
-        limits: limit_report(args.limit, sections),
+        limits: (args.limit > 0).then_some(limits),
     })
 }
 
 pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryReport> {
     let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
-    let mut largest_residual_atomic_groups: Vec<AtomicGroupSummary> = graph
+    let mut residual_groups: Vec<_> = graph
         .atomic_graph
         .nodes
         .iter()
@@ -511,47 +535,28 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
                 .iter()
                 .any(|destination| graph.is_unassigned_or_entry(destination))
         })
+        .collect();
+    let residual_atomic_group_count = residual_groups.len();
+    residual_groups.sort_by_key(|group| (std::cmp::Reverse(group.size_lines_estimate), &group.id));
+    apply_limit(&mut residual_groups, args.limit);
+    let largest_residual_atomic_groups = residual_groups
+        .into_iter()
         .map(|atomic_group| AtomicGroupSummary {
             atomic_group_id: atomic_group.id.clone(),
             size_lines_estimate: atomic_group.size_lines_estimate,
             members: atomic_group.members.clone(),
         })
         .collect();
-    largest_residual_atomic_groups.sort_by_key(|atomic_group| {
-        (
-            std::cmp::Reverse(atomic_group.size_lines_estimate),
-            atomic_group.atomic_group_id.clone(),
-        )
-    });
-    apply_limit(&mut largest_residual_atomic_groups, args.limit);
     Ok(GraphSummaryReport {
         source_unit_count: graph.nodes.len(),
         dependency_edge_count: graph.edges.len(),
         atomic_group_count: graph.atomic_graph.nodes.len(),
-        residual_atomic_group_count: graph
-            .atomic_graph
-            .nodes
-            .iter()
-            .filter(|atomic_group| {
-                atomic_group
-                    .destinations
-                    .iter()
-                    .any(|destination| graph.is_unassigned_or_entry(destination))
-            })
-            .count(),
+        residual_atomic_group_count,
         atomic_edge_count: graph.atomic_graph.edges.len(),
         module_count: graph.quotient.nodes.len(),
         module_edge_count: graph.quotient.edges.len(),
         largest_residual_atomic_groups,
     })
-}
-
-macro_rules! apply_limits {
-    ($limit:expr, $sections:expr, $(($vec:expr, $name:expr)),+ $(,)?) => {
-        $(
-            apply_limit_with_metadata(&mut $vec, $limit, &mut $sections, $name);
-        )+
-    };
 }
 
 /// One command's loaded graph and shared authoring lookups. This cache never
@@ -917,25 +922,27 @@ fn explain_from_graph(
         .filter(|witness| !witness.affected_roots.is_disjoint(&affected_roots))
         .cloned()
         .collect();
-    let mut sections = BTreeMap::new();
-    apply_limits!(
-        args.limit,
-        sections,
-        (native_integrity_witnesses, "native_integrity_witnesses"),
-        (native_prototype_mutations, "native_prototype_mutations"),
-        (limited_source_unit_ids, "source_unit_ids"),
-        (source_units, "source_units"),
-        (neighbor_source_units, "neighbor_source_units"),
-        (bindings, "bindings"),
-        (binding_homes, "binding_homes"),
-        (incoming_edges, "incoming_edges"),
-        (outgoing_edges, "outgoing_edges"),
-        (atomic_groups, "atomic_groups"),
-        (incoming_atomic_edges, "incoming_atomic_edges"),
-        (outgoing_atomic_edges, "outgoing_atomic_edges"),
-        (quotient_edges, "quotient_edges"),
-        (unknown_binding_ids, "unknown_binding_ids"),
+    let mut limits = LimitReport::new(args.limit);
+    limits.apply(
+        "native_integrity_witnesses",
+        &mut native_integrity_witnesses,
     );
+    limits.apply(
+        "native_prototype_mutations",
+        &mut native_prototype_mutations,
+    );
+    limits.apply("source_unit_ids", &mut limited_source_unit_ids);
+    limits.apply("source_units", &mut source_units);
+    limits.apply("neighbor_source_units", &mut neighbor_source_units);
+    limits.apply("bindings", &mut bindings);
+    limits.apply("binding_homes", &mut binding_homes);
+    limits.apply("incoming_edges", &mut incoming_edges);
+    limits.apply("outgoing_edges", &mut outgoing_edges);
+    limits.apply("atomic_groups", &mut atomic_groups);
+    limits.apply("incoming_atomic_edges", &mut incoming_atomic_edges);
+    limits.apply("outgoing_atomic_edges", &mut outgoing_atomic_edges);
+    limits.apply("quotient_edges", &mut quotient_edges);
+    limits.apply("unknown_binding_ids", &mut unknown_binding_ids);
 
     Ok(ExplainReport {
         native_integrity_witnesses,
@@ -954,10 +961,7 @@ fn explain_from_graph(
         outgoing_atomic_edges,
         quotient_edges,
         unknown_binding_ids,
-        limits: Some(LimitReport {
-            limit: args.limit,
-            sections,
-        }),
+        limits: Some(limits),
     })
 }
 
@@ -1071,37 +1075,10 @@ fn apply_limit<T>(records: &mut Vec<T>, limit: usize) {
     }
 }
 
-/// Truncate a report section and record the pre- and post-limit row counts.
-pub fn apply_limit_with_metadata<T>(
-    records: &mut Vec<T>,
-    limit: usize,
-    sections: &mut BTreeMap<&'static str, LimitSectionReport>,
-    section: &'static str,
-) {
-    let total = records.len();
-    apply_limit(records, limit);
-    let emitted = records.len();
-    sections.insert(
-        section,
-        LimitSectionReport {
-            total,
-            emitted,
-            truncated: emitted < total,
-        },
-    );
-}
-
 fn move_to_front<T>(records: &mut [T], mut matches: impl FnMut(&T) -> bool) {
     if let Some(index) = records.iter().position(&mut matches) {
         records[..=index].rotate_right(1);
     }
-}
-
-fn limit_report(
-    limit: usize,
-    sections: BTreeMap<&'static str, LimitSectionReport>,
-) -> Option<LimitReport> {
-    (limit > 0).then_some(LimitReport { limit, sections })
 }
 
 fn group_atomic_groups_by_destination(
@@ -1195,9 +1172,7 @@ fn patch_plan_rows(
             .iter()
             .map(|patch_set| SourceClaimSet {
                 module_path: &patch_set.file,
-                member_selectors: &patch_set.member_selectors,
-                source_matches: &patch_set.source_matches,
-                anonymous_selectors: &patch_set.anonymous_selectors,
+                module: &patch_set.claims,
             })
             .collect::<Vec<_>>(),
     )?;
@@ -1206,13 +1181,12 @@ fn patch_plan_rows(
         .zip(resolved_by_set)
         .map(|(patch_set, resolved)| {
             let claimed_bindings: BTreeSet<String> = patch_set
-                .bindings
-                .iter()
-                .chain(&resolved.bindings)
-                .cloned()
+                .claims
+                .binding_pins()
+                .map(str::to_owned)
+                .chain(resolved.bindings)
                 .collect();
-            let mut requested_binding_ids: Vec<String> = claimed_bindings.iter().cloned().collect();
-            requested_binding_ids.sort();
+            let requested_binding_ids: Vec<String> = claimed_bindings.iter().cloned().collect();
 
             let mut requested_source_unit_ids = BTreeSet::<String>::new();
             let mut unknown_binding_ids = Vec::<String>::new();
@@ -1311,10 +1285,7 @@ fn patch_plan_rows(
 struct PatchSet {
     path: String,
     file: PathBuf,
-    bindings: BTreeSet<String>,
-    member_selectors: Vec<(String, spec::MemberSelectorSpec)>,
-    anonymous_selectors: BTreeSet<spec::AnonymousStatementSelector>,
-    source_matches: Vec<spec::SourceMatchClaim>,
+    claims: spec_modules::ModuleClaims,
 }
 
 fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
@@ -1327,10 +1298,7 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
         sets.push(PatchSet {
             path: module_path_from_file(&file, modules_root),
             file,
-            bindings: claims.bindings,
-            member_selectors: claims.member_selectors,
-            anonymous_selectors: claims.anonymous_selectors,
-            source_matches: claims.source_matches,
+            claims,
         });
     }
     Ok(sets)
@@ -1523,23 +1491,6 @@ fn resolve_module_path_source_unit_ids(
     module_files: &[PathBuf],
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<(Vec<String>, Vec<String>)> {
-    let yaml_path = common.modules_root.join(format!("{module_path}.yaml"));
-    let claims = read_module_claims(&yaml_path)
-        .with_context(|| format!("reading module YAML {}", yaml_path.display()))?;
-    if claims.is_empty() {
-        bail!("module {module_path:?} has no members or anonymous_statements; nothing to describe");
-    }
-
-    let binding_to_source_units = binding_to_source_units(graph);
-    let mut source_unit_ids = BTreeSet::<String>::new();
-    let mut unknown_binding_ids = Vec::<String>::new();
-    for binding in &claims.bindings {
-        if let Some(binding_source_unit_ids) = binding_to_source_units.get(binding) {
-            source_unit_ids.extend(binding_source_unit_ids.iter().cloned());
-        } else {
-            unknown_binding_ids.push(binding.clone());
-        }
-    }
     // The module's claims resolve jointly with every other module's, as in
     // `run`.
     let all_claims = module_files
@@ -1550,6 +1501,11 @@ fn resolve_module_path_source_unit_ids(
         .iter()
         .position(|file| module_path_from_file(file, &common.modules_root) == module_path)
         .with_context(|| format!("module {module_path:?} is not in the modules tree"))?;
+    let claims = &all_claims[index];
+    if claims.is_empty() {
+        bail!("module {module_path:?} has no members or anonymous_statements; nothing to describe");
+    }
+
     let resolved = resolve_source_claims_of(
         anonymous_resolution::SourceClaimsContext {
             graph,
@@ -1564,18 +1520,23 @@ fn resolve_module_path_source_unit_ids(
             .zip(&all_claims)
             .map(|(file, claims)| SourceClaimSet {
                 module_path: file,
-                member_selectors: &claims.member_selectors,
-                source_matches: &claims.source_matches,
-                anonymous_selectors: &claims.anonymous_selectors,
+                module: claims,
             })
             .collect::<Vec<_>>(),
         index,
     )?;
-    for binding in &resolved.bindings {
+    let binding_to_source_units = binding_to_source_units(graph);
+    let mut source_unit_ids = BTreeSet::<String>::new();
+    let mut unknown_binding_ids = Vec::<String>::new();
+    let pins = claims.binding_pins().collect::<BTreeSet<_>>();
+    for binding in pins
+        .into_iter()
+        .chain(resolved.bindings.iter().map(String::as_str))
+    {
         if let Some(binding_source_unit_ids) = binding_to_source_units.get(binding) {
             source_unit_ids.extend(binding_source_unit_ids.iter().cloned());
         } else {
-            unknown_binding_ids.push(binding.clone());
+            unknown_binding_ids.push(binding.to_owned());
         }
     }
     for source_unit in &resolved.anonymous_source_units {

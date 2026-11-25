@@ -1,6 +1,5 @@
 # gazelle:ignore
 
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
 # gazelle:resolve py volsync_replicationdestination_crds //cluster/cdk8s/providers/volsync:replicationdestination
 load("//devinfra/python:defs.bzl", "py_library")
 
@@ -10,11 +9,13 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/authentik:app",
@@ -40,6 +41,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:mcp_oauth_state",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:public_web_pki",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/authentik:app",

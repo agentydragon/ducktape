@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -80,7 +81,7 @@ func Sample(ctx context.Context, client *http.Client, baseURL, authorization str
 	head := protocol.HTTPResponseHead{
 		HTTPStatus: response.StatusCode, ProviderRequestID: response.Header.Get("x-request-id"), ContentType: response.Header.Get("content-type"),
 	}
-	if err := protocol.RecordProviderEvidence(ctx, evidence, head); err != nil {
+	if err := protocol.RecordProviderEvidence(ctx, evidence, head, false); err != nil {
 		return nil, err
 	}
 	if hooks.ResponseHeadRecorded != nil {
@@ -126,12 +127,12 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		if data == "[DONE]" {
 			return state.finish(ctx, evidence)
 		}
-		progress, err := state.consume(ctx, []byte(data), evidence)
+		semanticProgress, err := state.consume(ctx, []byte(data), evidence)
 		if err != nil {
 			return nil, err
 		}
-		if progress && hooks.Progress != nil {
-			if err := hooks.Progress(ctx); err != nil {
+		if semanticProgress && hooks.Progress != nil {
+			if err := hooks.Progress(); err != nil {
 				return nil, err
 			}
 		}
@@ -149,7 +150,7 @@ func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence prot
 	}
 	var observations []*eventpb.Event
 	if len(c.Error) > 0 && string(c.Error) != "null" {
-		if err := protocol.RecordProviderEvidence(ctx, evidence, frame{Data: raw}); err != nil {
+		if err := protocol.RecordProviderEvidence(ctx, evidence, frame{Data: raw}, false); err != nil {
 			return false, err
 		}
 		return false, &protocol.KnownFailureError{Evidence: map[string]any{"error": c.Error}}
@@ -172,7 +173,7 @@ func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence prot
 		}
 		s.audit.Usage = c.Usage
 	}
-	progress := false
+	semanticProgress := false
 	if len(c.Choices) > 0 {
 		if len(c.Choices) != 1 || c.Choices[0].Index != 0 {
 			return false, malformed("unexpected choice")
@@ -181,12 +182,22 @@ func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence prot
 			if !isTrailingUsageChoice(raw, c.Usage) {
 				return false, malformed("unexpected choice")
 			}
-			return false, s.record(ctx, evidence, frame{Data: raw}, nil)
+			return false, protocol.RecordProviderEvidence(ctx, evidence, frame{Data: raw}, false)
 		}
 		choice := c.Choices[0]
 		d := choice.Delta
 		if s.audit.ID == "" || (d.Role != "" && d.Role != "assistant") {
 			return false, malformed("missing response ID or invalid role")
+		}
+		if d.Reasoning != "" {
+			id := s.audit.ID + "#reasoning"
+			if s.reasoning.Len() == 0 {
+				observations = append(observations, startItem(id, eventpb.ItemKind_ITEM_KIND_REASONING, ""))
+			}
+			observations = append(observations, &eventpb.Event{Observation: &eventpb.Event_TextDelta{
+				TextDelta: &eventpb.TextDelta{ItemId: id, Text: protocol.DisplayText(d.Reasoning)},
+			}})
+			s.reasoning.WriteString(d.Reasoning)
 		}
 		if d.Content != "" {
 			if s.text.Len() == 0 {
@@ -197,7 +208,6 @@ func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence prot
 			}})
 			s.text.WriteString(d.Content)
 		}
-		s.reasoning.WriteString(d.Reasoning)
 		for _, fragment := range d.ToolCalls {
 			if fragment.Index == nil || *fragment.Index < 0 || *fragment.Index > len(s.calls) {
 				return false, malformed("invalid tool call index")
@@ -215,9 +225,9 @@ func (s *stream) consume(ctx context.Context, raw json.RawMessage, evidence prot
 			s.arguments[i].WriteString(fragment.Function.Arguments)
 		}
 		s.audit.FinishReason = choice.FinishReason
-		progress = d.Content != "" || d.Reasoning != "" || len(d.ToolCalls) > 0 || choice.FinishReason != ""
+		semanticProgress = d.Content != "" || d.Reasoning != "" || len(d.ToolCalls) > 0 || choice.FinishReason != ""
 	}
-	return progress, s.record(ctx, evidence, frame{Data: raw}, observations)
+	return semanticProgress, s.record(ctx, evidence, frame{Data: raw}, semanticProgress, observations)
 }
 
 // LiteLLM can attach a usage-only chunk to an empty choice after the finish
@@ -276,14 +286,24 @@ func (s *stream) finish(ctx context.Context, evidence protocol.EvidenceSink) (*R
 			slog.WarnContext(ctx, "Chat Completions finished with tool_calls but sent no tool calls", "response_id", s.audit.ID)
 			return nil, &protocol.ProviderTransientError{Cause: errors.New("invalid Chat Completions stream: tool_calls finish without any tool calls")}
 		}
+	case "length":
+		return nil, &protocol.ProviderTransientError{Cause: errors.New("Chat Completions reached its output token limit before completing the sample")}
 	case "stop":
 		if len(s.calls) > 0 {
 			return nil, malformed("finish reason does not match tool calls")
 		}
 	default:
-		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"finish_reason": s.audit.FinishReason}}
+		return nil, &protocol.KnownFailureError{
+			Message:  fmt.Sprintf("Chat Completions returned an unsupported finish_reason: %q", s.audit.FinishReason),
+			Evidence: map[string]any{"finish_reason": s.audit.FinishReason},
+		}
 	}
 	if _, _, err := inspect([]message{m}); err != nil {
+		// The model may have reached its limit inside a tool argument even when
+		// the provider reports tool_calls. No call from this sample has run.
+		if errors.Is(err, protocol.ErrInvalid) {
+			return nil, &protocol.ProviderTransientError{Cause: malformed(err.Error())}
+		}
 		return nil, malformed(err.Error())
 	}
 	record, err := json.Marshal(m)
@@ -291,6 +311,11 @@ func (s *stream) finish(ctx context.Context, evidence protocol.EvidenceSink) (*R
 		return nil, err
 	}
 	var observations []*eventpb.Event
+	if m.Reasoning != "" {
+		observations = append(observations, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{
+			ItemCompleted: &eventpb.ItemCompleted{ItemId: s.audit.ID + "#reasoning", Outcome: &eventpb.ItemCompleted_Text{Text: protocol.DisplayText(m.Reasoning)}},
+		}})
+	}
 	if m.Content != "" {
 		observations = append(observations, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{
 			ItemCompleted: &eventpb.ItemCompleted{ItemId: s.audit.ID, Outcome: &eventpb.ItemCompleted_Text{Text: protocol.DisplayText(m.Content)}},
@@ -306,17 +331,17 @@ func (s *stream) finish(ctx context.Context, evidence protocol.EvidenceSink) (*R
 				ToolArguments: &eventpb.ToolArguments{ItemId: call.ID, ArgumentsJson: args},
 			}})
 	}
-	if err := s.record(ctx, evidence, frame{Done: true}, observations); err != nil {
+	if err := s.record(ctx, evidence, frame{Done: true}, false, observations); err != nil {
 		return nil, err
 	}
 	return &Result{Record: record, Audit: s.audit, ContextTokens: s.contextTokens}, nil
 }
 
-func (s *stream) record(ctx context.Context, evidence protocol.EvidenceSink, frame frame, observations []*eventpb.Event) error {
+func (s *stream) record(ctx context.Context, evidence protocol.EvidenceSink, frame frame, semanticProgress bool, observations []*eventpb.Event) error {
 	if s.compaction {
 		observations = nil
 	}
-	return protocol.RecordProviderEvidence(ctx, evidence, frame, observations...)
+	return protocol.RecordProviderEvidence(ctx, evidence, frame, semanticProgress, observations...)
 }
 
 func startItem(id string, kind eventpb.ItemKind, toolName string) *eventpb.Event {

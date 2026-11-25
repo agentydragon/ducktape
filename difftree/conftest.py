@@ -1,6 +1,7 @@
 """Shared test fixtures for difftree tests."""
 
-import subprocess
+from collections.abc import Callable
+from functools import partial
 from io import StringIO
 from pathlib import Path
 from typing import Literal
@@ -12,7 +13,8 @@ from difftree.config import RenderConfig, SortMode
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import DEFAULT_RIGHT_BLOCKS
-from difftree.tree import build_tree, sort_tree
+from difftree.tree import build_tree
+from testing.git_repo import git, init_git_repo
 
 # Test constants
 PNG_HEADER = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
@@ -50,8 +52,7 @@ def make_diff_tree(
     changes: list[FileChange], config: RenderConfig | None = None, sort_by: SortMode = SortMode.ALPHA
 ) -> DiffTree:
     """Build a DiffTree from file changes."""
-    root = build_tree(changes)
-    root = sort_tree(root, sort_by=sort_by)
+    root = build_tree(changes, sort_by=sort_by)
     return DiffTree(root, config=config)
 
 
@@ -73,13 +74,7 @@ def temp_git_repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Create a temporary git repository for E2E testing."""
     repo_path = tmp_path_factory.mktemp("git_repo")
 
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True, capture_output=True)
-    # Disable commit signing for tests
-    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=repo_path, check=True, capture_output=True)
-
+    init_git_repo(repo_path)
     return repo_path
 
 
@@ -97,10 +92,5 @@ def git_add_commit(run_git) -> None:
 
 
 @pytest.fixture
-def run_git(temp_git_repo: Path):
-    """Run checked git commands in temp_git_repo and capture text output."""
-
-    def _run_git(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["git", *args], cwd=temp_git_repo, capture_output=True, text=True, check=True)
-
-    return _run_git
+def run_git(temp_git_repo: Path) -> Callable[..., str]:
+    return partial(git, temp_git_repo)

@@ -9,14 +9,13 @@ from gmail_archiver.models import Email
 from gmail_archiver.plan import LABEL_AUTO_CLEANED, Plan, Planner
 
 
-def plan_age_archive[Parsed](
+def plan_age_archive(
     inbox: GmailInbox,
     *,
     planner: Planner,
     query: str,
     days_threshold: int,
-    parse: Callable[[Email], Parsed],
-    date_from: Callable[[Parsed], datetime | None],
+    date_of: Callable[[Email], datetime | None],
     missing_date_reason: str,
     archive_item_plural: str,
 ) -> Plan:
@@ -25,7 +24,7 @@ def plan_age_archive[Parsed](
     cutoff_date = datetime.now(UTC) - timedelta(days=days_threshold)
 
     for message in messages:
-        message_date = date_from(parse(message))
+        message_date = date_of(message)
         if message_date is None:
             plan.add_action(message=message, reason=missing_date_reason)
             continue

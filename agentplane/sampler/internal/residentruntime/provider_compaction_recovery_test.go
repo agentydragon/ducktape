@@ -3,7 +3,9 @@ package residentruntime
 import (
 	"bytes"
 	"database/sql"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,12 +15,19 @@ import (
 
 	runtimetesting "github.com/agentydragon/ducktape/agentplane/sampler/internal/residentruntime/testing"
 
+	residentsession "github.com/agentydragon/ducktape/agentplane/sampler/internal/residentruntime/session"
+
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 
+	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
+	"google.golang.org/grpc"
 )
 
 func seedProviderCompactionCommand(t *testing.T, store *sessionstore.Store, session *sessionstore.Session, commandID string) {
@@ -47,6 +56,159 @@ func writeProviderCompactionSuccess(w http.ResponseWriter) error {
 		return err
 	}
 	return writeSamplingEvent(w, map[string]any{"type": responses.EventCompleted, "response": map[string]any{"id": "compact-response", "status": "completed"}})
+}
+
+func TestRuntimeCompactsWithLiveCellAndInFlightNestedTool(t *testing.T) {
+	store, session, seed := runtimetesting.ClaimedSession(t, integrationDatabase)
+	// The fake workspace is already ready. Every process start below is one of
+	// the two delegated tool calls, so the first can be held across compaction.
+	if err := store.PreparedWorkspace(t.Context(), seed, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(t.Context(), seed); err != nil {
+		t.Fatal(err)
+	}
+	const commandID = "live-cell-compaction"
+	runtimetesting.AdmitInput(t, store, session.ID, commandID, strings.Repeat("retain this task ", 64))
+
+	nestedGate := make(chan struct{})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := grpc.NewServer()
+	executorpb.RegisterExecutorServer(executor, &drainExecutorServer{startGate: nestedGate})
+	go func() { _ = executor.Serve(listener) }()
+	t.Cleanup(executor.Stop)
+
+	requests := make(chan []byte, 4)
+	compactionGate := make(chan struct{})
+	handle := make(chan string, 1)
+	var requestNumber atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read provider request: %v", err)
+			return
+		}
+		number := requestNumber.Add(1)
+		select {
+		case requests <- body:
+		case <-r.Context().Done():
+			return
+		}
+		var responseErr error
+		switch number {
+		case 1:
+			item := responses.Item{Type: responses.ItemCustomToolCall, ID: "exec-item", CallID: "exec-call", Name: "exec", Input: "text('start the work')"}
+			responseErr = writeCompactionFixtureToolCall(w, item, 100)
+		case 2:
+			select {
+			case <-compactionGate:
+				responseErr = writeProviderCompactionSuccess(w)
+			case <-r.Context().Done():
+			}
+		case 3:
+			select {
+			case cellID := <-handle:
+				item := responses.Item{Type: responses.ItemFunctionCall, ID: "wait-item", CallID: "wait-call", Name: "wait", Arguments: fmt.Sprintf(`{"cell_id":%q}`, cellID)}
+				responseErr = writeCompactionFixtureToolCall(w, item, 10)
+			case <-r.Context().Done():
+			}
+		case 4:
+			responseErr = writeSamplingSuccess(w, "finished-after-compact", "the original task is complete")
+		default:
+			t.Errorf("unexpected provider request %d", number)
+		}
+		if responseErr != nil {
+			t.Errorf("write provider response: %v", responseErr)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	settings := providerSamplingSettings(server.URL, 1)
+	model := settings.Models["fixture-model"]
+	model.AutoCompactTokens = new(50)
+	settings.Models["fixture-model"] = model
+	settings.DirectExecutorTarget = listener.Addr().String()
+	settings.DirectExecutorInsecureLocaltest = true
+	manager, peers := newFakeCodeModeManager(t)
+	runtime := New(store, settings, residentsession.NewCodeModeHost(manager.Manager, store, nil))
+	cancel, done := startRuntimeForTest(t, runtime)
+	t.Cleanup(func() { cancel(); waitRuntimeDone(t, done) })
+	runtime.Wake(session.ID)
+
+	_ = receiveProviderRequest(t, requests)
+	eventually.Within(t, 3*time.Second, func() (bool, string) {
+		return len(peers()) == 1, "expected the Code Mode host to open"
+	})
+	peer := peers()[0]
+	execute := runtimetesting.ReceiveCodeOperationRequest(t, peer, "", "session/execute")
+	sendNestedExecCommand(t, peer, execute.SessionID, 9001)
+	eventually.Within(t, 3*time.Second, func() (bool, string) {
+		count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_intent
+			WHERE conversation_id=$1 AND request->>'method'='process/start' AND result IS NULL`, session.ConversationID)
+		return count == 1, "expected one unsettled process start from the running cell"
+	})
+	yieldCell(t, peer, execute.ID)
+
+	compact := receiveProviderRequest(t, requests)
+	if !bytes.Contains(compact, []byte(`"type":"compaction_trigger"`)) {
+		t.Fatalf("usage above threshold did not trigger compaction: %s", compact)
+	}
+	close(nestedGate)
+	receiveDelegateResponse(t, peer, 9001)
+	// The yielded cell can begin and settle a second effect during compaction.
+	sendNestedExecCommand(t, peer, execute.SessionID, 9002)
+	receiveDelegateResponse(t, peer, 9002)
+	if err := peer.Send(codemode.Frame{
+		Type: codemode.DelegateRequest, ID: new(int64(9003)), SessionID: execute.SessionID,
+		Request: &codemode.Delegate{Type: "notification/send", CallID: "exec-call", CellID: "cell-1", Text: "nested work completed during compaction"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveDelegateResponse(t, peer, 9003)
+	close(compactionGate)
+
+	cellID := execute.SessionID + ":cell-1"
+	continuation := receiveProviderRequest(t, requests)
+	if !bytes.Contains(continuation, []byte("opaque-compact-summary")) ||
+		!bytes.Contains(continuation, []byte("Active execution handles: ")) ||
+		!bytes.Contains(continuation, []byte(cellID)) ||
+		bytes.Count(continuation, []byte("nested work completed during compaction")) != 1 {
+		t.Fatalf("first continuation lost the summary, live handle, or notification: %s", continuation)
+	}
+	handle <- cellID
+	wait := runtimetesting.ReceiveCodeOperationRequest(t, peer, execute.SessionID, "session/wait")
+	completeCell(t, peer, execute.SessionID, wait.ID)
+
+	result := receiveProviderRequest(t, requests)
+	if !bytes.Contains(result, []byte(`"call_id":"wait-call"`)) ||
+		!bytes.Contains(result, []byte("done")) ||
+		!bytes.Contains(result, []byte(`{\"cells\":[]`)) ||
+		bytes.Count(result, []byte("nested work completed during compaction")) != 1 {
+		t.Fatalf("sampling after wait lost the tool result, cleared handles, or notification: %s", result)
+	}
+	waitProviderCommandOutcome(t, store, session.ID, commandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
+	if starts := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_intent
+		WHERE conversation_id=$1 AND request->>'method'='process/start'`, session.ConversationID); starts != 2 {
+		t.Fatalf("recorded process starts=%d, want one per delegate", starts)
+	}
+}
+
+func writeCompactionFixtureToolCall(w http.ResponseWriter, item responses.Item, tokens int) error {
+	w.Header().Set("Content-Type", "text/event-stream")
+	for _, event := range []responses.Event{
+		{Type: responses.EventOutputItemAdded, Item: &item},
+		{Type: responses.EventOutputItemDone, Item: &item},
+	} {
+		if err := writeSamplingEvent(w, event); err != nil {
+			return err
+		}
+	}
+	return writeSamplingEvent(w, map[string]any{"type": responses.EventCompleted, "response": map[string]any{
+		"id": item.ID + "-response", "status": "completed", "usage": map[string]int{"total_tokens": tokens},
+	}})
 }
 
 type compactionAttempt struct {
@@ -126,11 +288,8 @@ func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing
 		!first.resultPresent || second.status != "" || !second.resultPresent {
 		t.Fatalf("compaction attempt lineage/results=%+v", attempts)
 	}
-	var completed int
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_intent
-		WHERE provider_command_id=$1 AND request->>'kind'='compaction' AND result IS NOT NULL AND NOT (result ? 'status')`, commandID).Scan(&completed); err != nil {
-		t.Fatal(err)
-	}
+	completed := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_intent
+		WHERE provider_command_id=$1 AND request->>'kind'='compaction' AND result IS NOT NULL AND NOT (result ? 'status')`, commandID)
 	if completed != 1 {
 		t.Fatalf("persisted successful compaction results=%d, want one", completed)
 	}
@@ -196,7 +355,7 @@ func TestRuntimePermanentCompactionFailureLeavesNextInputUsable(t *testing.T) {
 	}
 
 	const inputCommandID = "input-after-permanent-compact-failure"
-	admitProviderSamplingCommand(t, store, session.ID, inputCommandID, "usable after compaction failure")
+	runtimetesting.AdmitInput(t, store, session.ID, inputCommandID, "usable after compaction failure")
 	runtime.Wake(session.ID)
 	inputBody := receiveProviderRequest(t, requests)
 	if !strings.Contains(string(inputBody), "usable after compaction failure") {

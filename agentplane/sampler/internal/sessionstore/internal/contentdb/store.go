@@ -16,7 +16,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// ContentReferences resolves the provider-owned children of a stored content row.
+// ContentReferences resolves the children of a stored content row.
 type ContentReferences func(content.ContentKind, json.RawMessage) ([]content.ContentID, error)
 
 // Store provides transaction-scoped access to content and immutable context chains.

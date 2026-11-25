@@ -1,15 +1,21 @@
 # Squid egress-proxy spike
 
-Archived after the spike was retired. Its Flux declarations are suspended
-historical records; this directory is not reconciled by the active cluster
-configuration.
+Archived after the spike was retired. This directory keeps the findings below and the
+Squid configuration they were measured with (`app/squid.conf`,
+`app/credentials.conf.tmpl`). The Deployment, echo origin, ICAP stub, NetworkPolicy,
+certificate, fake credentials, Flux declarations and namespace were deleted from it;
+recover them from Git at `1cd0ef2385`, for example
+`git show 1cd0ef2385:cluster/archive/2026_09_squid_egress_spike/k8s/app/deployment.yaml`.
+`squid.conf` also configures ICAP request adaptation against that stub
+(`app/icap_stub.py`), which was built to answer Squid-side ICAP questions before an ICAP
+server existed; no ICAP findings are recorded here.
 
 Throwaway spike deciding whether **one Squid per fence** can replace the
 iron-proxy + cache split as Haku's egress fence. Rationale, alternatives and the
 earlier 3.5 results: [historical egress research](https://github.com/agentydragon/ducktape/blob/52e1bfa5a1/cluster/docs/plans/agent_egress_proxy_options.md).
 
-**Holds no real credentials.** Every value in `app/fake-credentials.yaml` is
-fake, deliberately a ConfigMap rather than a Secret, because the spike proves a
+**Holds no real credentials.** Every value in the spike's `fake-credentials.yaml`
+was fake, deliberately a ConfigMap rather than a Secret, because the spike proves a
 mechanism and a real credential would add risk without adding information.
 
 ## Questions it answers
@@ -209,17 +215,17 @@ git show 62387f53477a139fdfa0681759f1c421b5653a39:cluster/images/squid-ssl/Docke
 git show 62387f53477a139fdfa0681759f1c421b5653a39:.github/workflows/squid-ssl-image.yml
 ```
 
-The archived Deployment retains its last image tag and `$imagepolicy` markers
-as historical state. To revive it, restore or replace the image build and
-publication path, check the current package and registry credentials, and update
-the Deployment tag before resuming Flux reconciliation. No active Squid image
-automation declaration exists in the tracked cluster source at retirement.
+The deleted Deployment retained its last image tag and `$imagepolicy` markers as
+historical state. To revive the spike, restore the manifests from `1cd0ef2385`, restore or
+replace the image build and publication path, check the current package and registry
+credentials, and update the Deployment tag before resuming Flux reconciliation. No
+active Squid image automation declaration existed in the tracked cluster source at
+retirement.
 
 ## Disposal
 
 This is a spike, not infrastructure. The active cluster wiring and live objects
-are retired; this archive keeps the experiment's findings and suspended Flux
-declarations as reference material. The automatic image workflow and image
+are retired; this archive keeps the experiment's findings and Squid configuration as
+reference material. The automatic image workflow and image
 source were retired separately; the recipe remains recoverable from Git history
-above. Keep this archive until its findings and revival package are no longer
-useful.
+above. Keep this archive until its findings and configuration are no longer useful.

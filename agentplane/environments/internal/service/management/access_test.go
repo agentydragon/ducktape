@@ -15,32 +15,18 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const namespace = "test-sandboxes"
-
-func testScheme(t *testing.T) *runtime.Scheme {
-	t.Helper()
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{
-		corev1.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme,
-	} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return scheme
-}
 
 type assigningClient struct {
 	client.Client
@@ -58,7 +44,7 @@ func (c *assigningClient) Create(ctx context.Context, object client.Object, opti
 
 func newAccess(t *testing.T, objects ...client.Object) (*Access, client.Client) {
 	t.Helper()
-	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(append(objects, testAgent())...).Build()
+	underlying := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(append(objects, testAgent())...).Build()
 	objectsClient := &assigningClient{Client: underlying}
 	access, err := New(namespace, objectsClient, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
@@ -79,7 +65,7 @@ func testSandbox(name, uid string, mode sandboxapi.OperatingMode) *sandboxapi.Sa
 }
 
 func TestCreateNamesTheIdentityAndCallerIntentAndIsIdempotent(t *testing.T) {
-	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
+	base := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(
 		testAgent(),
 	).Build()
 	objects := &assigningClient{Client: base}
@@ -253,7 +239,7 @@ func TestDeleteRequiresReportedSuspensionAndUsesUIDFence(t *testing.T) {
 
 func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 	resource := testSandbox("replaceable", "old-uid", sandboxapi.OperatingModeRunning)
-	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource).Build()
+	underlying := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(resource).Build()
 	conflicts := &conflictOnceClient{Client: underlying}
 	access, err := New(namespace, conflicts, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
@@ -266,7 +252,7 @@ func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 		t.Fatalf("conflict retry patch count=%d stored=%#v", conflicts.patches, readSandbox(t, underlying, "replaceable").Spec)
 	}
 
-	underlying = clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource.DeepCopy()).Build()
+	underlying = clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(resource.DeepCopy()).Build()
 	replacing := &replaceBeforeRetryClient{Client: underlying}
 	access, err = New(namespace, replacing, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
@@ -285,7 +271,7 @@ func TestIdentityPatchRetriesWithCurrentResourceVersion(t *testing.T) {
 	resource.Status.StopStage = sandboxapi.StopStageStopped
 	identity := testAgent()
 	identity.UID = "identity-uid"
-	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource, identity).Build()
+	base := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(resource, identity).Build()
 	objects := &concurrentPolicyClient{Client: base}
 	access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
@@ -380,7 +366,7 @@ func isInvalid(err error) bool {
 }
 
 func TestCreateRetryMatchesRecordedIntentSemantically(t *testing.T) {
-	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
+	base := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(
 		testAgent(),
 	).Build()
 	objects := &assigningClient{Client: base}
@@ -435,7 +421,7 @@ func TestCreateRetryMatchesRecordedIntentSemantically(t *testing.T) {
 
 // A create whose outcome the client never saw still lands; the caller's retry of it adopts that Sandbox.
 func TestCreateAdoptsItsOwnUncertainCreate(t *testing.T) {
-	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
+	base := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(
 		testAgent(),
 	).Build()
 	objects := &lostCreateClient{assigningClient: assigningClient{Client: base}}
@@ -500,7 +486,7 @@ func TestCreateReturnsPersistedIdentityAcrossUncertainWritesAndReplacement(t *te
 		{name: "same-name replacement after uncertain write", uncertain: true, replace: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(testAgent()).Build()
+			underlying := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(testAgent()).Build()
 			assigning := &assigningClient{Client: underlying}
 			objects := &createOutcomeClient{Client: assigning}
 			objects.outcome = func(ctx context.Context, object client.Object) error {
@@ -549,7 +535,7 @@ func TestCreateReturnsPersistedIdentityAcrossUncertainWritesAndReplacement(t *te
 }
 
 func TestCreateDoesNotInferPersistenceFromAnUncertainWrite(t *testing.T) {
-	underlying := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(testAgent()).Build()
+	underlying := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(testAgent()).Build()
 	objects := &createOutcomeClient{Client: &assigningClient{Client: underlying}}
 	objects.outcome = func(ctx context.Context, object client.Object) error {
 		if err := underlying.Delete(ctx, object); err != nil {

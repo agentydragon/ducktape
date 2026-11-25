@@ -7,16 +7,24 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from devinfra.lint.x.py_detectors.models import Detection, LineRange
-from devinfra.lint.x.py_detectors.utils import iter_py_files, parse_python_file, read_snippet
+from devinfra.lint.x.py_detectors.utils import iter_py_files, parse_python_file
 
 # Per-file detector: receives a parsed file and yields detections.
 FileDetector = Callable[[Path, ast.AST, str], Iterable[Detection]]
 
 
 def detection(
-    detector: str, prop: str, path: Path, start_line: int, end_line: int | None, message: str, confidence: float = 0.9
+    detector: str,
+    prop: str,
+    path: Path,
+    source: str,
+    start_line: int,
+    end_line: int | None,
+    message: str,
+    confidence: float = 0.9,
 ) -> Detection:
-    """Create a Detection with auto-generated snippet."""
+    """Create a detection and its snippet from the parsed source."""
+    excerpt = source.splitlines()[start_line - 1 : end_line or start_line]
     return Detection(
         property=prop,
         path=path,
@@ -24,7 +32,7 @@ def detection(
         detector=detector,
         confidence=confidence,
         message=message,
-        snippet=read_snippet(path, start_line, end_line, context=0),
+        snippet="\n".join(f"{number:>5}: {line}" for number, line in enumerate(excerpt, start_line)),
     )
 
 
@@ -48,37 +56,35 @@ def run_all(
     if not selected:
         return []
 
-    def _run_detector(name: str, fn: FileDetector) -> list[Detection]:
-        try:
-            out: list[Detection] = []
-            for path in iter_py_files(root):
-                if parsed := parse_python_file(path):
-                    tree, source = parsed
-                    out.extend(fn(path, tree, source))
-            return out
-        except Exception as e:
-            return [
-                Detection(
-                    property="unknown",
-                    path=root,
-                    ranges=[],
-                    detector=name,
-                    confidence=0.1,
-                    message=f"detector error: {e}",
+    def scan(path: Path) -> list[Detection]:
+        parsed = parse_python_file(path)
+        if parsed is None:
+            return []
+        tree, source = parsed
+        findings: list[Detection] = []
+        for name, detector in selected.items():
+            try:
+                findings.extend(detector(path, tree, source))
+            except Exception as error:
+                findings.append(
+                    Detection(
+                        property="unknown",
+                        path=path,
+                        ranges=[],
+                        detector=name,
+                        confidence=0.1,
+                        message=f"detector error: {error}",
+                    )
                 )
-            ]
+        return findings
 
-    auto_workers = min(len(selected), os.cpu_count() or 1) if workers is None else int(workers)
-
-    if auto_workers <= 1:
-        out: list[Detection] = []
-        for name, fn in selected.items():
-            out.extend(_run_detector(name, fn))
-        return out
-
-    results: list[Detection] = []
-    items = list(selected.items())
-    with ThreadPoolExecutor(max_workers=auto_workers) as ex:
-        for detections in ex.map(lambda item: _run_detector(item[0], item[1]), items):
-            results.extend(detections)
-    return results
+    paths = iter_py_files(root)
+    count = min(len(selected), os.cpu_count() or 1) if workers is None else workers
+    if count <= 1:
+        findings = [item for path in paths for item in scan(path)]
+    else:
+        with ThreadPoolExecutor(max_workers=count) as executor:
+            findings = [item for batch in executor.map(scan, paths, buffersize=count * 2) for item in batch]
+    # Keep CLI reports grouped in rule order regardless of worker count.
+    order = {name: index for index, name in enumerate(selected)}
+    return sorted(findings, key=lambda item: order[item.detector])

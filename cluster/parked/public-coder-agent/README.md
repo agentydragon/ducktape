@@ -1,5 +1,10 @@
 # public-coder-agent
 
+A second OpenClaw agent at <https://public-coder-agent.allegedly.works>, separate
+from the personal agent at `openclaw.allegedly.works`. Its job is opening pull
+requests against **public** repositories as `agentydragon-agent`, which has its
+own GitHub account and pushes to its own forks.
+
 ## Paused
 
 Public Coder OpenClaw is paused while model-limit ownership is being simplified.
@@ -13,16 +18,9 @@ unchanged. The VolSync backup's ReplicationSource is paused (`spec.paused`); its
 Restic repository and controller-owned cache PVC are kept. The
 `public-coder-agent-app` Flux owner is annotated `ducktape.org/parked`, suspended, and
 set to `deletionPolicy: Orphan` with its artifact omitted, so the declared PVCs survive. The
-backup owner is suspended too. The devbox and Public Coder secret
-cleanup inventories were removed after reconciliation in PR #11457. The
-`public-coder-agent-access` owner
+backup owner is suspended too. The `public-coder-agent-access` owner
 (`cluster/generated/agents/public-coder-agent/access/`) stays active: it owns the
-Namespace and Roles that Haku and Agentplane Sandboxes still read. This change removes
-the Haku proxy's cluster-admin binding from that inventory.
-
-The retired Haku proxy's reflected bearer Secret and certificate TLS Secret were
-pruned by Flux after their source owners reconciled and the temporary cleanup
-inventory was removed.
+Namespace and Roles that Haku and Agentplane Sandboxes still read.
 
 To resume, move the app directory back under `cluster/k8s` and drop the parked
 annotation, per `cluster/AGENTS.md`; restore the OpenClaw replica count and
@@ -36,22 +34,10 @@ PVCs or change the embedding identity.
 
 ## Kubernetes API access removed
 
-Haku Console's Kubernetes authorization endpoint was retired, so the dedicated Haku
-Kubernetes API proxy failed closed. This change removes that workload, its public route,
-ServiceAccount and cluster-admin ceiling, along with Public Coder's kubeconfig and Haku
-bearer substitution. Resuming OpenClaw does not restore Kubernetes API access. The
-separate narrow Roles that Haku and Agentplane Sandboxes still use remain owned by
-`public-coder-agent-access`.
-
-Node-local Alloy scrapes ordinary pod stdout/stderr from the application and Console into Loki. The current
-Loki configuration enables compactor retention but sets no finite `retention_period`, so these
-records are not subject to age-based deletion. Console logs map authorization decisions to the
-Agent and grant, while the durable grant row maps the grant to its source ToolCall.
-
-A second OpenClaw agent at <https://public-coder-agent.allegedly.works>, separate
-from the personal agent at `openclaw.allegedly.works`. Its job is opening pull
-requests against **public** repositories as `agentydragon-agent`, which has its
-own GitHub account and pushes to its own forks.
+The Haku Kubernetes API proxy, its public route, ServiceAccount and cluster-admin
+ceiling, Public Coder's kubeconfig and the Haku bearer substitution are gone;
+resuming OpenClaw does not restore Kubernetes API access. The separate narrow Roles
+that Haku and Agentplane Sandboxes still use remain owned by `public-coder-agent-access`.
 
 ## Layers
 
@@ -60,9 +46,8 @@ own GitHub account and pushes to its own forks.
 | `app/`    | Namespace, OpenClaw Deployment, config, state/diagnostics/retained-recordings PVCs, credentials, and NetworkPolicies |
 | `backup/` | Paused VolSync backup definition and retained repository                                                             |
 
-The repository-owned tooling and approval operating instructions are in <TOOLING.md>. They cover
-which local, GitHub, Kubernetes, Haku, and physical-host surfaces to prefer, how to inspect the live
-authority, and how to handle the approval lifecycle without unnecessary stalls.
+The repository-owned tooling guide is <TOOLING.md>: which local, GitHub, AIQuota and ClickHouse
+surfaces to prefer, and how Agentplane egress mediates them.
 
 The agent also connects to Matrix as `@public-coder-agent:allegedly.works`.
 Matrix is an official plugin baked into the derivative OpenClaw gateway's

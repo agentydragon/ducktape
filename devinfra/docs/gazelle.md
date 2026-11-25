@@ -1,30 +1,22 @@
 # Gazelle
 
-Python BUILD files are gazelle-managed. `bb run //devinfra:gazelle` regenerates them;
-a run over a converged tree is a no-op, so `--mode=diff` (exit nonzero on any diff or
-unresolvable import) is the drift check, and CI runs it on every PR (§ Drift check).
-For generator changes, `bb run //devinfra:gazelle -- -mode=diff` builds the
-current generator and checks the local tree in one invocation.
-Code-shape conventions (per-file libraries, `main_module` binaries, test-glob
-reservation, the conftest chain) live in <../../STYLE.md> § Gazelle.
+Run `gazelle` from the devshell after adding, moving or deleting Python files or
+changing imports. Use `gazelle -mode=diff` to check for BUILD drift and unresolved
+imports without writing files. The released binary reads the
+[Python import manifest](../gazelle_python.yaml) and BUILD directives from the checkout.
 
-The same binary is released (the `gazelle` pin in <../../nix/artifact-pins.json>) and
-the devshell puts it on PATH: `gazelle` from anywhere in a checkout regenerates BUILD
-files, `gazelle -mode=diff` checks drift, no Bazel involved. The plugin and patch are
-compiled in; the manifest (<../gazelle_python.yaml>) and directives are read from the
-tree.
+Use `bb run //devinfra:gazelle` to build and run the generator from the current
+tree. Add `-- -mode=diff` to check a change to the generator itself.
+[STYLE.md](../../STYLE.md#gazelle) owns BUILD conventions.
 
 ## Plugin and patch
 
-`rules_python_gazelle_plugin` 2.5.0-rc4 uses the official tree-sitter Go and
-Python parsers, replacing the older `smacker/go-tree-sitter` parser. Its release
-is [published upstream](https://github.com/bazel-contrib/rules_python/releases/tag/2.5.0-rc4)
-but is not yet in BCR, so <../../MODULE.bazel> checksum-pins the official archive
-until the registry entry is available. The plugin runs in per-file generation mode,
-with <../../patches/rules_python_gazelle_ducktape.patch> applied:
+The BCR-pinned `rules_python_gazelle_plugin` uses the official tree-sitter Go and
+Python parsers. It runs in per-file generation mode with
+<../../patches/rules_python_gazelle_ducktape.patch> applied:
 
-1. Per-file mode generates a `py_library` for every `.py` file. The 2.5.0-rc4 plugin
-   still splits files containing `if __name__ == "__main__"` into `py_binary`
+1. The patch keeps a `py_library` for every `.py` file in per-file mode. Upstream
+   splits files containing `if __name__ == "__main__"` into `py_binary`
    targets, stealing the module's library. The closest upstream tracker is
    [rules_python issue #1815](https://github.com/bazel-contrib/rules_python/issues/1815),
    although it does not yet track this exact fix. Retire this hunk after a released
@@ -35,9 +27,6 @@ with <../../patches/rules_python_gazelle_ducktape.patch> applied:
    (gazelle rejects `py_library py_library <bzl>` as a kind loop), and 2.x's
    `alias_kind` directive only registers differently-named wrappers for rule
    _recognition_ — it rejects same-name aliases and does not affect emitted loads.
-3. The parser migration substantially reduces parse warnings in the repository.
-   The RC4 `bb run //devinfra:gazelle -- -mode=diff` check converges, with one
-   remaining parse warning for `grocy_mcp/request_scoped_openapi.py`.
 
 No root `map_kind py_binary py_library` directive: gazelle applies map_kind to
 existing rules too, rewriting hand-written binaries' kind.
@@ -51,8 +40,7 @@ and lazy imports belong in `deps`.
 Import validation is on; every escape is explicit and local:
 
 - `# gazelle:ignore <mod>` in the `.py` file for imports the environment provides
-  (`FreeCAD`, `gi`, `PySide6`, `pivy`) or that resolve to a
-  Bazel-generated `__init__` stub with no target of its own.
+  (`FreeCAD`, `gi`, `PySide6`, `pivy`).
 - `# gazelle:include_dep <label>` in the `.py` file for runtime-only deps the import
   scan cannot see, placed in the module that triggers the hidden import: SQLAlchemy
   dialect drivers, wheel extras imported at module load (py-key-value backends,
@@ -65,7 +53,7 @@ Import validation is on; every escape is explicit and local:
   gazelle-managed.
 - A rule-level `# keep` on hand-maintained rules whose `srcs` are excluded files:
   gazelle deletes managed-kind rules over files it cannot see
-  (`devinfra/skills/forgejo/scripts:forgejo_lib`, `skills/testing:frontmatter_test`).
+  (`skills/session_logs:session_logs_lib`, `skills/testing:frontmatter_test`).
 - A dep-level `# keep: <reason>` suffix where the source file cannot carry the
   annotation: sibling stub dists a package's `__init__` chains into
   (`agent_framework_{anthropic,claude,openai}` beside `_core`), and any dep of a rule
@@ -88,6 +76,9 @@ the authoritative one.
 
 ## Known limitations
 
+- The parser warns on the PEP 696 type-parameter default in
+  `grocy_mcp/request_scoped_openapi.py`. See
+  [tree-sitter-python#346](https://github.com/tree-sitter/tree-sitter-python/issues/346).
 - Plugin 2.x can also delete `py_library`/`py_test` rules whose `srcs` files were
   deleted, but only under a gazelle release carrying
   [bazel-gazelle#2362](https://github.com/bazel-contrib/bazel-gazelle/pull/2362);

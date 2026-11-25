@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
 const validSettingsYAML = `
@@ -68,10 +69,7 @@ const dispatcherTokenSetting = "session_dispatcher_token_file: /run/dispatcher/t
 
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
-	path := t.TempDir() + "/app.yaml"
-	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
-		t.Fatal(err)
-	}
+	path := configtest.WriteSettings(t, contents)
 	t.Setenv("AGENTPLANE_CONFIG_FILE", path)
 	t.Setenv("AGENTPLANE_DATABASE_URL", "postgresql://app@postgres/agentplane")
 	return path
@@ -84,7 +82,7 @@ func validTestConfig() Config {
 			Harnesses: map[string][]string{"HARNESS_CLAUDE": {"model-a"}, "HARNESS_CODEX": {"model-a"}},
 		},
 		ThreadPresets: map[string]ThreadPreset{
-			"default": {Title: "Default", Harness: "HARNESS_CODEX", Model: "model-a", ReasoningEffort: stringPtr("low")},
+			"default": {Title: "Default", Harness: "HARNESS_CODEX", Model: "model-a", ReasoningEffort: new("low")},
 		},
 		SandboxPresets: map[string]SandboxPreset{
 			"work": {Title: "Work", Template: "linux", ThreadPreset: "default", InboxTags: []string{"team"}},
@@ -116,8 +114,6 @@ func validTestConfig() Config {
 		ListenAddress: "127.0.0.1:8080", EgressAdminTokenFile: "/var/run/egress/token", EgressAdminTimeoutSeconds: 5,
 	}
 }
-
-func stringPtr(value string) *string { return &value }
 
 func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 	if err := validTestConfig().validate(); err != nil {
@@ -386,13 +382,8 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 				c.NotificationsRequestTimeoutSeconds, c.SessionDispatcherRequestTimeoutSecs,
 				c.HistoryServiceRequestTimeoutSeconds, c.EgressAdminTimeoutSeconds, c.ShutdownTimeoutSeconds)
 		}
-		if c.RunnerGatewayRequestTimeoutSeconds != 0 || c.RunnerGatewayLifecycleTimeoutSecs != 0 {
-			t.Fatalf("unused Runner Gateway timeouts took defaults: request=%v lifecycle=%v",
-				c.RunnerGatewayRequestTimeoutSeconds, c.RunnerGatewayLifecycleTimeoutSecs)
-		}
-		views := c.PresetViews()
-		if len(views) != 2 || views[0].Name != "Work Space" || views[1].Name != "Alpha" || views[0].SessionDefaults.CWD != "/state/workspaces/{session_id}" {
-			t.Fatalf("unexpected browser preset views: %+v", views)
+		if names := c.SandboxPresetNames(); len(names) != 2 || names[0] != "Work Space" || names[1] != "Alpha" || c.ThreadPresets["DefaultThread"].CWD != "/state/workspaces/{session_id}" {
+			t.Fatalf("unexpected Sandbox preset order %v or Thread preset defaults %+v", names, c.ThreadPresets)
 		}
 		if c.ActionFederation.LoginTokenProfile != "authentik" || c.ActionFederation.Target.TokenProfile != "authentik" {
 			t.Fatalf("unexpected federation profile defaults: %+v", c.ActionFederation)

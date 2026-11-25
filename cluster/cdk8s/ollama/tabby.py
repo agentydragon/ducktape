@@ -3,8 +3,17 @@
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
+    PodMonitorSpecPodMetricsEndpoints,
+    PodMonitorSpecSelector,
+)
 from python.runfiles import Runfiles
 
+from cluster.cdk8s import cilium
+from cluster.cdk8s.container_resources import quantities
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.ollama.tabby_endpoint import MODEL_NAME, NAME, NAMESPACE, PORT, SWITCHING_SERVICE
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED
@@ -72,13 +81,7 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
     k8s.KubeDeployment(
         scope,
         "tabbyapi-deployment",
-        metadata=k8s.ObjectMeta(
-            name=NAME,
-            namespace=NAMESPACE,
-            labels=_PODS.selector,
-            # The config and template use subPath mounts and need a pod restart.
-            annotations={"configmap.reloader.stakater.com/reload": config.name},
-        ),
+        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_PODS.selector),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -94,21 +97,14 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                         k8s.Container(
                             name=NAME,
                             image=_IMAGE,
-                            args=["tabbyapi_serve.py", "--host", "0.0.0.0"],
-                            ports=[SERVICE.port.k8s_container_port()],
+                            ports=[SERVICE.k8s_container_port()],
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
                             env=[k8s.EnvVar(name="CUDA_DEVICE_ORDER", value="PCI_BUS_ID")],
                             resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("4"),
-                                    "memory": k8s.Quantity.from_string("20Gi"),
-                                },
-                                limits={
-                                    "memory": k8s.Quantity.from_string("48Gi"),
-                                    "nvidia.com/gpu": k8s.Quantity.from_string("2"),
-                                },
+                                requests=quantities({"cpu": "4", "memory": "20Gi"}),
+                                limits=quantities({"memory": "48Gi", "nvidia.com/gpu": "2"}),
                             ),
                             startup_probe=k8s.Probe(
                                 http_get=models, period_seconds=5, timeout_seconds=2, failure_threshold=72
@@ -124,12 +120,6 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                                 ],
                                 k8s.VolumeMount(
                                     name="config", mount_path="/app/config.yml", sub_path="config.yml", read_only=True
-                                ),
-                                k8s.VolumeMount(
-                                    name="config",
-                                    mount_path="/app/tabbyapi_serve.py",
-                                    sub_path="tabbyapi_serve.py",
-                                    read_only=True,
                                 ),
                                 *[
                                     k8s.VolumeMount(
@@ -181,7 +171,6 @@ def add_tabbyapi(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=NAMESPACE),
         data={
             "config.yml": (sources / "tabbyapi-config.yml").read_text(),
-            "tabbyapi_serve.py": (sources / "tabbyapi_serve.py").read_text(),
             "chat_template.jinja": (sources / "tabbyapi-chat-template.jinja").read_text(),
         },
     )
@@ -189,11 +178,20 @@ def add_tabbyapi(scope: Construct) -> None:
         _local_claim(scope, f"/games/llm-models/{name}", claim, capacity)
     _local_claim(scope, "/games/tabbyapi-prefix-cache", _PREFIX_CACHE, "16Gi")
     _deploy(scope, config)
+    PodMonitor(
+        scope,
+        "tabbyapi-monitor",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_PODS.selector),
+            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port=SERVICE.port.name, path="/metrics")],
+        ),
+    )
     k8s.KubeService(
         scope,
         "tabbyapi-service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE, labels=_PODS.selector),
-        spec=k8s.ServiceSpec(selector=_PODS.selector, ports=[SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_PODS.selector, ports=[SERVICE.k8s_service_port()]),
     )
     # The older pod serves unknown model IDs with its loaded stock model. The
     # candidate route must only reach the new pod, even if LiteLLM rolls first.
@@ -201,9 +199,9 @@ def add_tabbyapi(scope: Construct) -> None:
         scope,
         SWITCHING_SERVICE,
         metadata=k8s.ObjectMeta(name=SWITCHING_SERVICE, namespace=NAMESPACE, labels=_PODS.selector),
-        spec=k8s.ServiceSpec(selector={**_PODS.selector, **_SWITCHING_LABEL}, ports=[SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector={**_PODS.selector, **_SWITCHING_LABEL}, ports=[SERVICE.k8s_service_port()]),
     )
-    # LiteLLM authenticates client requests. Gatus only needs the model-list health check.
+    # LiteLLM authenticates clients; Gatus probes health and Alloy scrapes metrics.
     k8s.KubeNetworkPolicy(
         scope,
         "tabbyapi-ingress",
@@ -215,10 +213,16 @@ def add_tabbyapi(scope: Construct) -> None:
                 k8s.NetworkPolicyIngressRule(
                     from_=[
                         k8s.NetworkPolicyPeer(
-                            namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": name}),
-                            pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": name}),
+                            namespace_selector=k8s.LabelSelector(
+                                match_labels={"kubernetes.io/metadata.name": peer.namespace}
+                            ),
+                            pod_selector=k8s.LabelSelector(match_labels=peer.selector),
                         )
-                        for name in ("litellm", "gatus")
+                        for peer in (
+                            Pods(namespace="litellm", labels=(("app.kubernetes.io/name", "litellm"),)),
+                            cilium.PROBER,
+                            alloy_endpoints.NODE,
+                        )
                     ],
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(SERVICE.pod_port), protocol="TCP")],
                 )

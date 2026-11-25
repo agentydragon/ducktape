@@ -2,7 +2,6 @@
 
 import base64
 import json
-import logging
 import re
 import sys
 from collections.abc import Callable, Collection
@@ -15,7 +14,7 @@ from typing import TypeGuard, cast
 from googleapiclient.errors import HttpError
 from tenacity import RetryCallState, Retrying, retry_if_result, stop_after_attempt, wait_exponential
 
-from gmail_api.labels import GmailLabel
+from gmail_api.labels import CreateLabelRequest, GmailLabel
 from gmail_api.service import build_gmail_service
 from gmail_archiver.gmail_api_models import (
     CreateFilterRequest,
@@ -24,8 +23,6 @@ from gmail_archiver.gmail_api_models import (
     GmailMessageWithHeaders,
 )
 from gmail_archiver.models import Email
-
-logger = logging.getLogger(__name__)
 
 
 def _is_rate_limit_error(exception: Exception | None) -> TypeGuard[HttpError]:
@@ -150,12 +147,8 @@ class GmailClient:
     """Wrapper around Gmail API for email archival operations."""
 
     def __init__(self, token_file: Path):
-        self.token_file = token_file
-        self.service = self._build_service()
+        self.service = build_gmail_service(token_file)
         self._label_cache: dict[str, str] | None = None  # name -> id
-
-    def _build_service(self):
-        return build_gmail_service(self.token_file)
 
     def list_messages_by_query(self, query: str, max_results: int | None = None) -> list[str]:
         return self._list_messages({"q": query}, max_results)
@@ -338,9 +331,8 @@ class GmailClient:
         if label_id := self.get_label_id(label_name):
             return label_id
 
-        label_object = {"name": label_name, "labelListVisibility": "labelShow", "messageListVisibility": "show"}
-
-        result = self.service.users().labels().create(userId="me", body=label_object).execute()
+        body = CreateLabelRequest(name=label_name).model_dump(by_alias=True, exclude_none=True)
+        result = self.service.users().labels().create(userId="me", body=body).execute()
 
         self._label_cache = None
 

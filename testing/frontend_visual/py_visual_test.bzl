@@ -20,6 +20,7 @@ def py_visual_test(
         test_deps = [],
         env = {},
         tags = [],
+        args = [],
         **kwargs):
     """Run Python tests with hermetic browser assets and visual-review metadata.
 
@@ -68,6 +69,7 @@ def py_visual_test(
                ([fonts] if fonts != None else []),
         env = visual_env,
         tags = tags + ["visual"],
+        args = ["-p", "testing.frontend_visual.fixtures"] + args,
         deps = [
             "//:conftest",
             "//testing/frontend_visual:fixtures",

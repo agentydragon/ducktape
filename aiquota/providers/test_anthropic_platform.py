@@ -4,8 +4,9 @@ import httpx
 import pytest
 import pytest_bazel
 
+from aiquota.config import AnthropicPlatformSettings
 from aiquota.models import FetchError, FetchSuccess
-from aiquota.providers.anthropic_platform import AnthropicPlatformProvider, AnthropicPlatformSettings
+from aiquota.providers.anthropic_platform import AnthropicPlatformProvider
 from aiquota.providers.client import provider_client
 
 

@@ -3,7 +3,7 @@
 //! introduce destructure siblings, etc. `ChunkAstAnalysis` is the
 //! input to selector projection and downstream planning.
 
-use binding_targets::{binding_names, declaration_ids, declaration_name_strings};
+use binding_targets::{binding_names, declaration_ids};
 use selector_outcome::{Declaration, DeclarationKind};
 use source_identity::StatementId;
 
@@ -18,7 +18,7 @@ use swc_ecma_ast::*;
 #[derive(Debug, Clone)]
 pub struct TopLevelDecl {
     pub statement: StatementId,
-    pub bindings: Vec<(String, Id)>,
+    pub bindings: Vec<Id>,
     pub exported: bool,
 }
 
@@ -96,26 +96,20 @@ pub fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     for (ordinal, item) in module.body.iter().enumerate() {
         let statement = StatementId(ordinal);
         let source_exports = source_public_export_identities(item, statement);
+        for export in &source_exports {
+            if let ExportedNameOrigin::Binding(id) = &export.origin {
+                pre_existing_entry_exports.insert(id.clone());
+                pre_existing_public_export_names.insert(export.public_name.clone());
+            }
+        }
         if !source_exports.is_empty() {
             source_public_export_identities_by_statement.insert(statement, source_exports);
         }
-        let (names, exported) = top_level_declaration_names(item);
         let ids = top_level_declaration_ids(item);
-        if !names.is_empty() {
-            let bindings: Vec<(String, Id)> = names.into_iter().zip(ids.iter().cloned()).collect();
-            if exported {
-                pre_existing_entry_exports.extend(bindings.iter().map(|(_, id)| id.clone()));
-                // `export const foo = …` / `export function foo()` /
-                // `export class Foo {}` — the declared name is also
-                // the public name.
-                pre_existing_public_export_names
-                    .extend(bindings.iter().map(|(name, _)| name.clone()));
-            }
-            declarations.push(TopLevelDecl {
-                statement: StatementId(ordinal),
-                bindings,
-                exported,
-            });
+        let exported = matches!(item, ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(_)));
+        if exported {
+            pre_existing_entry_exports.extend(ids.iter().cloned());
+            pre_existing_public_export_names.extend(ids.iter().map(|id| id.0.to_string()));
         }
         record_exact_destructuring_groups(
             item,
@@ -143,19 +137,21 @@ pub fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
         {
             nested_var_statements.push(NestedVarStatement {
                 statement: StatementId(ordinal),
+                bindings: ids.clone(),
+            });
+        }
+        if !ids.is_empty() {
+            declarations.push(TopLevelDecl {
+                statement,
                 bindings: ids,
+                exported,
             });
         }
         record_runtime_imports(item, &mut imports);
-        record_pre_existing_named_exports(
-            item,
-            &mut pre_existing_entry_exports,
-            &mut pre_existing_public_export_names,
-        );
     }
     let mut declaration_by_name = HashMap::<Id, Vec<StatementId>>::new();
     for decl in &declarations {
-        for (_, id) in &decl.bindings {
+        for id in &decl.bindings {
             declaration_by_name
                 .entry(id.clone())
                 .or_default()
@@ -191,13 +187,7 @@ fn source_public_export_identities(
             for (specifier_index, specifier) in named.specifiers.iter().enumerate() {
                 match specifier {
                     ExportSpecifier::Named(named_specifier) => {
-                        let public_name = named_specifier
-                            .exported
-                            .as_ref()
-                            .map(binding_targets::module_export_name)
-                            .unwrap_or_else(|| {
-                                binding_targets::module_export_name(&named_specifier.orig)
-                            });
+                        let public_name = binding_targets::public_export_name(named_specifier);
                         let origin = if named.src.is_none()
                             && let ModuleExportName::Ident(local) = &named_specifier.orig
                         {
@@ -292,14 +282,10 @@ pub fn binding_declaration(
                     let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
                         return false;
                     };
-                    import.specifiers.iter().any(|specifier| {
-                        let local = match specifier {
-                            ImportSpecifier::Named(named) => &named.local,
-                            ImportSpecifier::Default(default) => &default.local,
-                            ImportSpecifier::Namespace(namespace) => &namespace.local,
-                        };
-                        local.to_id() == *binding
-                    })
+                    import
+                        .specifiers
+                        .iter()
+                        .any(|specifier| specifier.local().to_id() == *binding)
                 })
                 .with_context(|| format!("no top-level statement declares `{}`", binding.0))?,
         ),
@@ -340,70 +326,7 @@ pub fn binding_declaration(
     })
 }
 
-/// Pick up `export { foo, bar as baz }` (no `from`) — i.e. re-exports
-/// of locally-declared bindings. `export … from …` is excluded
-/// because those don't bind a local name in entry. `ExportDecl`
-/// (e.g. `export const foo = …`) is already covered by
-/// `top_level_declaration_ids` returning `(ids, exported = true)`.
-///
-/// Populates two parallel sets:
-/// - `local_out` — the `orig` (local-binding) side of each
-///   specifier, keyed on hygiene-aware `Id` so the emit-resolvability
-///   check in `auto_grown_residual_exports` matches the binding cells
-///   the analysis records.
-/// - `public_out` — the `exported` (public-name) side of each
-///   specifier (falls back to `orig`'s sym when no `as` rename is
-///   present). Keyed on bare `String` because export names are pure
-///   labels, not bound to a hygienic scope.
-pub fn record_pre_existing_named_exports(
-    item: &ModuleItem,
-    local_out: &mut HashSet<Id>,
-    public_out: &mut HashSet<String>,
-) {
-    let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
-        return;
-    };
-    if named.src.is_some() {
-        return;
-    }
-    for specifier in &named.specifiers {
-        let ExportSpecifier::Named(specifier) = specifier else {
-            continue;
-        };
-        let ModuleExportName::Ident(orig_ident) = &specifier.orig else {
-            continue;
-        };
-        local_out.insert(orig_ident.to_id());
-        let public_name = specifier
-            .exported
-            .as_ref()
-            .map(binding_targets::module_export_name)
-            .unwrap_or_else(|| orig_ident.sym.to_string());
-        public_out.insert(public_name);
-    }
-}
-
-pub fn top_level_declaration_names(item: &ModuleItem) -> (Vec<String>, bool) {
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => (declaration_name_strings(decl), false),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            (declaration_name_strings(&export_decl.decl), true)
-        }
-        // `var`s hoist to module scope out of `try`/`if`/loop blocks;
-        // the enclosing statement is the declarer. Keeps
-        // `declaration_by_name` in sync with the analyzer's
-        // `collect_declared_names`.
-        ModuleItem::Stmt(stmt) => (
-            binding_targets::hoisted_var_ids(stmt)
-                .iter()
-                .map(|(atom, _)| atom.to_string())
-                .collect(),
-            false,
-        ),
-        _ => (Vec::new(), false),
-    }
-}
-
+/// Includes module-scope `var` declarations hoisted from top-level control flow.
 pub fn top_level_declaration_ids(item: &ModuleItem) -> Vec<Id> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_ids(decl),

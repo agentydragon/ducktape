@@ -1,8 +1,8 @@
-//! Deterministic preferred import policy. `EsmImportSchedule` reifies this
-//! order and preserves it when valid; otherwise its exact constructor derives
-//! an alternative from the canonical graphs. Validation, effect sweeps and
-//! emission consume the retained concrete schedule, never independently rerun
-//! this policy. Linker positions remain useful diagnostic information.
+//! Deterministic preferred import policy. `EsmImportSchedule::from_policy`
+//! reifies this order unchanged; production never derives an alternative.
+//! Validation, effect sweeps and emission consume the retained concrete
+//! schedule, never independently rerun this policy. Linker positions remain
+//! useful diagnostic information.
 //!
 //! Entry prefers dependency ranks between import SCCs, reversed linker rank
 //! within each SCC. Other modules prefer dependency-first linker rank. Safe
@@ -51,11 +51,8 @@ impl EsmImportOrder {
     ) -> Self {
         let linker_order = chunk_linker_order_from_pairs(constraining_pairs.iter().copied());
         let linker_position = position_lookup(&linker_order);
-        let source_import_order = chunk_source_import_order_from_adjacency(
-            constraining_pairs.iter().copied(),
-            i_successors,
-            extra_nodes,
-        );
+        let source_import_order =
+            chunk_source_import_order_from_adjacency(&linker_position, i_successors, extra_nodes);
         let source_import_position = position_lookup(&source_import_order);
         Self {
             linker_order,

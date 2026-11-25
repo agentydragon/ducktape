@@ -295,9 +295,7 @@ func readCommandStart(conn *net.UnixConn) (CommandConfig, CommandFiles, error) {
 	keep := false
 	defer func() {
 		if !keep {
-			for _, file := range files {
-				_ = file.Close()
-			}
+			closeFiles(files...)
 		}
 	}()
 	if err != nil {
@@ -348,9 +346,7 @@ func readCommandReady(conn *net.UnixConn) (*os.File, error) {
 			err = errors.New("command readiness reply is missing its process group pidfd")
 		}
 	}
-	for _, file := range files {
-		_ = file.Close()
-	}
+	closeFiles(files...)
 	return nil, err
 }
 

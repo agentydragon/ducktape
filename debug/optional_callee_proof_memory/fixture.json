@@ -1,0 +1,13 @@
+{
+  "source": "const run = () => {\n      let trace = \"\";\n      const argument = () => { trace += \"a\"; };\n      const read = (receiver) => receiver.method?.(argument());\n      const record = { get method() { trace += \"g\"; return null; } };\n      if (read(record) !== undefined || read({}) !== undefined || trace !== \"g\") throw \"nullish method\";\n      try {\n        read({ get method() { trace += \"t\"; throw \"getter\"; } });\n        throw \"getter returned\";\n      } catch (error) {\n        if (error !== \"getter\") throw error;\n      }\n      try {\n        read({ method: false });\n        throw \"noncallable method returned\";\n      } catch (error) {\n        if (typeof error !== \"object\") throw error;\n      }\n      try {\n        read(null);\n        throw \"null receiver returned\";\n      } catch (error) {\n        if (typeof error !== \"object\") throw error;\n      }\n      if (trace !== \"gta\") throw \"argument order\";\n      return trace;\n    };\n    const result = run();\n    export { result };",
+  "spec": {
+    "entry": "entry.mjs",
+    "modules": {
+      "owner.mjs": ["#0"],
+      "reader.mjs": ["#1"],
+      "entry.mjs": ["#2"]
+    },
+    "order": ["owner.mjs", "reader.mjs"],
+    "sequential": true
+  }
+}

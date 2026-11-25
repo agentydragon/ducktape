@@ -19,6 +19,16 @@ py_library(
 )
 
 py_library(
+    name = "pytest_otel",
+    srcs = ["pytest_otel.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
     name = "postgres",
     testonly = True,
     srcs = ["postgres.py"],
@@ -50,6 +60,7 @@ py_test(
         "//:conftest",
         "//testing:postgres_fixtures",
         "@pypi//psycopg",
+        "@pypi//psycopg2_binary",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -85,6 +96,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//devinfra/testing:undeclared_outputs",
+        "@pypi//docker",
         "@pypi//testcontainers",
     ],
 )
@@ -122,6 +134,7 @@ py_library(
     srcs = ["mock_oidc.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "@pypi//authlib",
         "@pypi//cryptography",
         "@pypi//pyjwt",
         "@pypi//starlette",
@@ -151,4 +164,16 @@ py_library(
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "threaded_http",
+    srcs = ["threaded_http.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "git_repo",
+    srcs = ["git_repo.py"],
+    visibility = ["//visibility:public"],
 )

@@ -33,13 +33,13 @@ The Go implementation is split into public boundary packages and `internal/` run
 - `internal/upstream`: the admitted host resolved by the proxy, refused when it points anywhere not globally
   reachable, and pinned so the dial goes to the address checked.
 - `internal/informer`: list-and-watch of those kinds into each replica's `Index`. `../policy/reader` watches
-  the PolicySets and PolicyBindings, keeps the `EgressReady` condition on each binding, and bounds
+  the PolicySets, PolicyBindings and Identities, keeps the `EgressReady` condition on each binding, and bounds
   watch periods for every kind; this package adds EgressCredentials and Secrets through
   Kubernetes-generated clients and shared informers from `client/`.
 - `internal/rules`: the `EgressRules` gRPC service, which projects the authenticated workload's effective rules.
 - `internal/decision` and `internal/history`: admission records, and their bounded best-effort write to the shared
-  PostgreSQL history; `internal/admin` serves that history, a change stream, readiness and liveness, and
-  those reads again as the gRPC `EgressAdmin` and standard health services.
+  PostgreSQL history; `internal/admin` serves that history, its changes, the credential inventory and
+  readiness as the gRPC `EgressAdmin` and standard health services.
 - `internal/history/migrations`: the Goose schema of that history (below), embedded in the proxy binary.
 
 Also here:
@@ -95,21 +95,9 @@ and each environment's image-pins component. Normal startup initializes the sche
 The deployment supplies static proxy settings through its YAML file and the history database URL through
 the explicit Secret-backed environment input.
 The `forward` listener requires serving TLS files and an `auth` list containing SPIFFE with its
-trust bundle. The proxy presents `spiffe://agentplane/egress-proxy` and requires a Runtime SVID
-with explicit clientAuth. Every request checks the live Sandbox UID, accepted credential and Pod
-binding before reading policy. The subject is the record's Identity in `rules_namespace`, fenced on
-its UID. Clearing
-or replacing acceptance, changing the binding, or removing the Sandbox revokes access; quiescence
-keeps the accepted credential available for final History sealing. Caller headers cannot select a
-subject, and bearer credentials cannot authenticate the hop.
-
-The retired `X-Agentplane-Workload-Token` header is discarded by both forwarding hops and never
-participates in authentication or credential substitution. History, Notification, Dispatcher,
-Action, LLM and Rules verify workload SVIDs themselves; central carries their TLS opaquely and
-never asserts the caller.
-
-The real-binary `test_proxy.py` harness checks accepted SVIDs, revocation, forged subjects, expired
-and forged leaves, untrusted workload-token header stripping, and refusal of bearer hop authentication.
+trust bundle. Who a caller is and when its access ends: <SPEC.md> § Identity. The service authorities in
+`tls_passthrough_targets` are carried as opaque TLS: each destination verifies workload SVIDs itself, and
+central never asserts the caller (<SPEC.md> § Decision).
 
 ## BuildBuddy clients
 
@@ -166,66 +154,46 @@ impersonation rights.
 ## Rules API
 
 `agentplane egress rules` calls native `EgressRules.GetRules` through the sidecar's shared
-platform gRPC listener on port 3130. That local listener dispatches by exact service prefix. The
-sidecar holds the credential and presents the runner SVID to the destination.
-SVID calls establish verified TLS through an opaque central CONNECT to the shared gRPC port 8081;
-the server verifies its actual peer using the forward hop's authentication policy. No identity is
-asserted by the proxy. Rules has no separate audience, certificate or HTTP API. Health probes and
-operator RPCs keep their independent authorization on that shared port.
+platform gRPC listener on port 3130, which dispatches by exact service prefix. The sidecar holds the
+credential and presents the runner SVID; the call reaches the shared gRPC port 8081 through an opaque
+central CONNECT, and the server verifies its actual peer by the forward hop's authentication policy.
+The proxy asserts no identity. Rules has no separate audience, certificate or HTTP API.
 
 ## Admin gRPC API
 
 `EgressAdmin` (<api/admin/egress_admin.proto>) serves the operator reads on the admin listener:
-`ListDecisions` lists a subject's recent decisions, `WatchDecisions` sends that list on subscribing and
-again each time it differs, and `GetHealth` carries the readiness verdict as `ready` with the facts it
-rests on (`decision_history`, the refresh ages). All three read through the same `Decisions`,
-`Changes`, history counters and `Index`.
+`ListDecisions` lists a subject's recent decisions, `WatchDecisions` sends that window on subscribing
+and then its changes, `WatchCredentials` sends the redacted credential inventory and then its changes,
+and `GetHealth` carries the readiness verdict as `ready` with the facts it rests on (`synced`,
+`draining`, the `failing` kinds, `decision_history`). Decision reads go through `Decisions` and
+`Changes`, credential reads through the `Index`.
 
 The standard `grpc.health.v1.Health` service is served on the same listener for Kubernetes' native `grpc` probes:
 the empty service is readiness and the service `livez` liveness, which stays `SERVING` while the process
 answers so a recoverable watch outage never restarts it. It admits every caller, because the kubelet
 sends no bearer; `GetHealth` does not. `Watch` is not served.
 
-The shared gRPC listener also serves Rules under the forward hop's shared authentication policy.
-
-The shared port serves native gRPC over TLS; Rules accepts the same SVID authentication as the forward hop, while probes and
-Admin service methods use the same verified TLS listener with their own method policy. On shutdown it ends the open watches, then stops gracefully: the
-other calls in flight finish within the drain deadline.
-
-Every `EgressAdmin` call authenticates an exact service SPIFFE ID from
-`admin_grpc_service_callers` over mTLS before reading anything. The listener requires the forward
-listener's TLS and SPIFFE client CA. Bearers are rejected, including when combined with a service
-certificate. This allowlist grants no access to the separate Rules API. Watches periodically
-revalidate the admitted certificate and end on expiry or when the proxy drains; reconnecting
-callers are admitted afresh. See <../docs/grpc_services.md>.
-
-The health service is always mounted. `EgressAdmin` is mounted only when
-`admin_grpc_service_callers` is nonempty; Rules admission follows the workload transport policy above.
+Every `EgressAdmin` call authenticates an exact service SPIFFE ID from `admin_grpc_service_callers`
+over mTLS before reading anything, and `EgressAdmin` is mounted only when that list is nonempty
+(<SPEC.md> § Decisions). The health service is always mounted. On shutdown the server ends the open
+watches, then stops gracefully: other calls in flight finish within the drain deadline.
+See <../docs/grpc_services.md>.
 
 ## ServiceAccount permissions
 
-In the rules namespace (`rules_namespace`): `get`, `list`, `watch` on `egresscredentials`, `policysets` and `policybindings`, and `patch` on
-`policybindings/status`. Each admitted Sandbox namespace grants only `get`, `list` and `watch` on Sandboxes. The proxy
-uses the Sandbox's own ServiceAccount name without reading ServiceAccount or Pod objects. In the credentials namespace
-(`credentials_namespace`): `get`, `list`, `watch` on
-`secrets`, and nothing else. The proxy has no TokenReview grant. There is no leader election: every replica applies the same `EgressReady` under one field manager, and
-writes only when the condition it decides differs from the one the binding carries.
+In the rules namespace (`rules_namespace`): `get`, `list`, `watch` on `egresscredentials`, `policysets`,
+`policybindings` and `identities`, and `patch` on `policybindings/status`; `get` on `workloadcredentials`
+there and in each standing-workload namespace, read live on every request (<SPEC.md> § Identity). The
+Role also grants `get`, `list`, `watch` on `sandboxes` and `get` on `serviceaccounts`, which the proxy
+does not read. In the credentials namespace (`credentials_namespace`): `get`, `list`, `watch` on
+`secrets`, and nothing else. The proxy has no `pods` or TokenReview grant. There is no leader election:
+every replica applies the same `EgressReady` under one field manager, and writes only when the condition
+it decides differs from the one the binding carries.
 
 Substituted credentials live in a namespace of their own because RBAC cannot filter Secrets by
 label: a namespace-wide read where the sandboxes run would hand the proxy the model key and the
 database credential along with the ones it is meant to substitute. Staging uses
 `agentplane-staging-egress-credentials`.
-
-### Rejected: binding a bearer to its Pod's source address
-
-Reading the calling Pod and refusing a connection whose source is not that Pod's IP, on every
-request including cache hits, stops a token copied out of its Pod from being replayed elsewhere in
-the cluster. It costs a `pods` read in every `allowed_service_account_namespaces` entry, the grant
-the rule above keeps at nothing. Without it the exposure is bounded (<SPEC.md> § Identity): one
-in-cluster workload borrowing another's egress rules, not a way past the egress policy. Restore it if that
-borrowing becomes a real concern — for example, where workloads can obtain another subject's SVID or
-a namespace whose Pod specs are not ours — with a pod IP on the principal, the check in `identity`,
-the peer-address read in `proxy`, and that `pods` read.
 
 ## Decision history
 
@@ -266,8 +234,8 @@ listeners or workers, so a failed migration keeps that Pod unready while previou
 
 ## Replica lifecycle
 
-Readiness (the empty health service and `GetHealth`'s `ready`) and every CONNECT/HTTP admission share `Index` availability: all four watched kinds must be
-initially synced, and none may be failing. A kind fails when one of its list or watch requests fails
+Readiness (the empty health service and `GetHealth`'s `ready`) and every CONNECT/HTTP admission share `Index` availability: all five watched kinds (policy sets, policy bindings, identities, egress
+credentials, Secrets) must be initially synced, and none may be failing. A kind fails when one of its list or watch requests fails
 or client-go's watch error handler reports an abnormal end, and recovers on its next successful list
 or watch; `GetHealth` names each failing kind with its error and since when. client-go owns the
 watch timeouts, resumes and relists, and its HTTP/2 health checks turn a dead connection into a

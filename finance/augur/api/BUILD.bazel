@@ -54,6 +54,7 @@ py_library(
         ":schemas",
         ":wire",
         "//finance:yaml_decimal",
+        "//finance/augur:config_paths",
         "//finance/augur/model:series",
         "//finance/augur/product:wire",
         "//finance/augur/sim:ids",
@@ -179,6 +180,7 @@ py_library(
     srcs = ["catalog.py"],
     deps = [
         ":config",
+        ":schemas",
         ":wire",
         "//finance/augur/calibration:catalog",
         "//finance/augur/model:series",
@@ -412,10 +414,7 @@ build_test(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    deps = [
-        ":server",
-        "//finance/budget:wire",
-    ],
+    deps = [":server"],
 )
 
 py_binary(

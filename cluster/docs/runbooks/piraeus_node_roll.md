@@ -87,7 +87,7 @@ retire and rebuild the source standbys serially afterward.
    [CNPG conventions](../cnpg_conventions.md#current-compliance)), work serially:
    finish and verify one before starting the next. Record its desired count,
    each Pod/PVC UID, size, StorageClass and primary. New claims use
-   `piraeus-ssd-local`, sized for measured PGDATA plus headroom.
+   `piraeus-ssd-local`, sized for measured PGDATA plus headroom (Study Casino stays **1Gi**).
    Measure actual PGDATA, including WAL. Stop before requesting a replacement that cannot hold the
    current data and agreed reserve.
 2. Put a brief, resource-specific Flux hold on that Cluster, then temporarily
@@ -105,9 +105,8 @@ retire and rebuild the source standbys serially afterward.
    healthy members remain outside the outage set.
 5. Restore the Cluster's desired count before removing its Flux hold. Verify
    Flux and CNPG agree, then proceed to the next cluster.
-6. Three-member clusters (Attic, Study Casino) need no temporary member: move a
-   target primary first and retain two healthy off-target members. Study Casino
-   stays **1Gi**.
+6. A Cluster whose `spec.instances` is already 3 needs no temporary member: move a
+   target primary first and retain two healthy off-target members.
 
 Use a brief, resource-specific Flux hold for each temporary member change. A
 parent can undo suspension of a child Kustomization; hold the managed resource
@@ -140,7 +139,7 @@ manual repair, use the read-only `GetAdminLockStatus` and verify no repair is
 active.
 
 Refresh long-lived FUSE clients while the old endpoint still exists, then check
-that requests no longer depend on it. The [retirement caveat](rolling_seaweedfs_volume_pvc.md#caveat-retiring-a-volume-server-refresh-fuse-clients-before-you-delete-it)
+that requests no longer depend on it. The [stale-mount lesson](../lessons_learned/2026_07_04_seaweedfs_stale_mount_cache_after_evacuation.md)
 describes the cached-location failure: an alive-but-empty server still proxies
 reads, so a stale client never re-resolves. A rolling restart that lands on the
 same node keeps its CSI mount staged; scale the consumer to zero and back to

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from enum import StrEnum
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -28,6 +27,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from python.runfiles import Runfiles
 
+from cluster.cdk8s.agentplane.service_database import Database
 from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "postgres"
@@ -39,26 +39,8 @@ _PASSWORD = "test-k3s-database-password"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
 
-class Database(StrEnum):
-    APP = "app"
-    ACTIONS = "actions"
-    EGRESS = "egress"
-    MCP_EDGE = "mcp_edge"
-    NOTIFICATIONS = "notifications"
-    HISTORY = "sandbox_service"
-    SESSION_DISPATCHER = "session_dispatcher"
-    CENTRAL_SAMPLER = "central_sampler"
-
-    @property
-    def secret_name(self) -> str:
-        return f"postgres-{self.replace('_', '-')}"
-
-    @property
-    def password_env(self) -> str:
-        return f"AGENTPLANE_DB_PASSWORD_{self.upper()}"
-
-    def url(self, scope: Construct, *, namespace: str, key: str = "uri") -> EnvValue:
-        return SecretRef(namespace=namespace, name=self.secret_name).key(key).env_value(scope, f"{self}-database-url")
+def password_env(database: str) -> str:
+    return f"AGENTPLANE_DB_PASSWORD_{database.upper()}"
 
 
 def _fixture_file(name: str) -> str:
@@ -96,7 +78,7 @@ def add_database(scope: Construct, *, namespace: str, databases: Sequence[Databa
         _database_secret(db_scope, namespace=namespace, database=database)
         bootstrap_statements.extend(
             (
-                f"\\getenv {database}_password {database.password_env}",
+                f"\\getenv {database}_password {password_env(database)}",
                 f"CREATE ROLE {database} WITH LOGIN PASSWORD :'{database}_password';",
                 f"CREATE DATABASE {database} OWNER {database};",
             )
@@ -133,7 +115,7 @@ def add_database(scope: Construct, *, namespace: str, databases: Sequence[Databa
         .env_value(db_scope, "postgres-bootstrap-password"),
     }
     for database in databases:
-        env_variables[database.password_env] = (
+        env_variables[password_env(database)] = (
             SecretRef(namespace=namespace, name=database.secret_name)
             .key("password")
             .env_value(db_scope, f"postgres-{database}-password")

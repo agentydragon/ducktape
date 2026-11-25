@@ -1,23 +1,86 @@
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
-load("@rules_lean//lean:lean.bzl", "lean_axiom_test", "lean_binary")
+load("@rules_lean//lean:lean.bzl", "lean_axiom_test", "lean_binary", "lean_library", "lean_test")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load(":splitter_launcher.bzl", "splitter_launcher")
 
 _EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
 
-_PROOF_SOURCES = [
-    "EsmSplit.lean",
-    "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
-] + glob(
-    ["EsmSplit/*.lean"],
-    exclude = [
-        "EsmSplit/Audit.lean",
-        "EsmSplit/Instance.lean",
+lean_library(
+    name = "plan",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Plan.lean",
     ],
+)
+
+lean_library(
+    name = "planner",
+    srcs = [
+        "EsmSplit/Cli.lean",
+        "EsmSplit/Correct.lean",
+        "EsmSplit/Fast.lean",
+        "EsmSplit/ModulePath.lean",
+        "EsmSplit/Semantics.lean",
+        "EsmSplit/Split.lean",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+    deps = [":plan"],
+)
+
+lean_library(
+    name = "estree",
+    srcs = [
+        "EsmSplit/ESTreeSource.lean",
+        "EsmSplit/ESTreeUnits.lean",
+    ],
+)
+
+lean_library(
+    name = "effects_domain",
+    srcs = ["EsmSplit/Effects/Domain.lean"],
+)
+
+lean_library(
+    name = "effects",
+    srcs = [
+        "EsmSplit/Effects.lean",
+        "EsmSplit/IntrinsicMembers.lean",
+        "EsmSplit/Intrinsics.lean",
+        "EsmSplit/Lower.lean",
+        "EsmSplit/TranslateInput.lean",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+    deps = [
+        ":effects_domain",
+        ":estree",
+    ],
+)
+
+lean_binary(
+    name = "analysis_inventory",
+    srcs = ["AnalysisInventory.lean"],
+    entry = "AnalysisInventory.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    deps = [
+        ":effects",
+        ":estree",
+    ],
+)
+
+lean_library(
+    name = "example_proof",
+    srcs = [
+        "EsmSplit/Controls.lean",
+        "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
+    ],
+    deps = [":planner"],
 )
 
 lean_axiom_test(
     name = "axioms_test",
-    srcs = _PROOF_SOURCES,
+    # Compile the root module locally so rules_lean can find it beside the merged EsmSplit/ imports.
+    srcs = ["EsmSplit.lean"],
     imports = ["EsmSplit"],
     theorems = [
         "EsmSplit.Bundle.conflict_symm",
@@ -32,18 +95,33 @@ lean_axiom_test(
         "Example.control_claimed_twice_rejected",
         "Example.missing_import_rejected",
         "Example.dropped_module_rejected",
+        "Example.export_alias_valid",
+        "Example.export_alias_named",
+        "Example.export_collision_rejected",
         "Example.variant_cycle_valid",
         "Example.good_observes_same",
         "Example.cycle_variant_observes_same",
         "Example.effect_order_observes_differently",
         "Example.cycle_tdz_observes_differently",
     ],
+    deps = [":example_proof"],
+)
+
+lean_library(
+    name = "fixture_renderer",
+    srcs = ["FixtureRender.lean"],
+    deps = [":planner"],
 )
 
 lean_binary(
     name = "render",
-    srcs = ["Main.lean"] + _PROOF_SOURCES,
+    srcs = ["Main.lean"],
     entry = "Main.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/fuzz:__pkg__"],
+    deps = [
+        ":example_proof",
+        ":fixture_renderer",
+    ],
 )
 
 sh_test(
@@ -68,113 +146,676 @@ diff_test(
     file2 = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
 )
 
-# The checker's Lean sources, less the entry and the module that converts footprints to
-# statements, so the `no_writes` mutation test can swap in a changed `Translate.lean`.
-_TRANSLATE_BASE = [
-    "EsmSplit/Bundle.lean",
-    "EsmSplit/Cli.lean",
-    "EsmSplit/Correct.lean",
-    "EsmSplit/Fast.lean",
-    "EsmSplit/Plan.lean",
-    "EsmSplit/Render.lean",
-    "EsmSplit/Semantics.lean",
-    "EsmSplit/Split.lean",
-    "Experiments/Effects.lean",
-    "Experiments/IntrinsicMembers.lean",
-    "Experiments/Intrinsics.lean",
-    "Experiments/Lower.lean",
-    "Experiments/TranslateMain.lean",
-]
-
 lean_binary(
     name = "translate",
-    srcs = _TRANSLATE_BASE + ["Experiments/Translate.lean"],
+    srcs = [
+        "EsmSplit/Translate.lean",
+        "EsmSplit/TranslateMain.lean",
+    ],
     # `lean_binary` runs the entry with `lean --run` on each call: it elaborates the entry and interprets the checker,
     # about ten times slower than the native build of `lake build`. The tests that call it are `medium` or larger.
-    entry = "Experiments/TranslateMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    entry = "EsmSplit/TranslateMain.lean",
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
+    deps = [
+        ":effects",
+        ":planner",
+    ],
 )
 
 lean_binary(
     name = "lower",
     srcs = [
-        "Experiments/Effects.lean",
-        "Experiments/IntrinsicMembers.lean",
-        "Experiments/Intrinsics.lean",
-        "Experiments/Lower.lean",
-        "Experiments/LowerMain.lean",
+        "EsmSplit/LowerMain.lean",
     ],
-    entry = "Experiments/LowerMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    entry = "EsmSplit/LowerMain.lean",
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/lowering:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
+    deps = [
+        ":effects",
+        ":planner",
+    ],
 )
 
-# Source groups used only to compile the deliberately unsound `no_writes` checker.
-filegroup(
-    name = "translate_mutation_base_sources",
-    srcs = _TRANSLATE_BASE,
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+exports_files(
+    [
+        "EsmSplit/Translate.lean",
+        "EsmSplit/TranslateMain.lean",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants/no_writes:__pkg__"],
 )
 
-filegroup(
-    name = "translate_mutation_source",
-    srcs = ["Experiments/Translate.lean"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+splitter_launcher(
+    name = "lowersplit_launcher",
+    out = "lowersplit_launcher.sh",
+    diagnostic = ":lowersplit_diagnostic_core",
+    interpreter = ":lowersplit_core",
+    module_io = "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    template = "lowersplit.sh",
+)
+
+sh_binary(
+    name = "lowersplit",
+    srcs = [":lowersplit_launcher"],
+    data = [
+        ":lowersplit_core",
+        ":lowersplit_diagnostic_core",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
+    use_bash_launcher = True,
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+    ],
+)
+
+# Keep the shared proofs reusable when linked input or certificate generation changes.
+lean_library(
+    name = "corejs_certificate_support",
+    srcs = [
+        "EsmSplit/CoreJS/BatchState.lean",
+        "EsmSplit/CoreJS/BindingCertificate.lean",
+        "EsmSplit/CoreJS/BindingFootprint.lean",
+        "EsmSplit/CoreJS/BindingMoves.lean",
+        "EsmSplit/CoreJS/CellFootprint.lean",
+        "EsmSplit/CoreJS/ClassOrigin.lean",
+        "EsmSplit/CoreJS/ClassParents.lean",
+        "EsmSplit/CoreJS/Declaration/Artifacts.lean",
+        "EsmSplit/CoreJS/Declaration/Certificate.lean",
+        "EsmSplit/CoreJS/Declaration/Group.lean",
+        "EsmSplit/CoreJS/Declaration/Input.lean",
+        "EsmSplit/CoreJS/Declaration/Program.lean",
+        "EsmSplit/CoreJS/DenseArray.lean",
+        "EsmSplit/CoreJS/DynamicImports.lean",
+        "EsmSplit/CoreJS/EntryExports.lean",
+        "EsmSplit/CoreJS/Frame.lean",
+        "EsmSplit/CoreJS/FreshWrites.lean",
+        "EsmSplit/CoreJS/Fuel.lean",
+        "EsmSplit/CoreJS/HeritageCertificate.lean",
+        "EsmSplit/CoreJS/HeritageMove.lean",
+        "EsmSplit/CoreJS/LinkedBehavior.lean",
+        "EsmSplit/CoreJS/LinkedCells.lean",
+        "EsmSplit/CoreJS/LinkedDeployment.lean",
+        "EsmSplit/CoreJS/LiteralRecord.lean",
+        "EsmSplit/CoreJS/ModuleInput.lean",
+        "EsmSplit/CoreJS/ModuleLocation.lean",
+        "EsmSplit/CoreJS/Move.lean",
+        "EsmSplit/CoreJS/NativeRecord.lean",
+        "EsmSplit/CoreJS/OpaqueFrame.lean",
+        "EsmSplit/CoreJS/OpaqueInput.lean",
+        "EsmSplit/CoreJS/Reachability.lean",
+        "EsmSplit/CoreJS/Scope.lean",
+        "EsmSplit/CoreJS/Split.lean",
+        "EsmSplit/CoreJS/StateMatch.lean",
+        "EsmSplit/CoreJS/WriteExpr.lean",
+    ],
+    deps = [
+        ":corejs_runtime",
+        ":effects",
+        ":planner",
+    ],
+)
+
+lean_library(
+    name = "corejs_linked_input",
+    srcs = [
+        "EsmSplit/CertificateData.lean",
+        "EsmSplit/CoreJS/LinkedInput.lean",
+    ],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_runtime",
+        ":effects",
+        ":planner",
+    ],
+)
+
+# Generated certificates import the proof layer on its own.
+lean_library(
+    name = "corejs_certificate_proof",
+    srcs = [
+        "EsmSplit/CoreJS/LinkedCertificate/Proof.lean",
+        "EsmSplit/CoreJS/LinkedLocalMove.lean",
+    ],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_linked_input",
+    ],
+)
+
+lean_library(
+    name = "corejs_certificate_generation_support",
+    srcs = [
+        "EsmSplit/CoreJS/LinkedCertificate/Probe.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteCoreJS.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteJson.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteRecords.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteWrites.lean",
+    ],
+    deps = [":corejs_certificate_proof"],
+)
+
+lean_library(
+    name = "corejs_certificates",
+    srcs = ["EsmSplit/CoreJS/LinkedCertificate.lean"],
+    deps = [":corejs_certificate_generation_support"],
+)
+
+lean_library(
+    name = "corejs_structural",
+    srcs = [
+        "EsmSplit/CoreJS/BindingFrame.lean",
+        "EsmSplit/CoreJS/EvaluatorFrame.lean",
+        "EsmSplit/CoreJS/ExpressionFrame.lean",
+        "EsmSplit/CoreJS/HiddenRegion.lean",
+        "EsmSplit/CoreJS/HostFrame.lean",
+        "EsmSplit/CoreJS/InvocationFrame.lean",
+        "EsmSplit/CoreJS/IteratorFrame.lean",
+        "EsmSplit/CoreJS/JointStatic.lean",
+        "EsmSplit/CoreJS/LinkWorld.lean",
+        "EsmSplit/CoreJS/LinkedPivot.lean",
+        "EsmSplit/CoreJS/LinkedPivotCertificate.lean",
+        "EsmSplit/CoreJS/LinkedPivotCheck.lean",
+        "EsmSplit/CoreJS/ObjectFrame.lean",
+        "EsmSplit/CoreJS/OpaqueClosureFrame.lean",
+        "EsmSplit/CoreJS/PrefixProjection.lean",
+        "EsmSplit/CoreJS/RecordOrigin.lean",
+        "EsmSplit/CoreJS/Request/Allocation.lean",
+        "EsmSplit/CoreJS/Request/Dispatch.lean",
+        "EsmSplit/CoreJS/Request/Frame.lean",
+        "EsmSplit/CoreJS/Request/Property.lean",
+        "EsmSplit/CoreJS/StableIntrinsic.lean",
+        "EsmSplit/CoreJS/StatementFrame.lean",
+        "EsmSplit/CoreJS/StringInitializer.lean",
+        "EsmSplit/CoreJS/StructuralCertificate.lean",
+    ],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_linked_input",
+        ":corejs_runtime",
+        ":planner",
+    ],
+)
+
+lean_library(
+    name = "lowersplit_support",
+    srcs = [
+        "EsmSplit/ESTreeEmit.lean",
+        "EsmSplit/InstanceSource.lean",
+        "EsmSplit/ReadDeployment.lean",
+        "EsmSplit/SplitFiles.lean",
+    ],
+    deps = [
+        ":corejs_certificate_support",
+        ":effects",
+        ":planner",
+    ],
+)
+
+lean_library(
+    name = "lowersplit_workflows",
+    srcs = [
+        "EsmSplit/LowerSplit/Certified.lean",
+        "EsmSplit/LowerSplit/Diagnostic.lean",
+        "EsmSplit/LowerSplit/Input.lean",
+    ],
+    deps = [
+        ":corejs_certificates",
+        ":corejs_runtime",
+        ":corejs_structural",
+        ":lowersplit_support",
+        ":planner",
+    ],
+)
+
+# The interpreted launcher loads the entry's imports on every invocation.
+# Diagnostic runs need no linked certificate evaluator or structural proofs.
+lean_binary(
+    name = "lowersplit_diagnostic_core",
+    srcs = ["EsmSplit/LowerSplitDiagnosticMain.lean"],
+    entry = "EsmSplit/LowerSplitDiagnosticMain.lean",
+    deps = [":lowersplit_workflows"],
 )
 
 lean_binary(
-    name = "lowersplit",
+    name = "lowersplit_core",
     srcs = [
-        "EsmSplit/Bundle.lean",
-        "EsmSplit/Cli.lean",
-        "EsmSplit/Fast.lean",
-        "EsmSplit/Plan.lean",
-        "EsmSplit/Render.lean",
-        "EsmSplit/Semantics.lean",
-        "EsmSplit/Split.lean",
-        "Experiments/Effects.lean",
-        "Experiments/IntrinsicMembers.lean",
-        "Experiments/Intrinsics.lean",
-        "Experiments/Lower.lean",
-        "Experiments/LowerSplit.lean",
+        "EsmSplit/LowerSplit.lean",
+        "EsmSplit/LowerSplitMain.lean",
     ],
-    entry = "Experiments/LowerSplit.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+    entry = "EsmSplit/LowerSplitMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    deps = [":lowersplit_workflows"],
 )
 
-_PROOF_FIXTURE_SOURCES = [
-    "EsmSplit/Bundle.lean",
-    "EsmSplit/Cli.lean",
-    "EsmSplit/Correct.lean",
-    "EsmSplit/Fast.lean",
-    "EsmSplit/Plan.lean",
-    "EsmSplit/Render.lean",
-    "EsmSplit/Semantics.lean",
-    "EsmSplit/Split.lean",
-    "Experiments/MiniJS.lean",
-    "Experiments/MiniJSSource.lean",
-    "Experiments/ProofFixture.lean",
-    "//devinfra/js/debundle/x/split_proof/lean/generated:generate_proof_fixture",
-]
+lean_binary(
+    name = "joint_static_test_runner",
+    testonly = True,
+    srcs = ["JointStaticTest.lean"],
+    entry = "JointStaticTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [
+        ":corejs_structural",
+        ":lowersplit_workflows",
+    ],
+)
+
+lean_binary(
+    name = "linked_input_test_runner",
+    testonly = True,
+    srcs = [
+        "LinkedInputTest.lean",
+    ],
+    entry = "LinkedInputTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_runtime",
+        ":effects",
+        ":planner",
+    ],
+)
+
+# The order in which the modules of a plan run. `model/differential.mjs` compares the CoreJS model's with it.
+lean_binary(
+    name = "evalorder",
+    srcs = [
+        "EsmSplit/EvalOrder.lean",
+    ],
+    entry = "EsmSplit/EvalOrder.lean",
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/es_order:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
+    ],
+    deps = [":plan"],
+)
+
+lean_library(
+    name = "corejs_runtime",
+    srcs = [
+        "EsmSplit/CoreJS/BrowserGlobals.lean",
+        "EsmSplit/CoreJS/Decode.lean",
+        "EsmSplit/CoreJS/Eval.lean",
+        "EsmSplit/CoreJS/Fragment.lean",
+        "EsmSplit/CoreJS/FromESTree.lean",
+        "EsmSplit/CoreJS/HostProfile.lean",
+        "EsmSplit/CoreJS/Iterator.lean",
+        "EsmSplit/CoreJS/Number.lean",
+        "EsmSplit/CoreJS/Run.lean",
+        "EsmSplit/CoreJS/Syntax.lean",
+        "EsmSplit/CoreJS/SyntaxMatch.lean",
+        "EsmSplit/CoreJS/Value.lean",
+    ],
+    deps = [":estree"],
+)
+
+# The CoreJS model. `model/differential.mjs` runs it against Node.
+lean_binary(
+    name = "corejs",
+    srcs = ["EsmSplit/CoreJSMain.lean"],
+    entry = "EsmSplit/CoreJSMain.lean",
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
+    deps = [":corejs_linked_input"],
+)
+
+lean_axiom_test(
+    name = "corejs_axioms_test",
+    srcs = [
+        "EsmSplit/CoreJS/CellFootprintExamples.lean",
+        "EsmSplit/CoreJS/DataProjection.lean",
+        "EsmSplit/CoreJS/Declaration/ArtifactsExamples.lean",
+        "EsmSplit/CoreJS/LinkedBehaviorExamples.lean",
+        "EsmSplit/CoreJS/MetadataCell.lean",
+        "EsmSplit/CoreJS/MetadataLink.lean",
+        "EsmSplit/CoreJS/ReachabilityExamples.lean",
+        "EsmSplit/CoreJS/WrapperLinked.lean",
+        "EsmSplit/CoreJS/WrapperMove.lean",
+    ],
+    imports = [
+        "EsmSplit.CoreJS.BatchState",
+        "EsmSplit.CoreJS.BindingCertificate",
+        "EsmSplit.CoreJS.BindingFootprint",
+        "EsmSplit.CoreJS.BindingFrame",
+        "EsmSplit.CoreJS.BindingMoves",
+        "EsmSplit.CoreJS.CellFootprint",
+        "EsmSplit.CoreJS.CellFootprintExamples",
+        "EsmSplit.CoreJS.ClassOrigin",
+        "EsmSplit.CoreJS.ClassParents",
+        "EsmSplit.CoreJS.DataProjection",
+        "EsmSplit.CoreJS.Declaration.Artifacts",
+        "EsmSplit.CoreJS.Declaration.ArtifactsExamples",
+        "EsmSplit.CoreJS.Declaration.Certificate",
+        "EsmSplit.CoreJS.Declaration.Input",
+        "EsmSplit.CoreJS.Declaration.Program",
+        "EsmSplit.CoreJS.DenseArray",
+        "EsmSplit.CoreJS.EvaluatorFrame",
+        "EsmSplit.CoreJS.ExpressionFrame",
+        "EsmSplit.CoreJS.Frame",
+        "EsmSplit.CoreJS.FreshWrites",
+        "EsmSplit.CoreJS.Fuel",
+        "EsmSplit.CoreJS.HeritageCertificate",
+        "EsmSplit.CoreJS.HeritageMove",
+        "EsmSplit.CoreJS.HostFrame",
+        "EsmSplit.CoreJS.InvocationFrame",
+        "EsmSplit.CoreJS.JointStatic",
+        "EsmSplit.CoreJS.LinkWorld",
+        "EsmSplit.CoreJS.LinkedBehaviorExamples",
+        "EsmSplit.CoreJS.LinkedCells",
+        "EsmSplit.CoreJS.LinkedPivot",
+        "EsmSplit.CoreJS.LinkedPivotCheck",
+        "EsmSplit.CoreJS.LiteralRecord",
+        "EsmSplit.CoreJS.MetadataCell",
+        "EsmSplit.CoreJS.MetadataLink",
+        "EsmSplit.CoreJS.Move",
+        "EsmSplit.CoreJS.NativeRecord",
+        "EsmSplit.CoreJS.ObjectFrame",
+        "EsmSplit.CoreJS.OpaqueClosureFrame",
+        "EsmSplit.CoreJS.OpaqueFrame",
+        "EsmSplit.CoreJS.Reachability",
+        "EsmSplit.CoreJS.ReachabilityExamples",
+        "EsmSplit.CoreJS.RecordOrigin",
+        "EsmSplit.CoreJS.Request.Allocation",
+        "EsmSplit.CoreJS.Request.Dispatch",
+        "EsmSplit.CoreJS.Request.Frame",
+        "EsmSplit.CoreJS.Request.Property",
+        "EsmSplit.CoreJS.Scope",
+        "EsmSplit.CoreJS.Split",
+        "EsmSplit.CoreJS.StateMatch",
+        "EsmSplit.CoreJS.StatementFrame",
+        "EsmSplit.CoreJS.StructuralCertificate",
+        "EsmSplit.CoreJS.WrapperLinked",
+        "EsmSplit.CoreJS.WrapperMove",
+        "EsmSplit.CoreJS.WriteExpr",
+    ],
+    theorems = [
+        "CoreJS.evaluatorFrames",
+        "CoreJS.LinkedBehavior.certifyStaticDeployment",
+        "CoreJS.LinkedBehavior.certifyDeployment",
+        "CoreJS.LinkedBehavior.certifyStructuralASTs",
+        "CoreJS.DenseArray.reduce",
+        "CoreJS.evalExpr_obj_string_fields",
+        "CoreJS.lookup_literalProperties",
+        "CoreJS.LinkedBehavior.ends_iff",
+        "CoreJS.LinkedBehavior.different_probe_states_refute_equivalence",
+        "CoreJS.LinkedBehavior.checkASTs_sound",
+        "CoreJS.LinkedBehavior.EquivalentFor.normalEquivalent",
+        "CoreJS.LinkedBehavior.ASTEquivalent.normal",
+        "CoreJS.LinkedBehavior.normalEquivalent_of_shared",
+        "CoreJS.LinkedBehavior.probeObservationMismatchRefutesEquivalent",
+        "CoreJS.LinkedBehaviorExamples.literalRoundTrip",
+        "CoreJS.LinkedBehaviorExamples.jsonLiteralRoundTrip",
+        "CoreJS.LinkedBehaviorExamples.sharedJsonLiteralRoundTrip",
+        "CoreJS.LinkedBehaviorExamples.movedClosure",
+        "CoreJS.reachFrame_fromWorld",
+        "CoreJS.reachFrame_hostCall",
+        "CoreJS.reachFrame_observeGlobalTypeof",
+        "CoreJS.reachFrame_readHostRef",
+        "CoreJS.DeclarationArtifacts.check_sound",
+        "CoreJS.MetadataCell.eval_captured",
+        "CoreJS.MetadataCell.checkRead",
+        "CoreJS.MetadataCell.missing_linked_root",
+        "CoreJS.MetadataLink.no_common_probe",
+        "CoreJS.NativeRecord.initial_heap",
+        "CoreJS.DeclarationArtifacts.prepare?",
+        "CoreJS.DeclarationArtifacts.order_kept",
+        "CoreJS.DeclarationArtifacts.moves",
+        "CoreJS.DeclarationInput.matches_sound",
+        "CoreJS.DeclarationCertificate.eval_eq_single",
+        "CoreJS.DeclarationCertificate.order_kept",
+        "CoreJS.DeclarationCertificate.moves",
+        "CoreJS.wrapper_var_commutes_at",
+        "CoreJS.wrapperVar_origin",
+        "CoreJS.WrapperLinked.normal_iff",
+        "CoreJS.WriteExpr.eval",
+        "CoreJS.cellFootprint_lift",
+        "CoreJS.CellFootprint.bind",
+        "CoreJS.plainClassVar_origin",
+        "CoreJS.evalExpr_seq_batch",
+        "CoreJS.setProp_many_fresh",
+        "CoreJS.RecordOrigin.literalVar_origin",
+        "CoreJS.CellFootprint.preserves",
+        "CoreJS.CellFootprintExamples.copy_footprint",
+        "CoreJS.CellFootprintExamples.independent_writes",
+        "CoreJS.CellFootprintExamples.independent_units",
+        "CoreJS.CellFootprintExamples.copy_reference",
+        "CoreJS.CellFootprintExamples.omitted_write_rejected",
+        "CoreJS.CellFootprintExamples.omitted_read_rejected",
+        "CoreJS.CellFootprintExamples.dependent_read_does_not_commute",
+        "CoreJS.CellFootprintExamples.tdz_write",
+        "CoreJS.CellFootprintExamples.immutable_write",
+        "CoreJS.CellFootprintExamples.initialize_tdz",
+        "CoreJS.CellFootprintExamples.unit_resets_region",
+        "CoreJS.CellFootprint.commute",
+        "CoreJS.CellFootprint.inRegion_commute",
+        "CoreJS.cellFootprint_readVar",
+        "CoreJS.cellFootprint_initVar",
+        "CoreJS.cellFootprint_writeVar",
+        "CoreJS.newCells_distinct",
+        "CoreJS.LinkedCellsExamples.nonempty_allocation",
+        "CoreJS.LinkedCellsExamples.names_allow_alias",
+        "CoreJS.LinkedCellsExamples.allocation_rejects_alias",
+        "CoreJS.declareTops_scope_injective",
+        "CoreJS.declareTops_bundleEnv_injective",
+        "CoreJS.declareTops_bundleEnv_disjoint",
+        "CoreJS.allocOnly_extends",
+        "CoreJS.State.objectCount_pos_of_objAt",
+        "CoreJS.getProp_ownData",
+        "CoreJS.DataProjection.declaration_commutes_at",
+        "CoreJS.classParents_ownPrototype",
+        "CoreJS.classParents_extends",
+        "CoreJS.classParents_replay",
+        "CoreJS.plainClassMembers_fieldInits",
+        "CoreJS.evalMembers_plain_keeps",
+        "CoreJS.local_evalMembers_plain",
+        "CoreJS.finishDerived_plain_keeps",
+        "CoreJS.local_finishDerived_plain",
+        "CoreJS.allocOnly_plainClass_opaqueMethod",
+        "CoreJS.allocOnly_class_staticField_rejected",
+        "CoreJS.allocOnly_class_instanceField_rejected",
+        "CoreJS.allocOnly_class_nonliteralKey_rejected",
+        "CoreJS.allocOnly_derivedClass_rejected",
+        "CoreJS.decl_allocOnly",
+        "CoreJS.binop_ne_strings",
+        "CoreJS.evalExpr_cond",
+        "CoreJS.fuel_mono",
+        "CoreJS.Ends.unique",
+        "CoreJS.same",
+        "CoreJS.runUnit_agree",
+        "CoreJS.capture_faithful",
+        "CoreJS.StateMatch.probe",
+        "CoreJS.order_kept_preserves",
+        "CoreJS.split_holds_statements",
+        "CoreJS.split_scopes_agree",
+        "CoreJS.split_units_agree",
+        "CoreJS.valid_order_kept_preserves",
+        "CoreJS.local_units_commute",
+        "CoreJS.not_local_of_foreign_object_change",
+        "CoreJS.ParentAt.after_derived",
+        "CoreJS.derived_var_commutes_at",
+        "CoreJS.moves_preserve_of_heritageMovesOk",
+        "CoreJS.MovesSound.or",
+        "CoreJS.mayMove_commutes",
+        "CoreJS.mayMove_sound",
+        "CoreJS.reorder_units_of_commute",
+        "CoreJS.runUnits_pivot",
+        "CoreJS.moves_preserve_run_of_order",
+        "CoreJS.moves_preserve_run_of_sound",
+        "CoreJS.moves_preserve_of_sound",
+        "CoreJS.moves_preserve_run",
+        "CoreJS.moves_preserve",
+        "CoreJS.movesOk_iff",
+        "CoreJS.moves_preserve_of_movesOk",
+        "CoreJS.converse_frames",
+        "CoreJS.opaque_world_frames",
+        "CoreJS.readOnceWorld_frames",
+        "CoreJS.readOnceWorld_commutes",
+        "CoreJS.readOnceWorld_initialized",
+        "CoreJS.readOnceWorld_caught",
+        "CoreJS.ReachFrame.runUnit_access",
+        "CoreJS.ReachFrame.local_commuteOn",
+        "CoreJS.runUnits_reachFrame_pivot",
+        "CoreJS.LinkedBehavior.link_from_probe",
+        "CoreJS.LinkedBehavior.runUnits_pivot_normal",
+        "CoreJS.LinkedBehavior.localPivotOk_sound",
+        "CoreJS.LinkedBehavior.checkPivot",
+        "CoreJS.local_frame_units_commute",
+        "CoreJS.frame_local_units_commute",
+        "CoreJS.decl_opaque_world_commute",
+        "CoreJS.Access.reachable",
+        "CoreJS.access_reachable",
+        "CoreJS.accessOk_iff",
+        "CoreJS.ReachabilityExamples.hoisted_capture_check",
+        "CoreJS.ReachabilityExamples.async_hoisted_capture_check",
+        "CoreJS.Access.put",
+        "CoreJS.Access.assign",
+        "CoreJS.reachFrame_alloc",
+        "CoreJS.reachFrame_create",
+        "CoreJS.frames_newObject",
+        "CoreJS.access_newObject",
+        "CoreJS.frames_newCallback",
+        "CoreJS.access_newCallback",
+        "CoreJS.frames_newConstructor",
+        "CoreJS.access_newConstructor",
+        "CoreJS.perform_newObject",
+        "CoreJS.perform_newFunction",
+        "CoreJS.perform_bindingOrKeys",
+        "CoreJS.reachFrame_newCell",
+        "CoreJS.reachFrame_declare",
+        "CoreJS.Env.nodes_capture",
+        "CoreJS.reachFrame_initSelf",
+        "CoreJS.reachFrame_readVar",
+        "CoreJS.reachFrame_writeVar",
+        "CoreJS.reachFrame_copyBindings",
+        "CoreJS.reachFrame_makeFunc",
+        "CoreJS.reachFrame_enterFunction",
+        "CoreJS.execOpaque_reachFrame_step",
+        "CoreJS.evalFields_reachFrame_step",
+        "CoreJS.evalProps_reachFrame_step",
+        "CoreJS.evalMembers_reachFrame_step",
+        "CoreJS.evalArray_reachFrame_step",
+        "CoreJS.evalClass_reachFrame_step",
+        "CoreJS.evalDerived_reachFrame_step",
+        "CoreJS.reachFrame_copySpread",
+        "CoreJS.execStmt_reachFrame_step",
+        "CoreJS.evalExpr_reachFrame_step",
+        "CoreJS.execStmts_reachFrame_step",
+        "CoreJS.loop_reachFrame_step",
+        "CoreJS.reachFrame_lookupProp",
+        "CoreJS.perform_has",
+        "CoreJS.perform_get",
+        "CoreJS.perform_set",
+        "CoreJS.perform_delete",
+        "CoreJS.perform_call",
+        "CoreJS.perform_construct",
+        "CoreJS.perform_reachFrame",
+        "CoreJS.callFn_reachFrame_of_steps",
+        "CoreJS.constructTarget_reachFrame_of_steps",
+        "CoreJS.reachFrame_prim_defineProperty",
+        "CoreJS.reachFrame_prim_getPrototypeOf",
+        "CoreJS.reachFrame_prim_setPrototypeOf",
+        "CoreJS.ReachFrame.attempt",
+        "CoreJS.converse_reachFrame",
+        "CoreJS.opaque_world_reachFrame",
+        "CoreJS.publish_alias_frame",
+        "CoreJS.ReachabilityExamples.prototype_reachable",
+        "CoreJS.ReachabilityExamples.accessor_reachable",
+        "CoreJS.ReachabilityExamples.closure_cell_reachable",
+        "CoreJS.ReachabilityExamples.closure_this_reachable",
+        "CoreJS.ReachabilityExamples.opaque_cell_reachable",
+        "CoreJS.ReachabilityExamples.hidden_capture_not_away",
+        "CoreJS.ReachabilityExamples.same_address_not_object",
+        "CoreJS.ReachabilityExamples.initializer_read_not_away",
+        "CoreJS.ReachabilityExamples.separated_request",
+        "CoreJS.ReachabilityExamples.mutable_write",
+        "CoreJS.ReachabilityExamples.immutable_write",
+        "CoreJS.ReachabilityExamples.initialize_tdz",
+        "CoreJS.ReachabilityExamples.tdz_read_caught",
+        "CoreJS.ReachabilityExamples.readOnce_conversation",
+        "CoreJS.ReachabilityExamples.forged_handle",
+        "CoreJS.ReachabilityExamples.forged_existing_object",
+        "CoreJS.ReachabilityExamples.missing_binding",
+        "CoreJS.ReachabilityExamples.keys_without_callback",
+        "CoreJS.ReachabilityExamples.publish_alias",
+        "CoreJS.ReachabilityExamples.publish_alias_accessible",
+        "CoreJS.bindingCertificate_witness",
+        "CoreJS.Expr.bindingFootprint",
+        "CoreJS.Stmt.bindingFootprint",
+        "CoreJS.certifiedMovesOk_iff",
+        "CoreJS.bindingMayMove_sound",
+        "CoreJS.certifiedMayMove_sound",
+        "CoreJS.moves_preserve_of_certifiedMovesOk",
+        "CoreJS.binding_names_disjoint",
+        "CoreJS.binding_summaries_independent",
+        "CoreJS.BindingCertificateExamples.accepts_actual_reads_and_writes",
+        "CoreJS.BindingCertificateExamples.accepted_certificate_has_witness",
+        "CoreJS.BindingCertificateExamples.rejects_missing_conditional_branch_read",
+        "CoreJS.BindingCertificateExamples.rejects_missing_short_circuit_write",
+        "CoreJS.BindingCertificateExamples.rejects_heap_inspecting_typeof",
+        "CoreJS.BindingCertificateExamples.rejects_missing_binary_operand_read",
+        "CoreJS.BindingCertificateExamples.rejects_missing_binary_operand_write",
+        "CoreJS.BindingCertificateExamples.rejects_missing_write",
+        "CoreJS.BindingCertificateExamples.rejects_missing_read",
+        "CoreJS.BindingCertificateExamples.rejects_property_access",
+        "CoreJS.BindingCertificateExamples.rejects_call",
+        "CoreJS.BindingCertificateExamples.rejects_host_value",
+        "CoreJS.BindingCertificateExamples.rejects_frozen_assignment",
+        "CoreJS.BindingCertificateExamples.rejects_hoisted_footprint",
+        "CoreJS.BindingCertificateExamples.rejects_out_of_bounds_statement",
+        "CoreJS.BindingCertificateExamples.rejects_out_of_bounds_footprint",
+    ],
+    deps = [
+        ":corejs_certificates",
+        ":corejs_runtime",
+        ":corejs_structural",
+        ":planner",
+    ],
+)
+
+lean_library(
+    name = "proof_fixture",
+    srcs = [
+        "CustomMoveExample.lean",
+        "ProofFixtureChecks.lean",
+        "//devinfra/js/debundle/x/split_proof/lean/generated:generate_proof_fixture",
+    ],
+    deps = [
+        ":corejs_certificate_support",
+        ":fixture_renderer",
+        ":planner",
+    ],
+)
 
 lean_axiom_test(
     name = "proof_fixture_axioms_test",
-    srcs = _PROOF_FIXTURE_SOURCES,
-    imports = ["Experiments.ProofFixture"],
+    imports = [
+        "CustomMoveExample",
+        "ProofFixtureChecks",
+    ],
     theorems = [
         "Example.plan_valid",
         "Example.control_bad_rejected",
+        "CoreJS.CustomMoveExample.syntax_refuses",
+        "CoreJS.CustomMoveExample.swapped",
         "ProofFixture.extracted_footprints",
-        "ProofFixture.source_accepted",
-        "ProofFixture.program_value",
-        "ProofFixture.unsupported_nonconst",
-        "ProofFixture.unsupported_extra_tokens",
-        "ProofFixture.unsupported_call",
-        "ProofFixture.unsupported_coercion",
-        "ProofFixture.unsupported_number",
-        "ProofFixture.unsupported_escape",
-        "ProofFixture.unsupported_keyword",
-        "ProofFixture.unsupported_reserved_name",
-        "ProofFixture.unsupported_strict_name",
+        "ProofFixture.source_matches",
         "ProofFixture.execution_order",
         "ProofFixture.safe_inversion",
         "ProofFixture.hoisted_read_both_directions",
@@ -185,12 +826,14 @@ lean_axiom_test(
         "ProofFixture.rendered_base",
         "ProofFixture.rendered_entry",
     ],
+    deps = [":proof_fixture"],
 )
 
 lean_binary(
     name = "proof_fixture_render",
-    srcs = ["ProofFixtureMain.lean"] + _PROOF_FIXTURE_SOURCES,
+    srcs = ["ProofFixtureMain.lean"],
     entry = "ProofFixtureMain.lean",
+    deps = [":proof_fixture"],
 )
 
 sh_test(
@@ -207,4 +850,51 @@ sh_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     use_bash_launcher = True,
+)
+
+lean_axiom_test(
+    name = "weakmap_boundary_test",
+    srcs = ["EsmSplit/CoreJS/WeakMapBoundary.lean"],
+    imports = ["EsmSplit.CoreJS.WeakMapBoundary"],
+    theorems = [
+        "CoreJS.WeakMapBoundary.stableRead_newEmpty",
+        "CoreJS.WeakMapBoundary.sameShape_sameObservation",
+    ],
+    deps = [":corejs_certificate_support"],
+)
+
+lean_test(
+    name = "corejs_uint8_test",
+    srcs = [
+        "EsmSplit/CoreJS/Number.lean",
+        "EsmSplit/CoreJS/Uint8Examples.lean",
+    ],
+    entry = "EsmSplit/CoreJS/Uint8Examples.lean",
+)
+
+lean_binary(
+    name = "replicate_plan",
+    testonly = True,
+    srcs = ["Experiments/ReplicatePlan.lean"],
+    entry = "Experiments/ReplicatePlan.lean",
+    deps = [":lowersplit_workflows"],
+)
+
+lean_test(
+    name = "experiments_test",
+    srcs = [
+        "Experiments.lean",
+        "Experiments/Automation.lean",
+        "Experiments/Ladder.lean",
+    ],
+    entry = "Experiments.lean",
+    tags = ["manual"],
+    deps = [":example_proof"],
+)
+
+lean_test(
+    name = "lowered_example_certificate_test",
+    srcs = ["//devinfra/js/debundle/x/split_proof/lean/generated:generate_lowered_example_certificate"],
+    entry = "Experiments/Generated.lean",
+    deps = [":planner"],
 )

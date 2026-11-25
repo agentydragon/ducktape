@@ -9,7 +9,7 @@ from typing import Any
 from tana.domain.nodes import MIN_TUPLE_CHILDREN, BaseNode, TupleNode
 from tana.domain.system_nodes import SUPERTAG_KEY_ID
 from tana.domain.types import NodeId
-from tana.export.convert import RenderContext
+from tana.export.convert import RenderContext, format_tanapaste
 from tana.graph.graph import TanaGraph
 from tana.graph.wrappers import is_wrapper
 
@@ -19,21 +19,13 @@ PRETTY_PRINT_LIMIT = 10
 class TrackingGraph(TanaGraph):
     """A TanaGraph that tracks which nodes are accessed."""
 
-    def __init__(self, mapping: dict[NodeId, BaseNode]):
-        # `TanaGraph.__init__` calls `get`, which reads both attributes.
-        self.accessed_nodes: set[NodeId] = set()
-        self.tracking_enabled: bool = True
-        super().__init__(mapping)
+    accessed_nodes: set[NodeId] | None = None
 
     def __getitem__(self, node_id: NodeId) -> BaseNode:
-        if self.tracking_enabled:
+        node = super().__getitem__(node_id)
+        if self.accessed_nodes is not None:
             self.accessed_nodes.add(node_id)
-        return super().__getitem__(node_id)
-
-    def get(self, node_id: NodeId, default=None):
-        if node_id in self and self.tracking_enabled:
-            self.accessed_nodes.add(node_id)
-        return super().get(node_id, default)
+        return node
 
 
 def collect_supertag_dependencies(store: TanaGraph, node_ids: set[NodeId]) -> set[NodeId]:
@@ -68,6 +60,9 @@ def collect_supertag_dependencies(store: TanaGraph, node_ids: set[NodeId]) -> se
                 and child.children[0] == SUPERTAG_KEY_ID
             ):
                 dependencies.add(child.id)
+                # The graph needs the key document to index supertags.
+                if SUPERTAG_KEY_ID in store:
+                    dependencies.add(SUPERTAG_KEY_ID)
                 for tag_id in child.children[1:]:
                     if tag_id in store:
                         dependencies.add(tag_id)
@@ -85,50 +80,21 @@ def collect_supertag_dependencies(store: TanaGraph, node_ids: set[NodeId]) -> se
     return dependencies
 
 
-class TrackingRenderContext(RenderContext):
-    """A RenderContext that ensures node access is tracked."""
-
-    def __init__(self, store: TrackingGraph, style: str):
-        super().__init__(store, style)
-        self.tracking_store = store
-
-    def render_node(self, n: BaseNode):
-        # Make sure the node itself is tracked
-        self.tracking_store.accessed_nodes.add(n.id)
-        yield from super().render_node(n)
-
-
 def export_node_with_tracking(store: TrackingGraph, node_id: NodeId) -> tuple[str, set[NodeId]]:
     """Return (TanaPaste, accessed IDs plus supertag dependencies) for one node."""
-    # Get the target node
-    if node_id not in store:
+    node = store.get(node_id)
+    if node is None:
         raise ValueError(f"Node {node_id} not found in store")
 
-    node = store[node_id]
+    accessed = {node_id}
+    store.accessed_nodes = accessed
+    try:
+        tanapaste = format_tanapaste(RenderContext(store, "tana").render_node(node))
+    finally:
+        store.accessed_nodes = None
 
-    # Clear accessed nodes to start fresh
-    store.accessed_nodes.clear()
-
-    # Export the node using tracking context
-    lines = ["%%tana%%"]
-    ctx = TrackingRenderContext(store, "tana")
-    lines.extend(ctx.render_node(node))
-
-    tanapaste = "\n".join(lines).rstrip() + "\n\n"
-
-    # Get all accessed nodes from the export
-    export_nodes = store.accessed_nodes.copy()
-
-    # Disable tracking while collecting dependencies to avoid cascading
-    store.tracking_enabled = False
-    supertag_deps = collect_supertag_dependencies(store, export_nodes)
-    store.tracking_enabled = True
-
-    # Combine both sets
-    all_accessed = export_nodes | supertag_deps
-
-    # Return the export and all accessed nodes
-    return tanapaste, all_accessed
+    # Subset files end with a blank line.
+    return tanapaste + "\n", accessed | collect_supertag_dependencies(store, accessed)
 
 
 def create_subset_json(original_data: dict[str, Any], touched_nodes: set[NodeId]) -> dict[str, Any]:

@@ -2,7 +2,7 @@ import { Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import { definePreview } from "./entry";
+import { definePreview, defineReceiptPreview } from "./entry";
 import { batchError, batchOutcome, displayRef, grocyRequest, Line, objectLink, reference } from "./grocy_shared";
 import type { ActionPresentation } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
@@ -177,6 +177,17 @@ function scopedAmount(item: {
   );
 }
 
+function StockBatch<T>({ items, show }: { items: T[]; show: (item: T) => ReactNode }) {
+  return (
+    <Stack gap={4}>
+      {items.slice(0, 2).map((item, i) => (
+        <div key={i}>{show(item)}</div>
+      ))}
+      {items.length > 2 && <Line>{items.length - 2} more</Line>}
+    </Stack>
+  );
+}
+
 const entry = z.strictObject({
   entry_id: id,
   product_id: id,
@@ -191,9 +202,11 @@ const entry = z.strictObject({
   note: z.string().nullish(),
 });
 const updatedField = z.strictObject({ old: z.unknown(), new: z.unknown() });
+const entryOk = z.strictObject({ kind: z.literal("ok"), entry, changes: z.record(z.string(), updatedField).nullish() });
 const entries = z.array(
-  z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("ok"), entry, changes: z.record(z.string(), updatedField).nullish() }),
+  z.union([
+    entryOk,
+    entryOk.extend({ entry: entry.nullish(), entry_id: id, transaction_id: z.string() }),
     z.strictObject({ kind: z.literal("error"), error: z.string(), entry_id: id.nullish() }),
   ])
 );
@@ -212,7 +225,7 @@ function changedValue(value: unknown): ReactNode {
   return value == null ? "(none)" : typeof value === "string" ? value || "(empty text)" : JSON.stringify(value);
 }
 
-const entryResult = defineResultPreview(entries, ({ result }) => (
+const StockEntries = ({ result }: { result: z.infer<typeof entries> }) => (
   <Stack gap="xs">
     {result.length === 0 && <Line>No stock entries matched</Line>}
     {result.map((row, index) =>
@@ -222,22 +235,34 @@ const entryResult = defineResultPreview(entries, ({ result }) => (
         </Line>
       ) : (
         <Stack gap={2} key={index}>
-          <Line>
-            {objectLink("stockentry", row.entry.entry_id, row.entry.product_name)} · {row.entry.amount}{" "}
-            {row.entry.qu_name} in {row.entry.location_name}
-            {row.entry.open && " · Opened"}
-          </Line>
-          <Fields
-            values={[
-              [
-                "Best before",
-                row.entry.best_before_date === "2999-12-31" ? "Never expires" : row.entry.best_before_date,
-              ],
-              ["Purchased", row.entry.purchased_date],
-              ["Price per unit", row.entry.price],
-              ["Note", row.entry.note],
-            ]}
-          />
+          {"transaction_id" in row && (
+            <>
+              <Line>Saved edit to stock entry #{row.entry_id}</Line>
+              <Line>Transaction · {row.transaction_id}</Line>
+            </>
+          )}
+          {row.entry ? (
+            <>
+              <Line>
+                {objectLink("stockentry", row.entry.entry_id, row.entry.product_name)} · {row.entry.amount}{" "}
+                {row.entry.qu_name} in {row.entry.location_name}
+                {row.entry.open && " · Opened"}
+              </Line>
+              <Fields
+                values={[
+                  [
+                    "Best before",
+                    row.entry.best_before_date === "2999-12-31" ? "Never expires" : row.entry.best_before_date,
+                  ],
+                  ["Purchased", row.entry.purchased_date],
+                  ["Price per unit", row.entry.price],
+                  ["Note", row.entry.note],
+                ]}
+              />
+            </>
+          ) : (
+            <Line>Current lot unavailable</Line>
+          )}
           {Object.entries(row.changes ?? {}).map(([name, values]) => (
             <Line key={name}>
               {Object.hasOwn(fieldLabels, name) ? fieldLabels[name] : name.replaceAll("_", " ")} ·{" "}
@@ -248,7 +273,9 @@ const entryResult = defineResultPreview(entries, ({ result }) => (
       )
     )}
   </Stack>
-));
+);
+
+const entryResult = defineResultPreview(entries, StockEntries);
 
 const productStock = defineResultPreview(
   z.object({
@@ -280,15 +307,29 @@ const productStock = defineResultPreview(
 );
 
 const volatilityFields = { product_id: id, product_name: z.string(), amount: z.number(), qu_name: z.string() };
-const expirationFields = { ...volatilityFields, location_name: z.string(), best_before_date: date };
+const expirationFields = {
+  ...volatilityFields,
+  entry_id: id.optional(),
+  location_name: z.string(),
+  best_before_date: date,
+};
 const expiring = z.array(z.strictObject({ ...expirationFields, days_until_expiry: id }));
 const expired = z.array(z.strictObject({ ...expirationFields, days_overdue: id }));
 const below = z.array(z.strictObject({ ...volatilityFields, min_amount: z.number(), deficit: z.number() }));
 
-function stockLabel(row: { product_id: number; product_name: string; amount: number; qu_name: string }) {
+function stockLabel(row: {
+  product_id: number;
+  product_name: string;
+  amount: number;
+  qu_name: string;
+  entry_id?: number;
+}) {
   return (
     <>
-      {objectLink("product", row.product_id, row.product_name || "Open product")} · {row.amount} {row.qu_name}
+      {row.entry_id === undefined
+        ? objectLink("product", row.product_id, row.product_name || "Open product")
+        : objectLink("stockentry", row.entry_id, `${row.product_name} · Lot #${row.entry_id}`)}{" "}
+      · {row.amount} {row.qu_name}
     </>
   );
 }
@@ -439,7 +480,8 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
             ))}
           </Stack>
         ),
-        stockResult("added")
+        stockResult("added"),
+        ({ args }) => <StockBatch items={args.items} show={scopedAmount} />
       ),
       outcome: stockOutcome,
     },
@@ -461,7 +503,19 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
             ))}
           </Stack>
         ),
-        stockResult("consumed")
+        stockResult("consumed"),
+        ({ args }) => (
+          <StockBatch
+            items={args.items}
+            show={(item) => (
+              <>
+                {scopedAmount(item)}
+                {item.spoiled && <Line>Record as spoilage</Line>}
+                {item.allow_subproduct_substitution && <Line>Use variant stock if needed</Line>}
+              </>
+            )}
+          />
+        )
       ),
       outcome: stockOutcome,
     },
@@ -491,7 +545,19 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
             ))}
           </Stack>
         ),
-        stockResult("adjusted")
+        stockResult("adjusted"),
+        ({ args }) => (
+          <StockBatch
+            items={args.items}
+            show={(item) => (
+              <Line>
+                {displayRef(item.product, "products")} · Set total to {item.new_amount}{" "}
+                {item.qu == null ? "stock units" : displayRef(item.qu, "quantity_units")} ·{" "}
+                {displayRef(item.location, "locations")}
+              </Line>
+            )}
+          />
+        )
       ),
       outcome: stockOutcome,
     },
@@ -514,7 +580,17 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
             <Line>Moving into or out of a freezer may change the due date.</Line>
           </Stack>
         ),
-        defineResultPreview(stockOpRow, ({ result }) => <StockChanges entries={[result]} verb="transferred" />)
+        defineResultPreview(stockOpRow, ({ result }) => <StockChanges entries={[result]} verb="transferred" />),
+        ({ args }) => (
+          <Stack gap={4}>
+            <Line>
+              {args.amount} {displayRef(args.qu, "quantity_units")} · {displayRef(args.product, "products")}
+            </Line>
+            <Line>
+              {displayRef(args.from_location, "locations")} → {displayRef(args.to_location, "locations")}
+            </Line>
+          </Stack>
+        )
       ),
       outcome: (value) => {
         const parsed = stockOpRow.safeParse(value);
@@ -539,7 +615,13 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
             ))}
           </Line>
         ),
-        entryResult
+        entryResult,
+        ({ args }) => (
+          <StockBatch
+            items={args.products ?? args.entry_ids ?? []}
+            show={(item) => <Line>{displayRef(item, args.products ? "products" : "stock_entries")}</Line>}
+          />
+        )
       ),
       outcome: unknownStockOutcome,
     },
@@ -571,8 +653,20 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
             ))}
           </Stack>
         ),
-        entryResult
+        entryResult,
+        ({ args }) => (
+          <StockBatch
+            items={args.items}
+            show={(item) => (
+              <Line>
+                {displayRef(item.entry_id, "stock_entries")}
+                {item.amount != null && ` · Set amount to ${item.amount}`}
+              </Line>
+            )}
+          />
+        )
       ),
+      call: defineReceiptPreview(editArgs, entries, StockEntries),
       outcome: unknownStockOutcome,
     },
   ],
@@ -635,14 +729,23 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
           {args.allow_subproduct_substitution && <Line>Use variant stock if needed</Line>}
         </Stack>
       ),
-      openedReceipt
+      openedReceipt,
+      ({ args }) => (
+        <Stack gap={4}>
+          <Line>
+            {args.amount} stock units of {displayRef(args.productId, "products")}
+          </Line>
+          {args.stock_entry_id && <Line>Exact stock entry · {args.stock_entry_id}</Line>}
+          {args.allow_subproduct_substitution && <Line>Use variant stock if needed</Line>}
+        </Stack>
+      )
     ),
   ],
   [
     "transaction_undo",
     {
       fallbackLabel: "Undo Grocy stock transaction",
-      pane: { opened: undoReview },
+      pane: { collapsed: undoReview, opened: undoReview },
       details: { arguments: undoReview, result: undoReceipt, emptyResult: <Line>Transaction undone</Line> },
     },
   ],

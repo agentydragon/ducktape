@@ -2,10 +2,13 @@
 
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
+import litellm
 import pytest
 import pytest_bazel
+from cdk8s import App, Chart
 from litellm.integrations.otel.model.baggage import DEFAULT_BAGGAGE_METADATA_KEYS, promoted_baggage
 from litellm.integrations.otel.model.config import CaptureMessageContent, ExporterOwner, OpenTelemetryV2Config
 from litellm.integrations.otel.model.metadata import RequestIdentity
@@ -14,22 +17,32 @@ from litellm.litellm_core_utils.litellm_logging import (
     create_dummy_standard_logging_payload,
 )
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
+from litellm.types.llms.openai import AllMessageValues
 
 from cluster.cdk8s.litellm.config import main_proxy_config, model_entry
-from cluster.cdk8s.litellm.proxy import proxy_specs
+from cluster.cdk8s.litellm.proxy import LiteLLMProxy
 from cluster.cdk8s.litellm.secrets import LANGFUSE_EXPORTERS_TEMPLATE
 from cluster.cdk8s.litellm.upstreams import RUGGED_LOCAL_LLM_API_BASE, RUGGED_LOCAL_LLM_KEY_ENV
+from cluster.cdk8s.testing.manifests import find_resource
 from model_catalog.catalog import (
-    OLLAMA_QWEN_IQ4XS_128K,
-    OLLAMA_QWEN_IQ4XS_256K,
     RUGGED_LOCAL_CANDIDATE_ROUTES,
     RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     RUGGED_LOCAL_OPENAI,
     TABBYAPI_QWEN_ABLITERATED,
+    TABBYAPI_QWEN_STOCK,
     TANA_ROUTES,
     Model,
     Route,
 )
+
+
+@pytest.fixture(scope="module")
+def deployment_env(scratch_app_factory: Callable[[], App]) -> dict[str, dict[str, Any]]:
+    chart = Chart(scratch_app_factory(), "litellm", disable_resource_name_hashes=True)
+    LiteLLMProxy(chart, "proxy")
+    deployment = find_resource(chart.to_json(), "Deployment", "litellm", namespace="litellm")
+    [container] = deployment["spec"]["template"]["spec"]["containers"]
+    return {entry["name"]: entry for entry in container["env"]}
 
 
 def test_tana_routes_project_to_the_in_process_provider() -> None:
@@ -41,7 +54,7 @@ def test_tana_routes_project_to_the_in_process_provider() -> None:
     assert any(item["provider"] == "tana" for item in config["litellm_settings"]["custom_provider_map"])
 
 
-def test_rugged_routes_register_and_inject_the_bearer_key() -> None:
+def test_rugged_routes_register_and_inject_the_bearer_key(deployment_env: dict[str, dict[str, Any]]) -> None:
     config = main_proxy_config()
     rugged_routes = (*RUGGED_LOCAL_CANDIDATE_ROUTES, *RUGGED_LOCAL_EXPERIMENTAL_ROUTES)
     configured_routes = {
@@ -53,22 +66,16 @@ def test_rugged_routes_register_and_inject_the_bearer_key() -> None:
         assert params["model"] == f"openai/{route.upstream_model}"
         assert params["api_base"] == RUGGED_LOCAL_LLM_API_BASE
         assert params["api_key"] == f"os.environ/{RUGGED_LOCAL_LLM_KEY_ENV}"
-    [spec] = proxy_specs()
-    assert RUGGED_LOCAL_LLM_KEY_ENV in {entry.name for entry in spec.env}
+    assert RUGGED_LOCAL_LLM_KEY_ENV in deployment_env
 
 
-def test_existing_qwen_model_names_route_to_tabbyapi() -> None:
+def test_stock_qwen_routes_to_tabbyapi() -> None:
     entries = {entry["model_name"]: entry for entry in main_proxy_config()["model_list"]}
-    for family in (OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K):
-        for route in (family.openai, family.native):
-            entry = entries[route.id]
-            assert entry["model_info"]["mode"] == "chat"
-            params = entry["litellm_params"]
-            assert params["model"] == "hosted_vllm/qwen38-exl3-268"
-            assert params["api_base"] == "http://tabbyapi.ollama.svc:5000/v1"
-            assert params["allowed_openai_params"] == ["reasoning_effort"]
-            assert params["use_chat_completions_api"] is True
-            assert "extra_body" not in params
+    params = entries[TABBYAPI_QWEN_STOCK.id]["litellm_params"]
+    assert params["model"] == "openai/qwen38-exl3-268"
+    assert params["api_base"] == "http://tabbyapi-model-switching.ollama.svc:5000/v1"
+    assert params["allowed_openai_params"] == ["reasoning_effort"]
+    assert params["use_chat_completions_api"] is True
 
 
 def test_abliterated_qwen_routes_to_its_own_checkpoint() -> None:
@@ -77,12 +84,37 @@ def test_abliterated_qwen_routes_to_its_own_checkpoint() -> None:
     ]
     assert entry["model_info"] == {"mode": "chat", "supports_function_calling": True}
     assert entry["litellm_params"] == {
-        "model": "hosted_vllm/qwen38-exl3-250-abliterated",
+        "model": "openai/qwen38-exl3-250-abliterated",
         "api_base": "http://tabbyapi-model-switching.ollama.svc:5000/v1",
         "api_key": "tabbyapi",
         "allowed_openai_params": ["reasoning_effort"],
         "use_chat_completions_api": True,
     }
+
+
+def test_tabby_chat_adapter_preserves_message_history() -> None:
+    params = model_entry(TABBYAPI_QWEN_STOCK)["litellm_params"]
+    model, provider, *_ = litellm.get_llm_provider(model=params["model"])
+    config = litellm.ProviderConfigManager.get_provider_chat_config(
+        model=model, provider=litellm.LlmProviders(provider)
+    )
+    assert config is not None
+    messages: list[AllMessageValues] = [
+        {"role": "user", "content": "Check readiness."},
+        {"role": "assistant", "content": "Ready.", "reasoning_content": "replay marker"},
+        {"role": "system", "content": "The environment changed."},
+        {"role": "user", "content": "Check again."},
+    ]
+    request = config.transform_request(
+        model,
+        messages,
+        {"reasoning_effort": "medium"},
+        {"api_base": params["api_base"], "custom_llm_provider": provider},
+        {},
+    )
+    assert [m["role"] for m in request["messages"]] == ["user", "assistant", "system", "user"]
+    assert request["messages"][1]["reasoning_content"] == "replay marker"
+    assert request["reasoning_effort"] == "medium"
 
 
 def test_route_timeouts_are_projected_independently() -> None:
@@ -97,20 +129,19 @@ def test_route_timeouts_are_projected_independently() -> None:
     assert "stream_timeout" not in untimed
 
 
-def test_langfuse_exporter_is_model_call_scoped_and_console_without_secret(monkeypatch: pytest.MonkeyPatch) -> None:
-    [spec] = proxy_specs()
-    env = {entry.name: getattr(entry, "value", None) for entry in spec.env}
+def test_langfuse_exporter_is_model_call_scoped_and_console_without_secret(
+    deployment_env: dict[str, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
     config = main_proxy_config()
-    secret_env = {entry.name for entry in spec.env if getattr(entry, "optional", False)}
-    assert "EXPORTERS" in secret_env
+    assert deployment_env["EXPORTERS"]["valueFrom"]["secretKeyRef"]["optional"] is True
     assert config["litellm_settings"]["callbacks"] == ["otel", "prometheus"]
     assert config["callback_settings"]["otel"]["mapper_names"] == ["langfuse"]
 
     # LiteLLM's own settings loader reads the Deployment's literal env; ESO renders the Go
     # template in EXPORTERS, so any credential string stands in for it here.
-    for name, value in env.items():
-        if value is not None:
-            monkeypatch.setenv(name, value)
+    for name, entry in deployment_env.items():
+        if "value" in entry:
+            monkeypatch.setenv(name, entry["value"])
     without_secret = OpenTelemetryV2Config()
     assert [exporter.kind for exporter in without_secret.exporters] == ["console"]
 

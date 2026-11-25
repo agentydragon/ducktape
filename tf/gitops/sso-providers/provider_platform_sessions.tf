@@ -51,7 +51,7 @@ resource "kubernetes_secret" "platform_sessions_oidc" {
     namespace = "platform-sessions"
   }
   data = {
-    PLATFORM_SESSIONS_ISSUER          = "https://auth.allegedly.works/application/o/platform-sessions/"
+    PLATFORM_SESSIONS_ISSUER          = "https://auth.allegedly.works/application/o/${authentik_application.platform_sessions.slug}/"
     PLATFORM_SESSIONS_CLIENT_ID       = authentik_provider_oauth2.platform_sessions.client_id
     PLATFORM_SESSIONS_CLIENT_SECRET   = authentik_provider_oauth2.platform_sessions.client_secret
     PLATFORM_SESSIONS_SESSION_SECRET  = random_password.platform_sessions_session_secret.result

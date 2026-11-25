@@ -57,8 +57,8 @@ use serde::Serialize;
 use source_identity::SourceUnitId;
 use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
 use spec_modules::{
-    ModuleClaims, ModuleFile, collect_module_files, ensure_unaliased_module_tree, is_module_yaml,
-    module_claims, module_path_from_file, read_module_claims,
+    ModuleClaims, ModuleFile, collect_module_files, ensure_unaliased_module_tree, module_claims,
+    module_path_from_file, read_module_claims,
 };
 use spec_tree::ModuleTreeScope;
 
@@ -90,6 +90,14 @@ pub struct GraphEditArgs {
     pub format: Option<peel::OutputFormat>,
 }
 impl GraphEditArgs {
+    pub(super) fn edits_with_graph(&self) -> bool {
+        self.dependency_graph_path.is_some()
+    }
+
+    pub(super) fn writes_with_graph(&self) -> bool {
+        self.edits_with_graph() && !self.dry_run
+    }
+
     pub fn gate<'a>(
         &'a self,
         source_context: Option<&'a VerifiedGraphSourceContext>,
@@ -494,10 +502,8 @@ pub enum LocalBindingResolution {
 /// How a member's binding claim reached the source unit projection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectedBindingKind {
-    /// A direct local-name pin, retaining its optional source kind.
-    LocalName {
-        source_kind: Option<BindingSourceKind>,
-    },
+    /// A direct local-name pin.
+    LocalName,
     /// A direct import claim. Imports are handled as re-exports and do not
     /// claim a local declaration source unit.
     ImportSpecifier,
@@ -521,7 +527,6 @@ pub struct UnresolvedLocalBindingClaim {
     pub module_path: PathBuf,
     pub claim_name: String,
     pub binding_name: String,
-    pub source_kind: Option<BindingSourceKind>,
     pub resolution: LocalBindingResolution,
 }
 
@@ -638,25 +643,45 @@ impl<'a> LocalBindingIndex<'a> {
     }
 }
 
-/// Project the typed in-memory spec used by edit commands into the canonical
-/// resolver's per-module claim sets.
-pub fn source_claim_sets_from_post_spec(post_spec: &PostEditSpec) -> Vec<SourceClaimSet<'_>> {
-    post_spec
+/// Resolve an edit's module claims and project them onto the same graph.
+pub fn resolve_edit_claims(
+    stderr: &mut (dyn std::io::Write + Send),
+    input: &DependencyGraphInput,
+    dependency_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    post_spec: &PostEditSpec,
+) -> Result<(Vec<ResolvedSourceClaims>, SourceUnitClaimProjection)> {
+    let claim_sets: Vec<_> = post_spec
         .modules
         .iter()
         .map(|module| SourceClaimSet {
             module_path: &module.path,
-            member_selectors: &module.claims.member_selectors,
-            source_matches: &module.claims.source_matches,
-            anonymous_selectors: &module.claims.anonymous_selectors,
+            module: &module.claims,
         })
-        .collect()
+        .collect();
+    let resolved = command_diagnostics::run(stderr, |diagnostics| {
+        resolve_source_claims(
+            anonymous_resolution::SourceClaimsContext {
+                graph: input.report(),
+                dependency_graph_path,
+                modules_root,
+                source_root,
+                source_context,
+                diagnostics,
+            },
+            &claim_sets,
+        )
+    })?;
+    let projection = project_source_unit_claims(input, post_spec, &resolved)?;
+    Ok((resolved, projection))
 }
 
 /// Resolve typed binding claims to source unit identities. Direct imports remain
 /// distinct from local declarations, and repeated local declarations are
 /// joined only when `dependency_graph.json.gz` carries matching `CoDeclaration` edges.
-pub fn project_source_unit_claims(
+fn project_source_unit_claims(
     input: &DependencyGraphInput,
     post_spec: &PostEditSpec,
     resolved_claims: &[ResolvedSourceClaims],
@@ -704,14 +729,11 @@ pub fn project_source_unit_claims(
                         &module.path,
                         claim_name,
                         &binding.name,
-                        binding.kind,
                         resolution.clone(),
                     );
                     module_projection.members.push(ProjectedMemberClaim {
                         binding_name: binding.name.clone(),
-                        kind: ProjectedBindingKind::LocalName {
-                            source_kind: binding.kind,
-                        },
+                        kind: ProjectedBindingKind::LocalName,
                         resolution: Some(resolution),
                     });
                 }
@@ -730,7 +752,6 @@ pub fn project_source_unit_claims(
                         &module.path,
                         claim_name,
                         binding_name,
-                        None,
                         resolution.clone(),
                     );
                     module_projection.members.push(ProjectedMemberClaim {
@@ -752,7 +773,6 @@ pub fn project_source_unit_claims(
                 &module.path,
                 "source-backed claim",
                 binding_name,
-                None,
                 resolution,
             );
         }
@@ -804,7 +824,6 @@ fn record_local_binding_claim(
     module_path: &Path,
     claim_name: &str,
     binding_name: &str,
-    source_kind: Option<BindingSourceKind>,
     resolution: LocalBindingResolution,
 ) {
     match &resolution {
@@ -820,7 +839,6 @@ fn record_local_binding_claim(
                     module_path: module_path.to_path_buf(),
                     claim_name: claim_name.to_string(),
                     binding_name: binding_name.to_string(),
-                    source_kind,
                     resolution: resolution.clone(),
                 });
         }
@@ -918,8 +936,9 @@ pub fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<
             continue;
         }
         modules.push(PostEditModule {
-            path: file.clone(),
-            claims: read_gate_claims(&file)?,
+            claims: read_module_claims(&file)
+                .with_context(|| format!("reading module {}", file.display()))?,
+            path: file,
         });
     }
     Ok(PostEditSpec { modules })
@@ -955,15 +974,6 @@ pub fn post_edit_spec_from_docs(
     Ok(PostEditSpec { modules })
 }
 
-/// Parse a spec module YAML and return the source unit claims its
-/// `members:` and `anonymous_statements:` entries declare.
-pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
-    if !is_module_yaml(path) {
-        return Ok(ModuleClaims::default());
-    }
-    read_module_claims(path).with_context(|| format!("reading module {}", path.display()))
-}
-
 fn gate_post_edit_assignment_with_expected(
     stderr: &mut (dyn std::io::Write + Send),
     dependency_graph_path: &Path,
@@ -981,21 +991,15 @@ fn gate_post_edit_assignment_with_expected(
     // source units they claim. A claim the gate cannot resolve (missing chunk
     // source, unmatched/ambiguous selector) is a hard error — the claimed
     // source unit must never silently fall to residual.
-    let claim_sets = source_claim_sets_from_post_spec(post_spec);
-    let resolved_claims = command_diagnostics::run(stderr, |diagnostics| {
-        resolve_source_claims(
-            anonymous_resolution::SourceClaimsContext {
-                graph: dependency_graph_report,
-                dependency_graph_path,
-                modules_root,
-                source_root: source_lookup.root,
-                source_context: source_lookup.verified,
-                diagnostics,
-            },
-            &claim_sets,
-        )
-    })?;
-    let claim_projection = project_source_unit_claims(input, post_spec, &resolved_claims)?;
+    let (resolved_claims, claim_projection) = resolve_edit_claims(
+        stderr,
+        input,
+        dependency_graph_path,
+        modules_root,
+        source_lookup.root,
+        source_lookup.verified,
+        post_spec,
+    )?;
     reject_unresolved_projected_claims(&claim_projection)?;
     let scope = match &expected {
         ExpectedPostEditClaims::SourceUnits { scope, .. } => *scope,
@@ -1074,21 +1078,15 @@ fn gate_post_edit_assignment_with_expected(
                 .is_ok_and(|path| scope.contains(path))
         });
     }
-    let before_claim_sets = source_claim_sets_from_post_spec(&before_spec);
-    let before_resolved = command_diagnostics::run(stderr, |diagnostics| {
-        resolve_source_claims(
-            anonymous_resolution::SourceClaimsContext {
-                graph: dependency_graph_report,
-                dependency_graph_path,
-                modules_root,
-                source_root: source_lookup.root,
-                source_context: source_lookup.verified,
-                diagnostics,
-            },
-            &before_claim_sets,
-        )
-    })?;
-    let before_projection = project_source_unit_claims(input, &before_spec, &before_resolved)?;
+    let (_, before_projection) = resolve_edit_claims(
+        stderr,
+        input,
+        dependency_graph_path,
+        modules_root,
+        source_lookup.root,
+        source_lookup.verified,
+        &before_spec,
+    )?;
     // A repair may remove unresolved or duplicate baseline claims. Only their
     // resolved unit coverage is relevant here; the post-edit claims above must
     // still resolve uniquely and completely.

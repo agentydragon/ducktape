@@ -1,15 +1,8 @@
-use log::info;
-use rust_decimal::prelude::*;
+use super::decimal_log;
+use rust_decimal::Decimal;
 use rust_decimal_macros::*;
 
-// TODO: deduplicate
-fn decimal_log(x: Decimal) -> Decimal {
-    info!("ln({x})");
-    let x = x.to_f64().unwrap();
-    Decimal::from_f64(x.ln()).unwrap()
-}
-
-pub fn years_until_saved_up_exp(
+pub(super) fn years_until_saved_up_exp(
     total: Decimal,
     yearly_yield: Decimal,
     target_number: Decimal,
@@ -35,7 +28,7 @@ pub fn years_until_saved_up_exp(
 }
 
 // Calculates how long a given amount will last, in years.
-pub fn get_investment_durability(
+pub(super) fn get_investment_durability(
     total: Decimal,
     yearly_yield: Decimal,
     monthly_costs: Decimal,

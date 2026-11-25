@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
-import { create, fromJson, toJson } from "@bufbuild/protobuf";
+import { create, fromJson } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
 import {
+  batchGetDispatches,
   interruptTurn,
   changeModel,
   changeReasoningEffort,
@@ -13,11 +14,11 @@ import {
   threadEvidence,
   threadNativeFrames,
   threadObservations,
-  listThreadWindow,
+  listThreadMetadata,
+  selectThreadWindow,
 } from "./client";
 import { SessionSchema, DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import {
-  BatchGetSessionSummariesResponseSchema,
   FeedStatus,
   EntityKeySchema,
   ReadEntityEvidenceRequestSchema,
@@ -28,7 +29,7 @@ import {
   SessionSummarySchema,
 } from "../../../history_service/api/history/history_service_pb";
 import { Harness, HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
-import { ListThreadMetadataResponseSchema, ThreadMetadataSchema } from "../../app_service_pb";
+import { ThreadMetadataSchema } from "../../app_service_pb";
 
 function watchedSession(id = "thread-id", name = "sandbox", uid = "sandbox-uid") {
   return create(SessionSchema, {
@@ -38,12 +39,14 @@ function watchedSession(id = "thread-id", name = "sandbox", uid = "sandbox-uid")
   });
 }
 
+const listing = { limit: 20, search: null, includeArchived: false };
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
-it("keeps app metadata and History SessionSummary in their generated message shapes", async () => {
+it("keeps app metadata and History SessionSummary in their generated message shapes", () => {
   const metadata = create(ThreadMetadataSchema, {
     threadId: "thread-id",
     createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
@@ -52,8 +55,6 @@ it("keeps app metadata and History SessionSummary in their generated message sha
   });
   const summary = create(SessionSummarySchema, {
     sessionId: "thread-id",
-    foldedThrough: 9007199254740993n,
-    feedStatus: FeedStatus.UNSPECIFIED,
     sandbox: { name: "sandbox", uid: "sandbox-uid" },
     attached: {
       sessionId: "thread-id",
@@ -71,47 +72,41 @@ it("keeps app metadata and History SessionSummary in their generated message sha
       launchOutcome: LaunchOutcome.STARTED,
     },
   });
-  const requests: Request[] = [];
-  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = new Request(input, init);
-    requests.push(request);
-    return Promise.resolve(
-      request.method === "GET"
-        ? Response.json(
-            toJson(ListThreadMetadataResponseSchema, create(ListThreadMetadataResponseSchema, { threads: [metadata] }))
-          )
-        : Response.json(
-            toJson(
-              BatchGetSessionSummariesResponseSchema,
-              create(BatchGetSessionSummariesResponseSchema, { summaries: [summary] })
-            )
-          )
-    );
-  });
 
-  const result = await listThreadWindow({ limit: 1, search: null, includeArchived: false }, null, [watchedSession()]);
+  const result = selectThreadWindow(
+    { ...listing, limit: 1 },
+    null,
+    [watchedSession()],
+    new Map([["thread-id", metadata]]),
+    new Map([["thread-id", summary]])
+  );
 
   expect(result.threads).toEqual([{ metadata, summary, session: watchedSession() }]);
-  expect(result.threads[0]?.summary.foldedThrough).toBe(9007199254740993n);
-  expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
-    "/upstream/app/v1/threads",
-    "/upstream/history/v1/sessions:batchGetSummaries",
-  ]);
 });
 
-it("filters Sandbox membership from Dispatcher while reading App metadata without a History filter", async () => {
+it("filters Sandbox membership from Dispatcher Sessions", () => {
+  const sessions = [
+    watchedSession("thread-id", "sandbox", "opaque-uid"),
+    watchedSession("other-thread-id", "other-sandbox", "other-uid"),
+  ];
+  const result = selectThreadWindow({ ...listing, sandboxUID: "opaque-uid" }, null, sessions, new Map(), new Map());
+  expect(result.threads.map((thread) => thread.metadata.threadId)).toEqual(["thread-id"]);
+});
+
+it("reads App metadata without a Sandbox filter", async () => {
   const requests: Request[] = [];
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = new Request(input, init);
-    requests.push(request);
+    requests.push(new Request(input, init));
     return Promise.resolve(
-      Response.json(request.method === "GET" ? { threads: [], archivedCount: 0 } : { summaries: [] })
+      Response.json({
+        threads: [{ threadId: "thread-id", createdAt: "2026-01-01T00:00:00Z", name: "Generated name" }],
+        archivedCount: 0,
+      })
     );
   });
-  await listThreadWindow({ limit: 200, search: null, includeArchived: false, sandboxUID: "opaque-uid" }, null, [
-    watchedSession("thread-id", "sandbox", "opaque-uid"),
-  ]);
-  expect(requests).toHaveLength(2);
+  const metadata = await listThreadMetadata();
+  expect(metadata.get("thread-id")?.name).toBe("Generated name");
+  expect(requests).toHaveLength(1);
   const url = new URL(requests[0]!.url);
   expect(url.pathname).toBe("/upstream/app/v1/threads");
   expect(url.searchParams.get("sandbox_uid")).toBeNull();
@@ -119,67 +114,46 @@ it("filters Sandbox membership from Dispatcher while reading App metadata withou
 });
 
 it.each([
-  { label: "a retained harness", historicalHarness: "HARNESS_CLAUDE", expected: Harness.CLAUDE },
-  { label: "no retained harness provenance", historicalHarness: undefined, expected: Harness.UNSPECIFIED },
-])("uses $label when archived History has no live placement", async ({ historicalHarness, expected }) => {
-  vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
-    const path = new URL(input instanceof Request ? input.url : input.toString()).pathname;
-    if (path === "/upstream/app/v1/threads") {
-      return Promise.resolve(
-        Response.json({
-          threads: [{ threadId: "archived-session", createdAt: "2026-11-04T00:00:00Z", archived: true }],
-          archivedCount: 1,
-        })
-      );
-    }
-    if (path === "/upstream/history/v1/sessions:batchGetSummaries") {
-      return Promise.resolve(
-        Response.json({
-          summaries: [
-            {
-              sessionId: "archived-session",
-              foldedThrough: "0",
-              feedStatus: "FEED_STATUS_ENDED",
-              sandbox: { name: "archived-sandbox", uid: "archived-sandbox-uid" },
-              attached: {
-                spec: { model: "archived-model" },
-                historicalHarness,
-                harnessState: "HARNESS_STATE_STOPPED",
-                setupState: "SETUP_STATE_NOT_REQUIRED",
-                launchOutcome: "LAUNCH_OUTCOME_STARTED",
-              },
-            },
-          ],
-        })
-      );
-    }
-    throw new Error(`Unexpected request: ${path}`);
+  { label: "a retained harness", historicalHarness: Harness.CLAUDE },
+  { label: "no retained harness provenance", historicalHarness: Harness.UNSPECIFIED },
+])("uses $label when archived History has no live placement", ({ historicalHarness }) => {
+  const metadata = create(ThreadMetadataSchema, {
+    threadId: "archived-session",
+    createdAt: timestampFromDate(new Date("2026-11-04T00:00:00Z")),
+    archived: true,
+  });
+  const summary = create(SessionSummarySchema, {
+    sessionId: "archived-session",
+    feedStatus: FeedStatus.ENDED,
+    sandbox: { name: "archived-sandbox", uid: "archived-sandbox-uid" },
+    attached: {
+      spec: { model: "archived-model" },
+      historicalHarness,
+      harnessState: HarnessState.STOPPED,
+      setupState: SetupState.NOT_REQUIRED,
+      launchOutcome: LaunchOutcome.STARTED,
+    },
   });
 
-  const result = await listThreadWindow({ limit: 20, search: null, includeArchived: true }, null, [
-    watchedSession("archived-session", "archived-sandbox", "archived-sandbox-uid"),
-  ]);
+  const result = selectThreadWindow(
+    { ...listing, includeArchived: true },
+    null,
+    [watchedSession("archived-session", "archived-sandbox", "archived-sandbox-uid")],
+    new Map([["archived-session", metadata]]),
+    new Map([["archived-session", summary]])
+  );
   expect(result.threads).toHaveLength(1);
-  expect(result.threads[0]?.summary.attached?.historicalHarness).toBe(expected);
+  expect(result.threads[0]?.summary.attached?.historicalHarness).toBe(historicalHarness);
 });
 
-it("lists a Dispatcher Session without History or App metadata and excludes History-only metadata", async () => {
+it("lists a Dispatcher Session without History or App metadata and excludes History-only metadata", () => {
   const session = watchedSession("test-unrecorded-session");
-  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = new Request(input, init);
-    return Promise.resolve(
-      Response.json(
-        request.method === "GET"
-          ? {
-              threads: [
-                { threadId: "test-history-only", createdAt: "2026-01-01T00:00:00Z", name: "History-only thread" },
-              ],
-            }
-          : { summaries: [] }
-      )
-    );
+  const historyOnly = create(ThreadMetadataSchema, {
+    threadId: "test-history-only",
+    createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
+    name: "History-only thread",
   });
-  const result = await listThreadWindow({ limit: 20, search: null, includeArchived: false }, null, [session]);
+  const result = selectThreadWindow(listing, null, [session], new Map([["test-history-only", historyOnly]]), new Map());
   expect(result.threads.map((thread) => thread.metadata.threadId)).toEqual([session.sessionId]);
   expect(result.threads[0]?.session).toEqual(session);
   expect(result.threads[0]?.summary.attached).toBeUndefined();
@@ -590,4 +564,84 @@ it("retries the same Session command and payload after a lost transport reply", 
     expect(new URL(request.url).pathname).toBe("/upstream/dispatcher/v1/sessions/thread:submitInput");
     expect(await request.json()).toEqual(input);
   }
+});
+
+const batchSessionId = "5c35dc98-6f98-45f4-a536-506abe79c8af";
+const legacyReceipt = {
+  commandId: "legacy",
+  sessionId: batchSessionId,
+  operation: "OPERATION_SUBMIT_INPUT",
+  state: "DELIVERY_STATE_UNKNOWN",
+  reason: "Original reason from the retained deletion record.",
+  receiptVersion: "9007199254740993",
+};
+
+it("reads current receipts, legacy deletion receipts, and misses in exact command ID order", async () => {
+  const ids = ["current", "legacy", "missing"];
+  const current = { ...legacyReceipt, commandId: "current", sandbox: "demo", sandboxUid: "sandbox-id" };
+  const fetch = vi.fn((input: RequestInfo | URL) => {
+    const url = new URL(String(input), window.location.href);
+    expect(url.pathname).toBe(`/upstream/dispatcher/v1/sessions/${batchSessionId}/dispatches:batchGet`);
+    expect(url.searchParams.getAll("commandIds")).toEqual(ids);
+    return Promise.resolve(
+      Response.json({
+        results: [
+          { commandId: "current", dispatch: current },
+          { commandId: "legacy", legacyDeletionReceipt: legacyReceipt },
+          { commandId: "missing", notFound: {} },
+        ],
+      })
+    );
+  });
+  vi.stubGlobal("fetch", fetch);
+  const results = await batchGetDispatches(batchSessionId, ids, new AbortController().signal);
+  expect(results.map((row) => [row.commandId, row.result.case])).toEqual([
+    ["current", "dispatch"],
+    ["legacy", "legacyDeletionReceipt"],
+    ["missing", "notFound"],
+  ]);
+  expect(results[1]?.result.value).toMatchObject({
+    reason: legacyReceipt.reason,
+    receiptVersion: 9007199254740993n,
+  });
+  expect(fetch).toHaveBeenCalledOnce();
+});
+
+it.each([
+  { result: {}, error: "Missing Dispatcher result" },
+  {
+    result: { legacyDeletionReceipt: { ...legacyReceipt, receiptVersion: undefined } },
+    error: "Dispatcher omitted a receipt revision",
+  },
+  {
+    result: { legacyDeletionReceipt: { ...legacyReceipt, sessionId: "another-session" } },
+    error: "mismatched Dispatcher destination or command",
+  },
+  {
+    result: { legacyDeletionReceipt: { ...legacyReceipt, sandbox: "demo", sandboxUid: "sandbox-id" } },
+    error: "Invalid legacy deletion receipt",
+  },
+  {
+    result: { legacyDeletionReceipt: { ...legacyReceipt, commandId: "another-command" } },
+    error: "mismatched Dispatcher destination or command",
+  },
+])("rejects a batch whose selected deletion receipt is unconfirmed ($error)", async ({ result, error }) => {
+  vi.stubGlobal("fetch", () => Promise.resolve(Response.json({ results: [{ commandId: "legacy", ...result }] })));
+  await expect(batchGetDispatches(batchSessionId, ["legacy"], new AbortController().signal)).rejects.toThrow(error);
+});
+
+it("splits a receipt read when the complete batch exceeds the server's byte limit", async () => {
+  const seen: string[][] = [];
+  vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+    const ids = new URL(String(input), window.location.href).searchParams.getAll("commandIds");
+    seen.push(ids);
+    return Promise.resolve(
+      ids.length > 1
+        ? Response.json({ code: 8, message: "Dispatch batch exceeds 4 MiB" }, { status: 429 })
+        : Response.json({ results: ids.map((commandId) => ({ commandId, notFound: {} })) })
+    );
+  });
+  const results = await batchGetDispatches(batchSessionId, ["first", "second"], new AbortController().signal);
+  expect(results.map((row) => row.commandId)).toEqual(["first", "second"]);
+  expect(seen).toEqual([["first", "second"], ["first"], ["second"]]);
 });

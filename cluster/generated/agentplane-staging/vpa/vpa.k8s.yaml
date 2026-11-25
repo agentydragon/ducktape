@@ -8,6 +8,7 @@ spec:
     containerPolicies:
       - containerName: actions
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
@@ -21,7 +22,7 @@ spec:
     kind: Deployment
     name: actions
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -33,6 +34,7 @@ spec:
     containerPolicies:
       - containerName: app
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
@@ -46,7 +48,51 @@ spec:
     kind: Deployment
     name: app
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: central-sampler
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: central-sampler
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: central-sampler
+  updatePolicy:
+    updateMode: Recreate
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: egress
+  namespace: agentplane-staging
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: proxy
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: egress
+  updatePolicy:
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -58,10 +104,9 @@ spec:
     containerPolicies:
       - containerName: electric
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          memory: 576Mi
         minAllowed:
           memory: 448Mi
       - containerName: "*"
@@ -71,7 +116,8 @@ spec:
     kind: Deployment
     name: electric
   updatePolicy:
-    updateMode: Initial
+    minReplicas: 1
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -83,6 +129,7 @@ spec:
     containerPolicies:
       - containerName: environments
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
@@ -96,7 +143,7 @@ spec:
     kind: Deployment
     name: environments
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -108,12 +155,9 @@ spec:
     containerPolicies:
       - containerName: frontend
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          memory: 40Mi
-        minAllowed:
-          memory: 32Mi
       - containerName: "*"
         mode: "Off"
   targetRef:
@@ -133,6 +177,7 @@ spec:
     containerPolicies:
       - containerName: history-service
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
@@ -146,7 +191,7 @@ spec:
     kind: Deployment
     name: history-service
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -158,6 +203,7 @@ spec:
     containerPolicies:
       - containerName: ingress
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
@@ -171,7 +217,7 @@ spec:
     kind: Deployment
     name: llm-ingress
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -183,6 +229,7 @@ spec:
     containerPolicies:
       - containerName: mcp-edge
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
@@ -196,7 +243,7 @@ spec:
     kind: Deployment
     name: mcp-edge
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -208,6 +255,7 @@ spec:
     containerPolicies:
       - containerName: notifications
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
@@ -221,7 +269,7 @@ spec:
     kind: Deployment
     name: notifications
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -233,6 +281,7 @@ spec:
     containerPolicies:
       - containerName: policy-controller
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
@@ -246,7 +295,7 @@ spec:
     kind: Deployment
     name: policy-controller
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -258,6 +307,7 @@ spec:
     containerPolicies:
       - containerName: sessions
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
@@ -271,4 +321,26 @@ spec:
     kind: Deployment
     name: sessions
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: haku-ci-egress
+  namespace: haku-ci
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: egress-sidecar
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: haku-ci-egress
+  updatePolicy:
+    updateMode: Recreate

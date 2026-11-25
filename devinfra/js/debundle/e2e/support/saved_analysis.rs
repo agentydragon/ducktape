@@ -137,6 +137,12 @@ impl Staged {
         self.run_with_graphs(true, extra)
     }
 
+    pub fn run_saved(&self, extra: &[&str]) -> StagedInvocation {
+        let mut args = extra.to_vec();
+        args.extend(["--analysis", path(&self.artifact)]);
+        self.run(&args)
+    }
+
     pub fn run_without_graphs(&self, extra: &[&str]) -> StagedInvocation {
         self.run_with_graphs(false, extra)
     }
@@ -296,74 +302,6 @@ impl TreeStaged {
         )
     }
 
-    pub fn apply_args(
-        &self,
-        batch: &Path,
-        analysis: Option<&Path>,
-        dry_run: bool,
-        complete_context: bool,
-        partial_context_without_analysis: bool,
-        output_root: &Path,
-    ) -> Vec<String> {
-        let root = self.root();
-        let mut args = vec![
-            "modules".to_string(),
-            "apply".to_string(),
-            "--assignments".to_string(),
-            path(batch).to_string(),
-            "--modules".to_string(),
-            path(&self.modules).to_string(),
-            "--graph".to_string(),
-            path(&self.graph).to_string(),
-            "--source-root".to_string(),
-            path(&root.join("snapshot")).to_string(),
-            "--tree-config".to_string(),
-            path(&self.config).to_string(),
-            "--format".to_string(),
-            "json".to_string(),
-        ];
-        if dry_run {
-            args.push("--dry-run".to_string());
-        }
-        if let Some(analysis) = analysis {
-            if complete_context {
-                args.extend([
-                    "--tree-vendor-marks".to_string(),
-                    path(&self.vendor_marks).to_string(),
-                    "--tree-source-root".to_string(),
-                    path(root).to_string(),
-                    "--out-root".to_string(),
-                    path(output_root).to_string(),
-                ]);
-            }
-            args.extend(["--analysis".to_string(), path(analysis).to_string()]);
-        } else if partial_context_without_analysis {
-            args.extend(["--tree-source-root".to_string(), path(root).to_string()]);
-        }
-        args
-    }
-
-    pub fn apply(
-        &self,
-        batch: &Path,
-        analysis: Option<&Path>,
-        dry_run: bool,
-        complete_context: bool,
-        partial_context_without_analysis: bool,
-    ) -> StagedInvocation {
-        let outputs = self.run.workspace().child();
-        let output_root = outputs.path().join("out");
-        let args = self.apply_args(
-            batch,
-            analysis,
-            dry_run,
-            complete_context,
-            partial_context_without_analysis,
-            &output_root,
-        );
-        StagedInvocation::tree_command(&args, outputs)
-    }
-
     pub fn run_with_analysis(&self, analysis: &Path, emit_on_rejection: bool) -> StagedInvocation {
         let outputs = self.run.workspace().child();
         let output_root = outputs.path().join("out");
@@ -497,6 +435,26 @@ pub fn module_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
         .into_iter()
         .map(|(relative, bytes)| (root.join(relative), bytes))
         .collect()
+}
+
+/// Compare the preview against the original staged run, which also produced the graph.
+#[track_caller]
+pub fn assert_candidate_changes_emitted_order(assessment: &Value, staged: &TreeStaged) {
+    assert_ok(&staged.run.result, "baseline staged run");
+    let baseline = read_effect_report(&staged.run.out_root);
+    assert_eq!(baseline["swapped_pairs"], 0, "{baseline:#}");
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    assert_ne!(
+        assessment["emitted_order"], baseline["emitted_order"],
+        "{assessment:#}"
+    );
 }
 
 pub fn assert_candidate_assessment_matches_run(
@@ -800,10 +758,7 @@ pub fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
             "explicit stream must exist before staged comparison"
         );
     }
-    let artifact = path(&staged.artifact).to_owned();
-    let mut staged_args = run_args.to_vec();
-    staged_args.extend(["--analysis", artifact.as_str()]);
-    let from_artifact = staged.run(&staged_args);
+    let from_artifact = staged.run_saved(run_args);
     assert_eq!(
         direct.result.status.code(),
         from_artifact.result.status.code()
@@ -817,7 +772,7 @@ pub fn assert_staged_entry_output(opts: FixtureOpts<'_>, expected: &str) {
     let (staged, _fixture) = staged(opts);
     assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
     let fresh = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     for invocation in [&fresh, &saved] {
         assert_ok(&invocation.result, "fresh/saved run");
         assert_node_output(

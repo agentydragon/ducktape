@@ -41,6 +41,12 @@ consider keeping heavy tools in an immutable disk. In every case,
 preserve the paused disk/RAM boundary, durable manifest commit and identity fencing. The
 [system-test scenario](../system_tests/scenarios/firecracker.py) exercises the current CI guest.
 
+Measure whether a Firecracker writer using bounded, aligned direct I/O to a fresh memory
+file lowers the second checkpoint's cgroup memory peak. The pinned Firecracker API uses
+buffered capture. Verify direct I/O support on the staging state filesystem, checkpoint
+latency, successful repeated restore and the existing durable generation commit before
+reducing the launcher limit.
+
 ## Explore keeping control services outside Firecracker guests
 
 Consider keeping the runner/Environment Runtime, Codex exec-server and other control services

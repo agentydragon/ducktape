@@ -21,6 +21,7 @@ pkgs.runCommand "environment-tools-check"
     chmod u+w .pre-commit-config.yaml ruff.toml
 
     bbr --help
+    bbapi --help
     pre-commit --version
     printf 'answer = 42\n' > probe.py
     printf '# Probe\n' > probe.md

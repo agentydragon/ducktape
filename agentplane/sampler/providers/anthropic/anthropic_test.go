@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture"
 	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
 )
 
@@ -78,7 +78,7 @@ func TestCompactionFailureDiagnosticsKeepTransientEvents(t *testing.T) {
 	}
 	events := []json.RawMessage{json.RawMessage(`{"type":"message_start","provider_event_marker":"fixture"}`)}
 	plan := &CompactionPlan{original: &Context{}}
-	_, err := plan.Apply(nil, audit, events)
+	_, err := plan.Apply(nil, audit, events, "fixture-compaction")
 	var known *protocol.KnownFailureError
 	if !errors.As(err, &known) {
 		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
@@ -93,22 +93,29 @@ func TestCompactionFailureDiagnosticsKeepTransientEvents(t *testing.T) {
 
 func TestSuccessfulCompactionAuditKeepsReplacementWithoutEvents(t *testing.T) {
 	original := &Context{}
-	if err := original.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("original context ", 40)}}); err != nil {
+	if err := original.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("original context ", 40)}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	plan := &CompactionPlan{original: original}
+	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, ObjectID: "session-fixture"}
+	if err := original.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "kept environment"}}, false, origin); err != nil {
+		t.Fatal(err)
+	}
+	plan := &CompactionPlan{original: original, cut: 1}
 	audit := &Audit{
 		Response:   json.RawMessage(`{"id":"msg_fixture","usage":{"input_tokens":11,"output_tokens":6,"provider_usage":{"cache":3}},"provider_metadata":{"opaque_sequence":9007199254740993}}`),
 		HTTPStatus: 200, ProviderRequestID: "req_fixture",
 	}
 	events := []json.RawMessage{json.RawMessage(`{"type":"message_start","provider_event_marker":"fixture"}`)}
 	records := []json.RawMessage{json.RawMessage(`{"id":"msg_compacted","type":"message","role":"assistant","content":[{"type":"compaction","content":"summary","signature":"sig_fixture"}],"stop_reason":"compaction"}`)}
-	replacement, err := plan.Apply(records, audit, events)
+	replacement, err := plan.Apply(records, audit, events, "fixture-compaction")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if audit.Replacement != replacement {
 		t.Fatal("successful compaction did not retain its replacement context in the audit")
+	}
+	if replacement.OriginAt(1) != origin || replacement.OriginAt(0) != (protocol.RecordOrigin{Kind: protocol.RecordOriginCompaction, SourceID: "fixture-compaction"}) {
+		t.Fatal("retained environment lost its origin at the replacement ordinal")
 	}
 	got := string(wirefixture.MustMarshalJSON(t, audit))
 	if strings.Contains(got, `"events"`) {
@@ -128,12 +135,12 @@ func TestBuildAnthropicRequestConvertsImagesAndConfiguresCacheAndEffort(t *testi
 		t.Fatal(err)
 	}
 	image := json.RawMessage(`{"type":"input_image","image_url":"data:image/png;base64,aGVsbG8="}`)
-	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}); err != nil {
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	restoredEffort := "high"
 	conversation.PendingEffort = &restoredEffort
-	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "next turn"}}); err != nil {
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "next turn"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	body, err := testBuildRequest(RequestParams{Context: conversation, Effort: "high"}, config, "msg_previous")
@@ -238,7 +245,7 @@ func TestAnthropicHistoryObservationsUseNativeBlockIdentity(t *testing.T) {
 
 func TestBuildAnthropicRequestAcceptsStoredTextMessage(t *testing.T) {
 	conversation := &Context{}
-	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "stored conversation text"}}); err != nil {
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "stored conversation text"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	body, err := testBuildRequest(RequestParams{Context: conversation}, testConfig(), "")
@@ -314,13 +321,13 @@ func TestAnthropicContextUsesNativeRecordsForToolCallsAndResults(t *testing.T) {
 	if err != nil || len(records) != 1 {
 		t.Fatalf("tool call created a duplicate canonical record: records=%d err=%v", len(records), err)
 	}
-	if err := context.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "done"}}); err != nil {
+	if err := context.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "done"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := context.CheckSettled(); err != nil {
 		t.Fatalf("tool result did not settle the call: %v", err)
 	}
-	if err := context.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "later"}}); err != nil {
+	if err := context.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "later"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	records, err = context.Records()
@@ -355,7 +362,7 @@ func TestAnthropicPendingEffortRestoresAfterNewUserAndPreservesSignedPrefix(t *t
 	thinking := json.RawMessage(`{"type":"thinking","thinking":"keep this signed prefix","signature":"sig_fixture","unknown_block_field":{"keep":true}}`)
 	message := json.RawMessage(`{"id":"msg_signed","type":"message","role":"assistant","content":[` + string(thinking) + `],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":5,"unknown_usage":17},"provider_unknown":{"keep":"yes"}}`)
 	effort := "high"
-	context := &Context{messages: []json.RawMessage{message}, PendingEffort: &effort}
+	context := &Context{messages: []protocol.ContextRecord{{Native: message}}, PendingEffort: &effort}
 	wire, err := json.Marshal(context)
 	if err != nil {
 		t.Fatal(err)
@@ -367,21 +374,21 @@ func TestAnthropicPendingEffortRestoresAfterNewUserAndPreservesSignedPrefix(t *t
 	if restored.PendingEffort == nil || *restored.PendingEffort != "high" {
 		t.Fatalf("pending effort was not persisted: %s", wire)
 	}
-	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "new turn"}}); err != nil {
+	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "new turn"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if restored.PendingEffort != nil || len(restored.messages) != 3 {
 		t.Fatalf("restoration did not activate after the user message: %+v", restored)
 	}
 	var prefix map[string]json.RawMessage
-	if err := json.Unmarshal(restored.messages[0], &prefix); err != nil {
+	if err := json.Unmarshal(restored.messages[0].Native, &prefix); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(prefix["content"], []byte(`"signature":"sig_fixture"`)) ||
 		!bytes.Contains(prefix["content"], []byte(`"unknown_block_field":{"keep":true}`)) ||
-		!bytes.Contains(restored.messages[0], []byte(`"unknown_usage":17`)) ||
-		!bytes.Contains(restored.messages[0], []byte(`"provider_unknown":{"keep":"yes"}`)) {
-		t.Fatalf("signed prefix or provider metadata changed: %s", restored.messages[0])
+		!bytes.Contains(restored.messages[0].Native, []byte(`"unknown_usage":17`)) ||
+		!bytes.Contains(restored.messages[0].Native, []byte(`"provider_unknown":{"keep":"yes"}`)) {
+		t.Fatalf("signed prefix or provider metadata changed: %s", restored.messages[0].Native)
 	}
 	var control struct {
 		Role         string `json:"role"`
@@ -390,7 +397,7 @@ func TestAnthropicPendingEffortRestoresAfterNewUserAndPreservesSignedPrefix(t *t
 			Effort string `json:"effort"`
 		} `json:"output_config"`
 	}
-	if err := json.Unmarshal(restored.messages[2], &control); err != nil {
+	if err := json.Unmarshal(restored.messages[2].Native, &control); err != nil {
 		t.Fatal(err)
 	}
 	if control.Role != "system" || len(control.Content) != 0 || control.OutputConfig.Effort != "high" {
@@ -492,58 +499,40 @@ func TestAnthropicRetryableHTTPStatusesCarryRetryAfter(t *testing.T) {
 }
 
 func TestAnthropicSemanticProgressResetsIdleBudget(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
-		flusher := w.(http.Flusher)
-		write := func(payload string) {
-			_, _ = io.WriteString(w, "data: "+payload+"\n\n")
-			flusher.Flush()
-		}
-		write(`{"type":"message_start","message":{"id":"msg_progress","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
-		write(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
+	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, r *http.Request) {
+		stream.Data(`{"type":"message_start","message":{"id":"msg_progress","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+		stream.Data(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
 		for range 5 {
 			select {
 			case <-r.Context().Done():
 				return
 			case <-time.After(20 * time.Millisecond):
 			}
-			write(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"piece"}}`)
+			stream.Data(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"piece"}}`)
 		}
-		write(`{"type":"content_block_stop","index":0}`)
-		write(`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`)
-		write(`{"type":"message_stop"}`)
-	}))
-	defer server.Close()
-
-	var progress atomic.Int32
-	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 70*time.Millisecond, func(context.Context) error {
-		progress.Add(1)
-		return nil
+		stream.Data(`{"type":"content_block_stop","index":0}`)
+		stream.Data(`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`)
+		stream.Data(`{"type":"message_stop"}`)
 	})
-	defer stop()
-	recorder := &anthropicEvidenceRecorder{}
+
+	ctx, hooks, progress := providerfixture.IdleBudget(t, 70*time.Millisecond)
+	recorder := &providerfixture.EvidenceRecorder{}
 	response, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), 250*time.Millisecond), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response == nil || progress.Load() < 5 {
-		t.Fatalf("response=%v, durable semantic progress=%d", response, progress.Load())
+	if response == nil || recorder.SemanticProgress != 10 || progress.Load() != 10 {
+		t.Fatalf("response=%v, semantic progress writes=%d, idle callbacks=%d", response, recorder.SemanticProgress, progress.Load())
 	}
-	if !recorder.headRecorded {
+	if !recorder.HeadRecorded {
 		t.Fatal("response head was not persisted before streaming")
 	}
 }
 
 func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
-		flusher := w.(http.Flusher)
-		write := func(payload string) {
-			_, _ = io.WriteString(w, "data: "+payload+"\n\n")
-			flusher.Flush()
-		}
-		write(`{"type":"message_start","message":{"id":"msg_idle","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
-		write(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
+	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, r *http.Request) {
+		stream.Data(`{"type":"message_start","message":{"id":"msg_idle","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+		stream.Data(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
 		for index := 0; ; index++ {
 			select {
 			case <-r.Context().Done():
@@ -551,73 +540,47 @@ func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
 			case <-time.After(8 * time.Millisecond):
 			}
 			if index%2 == 0 {
-				write(`{"type":"ping"}`)
+				stream.Data(`{"type":"ping"}`)
 			} else {
-				write(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`)
+				stream.Data(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`)
 			}
 		}
-	}))
-	defer server.Close()
-
-	var progress atomic.Int32
-	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 45*time.Millisecond, func(context.Context) error {
-		progress.Add(1)
-		return nil
 	})
-	defer stop()
-	recorder := &anthropicEvidenceRecorder{}
+
+	ctx, hooks, progress := providerfixture.IdleBudget(t, 45*time.Millisecond)
+	recorder := &providerfixture.EvidenceRecorder{}
 	_, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
 	var timeout *protocol.ProviderPhaseTimeoutError
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
 		t.Fatalf("ping-only stream error=%v, want semantic-idle timeout", err)
 	}
-	if progress.Load() != 2 {
-		t.Fatalf("ping/empty-delta stream reported %d semantic progress events, want only message and block start", progress.Load())
+	if recorder.SemanticProgress != 2 || progress.Load() != 2 {
+		t.Fatalf("ping/empty-delta stream reported %d progress writes and %d idle callbacks, want only message and block start", recorder.SemanticProgress, progress.Load())
 	}
-	if !recorder.headRecorded || !strings.Contains(string(recorder.wire), `"type":"ping"`) {
-		t.Fatalf("timeout lost raw response evidence: head=%t bytes=%q", recorder.headRecorded, recorder.wire)
+	if !recorder.HeadRecorded || !strings.Contains(string(recorder.Wire), `"type":"ping"`) {
+		t.Fatalf("timeout lost raw response evidence: head=%t bytes=%q", recorder.HeadRecorded, recorder.Wire)
 	}
 }
 
 func TestAnthropicCompactionUsesProviderPhaseHooks(t *testing.T) {
-	stream := wirefixture.SSEEventStream(
-		`{"type":"message_start","message":{"id":"msg_compact","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
-		`{"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":"summary","signature":"sig_fixture"}}`,
-		`{"type":"content_block_stop","index":0}`,
-		`{"type":"message_delta","delta":{"stop_reason":"compaction"},"usage":{"output_tokens":1}}`,
-		`{"type":"message_stop"}`,
-	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
-		_, _ = io.WriteString(w, stream)
-	}))
-	defer server.Close()
+	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, _ *http.Request) {
+		stream.Data(`{"type":"message_start","message":{"id":"msg_compact","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+		stream.Data(`{"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":"summary","signature":"sig_fixture"}}`)
+		stream.Data(`{"type":"content_block_stop","index":0}`)
+		stream.Data(`{"type":"message_delta","delta":{"stop_reason":"compaction"},"usage":{"output_tokens":1}}`)
+		stream.Data(`{"type":"message_stop"}`)
+	})
 
-	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 120*time.Millisecond, nil)
+	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 120*time.Millisecond)
 	defer stop()
-	recorder := &anthropicEvidenceRecorder{}
+	recorder := &providerfixture.EvidenceRecorder{}
 	response, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, true, hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response == nil || !recorder.headRecorded {
-		t.Fatalf("compaction response=%v, durable response head=%t", response, recorder.headRecorded)
+	if response == nil || !recorder.HeadRecorded || recorder.SemanticProgress != 5 {
+		t.Fatalf("compaction response=%v, durable response head=%t, semantic progress writes=%d", response, recorder.HeadRecorded, recorder.SemanticProgress)
 	}
-}
-
-type anthropicEvidenceRecorder struct {
-	headRecorded bool
-	wire         []byte
-}
-
-func (r *anthropicEvidenceRecorder) Record(_ context.Context, evidence protocol.ProviderEvidence, _ ...*eventpb.Event) error {
-	switch value := evidence.(type) {
-	case protocol.HTTPResponseHead:
-		r.headRecorded = true
-	case protocol.WireBytes:
-		r.wire = append(r.wire, value.Bytes...)
-	}
-	return nil
 }
 
 func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {
@@ -665,7 +628,7 @@ func TestAnthropicRequestWireBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	image := json.RawMessage(`{"type":"input_image","image_url":"data:image/png;base64,aGVsbG8="}`)
-	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}); err != nil {
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := conversation.AppendRecords([]json.RawMessage{json.RawMessage(`{"id":"msg_tool","type":"message","role":"assistant","content":[{"type":"tool_use","id":"call_wire","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`)}); err != nil {
@@ -675,12 +638,12 @@ func TestAnthropicRequestWireBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := conversation.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "1"}}); err != nil {
+	if err := conversation.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "1"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	for index, text := range []string{"first answer", "second answer"} {
 		if index > 0 {
-			if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "again"}}); err != nil {
+			if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "again"}}, protocol.RecordOrigin{}); err != nil {
 				t.Fatal(err)
 			}
 		}

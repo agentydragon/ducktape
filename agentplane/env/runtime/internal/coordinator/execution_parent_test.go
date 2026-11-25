@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 )
 
 // Pause after startup's final check but before Runtime publishes the owner.
@@ -250,7 +250,7 @@ func (p *heldExecutionWorker) registerExecutionWorker() func() {
 
 func TestExecutionParentCloseJoinsRegisteredWorkerBeforeStoreRelease(t *testing.T) {
 	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
-	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
+	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	r, err := newTestRuntime(t, config.Config, nil, runtimeDeps{
 		startExecution: func(context.Context, Config, string) (executionHandle, error) {
@@ -284,19 +284,10 @@ func TestExecutionParentCloseJoinsRegisteredWorkerBeforeStoreRelease(t *testing.
 		t.Fatalf("Close returned before the registered worker joined: %v", err)
 	default:
 	}
-	if backing, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = backing.Close()
-		t.Fatal("Runtime released its state store before joining its Execution worker")
-	}
+	requireOwnerRetained(t, config.StateDir, "Runtime released its state store before joining its Execution worker")
 	release.Do(func() { close(p.release) })
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatal(err)
 	}
-	backing, err := openTestRuntimeStore(config.StateDir)
-	if err != nil {
-		t.Fatalf("Runtime retained its store after the worker joined: %v", err)
-	}
-	if err := backing.Close(); err != nil {
-		t.Fatal(err)
-	}
+	requireOwnerReleased(t, config.StateDir, "Runtime retained its store after the worker joined")
 }

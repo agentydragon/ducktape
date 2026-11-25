@@ -5,6 +5,16 @@ import os
 import shlex
 import subprocess
 import sys
+from enum import StrEnum
+
+# The workflow caps every benchmark test; direct runs also cap each native phase.
+PRLIMIT = ("prlimit", f"--as={16 * 1024**3}", f"--fsize={512 * 1024**2}", "--")
+
+
+class ProfileMode(StrEnum):
+    NONE = "none"
+    CPU = "cpu"
+    HEAP = "heap"
 
 
 def main() -> None:
@@ -15,14 +25,14 @@ def main() -> None:
         "all": "//devinfra/js/debundle/...",
     }
     profile = os.environ.get("DEBUNDLE_BENCH_PROFILE", "none")
-    if suite not in scopes or profile not in ("none", "cpu", "heap"):
+    if suite not in scopes or profile not in tuple(ProfileMode):
         sys.exit("unsupported benchmark suite or profile setting")
-    if suite == "bench" and profile != "none":
+    if suite == "bench" and profile != ProfileMode.NONE:
         sys.exit("profiling requires the Excalidraw workload")
     flags = shlex.split(
         base64.b64decode(os.environ.get("DEBUNDLE_BENCH_ADDITIONAL_TEST_FLAGS_B64", ""), validate=True).decode()
     )
-    if profile != "none":
+    if profile != ProfileMode.NONE:
         flags.extend(
             [
                 "--@rules_rust//rust/settings:extra_rustc_flag=-Cdebuginfo=1",
@@ -56,7 +66,7 @@ def main() -> None:
             "--build_metadata=TAG_suite=" + suite,
             "--build_metadata=TAG_profile=" + profile,
             "--test_env=DEBUNDLE_BENCH_PROFILE=" + profile,
-            "--run_under=prlimit --as=17179869184 --fsize=536870912 --",
+            "--run_under=" + shlex.join(PRLIMIT),
             *targets,
         ],
     )

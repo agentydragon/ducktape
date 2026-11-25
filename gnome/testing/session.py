@@ -20,6 +20,8 @@ from testcontainers.core.container import DockerContainer
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
+_EXTENSIONS_DIR = Path("/usr/share/gnome-shell/extensions")
+
 
 def exec_output(result: ExecResult) -> tuple[bytes, bytes]:
     stdout, stderr = cast(tuple[bytes | None, bytes | None], result.output)
@@ -104,6 +106,13 @@ class GnomeSession:
             description=f"test D-Bus interface {self.destination} was not exported",
         )
 
+    def gsettings(self, *args: str) -> None:
+        schema_dir = _EXTENSIONS_DIR / self.extension / "schemas"
+        command = shlex.join(["gsettings", "--schemadir", str(schema_dir), *args])
+        result = self.exec(command)
+        if result.exit_code != 0:
+            raise RuntimeError(f"{command} failed: {exec_output(result)}")
+
     def dbus_call(self, destination: str, object_path: str, method: str, *args: str) -> bytes:
         # gdbus replaces non-ASCII text with '?' in the container's default C locale.
         result = self.exec(
@@ -172,7 +181,6 @@ def gnome_session(
     object_path: str,
     environment: Mapping[str, str],
     display_size: tuple[int, int] = (1920, 500),
-    compile_extension_schemas: bool = False,
     activate_display: bool = False,
     before_start: Callable[[GnomeSession], None] | None = None,
 ) -> Iterator[GnomeSession]:
@@ -180,13 +188,16 @@ def gnome_session(
     container = DockerContainer(image)
     container.with_env("RENDER_WIDTH", str(display_size[0]))
     container.with_env("RENDER_HEIGHT", str(display_size[1]))
-    container.with_volume_mapping(
-        str(extension_dir),
-        f"/usr/share/gnome-shell/extensions/{extension}",
-        "rw" if compile_extension_schemas else "ro",
-    )
+    install_dir = _EXTENSIONS_DIR / extension
+    has_schemas = (extension_dir / "schemas").is_dir()
+    container.with_volume_mapping(str(extension_dir), str(install_dir), "rw" if has_schemas else "ro")
     container.with_volume_mapping(str(fixture_dir), "/fixtures", "ro")
     container.with_volume_mapping(str(fake_daemon_script), "/fake-daemon.js", "ro")
+    container.with_volume_mapping(
+        str(fake_daemon_script.parent / "dbus/fake-control.xml"), "/dbus/fake-control.xml", "ro"
+    )
+    container.with_volume_mapping(str(extension_dir / "dbus.js"), "/dbus.js", "ro")
+    container.with_volume_mapping(str(extension_dir / "dbus/daemon.xml"), "/dbus/daemon.xml", "ro")
     container.with_volume_mapping(
         str(Runfiles.CreateOrRaise().root() / "ducktape/gnome/testing/fake-daemon.js"), "/gnome-fake-daemon.js", "ro"
     )
@@ -206,10 +217,8 @@ def gnome_session(
                 result = session.exec("dbus-update-activation-environment DISPLAY DBUS_SESSION_BUS_ADDRESS")
                 if result.exit_code != 0:
                     raise RuntimeError(f"Could not set D-Bus activation environment: {exec_output(result)}")
-            if compile_extension_schemas:
-                result = session.container.exec_run(
-                    ["glib-compile-schemas", f"/usr/share/gnome-shell/extensions/{extension}/schemas"], demux=True
-                )
+            if has_schemas:
+                result = session.container.exec_run(["glib-compile-schemas", str(install_dir / "schemas")], demux=True)
                 if result.exit_code != 0:
                     raise RuntimeError(f"Extension schema compilation failed: {exec_output(result)}")
             if before_start is not None:

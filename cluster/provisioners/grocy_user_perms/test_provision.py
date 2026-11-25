@@ -57,7 +57,7 @@ def make_client(fake: FakeGrocy) -> httpx.Client:
 def test_converges_only_drifted_users():
     # test-admin already at its full explicit set (no PUT), test-user wrongly elevated
     # (PUT back to empty), test-operator absent (auto-created, then PUT to its full set).
-    fake = FakeGrocy({"test-admin": {1, 2}, "test-user": {2}})
+    fake = FakeGrocy({"test-admin": {1, 2}, "test-user": {2}, "test-bystander": {2}})
     reconcile(
         make_client(fake),
         Policy(
@@ -69,21 +69,14 @@ def test_converges_only_drifted_users():
         ),
     )
     assert fake.puts == {"test-operator": [1, 2], "test-user": []}
-    assert fake.user_permissions == {"test-admin": {1, 2}, "test-operator": {1, 2}, "test-user": set()}
-
-
-def test_unlisted_users_untouched():
-    fake = FakeGrocy({"test-admin": {1, 2}, "test-bystander": {2}})
-    reconcile(make_client(fake), Policy(users={"test-admin": {"ADMIN", "MASTER_DATA_EDIT"}}))
-    assert fake.puts == {}
-    assert fake.user_permissions["test-bystander"] == {2}
 
 
 def test_unknown_permission_name_rejected_before_any_write():
-    fake = FakeGrocy({"test-admin": {1}, "test-user": {2}})
+    # The valid entry comes first. Authenticating as that user would create the account.
+    fake = FakeGrocy({})
     with pytest.raises(ValueError, match="NOT_A_PERMISSION"):
-        reconcile(make_client(fake), Policy(users={"test-admin": {"NOT_A_PERMISSION"}, "test-user": set()}))
-    assert fake.puts == {}
+        reconcile(make_client(fake), Policy(users={"new-user": {"ADMIN"}, "invalid": {"NOT_A_PERMISSION"}}))
+    assert fake.user_permissions == {}
 
 
 if __name__ == "__main__":

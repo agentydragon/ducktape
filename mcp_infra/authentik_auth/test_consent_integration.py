@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import re
 import secrets
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest_bazel
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from fastmcp import FastMCP
 from key_value.aio.stores.memory import MemoryStore
 from starlette.applications import Starlette
@@ -32,7 +31,7 @@ def _hidden_input(page: str, name: str) -> str:
 
 
 def _authorization_params(*, client_id: str, state: str, code_verifier: str) -> dict[str, str]:
-    code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=").decode()
+    code_challenge = create_s256_code_challenge(code_verifier)
     return {
         "response_type": "code",
         "client_id": client_id,

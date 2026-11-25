@@ -176,27 +176,16 @@ async def handle_remove_worktree(config, name: str, *, force: bool = False) -> N
 
 async def handle_copy_worktree(config, source: str, dest: str | None = None) -> None:
     """Handle worktree copying."""
+    daemon_client = WtClient(config)
     if dest is None:
-        # wt cp <x> - create new worktree from current location
-        new_name = source
-        daemon_client = WtClient(config)
-        current_wt_path, _ = await daemon_client.current_worktree_info()
-        if not current_wt_path:
+        current = await daemon_client.identify_worktree(Path.cwd())
+        if not current.is_worktree or current.wtid is None:
             click.echo("Error: Not in a worktree")
             sys.exit(1)
-        from_name = current_wt_path.name
-        new_path = await daemon_client.create_worktree_convenience(new_name, source_name=from_name, from_default=False)
-        emit_cd_command(new_path, main_repo=config.main_repo)
+        new_path = await daemon_client.create_worktree_convenience(source, source_wtid=current.wtid, from_default=False)
     else:
-        # wt cp <x> <y> - copy worktree x to new worktree y
-        source_name, target_name = source, dest
-
-        daemon_client = WtClient(config)
-        _ = await daemon_client.require_worktree_exists(source_name)
-        new_path = await daemon_client.create_worktree_convenience(
-            target_name, source_name=source_name, from_default=False
-        )
-        emit_cd_command(new_path, main_repo=config.main_repo)
+        new_path = await daemon_client.create_worktree_convenience(dest, source_name=source, from_default=False)
+    emit_cd_command(new_path, main_repo=config.main_repo)
 
 
 async def handle_path_command(config, worktree_name: str | None = None, subpath: str | None = None) -> None:

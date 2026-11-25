@@ -11,16 +11,11 @@ import (
 )
 
 type Client struct {
-	OnOpenSession      func(context.Context, *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error)
-	OnStartProcess     func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error)
-	OnReadProcess      func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error)
-	OnWriteProcess     func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error)
-	OnSignalProcess    func(context.Context, *executorpb.SignalProcessRequest) (*executorpb.SignalProcessResponse, error)
-	OnTerminateProcess func(context.Context, *executorpb.TerminateProcessRequest) (*executorpb.TerminateProcessResponse, error)
-	OnGetFileMetadata  func(context.Context, *executorpb.GetFileMetadataRequest) (*executorpb.GetFileMetadataResponse, error)
-	OnOpenFile         func(context.Context, *executorpb.OpenFileRequest) (*executorpb.OpenFileResponse, error)
-	OnReadFile         func(context.Context, *executorpb.ReadFileRequest) (*executorpb.ReadFileResponse, error)
-	OnCloseFile        func(context.Context, *executorpb.CloseFileRequest) (*executorpb.CloseFileResponse, error)
+	OnOpenSession  func(context.Context, *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error)
+	OnStartProcess func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error)
+	OnReadProcess  func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error)
+	OnWriteProcess func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error)
+	OnReadFile     func(context.Context, *executorpb.ReadFileRequest) (*executorpb.ReadFileResponse, error)
 }
 
 func (c *Client) OpenSession(ctx context.Context, request *executorpb.OpenSessionRequest, _ ...grpc.CallOption) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
@@ -57,31 +52,19 @@ func (c *Client) WriteProcess(ctx context.Context, request *executorpb.WriteProc
 	return &executorpb.WriteProcessResponse{Status: CompletedStatus(), WriteStatus: "accepted"}, nil
 }
 
-func (c *Client) SignalProcess(ctx context.Context, request *executorpb.SignalProcessRequest, _ ...grpc.CallOption) (*executorpb.SignalProcessResponse, error) {
-	if c.OnSignalProcess != nil {
-		return c.OnSignalProcess(ctx, request)
-	}
+func (*Client) SignalProcess(context.Context, *executorpb.SignalProcessRequest, ...grpc.CallOption) (*executorpb.SignalProcessResponse, error) {
 	return &executorpb.SignalProcessResponse{Status: CompletedStatus()}, nil
 }
 
-func (c *Client) TerminateProcess(ctx context.Context, request *executorpb.TerminateProcessRequest, _ ...grpc.CallOption) (*executorpb.TerminateProcessResponse, error) {
-	if c.OnTerminateProcess != nil {
-		return c.OnTerminateProcess(ctx, request)
-	}
+func (*Client) TerminateProcess(context.Context, *executorpb.TerminateProcessRequest, ...grpc.CallOption) (*executorpb.TerminateProcessResponse, error) {
 	return &executorpb.TerminateProcessResponse{Status: CompletedStatus()}, nil
 }
 
-func (c *Client) GetFileMetadata(ctx context.Context, request *executorpb.GetFileMetadataRequest, _ ...grpc.CallOption) (*executorpb.GetFileMetadataResponse, error) {
-	if c.OnGetFileMetadata != nil {
-		return c.OnGetFileMetadata(ctx, request)
-	}
+func (*Client) GetFileMetadata(context.Context, *executorpb.GetFileMetadataRequest, ...grpc.CallOption) (*executorpb.GetFileMetadataResponse, error) {
 	return &executorpb.GetFileMetadataResponse{Status: CompletedStatus()}, nil
 }
 
-func (c *Client) OpenFile(ctx context.Context, request *executorpb.OpenFileRequest, _ ...grpc.CallOption) (*executorpb.OpenFileResponse, error) {
-	if c.OnOpenFile != nil {
-		return c.OnOpenFile(ctx, request)
-	}
+func (*Client) OpenFile(_ context.Context, request *executorpb.OpenFileRequest, _ ...grpc.CallOption) (*executorpb.OpenFileResponse, error) {
 	return &executorpb.OpenFileResponse{Status: CompletedStatus(), HandleId: request.GetHandleId()}, nil
 }
 
@@ -92,10 +75,7 @@ func (c *Client) ReadFile(ctx context.Context, request *executorpb.ReadFileReque
 	return &executorpb.ReadFileResponse{Status: CompletedStatus(), Eof: true}, nil
 }
 
-func (c *Client) CloseFile(ctx context.Context, request *executorpb.CloseFileRequest, _ ...grpc.CallOption) (*executorpb.CloseFileResponse, error) {
-	if c.OnCloseFile != nil {
-		return c.OnCloseFile(ctx, request)
-	}
+func (*Client) CloseFile(context.Context, *executorpb.CloseFileRequest, ...grpc.CallOption) (*executorpb.CloseFileResponse, error) {
 	return &executorpb.CloseFileResponse{Status: CompletedStatus()}, nil
 }
 

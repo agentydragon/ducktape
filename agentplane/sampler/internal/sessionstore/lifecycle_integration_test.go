@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"testing"
-	"time"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
@@ -14,12 +12,7 @@ import (
 )
 
 func TestProtocolEventsDoNotLoadRetainedConversationItems(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, _, owner := claimedSession(t)
 	if _, err := store.DB().ExecContext(t.Context(), `ALTER TABLE sampler_content RENAME TO unavailable_content`); err != nil {
 		t.Fatal(err)
 	}
@@ -30,10 +23,8 @@ func TestProtocolEventsDoNotLoadRetainedConversationItems(t *testing.T) {
 }
 
 func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
+	store, session, owner := claimedSession(t)
+	if _, err := store.PrepareSamplingContext(t.Context(), owner, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, input := range []string{"first input", "second input"} {
@@ -64,8 +55,8 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(before) != 2 {
-		t.Fatalf("transcript rows=%d, want 2", len(before))
+	if len(before) != 3 {
+		t.Fatalf("transcript rows=%d, want 3", len(before))
 	}
 	conversation, err := store.Read(t.Context(), owner)
 	if err != nil {
@@ -76,7 +67,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": "complete"}, conversation.Context(), replacement); err != nil {
+	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": "complete"}, conversation.Context(), replacement, nil); err != nil {
 		t.Fatal(err)
 	}
 	after, err := readTranscript()
@@ -102,18 +93,8 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 }
 
 func TestBlockedReasonNamesUnresolvedIntentInGetSession(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-		CommandId: "turn",
-		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}},
-	}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
+	admitInput(t, store, session.ID, "turn", "hello")
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -144,12 +125,7 @@ func TestBlockedReasonNamesUnresolvedIntentInGetSession(t *testing.T) {
 }
 
 func TestStoreRejectsUnknownStatusesAndTurnResults(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	if err := store.RegisterProcess(t.Context(), owner, "known-process", false); err != nil {
 		t.Fatal(err)
 	}

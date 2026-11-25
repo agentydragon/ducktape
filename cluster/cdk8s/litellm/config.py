@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from cluster.cdk8s.litellm.upstreams import UPSTREAM_BINDINGS
-from cluster.cdk8s.ollama import tabby_endpoint
 from model_catalog.catalog import (
     HIDDEN_ALIASES,
-    OLLAMA_QWEN_IQ4XS_128K,
-    OLLAMA_QWEN_IQ4XS_256K,
     SERVED_ROUTES,
     TABBYAPI_CHAT,
     ApiShape,
@@ -19,26 +14,6 @@ from model_catalog.catalog import (
     RouteAlias,
     shape_mode,
 )
-
-# Preserve the existing client model IDs and key grants across the cutover.
-_TABBY_QWEN_IDS = {
-    OLLAMA_QWEN_IQ4XS_128K.openai.id,
-    OLLAMA_QWEN_IQ4XS_128K.native.id,
-    OLLAMA_QWEN_IQ4XS_256K.openai.id,
-    OLLAMA_QWEN_IQ4XS_256K.native.id,
-}
-
-
-CONFIG_MAP_NAME = "config"
-
-
-@dataclass(frozen=True)
-class ConfigMapSpec:
-    """The generated files belonging to one LiteLLM proxy."""
-
-    name: str
-    namespace: str
-    data: dict[str, object]
 
 
 def model_entry(entry: Route | RouteAlias) -> dict:
@@ -65,14 +40,9 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         # Fail instead of silently embedding a truncated prefix, including Ollama's
         # retry at num_batch after a runner rejects a longer input.
         params["truncate"] = False
-    if route.id in _TABBY_QWEN_IDS:
-        # One server-side 256K context serves all four compatibility names.
-        # LiteLLM's hosted_vllm adapter sends Messages directly through Chat
-        # Completions instead of the OpenAI adapter's intermediate Responses hop.
-        params.update(
-            model=f"hosted_vllm/{tabby_endpoint.MODEL_NAME}", api_base=tabby_endpoint.API_BASE, api_key="tabbyapi"
-        )
-    if route.id in _TABBY_QWEN_IDS or upstream == TABBYAPI_CHAT:
+    if upstream == TABBYAPI_CHAT:
+        # Use the openai adapter: hosted_vllm strips assistant reasoning_content before
+        # Tabby can render it. See README.md#tabbyapi-reasoning-replay for the probe.
         params.update(
             allowed_openai_params=["reasoning_effort"],
             # TabbyAPI implements Chat Completions; let LiteLLM translate Responses.
@@ -166,7 +136,3 @@ def main_proxy_config() -> dict:
             "disable_spend_logs": True,
         },
     }
-
-
-def proxy_configs() -> tuple[ConfigMapSpec, ...]:
-    return (ConfigMapSpec("litellm", "litellm", {"config.yaml": main_proxy_config()}),)

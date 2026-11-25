@@ -35,6 +35,7 @@ from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.accounts import account
 from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
@@ -75,11 +76,6 @@ PARCELS = {
     HOME_LOCATION_ID: flat_parcel(Decimal("0.012")),
     RENTAL_LOCATION_ID: flat_parcel(Decimal("0.024")),
 }
-
-
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=CHECKING), USD.quanta(balance)
 
 
 def financing(

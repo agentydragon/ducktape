@@ -1,10 +1,17 @@
 # Authored conversation probes
 
-On November 12, 2026, the initial concise prompt repeatedly left correct answers private on the
-tested Qwen route. Both Qwen and Luna published the reset and correction answers with an
-explanatory prompt. Each model also revised a prior answer when explicitly instructed to do so.
-These bounded probes inform the interaction design. Reliability, live edits during work, and the
-broader History architecture remain open.
+The [original paired CLI experiment](protocol.md#runs-and-win-conditions) was **unpromising
+on the tested Qwen/LiteLLM configuration with the concise prompt**. The authored thread
+showed the file answer and clarification (W1 and W3), with extra unrelated text after the file
+answer. It omitted the requested progress and corrected result (W2), and the answer after context
+reset (W4). Each omission recurred in its one same-prompt repeat. The ordinary-chat control
+showed both answers and combined progress with its final reply. The [original report][paired]
+records all four cases, timing and run IDs.
+
+In follow-up probes, an explanatory prompt elicited published reset and correction answers on
+Qwen and Luna. Each model also revised a prior answer when explicitly asked. These cases
+inform the next design review. Publication reliability, live edits during work and the broader
+History architecture remain open.
 
 ## Shared method
 

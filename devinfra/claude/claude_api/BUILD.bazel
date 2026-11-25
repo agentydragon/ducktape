@@ -66,14 +66,14 @@ py_test(
     name = "test_schema_equivalence",
     srcs = ["test_schema_equivalence.py"],
     data = [
-        "//devinfra/claude/claude_api/hooks/schemas/2.1.105:hook_schemas",
+        "//devinfra/claude/claude_api/hooks/schemas/2.1.105:hook_output.json",
     ],
+    env = {"HOOK_OUTPUT_SCHEMA": "$(rlocationpath //devinfra/claude/claude_api/hooks/schemas/2.1.105:hook_output.json)"},
     deps = [
         ":json_schema",
         "//:conftest",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:output",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",

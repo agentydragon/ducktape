@@ -260,6 +260,18 @@ fn resolved_arguments(nodes: &[CommandNode<'_>]) -> Result<Vec<ResolvedArgument>
                 } else {
                     "json".to_string()
                 }])
+            } else if matches!(name, "package_roots" | "graph_package_roots") {
+                let roots = node
+                    .matches
+                    .try_get_many::<(String, PathBuf)>(name)?
+                    .into_iter()
+                    .flatten()
+                    .map(|(package, path)| PackageRoot {
+                        package: package.clone(),
+                        path: path.clone(),
+                    })
+                    .collect();
+                ArgumentValue::PackageRoots(roots)
             } else {
                 let values = node
                     .matches
@@ -270,21 +282,7 @@ fn resolved_arguments(nodes: &[CommandNode<'_>]) -> Result<Vec<ResolvedArgument>
                     })
                     .transpose()?
                     .unwrap_or_default();
-                if matches!(name, "package_roots" | "graph_package_roots") {
-                    let roots = values
-                        .into_iter()
-                        .map(|value| {
-                            let (package, path) = value.split_once('=').with_context(|| {
-                                format!("Clap accepted malformed package root {value:?}")
-                            })?;
-                            Ok(PackageRoot {
-                                package: package.to_string(),
-                                path: PathBuf::from(path),
-                            })
-                        })
-                        .collect::<Result<Vec<_>>>()?;
-                    ArgumentValue::PackageRoots(roots)
-                } else if is_path_argument(name, argument.get_env()) {
+                if is_path_argument(name, argument.get_env()) {
                     ArgumentValue::Paths(values.into_iter().map(PathBuf::from).collect())
                 } else {
                     ArgumentValue::Values(values)
@@ -497,7 +495,6 @@ fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> Invocati
         [coverage] if coverage == "coverage" => InvocationMode::ReadOnlyAnalysis,
         [graph_summary] if graph_summary == "graph-summary" => InvocationMode::ReadOnlyAnalysis,
         [describe] if describe == "describe" => InvocationMode::ReadOnlyAnalysis,
-        [inspect] if inspect == "inspect-source" => InvocationMode::ReadOnlyAnalysis,
         [scc] if scc == "scc" => InvocationMode::ReadOnlyAnalysis,
         [cluster] if cluster == "cluster" => InvocationMode::ReadOnlyAnalysis,
         [bindings, list] if bindings == "bindings" && list == "list" => {
@@ -510,9 +507,6 @@ fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> Invocati
             if spec == "spec"
                 && ["stats", "selector-debt", "match-selector"].contains(&verb.as_str()) =>
         {
-            InvocationMode::ReadOnlyAnalysis
-        }
-        [gate, verb] if gate == "gate" && ["list", "describe", "cut"].contains(&verb.as_str()) => {
             InvocationMode::ReadOnlyAnalysis
         }
         _ => InvocationMode::Unclassified,

@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 import pytest_bazel
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import IntegrityError
 
 from study_casino.actions import ConvertResult, ImportData, ImportPrize, ImportResult, ResetResult
-from study_casino.models import Game, GameEventRow, GameEventSource, StateSnapshotRow
+from study_casino.models import Game, GameEventRow, GameEventSource, LedgerEventRow, StateSnapshotRow
 from study_casino.state import BalanceRead
-from study_casino.store import ActionMutation, ActionRejectedError, ServerActionResult, SqlStore, locked_balance
+from study_casino.store import ActionMutation, ActionRejectedError, SqlStore
+from util.alembic_upgrade import upgrade
 
 
 @pytest.fixture
@@ -109,14 +110,21 @@ def _seed_game_events(store: SqlStore, rows: list[GameEventRow]) -> None:
         s.add_all(rows)
 
 
-def test_economy_rebalance_migration_preserves_progress(empty_db_url: str) -> None:
-    engine = create_engine(empty_db_url)
-    cfg = AlembicConfig()
-    cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+def _ledger_rows(store: SqlStore, username: str = _U) -> list[LedgerEventRow]:
+    with store._Session() as s:
+        return list(
+            s.scalars(
+                select(LedgerEventRow).where(LedgerEventRow.user_id == username).order_by(LedgerEventRow.id)
+            ).all()
+        )
+
+
+def test_economy_rebalance_migration_preserves_progress(empty_postgres_url: str) -> None:
+    engine = create_engine(empty_postgres_url)
+    scripts = Path(__file__).parent / "migrations"
 
     with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        alembic_command.upgrade(cfg, "0004")
+        upgrade(conn, scripts, "0004")
         conn.execute(text("INSERT INTO balance (user_id, credits, tokens) VALUES ('auragon', 60000, 23114)"))
         conn.execute(
             text(
@@ -127,8 +135,7 @@ def test_economy_rebalance_migration_preserves_progress(empty_db_url: str) -> No
         )
 
     with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        alembic_command.upgrade(cfg, "head")
+        upgrade(conn, scripts, "head")
         assert conn.execute(text("SELECT tokens FROM balance WHERE user_id = 'auragon'")).scalar_one() == 13868
         assert conn.execute(text("SELECT cost FROM prizes WHERE id = 'chair'")).scalar_one() == 21600
         assert conn.execute(text("SELECT cost FROM prizes WHERE id = 'small'")).scalar_one() == 1
@@ -137,31 +144,25 @@ def test_economy_rebalance_migration_preserves_progress(empty_db_url: str) -> No
 
 
 def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -> None:
-    def grant_credits(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def grant_credits(s, balance, _now_ms):
         balance.credits += 7000  # 7 credits, in millis
         return ActionMutation(result=ConvertResult(amount=7), details={"reason": "test"})
 
     result = store.run_server_action(
         username=_U, client_action_id="act-1", action_type="test.grant", mutator=grant_credits
     )
-    assert isinstance(result, ServerActionResult)
-    assert result.event.action_type == "test.grant"
-    assert result.event.credits_before_millis == 0
-    assert result.event.credits_after_millis == 7000
-    assert result.result == ConvertResult(amount=7)
+    assert result == ConvertResult(amount=7)
 
     state = store.state_dump(_U)
     assert state.balance.credits_millis == 7000
 
-    ledger = store.list_ledger_events(_U)
-    assert len(ledger) == 1
-    assert ledger[0].client_action_id == "act-1"
+    [ledger] = _ledger_rows(store)
+    assert (ledger.client_action_id, ledger.action_type) == ("act-1", "test.grant")
+    assert (ledger.credits_before, ledger.credits_after) == (0, 7000)
 
 
 def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
-    def grant_credits(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def grant_credits(s, balance, _now_ms):
         balance.credits += 5000
         return ActionMutation(result=ConvertResult(amount=5))
 
@@ -171,15 +172,54 @@ def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
     second = store.run_server_action(
         username=_U, client_action_id="act-dup", action_type="test.grant", mutator=grant_credits
     )
-    assert second.event.id == first.event.id
-    assert second.result == first.result
+    assert second == first
     # Mutator was NOT replayed — credits stayed at 5000 millis, not 10000.
     assert store.state_dump(_U).balance.credits_millis == 5000
+    assert len(_ledger_rows(store)) == 1
+
+
+@pytest.mark.parametrize("existing_user", [False, True], ids=["first-use", "existing-user"])
+def test_overlapping_retry_returns_original_result(store: SqlStore, existing_user: bool) -> None:
+    if existing_user:
+        store.state_dump(_U)
+
+    def run(mutator):
+        return store.run_server_action(
+            username=_U, client_action_id="overlap", action_type="test.grant", mutator=mutator
+        )
+
+    def unexpected_mutation(*_args):
+        pytest.fail("Retry ran the mutator a second time")
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        retries = []
+
+        def grant(s, balance, _now_ms):
+            retry = pool.submit(run, unexpected_mutation)
+            retries.append(retry)
+            # Hold the original transaction open until PostgreSQL sees the retry waiting on it.
+            waiting = text(
+                "SELECT EXISTS (SELECT FROM pg_locks WHERE NOT granted AND pg_backend_pid() = ANY(pg_blocking_pids(pid)))"
+            )
+            deadline = time.monotonic() + 10
+            while not s.scalar(waiting):
+                if retry.done():
+                    retry.result()
+                    pytest.fail("Retry returned before the original transaction committed")
+                if time.monotonic() >= deadline:
+                    pytest.fail("Retry never waited for the original transaction")
+                time.sleep(0.01)
+            balance.credits += 5000
+            return ActionMutation(result=ConvertResult(amount=5))
+
+        assert run(grant) == retries[0].result(timeout=10) == ConvertResult(amount=5)
+
+    assert store.state_dump(_U).balance.credits_millis == 5000
+    assert len(_ledger_rows(store)) == 1
 
 
 def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
-    def half_then_reject(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def half_then_reject(s, balance, _now_ms):
         balance.credits += 99
         raise ActionRejectedError("nope", "no good")
 
@@ -190,14 +230,14 @@ def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
 
     # Transaction was rolled back: balance unchanged, no ledger row.
     assert store.state_dump(_U).balance.credits_millis == 0
-    assert len(store.list_ledger_events(_U)) == 0
+    assert _ledger_rows(store) == []
 
 
 def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
-    def import_payload(s, _now_ms):
+    def import_payload(s, balance, _now_ms):
         store.replace_state_for_import(
             s,
-            _U,
+            balance,
             ImportData(
                 credits=11, tokens=22, sessions=[], prizes=[ImportPrize(id="p-only", name="Only", cost=5)], prize_log=[]
             ),
@@ -230,8 +270,7 @@ def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
 
 
 def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
-    def grant_then_reset(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def grant_then_reset(s, balance, _now_ms):
         balance.credits = 50000
         balance.tokens = 30
         return ActionMutation(result=ConvertResult(amount=50))
@@ -243,8 +282,8 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
     assert pre_reset.balance == BalanceRead(credits_millis=50000, tokens=30)
     prizes_before = pre_reset.prizes
 
-    def reset(s, _now_ms):
-        store.replace_state_for_reset(s, _U)
+    def reset(s, balance, _now_ms):
+        store.replace_state_for_reset(s, balance)
         return ActionMutation(result=ResetResult(reset=True))
 
     store.run_server_action(
@@ -265,8 +304,7 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
 def test_db_check_constraint_rejects_negative_credits(store: SqlStore) -> None:
     """The CHECK constraint is the last line of defence if a buggy mutator misses a pre-flight check."""
 
-    def goes_negative(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def goes_negative(s, balance, _now_ms):
         balance.credits = -1
         return ActionMutation(result=ConvertResult(amount=0))
 
@@ -277,8 +315,7 @@ def test_db_check_constraint_rejects_negative_credits(store: SqlStore) -> None:
 def test_state_persists_across_reopen(db_url: str) -> None:
     store_a = SqlStore(db_url)
 
-    def grant(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def grant(s, balance, _now_ms):
         balance.credits = 13000
         return ActionMutation(result=ConvertResult(amount=13))
 
@@ -291,12 +328,12 @@ def test_state_persists_across_reopen(db_url: str) -> None:
 def test_two_users_share_db_without_collision(store: SqlStore) -> None:
     """Two users on the same store have independent balances, sessions, ledgers."""
 
-    def grant_alice(s, _now_ms):
-        locked_balance(s, "alice").credits += 10000
+    def grant_alice(s, balance, _now_ms):
+        balance.credits += 10000
         return ActionMutation(result=ConvertResult(amount=10))
 
-    def grant_bob(s, _now_ms):
-        locked_balance(s, "bob").credits += 99000
+    def grant_bob(s, balance, _now_ms):
+        balance.credits += 99000
         return ActionMutation(result=ConvertResult(amount=99))
 
     # Same client_action_id used for both — must NOT collide since the
@@ -307,8 +344,8 @@ def test_two_users_share_db_without_collision(store: SqlStore) -> None:
     assert store.state_dump("alice").balance.credits_millis == 10000
     assert store.state_dump("bob").balance.credits_millis == 99000
     # Each user's ledger lists only their own row.
-    assert len(store.list_ledger_events("alice")) == 1
-    assert len(store.list_ledger_events("bob")) == 1
+    assert len(_ledger_rows(store, "alice")) == 1
+    assert len(_ledger_rows(store, "bob")) == 1
 
 
 def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
@@ -391,7 +428,6 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
     # Theoretical for red on a 37-pocket wheel: P(win) = 18/37, RTP = 36/37.
     assert red.theoretical_payout_rate == pytest.approx(18 / 37)
     assert red.theoretical_rtp == pytest.approx(36 / 37)
-    assert red.expected_returned == pytest.approx(30 * 36 / 37)
     assert red.expected_net == pytest.approx((30 * 36 / 37) - 30)
     assert red.fair_win_lower_tail_probability == pytest.approx(1 - (18 / 37) ** 3)
 
@@ -400,7 +436,6 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
     assert roulette.total.count == 3
     assert roulette.total.theoretical_payout_rate == pytest.approx(18 / 37)
     assert roulette.total.theoretical_rtp == pytest.approx(36 / 37)
-    assert roulette.total.expected_returned == pytest.approx(30 * 36 / 37)
     assert roulette.total.expected_net == pytest.approx((30 * 36 / 37) - 30)
     assert roulette.total.fair_win_lower_tail_probability == pytest.approx(1 - (18 / 37) ** 3)
     # Timeline buckets across two UTC days.
@@ -422,7 +457,13 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
     assert win.theoretical_rtp is None
 
 
-def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStore) -> None:
+@pytest.mark.parametrize(
+    ("red_won", "number_won", "tail"),
+    [(False, False, (19 / 37) * (36 / 37)), (True, False, 1 - (18 / 37) * (1 / 37)), (True, True, 1.0)],
+)
+def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(
+    store: SqlStore, red_won: bool, number_won: bool, tail: float
+) -> None:
     """The roulette total row has no fake uniform strategy assumption.
 
     It reports the expected hit rate and returned tokens for the actual
@@ -432,13 +473,15 @@ def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStor
     _seed_game_events(
         store,
         [
-            _game_event("roulette-mix-1", "roulette", _roulette_outcome("red", False), wager=10, payout=0),
+            _game_event(
+                "roulette-mix-1", "roulette", _roulette_outcome("red", red_won), wager=10, payout=20 if red_won else 0
+            ),
             _game_event(
                 "roulette-mix-2",
                 "roulette",
-                _roulette_outcome("number", False, bet_number=7, multiplier=36),
+                _roulette_outcome("number", number_won, bet_number=7, multiplier=36),
                 wager=5,
-                payout=0,
+                payout=180 if number_won else 0,
             ),
         ],
     )
@@ -450,13 +493,12 @@ def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStor
     assert roulette.total.theoretical_payout_rate == pytest.approx(((18 / 37) + (1 / 37)) / 2)
     assert roulette.total.theoretical_rtp == pytest.approx(36 / 37)
     assert roulette.total.theoretical_ev_per_credit == pytest.approx(-1 / 37)
-    assert roulette.total.expected_returned == pytest.approx(15 * 36 / 37)
     assert roulette.total.expected_net == pytest.approx(-15 / 37)
-    assert roulette.total.fair_win_lower_tail_probability == pytest.approx((19 / 37) * (36 / 37))
+    assert roulette.total.fair_win_lower_tail_probability == pytest.approx(tail)
     red = next(b for b in roulette.buckets if b.key == "red")
     number = next(b for b in roulette.buckets if b.key == "number")
-    assert red.fair_win_lower_tail_probability == pytest.approx(19 / 37)
-    assert number.fair_win_lower_tail_probability == pytest.approx(36 / 37)
+    assert red.fair_win_lower_tail_probability == pytest.approx(1.0 if red_won else 19 / 37)
+    assert number.fair_win_lower_tail_probability == pytest.approx(1.0 if number_won else 36 / 37)
 
 
 def test_casino_stats_empty_for_fresh_user(store: SqlStore) -> None:
@@ -500,8 +542,6 @@ def test_casino_stats_blackjack_summary_and_outcome_freq(store: SqlStore) -> Non
     assert bj.summary.wins == 3  # blackjack + win + dealerBust
     assert bj.summary.losses == 2  # lose + bust
     assert bj.summary.pushes == 1
-    assert bj.summary.blackjacks == 1
-    assert bj.summary.busts == 1
     # 3 wins / (3 wins + 2 losses) — push excluded.
     assert bj.summary.win_rate_excl_push == pytest.approx(3 / 5)
     assert bj.summary.blackjack_rate == pytest.approx(1 / 6)
@@ -509,6 +549,7 @@ def test_casino_stats_blackjack_summary_and_outcome_freq(store: SqlStore) -> Non
     freq_by_key = {f.key: f for f in bj.outcome_freq}
     assert {f.key for f in bj.outcome_freq} == {"blackjack", "win", "dealerBust", "push", "lose", "bust"}
     assert freq_by_key["blackjack"].count == 1
+    assert freq_by_key["bust"].count == 1
     assert freq_by_key["blackjack"].freq == pytest.approx(1 / 6)
     assert freq_by_key["blackjack"].avg_wager == pytest.approx(2.0)
     assert freq_by_key["win"].avg_wager == pytest.approx(1.0)

@@ -1,57 +1,26 @@
-"""
-Date utility functions for Habitify.
-Provides consistent date handling across CLI and API components.
-"""
+"""Date handling for Habitify requests and responses."""
 
-import datetime
+from datetime import UTC, date, datetime, time
 
 
-def parse_date(date_string: str | None = None) -> datetime.datetime:
-    """Parse an ISO date/datetime or YYYY-MM-DD, defaulting to local now for missing or empty input."""
-    if not date_string:
-        return datetime.datetime.now()
+def aware_datetime(value: str | datetime) -> datetime:
+    """Keep explicit offsets and interpret timezone-free values as UTC."""
+    if not isinstance(value, (str, datetime)):
+        raise ValueError(f"Expected datetime or ISO string, got {type(value)}")
+    parsed = datetime.fromisoformat(value) if isinstance(value, str) else value
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
 
-    try:
-        return datetime.datetime.fromisoformat(date_string)
-    except ValueError:
+
+def target_datetime(value: str | date | None) -> datetime:
+    """Resolve an optional request date once, before sending it to Habitify."""
+    if value is None or value == "":
+        return datetime.now(UTC)
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return datetime.combine(value, time.min, tzinfo=UTC)
+    if isinstance(value, str):
         try:
-            # Try to parse as YYYY-MM-DD
-            return datetime.datetime.strptime(date_string, "%Y-%m-%d")
+            return aware_datetime(value)
         except ValueError:
-            raise ValueError(f"Invalid date format: {date_string}. Please use YYYY-MM-DD.")
-
-
-def _normalize_date(date: str | datetime.date | datetime.datetime | None = None) -> datetime.datetime:
-    """Keep datetimes, turn dates into midnight, parse strings, or default None to local now."""
-    if date is None:
-        return datetime.datetime.now()
-
-    if isinstance(date, datetime.datetime):
-        return date
-
-    if isinstance(date, datetime.date):
-        # Convert date to datetime
-        return datetime.datetime.combine(date, datetime.datetime.min.time())
-
-    return parse_date(date)
-
-
-def format_date_for_api(date: str | datetime.date | datetime.datetime | None = None) -> str:
-    """Date-only becomes midnight +00:00; ISO strings with Z/+ keep offsets (Z -> +00:00); other values receive +00:00."""
-    # Special case for YYYY-MM-DD string format - optimize to avoid parsing
-    if isinstance(date, str) and len(date.split("-")) == 3:
-        try:
-            datetime.datetime.strptime(date, "%Y-%m-%d")
-            return f"{date}T00:00:00+00:00"
-        except ValueError:
-            pass
-
-    # If already in ISO format with timezone, return as is
-    if isinstance(date, str) and "T" in date and ("Z" in date or "+" in date):
-        return date.replace("Z", "+00:00")
-
-    # Special case for date objects
-    if isinstance(date, datetime.date) and not isinstance(date, datetime.datetime):
-        return f"{date.isoformat()}T00:00:00+00:00"
-
-    return _normalize_date(date).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+            # Also accept dates with a single-digit month or day.
+            return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
+    return aware_datetime(value)

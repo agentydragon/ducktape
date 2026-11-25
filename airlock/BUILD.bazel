@@ -158,6 +158,7 @@ py_test(
         "//airlock/oauth:k8s_client",
         "//airlock/oauth:provider",
         "//testing:asgi",
+        "@pypi//authlib",
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//pytest",

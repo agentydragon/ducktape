@@ -4,23 +4,22 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use analysis::{DependencyGraphReport, ModuleDestinationKind, StatementKind};
-use anonymous_resolution::{resolve_source_claims, resolve_source_file};
+use anonymous_resolution::resolve_source_file;
 use anyhow::{Context, Result, anyhow, bail};
 use peel::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
-use spec::{AnonymousStatement, LogicalModule, ModulePath, is_residual_namespace_path};
+use spec::{LogicalModule, ModulePath, is_residual_namespace_path};
 use spec_modules::{coalesce_source_match_claims, module_path_from_file};
 use spec_tree::ModuleTreeScope;
 
 use crate::binding::{
     BindingIdentity, BindingLabel, ModuleDocs, apply_doc_changes, binding_effective_name,
     binding_matches_in_doc, canonical_module_path, insert_annotation, load_module_docs,
-    member_effective_name, source_match_readable, take_members, take_source_match_bindings,
+    member_effective_name, source_match_readable, take_indexed, take_source_match_bindings,
 };
 use crate::candidate_assessment::ResolvedCandidateEffectAssessment;
 use crate::edit_gate::{
     Gate, ProjectedBindingKind, SourceUnitClaimProjection, SourceUnitModuleAssignments,
-    post_edit_spec_from_docs, project_source_unit_claims, source_claim_sets_from_post_spec,
-    source_unit_module_assignments_from_projection,
+    post_edit_spec_from_docs, resolve_edit_claims, source_unit_module_assignments_from_projection,
 };
 use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
@@ -37,6 +36,8 @@ pub struct SourceUnitApplyOutcome {
 
 pub struct SourceUnitApplyOptions<'a> {
     pub tree_config: Option<&'a Path>,
+    /// Plan destinations are relative to the chunk's roots in a full module tree.
+    pub chunk_logical_destinations: bool,
     pub assignments: Vec<SourceUnitAssignment>,
     pub import_order: Option<Vec<ModulePath>>,
     pub readable_names: BTreeMap<String, String>,
@@ -50,6 +51,42 @@ pub struct SourceUnitApplyOptions<'a> {
 pub enum SelectorOverride {
     SourceMatch(spec::SourceMatchClaim),
     Relational(Box<spec::RawMemberSelector>),
+}
+
+fn resolve_plan_destinations(
+    changes: &mut [SourceUnitAssignment],
+    docs: &ModuleDocs,
+    scope: &ModuleTreeScope,
+) -> Result<()> {
+    let mut authored_paths = BTreeMap::<_, Vec<_>>::new();
+    for physical in docs.keys() {
+        let logical = ModulePath::parse(scope.logical_destination(physical)?, "")?;
+        authored_paths.entry(logical).or_default().push(physical);
+    }
+    for change in changes {
+        let logical = ModulePath::parse(&change.module, "")?;
+        let existing = authored_paths
+            .get(&logical)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        anyhow::ensure!(
+            existing.len() <= 1,
+            "logical destination {logical} has multiple authored files"
+        );
+        change.module = if let Some(existing) = existing.first() {
+            (*existing).clone()
+        } else {
+            scope
+                .roots()
+                .first()
+                .context("tree config has no module root for plan destination")?
+                .join(logical.as_str())
+                .to_str()
+                .context("module destination is not UTF-8")?
+                .to_string()
+        };
+    }
+    Ok(())
 }
 
 pub(super) fn validate_assignment_module_id(module: &str) -> Result<()> {
@@ -96,11 +133,11 @@ pub fn run_source_unit_apply(
     stderr: &mut (dyn std::io::Write + Send),
     modules_root: &Path,
     dependency_graph_path: &Path,
+    graph_input: analysis::DependencyGraphInput,
     source_root: &Path,
     source_context: Option<&graph_provenance::VerifiedGraphSourceContext>,
     options: SourceUnitApplyOptions<'_>,
 ) -> Result<SourceUnitApplyOutcome> {
-    let graph_input = analysis::DependencyGraphInput::read(dependency_graph_path)?;
     if graph_input.report().ownership_subset.is_some() {
         return crate::selected_view_apply::run(
             stderr,
@@ -112,9 +149,10 @@ pub fn run_source_unit_apply(
     }
     let SourceUnitApplyOptions {
         tree_config,
-        assignments,
+        mut assignments,
+        chunk_logical_destinations,
         import_order,
-        readable_names,
+        mut readable_names,
         mut selector_overrides,
         dry_run,
         effect_assessment_context,
@@ -129,9 +167,6 @@ pub fn run_source_unit_apply(
     if assignments.is_empty() {
         bail!("source unit assignment batch is empty");
     }
-    for assignment in &assignments {
-        validate_assignment_module_id(&assignment.module)?;
-    }
 
     let graph_input = std::sync::Arc::new(graph_input);
     let dependency_graph = graph_input.report();
@@ -141,24 +176,24 @@ pub fn run_source_unit_apply(
     let mut original_docs = load_module_docs(modules_root)?;
     if let Some(scope) = &scope {
         original_docs.retain(|module, _| scope.contains(Path::new(module)));
+        if chunk_logical_destinations {
+            resolve_plan_destinations(&mut assignments, &original_docs, scope)?;
+        }
+    }
+    for assignment in &assignments {
+        validate_assignment_module_id(&assignment.module)?;
     }
     let mut docs = original_docs.clone();
     let initial_spec = post_edit_spec_from_docs(&original_docs, &BTreeSet::new())?;
-    let claim_sets = source_claim_sets_from_post_spec(&initial_spec);
-    let resolved = command_diagnostics::run(stderr, |diagnostics| {
-        resolve_source_claims(
-            anonymous_resolution::SourceClaimsContext {
-                graph: dependency_graph,
-                dependency_graph_path,
-                modules_root,
-                source_root: Some(source_root),
-                source_context,
-                diagnostics,
-            },
-            &claim_sets,
-        )
-    })?;
-    let claim_projection = project_source_unit_claims(&graph_input, &initial_spec, &resolved)?;
+    let (resolved, claim_projection) = resolve_edit_claims(
+        stderr,
+        &graph_input,
+        dependency_graph_path,
+        modules_root,
+        Some(source_root),
+        source_context,
+        &initial_spec,
+    )?;
     let current_source_unit_modules = source_unit_module_assignments_from_projection(
         dependency_graph,
         modules_root,
@@ -293,7 +328,6 @@ pub fn run_source_unit_apply(
         std::path::PathBuf,
         BTreeMap<String, Vec<source_identity::SourceUnitOrdinal>>,
     >::new();
-    let mut used_names = BTreeSet::new();
     let mut selected_binding_names = BTreeSet::new();
     let mut provided_selectors = Vec::new();
     let existing_destinations = physical_modules_by_logical_destination(&docs, scope.as_ref())?;
@@ -330,27 +364,17 @@ pub fn run_source_unit_apply(
                         "binding {runtime:?} is declared by several selected source units"
                     );
                     let readable = readable_names
-                        .get(&runtime)
-                        .cloned()
+                        .remove(&runtime)
                         .unwrap_or_else(|| binding.export_name.to_string());
                     anyhow::ensure!(
                         !readable.is_empty(),
                         "readable name for {runtime:?} is empty"
                     );
-                    if readable_names.contains_key(&runtime) {
-                        used_names.insert(runtime.clone());
-                    }
                     if let Some(selector) = selector_overrides
                         .get_mut(source_unit_id)
                         .and_then(|selectors| selectors.remove(&runtime))
                     {
-                        provided_selectors.push((
-                            source.clone(),
-                            destination.clone(),
-                            runtime,
-                            readable,
-                            selector,
-                        ));
+                        provided_selectors.push((destination.clone(), runtime, readable, selector));
                     } else {
                         anyhow::ensure!(
                             fresh_bindings
@@ -427,7 +451,7 @@ pub fn run_source_unit_apply(
     }
 
     anyhow::ensure!(
-        used_names.len() == readable_names.len(),
+        readable_names.is_empty(),
         "readable_names must name only newly claimed bindings"
     );
     selector_overrides.retain(|_, selectors| !selectors.is_empty());
@@ -464,7 +488,7 @@ pub fn run_source_unit_apply(
                 .extend(statements);
         }
     }
-    for (source, destination, runtime, readable, selector) in provided_selectors {
+    for (destination, runtime, readable, selector) in provided_selectors {
         let doc = ensure_source_unit_destination(&mut docs, modules_root, &destination);
         match selector {
             SelectorOverride::SourceMatch(claim) => {
@@ -480,7 +504,6 @@ pub fn run_source_unit_apply(
                     binding.local() != runtime || readable == runtime,
                     "source_match override for {runtime:?} retains its capture local; use a neutral selector-local name"
                 );
-                let _ = source;
                 doc.source_matches.push(claim);
             }
             SelectorOverride::Relational(selector) => {
@@ -491,7 +514,6 @@ pub fn run_source_unit_apply(
                     name: Some(readable),
                     selector: *selector,
                 });
-                let _ = source;
             }
         }
     }
@@ -502,7 +524,7 @@ pub fn run_source_unit_apply(
             SourceUnitClaimSlot::Member(index) => Some((movement.source_module.clone(), index)),
             _ => None,
         });
-    let mut pulled_members = take_members(&mut docs, moved_members);
+    let mut pulled_members = take_indexed(&mut docs, moved_members, |doc| &mut doc.members);
     let moved_source_match_bindings =
         planned_moves
             .iter()
@@ -520,7 +542,9 @@ pub fn run_source_unit_apply(
             SourceUnitClaimSlot::Anonymous(index) => Some((movement.source_module.clone(), index)),
             _ => None,
         });
-    let mut pulled_anonymous = take_anonymous_statements(&mut docs, moved_anonymous);
+    let mut pulled_anonymous = take_indexed(&mut docs, moved_anonymous, |doc| {
+        &mut doc.anonymous_statements
+    });
 
     let mut destination_claims = BTreeMap::<(String, String, usize), usize>::new();
     let mut moved_names_by_destination = BTreeMap::<String, BTreeSet<String>>::new();
@@ -895,31 +919,6 @@ fn check_graph_source_unit_destinations(
         );
     }
     Ok(())
-}
-
-fn take_anonymous_statements(
-    docs: &mut ModuleDocs,
-    identities: impl IntoIterator<Item = (String, usize)>,
-) -> BTreeMap<(String, usize), AnonymousStatement> {
-    let mut by_module: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
-    for (module, index) in identities {
-        by_module.entry(module).or_default().insert(index);
-    }
-    let mut taken = BTreeMap::new();
-    for (module, indices) in by_module {
-        let (_, doc) = docs.get_mut(&module).expect("resolved module is loaded");
-        for (index, statement) in std::mem::take(&mut doc.anonymous_statements)
-            .into_iter()
-            .enumerate()
-        {
-            if indices.contains(&index) {
-                taken.insert((module.clone(), index), statement);
-            } else {
-                doc.anonymous_statements.push(statement);
-            }
-        }
-    }
-    taken
 }
 
 fn ensure_source_unit_destination<'a>(

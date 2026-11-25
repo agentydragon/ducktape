@@ -32,7 +32,6 @@ from x.wt.shared.protocol import (
     StatusResultOk,
 )
 from x.wt.testing.config_factory import ConfigFactory, gitstatusd_binary
-from x.wt.testing.mock_factory import ServiceBuilder
 from x.wt.testing.repo_factory import GitRepoFactory
 from x.wt.testing.utils import run_cli_command, wait_until
 
@@ -69,12 +68,6 @@ def disable_gh_cli_token(monkeypatch):
 
 
 @pytest.fixture
-def service_builder():
-    """Lowercase alias for ServiceBuilder to match legacy tests."""
-    return ServiceBuilder
-
-
-@pytest.fixture
 def repo_factory(tmp_path: Path):
     """Factory for creating git repositories with different configurations."""
     return GitRepoFactory(tmp_path)
@@ -108,9 +101,6 @@ def daemon_config_factory(tmp_path: Path):
         return ConfigFactory(repo_path, tmp_path, gitstatusd_path=gitstatusd_path)
 
     return _factory_for_repo
-
-
-# Service builder and env var fixtures removed - configure directly in tests with factories
 
 
 @pytest.fixture

@@ -10,6 +10,7 @@ It should NOT be imported by orchestration, backend, or other host-side code.
 - `critic/` — Critic agent (finds issues in code)
 - `grader/` — Grader agent (matches issues to ground truth)
 - `critic_dev/` — Meta-agents that develop critics
+- `af/` — Microsoft Agent Framework glue shared by all agents (loop, tools, `exec` tool, middleware, chat client)
 - `docs/` — Agent-facing documentation templates
 
 ## Boundary Enforcement

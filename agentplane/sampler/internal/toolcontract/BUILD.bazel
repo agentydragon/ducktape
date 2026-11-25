@@ -15,10 +15,7 @@ go_library(
         "codex/wait_description.txt",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract",
-    visibility = [
-        "//agentplane/sampler:__pkg__",
-        "//agentplane/sampler:__subpackages__",
-    ],
+    visibility = ["//agentplane/sampler:__subpackages__"],
     deps = [
         "//agentplane/env/jsonrpc",
         "//agentplane/sampler/protocol",

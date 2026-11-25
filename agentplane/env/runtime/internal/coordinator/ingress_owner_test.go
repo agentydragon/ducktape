@@ -285,10 +285,7 @@ func TestRuntimeCloseJoinsHistoryBeforeReleasingOwner(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Runtime did not cancel History delivery after Host drain")
 	}
-	if owner, err := openTestRuntimeStore(r.config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner before History worker join")
-	}
+	requireOwnerRetained(t, r.config.StateDir, "Runtime released owner before History worker join")
 	select {
 	case err := <-closed:
 		t.Fatalf("Runtime Close completed before History worker joined: %v", err)
@@ -303,11 +300,7 @@ func TestRuntimeCloseJoinsHistoryBeforeReleasingOwner(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Runtime Close did not join History worker")
 	}
-	owner, err := openTestRuntimeStore(r.config.StateDir)
-	if err != nil {
-		t.Fatalf("joined Runtime retained owner: %v", err)
-	}
-	_ = owner.Close()
+	requireOwnerReleased(t, r.config.StateDir, "joined Runtime retained owner")
 }
 
 const sealedHistorySessionID = "session-1"
@@ -397,10 +390,7 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 		t.Fatalf("Runtime Close accepted an unacknowledged seal: %v", err)
 	default:
 	}
-	if owner, err := openTestRuntimeStore(r.config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner before sealed History acknowledgement")
-	}
+	requireOwnerRetained(t, r.config.StateDir, "Runtime released owner before sealed History acknowledgement")
 	seal.release()
 	select {
 	case err := <-closed:
@@ -448,10 +438,7 @@ func TestLateSealedAcknowledgementAfterEngineStopKeepsRuntimeOwner(t *testing.T)
 	})); err != nil {
 		t.Fatalf("wait for late durable sealed acknowledgement: %v", err)
 	}
-	if owner, err := openTestRuntimeStore(r.config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("late acknowledgement released the owner after the lifecycle engine stopped")
-	}
+	requireOwnerRetained(t, r.config.StateDir, "late acknowledgement released the owner after the lifecycle engine stopped")
 }
 
 func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testing.T) {
@@ -539,10 +526,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	case <-ctx.Done():
 		t.Fatal("Runtime Close did not report the failed sealed History delivery")
 	}
-	if owner, err := openTestRuntimeStore(r.config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner without the exact durable sealed History acknowledgement")
-	}
+	requireOwnerRetained(t, r.config.StateDir, "Runtime released owner without the exact durable sealed History acknowledgement")
 }
 
 func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgement(t *testing.T) {
@@ -579,8 +563,5 @@ func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgemen
 	if err != nil || found && ack.Sealed {
 		t.Fatalf("durable sealed History ACK after failed write = %+v, found=%t, err=%v", ack, found, err)
 	}
-	if owner, err := openTestRuntimeStore(r.config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner without durable sealed History acknowledgement")
-	}
+	requireOwnerRetained(t, r.config.StateDir, "Runtime released owner without durable sealed History acknowledgement")
 }

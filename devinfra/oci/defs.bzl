@@ -3,37 +3,6 @@
 load("@aspect_bazel_lib//lib:paths.bzl", "to_rlocation_path")
 load("//devinfra/python:defs.bzl", "py_library")
 
-def _oci_layout_rloc_impl(ctx):
-    """Write a one-line .rloc file with the OCI layout runfiles path."""
-    out = ctx.actions.declare_file(ctx.label.name + ".rloc")
-    ctx.actions.write(out, to_rlocation_path(ctx, ctx.file.image))
-
-    # Include the image tree artifact and its runfiles so the OCI layout is
-    # accessible in tests. Locally-built oci_image targets place the image
-    # directory only in DefaultInfo.files, not default_runfiles, so we must
-    # add it via transitive_files.
-    runfiles = ctx.runfiles(
-        [out],
-        transitive_files = ctx.attr.image[DefaultInfo].files,
-    ).merge(ctx.attr.image[DefaultInfo].default_runfiles)
-    return [DefaultInfo(files = depset([out]), runfiles = runfiles)]
-
-oci_layout_rloc = rule(
-    implementation = _oci_layout_rloc_impl,
-    attrs = {
-        "image": attr.label(
-            doc = "OCI image layout target.",
-            mandatory = True,
-            allow_single_file = True,
-        ),
-    },
-    doc = """OCI image .rloc target: a single-line file naming the OCI layout directory.
-
-    Prefer `oci_layout_py` for Python consumers. Use this for language-neutral
-    handoffs that need a file containing the layout's runfiles path.
-    """,
-)
-
 _LAYOUT_MODULE = """\"\"\"Auto-generated OCI layout runfiles path (do not edit).\"\"\"
 
 LAYOUT_RLOCATION = {rloc}
@@ -61,7 +30,7 @@ _oci_layout_py_src = rule(
     },
 )
 
-def oci_layout_py(name, image, visibility = None, testonly = False):
+def oci_layout_py(name, image, visibility = None, testonly = None, tags = None):
     """A py_library exporting `LAYOUT_RLOCATION` and carrying `image` in its runfiles.
 
     One dep gives a test both the constant and the bytes it names:
@@ -79,18 +48,22 @@ def oci_layout_py(name, image, visibility = None, testonly = False):
         name: target and module name, e.g. "postgres_18" for `postgres_18.LAYOUT_RLOCATION`.
         image: the OCI image layout target, e.g. "@postgres_18_linux_amd64".
         visibility: target visibility.
-        testonly: mark the generated module and library testonly.
+        testonly: mark the generated module and library testonly. Unset follows the package's
+            `default_testonly`; pass `False` to opt out of it.
+        tags: tags applied to both the generated source and the library.
     """
     _oci_layout_py_src(
         name = name + "_src",
         module = name,
         image = image,
+        tags = tags,
         testonly = testonly,
     )
     py_library(
         name = name,
         srcs = [":" + name + "_src"],
         data = [image],
+        tags = tags,
         testonly = testonly,
         visibility = visibility,
     )

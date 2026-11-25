@@ -85,6 +85,7 @@ spec:
                 namespace: cert-manager
                 annotations:
                   goldilocks.fairwinds.com/vpa-update-mode: auto
+                  goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "cert-manager-cainjector", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "20m", "memory": "224Mi"}, "maxAllowed": {"cpu": "100m", "memory": "512Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
             target:
               kind: Deployment
               name: cert-manager-cainjector
@@ -97,6 +98,7 @@ spec:
                 namespace: cert-manager
                 annotations:
                   goldilocks.fairwinds.com/vpa-update-mode: auto
+                  goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "cert-manager-controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "20m", "memory": "112Mi"}, "maxAllowed": {"cpu": "100m", "memory": "128Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
             target:
               kind: Deployment
               name: cert-manager
@@ -109,6 +111,7 @@ spec:
                 namespace: cert-manager
                 annotations:
                   goldilocks.fairwinds.com/vpa-update-mode: auto
+                  goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "cert-manager-webhook", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "64Mi"}, "maxAllowed": {"cpu": "100m", "memory": "128Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
             target:
               kind: Deployment
               name: cert-manager-webhook

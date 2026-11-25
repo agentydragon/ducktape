@@ -1,28 +1,21 @@
 import pytest_bazel
-from cdk8s import (
-    Chart,
-    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
-)
+from cdk8s import App
 from more_itertools import one
 
-from cluster.cdk8s.etcd import TalosEtcdMetrics
-from cluster.scripts.nebula_mesh import Host, Mesh
+from cluster.cdk8s import etcd
+from cluster.scripts.nebula_mesh import Mesh
 
 
-def test_endpoint_slice_lists_the_control_planes_by_nebula_ip(scratch_chart: Chart) -> None:
-    mesh = Mesh(
-        hosts={
-            "cp-a": Host(nebula_ip="10.42.255.1", role="control-plane", managed_by="tofu-ovh"),
-            "worker-b": Host(nebula_ip="10.42.255.2", role="worker", managed_by="tofu-ovh"),
-            "cp-c": Host(nebula_ip="10.42.255.3", role="control-plane", managed_by="tofu-ovh"),
-        }
-    )
-    TalosEtcdMetrics(scratch_chart, "etcd", mesh)
-    endpoint_slice = one(doc for doc in Cdk8sTesting.synth(scratch_chart) if doc["kind"] == "EndpointSlice")
-    assert endpoint_slice["endpoints"] == [
-        {"addresses": ["10.42.255.1"], "conditions": {"ready": True}, "hostname": "cp-a", "nodeName": "cp-a"},
-        {"addresses": ["10.42.255.3"], "conditions": {"ready": True}, "hostname": "cp-c", "nodeName": "cp-c"},
-    ]
+def test_ready_etcd_targets_match_the_control_plane_roster(scratch_app: App, nebula_roster: Mesh) -> None:
+    chart = etcd.chart(scratch_app, nebula_roster)
+    endpoint_slice = one(obj for obj in chart.api_objects if obj.kind == "EndpointSlice")
+    # Prometheus labels each scrape with the EndpointSlice hostname. Talos serves metrics on the Nebula IP.
+    assert sorted(
+        (endpoint["hostname"], address)
+        for endpoint in endpoint_slice.to_json()["endpoints"]
+        if endpoint["conditions"]["ready"]
+        for address in endpoint["addresses"]
+    ) == sorted((name, host.nebula_ip) for name, host in nebula_roster.control_planes().items())
 
 
 if __name__ == "__main__":

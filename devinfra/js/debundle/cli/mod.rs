@@ -655,8 +655,7 @@ fn run_debundle_cli(
             let keep_going = !args.fail_fast;
             let cli = args.context.resolve()?;
             let (ownership_subset, ownership_subset_input) = if let Some(path) = &ownership_subset {
-                let (subset, bytes) =
-                    lowering::ownership_subset::OwnershipSubset::read_with_bytes(path)?;
+                let (subset, bytes) = ownership_subset::OwnershipSubset::read_with_bytes(path)?;
                 (
                     Some(subset),
                     Some(pipeline::OwnershipSubsetInput {
@@ -1066,6 +1065,30 @@ mod tests {
             let cli = args.context.resolve().expect("resolve cli");
             assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
         });
+    }
+
+    #[test]
+    fn modules_apply_requires_assignments_or_plan_before_dispatch() {
+        let error = super::cli_command()
+            .try_get_matches_from([
+                "debundle",
+                "modules",
+                "apply",
+                "--graph",
+                "graph.json.gz",
+                "--modules",
+                "modules",
+                "--source-root",
+                "source",
+                "--readable-names",
+                "names.json",
+            ])
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+        assert!(error.to_string().contains("--assignments"));
     }
 
     #[test]

@@ -23,8 +23,11 @@ class Resistor(BasePart):
 @dataclasses.dataclass
 class Capacitor(BasePart):
     capacitance: pint.Quantity
-    dielectric: str
-    voltage_rating: float
+    dielectric: str | None
+    voltage_rating: float | None
+
+
+type BookPart = Resistor | Capacitor
 
 
 def crunch(factory, *items):
@@ -56,7 +59,7 @@ def _c(value, **kwargs):
     return Capacitor(capacitance=value * pf, **kwargs)
 
 
-parts: list[BasePart] = []
+parts: list[BookPart] = []
 
 # R 0201
 crunch(

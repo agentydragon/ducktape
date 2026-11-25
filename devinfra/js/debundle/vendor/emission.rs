@@ -28,9 +28,7 @@ use swc_common::GLOBALS;
 use swc_ecma_ast::Id;
 use swc_ecma_visit::VisitMutWith;
 
-use artifact::{
-    ArtifactIndexes, ChunkBundle, FileRole, JsFile, JsFileAstParts, list_chunk_file_paths,
-};
+use artifact::{ArtifactIndexes, ChunkBundle, FileRole, JsFile, JsFileAstParts};
 use js_ast::{GlobalUseElisions, ParsedGlobalUses, ParsedJsModule};
 use spec::PartialSwapSymbol;
 
@@ -43,22 +41,14 @@ use crate::{
     SelfRewriteOutputs, seed_bundled_partial_swap_self_rewrites,
 };
 
-/// What the emission rewrites changed beyond the file bodies themselves.
-#[derive(Debug, Default)]
-pub struct EmissionRewriteOutput {
-    /// Rewritten references per (swapped chunk, chunk export).
-    pub references_by_symbol: BTreeMap<(ChunkId, String), usize>,
-    /// Prepared-parse global-use sites each vendor residual strip removed.
-    pub global_use_elisions: BTreeMap<ChunkId, GlobalUseElisions>,
-}
-
 /// Body-only emit pass: ASTs are taken out for parallel rewrites and put back
 /// at the same file paths. The caller may retain its output-path indexes.
 pub fn apply_emission_rewrites_in_place(
     artifact: &mut ChunkBundle,
     plan: &VendorResolutionPlan,
     references: &ArtifactIndexes,
-) -> Result<EmissionRewriteOutput> {
+    references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
+) -> Result<BTreeMap<ChunkId, GlobalUseElisions>> {
     let chunk_table = artifact.chunk_table.clone();
     let materialized_index = MaterializedOutputChunkIndex::build(&chunk_table);
     let context = PassthroughContext {
@@ -80,16 +70,7 @@ pub fn apply_emission_rewrites_in_place(
             continue;
         }
         let chunk_name = chunk_table.name(chunk_id).to_string();
-        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-            let Some(file) = chunk_artifact.js.get_file(&file_path) else {
-                continue;
-            };
-            // Materialized module files' specifiers are constructed by
-            // lowering from the same plan; only pass-through files
-            // (entries, runtime files) are rewritten here.
-            if file.metadata.role == FileRole::Module || file.ast().is_none() {
-                continue;
-            }
+        for file_path in passthrough_ast_paths(&chunk_artifact.js) {
             let (parts, ast) = chunk_artifact
                 .js
                 .remove_file(&file_path)
@@ -131,7 +112,6 @@ pub fn apply_emission_rewrites_in_place(
             .collect()
     });
 
-    let mut references_by_symbol = BTreeMap::new();
     for result in results {
         for ((chunk_id, chunk_export), count) in result.references_by_symbol {
             if !plan.partial_swaps.contains_key(&chunk_id)
@@ -161,7 +141,7 @@ pub fn apply_emission_rewrites_in_place(
             artifact,
             &chunk_table,
             chunk_id,
-            &partial.chunk_path,
+            &partial.resolution.chunk_path,
             &partial.entry_file,
             &partial.symbols,
             None,
@@ -172,7 +152,7 @@ pub fn apply_emission_rewrites_in_place(
             artifact,
             &chunk_table,
             chunk_id,
-            &bundled.chunk_path,
+            &bundled.resolution.chunk_path,
             &bundled.entry_file,
             &bundled.symbols,
             Some(bundled),
@@ -200,10 +180,7 @@ pub fn apply_emission_rewrites_in_place(
         }
     }
 
-    Ok(EmissionRewriteOutput {
-        references_by_symbol,
-        global_use_elisions,
-    })
+    Ok(global_use_elisions)
 }
 
 struct PassthroughFileJob {
@@ -265,13 +242,7 @@ fn extract_residual_job<'a>(
     }
     let mut files = Vec::new();
     let mut has_entry_ast = false;
-    for file_path in list_chunk_file_paths(js_chunk) {
-        let Some(file) = js_chunk.get_file(&file_path) else {
-            continue;
-        };
-        if file.metadata.role == FileRole::Module || file.ast().is_none() {
-            continue;
-        }
+    for file_path in passthrough_ast_paths(js_chunk) {
         let (parts, ast) = js_chunk
             .remove_file(&file_path)
             .and_then(|file| file.into_ast_parts())
@@ -375,9 +346,8 @@ fn emit_vendor_residual(
         .iter()
         .position(|(file_path, _, _)| file_path == entry_file)
         .expect("residual job extraction verified the entry AST is present");
-    // Strip the entry last and keep it last in re-insertion order,
-    // matching the former stage order (strip re-appended the entry
-    // after the pass-through and self-rewrite waves).
+    // Strip the entry after the per-file rewrites above (the strip consumes the
+    // `replacement_import_locals` they seed) and re-insert it last.
     let (_, _, entry_ast) = &mut files[entry_index];
     let global_use_elisions = strip_one_chunk_with_replacement_imports(
         &mut entry_ast.module,
@@ -413,4 +383,15 @@ pub fn write_planned_vendor_outputs(plan: &VendorResolutionPlan) -> Result<()> {
         write_planned_bundled_assets(&bundled.assets)?;
     }
     Ok(())
+}
+
+// Lowering constructs module imports from the same plan. Only pass-through
+// entries and runtime files with a retained AST need a rewrite job.
+fn passthrough_ast_paths(chunk: &artifact::JsChunk) -> Vec<String> {
+    chunk
+        .ordered_files()
+        .into_iter()
+        .filter(|file| file.metadata.role != FileRole::Module && file.ast().is_some())
+        .map(|file| file.path.clone())
+        .collect()
 }

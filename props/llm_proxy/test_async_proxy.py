@@ -59,7 +59,6 @@ def _authorization(username: str, password: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-@pytest.mark.asyncio
 async def test_async_auth_route_and_logging(synced_db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     run_id = uuid4()
     with synced_db.session() as session:

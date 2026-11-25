@@ -1,3 +1,5 @@
+import { useHref } from "react-router";
+import CopyButton from "../components/CopyButton";
 import EntityLink from "./EntityLink";
 
 interface Props {
@@ -7,15 +9,21 @@ interface Props {
   filePath?: string;
 }
 
-export default function OccurrenceLink({ snapshotSlug, issueId, occurrenceId, filePath }: Props) {
-  let urlPath = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}`;
-  if (filePath) {
-    urlPath += `?file=${encodeURIComponent(filePath)}`;
-  }
+function occurrencePath({ snapshotSlug, issueId, occurrenceId, filePath }: Props): string {
+  const path = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}`;
+  return filePath ? `${path}?file=${encodeURIComponent(filePath)}` : path;
+}
 
+export function CopyOccurrenceLink(props: Props & { label: string }) {
+  const href = useHref(occurrencePath(props));
+  return <CopyButton text={new URL(href, window.location.href).href} label={props.label} />;
+}
+
+export default function OccurrenceLink(props: Props) {
+  const { snapshotSlug, issueId, occurrenceId } = props;
   return (
     <EntityLink
-      to={urlPath}
+      to={occurrencePath(props)}
       title={`View occurrence ${issueId}/${occurrenceId} in ${snapshotSlug}`}
       variant="monospace"
     >

@@ -1,0 +1,52 @@
+# Upstream owner: packages/excalidraw/element/heading.ts (v0.18.1)
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        HEADING_RIGHT = [1, 0],
+        HEADING_DOWN = [0, 1],
+        HEADING_LEFT = [-1, 0],
+        HEADING_UP = [0, -1],
+        headingForDiamond = (a, b) => {
+          let angle = radiansToDegrees(Math.atan2(b[1] - a[1], b[0] - a[0]));
+          return angle >= 315 || angle < 45 ? HEADING_UP :
+            angle >= 45 && angle < 135 ? HEADING_RIGHT :
+            angle >= 135 && angle < 225 ? HEADING_DOWN : HEADING_LEFT;
+        },
+        vectorToHeading = vec => {
+          let [x, y] = vec, absX = Math.abs(x), absY = Math.abs(y);
+          return x > absY ? HEADING_RIGHT : x <= -absY ? HEADING_LEFT :
+            y > absX ? HEADING_DOWN : HEADING_UP;
+        },
+        headingForPoint = (p, o) => vectorToHeading(vectorFromPoint(p, o)),
+        headingForPointIsHorizontal = (p, o) => headingIsHorizontal(headingForPoint(p, o)),
+        compareHeading = (a, b) => a[0] === b[0] && a[1] === b[1],
+        headingIsHorizontal = h => compareHeading(h, HEADING_RIGHT) || compareHeading(h, HEADING_LEFT),
+        headingForPointFromElement = (element, aabb, p) => {
+          let mid = EXPR(aabb);
+          if (element.type === "diamond") {
+            if (p[0] < element.x) return HEADING_LEFT;
+            if (p[1] < element.y) return HEADING_UP;
+            if (p[0] > element.x + element.width) return HEADING_RIGHT;
+            if (p[1] > element.y + element.height) return HEADING_DOWN;
+            STMT_LIST;
+          }
+          STMT_LIST;
+        },
+        flipHeading = h => [
+          h[0] === 0 ? 0 : h[0] > 0 ? -1 : 1,
+          h[1] === 0 ? 0 : h[1] > 0 ? -1 : 1
+        ],
+        DECLARATORS_AFTER = null;
+    bindings:
+      - HEADING_RIGHT
+      - HEADING_DOWN
+      - HEADING_LEFT
+      - HEADING_UP
+      - headingForDiamond
+      - vectorToHeading
+      - headingForPoint
+      - headingForPointIsHorizontal
+      - compareHeading
+      - headingIsHorizontal
+      - headingForPointFromElement
+      - flipHeading

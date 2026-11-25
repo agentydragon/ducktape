@@ -7,7 +7,7 @@ pub use graph_fixture::GraphFixture;
 
 use analysis::reports::schema::SourceUnitReport;
 use analysis::{DependencyGraphReport, ProgramGraphReport};
-use debundle_e2e_support::{Fixture, RejectedFixture, read_gzip_json};
+use debundle_e2e_support::{Fixture, RejectedFixture, read_gzip_json, read_json};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -24,49 +24,33 @@ pub fn commuting_statements_diagnostics(
     if !path.exists() {
         return Vec::new();
     }
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    serde_json::from_str(&text).unwrap_or_else(|error| panic!("parse {}: {error}", path.display()))
+    read_json(&path)
 }
 
 /// Typed graph accessors for fixtures that otherwise only need the CLI harness.
 pub trait FixtureGraphExt {
-    fn dependency_graph(&self) -> DependencyGraphReport;
-    fn program_graph(&self) -> ProgramGraphReport;
-}
+    fn dependency_graph_path(&self) -> PathBuf;
 
-impl FixtureGraphExt for Fixture {
     fn dependency_graph(&self) -> DependencyGraphReport {
-        read_dependency_graph(
-            &self
-                .report_root
-                .join(&self.chunk_id)
-                .join("dependency_graph.json.gz"),
-        )
+        read_dependency_graph(&self.dependency_graph_path())
     }
 
     fn program_graph(&self) -> ProgramGraphReport {
-        read_program_graph(
-            &self
-                .report_root
-                .join(&self.chunk_id)
-                .join("dependency_graph.json.gz"),
-        )
+        read_program_graph(&self.dependency_graph_path())
+    }
+}
+
+impl FixtureGraphExt for Fixture {
+    fn dependency_graph_path(&self) -> PathBuf {
+        self.report_root
+            .join(&self.chunk_id)
+            .join("dependency_graph.json.gz")
     }
 }
 
 impl FixtureGraphExt for RejectedFixture {
-    fn dependency_graph(&self) -> DependencyGraphReport {
-        read_dependency_graph(
-            &self
-                .report_root
-                .join(&self.chunk_id)
-                .join("dependency_graph.json.gz"),
-        )
-    }
-
-    fn program_graph(&self) -> ProgramGraphReport {
-        read_program_graph(&self.report_path("dependency_graph.json.gz"))
+    fn dependency_graph_path(&self) -> PathBuf {
+        self.report_path("dependency_graph.json.gz")
     }
 }
 

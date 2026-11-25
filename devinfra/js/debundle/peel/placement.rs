@@ -169,8 +169,7 @@ pub(super) fn search(
             SearchStatus::UnsupportedResidualRouting
         }
     } else {
-        let (validation, _) =
-            problem.validate_with_priority_and_schedule(&candidate, &import_order)?;
+        let validation = problem.validate_with_priority(&candidate, &import_order)?;
         ensure!(
             accepted(&validation),
             "append-last window theorem disagreed with complete assignment certification: {:?}",

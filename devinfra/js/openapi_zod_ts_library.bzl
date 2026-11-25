@@ -3,21 +3,11 @@
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
-def openapi_zod_ts_library(name, schema, config, tsconfig, deps, out = None, schema_files = [], config_files = [], config_deps = [], isolated_typecheck = False, visibility = None):
-    """Generate and type-check Zod TypeScript from declared OpenAPI and config files.
-
-    The schema, config, and every relative-local-reference target are action
-    inputs. `config_files` declares local modules imported by the config;
-    `config_deps` declares runtime package dependencies used by it. `$(location)`
-    supplies the primary files' execroot paths without parsing labels. The named
-    target is a compiled `ts_library`; the generated source is also available at
-    `out`, which defaults to `<name>.ts`.
-    """
+def openapi_zod_ts_library(name, schema, tsconfig, out = None, schema_files = [], isolated_typecheck = False, visibility = None):
+    """Generate a compiled Zod library. Declare local schema references in schema_files."""
     if out == None:
         out = name + ".ts"
 
-    schema_label = str(schema)
-    config_label = str(config)
     gen_dir = "_{}_hey_api_out".format(name)
     generated_ts = gen_dir + "/zod.gen.ts"
     package_dir = native.package_name()
@@ -27,12 +17,11 @@ def openapi_zod_ts_library(name, schema, config, tsconfig, deps, out = None, sch
 
     js_run_binary(
         name = "_{}_generate".format(name),
-        srcs = [schema, config] + schema_files + config_files + config_deps,
+        srcs = [schema] + schema_files,
         outs = [generated_ts],
         args = [
-            "$(location {})".format(schema_label),
+            "$(location {})".format(schema),
             bindir_output + gen_dir,
-            "$(location {})".format(config_label),
         ],
         chdir = "../../../",
         tool = "//devinfra/js:openapi_zod_codegen",
@@ -54,7 +43,7 @@ def openapi_zod_ts_library(name, schema, config, tsconfig, deps, out = None, sch
         name = name,
         srcs = [":" + emit_name],
         tsconfig = tsconfig,
-        deps = deps,
+        deps = ["//:node_modules/zod"],
         isolated_typecheck = isolated_typecheck,
         visibility = visibility,
     )

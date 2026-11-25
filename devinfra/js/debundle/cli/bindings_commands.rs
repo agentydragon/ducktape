@@ -11,6 +11,7 @@ use crate::emit_report;
 use crate::outcome::{MutationOutcome, MutationVerb, emit_gate_rejection_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
+use command_output::infallible;
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use peel::OutputFormat;
 use serde::Serialize;
@@ -24,39 +25,35 @@ pub(super) struct BindingsNs {
 }
 
 impl BindingsNs {
-    pub(super) fn edits_with_graph(&self) -> bool {
+    fn graph_edit_args(&self) -> Option<&GraphEditArgs> {
         match &self.command {
-            BindingsNsCommand::Assign(args) => args.edit.dependency_graph_path.is_some(),
-            BindingsNsCommand::Unassign(args) => args.edit.dependency_graph_path.is_some(),
-            _ => false,
-        }
-    }
-    pub(super) fn writes_with_graph(&self) -> bool {
-        match &self.command {
-            BindingsNsCommand::Assign(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            BindingsNsCommand::Unassign(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            _ => false,
-        }
-    }
-    pub(super) fn format(&self) -> Option<OutputFormat> {
-        match &self.command {
-            BindingsNsCommand::Assign(args) => args.edit.format,
-            BindingsNsCommand::Unassign(args) => args.edit.format,
+            BindingsNsCommand::Assign(args) => Some(&args.edit),
+            BindingsNsCommand::Unassign(args) => Some(&args.edit),
             _ => None,
         }
     }
+
+    pub(super) fn edits_with_graph(&self) -> bool {
+        self.graph_edit_args()
+            .is_some_and(GraphEditArgs::edits_with_graph)
+    }
+
+    pub(super) fn writes_with_graph(&self) -> bool {
+        self.graph_edit_args()
+            .is_some_and(GraphEditArgs::writes_with_graph)
+    }
+
+    pub(super) fn format(&self) -> Option<OutputFormat> {
+        self.graph_edit_args().and_then(|edit| edit.format)
+    }
+
     pub(super) fn verify_graph(
         &self,
         roots: &CurrentRoots,
     ) -> Result<Option<VerifiedGraphSourceContext>> {
-        match &self.command {
-            BindingsNsCommand::Assign(args) => args.edit.verify_graph(roots),
-            BindingsNsCommand::Unassign(args) => args.edit.verify_graph(roots),
-            _ => Ok(None),
+        match self.graph_edit_args() {
+            Some(edit) => edit.verify_graph(roots),
+            None => Ok(None),
         }
     }
 }
@@ -229,10 +226,7 @@ fn run_bindings_list_cmd(args: BindingsListNsArgs, output: &mut dyn std::io::Wri
         output,
         args.format,
         &report,
-        |report, out| {
-            render_bindings_list_text(report, out);
-            Ok(())
-        },
+        infallible(render_bindings_list_text),
         "writing bindings list output",
     )
 }
@@ -264,15 +258,7 @@ fn run_bindings_rename_cmd(
     args: BindingsRenameArgs,
 ) -> Result<()> {
     if let Some(path) = &args.batch {
-        use std::io::Read;
-        let text = if path == "-" {
-            let mut text = String::new();
-            std::io::stdin().read_to_string(&mut text)?;
-            text
-        } else {
-            std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?
-        };
-        let requests: Vec<Rename> = serde_json::from_str(&text)?;
+        let requests: Vec<Rename> = serde_json::from_str(&read_binding_batch(path)?)?;
         let out = rename_bindings(
             stderr,
             &args.modules_root,
@@ -330,6 +316,14 @@ fn run_bindings_rename_cmd(
     Ok(())
 }
 
+fn read_binding_batch(path: &str) -> Result<String> {
+    if path == "-" {
+        Ok(std::io::read_to_string(std::io::stdin())?)
+    } else {
+        std::fs::read_to_string(path).with_context(|| format!("reading {path}"))
+    }
+}
+
 fn run_bindings_assign_cmd(
     output: &mut dyn std::io::Write,
     stderr: &mut (dyn std::io::Write + Send),
@@ -337,20 +331,12 @@ fn run_bindings_assign_cmd(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
-    use std::io::Read;
     let mut moves: Vec<Move> = Vec::new();
     for t in &args.triples {
         moves.push(parse_move_triple(t)?);
     }
     if let Some(path) = &args.batch {
-        let text = if path == "-" {
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf)?;
-            buf
-        } else {
-            std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?
-        };
-        moves.extend(parse_batch_json(&text)?);
+        moves.extend(parse_batch_json(&read_binding_batch(path)?)?);
     }
     let candidate_context = args.effect_assessment.resolve_for_verified_write(
         &args.edit,

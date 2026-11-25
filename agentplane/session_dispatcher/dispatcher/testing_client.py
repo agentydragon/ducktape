@@ -7,6 +7,7 @@ from uuid import UUID
 
 import grpc
 from google.protobuf.message import Message
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.grpc.calls import call_unary, dial
@@ -39,7 +40,9 @@ class SessionDispatcherClient:
             yield cls(channel, request_timeout_s=request_timeout_s)
 
     async def unary[ResponseT: Message](self, call: Callable[..., Awaitable[ResponseT]], request: Message) -> ResponseT:
-        return await call_unary(call, request, timeout_s=self.request_timeout_s)
+        headers: dict[str, str] = {}
+        TraceContextTextMapPropagator().inject(headers)
+        return await call_unary(call, request, timeout_s=self.request_timeout_s, metadata=tuple(headers.items()))
 
     async def submit_input(
         self, session_id: str, command_id: str, sandbox: str, sandbox_uid: str, text: str

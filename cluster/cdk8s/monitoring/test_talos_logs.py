@@ -6,13 +6,13 @@ import json
 import socket
 import time
 from pathlib import Path
-from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
 import pytest_bazel
 from python.runfiles import Runfiles
 from testcontainers.core.network import Network
+from testcontainers.core.wait_strategies import HttpWaitStrategy
 
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -51,17 +51,9 @@ analytics:
 """
 
 
-def _wait_for_loki(base_url: str) -> None:
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        try:
-            with urlopen(f"{base_url}/ready", timeout=2) as response:
-                if response.status == 200:
-                    return
-        except OSError, URLError:
-            pass
-        time.sleep(0.2)
-    raise AssertionError("Loki did not become ready; see talos-loki/container.log")
+def _ready_loki_url(loki: LoggedContainer) -> str:
+    HttpWaitStrategy(3100, "/ready").with_startup_timeout(30).wait_until_ready(loki)
+    return f"http://{loki.get_container_host_ip()}:{loki.get_exposed_port(3100)}"
 
 
 def _connect(host: str, port: int) -> socket.socket:
@@ -129,8 +121,7 @@ def test_talos_tcp_delivery(tmp_path: Path, runfiles: Runfiles) -> None:
             "--storage.path=/tmp/alloy --server.http.listen-addr=127.0.0.1:12347 --disable-reporting"
         ) as alloy,
     ):
-        base_url = f"http://{loki.get_container_host_ip()}:{loki.get_exposed_port(3100)}"
-        _wait_for_loki(base_url)
+        base_url = _ready_loki_url(loki)
         host, port = alloy.get_container_host_ip(), int(alloy.get_exposed_port(13333))
         start_ns = time.time_ns()
         with _connect(host, port) as connection:
@@ -148,9 +139,8 @@ def test_talos_tcp_delivery(tmp_path: Path, runfiles: Runfiles) -> None:
         time.sleep(2)
         loki.get_wrapped_container().start()
         # Docker can allocate a new ephemeral host port when a container restarts.
-        base_url = f"http://{loki.get_container_host_ip()}:{loki.get_exposed_port(3100)}"
         try:
-            _wait_for_loki(base_url)
+            base_url = _ready_loki_url(loki)
         finally:
             (undeclared_outputs_dir() / "loki-restart.log").write_bytes(loki.get_wrapped_container().logs())
         entries = _entries(base_url, start_ns, 3)

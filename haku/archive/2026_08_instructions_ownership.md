@@ -11,8 +11,9 @@ discovery all live in haku-state's root cards now, base-sync and its pin are gon
 Two things are worth carrying forward from it, which is why it is kept rather than deleted.
 
 **The line that mattered was config, not prose.** The proposal spent its length deciding which
-paragraphs Haku may rewrite. What actually stayed behind in ducktape is `agent_shared.yaml` —
-model and tool grants — because that is the part a Haku-writable repo must not hold. The
+paragraphs Haku may rewrite. What actually stayed behind in ducktape was config — model and
+tool grants, in `agent_shared.yaml` until #18414 deleted it — because that is the part a
+Haku-writable repo must not hold. The
 document's own best argument pointed here already ("in-agent prose is not the boundary, the
 pod, RBAC and mitmproxy egress are"); the execution simply took it seriously enough to stop
 line-splitting a file whose contents were never the enforcement.

@@ -2,7 +2,6 @@
 
 # gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 load("//devinfra/python:defs.bzl", "py_library")
 
@@ -34,6 +33,7 @@ py_library(
     ],
     deps = [
         ":config",
+        "//cluster/cdk8s:public_web_pki",
         "//cluster/cdk8s/providers/cert_manager:bundle",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate_private_key",

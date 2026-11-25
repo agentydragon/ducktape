@@ -1,6 +1,6 @@
 # Cloud provider comparison (May 2026)
 
-Baseline when written: 4× Hetzner CPX31 (4 shared AMD vCPU, 8 GB, 160 GB NVMe, Hillsboro `HIL`) at ~$25/mo each, ~$100 total; Hetzner raised CPX31 from ~$18 in April 2026. The cluster has since moved to OVH dedicated servers in `hil` ([nodes](../cluster/docs/topology.md#nodes)). To refresh prices: `cluster/scripts/ovh_hil_availability.py` (sub-$100 OVH dedicated in Hillsboro) and `cluster/scripts/hcloud_server_types.py` (Hetzner types).
+Baseline when written: 4× Hetzner CPX31 (4 shared AMD vCPU, 8 GB, 160 GB NVMe, Hillsboro `HIL`) at ~$25/mo each, ~$100 total; Hetzner raised CPX31 from ~$18 in April 2026. The cluster has since moved to OVH dedicated servers in `hil` ([nodes](../cluster/docs/topology.md#nodes)). See [OVH and Hetzner price queries](../cluster/docs/ovh_hil_availability_queries.md) to refresh prices.
 
 ## Per-node comparison (~$25 budget, equivalent specs)
 

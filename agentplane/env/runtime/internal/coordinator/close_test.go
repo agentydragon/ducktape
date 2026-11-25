@@ -24,8 +24,5 @@ func TestCloseSessionStopFailureRetainsOwner(t *testing.T) {
 	} else if _, ok := err.(nonComparableCloseFailure); !ok {
 		t.Fatalf("Close error = %T: %v, want original failure type", err, err)
 	}
-	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("Session stop failure released environment owner")
-	}
+	requireOwnerRetained(t, config.StateDir, "Session stop failure released environment owner")
 }

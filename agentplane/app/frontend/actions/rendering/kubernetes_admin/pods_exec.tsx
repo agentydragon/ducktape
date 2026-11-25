@@ -65,6 +65,9 @@ function PodsDeleteLabel({ args }: { args: z.infer<typeof podsDeleteArguments> }
 
 export const podsDeleteLabel: ArgumentsPreview = definePreview(podsDeleteArguments, PodsDeleteLabel);
 export const podsDeletePane: ArgumentsPreview = definePreview(podsDeleteArguments, () => (
+  <Text size="sm">For MCP-managed Pods, this may also remove matching Services.</Text>
+));
+const podsDeleteDetails: ArgumentsPreview = definePreview(podsDeleteArguments, () => (
   <Text size="sm">
     For a Pod managed by the Kubernetes MCP server, this can also remove matching Services and OpenShift Routes.
   </Text>
@@ -77,7 +80,7 @@ export const podsDeletePresentation: ActionPresentation = {
   label: podsDeleteLabel,
   pane: { collapsed: podsDeletePane },
   details: {
-    arguments: podsDeletePane,
+    arguments: podsDeleteDetails,
     result: podsDeleteResultPreview,
   },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsDelete,

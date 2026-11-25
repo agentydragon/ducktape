@@ -124,7 +124,6 @@ type actionFake struct {
 
 	listGroups    func(context.Context, *action_servicepb.ListActionGroupsRequest) (*action_servicepb.ListActionGroupsResponse, error)
 	getAction     func(context.Context, *action_servicepb.GetActionRequest) (*action_servicepb.GetActionResponse, error)
-	getPolicy     func(context.Context, *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error)
 	submit        func(context.Context, *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error)
 	listRequests  func(context.Context, *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error)
 	getRequest    func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error)
@@ -184,11 +183,8 @@ func (s *actionFake) GetAction(ctx context.Context, request *action_servicepb.Ge
 	return nil, status.Error(codes.NotFound, "Action not found")
 }
 
-func (s *actionFake) GetActionPolicy(ctx context.Context, request *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
+func (s *actionFake) GetActionPolicy(ctx context.Context, _ *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
 	s.record(ctx, "GetActionPolicy")
-	if s.getPolicy != nil {
-		return s.getPolicy(ctx, request)
-	}
 	return &action_servicepb.GetActionPolicyResponse{ActionPolicy: &action_servicepb.CallerActionPolicy{}}, nil
 }
 

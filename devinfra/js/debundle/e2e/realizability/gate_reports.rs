@@ -667,5 +667,3 @@ export { a1, a2, b1 };
 
 // Acyclic cross-module at-init read correctness (Lemma 3's named
 // pin) lives in `cases/initialization/computed_key_read`.
-
-// --- Top-level await is rejected (docs/design.md A2) --------------------------

@@ -244,9 +244,11 @@ barman-cloud backups and continuous WAL archiving with a 30-day retention policy
 They are stored in SeaweedFS in the same OVH failure domain; offsite backup remains
 open in <plan.md>.
 
-All in-cluster tofu-controller `Terraform` CRs also use the PG backend (one schema per CR
-in the same `tofu-state-db-ovh` cluster; reflector mirrors PG creds into `flux-system`).
-PG advisory locks auto-release on runner-pod death — no more stale-Lease problem.
+Crossplane's OpenTofu provider manages state for the migrated GitOps roots. Its
+Workspaces and the remaining tofu-controller runners use the same PostgreSQL backend.
+Reflector mirrors the credentials into `flux-system`. Each GitOps root keeps its
+schema through a controller handoff or module rename. Infra-drift plans the bootstrap
+root against its existing `main` schema.
 
 Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
 resources have `lifecycle { prevent_destroy = true }`. Bootstrap uses targeted applies
@@ -265,14 +267,9 @@ sources themselves poll every 30m, only as the net for a lost delivery.
 
 ## InvenTree API Token Provisioning
 
-Via the `inventree-token-provisioner` image
-(`cluster/archive/inventree_token_provisioner/`), run as a Job plus a weekly
-renewal CronJob: admin credentials -> InvenTree REST API -> get-or-create the
-`sandbox-agent` user, issue a named API token, write the `inventree-api-token`
-Secret in the `inventree` namespace; an ESO `ClusterExternalSecret` mirrors it
-into `claude-sandbox`. Renews when fewer than 30 days remain. Decommissioned
-together with InvenTree; the provisioner source remains available if the app is
-revived, but its CI image target is archived rather than published automatically.
+The parked [provisioner](../archive/inventree_token_provisioner/provision.py) writes
+`inventree-api-token` in the `inventree` namespace. [ESO](../parked/inventree/token-provisioner/token-eso.yaml)
+mirrors it into `claude-sandbox`. [Revival checklist](../parked/inventree/TODO.md)
 
 ## CPU limits policy (VPA)
 
@@ -382,7 +379,11 @@ applications").
   from Git and Ollama). The cdk8s module and image build stay for revival; automatic image
   publication, Flux tracking, and the unused image pin were removed. See its README.
 - **Paperless**: `cluster/parked/paperless/` — decommissioned; third-party
-  (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
+  (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source. Its Authentik provider,
+  application, `paperless_admins` group and reflected `paperless-sso-providers` Secret are
+  no longer provisioned. A revival restores them from `8f5c464419`
+  (`git show 8f5c464419:tf/gitops/sso-providers/provider_paperless.tf`, plus the `paperless`
+  entry in `providers.tf` of the same commit).
 - **Firecrawl**: `cluster/parked/firecrawl/` — its namespace, database, and app
   declarations remain in Git.
 - **OpenHands**: `cluster/parked/openhands/` — experimental and not currently used;
@@ -398,8 +399,7 @@ applications").
   its revival package remains in Git.
 - **egress-proxy-rugged**: `cluster/parked/egress-proxy-rugged/` — decommissioned;
   its configuration remains in Git.
-- **InvenTree**: `cluster/parked/inventree/` — decommissioned; its four Flux
-  Kustomizations are removed from the active bundle, and the revival package remains in Git.
+- **InvenTree**: decommissioned. [Revival checklist](../parked/inventree/TODO.md) for images, credentials, and Flux owners.
 - **Authelia**: `cluster/parked/authelia/` — decommissioned SSO alternative
   experiment; its Flux Kustomization is removed from the active bundle and manifests
   remain for manual revival. Authentik is the active SSO provider.
@@ -408,18 +408,23 @@ applications").
   deleted.
 - **gecko**: `cluster/parked/gecko/` — same legacy-VM retirement hold as agent-box.
 - **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up
-  post-relocation (not unblocked by atlas/wyrm2 returning).
+  post-relocation (not unblocked by atlas/wyrm2 returning). Keep the RTL-TCP image
+  publishing job and Flux image tracking available for revival.
+  [Owner decision on SDR](https://github.com/agentydragon/ducktape/pull/18583#issuecomment-7059852738).
 - **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm
-  MCP server (`bmorphism/manifold-mcp-server`), ducktape's OCI build wrapper
-  (`third_party/manifold_mcp_server/`) stays live and unparked. Its Flux Kustomization
+  MCP server (`bmorphism/manifold-mcp-server`). Its OCI build wrapper
+  (`third_party/manifold_mcp_server/`, a nested Bazel module) was deleted; a revival
+  restores it from `f1f1ed6e1b`. Its Flux Kustomization
   is removed from the active bundle; manifests remain for manual revival. Its API-key
   Secret had been Reflector-mirrored into an `augur` namespace defined in the separate
   `gaffer-private` repo. That namespace is now absent, so no current in-cluster consumer
   remains; the secret manifest stays parked.
 - **osm-mcp**: `cluster/parked/osm-mcp/` — decommissioned; its Flux Kustomization
   is removed from the active bundle. The third-party Go MCP server
-  (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live
-  and unparked. Already unwired from haku-console's tool config since 2026-07-19
+  (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/` and its Go module
+  entries in `devinfra/bazel/go.MODULE.bazel`) was deleted; its image is off the publish
+  roster and not tracked by Flux, and a revival restores the wrapper from `ca1ec04d75`.
+  Already unwired from haku-console's tool config since 2026-07-19
   (routing-profile bug), so it had no live consumer.
 - **codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
   `cluster/parked/<name>/` — three successive Codex-in-a-pod experiments, previously
@@ -429,14 +434,19 @@ applications").
   once, but its Flux Kustomization had already been retired. The image source remains
   in place for possible revival, though its flake evaluation currently fails. Its two
   SOPS Secret manifests remain parked at `cluster/parked/codex-pod/`; replace
-  them with runtime-managed credentials before reactivation.
+  them with runtime-managed credentials before reactivation. Its Forgejo service user,
+  SSH key, read grant on `ducktape` and token-mint Secret are no longer provisioned
+  (`tf/gitops/forgejo-agentydragon-repos`, restore from `d36a089448`), and neither is its
+  rotated Forgejo tea token (`secrets/codex-pod-forgejo-tea-token.yaml`, last rotated
+  2026-09-03). Its two LiteLLM virtual keys, `codex-pod` and
+  `codex-pod-messages`, are also no longer provisioned.
 - **budget (Fava)**: `cluster/parked/budget/` — decommissioned read-only Beancount
   ledger viewer. Its `budget` namespace remains active at
   `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's
   git credentials (`budget-ledger-git-creds`). The underlying ledger data (a Forgejo git
   repo provisioned by `tf/gitops/budget-ledger/`) is untouched. Its Authentik
-  SSO blueprint was tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
-  <sso.md> § "Deleting Authentik providers or applications".
+  application and proxy provider were deleted through a `state: absent` blueprint, since
+  removed, per <sso.md> § "Deleting Authentik providers or applications".
 - **augur-evidence**: `cluster/parked/augur-evidence/` — retired Forgejo evidence
   repository provisioning and Flux package. The repository and credentials are retained;
   the market roster is kept at `finance/scraper/market-roster.yaml` for a future revival.

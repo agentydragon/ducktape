@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use http::StatusCode;
 use log::warn;
-use prometheus::{Encoder, HistogramOpts, HistogramVec, Registry, TextEncoder};
+use prometheus::{HistogramOpts, HistogramVec, Registry};
 
 use crate::path::{parse_metadata_request, parse_replay_path};
 use crate::response::{ArchiveResponse, stored_metadata_response, stored_replay_response};
@@ -60,9 +60,7 @@ impl ArchiveInputService {
     pub async fn metrics(&self) -> Result<String> {
         let registry = Registry::new();
         registry.register(Box::new(self.fill_wait_duration.clone()))?;
-        let mut output = Vec::new();
-        TextEncoder::new().encode(&registry.gather(), &mut output)?;
-        String::from_utf8(output).context("prometheus text encoder emitted invalid UTF-8")
+        crate::metrics::encode(&registry)
     }
 
     async fn handle_metadata(&self, request: MetadataRequest) -> ArchiveResponse {

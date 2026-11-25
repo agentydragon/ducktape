@@ -20,13 +20,6 @@ class CodexEvents:
     async def next(self) -> wire.CodexFrame:
         return wire.parse_frame(await self._frames.next())
 
-    async def response(self, request_id: wire.RequestId) -> wire.Response:
-        while True:
-            match await self.next():
-                case wire.Response(id=received) as frame:
-                    if received == request_id:
-                        return frame
-
     async def turn_started(self, turn_id: str, *, thread_id: str | None = None) -> wire.TurnStarted:
         while True:
             match await self.next():

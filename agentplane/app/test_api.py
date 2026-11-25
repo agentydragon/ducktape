@@ -126,12 +126,9 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
 
     # The Environment names an Identity created separately, and the browser-facing ProtoJSON
     # descriptor carries that name through the existing GetEnvironment route.
-    identity_response = await http.get(route, params=params)
-    assert identity_response.status_code == 200, identity_response.text
-    assert identity_response.json()["identityName"] == "route-identity"
-    identity_descriptor = ParseDict(identity_response.json(), environment_service_pb2.EnvironmentDescriptor())
-    assert identity_descriptor.HasField("identity_name")
-    assert identity_descriptor.identity_name == "route-identity"
+    assert created_response.json()["identityName"] == "route-identity"
+    assert created.HasField("identity_name")
+    assert created.identity_name == "route-identity"
 
     missing = await http.get(
         f"/upstream/environments/v1/environments/{target.namespace}/missing", params={"target.uid": "missing-uid"}

@@ -22,8 +22,10 @@ py_library(
     name = "sql_read_model",
     srcs = ["sql_read_model.py"],
     deps = [
+        ":classified_transaction",
         ":schema",
         ":wire",
+        "//finance:calendar_months",
         "//finance/plaid/db:models",
         "@pypi//sqlalchemy",
     ],
@@ -36,6 +38,7 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
+        ":classified_transaction",
         ":conftest",
         ":schema",
         ":sql_read_model",
@@ -53,7 +56,10 @@ py_test(
 py_library(
     name = "csv_export",
     srcs = ["csv_export.py"],
-    deps = [":wire"],
+    deps = [
+        ":schema",
+        ":wire",
+    ],
 )
 
 py_test(
@@ -79,6 +85,7 @@ py_library(
         ":schema",
         ":sql_read_model",
         ":wire",
+        "//finance:calendar_months",
         "@pypi//sqlalchemy",
     ],
 )
@@ -91,4 +98,9 @@ py_library(
         "//finance/plaid/db:testing",
         "//testing:postgres_fixtures",
     ],
+)
+
+py_library(
+    name = "classified_transaction",
+    srcs = ["classified_transaction.py"],
 )

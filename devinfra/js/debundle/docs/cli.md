@@ -2,17 +2,16 @@
 
 Cross-command semantics of the `debundle` CLI: conventions, pipelines, and
 interactions that span commands. The per-command and per-flag reference is
-the clap doc-comments themselves — `debundle <command> --help` — and the
-code wins wherever prose and binary disagree. Future CLI ideas live in
-`TODO.md`.
+available through `debundle <command> --help`. See the [task chooser](../README.md#choose-a-task)
+for authoring workflows and `TODO.md` for open requests.
 
 The source-built CLI target is `@ducktape//devinfra/js/debundle:debundle` in
 consuming repositories, or `//devinfra/js/debundle:debundle` inside Ducktape.
 Prefer the project's CLI wrapper when provided: it supplies the matching
-graph, modules tree, and source root. All commands share the same
-JSON-on-stdout / readable-diagnostic-on-stderr convention.
+graph, modules tree, and source root. See [output formats](#output-format)
+for interactive output and machine-readable reports.
 
-## Find a workflow
+## Inspect static import paths
 
 To inspect original static ESM loading paths before a spec passes validation,
 run `debundle static-imports` with the same flat-spec or tree inputs as `run`:
@@ -22,87 +21,69 @@ debundle static-imports --spec spec.yaml --from main \
   --target dependency --target other --format json
 ```
 
-The command reports strict request-edge paths from `main` to each target,
-back to `main`, and from each target back to itself. A null witness means no
-path through resolved ordinary static ESM requests; `request_issues` identifies
-unresolved, nonordinary, or nonentry requests in the inspected closures.
-`--max-issues` limits displayed issues while `request_issue_count` retains the
-total. This is source-graph evidence, not a cache or runtime verdict.
+Read each target's path from `main`, return path and self-cycle separately.
+Inspect `request_issues` for gaps in the resolved ESM graph. `--max-issues`
+caps details while `request_issue_count` retains the total.
 
-Add `--include-host-loader-candidates --interop-census` to include all direct
-literal `import.meta.require(...)` calls as conditional graph edges and report
-typed interop sites across every chunk. Calls inside deferred functions are
-included in the union graph. Direct loader-value references, dynamic direct
-targets, global loader forms, and CommonJS export uses remain visible as sites
-without graph edges; calls through an alias are not traced. The command
-does not assert the original host-loader identity or clear runtime blockers.
-`--max-interop-sites` limits detailed site rows while per-chunk kind counts
-remain complete.
-
-The README's [task chooser](../README.md#choose-a-task) links to the recipe for
-inspection, extraction, reorganization, naming, selector stabilization, gate
-diagnosis, or delegation.
-
-Use `debundle <command> --help` for the current command and flag inventory.
+Add `--include-host-loader-candidates` for conditional direct literal
+`import.meta.require(...)` edges, including calls in deferred functions.
+Use `--interop-census` to see loader forms outside that graph and
+`--max-interop-sites` to bound the detail. See the
+[query contract](../SPEC.md#static-import-and-host-loader-queries) for what
+a missing path establishes.
 
 ## Delegating with an input snapshot
 
-Generate current analysis, then create a separate snapshot for each worker:
+Generate the graph, then create one snapshot per worker from a tree spec with
+relative source/vendor paths. Use a new destination under an existing directory:
 
 ```bash
 debundle snapshot create --graph output/reports/tree/main/dependency_graph.json.gz \
-  --destination /tmp/worker-one > /tmp/worker-one.json
-debundle snapshot verify /tmp/worker-one
+  --destination "$scratch/worker-one" > "$scratch/worker-one.json"
 ```
 
-`--graph` may also come from `DEBUNDLE_GRAPH`; an explicit flag wins. The
-returned JSON identifies the copied engine, graph (with the `program_graph.json.gz`
-it references), spec/source roots, complete
-modules tree, `graph_package_roots` map and a `regeneration_argv` array. For a
-graph-backed query or edit in the snapshot, pass each map entry as the global
-`--graph-package-root NAME=DIR` alongside `--spec-root` and
-`--graph-source-root`. The reserved `__packages_root__` entry relocates the
-shared `--packages-root` directory. Execute `regeneration_argv`
-directly. The replay uses only copied inputs and writes under that worker's
-`output/` directory. To display a shell command:
+After moving a snapshot, run `debundle snapshot verify "$scratch/worker-one"`
+and use its JSON for the new paths. For graph-backed operations, use the copied
+engine and these global options from the create/verify result:
+
+| Option                          | Result field                                                    |
+| ------------------------------- | --------------------------------------------------------------- |
+| `--spec-root`                   | `spec_root`                                                     |
+| `--graph-source-root`           | `graph_source_root`                                             |
+| `--graph-ownership-subset-root` | `graph_ownership_subset_root`, when present                     |
+| `--graph-package-root NAME=DIR` | Each `graph_package_roots` entry, including `__packages_root__` |
+
+The shipped [graph command helper](../skills/shared/examples/isolated_edit.py)
+assembles these options. Use the returned `graph`, `source_root`, `modules`
+and `tree_config` for the selected command. After editing, run
+`regeneration_argv` directly and use the new graph for further graph-backed
+edits. To display the command with shell quoting:
 
 ```bash
-jq -r '.regeneration_argv | @sh' /tmp/worker-one.json
+jq -r '.regeneration_argv | @sh' "$scratch/worker-one.json"
 ```
 
-Send the worker its snapshot directory, task, acceptance checks and permitted
-edit scope. It edits its own YAML tree and regenerates analysis there. The
-original saved graph and `snapshot.json` describe the starting state; the
-snapshot baseline check will fail after edits. Subsequent graph-backed edits
-use the newly generated graph and copied roots. Create another snapshot for
-each concurrent worker instead of sharing writable spec paths.
-
-Return the reviewed YAML patch or changed files/deletions, the starting
-snapshot manifest, and exact validation invocations/results. Before integrating,
-verify that the receiving spec still matches that baseline. Apply reviewed
-changes in an isolated integration checkout, regenerate the combined spec and
-run its full pipeline/runtime checks. Individually accepted edits can conflict
-when combined.
-
-Snapshot creation currently supports tree-shaped specs with relative embedded
-source/vendor-bundle paths. It refuses unrooted input dependencies and existing
-destinations. Relocation roots are supplied by the global `--spec-root` and
-`--graph-source-root` options when the original graph was generated elsewhere.
+`snapshot verify` checks the **starting** inputs. See the
+[snapshot contract](../SPEC.md#delegated-input-snapshots) for input and
+relocation guarantees, the [adapter contract](../skills/shared/workflow.md#adapter-contract)
+for the worker handoff and the [integration procedure](integration.md) for
+checking the combined edits.
 
 ## Common arguments and env vars
 
 Most commands take these paths, each as a flag or an env var; the flag wins if
 both are set.
 
-| Flag                            | Env var                      | Meaning                                                                                                                                                                                                    |
-| ------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--graph <path>`                | `DEBUNDLE_GRAPH`             | `dependency_graph.json.gz` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation.                                        |
-| `--modules <dir>`               | `DEBUNDLE_MODULES`           | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                                                           |
-| `--source-root <dir>`           | `DEBUNDLE_SOURCE_ROOT`       | Selector lookup root. It must contain the graph's verified physical input; an existing logical-path candidate must resolve to that same file. Missing alias paths use the captured chunk-to-input mapping. |
-| `--tree-config <file>`          | `DEBUNDLE_TREE_CONFIG`       | For graph-backed `modules` edits and queries, including `describe`, scope an app-level modules tree to the chunk named by `--graph`.                                                                       |
-| `--spec-root <dir>`             | `DEBUNDLE_SPEC_ROOT`         | Current common root of the tree config, vendor marks and modules after relocation. Global flag; the flag wins over the env var.                                                                            |
-| `--graph-source-root <dir>`     | `DEBUNDLE_GRAPH_SOURCE_ROOT` | Current root of the analyzed input files after relocation. Distinct from `--source-root`, which resolves selector source paths. Global flag; the flag wins.                                                |
-| `--graph-package-root NAME=DIR` | —                            | Current root for a package input in the saved graph after relocation. Repeat for each relocated package. Global flag.                                                                                      |
+| Flag                                  | Env var                                | Meaning                                                                                                                                                                                                    |
+| ------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--graph <path>`                      | `DEBUNDLE_GRAPH`                       | `dependency_graph.json.gz` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation.                                        |
+| `--modules <dir>`                     | `DEBUNDLE_MODULES`                     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                                                           |
+| `--source-root <dir>`                 | `DEBUNDLE_SOURCE_ROOT`                 | Selector lookup root. It must contain the graph's verified physical input; an existing logical-path candidate must resolve to that same file. Missing alias paths use the captured chunk-to-input mapping. |
+| `--tree-config <file>`                | `DEBUNDLE_TREE_CONFIG`                 | For graph-backed `modules` edits and queries, including `describe`, scope an app-level modules tree to the chunk named by `--graph`.                                                                       |
+| `--spec-root <dir>`                   | `DEBUNDLE_SPEC_ROOT`                   | Current common root of the tree config, vendor marks and modules after relocation. Global flag; the flag wins over the env var.                                                                            |
+| `--graph-source-root <dir>`           | `DEBUNDLE_GRAPH_SOURCE_ROOT`           | Current root of the analyzed input files after relocation. Distinct from `--source-root`, which resolves selector source paths. Global flag; the flag wins.                                                |
+| `--graph-ownership-subset-root <dir>` | `DEBUNDLE_GRAPH_OWNERSHIP_SUBSET_ROOT` | Root of the captured ownership selection after relocation. Global flag.                                                                                                                                    |
+| `--graph-package-root NAME=DIR`       | —                                      | Current root for a package input in the saved graph after relocation. Repeat for each relocated package. Global flag.                                                                                      |
 
 Graph-backed spec queries and edits compare the saved graph's engine and
 captured input bytes and YAML path membership with the current roots before
@@ -190,32 +171,19 @@ Global options capture a JSON `ResolvedInvocation`:
 | `--invocation-out <path>` | Write the record before dispatch, preserving normal stdout/stderr; retain it even if the operation fails.     |
 | Both                      | Write and print the record, then skip the operation.                                                          |
 
-Resolution reads CLI metadata, cwd and executable path, not graph/source contents
-or unrelated ambient environment. The record contains:
-
-- `argv`: executable and resolved options; env-backed paths such as `DEBUNDLE_GRAPH`
-  become explicit flags, with CLI-over-env precedence. Relative paths remain relative
-  to the recorded cwd, enabling replay after caller environment changes.
-- `shell_command`: POSIX-quoted arguments plus a change to that cwd.
-- Effective arguments and their value sources, operation class, `requested_proof`
-  and `write_scope`. The latter lists possible writes, including the invocation file,
-  rather than files actually changed.
-
-Classes distinguish graph/diagnostic/source snapshot reads, fresh pipelines,
-snapshot creation/verification, validated/unverified edits, conditional comment
-operations and read-only analysis. Other shapes remain `unclassified`. Requested
-checks are not completed checks: an edit gate establishes neither fresh pipeline,
-reconstruction nor runtime success; saving a record does not prove success.
-
-Records neither fingerprint the spec/source/graph/other file inputs nor pin executable
-contents. Repeatable replay requires unchanged inputs; use graph/input provenance or an archived
-snapshot to prove file identity. For example, this records an explicit `--graph`
-without reading it or creating reports:
+Preview how a wrapper resolves its arguments before reading inputs or running
+a gate. For example:
 
 ```sh
 DEBUNDLE_GRAPH='reports/tree/main/dependency_graph.json.gz' \
   debundle gate list --print-invocation
 ```
+
+Replay `argv` from the recorded `cwd`, or use `shell_command`, which includes
+the directory change and shell quoting. Preserve the inputs and executable for
+repeatability. Save the actual exit status and output alongside the record
+when reporting a check. See the [invocation contract](../SPEC.md#resolved-cli-invocations)
+for argument provenance, requested proof and possible writes.
 
 With minimal remote downloads, request `--remote_download_outputs=all` to bring
 report side files local.
@@ -242,51 +210,21 @@ batch contents or fingerprint. Preserve the file alongside the worker input snap
 
 ## Output format
 
-Read-only commands accept `--format <text|json|ndjson>`:
-
-- `text` — human-readable default for interactive use.
-- `json` — single JSON document, parseable with `jq`.
-- `ndjson` — one JSON value per line, for streaming consumers (`jq -c`,
-  piping to other commands). Reach for it on many-row streaming queries
-  (`debundle scc --format ndjson` over a large graph).
-
-If `--format` isn't passed and stdout is **not** a tty (i.e. the command is
-in a pipeline), the default flips to `json`. So
-`debundle modules propose | jq …` works without an explicit `--format json`.
-
-Report rendering, serialization, stdout and stderr writes, and explicit final
-flushes are fallible. A successful operation whose stdout consumer closes the
-pipe exits successfully. A stderr failure exits nonzero, even when stdout also
-closes. If the operation failed, failure to emit its diagnostic on either
-stream preserves that failure and the output error and exits nonzero. Text
-reports finish rendering before writing any bytes.
-
-An output error can happen after a spec edit was written. The CLI leaves that
-edit applied and does not retry it; inspect the files before deciding whether
-to run another mutation.
+Read-only commands default to `text` on a terminal and `json` when piped.
+Use `--format ndjson` for one value per line on multirow queries, such as
+`debundle scc --format ndjson`. An output failure can occur after an edit
+has been applied. Inspect the files before retrying a mutation. See
+[output and diagnostic failures](../SPEC.md#diagnostic-ownership).
 
 ### Runtime failures from top-level queries
 
-After Clap has accepted the command line, `describe`, `inspect-source`,
-`graph-summary`, `atoms`, `coverage`, `scc`, and `cluster` keep runtime errors
-machine-readable in JSON modes. A `json` failure writes one object with a
-typed `reason` code and `message`; `ndjson` writes that same object as one row.
-The message contains the full actionable error chain, and the command exits
-nonzero while retaining the same diagnostic on stderr. Current reason codes are
-`io`, `invalid_json`, `source_unit_not_found`,
-`unsupported_identifier_prefix`, and `query_failed`. Unsupported-prefix
-failures also include the identifier, prefix, accepted forms, examples, and a
-suggestion when one is available.
+Check the exit status before consuming query results. In JSON modes a runtime
+query failure supplies a typed reason and message. A `graph_compatibility`
+rejection includes `mismatch.reason` and the regeneration command. Argument
+parse failures go to stderr. The [query failure contract](../SPEC.md#read-only-query-failures)
+lists covered commands, reason codes and stream behavior.
 
-Graph compatibility failures retain the existing `graph_compatibility`
-rejection object, including `mismatch.reason` and regeneration details. With
-`--format text`, runtime failures keep the existing stderr diagnostic and do
-not write an error report to stdout. Clap usage and argument-parsing failures
-remain Clap diagnostics because dispatch has not begun.
-
-Read-only inspection commands provide graph, source-unit, atomic-group and
-module-ownership evidence. `modules propose` searches the unseeded residual
-domain for an exact placement; see [exact residual placement](module_proposals.md).
+### Spec edit outcomes
 
 The mutating verbs (`bindings assign`, `bindings unassign`,
 `bindings rename`, `modules apply`, `modules merge`, `modules delete`) take the same
@@ -356,10 +294,15 @@ the complete prospective spec. For example, `merges.json`:
 ```
 
 ```bash
-debundle modules merge --batch merges.json --modules "$MODULES" \
-  --graph "$GRAPH" --source-root "$SOURCE_ROOT" --dry-run
+debundle modules merge --batch merges.json --modules "$CHUNK_MODULES" \
+  --graph "$GRAPH" --source-root "$SOURCE_ROOT" --import-order final-order.json --dry-run
 # Apply the same validated plan by omitting --dry-run.
 ```
+
+Pass the chunk's module subtree as `--modules`. When the batch creates a
+target, `final-order.json` must list every final nonentry owner in its
+reviewed import order. With only surviving owners, omitting `--import-order`
+keeps their relative order.
 
 Explicit `.yaml` filenames preserve their physical casing. Each entry uses the
 single-merge claim, annotation, comment and note rules. The batch rejects empty
@@ -447,30 +390,12 @@ loading or compatibility checks, with `logical:7` suggested for a module ID.
 An existing module path containing a colon is resolved as a path before this
 check.
 
-`describe` emits at most 20 rows in each report section by default. Use
-`--limit N` for a different positive per-section cap, or `--all` to return
-every matching row; `--all` conflicts with `--limit`, and `--limit 0` directs
-you to use `--all`. Its `limits.sections` object records `total`, `emitted`,
-and `truncated` after filtering; `limits.limit` is the cap, or `0` with
-`--all`. The selected binding/source-unit/group row comes first in its matching
-section so it remains available under a small limit.
-
-`--direction incoming|outgoing|both` selects edge direction relative to the
-query and defaults to `both`. It filters dependency, atomic-group, and
-module-quotient edges; neighbor source units are derived from the remaining
-dependency edges. Repeat `--reason KIND` to retain any of several dependency
-reasons, using the `edge_kind` spellings from `dependency_graph.json.gz`:
-`eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
-`deferred_rebind`, `sequenced`, `co_declaration`, `co_location`, or
-`local_effect`. Both
-filters are applied before totals and row limits.
-
-`cluster <binding>` also emits at most 20 incoming and 20 outgoing module
-neighbors by default. `--limit N` sets the positive cap for each direction;
-`--all` emits every neighbor and reports `limits.limit: 0`. Its
-`limits.sections.incoming_modules` and `outgoing_modules` entries report
-`total`, `emitted`, and `truncated` after `--direction` and repeated `--reason`
-filters.
+For a bounded neighborhood, use `describe <id> --direction incoming --limit N`.
+Repeat `--reason KIND` to retain any of several `edge_kind` values from the
+graph. Inspect `limits.sections` for truncation or use `--all` for complete
+results. `cluster <binding>` bounds module neighbors per direction. See the
+[saved graph query contract](../SPEC.md#querying-a-saved-graph) for selection
+order, default limits, filter semantics and counts.
 
 ## Validate-by-default (mutating commands)
 
@@ -630,6 +555,37 @@ still needs its own gate verdict. Passing one ownership subset does not imply
 that adding or removing claims will pass, because that changes the destinations
 and their quotient. See [the design distinction](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#two-classes-of-atom)
 for structural atoms, conservative effects, and the accepted lazy-cycle case.
+
+### Assemble selector proposals for an independent checker
+
+`spec resolve-placement --chunk CHUNK` accepts repeated
+`--proposal-fragment OWNER=FILE.yaml` arguments. Each file contains a nonempty
+`source_matches` list using the ordinary module-file syntax. Use a canonical,
+chunk-local owner path. Claims append to an existing module or create a new
+one; new owners without an explicit priority follow the shared tree's import
+priority in argument order. The priority is an input for a consumer to consider.
+
+For several chunks, use `spec resolve-placements --chunk CHUNK` once per
+requested chunk. It prepares the source artifact and resolves the full spec
+once, then writes `{"placements":[...]}` in the requested chunk order. Each
+placement has the same record shape as the singular command. Chunk IDs must be
+unique. Batch proposals use
+`--proposal-fragment CHUNK::OWNER=FILE.yaml`; the chunk qualifier chooses which
+spec tree receives the fragment. A batch `--ownership-subset` filters each
+chunk using the ordinary combined subset schema. When `--canonical-out` is
+also set, both output files use the batch envelope and come from the same
+solve. The batch command requires at least one `--chunk`.
+
+With `--ownership-subset VIEW.json --out selected.json --canonical-out full.json`,
+both files come from one full-context solve. An excluded ambiguous claim still
+fails the solve. Both JSON files identify the same chunk bytes by SHA-256;
+filtering retains the original ordinals. When supplying fragments or requesting
+both views, use fresh output paths. In Bazel, pass the fragment labels and
+owners in `debundle_resolve_placement(proposal_fragments = {...})` for one
+chunk, or `debundle_resolve_placements(chunks = [...], proposal_fragments =
+{...})` for a batch; fragment values are `OWNER` and `CHUNK::OWNER`,
+respectively. The unfiltered output filename is set with `canonical_out`. The
+normal Rust emitter uses its own authored tree and gate.
 
 ### Residual placement
 
@@ -897,8 +853,8 @@ selector or claim is the useful debugging target (its outcome line is the
 error).
 
 Every chunk's selectors resolve as one program. In a tree spec, several
-module trees may scope to one chunk (`module_roots`, <../README.md>); their
-entities never claim the same place.
+module trees may scope to one chunk. Their entities never claim the same place.
+See [tree spec configuration](spec_editing.md#tree-spec-configuration).
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /
@@ -1224,6 +1180,9 @@ refactors whose intermediate states would be invalid can land in one shot:
 5. If valid: write every changed surviving YAML first, then delete drained
    move-source files — an interruption can never lose a member that was not
    yet written to its destination.
+
+Only drained move sources are eligible for cleanup. For new destination owners,
+pass `--import-order final-order.json` with the complete final nonentry priority.
 
 `--dry-run` runs steps 1–4 and stops. `--no-verify` skips step 3 (still
 does duplicate-claim detection — that's a structural error, not a
@@ -1843,16 +1802,11 @@ both member and source-match bindings; module edits address the top-level
 
 ## Out of scope
 
-- **No cross-process materializer reader.** `debundle run` reads the spec
-  and emits JS in one process — see `wire_format.md` § "Why pre-filter
-  facts (`StatementFacts`) aren't on the wire" and
-  `lessons_learned/cross_process_stage_b.md`.
 - **Shell tab completion.**
 
 ## See also
 
-- `design.md` — the realizability theorem the gate enforces; § "Layered
-  mental model" + § "Factor assembly inside `debundle run`" for the materializer.
+- `docs/design.md` describes the realizability theorem and assignment assembly inside `debundle run`.
 - `wire_format.md` — JSON sidecar conventions readers of these commands
   consume.
 - `selectors.md` / `spec_editing.md` — selector authoring and spec-editing

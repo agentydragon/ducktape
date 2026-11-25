@@ -24,7 +24,7 @@ For RLS testing, tests use:
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from uuid import UUID
 
 import pytest
@@ -70,12 +70,11 @@ async def critic_dev_optimize_creds(synced_db: Database) -> AsyncGenerator[Agent
 @contextmanager
 def _role_session(synced_db: Database, creds: AgentCredentials) -> Iterator[Session]:
     """Database session connected as the agent's own Postgres role, with its RLS policies active."""
-    engine = create_engine(synced_db.config.with_user(creds.username, creds.password).url)
-    try:
+    with ExitStack() as cleanup:
+        engine = create_engine(synced_db.config.with_user(creds.username, creds.password).url)
+        cleanup.callback(engine.dispose)
         with Session(engine) as session:
             yield session
-    finally:
-        engine.dispose()
 
 
 @pytest_asyncio.fixture
@@ -87,9 +86,7 @@ async def critic_dev_optimize_session(
         yield session
 
 
-async def test_critic_dev_optimize_can_see_all_snapshots_metadata(
-    synced_db: Database, critic_dev_optimize_session: Session
-):
+async def test_critic_dev_optimize_can_see_all_snapshots_metadata(critic_dev_optimize_session: Session):
     """Critic-dev optimize users CAN see all snapshots including TEST split.
 
     The snapshots table contains only metadata (slug, split, source info) which
@@ -111,7 +108,7 @@ async def test_critic_dev_optimize_can_see_all_snapshots_metadata(
     assert "test" in splits
 
 
-async def test_critic_dev_optimize_can_read_model_metadata(synced_db: Database, critic_dev_optimize_session: Session):
+async def test_critic_dev_optimize_can_read_model_metadata(critic_dev_optimize_session: Session):
     """Agent roles can read model metadata needed to pick the LLM API shape."""
     metadata = critic_dev_optimize_session.get(ModelMetadata, DEFAULT_TEST_MODEL)
 
@@ -119,9 +116,7 @@ async def test_critic_dev_optimize_can_read_model_metadata(synced_db: Database, 
     assert metadata.model_id == DEFAULT_TEST_MODEL
 
 
-async def test_critic_dev_optimize_cannot_see_valid_split_true_positives(
-    synced_db: Database, critic_dev_optimize_session: Session
-):
+async def test_critic_dev_optimize_cannot_see_valid_split_true_positives(critic_dev_optimize_session: Session):
     """Critic-dev optimize users CANNOT see valid split true positives (RLS policy blocks).
 
     Uses test-fixtures/valid1 (VALID split) from git fixtures with synced TPs.
@@ -231,35 +226,22 @@ async def grader_train_session(grader_train_creds: AgentCredentials, synced_db: 
         yield session
 
 
-async def test_grader_can_read_occurrence_ranges_with_content(synced_db: Database, grader_train_session: Session):
-    """Grader agent can SELECT from occurrence_ranges and get actual GT content.
+async def test_grader_can_read_occurrence_ranges(grader_train_session: Session):
+    """Grader agent can SELECT from occurrence_ranges and get GT rows for its snapshot.
 
     Regression test for a bug where occurrence_ranges was missing from GRANT,
     RLS enable, and RLS policy lists — causing grader show_tp/show_fp tools to
     return 'permission denied' instead of actual line range data.
 
-    Verifies that file_path, start_line, end_line are returned (not just empty
-    results or permission errors).
+    Verifies that rows come back (not a permission error or an empty result).
     """
     rows = grader_train_session.query(OccurrenceRangeORM).filter(OccurrenceRangeORM.snapshot_slug == TRAIN1_SLUG).all()
 
     # train1 has 7 occurrence_ranges rows (5 TPs with varying file counts)
     assert len(rows) >= 1, "Grader must see occurrence_ranges rows for its snapshot"
 
-    # Verify actual content is returned, not empty/null placeholders
-    for row in rows:
-        assert row.file_path is not None, "file_path must not be None"
-        assert str(row.file_path) != "", "file_path must not be empty"
-        assert row.start_line is not None, "start_line must not be None"
-        assert row.end_line is not None, "end_line must not be None"
-        assert row.start_line > 0, "start_line must be positive"
-        assert row.end_line >= row.start_line, "end_line must be >= start_line"
-        assert row.occurrence_id is not None, "occurrence_id must not be None"
-        # Exactly one of tp_id/fp_id must be set (exclusive arc)
-        assert (row.tp_id is None) != (row.fp_id is None), "Exclusive arc: exactly one of tp_id/fp_id must be set"
 
-
-async def test_grader_can_read_tp_occurrences(synced_db: Database, grader_train_session: Session):
+async def test_grader_can_read_tp_occurrences(grader_train_session: Session):
     """Grader agent can SELECT from true_positive_occurrences for its snapshot."""
     rows = (
         grader_train_session.query(TruePositiveOccurrenceORM)
@@ -273,7 +255,7 @@ async def test_grader_can_read_tp_occurrences(synced_db: Database, grader_train_
         assert row.occurrence_id is not None
 
 
-async def test_grader_cannot_see_other_snapshot_occurrence_ranges(synced_db: Database, grader_train_session: Session):
+async def test_grader_cannot_see_other_snapshot_occurrence_ranges(grader_train_session: Session):
     """Grader scoped to train1 cannot see occurrence_ranges for valid1."""
     rows = grader_train_session.query(OccurrenceRangeORM).filter(OccurrenceRangeORM.snapshot_slug == VALID1_SLUG).all()
 

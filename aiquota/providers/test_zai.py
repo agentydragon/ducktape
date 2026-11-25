@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from aiquota.providers.zai import ZaiSettings, _QuotaResponse, _resolve_api_key, _to_success
+from aiquota.config import ZaiSettings
+from aiquota.providers.zai import _QuotaResponse, _resolve_api_key, _to_success
 
 
 @pytest.mark.parametrize(

@@ -26,7 +26,9 @@ MANIFEST_ROOTS = (HAND_WRITTEN_ROOT, GENERATED_ROOT, AGENTPLANE_CRDS_ROOT)
 PARKED_ROOT = "cluster/parked"
 
 
-def manifest_files(repo_root: Path, pattern: str = "*.yaml") -> Iterator[Path]:
-    """Every file matching `pattern` under a Flux manifest root in `repo_root`."""
+def manifest_files(repo_root: Path) -> Iterator[Path]:
+    """YAML files and extensionless Kustomize entry points under the Flux manifest roots."""
     for root in MANIFEST_ROOTS:
-        yield from (repo_root / root).rglob(pattern)
+        for path in (repo_root / root).rglob("*"):
+            if (path.suffix in {".yaml", ".yml"} or path.name == "Kustomization") and path.is_file():
+                yield path

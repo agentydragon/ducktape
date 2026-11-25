@@ -80,7 +80,6 @@ def _install_fake(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(permissions.k8s, "AuthorizationV1Api", FakeAuthorizationV1Api)
 
 
-@pytest.mark.asyncio
 async def test_minimal_observer_permissions_produce_diagnostic_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fake(monkeypatch)
     api_client = FakeApiClient(allowed=_ALLOWED)
@@ -118,7 +117,6 @@ async def test_minimal_observer_permissions_produce_diagnostic_evidence(monkeypa
         ).allowed
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("permission", "resource", "api_group", "verb", "namespace", "subresource", "name"),
     [
@@ -155,7 +153,6 @@ async def test_forbidden_permission_grant_fails_with_evidence(
     assert not violation.expected_allowed
 
 
-@pytest.mark.asyncio
 async def test_missing_required_read_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fake(monkeypatch)
     denied = ("", "pods", "log", "get", "sandbox-test", None)
@@ -171,7 +168,6 @@ async def test_missing_required_read_fails_closed(monkeypatch: pytest.MonkeyPatc
     assert evidence.expected_allowed
 
 
-@pytest.mark.asyncio
 async def test_incomplete_review_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_fake(monkeypatch)
     api_client = FakeApiClient(
@@ -243,7 +239,6 @@ def _observer_api(server: KubernetesApiServer, token: str) -> k8s.ApiClient:
     return k8s.ApiClient(configuration)
 
 
-@pytest.mark.asyncio
 async def test_real_rbac_observer_and_wildcard_grant() -> None:
     namespace = "permission-check"
     async with kubernetes_apiserver() as server:

@@ -79,7 +79,6 @@ pub(super) fn materialized_chunk_artifact(
         target_file,
         source_path,
         files,
-        file_records,
         applied,
         directory_dependency_facts,
         validation,
@@ -92,11 +91,11 @@ pub(super) fn materialized_chunk_artifact(
         vendor_reference_rewrites: _,
         gate_rejection: _,
     } = chunk;
-    let manifest_files = file_records
+    let manifest_files = files
         .iter()
-        .map(|(file, role)| ChunkFileRecord {
-            file: file.clone(),
-            role: *role,
+        .map(|file| ChunkFileRecord {
+            file: file.path.clone(),
+            role: file.metadata.role,
         })
         .collect();
     let logical_modules = ChunkLogicalModulesSummary {
@@ -171,7 +170,6 @@ mod tests {
             target_file: "lowered.js".to_string(),
             source_path: "first.js".to_string(),
             files: Vec::new(),
-            file_records: Vec::new(),
             applied: Vec::new(),
             directory_dependency_facts: Vec::new(),
             validation: ChunkValidationSummary {

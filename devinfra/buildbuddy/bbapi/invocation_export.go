@@ -60,20 +60,20 @@ func writeInvocationExport(exported *bbapipb.InvocationExport) error {
 // parseInvocationExport parses a raw BuildBuddy BES stream into the stable CI
 // contract. Presence flags distinguish an absent count from explicit zero.
 func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
-	var rawEvents []json.RawMessage
-	if err := json.Unmarshal(raw, &rawEvents); err != nil {
-		return nil, fmt.Errorf("parse invocation event stream: %w", err)
+	events, err := decodeBuildEvents(raw)
+	if err != nil {
+		return nil, err
 	}
-	if rawEvents == nil {
+	if events == nil {
 		return nil, fmt.Errorf("invocation event stream is not a list")
 	}
 
-	artifacts, err := parseArtifacts(raw)
+	artifacts, err := indexArtifacts(events)
 	if err != nil {
 		return nil, err
 	}
 	result := &bbapipb.InvocationExport{TestStatus: map[string]bespb.TestStatus{}}
-	for _, artifact := range artifacts {
+	for _, artifact := range artifacts.files {
 		if artifact.Kind == kindBuild {
 			result.Outputs = append(result.Outputs, artifact.Artifact)
 		}
@@ -92,13 +92,9 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 	var explicitCmdLines []*[]string
 	var requestedPatterns []string
 	var commitSHAs []string
-	for i, rawEvent := range rawEvents {
-		var event bespb.BuildEvent
-		if err := unmarshalJSON(rawEvent, &event); err != nil {
-			return nil, fmt.Errorf("parse invocation event %d: %w", i, err)
-		}
+	for i, event := range events {
 		var presence invocationPresenceEvent
-		if err := json.Unmarshal(rawEvent, &presence); err != nil {
+		if err := json.Unmarshal(event.rawJSON, &presence); err != nil {
 			return nil, fmt.Errorf("parse invocation event presence %d: %w", i, err)
 		}
 
@@ -181,16 +177,16 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 	result.Finished = finishedCount == 1
 	result.Successful = finishedCount == 1 && successfulCount == 1
 	if startedCount == 1 && startedInvocationID != "" {
-		result.InvocationId = stringPointer(startedInvocationID)
+		result.InvocationId = new(startedInvocationID)
 	}
 	if parentInvocationIDSeen && !parentInvocationIDConflict && parentInvocationID != "" {
-		result.ParentInvocationId = stringPointer(parentInvocationID)
+		result.ParentInvocationId = new(parentInvocationID)
 	}
 	if finishedCount == 1 && len(exitCodeNames) == 1 {
-		result.ExitCodeName = stringPointer(exitCodeNames[0])
+		result.ExitCodeName = new(exitCodeNames[0])
 	}
 	if len(commands) == 1 {
-		result.Command = stringPointer(commands[0])
+		result.Command = new(commands[0])
 	}
 	if len(explicitCmdLines) == 1 && explicitCmdLines[0] != nil {
 		result.ExplicitCmdLine = &bbapipb.Arguments{Values: *explicitCmdLines[0]}
@@ -205,7 +201,7 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 	if len(commitValues) == 1 {
 		for sha := range commitValues {
 			if sha != "" {
-				result.CommitSha = stringPointer(sha)
+				result.CommitSha = new(sha)
 			}
 		}
 	}
@@ -215,5 +211,3 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 func jsonPresent(raw json.RawMessage) bool {
 	return len(raw) != 0 && string(raw) != "null"
 }
-
-func stringPointer(value string) *string { return &value }

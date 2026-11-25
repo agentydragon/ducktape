@@ -36,13 +36,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(
-		migrations.Up,
-		func(database *postgres.Database) int {
-			integrationDatabase = database
-			return kubeapiserver.Run(m, useAPIServer)
-		},
-	))
+	os.Exit(postgres.RunIntegrationTests(func() int {
+		return kubeapiserver.Run(m, useAPIServer)
+	}, migrations.Up, &integrationDatabase))
 }
 
 func useAPIServer(server *kubeapiserver.Server) (err error) {

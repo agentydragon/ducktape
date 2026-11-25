@@ -26,7 +26,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -89,7 +88,7 @@ func serveIdentitySVIDsWithPolicy(
 	queueStore := testStore(t, 10)
 	hub := testWatchHub(t, queueStore)
 	service := &Service{
-		Store: queueStore, DispatcherCallers: sets.New[auth.Account](),
+		Store:     queueStore,
 		Sandboxes: inventory, EnvironmentRules: rules, PolicyReady: policyReady, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	server := grpc.NewServer(append(Methods(auth.AnySubject(svids)).ServerOptions(time.Second),

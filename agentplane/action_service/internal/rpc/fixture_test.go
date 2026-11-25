@@ -16,7 +16,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/informer"
@@ -45,7 +44,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -58,27 +56,20 @@ const (
 )
 
 var (
-	callerAccount    = auth.Account{Namespace: testNamespace, Name: "test-caller"}
-	otherAccount     = auth.Account{Namespace: testNamespace, Name: "test-other-caller"}
-	readerAccount    = auth.Account{Namespace: testNamespace, Name: "test-reader"}
-	unlabeledAccount = auth.Account{Namespace: testNamespace, Name: "test-unlabeled"}
-	// labeledReaderAccount is a service reader whose ServiceAccount also carries the caller label.
-	labeledReaderAccount = auth.Account{Namespace: testNamespace, Name: "test-labeled-reader"}
-	// outsiderAccount is labeled, outside the namespaces whose workloads may call.
-	outsiderAccount = auth.Account{Namespace: "test-elsewhere", Name: "test-caller"}
+	callerAccount = auth.Account{Namespace: testNamespace, Name: "test-caller"}
+	otherAccount  = auth.Account{Namespace: testNamespace, Name: "test-other-caller"}
 
 	kube *kubeapiserver.Server
 	// policyObjects writes PolicySets and PolicyBindings.
 	policyObjects client.Client
-	// Each proves its account, from a Pod running as it.
-	validKubernetesToken, unlabeledToken, outsiderToken string
+	// validKubernetesToken proves callerAccount, from a Pod running as it. The service refuses every Kubernetes bearer.
+	validKubernetesToken string
 	// policyNamespaces numbers the policy namespaces.
 	policyNamespaces atomic.Int32
 )
 
 func useAPIServer(server *kubeapiserver.Server) error {
 	kube = server
-	ctx := context.Background()
 	scheme := runtime.NewScheme()
 	if err := policyapi.AddToScheme(scheme); err != nil {
 		return err
@@ -87,33 +78,7 @@ func useAPIServer(server *kubeapiserver.Server) error {
 	if policyObjects, err = client.New(server.Config, client.Options{Scheme: scheme}); err != nil {
 		return err
 	}
-	for _, account := range []auth.Account{callerAccount, otherAccount, labeledReaderAccount, outsiderAccount} {
-		if err := setCallerLabel(ctx, account, true); err != nil {
-			return err
-		}
-	}
-	for token, account := range map[*string]auth.Account{
-		&validKubernetesToken: callerAccount, &unlabeledToken: unlabeledAccount, &outsiderToken: outsiderAccount,
-	} {
-		var err error
-		if *token, err = server.WorkloadToken(ctx, account, testAudience); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// setCallerLabel sets or removes the caller label on the account's ServiceAccount, which it creates when absent.
-func setCallerLabel(ctx context.Context, account auth.Account, labeled bool) error {
-	if _, err := kube.ServiceAccount(ctx, account); err != nil {
-		return err
-	}
-	value := "null"
-	if labeled {
-		value = fmt.Sprintf("%q", callers.ServiceAccountLabelValue)
-	}
-	_, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Patch(ctx, account.Name, types.MergePatchType,
-		fmt.Appendf(nil, `{"metadata":{"labels":{%q:%s}}}`, callers.ServiceAccountLabelKey, value), metav1.PatchOptions{})
+	validKubernetesToken, err = server.WorkloadToken(context.Background(), callerAccount, testAudience)
 	return err
 }
 

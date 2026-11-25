@@ -1,0 +1,49 @@
+# Early utility declarations in upstream packages/excalidraw/utils.ts (v0.18.1).
+source_matches:
+  - match: |
+      var mockDateTime = null,
+        getDateTime = () => {
+          if (mockDateTime) return mockDateTime;
+          let date = new Date(),
+            year = date.getFullYear(),
+            month = `${date.getMonth() + 1}`.padStart(2, "0"),
+            day = `${date.getDate()}`.padStart(2, "0"),
+            hours = `${date.getHours()}`.padStart(2, "0"),
+            minutes = `${date.getMinutes()}`.padStart(2, "0");
+          return `${year}-${month}-${day}-${hours}${minutes}`;
+        },
+        DECLARATORS_AFTER = null;
+    bindings:
+      - mockDateTime
+      - getDateTime
+
+  - match: |
+      var capitalizeString = text => text.charAt(0).toUpperCase() + text.slice(1);
+    bindings:
+      - capitalizeString
+
+  - match: |
+      var isToolIcon = target => target instanceof HTMLElement && target.className.includes("ToolIcon");
+    bindings:
+      - isToolIcon
+
+  - match: |
+      var isInputLike = target =>
+        (target instanceof HTMLElement && target.dataset.type === "wysiwyg") ||
+        target instanceof HTMLBRElement || target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+    bindings:
+      - isInputLike
+
+  - match: |
+      var isInteractive = target => isInputLike(target) || (target instanceof Element && !!target.closest("label, button"));
+    bindings:
+      - isInteractive
+
+  - match: |
+      var isWritableElement = target =>
+        (target instanceof HTMLElement && target.dataset.type === "wysiwyg") ||
+        target instanceof HTMLBRElement || target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLInputElement && (target.type === "text" || target.type === "number" || target.type === "password"));
+    bindings:
+      - isWritableElement

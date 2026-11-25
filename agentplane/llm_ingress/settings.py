@@ -80,10 +80,6 @@ class Settings(BaseModel):
             raise ValueError("central_sampler_services requires central_sampler_identity_callers")
         if self.central_sampler_identity_callers and not self.central_sampler_services:
             raise ValueError("central_sampler_identity_callers requires central_sampler_services")
-        if (self.model_config_service_callers or self.central_sampler_services) and not any(
-            auth.mode == "spiffe" for auth in self.rpc.auth
-        ):
-            raise ValueError("service callers require rpc spiffe client trust")
         if not self.attribution.names_identity():
             raise ValueError("policy_namespace requires every attribution output to carry the identity claim")
         return self

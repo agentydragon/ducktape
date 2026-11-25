@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
@@ -28,7 +29,7 @@ type (
 	}
 )
 
-func (conversation *Conversation) appendExecutionState(state *protocol.ExecutionState) error {
+func (s *Store) appendExecutionState(objects content.ContentWriter, conversation *Conversation, state *protocol.ExecutionState) error {
 	if state == nil {
 		return nil
 	}
@@ -38,7 +39,11 @@ func (conversation *Conversation) appendExecutionState(state *protocol.Execution
 	}
 	for _, process := range state.Processes {
 		if process.ModelSessionID != nil {
-			snapshot.Processes = append(snapshot.Processes, modelProcess{*process.ModelSessionID, process.Status, process.TTY, process.ExitCode})
+			processSnapshot := modelProcess{SessionID: *process.ModelSessionID, Status: process.Status, TTY: process.TTY}
+			if process.ExitCode != nil {
+				processSnapshot.ExitCode = new(*process.ExitCode)
+			}
+			snapshot.Processes = append(snapshot.Processes, processSnapshot)
 		}
 	}
 	slices.SortFunc(snapshot.Cells, func(a, b modelCell) int { return strings.Compare(a.CellID, b.CellID) })
@@ -46,17 +51,34 @@ func (conversation *Conversation) appendExecutionState(state *protocol.Execution
 	if conversation.executionSnapshots == nil {
 		conversation.executionSnapshots = map[protocol.Context]*modelExecutionSnapshot{}
 	}
+	var sourceID, notice string
 	return conversation.apply(func(native protocol.Context) error {
 		previous := conversation.executionSnapshots[native]
 		// A missing baseline is unknown, including after migration or compaction.
 		if reflect.DeepEqual(previous, &snapshot) {
 			return nil
 		}
-		raw, err := json.Marshal(snapshot)
-		if err != nil {
-			return err
+		if notice == "" {
+			if s.contextSourceWrites {
+				var err error
+				sourceID, err = putRecordObject(objects, ExecutionSnapshotObject{
+					ConversationID: conversation.ID, modelExecutionSnapshot: snapshot,
+				})
+				if err != nil {
+					return err
+				}
+			}
+			raw, err := json.Marshal(snapshot)
+			if err != nil {
+				return err
+			}
+			notice = "Active execution handles: " + string(raw)
 		}
-		if err := native.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "Active execution handles: " + string(raw)}}); err != nil {
+		var origin protocol.RecordOrigin
+		if sourceID != "" {
+			origin = protocol.RecordOrigin{Kind: protocol.RecordOriginExecutionSnapshot, ObjectID: sourceID}
+		}
+		if err := native.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}, origin); err != nil {
 			return err
 		}
 		conversation.executionSnapshots[native] = &snapshot

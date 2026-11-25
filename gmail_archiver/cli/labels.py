@@ -6,9 +6,21 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from gmail_archiver.cli.options import DryRunOption, TokenFileOption, get_client
+from gmail_api.labels import GmailLabel, LabelType
+from gmail_archiver.cli.options import DryRunOption, TokenFileOption, confirm_changes, get_client
+from gmail_archiver.gmail_client import GmailClient
 
 labels_app = typer.Typer(help="Manage Gmail labels")
+
+
+def _load_label_usage(client: GmailClient, console: Console) -> tuple[list[GmailLabel], set[str]]:
+    console.print("Fetching labels and filters...")
+    labels = client.list_labels_full()
+    used_label_ids: set[str] = set()
+    for gmail_filter in client.list_filters():
+        used_label_ids.update(gmail_filter.action.add_label_ids)
+        used_label_ids.update(gmail_filter.action.remove_label_ids)
+    return labels, used_label_ids
 
 
 @labels_app.command("list")
@@ -20,15 +32,7 @@ def list_labels(
     console = Console()
     client = get_client(token_file)
 
-    console.print("Fetching labels and filters...")
-
-    labels = client.list_labels_full()
-    filters = client.list_filters()
-
-    used_label_ids: set[str] = set()
-    for f in filters:
-        used_label_ids.update(f.action.add_label_ids)
-        used_label_ids.update(f.action.remove_label_ids)
+    labels, used_label_ids = _load_label_usage(client, console)
 
     table = Table(title="Gmail Labels")
     table.add_column("Name", style="cyan")
@@ -40,8 +44,8 @@ def list_labels(
     system_labels = []
 
     for label in labels:
-        label_type = label.type or "user"
-        is_system = label_type == "system"
+        label_type = label.type or LabelType.USER
+        is_system = label_type == LabelType.SYSTEM
 
         if is_system and not show_system:
             continue
@@ -84,17 +88,9 @@ def prune(dry_run: DryRunOption = None, token_file: TokenFileOption = None):
     console = Console()
     client = get_client(token_file)
 
-    console.print("Fetching labels and filters...")
+    labels, used_label_ids = _load_label_usage(client, console)
 
-    labels = client.list_labels_full()
-    filters = client.list_filters()
-
-    used_label_ids: set[str] = set()
-    for f in filters:
-        used_label_ids.update(f.action.add_label_ids)
-        used_label_ids.update(f.action.remove_label_ids)
-
-    unused_labels = [label for label in labels if label.type != "system" and label.id not in used_label_ids]
+    unused_labels = [label for label in labels if label.type != LabelType.SYSTEM and label.id not in used_label_ids]
 
     if not unused_labels:
         console.print("[green]✓[/green] All user labels are used by filters. Nothing to prune.")
@@ -111,12 +107,7 @@ def prune(dry_run: DryRunOption = None, token_file: TokenFileOption = None):
     console.print(table)
     console.print()
 
-    if dry_run is True:
-        console.print(f"[yellow]DRY RUN:[/yellow] Would delete {len(unused_labels)} label(s)")
-        return
-
-    if dry_run is None and not typer.confirm(f"Delete {len(unused_labels)} unused label(s)?"):
-        console.print("[yellow]Cancelled[/yellow]")
+    if not confirm_changes(dry_run, f"Delete {len(unused_labels)} unused label(s)", console):
         return
 
     deleted = 0

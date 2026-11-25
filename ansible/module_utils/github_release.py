@@ -99,10 +99,6 @@ class GitHubInstaller:
     def install_module_args(self, asset_url: str) -> dict[str, Any]:
         raise NotImplementedError
 
-    def get_additional_info(self, asset_url: str) -> dict[str, Any]:
-        """Extra information about installed asset."""
-        return {}
-
     def validate(self) -> None:
         pass
 
@@ -139,9 +135,6 @@ class BinaryInstall(GitHubInstaller):
             raise ActionError("dest_path is required for binary installation")
 
 
-ARCHIVES = (".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst", ".zip")
-
-
 @dataclass
 class ArchiveInstall(GitHubInstaller):
     """Install a GitHub release from an archive file."""
@@ -175,15 +168,6 @@ class ArchiveInstall(GitHubInstaller):
             raise ActionError("dest_path is required for archive installation")
         if self.extract_file and self.creates_file:
             raise ActionError("creates_file cannot be used with extract_file")
-
-    def get_additional_info(self, asset_url: str) -> dict[str, Any]:
-        """Determine extracted directory name and pattern from asset URL."""
-        filename = asset_url.rsplit("/", maxsplit=1)[-1]
-        # Extract base name without extension(s)
-        for ext in ARCHIVES:
-            if filename.endswith(ext):
-                return {"extracted_dir": filename.removesuffix(ext)}
-        return _fail({}, f"Can't guess extracted directory from URL: {asset_url}")
 
 
 # Maps method name to implementation.

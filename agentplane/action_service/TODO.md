@@ -28,7 +28,8 @@ discovery and refuse at admission, such as GitHub's Copilot delegation tools.
 ## Expose half-broken group states and their reasons
 
 A group is `available` while it silently lacks tools: `mirror` leaves out each tool the catalog cannot hold
-(invalid input schema, over-long description, duplicate name) and only logs `MCP tools skipped`. Nothing in
+(an input schema that is not a JSON object, a pattern whose evaluation cannot be settled, an over-long description,
+a duplicate name) and only logs `MCP tools skipped`. Nothing in
 `ListActionGroups` says a tool is missing or why, so a group that looks healthy is not told apart from a complete
 one, and the Tana outage's cause was readable only in `McpHealth.detail` and the executor logs. Add the skipped
 tools with their reasons to `McpHealth` (for example a repeated `{tool, reason}`), present for operators only like

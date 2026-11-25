@@ -39,6 +39,15 @@ func testStoreWithURL(t *testing.T, cap int) (*Store, string) {
 	return store, databaseURL
 }
 
+// connectStore opens a Store with queue capacity 3, the main store's in every test that calls it, on
+// its own single connection to databaseURL, and returns it with that connection's backend PID.
+func connectStore(t *testing.T, ctx context.Context, databaseURL string) (*Store, int) {
+	t.Helper()
+	db := postgres.Open(t, databaseURL)
+	db.SetMaxOpenConns(1)
+	return NewStore(db, 3), postgres.BackendPID(t, ctx, db)
+}
+
 var testStoreDatabaseURLs sync.Map // map[*sql.DB]string
 
 func testWatchHub(t *testing.T, store *Store) *wakeups.Hub {
@@ -87,7 +96,7 @@ func enqueueWithSession(t *testing.T, store *Store, ctx context.Context, session
 		if _, err := createSession(store, ctx, sessionID, sandboxName, sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			return nil, err
 		}
-		if _, err := store.DB.ExecContext(ctx, "UPDATE session SET state=$2 WHERE session_id=$1", sessionID, SessionAcceptedState); err != nil {
+		if _, err := store.DB.ExecContext(ctx, "UPDATE session SET state_value=$2 WHERE session_id=$1", sessionID, SessionAcceptedState); err != nil {
 			return nil, err
 		}
 	} else if err != nil {
@@ -105,6 +114,9 @@ func wakeKey(caller *identitypb.ServiceAccountIdentity) wake.WakeBudgetKey {
 	return wake.WakeBudgetKey{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName(), UID: caller.GetUid()}
 }
 
+// reserveWakeAttemptAsPreviousWriter reproduces the SQL shape deployed before
+// caller_uid existed: namespace/name locking, all-UID reads, and an INSERT that
+// relies on the migration's empty-UID default.
 func reserveWakeAttemptAsPreviousWriter(
 	ctx context.Context,
 	store *Store,

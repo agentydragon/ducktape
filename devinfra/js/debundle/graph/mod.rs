@@ -7,12 +7,11 @@
 //!   [`DependencyEdge`], [`DependencyEdgeId`]).
 //! - [`dependency_graph`] — the [`DependencyGraph`] IR and [`SourceUnit`] rows;
 //!   their dense IDs are `source_identity::SourceUnitId`. It also provides JSON
-//!   recovery ([`DependencyGraph::from_report`], [`UnresolvedDependencyEdgeEndpoint`]).
+//!   recovery ([`DependencyGraphInput`], [`GraphReportIdError`]).
 //! - [`build`] — dependency-graph construction ([`build_dependency_graph_with`],
 //!   at-init call promotion, the S-chain).
-//! - [`quotient`] — module-level projection ([`ModuleQuotient`],
-//!   [`EndpointView`], [`assignment_endpoints`], [`project_endpoints`],
-//!   [`build_module_quotient`]).
+//! - [`quotient`] — module-level edge projection ([`EndpointView`],
+//!   [`assignment_endpoints`], [`project_endpoints`]).
 //! - [`linker_order`] — the canonical ESM I-graph
 //!   ([`ChunkConstrainingEdgeSet`], [`chunk_constraining_module_edges`])
 //!   and its linker / source-import orderings.
@@ -37,8 +36,7 @@ pub use build::{
 };
 pub use commutation_order::{CommutationOrder, PreservedOrder, TemporalConstraint, TemporalEdge};
 pub use dependency_graph::{
-    AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitClass,
-    UnresolvedDependencyEdgeEndpoint,
+    AppliedCommutingPremise, DependencyGraph, GraphReportIdError, SourceUnit, SourceUnitClass,
 };
 pub use edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport, DependencyEdge,
@@ -49,6 +47,4 @@ pub use linker_order::{
     ChunkConstrainingEdgeSet, chunk_constraining_module_edges, chunk_linker_order_from_pairs,
     chunk_source_import_order_from_adjacency, position_lookup,
 };
-pub use quotient::{
-    EndpointView, ModuleQuotient, assignment_endpoints, build_module_quotient, project_endpoints,
-};
+pub use quotient::{EndpointView, assignment_endpoints, project_endpoints};

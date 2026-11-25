@@ -78,7 +78,7 @@ func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.ProcessA
 	}
 }
 
-func (a *claudeAdapter) Command() ([]string, error) {
+func (a *claudeAdapter) Command() []string {
 	session := a.host.Session()
 	args := []string{
 		a.launch.Binary,
@@ -106,7 +106,7 @@ func (a *claudeAdapter) Command() ([]string, error) {
 	if session.ReasoningEffort != "" {
 		args = append(args, "--effort", session.ReasoningEffort)
 	}
-	return args, nil
+	return args
 }
 
 func (a *claudeAdapter) Environment() (map[string]string, error) {

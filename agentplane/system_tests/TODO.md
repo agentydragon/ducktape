@@ -4,3 +4,6 @@
       workspace. Compare their backing storage and guest boot, format, and mount behavior, then
       decide whether to align any remaining differences. Performance impact is unknown; benchmark
       equivalent workloads before choosing a direction.
+- [ ] Consider a browser end-to-end test against the deployed App container. Send a message from
+      the thread composer, let a container harness or the central sampler call the model, and verify
+      that the assistant's reply appears in the same browser thread.

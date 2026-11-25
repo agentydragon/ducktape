@@ -29,16 +29,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	intentID, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +45,7 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 		`{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}`,
 		`{"type":"message_stop"}`,
 	)
-	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}, false, protocol.ProviderHooks{})
+	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: providerAttemptTestPolicy().Lease}, false, protocol.ProviderHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,30 +53,18 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 		t.Fatal("Anthropic response was not reconstructed")
 	}
 
-	rows, err := store.DB().QueryContext(t.Context(), `SELECT entry FROM sampler_event WHERE session_id=$1 ORDER BY sequence`, session.ID)
+	journal, err := store.Events(t.Context(), session.ID, 0, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
 	entries := map[uint64]*eventlogpb.EventEntry{}
 	var observed []*eventpb.Event
-	for rows.Next() {
-		var wire []byte
-		if err := rows.Scan(&wire); err != nil {
-			t.Fatal(err)
-		}
-		entry := &eventlogpb.EventEntry{}
-		if err := proto.Unmarshal(wire, entry); err != nil {
-			t.Fatal(err)
-		}
+	for _, entry := range journal {
 		entries[entry.GetOrigin().GetSequence()] = entry
 		event := entry.GetEvent()
 		if event.GetItemStarted() != nil || event.GetTextDelta() != nil || event.GetToolArgumentsDelta() != nil || event.GetToolArguments() != nil || event.GetItemCompleted() != nil {
 			observed = append(observed, event)
 		}
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
 	}
 
 	want := []struct {
@@ -184,12 +166,7 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 }
 
 func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	intent, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -212,7 +189,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 	defer release.Do(func() { close(resume) })
 	finished := make(chan error, 1)
 	go func() {
-		response, err := anthropic.Sample(t.Context(), server.Client(), server.URL, "fixture-key", *testsupport.AnthropicTestConfig().AnthropicMessages, []byte(`{}`), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intent}, false, protocol.ProviderHooks{})
+		response, err := anthropic.Sample(t.Context(), server.Client(), server.URL, "fixture-key", *testsupport.AnthropicTestConfig().AnthropicMessages, []byte(`{}`), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intent, ProgressLease: providerAttemptTestPolicy().Lease}, false, protocol.ProviderHooks{})
 		if response != nil {
 			finished <- errors.New("response completed after evidence failure")
 			return
@@ -223,27 +200,15 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 	deadline := time.Now().Add(5 * time.Second)
 	observed := false
 	for !observed && time.Now().Before(deadline) {
-		rows, err := store.DB().QueryContext(t.Context(), `SELECT entry FROM sampler_event WHERE session_id=$1 ORDER BY sequence`, session.ID)
+		journal, err := store.Events(t.Context(), session.ID, 0, 4096)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for rows.Next() {
-			var wire []byte
-			if err := rows.Scan(&wire); err != nil {
-				t.Fatal(err)
-			}
-			entry := &eventlogpb.EventEntry{}
-			if err := proto.Unmarshal(wire, entry); err != nil {
-				t.Fatal(err)
-			}
+		for _, entry := range journal {
 			if entry.GetEvent().GetBoundaryRecord().GetBoundary() == "provider_anthropic" {
 				observed = true
 			}
 		}
-		if err := rows.Err(); err != nil {
-			t.Fatal(err)
-		}
-		rows.Close()
 		if !observed {
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -251,11 +216,11 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 	if !observed {
 		t.Fatal("native prefix was not committed")
 	}
-	var cursor uint64
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT MAX(sequence) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&cursor); err != nil {
+	current, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), fmt.Sprintf(`ALTER TABLE sampler_event ADD CONSTRAINT reject_test_event CHECK (sequence <= %d)`, cursor)); err != nil {
+	if _, err := store.DB().ExecContext(t.Context(), fmt.Sprintf(`ALTER TABLE sampler_event ADD CONSTRAINT reject_test_event CHECK (sequence <= %d)`, current.Cursor)); err != nil {
 		t.Fatal(err)
 	}
 	release.Do(func() { close(resume) })
@@ -284,12 +249,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 }
 
 func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	intentID, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -299,27 +259,18 @@ func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testi
 		`{"type":"message_start","message":{"id":"msg_invalid","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		invalidStart,
 	)
-	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}, false, protocol.ProviderHooks{})
+	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: providerAttemptTestPolicy().Lease}, false, protocol.ProviderHooks{})
 	var known *protocol.KnownFailureError
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("invalid block start outcome=%+v err=%v; want known rejection", response, err)
 	}
 
-	rows, err := store.DB().QueryContext(t.Context(), `SELECT entry FROM sampler_event WHERE session_id=$1 ORDER BY sequence`, session.ID)
+	journal, err := store.Events(t.Context(), session.ID, 0, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
 	rawPersisted, observed := false, false
-	for rows.Next() {
-		var wire []byte
-		if err := rows.Scan(&wire); err != nil {
-			t.Fatal(err)
-		}
-		entry := &eventlogpb.EventEntry{}
-		if err := proto.Unmarshal(wire, entry); err != nil {
-			t.Fatal(err)
-		}
+	for _, entry := range journal {
 		event := entry.GetEvent()
 		if boundary := event.GetBoundaryRecord(); boundary != nil {
 			var payload struct {
@@ -331,9 +282,6 @@ func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testi
 			rawPersisted = rawPersisted || payload.WireEvent == invalidStart
 		}
 		observed = observed || event.GetItemStarted() != nil || event.GetTextDelta() != nil || event.GetItemCompleted() != nil
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
 	}
 	if !rawPersisted || observed {
 		t.Fatalf("invalid native event should remain raw evidence only: rawPersisted=%v observed=%v", rawPersisted, observed)

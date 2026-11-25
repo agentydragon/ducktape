@@ -99,13 +99,12 @@ pub fn write_artifact(
     body: &AnalysisArtifactBody,
     ordinals: &ContextOrdinals,
 ) -> Result<Vec<u8>> {
-    let header = rmp_serde::to_vec_named(header)?;
+    let mut bytes = vec![0; 4];
+    header.serialize(&mut rmp_serde::Serializer::new(&mut bytes).with_struct_map())?;
+    let header_len = u32::try_from(bytes.len() - 4)?;
+    bytes[..4].copy_from_slice(&header_len.to_le_bytes());
     let saved = SavedAnalysisBody::snapshot(body, ordinals)?;
-    let body = analysis_codec::encode(&saved)?;
-    let mut bytes = Vec::with_capacity(4 + header.len() + body.len());
-    bytes.extend_from_slice(&u32::try_from(header.len())?.to_le_bytes());
-    bytes.extend_from_slice(&header);
-    bytes.extend_from_slice(&body);
+    analysis_codec::encode(&saved, &mut bytes)?;
     Ok(bytes)
 }
 

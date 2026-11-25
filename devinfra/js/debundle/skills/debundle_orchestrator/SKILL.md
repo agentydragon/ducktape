@@ -26,17 +26,10 @@ obvious inexpensive repair, use the shared workflow's
 to retain useful passing extractions and isolate conflicting additions before
 committing to a long semantic repair.
 
-For an accepted partial spec, begin with unseeded
-[exact residual placement](references/docs/module_proposals.md) using `modules propose`.
-Use `--graphs` with the configured module tree for a corpus, or `--graph` for one
-chunk. Review discovered source meaning and the full destination mapping, check
-and preview/apply its snapshot-bound plan, then regenerate and run relevant
-behavior checks. Keep required companion moves in one worker packet.
-A completed negative is scoped to the append-one-owner, baseline-preserving
-entry-residual family. Unsupported routing, interruption and errors are
-inconclusive. Corpus rows retain their individual outcomes. Executable plans
-include the final import priority and selector preflight; graph-only inventories
-are separate. Normal materialization and runtime evidence remain required.
+For an accepted partial spec, dispatch unseeded
+[residual placement](references/docs/module_proposals.md). Require source review,
+one complete plan per worker and emitted behavior checks. Use each chunk's
+reported outcome and supported family when deciding whether to keep searching.
 
 Use `atoms` and `coverage` for structural inventory. A worker may also run an
 isolated [`per_atomic_group` emission probe](references/SPEC.md#unassigned-source).

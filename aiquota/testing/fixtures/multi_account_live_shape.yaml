@@ -1,0 +1,79 @@
+# Shape observed on the local daemon on 2026-11-22. All identifiers, amounts,
+# usage, and timestamps are synthetic; this is not a copy of the wire payload.
+providers:
+  - provider: claude
+    account_id: example-claude
+    account_label: Example Claude
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 65, reset_seconds: 345600, window_seconds: 604800 }
+        prepaid_balance: { kind: available, amount_minor: 1250, exponent: 2, currency: USD }
+        extra_spend: { is_enabled: true, monthly_limit_usd: 100, used_usd: 5, utilization: 5 }
+        claude_reset_grants:
+          - { label: Full resets, remaining: 1, original: 1, expires_at: "2026-02-15T12:00:00Z", usable_now: true }
+          - { label: Full resets, remaining: 1, original: 1, expires_at: "2026-02-15T12:00:00Z", usable_now: true }
+          - { label: Full resets, remaining: 1, original: 1, expires_at: "2026-02-15T12:00:00Z", usable_now: true }
+          - { label: Full resets, remaining: 1, original: 1, expires_at: "2026-02-15T12:00:00Z", usable_now: true }
+  - provider: codex
+    account_id: example-pro
+    account_label: Example Pro
+    plan_type: pro
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 35, reset_seconds: 432000, window_seconds: 604800 }
+        available_reset_credits: 1
+        available_reset_credit_expiries: ["2026-02-01T12:00:00Z"]
+  - provider: codex
+    account_id: example-max
+    account_label: Example Max
+    plan_type: promax
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        windows:
+          - { used_percent: 80, reset_seconds: 172800, window_seconds: 604800 }
+        paid_credits: { balance: "1234.50", unlimited: false }
+        available_reset_credits: 2
+        available_reset_credit_expiries: ["2026-02-02T12:00:00Z", "2026-02-03T12:00:00Z"]
+  - provider: openai_platform
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        openai_platform_credits: { total_available_usd: "30", total_paid_available_usd: "30", grants: [] }
+  - provider: anthropic_platform
+    last_output:
+      fetched_at: "2026-01-15T12:00:00Z"
+      result:
+        kind: success
+        anthropic_platform_credits:
+          organizations:
+            - uuid: "00000000-0000-0000-0000-000000000001"
+              name: Example organization
+              currency: USD
+              balance: { credits: { amount_minor: 12500, exponent: 2 } }
+              tranches:
+                - id: example-grant
+                  currency: USD
+                  granted_at: "2026-01-01T00:00:00Z"
+                  expires_at: "2026-07-01T00:00:00Z"
+                  granted: { credits: { amount_minor: 10000, exponent: 2 } }
+                  remaining: { credits: { amount_minor: 9500, exponent: 2 } }
+                  scope: { kind: unscoped, applies_to: [] }
+              promo_tranches:
+                - id: example-promo
+                  name: Example promo
+                  currency: USD
+                  granted_at: "2026-01-01T00:00:00Z"
+                  expires_at: "2026-05-01T00:00:00Z"
+                  granted: { credits: { amount_minor: 3000, exponent: 2 } }
+                  remaining: { credits: { amount_minor: 2999, exponent: 2 } }
+                  scope: { kind: scoped, applies_to: [{ product: api }] }
+fetched_at: "2026-01-15T12:00:00Z"

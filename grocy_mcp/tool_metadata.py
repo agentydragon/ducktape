@@ -36,9 +36,8 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
         "entity_update",
         "Partial update: send only the writable columns you want to change. Omitted fields are "
         "preserved. To null a nullable field, include it explicitly with value null. "
-        "Do NOT blindly round-trip the full `entities_get` response — GET returns server-computed "
-        "columns (e.g. `qu_factor_*`, `has_sub_products` on products, `userfields`) that Grocy "
-        "rejects on PUT with 400. For common fields prefer the typed helpers — `products_edit`, "
+        "Grocy product reads attach userfields to the stored columns. Sending the full "
+        "`entities_get` result back can fail with HTTP 400. For common fields prefer `products_edit`, "
         "`stock_entry_edit`, `shopping_list_item_edit` — and reserve `entity_update` for advanced "
         "fields those don't cover (e.g. `default_best_before_days_after_freezing`, "
         "`should_not_be_frozen`, `qu_id_consume` on products). Never set `best_before_date` to "
@@ -47,8 +46,8 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("DELETE", "/objects/{entity}/{objectId}"): ToolOverride("entity_delete"),
     ("GET", "/stock/volatile"): ToolOverride(
         "list_volatile_stock",
-        "Returns products that are due soon, overdue, expired, or below min stock — the same data "
-        "the typed `get_expiring_stock` / `get_expired_stock` / `get_below_minimum_stock` tools slice.",
+        "Returns product-level summaries for due, overdue, expired, or below-minimum stock. "
+        "Use `get_expiring_stock` or `get_expired_stock` for individual lots and their storage locations.",
     ),
     ("GET", "/stock/entry/{entryId}/printlabel"): _disabled("print_stock_entry_label"),
     ("GET", "/stock/products/{productId}"): ToolOverride(

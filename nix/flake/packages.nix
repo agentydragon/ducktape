@@ -20,6 +20,10 @@
 ducktapePkgs
 // gafferPkgs
 // {
+  github-actions-ci-image = import ../../devinfra/ci/github_actions_image.nix {
+    inherit pkgs;
+    inherit (ducktapePkgs) bb bbapi;
+  };
   # Focused PATH for running .pre-commit-config.yaml hooks via `nix shell` or CI.
   precommit = pkgs.symlinkJoin {
     name = "ducktape-precommit";
@@ -131,7 +135,8 @@ ducktapePkgs
   # Python interpreters 419 MiB; Claude Code 230 MiB; other tools/libraries 1,929 MiB.
   environment-tools = pkgs.buildEnv {
     name = "environment-tools";
-    paths = preCommitPackages;
+    # bbr reports bbapi commands for logs and target history; ship the client beside it.
+    paths = preCommitPackages ++ [ ducktapePkgs.bbapi ];
     pathsToLink = [ "/bin" ];
   };
   # Same harnesses, with the shared repository hook/build clients preinstalled.

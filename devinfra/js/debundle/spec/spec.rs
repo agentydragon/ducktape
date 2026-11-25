@@ -1734,8 +1734,8 @@ impl SourceMatchClaim {
         }
     }
 
-    pub fn source_match(&self) -> SourceMatch {
-        SourceMatch {
+    pub fn selector(&self) -> AnonymousStatementSelector {
+        AnonymousStatementSelector {
             identifiers: self.identifiers,
             target_binding: None,
             match_source: self.match_source.clone(),
@@ -1854,8 +1854,9 @@ impl SourceMatch {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub struct AnonymousStatementSelector {
+    #[serde(rename = "match")]
     pub match_source: String,
     pub identifiers: SourceMatchIdentifierMode,
     pub target_binding: Option<String>,

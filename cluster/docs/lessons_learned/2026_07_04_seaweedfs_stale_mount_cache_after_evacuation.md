@@ -92,7 +92,6 @@ deploy/forgejo`, stale errors dropped to 0, `ls-remote` went 8/8, and a real
 
 ## Prevention
 
-- Volume-server retirement runbook updated with the "keep the emptied server alive,
-  refresh clients, then delete" sequence: <../runbooks/rolling_seaweedfs_volume_pvc.md>.
-- The Piraeus node runbook carries the same gotcha for volume-server retirement:
+- The Piraeus node runbook carries the "keep the emptied server alive, refresh clients,
+  then delete" sequence for volume-server retirement:
   <../runbooks/piraeus_node_roll.md#seaweed-volume-servers>.

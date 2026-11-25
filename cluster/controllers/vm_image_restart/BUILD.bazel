@@ -58,6 +58,7 @@ py_test(
     srcs = ["test_controller.py"],
     deps = [
         ":controller",
+        ":kubernetes_watch",
         ":settings",
         "//:conftest",
         "@pypi//kubernetes_asyncio",

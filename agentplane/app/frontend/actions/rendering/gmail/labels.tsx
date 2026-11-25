@@ -203,7 +203,7 @@ export const labelRenderers: ReadonlyMap<string, ActionPresentation> = new Map<s
     "labels_get",
     {
       fallbackLabel: "Read Gmail label",
-      pane: { collapsed: null, opened: getLabelPreview },
+      pane: { collapsed: getLabelPreview, opened: getLabelPreview },
       call: getLabelCall,
       details: { arguments: getLabelPreview, result: defineResultPreview(labelResult, LabelCard) },
     },
@@ -231,7 +231,7 @@ export const labelRenderers: ReadonlyMap<string, ActionPresentation> = new Map<s
     {
       fallbackLabel: "Update Gmail label",
       call: defineCallPreview(patchArguments, labelResult, PatchLabelCall),
-      pane: { collapsed: definePreview(patchArguments, PatchFields), opened: patchLabelPreview },
+      pane: { collapsed: patchLabelPreview, opened: patchLabelPreview },
       details: { arguments: patchLabelPreview, result: defineResultPreview(labelResult, LabelCard) },
     },
   ],
@@ -239,12 +239,7 @@ export const labelRenderers: ReadonlyMap<string, ActionPresentation> = new Map<s
     "labels_delete",
     {
       fallbackLabel: "Delete Gmail label",
-      pane: {
-        collapsed: definePreview(labelMutationArguments, () => (
-          <Text size="sm">Affects every thread with the label.</Text>
-        )),
-        opened: deleteLabelPreview,
-      },
+      pane: { collapsed: deleteLabelPreview, opened: deleteLabelPreview },
       details: { arguments: deleteLabelPreview, emptyResult: <Text size="sm">Label deleted.</Text> },
     },
   ],

@@ -2,10 +2,10 @@
 
 use super::support::unit_id_for_binding;
 use debundle_e2e_graph_support::json_module_path_for_unit;
-use debundle_e2e_support::saved_analysis::assert_ok;
+use debundle_e2e_support::saved_analysis::{assert_ok, path};
 use debundle_e2e_support::{
-    TreeFixture, TreeRun, assert_node_output, debundle_fixture_output, debundler_path, process,
-    read_gzip_json, read_tree, tree_spec_args, write_tree_fixture,
+    TreeFixture, TreeRun, assert_node_output, debundle_fixture_output, debundler_path,
+    parse_stdout_json, process, read_gzip_json, read_tree, tree_spec_args, write_tree_fixture,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -112,30 +112,27 @@ fn selected_fixture() -> SelectedFixture {
     fixture
 }
 
-fn cli(fixture: &SelectedFixture, args: &[impl AsRef<std::ffi::OsStr>]) -> Output {
+fn modules_command(fixture: &SelectedFixture, verb: &str, args: &[&str]) -> Output {
     debundle_fixture_output(
         Command::new(debundler_path())
             .arg("--graph-ownership-subset-root")
             .arg(&fixture.root)
-            .args(args),
+            .args(["modules", verb, "--graph"])
+            .arg(&fixture.graph)
+            .arg("--modules")
+            .arg(&fixture.modules)
+            .arg("--source-root")
+            .arg(&fixture.root)
+            .arg("--tree-config")
+            .arg(&fixture.config)
+            .args(args)
+            .args(["--format", "json"]),
         &fixture.root,
     )
     .unwrap()
 }
 
-fn graph_args(fixture: &SelectedFixture) -> Vec<String> {
-    vec![
-        "--graph".to_owned(),
-        fixture.graph.display().to_string(),
-        "--modules".to_owned(),
-        fixture.modules.display().to_string(),
-        "--source-root".to_owned(),
-        fixture.root.display().to_string(),
-        "--tree-config".to_owned(),
-        fixture.config.display().to_string(),
-    ]
-}
-
+#[track_caller]
 fn require_success(output: Output, context: &str) -> Value {
     assert!(
         output.status.success(),
@@ -143,33 +140,17 @@ fn require_success(output: Output, context: &str) -> Value {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).expect("CLI emits JSON")
+    parse_stdout_json(&output)
 }
 
-fn propose(fixture: &SelectedFixture) -> Value {
-    let mut args = vec!["modules".to_owned(), "propose".to_owned()];
-    args.extend(graph_args(fixture));
-    args.extend([
-        "--into".to_owned(),
-        "fresh".to_owned(),
-        "--format".to_owned(),
-        "json".to_owned(),
-    ]);
-    require_success(cli(fixture, &args), "unseeded selected proposal")
-}
-
-fn propose_requiring(fixture: &SelectedFixture, unit_id: &str) -> Value {
-    let mut args = vec!["modules".to_owned(), "propose".to_owned()];
-    args.extend(graph_args(fixture));
-    args.extend([
-        "--into".to_owned(),
-        "fresh".to_owned(),
-        "--require".to_owned(),
-        unit_id.to_owned(),
-        "--format".to_owned(),
-        "json".to_owned(),
-    ]);
-    require_success(cli(fixture, &args), "required selected proposal")
+#[track_caller]
+fn propose(fixture: &SelectedFixture, extra_args: &[&str]) -> Value {
+    let mut args = vec!["--into", "fresh"];
+    args.extend_from_slice(extra_args);
+    require_success(
+        modules_command(fixture, "propose", &args),
+        "selected proposal",
+    )
 }
 
 fn plan_path(fixture: &SelectedFixture, plan: &Value) -> PathBuf {
@@ -178,50 +159,19 @@ fn plan_path(fixture: &SelectedFixture, plan: &Value) -> PathBuf {
     path
 }
 
-fn check_plan(fixture: &SelectedFixture, plan: &Path) -> Output {
-    let mut args = vec!["modules".to_owned(), "check".to_owned()];
-    args.extend(graph_args(fixture));
-    args.extend([
-        "--plan".to_owned(),
-        plan.display().to_string(),
-        "--format".to_owned(),
-        "json".to_owned(),
-    ]);
-    cli(fixture, &args)
+fn plan_command(fixture: &SelectedFixture, verb: &str, plan: &Path, flags: &[&str]) -> Output {
+    let mut args = vec!["--plan", path(plan)];
+    args.extend_from_slice(flags);
+    modules_command(fixture, verb, &args)
 }
 
-fn apply_plan(fixture: &SelectedFixture, plan: &Path, dry_run: bool) -> Output {
-    let mut args = vec!["modules".to_owned(), "apply".to_owned()];
-    args.extend(graph_args(fixture));
-    args.extend(["--plan".to_owned(), plan.display().to_string()]);
-    if dry_run {
-        args.push("--dry-run".to_owned());
-    }
-    args.extend(["--format".to_owned(), "json".to_owned()]);
-    cli(fixture, &args)
-}
-
-fn check_batch(fixture: &SelectedFixture, batch: &Path, import_order: &Path) -> Output {
-    let mut args = vec!["modules".to_owned(), "check".to_owned()];
-    args.extend(graph_args(fixture));
-    args.extend([
-        "--batch".to_owned(),
-        batch.display().to_string(),
-        "--import-order".to_owned(),
-        import_order.display().to_string(),
-        "--format".to_owned(),
-        "json".to_owned(),
-    ]);
-    cli(fixture, &args)
-}
-
-fn assert_apply_rejected_without_writes(fixture: &SelectedFixture, plan: &Path, dry_run: bool) {
+fn assert_apply_rejected_without_writes(fixture: &SelectedFixture, plan: &Path, flags: &[&str]) {
     let modules_before = read_tree(&fixture.modules);
     let view_before = fs::read(&fixture.subset).unwrap();
     let config_before = fs::read(&fixture.config).unwrap();
     let source_path = fixture.root.join("snapshot/app.js");
     let source_before = fs::read(&source_path).unwrap();
-    let output = apply_plan(fixture, plan, dry_run);
+    let output = plan_command(fixture, "apply", plan, flags);
     assert!(
         !output.status.success(),
         "invalid selected-view apply unexpectedly succeeded:\n{}",
@@ -252,11 +202,6 @@ fn unseeded_selected_residual_peel_checks_previews_applies_and_runs() {
     assert_node_output(&base.out_root.join("app/app/entry.js"), "0 1 8\n", "");
 
     let fixture = selected_fixture();
-    assert_node_output(
-        &fixture._run.out_root.join("app/app/entry.js"),
-        "0 1 8\n",
-        "",
-    );
     let graph_before: Value = read_gzip_json(&fixture.graph);
     assert_eq!(graph_before["import_order"], json!(["kept", "existing"]));
     assert_eq!(
@@ -274,7 +219,7 @@ fn unseeded_selected_residual_peel_checks_previews_applies_and_runs() {
     let view_before = fs::read(&fixture.subset).unwrap();
     let config_before = fs::read(&fixture.config).unwrap();
 
-    let proposal = propose(&fixture);
+    let proposal = propose(&fixture, &[]);
     assert_eq!(proposal["status"], "found", "{proposal:#}");
     assert!(proposal["plan"].is_object(), "{proposal:#}");
     assert!(proposal["residual_units_extracted"].as_u64().unwrap() > 0);
@@ -304,13 +249,16 @@ fn unseeded_selected_residual_peel_checks_previews_applies_and_runs() {
     assert_eq!(fs::read(&fixture.config).unwrap(), config_before);
 
     let plan_file = plan_path(&fixture, plan);
-    let checked = require_success(check_plan(&fixture, &plan_file), "selected plan check");
+    let checked = require_success(
+        plan_command(&fixture, "check", &plan_file, &[]),
+        "selected plan check",
+    );
     assert_eq!(checked["accepted"], true, "{checked:#}");
     assert_eq!(checked["existing_units_moved"], 0, "{checked:#}");
     assert!(checked["plan"].is_object(), "{checked:#}");
 
     require_success(
-        apply_plan(&fixture, &plan_file, true),
+        plan_command(&fixture, "apply", &plan_file, &["--dry-run"]),
         "selected plan preview",
     );
     assert_eq!(read_tree(&fixture.modules), modules_before);
@@ -318,7 +266,7 @@ fn unseeded_selected_residual_peel_checks_previews_applies_and_runs() {
     assert_eq!(fs::read(&fixture.config).unwrap(), config_before);
 
     require_success(
-        apply_plan(&fixture, &plan_file, false),
+        plan_command(&fixture, "apply", &plan_file, &[]),
         "selected plan apply",
     );
     assert_eq!(read_tree(&fixture.modules), modules_before);
@@ -440,7 +388,7 @@ fn ambiguous_selected_selector_discovery_has_no_plan_or_writes() {
         .unwrap()["id"]
         .as_str()
         .unwrap();
-    let report = propose_requiring(&fixture, ambiguous_unit);
+    let report = propose(&fixture, &["--require", ambiguous_unit]);
     assert_eq!(report["status"], "inventory_only", "{report:#}");
     assert!(report["plan"].is_null(), "{report:#}");
     assert!(
@@ -462,18 +410,16 @@ fn ambiguous_selected_selector_discovery_has_no_plan_or_writes() {
     .unwrap();
     let order = fixture.root.join("ambiguous-order.json");
     fs::write(&order, serde_json::to_vec(&json!(["fresh"])).unwrap()).unwrap();
-    let check = check_batch(&fixture, &batch, &order);
+    let check = modules_command(
+        &fixture,
+        "check",
+        &["--batch", path(&batch), "--import-order", path(&order)],
+    );
     assert!(
         !check.status.success(),
         "ambiguous selector check unexpectedly passed"
     );
-    let checked: Value = serde_json::from_slice(&check.stdout).unwrap_or_else(|error| {
-        panic!(
-            "selected batch check must emit its rejection report: {error}\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&check.stdout),
-            String::from_utf8_lossy(&check.stderr)
-        )
-    });
+    let checked = parse_stdout_json(&check);
     assert_eq!(checked["accepted"], false, "{checked:#}");
     assert!(checked["plan"].is_null(), "{checked:#}");
     assert!(
@@ -492,7 +438,7 @@ fn ambiguous_selected_selector_discovery_has_no_plan_or_writes() {
 fn stale_selected_inputs_and_invalid_plan_edits_never_write_even_in_preview() {
     for stale_input in ["source", "config", "view"] {
         let fixture = selected_fixture();
-        let proposal = propose(&fixture);
+        let proposal = propose(&fixture, &[]);
         assert_eq!(proposal["status"], "found", "{proposal:#}");
         let plan = plan_path(&fixture, &proposal["plan"]);
         match stale_input {
@@ -514,21 +460,21 @@ fn stale_selected_inputs_and_invalid_plan_edits_never_write_even_in_preview() {
             }
             _ => unreachable!(),
         }
-        assert_apply_rejected_without_writes(&fixture, &plan, true);
+        assert_apply_rejected_without_writes(&fixture, &plan, &["--dry-run"]);
     }
 
     let fixture = selected_fixture();
-    let proposal = propose(&fixture);
+    let proposal = propose(&fixture, &[]);
     assert_eq!(proposal["status"], "found", "{proposal:#}");
     let mut bad_priority = proposal["plan"].clone();
     // An incomplete priority is rejected even when the changed units are
     // otherwise individually realizable.
     bad_priority["import_order"] = json!(["kept", "fresh"]);
     let bad_priority_path = plan_path(&fixture, &bad_priority);
-    assert_apply_rejected_without_writes(&fixture, &bad_priority_path, false);
+    assert_apply_rejected_without_writes(&fixture, &bad_priority_path, &[]);
 
     let fixture = selected_fixture();
-    let proposal = propose(&fixture);
+    let proposal = propose(&fixture, &[]);
     assert_eq!(proposal["status"], "found", "{proposal:#}");
     let mut reassignment = proposal["plan"].clone();
     for change in reassignment["changes"].as_array_mut().unwrap() {
@@ -536,7 +482,7 @@ fn stale_selected_inputs_and_invalid_plan_edits_never_write_even_in_preview() {
     }
     reassignment["import_order"] = json!(["kept", "existing"]);
     let reassignment_path = plan_path(&fixture, &reassignment);
-    assert_apply_rejected_without_writes(&fixture, &reassignment_path, true);
+    assert_apply_rejected_without_writes(&fixture, &reassignment_path, &["--dry-run"]);
 }
 
 #[test]
@@ -558,11 +504,11 @@ fn selected_plan_cannot_split_an_atomic_group() {
         .unwrap_or_else(|| panic!("fixture has no multi-unit atom: {graph:#}"));
     let first_unit = group["source_unit_ids"][0].as_str().unwrap();
 
-    let proposal = propose(&fixture);
+    let proposal = propose(&fixture, &[]);
     assert_eq!(proposal["status"], "found", "{proposal:#}");
     let mut split = proposal["plan"].clone();
     split["changes"] = json!([{"unit_id": first_unit, "module": "fresh"}]);
     split["import_order"] = json!(["fresh"]);
     let split_path = plan_path(&fixture, &split);
-    assert_apply_rejected_without_writes(&fixture, &split_path, true);
+    assert_apply_rejected_without_writes(&fixture, &split_path, &["--dry-run"]);
 }

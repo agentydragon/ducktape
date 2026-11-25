@@ -55,6 +55,63 @@ and [packing rollout](../history_service/debug/2026_11_12_event_packing_rollout.
 their earlier capacity snapshots precede this baseline. The obsolete inline request snapshots are
 already removed. Response logging and cross-representation body sharing remain open.
 
+## November 24 recurrence and storage decision
+
+History accumulation predates block packing. On October 11 the staging dry run found **12.8 million
+streamed-delta rows and 2.68 GB of payload** eligible for settlement across 50 of 62 Sessions.
+This measured redundant payload that completions could replace. It excluded indexes and other event
+kinds. [Staging settlement measurements](https://github.com/agentydragon/ducktape/pull/10061)
+
+On November 11, before the first History block writer, `session_event` alone occupied **4,937 MiB**
+(1,836 MiB heap, 780 MiB indexes, 2,321 MiB TOAST). After intervening cleanup, the November 13
+03:13 UTC pre-packing snapshot counted **4,173,159 logical events and zero blocks**. History
+occupied 5.75 GB and `session_event` occupied 4.41 GB. The first packing pass converted 2,953,091
+historical events. After packing and full vacuum, History occupied 4.32 GB, a 24.9% reduction.
+These are dated snapshots across maintenance, so their difference cannot establish an ingestion
+rate. [November 11 relation inventory](../debug/2026_11_11_staging_storage_exhaustion.md#storage-measurements)
+and [November 13 packing and vacuum measurements](../history_service/debug/2026_11_12_event_packing_rollout.md#historical-maintenance).
+
+On November 11 the staging PostgreSQL volume filled at 16 GiB. History event rows, sampler
+events and intents, and GitHub deliveries were the largest measured relations. On November 24
+the operator reported another exhaustion and a volume expansion from 24 to 48 GiB. Across the
+measured 24-hour interval, databases grew by 7.99 GiB in total, including 4.37 GiB in
+`sandbox_service` (History) and 3.57 GiB in `central_sampler`. At inspection, History's
+`session_event` occupied 6.57 GiB and the sampler's `sampler_event` occupied 4.63 GiB,
+including indexes and TOAST. Those are relation sizes at one instant. The daily changes above
+were measured per database. Compare the [November 11 incident](../debug/2026_11_11_staging_storage_exhaustion.md),
+[November 12 amplification investigation](../history_service/debug/2026_11_12_retained_request_amplification.md)
+and November 13 measurements above.
+
+Use [History packing](https://github.com/agentydragon/ducktape/pull/19805) and
+[sampler journal blocks](https://github.com/agentydragon/ducktape/pull/19801) as the stopgap
+baseline. On November 24 both implementations had merged and staging activation was pending
+([History](https://github.com/agentydragon/ducktape/pull/19822),
+[sampler](https://github.com/agentydragon/ducktape/pull/19827)). Record activation times and any
+historical backfill separately. The [CNPG table graphs](https://github.com/agentydragon/ducktape/pull/19816)
+can show which relations continue to grow. Report bytes per retained event alongside bytes/day
+so a quieter day or space reused after vacuum does not masquerade as a better representation.
+
+Evaluate whether an existing storage engine or library can own cross-record compression behind
+operations such as append an exact value, fetch by cursor or reference, and scan an ordered range.
+Exercise repeated tool schemas, shared conversation prefixes and content blocks, and streams of
+small events with similar structure but distinct values. Compare the two service-owned packers
+against storage engines with compressed ordered blocks and standard column or segment formats.
+Prefer compression metadata owned by the engine or stored with the segment. An application-managed
+shared dictionary would require training, versioning, and retaining the matching decoder dictionary
+for every readable value. Revisit that option if measurements justify owning that lifecycle.
+Evaluate immutable content references separately using the sampler's existing content store or
+the [catalog proposal](https://github.com/agentydragon/ducktape/pull/19800). Consider
+staying on PostgreSQL, separating payload storage from its transactional index, or moving to another
+backend. Compare combinations when they address different measured costs.
+
+Use the same representative workload for each candidate. Count payloads, reference tables,
+indexes and duplicated service copies toward total physical bytes. Measure append cost, bounded
+point and kind-filtered range reads, sequential recovery/export reads, and whole-session deletion. Demonstrate exact replay through
+a retry and a reader restart. Compare operational costs, including atomic publication of a value
+and its reference, retention and deletion, restore, and mixed-version rollout. Present the simplest
+option that meets those contracts, its measured advantage over the stopgap, and which custom
+storage code it would retire. Keeping the stopgap is an available outcome.
+
 ## Design work
 
 ### Remove redundant response capture
@@ -64,12 +121,16 @@ Trace [transport capture](../sampler/protocol/evidence.go),
 [final intent audit](../sampler/internal/sessionstore/intents.go). Decide which representation each
 consumer actually needs. Prefer one retained stream with references from the completed operation
 over another full `events` array. Keep final response content only where it supplies information
-that cannot be referenced or derived from retained items.
+that cannot be referenced or derived from retained items. A 2026-11-12 staging sample found 17
+OpenAI responses retaining 370 KB of `instructions` and 151 KB of `tools`, which request profiles
+already represent.
 
 Separate optional raw transport diagnostics from data required for recovery or acknowledged
 history. Use existing typed configuration for capture/retention policy, considering per-Session
 capture when needed. Preserve malformed/partial-response diagnosis and the existing rule that
-failed evidence persistence stops processing. An unknown provider outcome must not trigger replay.
+failed evidence persistence stops processing. Each stream event and wire chunk is persisted by its
+own `ResponseEvidence.Record` transaction before the stream advances (`EvidenceSink`); batching
+those writes changes that rule. An unknown provider outcome must not trigger replay.
 
 The bounded source probe found a narrower first change: successful sampling and compaction audits
 copy `Response.Events` into both `sampler_intent.result` and result-phase boundary evidence. No

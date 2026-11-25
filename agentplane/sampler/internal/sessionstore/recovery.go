@@ -239,14 +239,14 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 				text = lostCellCallMessage(nested)
 			}
 			output := []protocol.ContentPart{{Type: "input_text", Text: text}}
-			if err := conversation.appendToolResult(call, output); err != nil {
+			if err := conversation.appendToolResult(call, output, protocol.RecordOrigin{}); err != nil {
 				return err
 			}
 			encoded, err := json.Marshal(output)
 			if err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
 				ItemId: call.CallID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: protocol.DisplayText(string(encoded)), Succeeded: false}},
 			}}}); err != nil {
 				return err
@@ -269,7 +269,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 				notice += " Calls abandoned with unknown outcome: " + strings.Join(names, ", ") + "."
 			}
 			if err := conversation.apply(func(state protocol.Context) error {
-				return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
+				return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}, protocol.RecordOrigin{})
 			}); err != nil {
 				return err
 			}
@@ -299,7 +299,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 				"abandoned_cells", len(abandonedCells), "abandoned_processes", len(abandonedProcesses), "previous_instance", previous.String, "instance", instanceID)
 		}
 		if changed {
-			return updateConversation(ctx, tx, conversation)
+			return s.updateConversation(ctx, tx, conversation)
 		}
 		return nil
 	})
@@ -340,7 +340,7 @@ func (s *Store) abandonIntent(ctx context.Context, tx *sql.Tx, conversation *Con
 	}
 	if reconciliation != nil {
 		reconciliation.SourceSequences = append(reconciliation.SourceSequences, sources...)
-		if _, err := appendEvent(ctx, tx, session, reconciliation); err != nil {
+		if _, err := s.appendEvent(ctx, tx, session, reconciliation); err != nil {
 			return err
 		}
 	}
@@ -463,9 +463,6 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 		if err != nil {
 			return err
 		}
-		if len(unresolved) == 0 && !liveCell && !liveProcess && rejectedCallID == "" {
-			return protocol.ErrPrecondition
-		}
 		var reconciliation *eventpb.Event
 		if pendingSampling {
 			// Provider output enters model context atomically at Finish. Do not infer that
@@ -504,25 +501,28 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 				message = "Tool call rejected before dispatch: " + rejectionReason + ". No runtime or executor operation was dispatched for this call."
 			}
 			output := []protocol.ContentPart{{Type: "input_text", Text: message}}
-			if err := conversation.appendToolResult(call, output); err != nil {
+			if err := conversation.appendToolResult(call, output, protocol.RecordOrigin{}); err != nil {
 				return err
 			}
 			encoded, err := json.Marshal(output)
 			if err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
 				ItemId: call.CallID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: protocol.DisplayText(string(encoded)), Succeeded: false}},
 			}}}); err != nil {
 				return err
 			}
 		}
 		notice := "An operator recovered this session after reviewing its boundary evidence. Unfinished JavaScript cells and executor operations were abandoned without replay; their remote outcome is unknown. The continuation uses a new JavaScript session, so prior store()/load() values and live-cell handles are unavailable. Recreate any required state in a new exec cell before continuing."
+		if len(unresolved) == 0 && !liveCell && !liveProcess && rejectedCallID == "" && len(calls) == 0 {
+			notice = "An operator recovered this session after reviewing its boundary evidence. No unresolved runtime handles or intents remained at recovery; earlier unknown outcomes are not confirmed and no operation was replayed. The continuation uses a new JavaScript session, so prior store()/load() values are unavailable."
+		}
 		if pendingSampling {
 			notice = "An operator abandoned an interrupted provider response after reviewing its retained request and stream evidence. The provider may have completed or charged for the request; its completion and external effects are unknown. The observed stream prefix was not committed as model output, and no sampler tool call from this response was dispatched. The response will not be replayed. Continue from the last committed conversation after new user input. This recovery starts a fresh JavaScript session; prior store()/load() values are unavailable."
 		}
 		if err := conversation.apply(func(state protocol.Context) error {
-			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
+			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}, protocol.RecordOrigin{})
 		}); err != nil {
 			return err
 		}
@@ -556,7 +556,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 		}
 		conversation.Pending = nil
 		conversation.Stopped = false
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET generation=generation+1,code_session_epoch=code_session_epoch+1,
@@ -591,11 +591,11 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 	return recovered, err
 }
 
+const lostExecutorSessionNotice = "The retained exec-server session was definitively lost. Its live process handles have been abandoned; their remote state is unknown unless explicitly reported, and no mutation was replayed. A fresh executor session is being opened. Recreate any required process state before continuing; old process handles cannot be reused."
+
 // RetireLostExecutorSession records that a retained exec-server session was definitively absent.
 // It abandons process handles without claiming they exited, clears the stale binding, and adds a
 // durable model-visible notice before any fresh executor session can be used.
-const lostExecutorSessionNotice = "The retained exec-server session was definitively lost. Its live process handles have been abandoned; their remote state is unknown unless explicitly reported, and no mutation was replayed. A fresh executor session is being opened. Recreate any required process state before continuing; old process handles cannot be reused."
-
 func (s *Store) RetireLostExecutorSession(ctx context.Context, owner Owner, sessionID, notDispatchedProcessID string) error {
 	if sessionID == "" {
 		return protocol.ErrInvalid
@@ -674,7 +674,7 @@ func (s *Store) rebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 		if replacementSessionID != "" {
 			conversation.ExecutorSession = &replacementSessionID
 			conversation.ExecutorShell = shell
-			return updateConversation(ctx, tx, conversation)
+			return s.updateConversation(ctx, tx, conversation)
 		}
 		return nil
 	})
@@ -725,24 +725,39 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, conversat
 	conversation.ExecutorSession = nil
 	conversation.ExecutorShell = nil
 	// The session can be retired while the model's outer exec call is still pending.
-	// Queue the notice against that call so it is appended after its tool result. This
-	// preserves Anthropic's tool_result ordering while keeping the notice durable in the
-	// same transaction as session retirement. With no pending call, append it directly.
+	// Queue the notice against that call so it follows the tool result.
 	pendingCalls, err := conversation.Transcript.PendingCalls()
 	if err != nil {
 		return err
 	}
 	if len(pendingCalls) > 0 {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_notification(conversation_id,call_id,cell_id,text) VALUES($1,$2,'',$3)`,
-			conversation.ID, pendingCalls[0].CallID, notice); err != nil {
+		if err := queueNotification(ctx, tx, conversation.ID, pendingCalls[0].CallID, "", notice); err != nil {
 			return err
 		}
-	} else if err := conversation.apply(func(state protocol.Context) error {
-		return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
-	}); err != nil {
-		return err
+	} else {
+		// A yielded cell can continue using the executor while the provider summarizes.
+		// Leave the source context untouched during compaction and any frozen retry.
+		frozen := pendingMatches(conversation.Pending, "", PendingIntentCompaction)
+		if !frozen && session.ActiveCommand != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_intent i
+				WHERE i.conversation_id=$1 AND i.provider_command_id=$2 AND i.provider_retry_not_before IS NOT NULL
+				AND i.request->>'kind'='compaction'
+				AND NOT EXISTS(SELECT 1 FROM sampler_intent n WHERE n.previous_provider_intent_id=i.id))`,
+				conversation.ID, *session.ActiveCommand).Scan(&frozen); err != nil {
+				return err
+			}
+		}
+		if frozen {
+			if err := queueNotification(ctx, tx, conversation.ID, "", "", notice); err != nil {
+				return err
+			}
+		} else if err := conversation.apply(func(state protocol.Context) error {
+			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}, protocol.RecordOrigin{})
+		}); err != nil {
+			return err
+		}
 	}
-	return updateConversation(ctx, tx, conversation)
+	return s.updateConversation(ctx, tx, conversation)
 }
 
 func (s *Store) checkRecovery(ctx context.Context, tx *sql.Tx, owner Owner) error {

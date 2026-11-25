@@ -7,40 +7,8 @@ import pytest_bazel
 
 from devinfra.ci.image_registry import DIGEST_SUFFIX, newest_pinned_digest
 from devinfra.ci.push_image import pinned_tag, push
-from devinfra.oci.crane import Crane, CraneError
-
-
-class FakeCrane(Crane):
-    """Registry stub: repo -> {tag: digest}, recording what gets published.
-
-    A real `Crane` with the subprocess replaced, as `devinfra/oci/test_crane.py` does — the
-    binary is never resolved because nothing reaches `_run`.
-    """
-
-    def __init__(self, repos: dict[str, dict[str, str]]) -> None:
-        super().__init__(Path("/nonexistent/crane"))
-        self.repos = repos
-        self.pushed: list[tuple[Path, str]] = []
-        self.tagged: list[tuple[str, str]] = []
-
-    def tags(self, repository: str) -> list[str]:
-        if repository not in self.repos:
-            raise CraneError(("ls", repository), 1, "NAME_UNKNOWN: unknown package", "")
-        return list(self.repos[repository])
-
-    def digest(self, image_ref: str) -> str:
-        repo, _, tag = image_ref.rpartition(":")
-        return self.repos[repo][tag]
-
-    def digest_or_none(self, image_ref: str) -> str | None:
-        repo, _, tag = image_ref.rpartition(":")
-        return self.repos.get(repo, {}).get(tag)
-
-    def push(self, image_dir: Path, ref: str) -> None:
-        self.pushed.append((image_dir, ref))
-
-    def tag(self, ref: str, tag: str) -> None:
-        self.tagged.append((ref, tag))
+from devinfra.ci.testing.fake_crane import FakeCrane
+from devinfra.oci.crane import CraneError
 
 
 def layout(tmp_path: Path, digest: str) -> Path:
@@ -72,16 +40,7 @@ def test_a_repository_with_nothing_published_yet_is_pushed(tmp_path: Path) -> No
 
 
 def test_an_unreadable_registry_aborts_rather_than_publishing(tmp_path: Path) -> None:
-    """The opposite of the planner's rule, deliberately. The planner publishes what it
-    could not prove unchanged because its mistake costs one runner; publishing here
-    costs a tag Flux commits back and rolls out. A push not made is recovered by the
-    next merge, which still sees the difference."""
-
-    class Unreachable(FakeCrane):
-        def digest_or_none(self, image_ref: str) -> str | None:
-            raise CraneError(("digest", image_ref), 1, "unexpected status code 500", "")
-
-    crane = Unreachable({"r/a": {"latest": "sha256:same"}})
+    crane = FakeCrane({"r/a": {"latest": "sha256:same"}}, errors={"digest": "unexpected status code 500"})
     with pytest.raises(CraneError):
         push(layout(tmp_path, "sha256:different"), "r/a", "devel-20260827000000-def5678", crane)
     assert crane.pushed == [], "nothing may go out when the registry could not be read"
@@ -114,12 +73,9 @@ def test_first_publish_accepts_missing_repository_but_rejects_denied() -> None:
     assert newest_pinned_digest(FakeCrane({}), "r/a", "main") is None
     assert newest_pinned_digest(FakeCrane({"r/a": {"latest": "sha256:other"}}), "r/a", "main") is None
 
-    class Denied(FakeCrane):
-        def tags(self, repository: str) -> list[str]:
-            raise CraneError(("ls", repository), 1, "DENIED: requested access is denied", "")
-
+    crane = FakeCrane({}, errors={"ls": "DENIED: requested access is denied"})
     with pytest.raises(CraneError, match="DENIED"):
-        newest_pinned_digest(Denied({}), "r/a", "main")
+        newest_pinned_digest(crane, "r/a", "main")
 
 
 def test_the_pinned_tag_is_the_shape_flux_filters_on() -> None:

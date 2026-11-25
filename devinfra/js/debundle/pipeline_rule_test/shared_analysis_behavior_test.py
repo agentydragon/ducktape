@@ -11,14 +11,10 @@ from python.runfiles import Runfiles
 
 
 @pytest.mark.parametrize(("output", "modules"), [("OUTPUT_A", {"values.js"}), ("OUTPUT_B", {"input.js", "double.js"})])
-def test_shared_analysis_accepts_both_layouts(output: str, modules: set[str]) -> None:
-    runfiles = Runfiles.Create()
-    assert runfiles is not None
-    root = runfiles.Rlocation(os.environ[output])
-    node = runfiles.Rlocation(os.environ["NODE"])
-    assert root is not None
-    assert node is not None
-    tree = Path(root)
+def test_shared_analysis_accepts_both_layouts(runfiles: Runfiles, output: str, modules: set[str]) -> None:
+    files = runfiles.root()
+    tree = Path(str(files / os.environ[output]))
+    node = str(files / os.environ["NODE"])
     chunk = tree / "app/main"
     assert {path.name for path in chunk.glob("*.js")} == modules | {"entry.js"}
     assert not (tree / "GATE_REJECTED").exists()

@@ -10,20 +10,20 @@ description: >-
 # Grafana dashboards
 
 Use this skill for every new or changed dashboard under
-`cluster/cdk8s/monitoring/dashboards/`. The deliverable is a
-dashboard that renders real data in Grafana, not merely valid JSON or a query
-that works after an agent manually edits it.
+`cluster/cdk8s/monitoring/dashboards/`. Verify the rendered dashboard and its actual datasource requests.
+
+## Dashboard source and artifact
 
 Locally authored dashboards use Grafana Foundation SDK builders and models. Monitoring
 builders live in `cluster/cdk8s/monitoring/dashboards/`; component dashboards live beside
 that component's generator. Declare each with `grafana_dashboard` from
 `//grafana:dashboard.bzl`. It builds compact JSON independently for each dashboard;
-the generator reads that Bazel output from runfiles and embeds it in
-`GrafanaDashboard.spec.json`, with datasource inputs mapped to provisioned UIDs in
+the owning generator declares the output in `data`, reads it from runfiles, and embeds
+its text in `GrafanaDashboard.spec.json`, with datasource inputs mapped to provisioned UIDs in
 `spec.datasources`. Dashboards imported from grafana.com keep their upstream references.
 
 Synthesis, browser tests and candidate verification consume the same generated JSON.
-Build just the dashboard needed, without formatting or checked-in JSON copies:
+Keep generated JSON out of Git. Build a specific dashboard using its JSON target.
 
 ```sh
 bbr build //cluster/cdk8s/monitoring/dashboards:cpap-gateway-disk.json
@@ -68,26 +68,14 @@ mode creates a uniquely named temporary dashboard through Grafana's HTTP API,
 renders that dashboard, and deletes it in a `finally` path. It never overwrites
 the dashboard being developed.
 
-After the PR is merged and Flux has applied the dashboard, run the same verifier
-against the real UID instead of the candidate file:
-
-```bash
-bb run //grafana/skill:verify_dashboard -- \
-  --live-uid <dashboard-uid> \
-  --screenshot-dir /tmp/grafana-<dashboard>-live
-```
-
-Wait for the `GrafanaDashboard` resource to report successful application and
-for the Grafana API to return the new dashboard version before this post-merge
-run. If candidate rendering was impossible before merge, this live run is
-mandatory before reporting success to the user.
-
 The verifier fails on any of these conditions:
 
 - a datasource query returns HTTP 4xx/5xx or a Grafana result error;
 - a panel returns no frames or only empty values;
-- a query request still contains an unresolved Grafana macro or dashboard
-  variable, including `$__rate_interval`, `$__all`, `$node`, or `${topk}`;
+- a query request still contains an unresolved dashboard variable or a
+  frontend-expanded macro, including `$__rate_interval`, `$__all`, `$node`, or
+  `${topk}`. ClickHouse backend macros such as `$__timeFilter` are allowed in
+  requests, but the returned executed SQL must show that they were expanded;
 - a query result is entirely zero without an explicit
   `--allow-all-zero-panel` exception and an explanation in the handoff;
 - the browser sees datasource request failures, page errors, PromQL/LogQL parse
@@ -122,20 +110,23 @@ verification.
    substitution from the generated resource before checking the name or UID against
    live Grafana datasources. It does not repair mismatched references.
    For a dashboard owned by another generator, pass
-   `--grafana-dashboard-manifest <generated-resource-file>`. After import, query
-   and render the live dashboard: `DashboardSynchronized=True` does not prove
-   datasource references work.
-3. Do not rely on Grafana macros unless the browser request proves that the
-   installed datasource plugin expands them. Fixed windows such as `[5m]` are
-   valid and predictable. In particular, never ship a literal
-   `$__rate_interval` into a PromQL or LogQL range selector.
+   `--grafana-dashboard-manifest <generated-resource-file>`.
+3. Do not rely on Grafana macros unless the browser request or, for ClickHouse
+   backend macros, the returned executed SQL proves that the installed datasource
+   plugin expands them. The verifier rejects ClickHouse dashboard variables until
+   it supports the plugin's interpolation and quoting rules. Fixed windows such as `[5m]` are
+   valid and predictable. An unresolved `$__rate_interval` can make Loki report
+   `not a valid duration string`, make Prometheus/Mimir return an empty result,
+   or make Explore/drilldown show `PromQL query has parsing errors` even when a
+   manual API probe succeeds.
 4. Treat `$__all` as a dashboard/UI variable value, not as a value to paste into
    a PromQL label matcher. The browser request must contain the intended regex
    or explicit selected values. Verify the actual request payload, not only the
-   dashboard JSON.
-5. For joins against Kubernetes metadata, deduplicate the metadata side before
-   joining. A syntactically valid query can still fail over a time range with a
-   duplicate-series match-group error.
+   dashboard JSON. Exercise the URL the user will use. A URL with `var-node=$__all`
+   can expand differently from the UI's All selection.
+5. Deduplicate the metadata side of Kubernetes joins. Duplicate `kube_pod_info`
+   or `kube_node_labels` matches can break range queries while instant queries
+   still work. Validate both modes when a panel uses both.
 6. Test every target with the actual Grafana `/api/ds/query` endpoint over a
    representative recent range. HTTP 200 alone is insufficient: inspect result
    errors, frame contents, and numeric values.
@@ -150,39 +141,28 @@ verification.
    silently weaken the verifier. Add an explicit allow-list argument for that
    panel and record why it is expected in the PR/handoff.
 
-## Deployment check
+## Post-merge verification
 
-The generated `GrafanaDashboard` is applied by Flux. A
-successful Bazel/Kustomize build proves wiring, not that Grafana imported the
-new dashboard. After merge, check the live resource and dashboard API, then run
-the live verifier:
+Wait for Flux to apply the generated `GrafanaDashboard`. Check its
+`DashboardSynchronized` condition and confirm the Grafana API returns the new
+dashboard version. Verify datasource wiring by querying and rendering the deployed
+dashboard.
 
 ```bash
 kubectl -n monitoring get grafanadashboard <dashboard-name> -o yaml
 curl -fsS https://grafana.allegedly.works/api/dashboards/uid/<dashboard-uid>
 ```
 
-Do not use Grafana's `/render/d-solo` endpoint as the sole visual check. This
-installation may return a successful HTTP response containing Grafana's
-"no image renderer available" placeholder. Use authenticated Chrome instead.
+Run the verifier against the live UID after Flux applies. This step is required
+before reporting success when candidate rendering was unavailable or deployment
+wiring changed.
 
-## Known failure modes captured here
+```bash
+bb run //grafana/skill:verify_dashboard -- \
+  --live-uid <dashboard-uid> \
+  --screenshot-dir /tmp/agents/YYYY_MM_DD/grafana-<dashboard>-live
+```
 
-- Grafana's query API can return HTTP 200 with an empty frame, so status-only
-  checks missed the original broken dashboard.
-- The browser request can retain `$__rate_interval` even when an agent's manual
-  API probe substituted a range first. Only the browser's actual request body
-  proves dashboard interpolation.
-- Loki rejects an unresolved range macro with `not a valid duration string`,
-  while Prometheus/Mimir may return an apparently successful but empty result.
-- Grafana's Explore/drilldown extension parses the panel expression separately;
-  an unresolved macro can produce `PromQL query has parsing errors` even when a
-  different API probe looked healthy.
-- A duplicate `kube_pod_info` or `kube_node_labels` match can break range queries
-  while instant queries appear healthy. Validate both query modes where a panel
-  uses them.
-- The Grafana image-renderer plugin is not guaranteed to be installed. A PNG
-  response from `/render` is not evidence that a panel was painted.
-- A URL containing `var-node=$__all` may not exercise the same expansion as the
-  dashboard's UI `All` selection. Inspect the payload generated by the exact URL
-  the user will use.
+Inspect the PNGs as described above. Grafana's `/render/d-solo` endpoint
+may return a successful HTTP response containing a “no image renderer available”
+placeholder.

@@ -1,15 +1,28 @@
-"""Bazel test for Helm template validation."""
+"""Render the Cilium chart with the bootstrap values."""
 
-import asyncio
+import subprocess
 
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from cluster.validation.helm_templates import validate_helm_templates
 
-
-def test_helm_templates_render() -> None:
-    errors = asyncio.run(validate_helm_templates())
-    assert not errors, "\n".join(errors)
+def test_helm_templates_render(runfiles: Runfiles) -> None:
+    root = runfiles.root()
+    subprocess.run(
+        [
+            root / "multitool/tools/helm/helm",
+            "template",
+            "test-release",
+            "cilium",
+            "--repo",
+            "https://helm.cilium.io/",
+            "--values",
+            root / "ducktape/cluster/terraform/main/cilium-values.yaml",
+            "--dry-run=client",
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""The `debundle_skill` macro and the reference docs every debundle skill ships."""
+"""Package debundle skills with their shared reference docs."""
 
 load("//skills:defs.bzl", "skill_mapping", "skill_package")
 
@@ -54,7 +54,7 @@ _CONTRACT_EXAMPLE_MAPPINGS = [
     for mapping in _contract_example_mappings(scenario)
 ]
 
-DEBUNDLE_REFERENCES = [
+_DEBUNDLE_REFERENCES = [
     skill_mapping(
         srcs = [
             "//devinfra/js/debundle/skills/shared:initialization_contracts.md",
@@ -105,13 +105,8 @@ DEBUNDLE_REFERENCES = [
 ]
 
 def debundle_skill(name):
-    """`skill_package` for a debundle skill: its `SKILL.md` plus `DEBUNDLE_REFERENCES`."""
+    """Package a role's instructions with the debundle reference tree."""
     skill_package(
         name = name,
-        contents = [
-            skill_mapping(
-                srcs = ["SKILL.md"],
-                preserve_paths = True,
-            ),
-        ] + DEBUNDLE_REFERENCES,
+        contents = [skill_mapping(srcs = ["SKILL.md"], preserve_paths = True)] + _DEBUNDLE_REFERENCES,
     )

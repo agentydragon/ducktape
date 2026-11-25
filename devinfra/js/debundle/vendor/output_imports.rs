@@ -74,128 +74,52 @@ fn resolve_materialized_output_import_target(
 /// relative imports to their target chunk. Built once per pass, so lookups
 /// need no per-import-decl O(N_chunks) scan over `ChunkTable`.
 ///
-/// Per chunk we register candidate keys derived from the chunk name plus,
-/// for slash-bearing names, the post-first-slash stripped form:
-///   * `by_exact["<name>.js"]`         — exact match against
-///     `resolved_path` (match_len = name.len()).
-///   * `by_dir_prefix["<name>"]`       — `resolved_path` is
-///     `"<name>/<rest>"` (match_len = name.len()).
-///
-/// Lookup checks the exact map plus walks `resolved_path`'s `/`-bounded
-/// ancestors longest-to-shortest against `by_dir_prefix`, then combines
-/// the two candidates: longest match wins; an equal-length tie between
-/// different chunks, or an ambiguous entry, yields `None`.
+/// Index both the full name and the alias obtained by dropping the first
+/// path component. A shared alias stays ambiguous instead of picking a chunk.
 pub struct MaterializedOutputChunkIndex {
-    by_exact: HashMap<String, ChunkEntry>,
-    by_dir_prefix: HashMap<String, ChunkEntry>,
-}
-
-#[derive(Clone, Copy)]
-enum ChunkEntry {
-    Unique(ChunkId, usize),
-    Ambiguous(usize),
-}
-
-impl ChunkEntry {
-    fn match_len(&self) -> usize {
-        match self {
-            ChunkEntry::Unique(_, len) | ChunkEntry::Ambiguous(len) => *len,
-        }
-    }
-
-    fn merge(&mut self, chunk_id: ChunkId, match_len: usize) {
-        match *self {
-            ChunkEntry::Unique(existing, existing_len) => {
-                debug_assert_eq!(existing_len, match_len);
-                if existing != chunk_id {
-                    *self = ChunkEntry::Ambiguous(match_len);
-                }
-            }
-            ChunkEntry::Ambiguous(existing_len) => {
-                debug_assert_eq!(existing_len, match_len);
-            }
-        }
-    }
+    aliases: HashMap<String, Option<ChunkId>>,
 }
 
 impl MaterializedOutputChunkIndex {
     pub fn build(chunk_table: &ChunkTable) -> Self {
-        let len = chunk_table.len();
-        let mut by_exact: HashMap<String, ChunkEntry> = HashMap::with_capacity(len * 2);
-        let mut by_dir_prefix: HashMap<String, ChunkEntry> = HashMap::with_capacity(len * 2);
-        for index in 0..len {
-            let chunk_id = ChunkId(index);
-            let chunk_name = chunk_table.name(chunk_id);
-            insert_candidate(&mut by_exact, &mut by_dir_prefix, chunk_id, chunk_name);
-            if let Some((_, stripped)) = chunk_name.split_once('/') {
-                insert_candidate(&mut by_exact, &mut by_dir_prefix, chunk_id, stripped);
+        let mut aliases = HashMap::with_capacity(chunk_table.len() * 2);
+        for index in 0..chunk_table.len() {
+            let id = ChunkId(index);
+            let name = chunk_table.name(id);
+            let stripped = name.split_once('/').map(|(_, rest)| rest);
+            for alias in std::iter::once(name).chain(stripped) {
+                aliases
+                    .entry(alias.to_owned())
+                    .and_modify(|entry| {
+                        if *entry != Some(id) {
+                            *entry = None;
+                        }
+                    })
+                    .or_insert(Some(id));
             }
         }
-        Self {
-            by_exact,
-            by_dir_prefix,
-        }
+        Self { aliases }
     }
 
-    fn lookup(&self, resolved_path: &str) -> Option<ChunkId> {
-        let exact = self.by_exact.get(resolved_path).copied();
-        let prefix = self.longest_prefix_match(resolved_path);
-        let candidate = match (exact, prefix) {
-            (None, None) => return None,
-            (Some(c), None) | (None, Some(c)) => c,
-            (Some(a), Some(b)) => {
-                if a.match_len() > b.match_len() {
-                    a
-                } else if b.match_len() > a.match_len() {
-                    b
-                } else {
-                    // Equal lengths: ambiguous unless both resolve to the
-                    // same Unique chunk (only possible when an exact
-                    // `"<name>.js"` key happens to also be a registered
-                    // dir-prefix for the same chunk; the check stays
-                    // explicit).
-                    match (a, b) {
-                        (ChunkEntry::Unique(ax, _), ChunkEntry::Unique(bx, _)) if ax == bx => a,
-                        _ => return None,
-                    }
-                }
+    fn lookup(&self, path: &str) -> Option<ChunkId> {
+        // In "<name>.js", every slash is inside <name>, so an exact alias
+        // is longer than any matching directory prefix. Even an ambiguous
+        // exact alias takes precedence over a shorter unique prefix.
+        if let Some(entry) = path
+            .strip_suffix(".js")
+            .and_then(|name| self.aliases.get(name))
+        {
+            return *entry;
+        }
+        let mut path = path;
+        while let Some((parent, _)) = path.rsplit_once('/') {
+            if let Some(entry) = self.aliases.get(parent) {
+                return *entry;
             }
-        };
-        match candidate {
-            ChunkEntry::Unique(chunk_id, _) => Some(chunk_id),
-            ChunkEntry::Ambiguous(_) => None,
+            path = parent;
         }
+        None
     }
-
-    fn longest_prefix_match(&self, resolved_path: &str) -> Option<ChunkEntry> {
-        // Walk `/`-bounded ancestors of `resolved_path` longest-first.
-        // A by_dir_prefix entry `K` matches iff `resolved_path == "<K>/<rest>"`.
-        let mut end = resolved_path.rfind('/')?;
-        loop {
-            if let Some(entry) = self.by_dir_prefix.get(&resolved_path[..end]) {
-                return Some(*entry);
-            }
-            end = resolved_path[..end].rfind('/')?;
-        }
-    }
-}
-
-fn insert_candidate(
-    by_exact: &mut HashMap<String, ChunkEntry>,
-    by_dir_prefix: &mut HashMap<String, ChunkEntry>,
-    chunk_id: ChunkId,
-    name: &str,
-) {
-    let match_len = name.len();
-    let exact_key = format!("{name}.js");
-    by_exact
-        .entry(exact_key)
-        .and_modify(|e| e.merge(chunk_id, match_len))
-        .or_insert(ChunkEntry::Unique(chunk_id, match_len));
-    by_dir_prefix
-        .entry(name.to_string())
-        .and_modify(|e| e.merge(chunk_id, match_len))
-        .or_insert(ChunkEntry::Unique(chunk_id, match_len));
 }
 
 #[cfg(test)]
@@ -237,6 +161,15 @@ mod tests {
         let index = MaterializedOutputChunkIndex::build(&table);
         assert_eq!(index.lookup("a/b/x.js"), Some(table.get("a/b").unwrap()));
         assert_eq!(index.lookup("a/x.js"), Some(table.get("a").unwrap()));
+    }
+
+    #[test]
+    fn ambiguous_exact_alias_shadows_shorter_directory_match() {
+        let table = chunk_table_with(&["a", "a/b", "static/a/b"]);
+        let index = MaterializedOutputChunkIndex::build(&table);
+        assert_eq!(index.lookup("a/b.js"), None);
+        assert_eq!(index.lookup("a/b/file.js"), None);
+        assert_eq!(index.lookup("a/c.js"), table.get("a"));
     }
 
     #[test]

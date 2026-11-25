@@ -181,9 +181,6 @@ func (h *StartHandle) observeExit(code int, observed bool, err error) {
 // WaitStarted observes the start job and process identity. Cancellation stops
 // this observation only; the handle remains owned and must still be stopped.
 func (h *StartHandle) WaitStarted(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	select {
 	case <-h.startDone:
 		h.stateMu.Lock()
@@ -328,9 +325,6 @@ func (h *StartHandle) OOMKilled() bool {
 // Wait returns exit evidence as soon as it is observed. The cgroup fence and
 // stream/connection teardown continue independently; Stop waits for that cleanup.
 func (h *StartHandle) Wait(ctx context.Context) (int, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	select {
 	case <-h.exitDone:
 		return h.exitResult()
@@ -362,9 +356,6 @@ func (h *StartHandle) recordExit(code int, err error, oomKilled bool) {
 }
 
 func (h *StartHandle) waitFenced(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	select {
 	case <-h.cleanupDone:
 		h.cleanupMu.Lock()
@@ -396,9 +387,6 @@ func (h *StartHandle) completeWith(code int, err error) {
 // waits for the reaper's unit and cgroup fence. A failed/canceled wait leaves
 // the handle available for a later retry.
 func (h *StartHandle) Stop(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	select {
 	case <-h.cleanupDone:
 		return h.waitFenced(ctx)
@@ -487,9 +475,6 @@ func (h *StartHandle) fenceUntilCertain() error {
 }
 
 func (h *StartHandle) fenceUntilCertainContext(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	conn := h.conn
 	cancelConnection := func() {}
 	defer func() {

@@ -107,7 +107,7 @@ must account for coverage rather than assuming the entries are complete.
 
 `agentplane session-dispatcher list` discovers current Dispatcher Session records, including waiting and failed
 materialization with no History yet. It requires only the Sessions URL and never contacts an
-environment. Results use retained owner authorization; the configured Pod-bound backend read scope
+environment. Results use retained owner authorization; the configured service-caller read scope
 also applies. `--limit` is 1-100 (default 50), and `--after` accepts the returned continuation token.
 Text output prints Sessions and a continuation hint; `--json` returns one page object with `sessions`
 and `nextPageToken`. Ordering is ascending Session UUID, with current reads rather than a frozen

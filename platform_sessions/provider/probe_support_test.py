@@ -3,11 +3,10 @@
 import datetime
 import json
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import pytest
 import pytest_bazel
-from python.runfiles import runfiles
+from python.runfiles import Runfiles
 
 from platform_sessions.probe_types import ProbeOutcome, ProbeSource
 from platform_sessions.provider import session_provider_pb2 as pb
@@ -27,12 +26,9 @@ class Reporter:
         self.completions.append((outcome, source, completed_at))
 
 
-def test_probe_source_examples():
-    files = runfiles.Create()
-    assert files is not None
-    path = files.Rlocation("ducktape/platform_sessions/provider/testdata/probe_source_examples.json")
-    assert path is not None
-    for example in json.loads(Path(path).read_text()):
+def test_probe_source_examples(runfiles: Runfiles) -> None:
+    path = runfiles.root() / "ducktape/platform_sessions/provider/testdata/probe_source_examples.json"
+    for example in json.loads(path.read_text()):
         wire_source = pb.ProbeSource.Value(example["wire"])
         if example["source"] is not None:
             assert probe_source_to_proto(ProbeSource(example["source"])) == wire_source
@@ -43,13 +39,10 @@ def test_probe_source_examples():
                 probe_request_source_from_proto(wire_source)
 
 
-def test_classified_probe_outcome_examples():
-    files = runfiles.Create()
-    assert files is not None
-    path = files.Rlocation("ducktape/platform_sessions/provider/testdata/probe_outcome_examples.json")
-    assert path is not None
+def test_classified_probe_outcome_examples(runfiles: Runfiles) -> None:
+    path = runfiles.root() / "ducktape/platform_sessions/provider/testdata/probe_outcome_examples.json"
     completed_at = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
-    for example in json.loads(Path(path).read_text()):
+    for example in json.loads(path.read_text()):
         result = probe_result(ProbeOutcome(example["outcome"]), ProbeSource.MANUAL, completed_at)
         assert result.WhichOneof("outcome") == example["wire"]
         assert result.completed_at.ToDatetime(tzinfo=datetime.UTC) == completed_at

@@ -23,17 +23,6 @@ export function formatAge(seconds: number): string {
   return total < 60 ? `${total}s` : formatDuration(total);
 }
 
-export function formatPrepaidBalance(amountMinor: number, exponent: number, currency: string): string {
-  const negative = amountMinor < 0;
-  const amount = BigInt(Math.abs(amountMinor));
-  const scale = 10n ** BigInt(exponent);
-  const whole = (amount / scale).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const fraction = exponent > 0 ? `.${(amount % scale).toString().padStart(exponent, "0")}` : "";
-  const value = `${whole}${fraction}`;
-  const sign = negative ? "-" : "";
-  return currency === "USD" ? `${sign}$${value}` : `${sign}${value} ${currency}`;
-}
-
 export function formatClock(instant: Date): string {
   return instant.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 }

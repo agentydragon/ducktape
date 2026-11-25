@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from textwrap import dedent
-
 from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -19,14 +17,21 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 
 from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.haku_ci import runner
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
-from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "keda"
 NAMESPACE = "keda"
+_OPERATOR_NAME = "keda-operator"
 METRICS_SERVER_NAME = "keda-operator-metrics-apiserver"
 OUTPUT_DIR = f"{GENERATED_ROOT}/keda"
 
@@ -50,18 +55,35 @@ def _memory_policy(container_name: str, resources: dict[str, dict[str, str]]) ->
     )
 
 
-def _auto_vpa_patch(name: str) -> HelmReleaseSpecPostRenderersKustomizePatches:
-    # The chart lacks per-Deployment annotations; inherit the namespace's VPA policy.
+def _deployment_annotations_patch(
+    name: str, annotations: dict[str, str]
+) -> HelmReleaseSpecPostRenderersKustomizePatches:
+    # The chart's annotation settings apply to all Deployments or to Pod templates.
     return HelmReleaseSpecPostRenderersKustomizePatches(
         target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(kind="Deployment", name=name),
-        patch=dedent(f"""\
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: {name}
-              annotations:
-                {namespaces.VPA_UPDATE_MODE_LABEL}: {Vpa.AUTO}
-            """),
+        patch=yaml_config(
+            {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": name, "annotations": annotations}}
+        ),
+    )
+
+
+def _auto_vpa_patch(name: str, resources: dict[str, dict[str, str]]) -> HelmReleaseSpecPostRenderersKustomizePatches:
+    return _deployment_annotations_patch(
+        name,
+        {
+            namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+            VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                ContainerPolicy(
+                    container_name=name,
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("cpu", "memory"),
+                    min_allowed=resources["requests"],
+                    max_allowed=resources["limits"],
+                ),
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                compact=True,
+            ),
+        },
     )
 
 
@@ -79,7 +101,7 @@ def chart(app: App) -> Chart:
             (
                 # Keep CPU reservations for these scaling and admission services. The memory floors
                 # preserve the startup reservations even when the recommender has sparse samples.
-                _memory_policy("keda-operator", operator_resources),
+                _memory_policy(_OPERATOR_NAME, operator_resources),
                 _memory_policy(METRICS_SERVER_NAME, metrics_resources),
                 _memory_policy("keda-admission-webhooks", webhook_resources),
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
@@ -106,7 +128,21 @@ def chart(app: App) -> Chart:
         post_renderers=[
             HelmReleaseSpecPostRenderers(
                 kustomize=HelmReleaseSpecPostRenderersKustomize(
-                    patches=[_auto_vpa_patch("keda-admission-webhooks"), _auto_vpa_patch(METRICS_SERVER_NAME)]
+                    patches=[
+                        _auto_vpa_patch("keda-admission-webhooks", webhook_resources),
+                        _auto_vpa_patch(METRICS_SERVER_NAME, metrics_resources),
+                        _deployment_annotations_patch(
+                            _OPERATOR_NAME,
+                            namespaces.initial_request_annotations(
+                                ContainerPolicy.cpu_and_memory_requests_only(
+                                    _OPERATOR_NAME,
+                                    cpu_floor=operator_resources["requests"]["cpu"],
+                                    memory_floor=operator_resources["requests"]["memory"],
+                                    memory_ceiling=operator_resources["limits"]["memory"],
+                                )
+                            ),
+                        ),
+                    ]
                 )
             )
         ],
@@ -117,16 +153,7 @@ def chart(app: App) -> Chart:
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
             "webhooks": {
                 "replicaCount": 2,
-                "affinity": {
-                    "podAntiAffinity": {
-                        "requiredDuringSchedulingIgnoredDuringExecution": [
-                            {
-                                "labelSelector": {"matchLabels": {"app": "keda-admission-webhooks"}},
-                                "topologyKey": "kubernetes.io/hostname",
-                            }
-                        ]
-                    }
-                },
+                "affinity": node_scheduling.one_per_host({"app": "keda-admission-webhooks"}),
             },
             "metricsServer": {"replicaCount": 2},
             "topologySpreadConstraints": {

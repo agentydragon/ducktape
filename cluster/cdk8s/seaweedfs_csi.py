@@ -104,6 +104,14 @@ def _values() -> dict[str, object]:
         # Keep the image tags explicit and in sync with the source tag so the deployed plugin
         # and mount-service versions are auditable.
         "seaweedfsCsiPlugin": {"image": "chrislusf/seaweedfs-csi-driver", "tag": _VERSION},
+        # Round the Off-mode VPA recommendations up for the CSI sidecars. The 30-day
+        # working-set peaks fit within these requests and the five-minute CPU peaks were
+        # below 4m. The liveness-probe value applies to both controller and node pods.
+        "csiAttacher": {"resources": {"requests": {"cpu": "15m", "memory": "48Mi"}}},
+        "csiProvisioner": {"resources": {"requests": {"cpu": "15m", "memory": "64Mi"}}},
+        "csiResizer": {"resources": {"requests": {"cpu": "15m", "memory": "80Mi"}}},
+        "csiLivenessProbe": {"resources": {"requests": {"cpu": "15m", "memory": "40Mi"}}},
+        "csiNodeDriverRegistrar": {"resources": {"requests": {"cpu": "15m", "memory": "40Mi"}}},
         # Restrict the FUSE mount service + CSI node daemons to OVH kimsufi nodes. Pods
         # consuming SeaweedFS CSI PVCs must schedule on OVH; we don't want phantom daemonsets
         # on non-OVH nodes until we know the backend is suitable.

@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse, urlunparse
 
 import jwt as pyjwt
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey, RSAPublicNumbers
 from starlette.applications import Starlette
@@ -245,7 +246,7 @@ def build_mock_oidc_app(
             return JSONResponse({"error": "invalid_grant"}, status_code=400)
         if challenge := code_data.get("code_challenge"):
             verifier = body.get("code_verifier", "")
-            actual = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+            actual = create_s256_code_challenge(verifier.encode())
             if actual != challenge:
                 return JSONResponse({"error": "invalid_grant"}, status_code=400)
         # A confidential client (authlib) authenticates with `client_secret_basic` — the client_id is

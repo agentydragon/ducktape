@@ -8,7 +8,7 @@ calling `workers.agentplane_index` from `generate_manifests.py` again (Kustomiza
 
 The image target `//agentplane/x/indexing:image` remains buildable, but CI no longer publishes
 it and Flux no longer scans or updates it. Before restoring the deployment, run
-`bbr test //agentplane/x/indexing/...` and publish a deliberate tag to
+`bbr test //agentplane/x/indexing:tests` and publish a deliberate tag to
 `git.allegedly.works/ducktape-ci/agentplane-index`. Restore the entry in
 `devinfra/ci/image_targets.json` if automatic publication is wanted. For automatic tag
 tracking, also restore the `agentplane-index` entry in

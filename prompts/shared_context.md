@@ -1,46 +1,29 @@
 # Shared Context for Code Quality Scans
 
-## Philosophy
+Two files own the durable rules, so this one stays short and every scan starts from the same
+place without restating them:
 
-- **Type safety without ugliness**: Python's type system should enhance code clarity, not obscure it
-- **Trust library types**: Well-typed libraries (OpenAI SDK, Pydantic, etc.) provide excellent types - use them as intended
-- **Read the source**: When uncertain about types, read the actual library source code to understand intended usage patterns
-- **Fail fast**: Prefer methods that raise exceptions over getters that hide errors
-- **No redundancy**: Every line of code should add value; remove trivial wrappers and obvious documentation
+- [Scan Prompt Philosophy](PHILOSOPHY.md) - how to run a scan: gather every candidate with
+  automation, verify each in context, fix only what verification confirms, and weigh a tool's
+  recall against its precision to decide how much manual reading a pattern needs.
+- [STYLE.md](../STYLE.md) - the house rules that make something a finding. Each file in
+  [scans/](scans/README.md) operationalizes one of them; the
+  [repository parsimony goal](../x/goals/parsimony.md) says why removing it is worth the change.
 
-## Tools Available
+## Before proposing a change
 
-- **mypy**: Type checker - use to verify type safety
-- **ruff**: Fast linter - catches many code quality issues
-- **vulture**: Dead code detector
-- **AST analysis**: Python's `ast` module for structural analysis
-- **grep/ripgrep**: Pattern matching in codebases
+- Read the library's own types before casting them or probing with `hasattr`. The OpenAI SDK,
+  Pydantic and SQLAlchemy ship usable annotations, and
+  [library_type_misuse.md](scans/library_type_misuse.md) shows where to look them up. Parse with
+  `Model.model_validate` rather than `TypeAdapter`.
+- Prefer a function that raises over a getter that returns `None` when it cannot do its job.
+- Search for an existing helper before adding one.
+- Keep a comment or docstring only when it says something the code cannot;
+  [useless_comments_and_docs.md](scans/useless_comments_and_docs.md) weighs that.
 
-## Analysis Workflow
+## Running the tools
 
-1. **Identify**: Use tools and patterns to find antipatterns
-2. **Verify**: Check if the pattern is actually problematic (read library source if needed)
-3. **Propose fix**: Suggest proper, type-safe alternative
-4. **Validate**: Ensure fix passes mypy and maintains correctness
-
-## Common Library Type Patterns
-
-### OpenAI SDK
-
-- Generally very well-typed
-- Use `Response`, `ResponseOutputMessage`, etc. directly
-- TypeAdapter for validation, not casts
-- Read `openai/types/` for actual type definitions
-
-### Pydantic
-
-- `model_dump(mode="json")` for serialization
-- `model_validate()` for parsing
-- TypeAdapter for non-model types
-- Avoid manual field-by-field serialization
-
-### SQLAlchemy
-
-- Use proper relationship typing
-- Consider better-stubs if ORM types are problematic
-- Avoid runtime hasattr/getattr when types are known
+- The scanners in `scans/` are stdlib-only Python exposed as Bazel targets: run
+  `bb run //prompts/scans:<name>_bin -- [directory]` from the repository root.
+- `ruff` and mypy run as Bazel aspects, so a proposed fix is checked by the same tools CI
+  applies to every other change.

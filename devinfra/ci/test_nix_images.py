@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import subprocess
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,9 @@ import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
-from devinfra.ci.nix_images import BUILD_JOB, Image, changed_images, load_images, marker_path
+from devinfra.ci import nix_images
+from devinfra.ci.nix_images import BUILD_JOB, Image, changed_images, load_images
+from testing.git_repo import git, init_git_repo
 
 
 def test_workflow_matches_roster_and_wait_build() -> None:
@@ -30,27 +33,49 @@ def test_smoke_scripts_are_image_inputs() -> None:
             ), image.attr
 
 
-def test_marker_path_matches_nix_to_file() -> None:
-    # From `nix eval --raw --expr 'builtins.toFile "nix-image-verified" "verified website-image
-    # /nix/store/abc-website\n"'` (Nix 2.31).
-    assert marker_path("website-image", "/nix/store/abc-website") == (
-        "/nix/store/fblrhqlxxgqkym4dhs44izbdvqvzxhk6-nix-image-verified"
+def test_build_only_marks_images_that_pass_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    images = {attr: Image(attr=attr, repository=attr, paths=(), smoke=f"{attr}.sh") for attr in ("working", "broken")}
+    for attr, status in [("working", 0), ("broken", 1)]:
+        (tmp_path / f"{attr}.sh").write_text(f"exit {status}\n")
+    outs = {attr: f"/nix/store/{attr}" for attr in images}
+    monkeypatch.setattr(nix_images, "out_paths", lambda attrs: outs)
+    monkeypatch.setattr(nix_images, "in_cache", lambda marker: False)
+    # Model the Nix store at its CLI boundary. build and path-info succeed for both
+    # images; the actual smoke scripts decide which marker reaches the store.
+    nix = tmp_path / "nix"
+    nix.write_text(
+        f"#!{sys.executable}\n"
+        """import sys
+from pathlib import Path
+if sys.argv[1] == "--eval":
+    content = sys.argv[sys.argv.index("--argstr") + 2]
+    if "--read-write-mode" in sys.argv:
+        with Path("markers").open("a") as markers:
+            markers.write(content)
+    print("/nix/store/marker", end="")
+"""
     )
+    nix.chmod(0o755)
+    (tmp_path / "nix-instantiate").symlink_to(nix)
+    monkeypatch.setenv("PATH", str(tmp_path), prepend=os.pathsep)
+
+    with pytest.raises(RuntimeError, match="broken: smoke test"):
+        nix_images.build(images, list(images))
+
+    assert (tmp_path / "markers").read_text() == "verified working /nix/store/working\n"
 
 
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.chdir(tmp_path)
 
-    def git(*args: str) -> None:
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args], check=True)
-
-    git("init", "--quiet")
+    init_git_repo(tmp_path)
     (tmp_path / "shared.nix").write_text("a")
     (tmp_path / "site").mkdir()
     (tmp_path / "site" / "index.html").write_text("a")
-    git("add", ".")
-    git("commit", "--quiet", "-m", "base")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "--quiet", "-m", "base")
     return tmp_path
 
 
@@ -67,11 +92,8 @@ IMAGES = {
 def test_changed_images_matches_globs(repo: Path, path: str, expected: list[str]) -> None:
     (repo / path).parent.mkdir(parents=True, exist_ok=True)
     (repo / path).write_text("b")
-    subprocess.run(["git", "add", "."], check=True)
-    subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "--quiet", "-m", "change"],
-        check=True,
-    )
+    git(repo, "add", ".")
+    git(repo, "commit", "--quiet", "-m", "change")
     assert changed_images(IMAGES, "HEAD^1", "HEAD") == expected
 
 

@@ -178,7 +178,7 @@ fn analysis_projection_preserves_semantic_note_keys_and_ignores_author_notes() {
         "adding or changing actual author notes must leave analysis identity stable",
     );
     fs::copy(&edited_spec, &staged.spec).unwrap();
-    let replay = staged.run(&["--analysis", path(&staged.artifact)]);
+    let replay = staged.run_saved(&[]);
     assert_ok(&replay.result, "reuse saved analysis after note edits");
     let replay_spec: serde_yaml::Value = serde_yaml::from_slice(
         &fs::read(
@@ -338,10 +338,7 @@ fn dedicated_projector_matches_flat_tree_and_resolved_member_inputs() {
 #[test]
 fn identity_mismatch_is_refused() {
     let (staged, _fixture) = staged(split_with_pure_import());
-    assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]).result,
-        "unmodified staged artifact",
-    );
+    assert_ok(&staged.run_saved(&[]).result, "unmodified staged artifact");
     let bytes = fs::read(&staged.artifact).unwrap();
     let (mut header, body) = staged_analysis::analysis_artifact::read_header(&bytes).unwrap();
     header.analysis_engine_sha256 = "another-compiled-engine".to_string();
@@ -350,23 +347,20 @@ fn identity_mismatch_is_refused() {
     corrupt.extend(encoded);
     corrupt.extend(body);
     fs::write(&staged.artifact, corrupt).unwrap();
-    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+    let refused = staged.run_saved(&[]);
     assert!(!refused.result.status.success());
 }
 
 #[test]
 fn saved_analysis_rejects_corruption_after_its_complete_value() {
     let (staged, _fixture) = staged(split_with_pure_import());
-    assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]).result,
-        "unmodified staged artifact",
-    );
+    assert_ok(&staged.run_saved(&[]).result, "unmodified staged artifact");
     let mut bytes = fs::read(&staged.artifact).unwrap();
     // The complete analysis value remains intact. Reading it alone must not
     // hide an invalid compressed frame after it, even with buffered read-ahead.
     bytes.extend_from_slice(b"invalid trailing compressed frame");
     fs::write(&staged.artifact, bytes).unwrap();
-    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+    let refused = staged.run_saved(&[]);
     assert!(
         !refused.result.status.success(),
         "accepted corrupted saved analysis: {}",
@@ -377,10 +371,7 @@ fn saved_analysis_rejects_corruption_after_its_complete_value() {
 #[test]
 fn source_mismatch_is_refused() {
     let (staged, _fixture) = staged(split_with_pure_import());
-    assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]).result,
-        "unmodified staged artifact",
-    );
+    assert_ok(&staged.run_saved(&[]).result, "unmodified staged artifact");
     let bytes = fs::read(&staged.artifact).unwrap();
     let (mut header, body) = staged_analysis::analysis_artifact::read_header(&bytes).unwrap();
     let source = header.chunk_sources.values_mut().next().unwrap();
@@ -390,7 +381,7 @@ fn source_mismatch_is_refused() {
     corrupt.extend(encoded);
     corrupt.extend(body);
     fs::write(&staged.artifact, corrupt).unwrap();
-    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+    let refused = staged.run_saved(&[]);
     assert!(!refused.result.status.success());
 }
 
@@ -439,8 +430,8 @@ fn staged_invocations_keep_outputs_and_refuse_reused_reports_destinations() {
     invalid_artifact.extend_from_slice(body);
     fs::write(&staged.artifact, invalid_artifact).unwrap();
 
-    let refused_first = staged.run(&["--analysis", path(&staged.artifact)]);
-    let refused_second = staged.run(&["--analysis", path(&staged.artifact)]);
+    let refused_first = staged.run_saved(&[]);
+    let refused_second = staged.run_saved(&[]);
     assert!(!refused_first.result.status.success());
     assert!(!refused_second.result.status.success());
     assert_ne!(refused_first.output_root(), refused_second.output_root());
@@ -530,23 +521,8 @@ fn assignment_edit_keeps_the_projection_and_the_artifact() {
 
 #[test]
 fn order_edits_reuse_the_analysis_but_recheck_the_supplied_priority() {
-    let (staged, _fixture) = staged(
-        FixtureOpts::new(
-            r#"const hub = () => [a, b];
-const a = { dependency: hub, lazy: () => b };
-const b = { dependency: hub };
-console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
-"#,
-            vec![
-                logical_module("hub", &[Member::new("hub")]),
-                logical_module("a", &[Member::new("a")]),
-                logical_module("b", &[Member::new("b")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline())
-        .with_import_order(&["a", "b", "hub"])
-        .with_browser_harness(),
-    );
+    let (staged, _fixture) =
+        staged(import_priority_fixture(&["a", "b", "hub"]).with_browser_harness());
     let projection = fs::read(&staged.projection).unwrap();
     let artifact = fs::read(&staged.artifact).unwrap();
     let mut spec: serde_yaml::Value =
@@ -566,7 +542,7 @@ console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
         );
         assert_eq!(fs::read(&edited_projection).unwrap(), projection);
 
-        let replay = staged.run(&["--analysis", path(&staged.artifact)]);
+        let replay = staged.run_saved(&[]);
         if accepted {
             assert_ok(&replay.result, "replay valid priority with saved facts");
             assert!(replay.harness_root().unwrap().exists());
@@ -617,7 +593,7 @@ fn graph_options_survive_the_source_only_analysis_boundary() {
             fs::read(&staged.projection).unwrap() == fs::read(edited).unwrap(),
             "graph-only setting changed analysis identity"
         );
-        let reused = staged.run(&["--analysis", path(&staged.artifact)]);
+        let reused = staged.run_saved(&[]);
         assert_ok(&reused.result, "run saved facts with changed graph options");
         let graph: DependencyGraphReport = read_gzip_json(
             &reused
@@ -658,7 +634,7 @@ export { Holder1, Holder2, instA, instB };
         .with_dataflow_aware_s_chain()
         .with_trusted_dataflow_summaries(),
     );
-    let reused = staged.run(&["--analysis", path(&staged.artifact)]);
+    let reused = staged.run_saved(&[]);
     assert_ok(
         &reused.result,
         "run trusted dataflow facts from the staged artifact",
@@ -696,7 +672,7 @@ export { Holder1, Holder2, instA, instB };
         fs::read(&edited).unwrap(),
         "trusted dataflow assumptions must remain in analysis identity"
     );
-    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+    let refused = staged.run_saved(&[]);
     assert!(
         !refused.result.status.success(),
         "changed trusted dataflow assumptions reused saved facts"
@@ -733,7 +709,7 @@ fn graph_only_chunk_options_keep_analysis_identity_and_evidence() {
         "an empty authored per-chunk entry changed source-analysis identity"
     );
     assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]).result,
+        &staged.run_saved(&[]).result,
         "reuse analysis after adding an empty chunk entry",
     );
 
@@ -755,7 +731,7 @@ fn graph_only_chunk_options_keep_analysis_identity_and_evidence() {
         fs::read(&edited).unwrap(),
         "a commuting premise changed source-analysis identity"
     );
-    let reused = staged.run(&["--analysis", path(&staged.artifact)]);
+    let reused = staged.run_saved(&[]);
     assert_ok(&reused.result, "reuse analysis with commuting option");
     let graph: DependencyGraphReport = read_gzip_json(
         &reused

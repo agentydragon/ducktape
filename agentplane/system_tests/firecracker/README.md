@@ -11,7 +11,9 @@ marked clean; failures discard the owned runner. Guest logs and `persistence-sui
 per-action outputs, while `recycled-runner.json` records the action and retained-runner chain.
 
 `//agentplane/system_tests/suites:test_firecracker` runs the full acceptance scenario in CI
-on the dedicated KVM worker. Its boot image is built by Bazel: a pinned Debian cloud kernel,
+on the dedicated KVM worker. Both cases create guests through Environments. The continuity
+case submits commands through Dispatcher and verifies their recorded turns and summaries in
+History. The fixture deploys these backend services without App. Its boot image is built by Bazel: a pinned Debian cloud kernel,
 a BusyBox initramfs loading virtio MMIO/block/network/vsock and filesystem drivers, and a
 small ext4 root containing systemd, Codex and the scenario's shell/Python tools. The launcher,
 runner disk, Runtime and management agent come from the current source tree. No private boot
@@ -20,8 +22,11 @@ image fetch or NixOS build is needed for this test.
 Systemd remains because the Runtime uses its transient units and resource slices to supervise
 processes. Removing it would change that Runtime contract; shrinking the test guest does not
 require that change. The test retains the production mount layout, credential synchronization,
-network setup and RAM/process-continuity assertions. It reaches the checkpoint through idle
-suspension, exercising the conditional Runtime admission barrier and its release after thaw.
+network setup and RAM/process-continuity assertions. The first checkpoint uses idle suspension,
+exercising the conditional Runtime admission barrier and its release after thaw. A second
+checkpoint runs after the restored guest has used its live working set. The test preserves
+launcher cgroup usage, high-water mark, memory counters and OOM events in
+`firecracker/launcher-memory.jsonl`.
 
 ```sh
 bbr test --nocache_test_results //agentplane/system_tests/suites:test_firecracker

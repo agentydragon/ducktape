@@ -43,7 +43,10 @@ typed_eslint_test(
         ":main",
         ":typed_lint_program_data",
     ],
-    source_data = ["//aiquota/shared:presentation.ts"],
+    source_data = [
+        "//aiquota/shared:presentation.ts",
+        "//util/frontend:typed_lint_srcs",
+    ],
     tsconfig = "tsconfig.json",
 )
 
@@ -90,7 +93,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":board",
-        ":quotas",
         ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -105,7 +107,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":dashboard",
-        ":quotas",
         ":schema",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -189,7 +190,6 @@ aiquota_vitest_test(
     srcs = ["format.test.ts"],
     isolated_typecheck = True,
     deps = [
-        ":fixtures",
         "//:node_modules/vitest",
         "//aiquota/shared:presentation",
     ],
@@ -213,12 +213,10 @@ aiquota_vitest_test(
     deps = [
         ":board",
         ":schema",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//util/frontend:react_test_utils",
     ],
 )
 
@@ -228,12 +226,10 @@ aiquota_vitest_test(
     isolated_typecheck = True,
     deps = [
         ":app",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//util/frontend:react_test_utils",
     ],
 )
 
@@ -261,7 +257,6 @@ ts_library(
         ":dashboard",
         ":fixtures",
         ":page_css",
-        ":quotas",
         ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -287,19 +282,6 @@ esbuild(
     deps = [":screenshot_harness_lib"],
 )
 
-# Single-file views so $(rootpath) resolves to one path each.
-filegroup(
-    name = "screenshot_bundle_js",
-    testonly = True,
-    srcs = ["harness/bundle.js"],
-)
-
-filegroup(
-    name = "screenshot_bundle_css",
-    testonly = True,
-    srcs = ["harness/bundle.css"],
-)
-
 # Peak-burn hours and credit expiries render in the viewer's zone; the sweep's browser context is UTC.
 py_visual_test(
     name = "screenshots",
@@ -308,10 +290,10 @@ py_visual_test(
     assets = [
         ":scenes_json",
         "harness/index.html",
-        ":screenshot_bundle_css",
+        ":harness/bundle.css",
     ],
     env = {"FIXTURE_CATALOG": "$(rlocationpath :scenes_json)"},
-    harness = ":screenshot_bundle_js",
+    harness = ":harness/bundle.js",
     test_deps = [
         "//aiquota/testing:quota_fixtures",
         "//testing/frontend_visual:capture",

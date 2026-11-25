@@ -309,12 +309,13 @@ already divide by the service that enforces them:
 | Targets are named as | live Sandboxes: direct, inbox tags, `allSandboxes`  | the Sandbox as History recorded it: namespace, name, UID once kept, history tags |
 | Lasts as long as     | the Sandbox                                         | the history                                                                      |
 
-History admits reviewed ServiceAccounts and scopes ordinary direct and delegated reads to the
-Session's retained execution principal (namespace, name and UID). Configured, Pod-bound backend
-readers can read all Sessions. Broader cross-principal archive grants remain a separate decision.
-Writes are fenced independently: ingress retains and checks the writer and execution principal
-(`api/service.go`, `internal/ingress/ingress.go`). The archive therefore already holds identities of its own
-which a broader archive policy could use.
+History scopes an Identity's reads to the Sessions retained under that exact Identity name and UID;
+configured service SVIDs (`reader_service_callers`) read all Sessions, and `service_delegation` actors
+read as a live effective Identity ([History README](../history_service/README.md)). Broader
+cross-principal archive grants remain a separate decision. Writes are fenced independently: ingress
+binds each Session to its first writer and execution Identity (`internal/ingress/ingress.go`,
+`internal/storage/store.go`). The archive therefore already holds identities of its own which a
+broader archive policy could use.
 
 **What it would mean.**
 
@@ -356,8 +357,9 @@ which a broader archive policy could use.
 **Interaction with the History key decisions.**
 
 - History records and checks the Sandbox UID (#11835). The UID is the archive's own owner
-  identity, the value UID-pinned archive grants match, copied from the writer ServiceAccount's
-  ownerReference at bind; afterwards the archive never reads the live object. A name-based archive
+  identity, the value UID-pinned archive grants match, copied at bind from the controller owner of
+  the writer's `WorkloadCredential` (for a central Session, from the sampler's announcement);
+  afterwards the archive never reads the live object. A name-based archive
   grant covers a deleted Sandbox and its same-name replacement alike; a UID-pinned one covers one
   incarnation.
 - The global Session ID stays the key (operator, 2026-10-24): a grant matches the recorded UID

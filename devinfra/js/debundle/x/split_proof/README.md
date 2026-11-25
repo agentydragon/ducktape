@@ -1,46 +1,336 @@
 # Splitting a bundle into ES modules, with a Lean proof
 
 A flat JavaScript bundle goes in. A spec says which top-level statement goes to which module.
-ES modules come out, and Lean checks that the split is a valid reshuffle.
+The experimental splitter emits ES modules after Lean certifies the requested
+CoreJS guarantee. [Certification commands and guarantees](#request-a-corejs-guarantee)
 
-This is an experiment. It does not use the `debundle` code; nothing here imports it.
+[`SUPPORT.md`](SUPPORT.md) inventories the syntax, standard library and host
+features the intended inputs require. [CoreJS coverage](model/README.md) tracks
+the fragment exercised by the model tests.
 
-The intended replacement must support the JavaScript syntax actually used across all configured `gaffer-private` debundle inputs. Broader syntax support is welcome. This is a requirement for the replacement, not a claim that the experiment supports it today.
-
-The available inputs already use the following syntax, so it belongs in that requirement:
-
-- `var`, `let` and `const`; array and object destructuring, default parameters, rest parameters and spread elements. The cached CLI extraction also contains `using` and `await using`.
-- Function declarations and expressions, arrow functions, async functions, generators and async generators; calls, `new`, `this`, `super` and `new.target`.
-- Classes with `extends`, computed methods and properties, getters and setters, instance and static fields, private fields and methods, and static initialization blocks; object literals with computed keys, methods, getters and setters.
-- `if`, `switch`, `for`, `for...in`, `for...of`, `for await...of`, `while`, `do...while`, `try`/`catch`/`finally`, `throw`, labeled statements, `break`, `continue`, `await` and `yield`.
-- Template literals and tagged templates, regular-expression and BigInt literals, optional chaining (`?.`), nullish coalescing (`??`), conditional (`?:`) and sequence expressions.
-- Binary `+`, `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=`, `==`, `!=`, `===`, `!==`, `&`, `|`, `^`, `<<`, `>>`, `>>>`, `in` and `instanceof`; `&&`, `||`, `??`; unary `!`, `+`, `-`, `~`, `typeof`, `void` and `delete`; `++`, `--`, and assignments `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=`, `&&=`, `||=` and `??=`.
-- Named, default and namespace imports; named and default exports; dynamic `import()` and `import.meta`.
-
-This list is a lower bound, not a complete grammar or an ECMAScript-version claim. A census on 2026-11-20, using `gaffer-private` commit `3ce58b883656` for the committed manifests, parsed 1,107 entries from seven Tana, Claude web and Platform Sessions snapshots, plus 2,256 entries from the Claude CLI extraction, using Acorn 8.19.0 with `ecmaVersion: "latest"`; all parsed without a syntax error. A rerun of the pinned extractor on the cached pinned CLI release, with the configured aliases, produced a byte-identical manifest and files. The generated Tana vendor replacement was also built and parsed; its SHA-256 is `751f15172a28e5c9712535dd568eadedbefbec7b3afb148eb2406d08cb8f0ea9`, and it added no syntax categories to this census. Package-root inputs and other configured fixtures or inputs outside these manifests were not inventoried. All files happened to parse in module grammar; that does not establish their actual host or module semantics. The census did not inspect lexical or regular-expression subfeatures, or runtime builtins. The requirement also covers syntax in configured inputs beyond this measured sample.
-
-The same requirement covers the standard library and the host: every standard and host feature the inputs use needs a sound treatment, either a rule of its own or the treatment of unknown code. [`HOST_FEATURES.md`](HOST_FEATURES.md) lists the features by name. An inventory on 2026-11-21 of the 3,363 files that the debundle specs at `gaffer-private` commit `3a48f085d31c` name as input (143.5 MB) found:
-
-- 63 ECMAScript globals, and static paths to most of their members. The names of all but 37 of the 378 members of the standard objects of Node 22 occur somewhere, so the requirement is close to the whole standard library.
-- 226 web platform globals, 10 Node.js globals the web does not have, `Bun`, 5 globals of other hosts, 42 Node.js and Bun modules and 5 keys of `import.meta`.
-- Assignments to standard objects: `Array.prototype.reduce`, `Function.prototype.toString`, `Math.hypot`, `Object.entries`, `Object.prototype.toString`, `Symbol.dispose` and `Symbol.asyncDispose`. These are patches by name, which the [effect analysis](experiments/effects/README.md) sees (premise P1) and pays for in precision: a patched static member turns the units that read it into effects, and a patched prototype member does that to every unit that is not a function declaration.
-
-The inventory is static and by name: it is a lower bound on the globals and an upper bound on the members of standard objects, and it prints no name that a program or its page defines (270 globals and 805 member paths are counted only). [`experiments/translation/README.md`](experiments/translation/README.md#the-host-inventory) says how to run it.
-
-Run everything with `./run.sh` (add `--controls`, `--fuzz`, `--experiments`, `--lowering`, `--es-order` or `--splits`).
-It needs `nix`, `node` and `npm`. Lean 4.35 and gcc come from `nixpkgs`. A clean build takes about 20 s, the first `./run.sh` about a minute.
-`run.sh` copies each `package.json.in` to `package.json` before `npm ci`; the repository's CI treats a committed `package.json` as a change to the whole build graph.
-
-Bazel generates the example's Lean instance from the bundle and spec, checks the proof and the
-axioms in `EsmSplit/Audit.lean`, checks that the committed instance is up to date, and runs the
-rendered modules and controls in Node:
+From the repository root, run the same checks as CI:
 
 ```sh
-bbr test //devinfra/js/debundle/x/split_proof/lean:axioms_test //devinfra/js/debundle/x/split_proof/lean:example_test //devinfra/js/debundle/x/split_proof/lean:instance_freshness_test
+p=//devinfra/js/debundle/x/split_proof
+bbr test "$p/..." --config=ci
 ```
 
-Bazel and Lake both read the Lean version from `lean/lean-toolchain`. The other experiments in
-`run.sh` are not yet Bazel targets.
+Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused checks and longer experiments, use the following commands with the same `p` (`out` is an absolute output path):
+
+| Task                                                         | Command                                                                               |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Compare the rendered example and rejected controls with Node | `bbr test "$p/lean:example_test"`                                                     |
+| Render the verified example                                  | `bb run "$p/lean:render" -- "$out"`                                                   |
+| Audit axioms and check the lowered example certificate       | `bbr test "$p/lean:axioms_test" "$p/lean:lowered_example_certificate_test"`           |
+| Compile the extra Lean proofs                                | `bbr test "$p/lean:experiments_test"`                                                 |
+| Compare module evaluation order across 500 graphs            | `bbr test "$p/es_order:es_order_sweep_test"`                                          |
+| Fuzz the example renderer                                    | `bb run "$p/fuzz:render_fuzz" -- 600 1`                                               |
+| Check translation fixtures and effect cases                  | `bbr test "$p/translation:fixtures_test" "$p/effects:effects_cases_test"`             |
+| Run a larger translation fuzz sample                         | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
+| Run the extended CoreJS comparison                           | `bbr test "$p/model:corejs_differential_sweep_test"`                                  |
+| Run the debundle case corpus                                 | [Corpus commands](debundle_cases/README.md#run-it)                                    |
+| Lower public library bundles and check their splits          | [Bundle commands](experiments/README.md#6-lower-the-ast-into-lean)                    |
+
+To refresh the checked-in example instance after changing the inputs:
+
+```sh
+dir=devinfra/js/debundle/x/split_proof
+bbr build "//$dir/lean/generated:generate_instance" --remote_build_event_upload=all --remote_download_outputs=toplevel
+cp "bb-out/bazel-out/k8-fastbuild/bin/$dir/lean/generated/EsmSplit/Instance.lean" "$dir/lean/EsmSplit/Instance.lean"
+bbr test "//$dir/lean:instance_freshness_test"
+```
+
+Acorn supplies an unsplit module AST and eslint-scope annotates its binding occurrences. Lean enumerates source ordinals from the module body. It gives each declarator of a top-level `var`, `let` or `const` its own ordinal, including under a named export, and keeps each destructuring pattern together. Lean assembles an ESTree `Program` for each output file, including the imports and exports that connect the modules. Astring prints these trees as JavaScript. Functions, classes and methods retain their original source spelling because JavaScript exposes it through `Function.prototype.toString`. Unversioned input dumps are upgraded by reparsing the included source and checking its annotations.
+
+For a closed module containing only identifier declarations, the checker also handles `Declaration extraction`. Supported initializers include primitive literals, binding reads, unary minus on a number literal, and logical negation of any supported initializer (for example, `const offset = -42, visible = !!offset;`). It evaluates the original declaration groups by allocating the entire module’s bindings before running the initializers in order. Lean proves that evaluating these groups gives the same CoreJS result as evaluating their extracted units, including if an initializer throws. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
+
+## Request a CoreJS guarantee
+
+Pass the deployment manifest and a fresh output directory to the splitter. Its default request is `normal-completion`; an order-preserving split may prove the stronger `all-outcomes` guarantee too.
+
+```sh
+bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- deployment.json output
+```
+
+An ordinary call to ambient `Symbol.for` can be retained in deferred code without a host assumption. If initialization reaches the callee, the model reports an unknown result before evaluating the arguments.
+
+For browser module scripts, the `browser-page` contract also permits `.js` output paths on emission and disk checking.
+
+For a module loaded as a browser page entry, you can pass `--host-contract browser.json` with `{"profile":"browser-page"}` on emission and on `--check-output`. Under this profile, ambient `window`, `globalThis`, and `self` may return the same opaque page object, and their `typeof` may return `"object"`. The browser fallback `typeof global` may return `"undefined"`; a page with a Node-style shim can violate that premise. Each selected observation must preserve host state throughout initialization. A direct read of ambient `global` remains opaque and stops the proof if reached. Lexical and imported names use their actual bindings.
+
+The [browser globals catalog](lean/EsmSplit/CoreJS/BrowserGlobals.lean) covers ECMAScript and browser APIs, including DOM bindings, timers, networking, storage, and static method references such as `Object.defineProperty` and `Date.now`. A reached lookup can assume a specific `typeof` or stable reference. For example, a reference to `FileReader` requires it to exist on that page. Reading `window.Error` and reading the bare `Error` binding can return the same opaque reference under separate premises. The checker records observations from both initializers and the generated Lean theorem checks them in every world satisfying the listed premises. A deferred or untaken lookup adds no premise. A reference to a method supplies no result for a call. Volatile page values, including scroll coordinates, and operations such as reading Error stacks or writing to the DOM stay opaque.
+
+CoreJS allocates a fresh object for each regular-expression literal. It preserves the pattern, flags, and `lastIndex` descriptor. The shared prototype implements `source`, the individual flag getters, and `flags`, including reads of overridden flag properties. Calls to the intrinsic matching methods currently produce an unknown result.
+
+The browser-page profile also allows deferred construction of selected ambient constructors (`Date`, `Error`, `RegExp`, `Set`, and `URL`). The linked model retains the constructor name and arguments. If initialization reaches that lookup, it reports an unknown result before evaluating the arguments, including inside a `try` block. Reading `Date.now` can certify under a stable-reference premise. Calling it during initialization requires a model of the clock. The caller is responsible for choosing a profile that holds in the deployment.
+
+Linked replay models `super.member` and `super[key]` reads, direct calls, and
+optional calls. It starts at the current prototype of the method's home object
+and passes the active receiver to getters and calls. An arrow retains both the
+home object and receiver of its enclosing scope. Async bodies can retain these
+references, but replay stops if it reaches an async invocation. Super-property
+writes and deletion remain outside the executable model.
+
+An async definition can fail during lowering if its body needs context the
+checker cannot retain. The `linked_input` verdict identifies the original unit,
+callable number within the unit, and failed check. A `probe_unknown` verdict
+that reports an async invocation means the linked initializer reached the call.
+
+Class static blocks run in their own scope with the constructor as the
+receiver. The checker evaluates class member keys before it initializes
+fixed-name static fields and runs blocks in their source order.
+
+The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee, so a default request may report `all-outcomes` for a supported order-preserving split. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
+
+To move an initializer such as `Math.PI / 12`, pass
+`{"profile":"browser-page","stableIntrinsicValues":["Math.PI@1"]}` with
+`--host-contract` and `--structural` on both emission and `--check-output`.
+The caller asserts that throughout initialization the ambient binding returns
+the same Math object, and that reading its own `PI` data property returns the
+Number with binary64 bits `0x400921fb54442d18`. Both reads must have no
+observable effects. The verdict lists the premise when the move uses it.
+A page that replaces `Math` with `{PI:24}` before the declaration can get
+`2` in source order but `Math.PI / 12` from the original intrinsic after the
+move. Such a page does not satisfy the contract. Neither a lexical `Math`
+binding nor an object operand requiring numeric coercion qualifies for this
+rule. The plain browser-page profile makes no such assertion.
+
+For the pinned Node semver bundle, `{"profile":"ecmascript","stableIntrinsicValues":["Object.defineProperty@1"]}`
+lets the structural checker move `var saved = Object.defineProperty;`. Throughout initialization,
+reading the ambient `Object` binding must return the same receiver, and reading its own data
+property `defineProperty` must return the same method reference. Both reads must preserve host
+state. Deployments that replace the method or install an observable getter can violate the premise.
+The contract grants no behavior for invoking the method and does not require browser globals.
+
+Use one deployment manifest for the original loader graph. Each changed chunk
+embeds one record from `debundle spec resolve-placements`; a fixed chunk has
+only its original route and source. Resolve physical source paths relative to
+the manifest. The following shell assembles a manifest for two changed chunks
+from a batch export:
+
+```sh
+jq '{entry:"main.js", chunks:[.placements[] | {
+  path:(.chunk_id + ".js"), source:("bundle/" + .chunk_id + ".js"), placement:.
+}]}' resolved.json > deployment.json
+printf '%s\n' '{"profile":"browser-page"}' > browser.json
+lowersplit deployment.json out --structural --host-contract browser.json --deployment-origin https://example.test
+lowersplit deployment.json out --structural --host-contract browser.json --deployment-origin https://example.test --check-output
+```
+
+Use the original module routes in `path`, including hashed filenames when the
+loader uses them. Multi-chunk structural checks read the routes from one original asset tree. The checker verifies each source digest and ordinal, keeps
+unclaimed units at their original routes, and checks one staged tree against
+the linked execution from `entry`. Each selected owner gets a distinct `.mjs`
+route. A fixture can supply `spec` in place of `placement` to use a handcrafted
+positional or binding-name plan.
+
+The untrusted planner derives module requests from the bindings each owner needs. Capturing a
+binding can require an import without reading its value at initialization. The authored priority
+orders requests. ES module evaluation visits dependencies before finishing the importing module
+and skips an already entered module in a cycle. The structural certificate checks the resulting
+order and actual live cells. A refusal applies to that proposal; it leaves other schedules unknown.
+For a required execution order, supply a regular spec with `sequential: true`.
+
+A declaration such as `const width = 2 * spacing` can move when the checked
+prefix in each layout establishes the Number in the linked `spacing` cell.
+The result can supply a later arithmetic initializer. The proof retains the
+operator tree and uses CoreJS Number operations; the emitted code still reads
+the binding. Unknown writes, object coercions and uninitialized cells do not
+provide Number facts.
+
+The same prefix check can certify creation of a fresh record such as
+`{[fontName]: 100, defaultTab: libraryTab}` when the two cells hold
+the same respective strings in both layouts. Lean checks key and value
+evaluation and every data property definition on the new object. It keeps
+the original allocation and field order; an object key requiring coercion
+does not satisfy the string-read proof.
+
+For a move such as `const chosen = table.value`, the structural checker can
+prove the read from a freshly allocated record with distinct own numeric
+data properties. It checks the receiver's actual linked cell and descriptor
+in each schedule, including through a local alias. A write, accessor or
+unmodeled intervening operation drops the evidence. Only the scheduling
+proof substitutes the value; the emitted JS still reads `table.value`.
+
+The experimental `--structural` checker selects a proof from the linked schedules. If the units keep their original order, it checks the exact unit sequence, source syntax, resolved capture cells, initial state and entry exports, then reports `scope: "linked-structural-order"`. For an order change, it brings units forward one at a time. A hoisted function is already in its declaration cell before either schedule runs. The initial states must agree on its object address, code, and captured cells; entry exports must resolve to the same live cells. Only the inert declaration step moves past earlier units, which may already use the function. Moving an allocating initializer still requires checks on the prefix and crossed units of the intermediate schedule. It reports `scope: "linked-structural-pivot"` for one move and `scope: "linked-structural-moves"` for multiple moves.
+
+A regex literal can move as a fresh allocation, including as the value of a named data property. Each evaluation creates a distinct object with its own `lastIndex` and the realm's `%RegExp.prototype%`. The intrinsic constructor's `prototype` is a non-writable, non-configurable data property; literal evaluation does not consult the global `RegExp` binding or invoke getters on the prototype. This rule needs no browser-page premise. Calling `new RegExp(...)`, reading `/a/.flags`, and running a matcher during initialization remain outside the allocation rule.
+
+Both proofs establish equality of normally terminating CoreJS states. Retained opaque statements use the same world on both sides, with access through their checked live cells and object handles. For a retained generator declaration, the structural checker uses the linked generator model at instantiation, including its distinct prototype and captured cells. This does not model generator execution or resumption. The verdict records the assumptions for interpreting the JavaScript artifacts.
+
+[Checking an assembled deployment](docs/joint_static.md) describes the scoped joint checker and the additional deployment premises needed for a main/editor split.
+
+A static browser deployment with retained `import.meta.url` and literal relative `import()` can supply `--deployment-origin ORIGIN`. The source entry keeps its effective URL, the split overlays its planned file paths, and the other assets keep their bytes and URLs. The checker parses the actual lazy-module dependency closure, accounts for its imports from linked modules, and checks the live cells those imports resolve to. The host uses native module caching and promise scheduling. Source positions and fetch timing are outside the modeled observations. Pass the same options to `--check-output` to repeat the proof after reparsing the emitted JavaScript.
+
+With the `browser-page` host profile, `--deployment-preset native-browser-record@1` adds an **initialization** premise to `--deployment-origin`. Each original referrer's metadata starts with the native browser shape: a fresh null-prototype object with writable, enumerable, configurable own `url` and `resolve` data properties. The per-record resolver uses its original referrer URL and the same static resolution context. Creating these objects has no observable side effect. A loader that preinstalls an `env` getter does not satisfy this premise; the splitter does not detect a lying host declaration.
+
+For a page whose import map remains empty, `--deployment-import-map empty@1` recognizes literal, unmapped package requests in retained units, for example `import("@scope/diagram")`. This is a deployment premise, including when a deferred callback runs. It requires the browser profile and checked deployment origin. The location checker records a rejected import: native resolution fails before there is a target URL, fetch, or module namespace. The original import stays in the opaque code. Each call still returns a promise, including the browser's rejection, reaction jobs, and unhandled-rejection reporting. Use the same flag for disk verification. A page that installs a map later, or uses a custom resolver, does not meet this premise. Computed requests, URL schemes and absolute paths do not use this rule.
+
+[Lean's initializer](lean/EsmSplit/CoreJS/NativeRecord.lean) allocates that receiver and its nonconstructible resolver in a private model dependency before original module bodies run. Each referrer captures its immutable binding. The resolver runs in the common opaque world with its actual receiver and arguments. The record's properties can subsequently change; getter calls and objects reachable from them remain subject to the ordinary structural frame checks. All metadata sites, including deferred ones, must stay at their original referrer. The model dependency is never emitted. Pass the same preset to `--check-output`; without it the original deployment checks still apply.
+
+The verdict's `scope` identifies which theorem the run established. Each theorem is about the CoreJS programs that Lean lowers from the original annotated ESTree and the [generated module ASTs](lean/EsmSplit/ESTreeEmit.lean):
+
+- [Closed declarations](lean/EsmSplit/CoreJS/Declaration/Artifacts.lean): `prepare?` checks the plan, footprints and order. Its `certify` function is a proven checker that runs as compiled code. It decodes the output modules, checks the entry's public surface, and proves the reported level for those modules. Kept order gives equal results and states for every world and fuel, including throws. Checked moves give the same successful states in both directions.
+- [Structural order and moves](lean/EsmSplit/CoreJS/StructuralCertificate.lean): `certifyStructuralASTs` is a proven checker that runs as compiled code. It checks both linked schedules. Its result proves that each entry exports the same live cells and that either graph reaches a successful final state exactly when the other does, under the opaque-world and deployment interpretation above.
+- [Linked execution](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean): each run writes a Lean proof about the two lowered programs, and the kernel checks it in a separate Lean process. `certifyASTs` then runs as compiled code and checks that the supplied ASTs lower to those programs. Both initialize normally in the same state for every world satisfying the reported host premises and export the same live cells.
+
+[Publication](lean/EsmSplit/SplitFiles.lean) prints to staging, reparses the files, and checks their module set, syntax, and callable spelling. It requires copied providers to match the source text. The certificate consumes the annotated ASTs from those disk reads. `--check-output` repeats the same checks on an existing directory, including for regrouped declarations with the same ordered units. The theorems relate CoreJS programs. Their application to the files relies on the parser and scope annotator, the lowering and CoreJS model, and Lean's compiler and file IO.
+
+For a module that calls functions or imports named bindings from relative JavaScript files, use
+the manifest command with the same original source path. The splitter parses
+reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
+Lean lowers the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about the two concrete CoreJS programs. The generated certificate then runs a proof-producing Lean check on the same in-memory AST data and plan to establish that they lower to those particular programs, including their deferred closure bodies. Both programs must initialize normally in the same final state for every modeled world satisfying the reported host premises.
+
+For large certificates, the checker can elaborate AST correspondence in a separate Lean process. That check imports the execution theorem compiled for the current certificate and audits the result. For large linked programs that need neither host premises nor file-local write-batch rules, the checker also proves the source run first and records its complete final state. The candidate must reach that same state. If a checkpoint stage fails, the checker retries with the ordinary execution proof.
+
+The linked checker can retain an ordinary function whose body fails lowering. It checks the callable's source spelling, original unit and lexical position, and captured bindings in both trees. The interpreter allocates the closure and its properties as usual. Calling or constructing it then yields an unknown result with the body’s lowering error. Retention requires that the callable can be represented without a module URL, method home object, or direct `eval`.
+
+A named export list such as `export { local as publicName }` can publish an imported binding.
+Imports can follow a chain of these aliases to the declaration's live cell. A chain that
+cycles without reaching a declaration fails to link. Lean checks that each entry export
+resolves to the same live cell in both graphs. Source-bearing re-exports such as
+`export { name } from "./provider.mjs"` are outside this fragment.
+When a generated import needs a binding already published under an alias,
+it imports that public name under the original local name. This adds no entry export.
+
+Linked code can define async functions, arrows and methods. Each callable retains its source body and captured bindings, has the declared name and arity, and inherits from the realm’s `AsyncFunction.prototype`. A call reached during initialization returns an unknown verdict because CoreJS does not execute promises or schedule continuations. Async callables that need a home object, private names, direct eval or module context are rejected during lowering.
+
+Synchronous and async generator declarations, expressions and methods retain their source and captures. Async generators have distinct shared function and iterator prototypes. Each function has a fresh prototype inheriting from the realm's corresponding generator prototype. Initialization can inspect those objects and their properties. Calling a generator during initialization yields an unknown verdict because parameter initialization and generator suspension are outside this model.
+
+Ordinary top-level function declarations initialize when the modules link. A call can reach a declared function before its statement executes, while its closed-over lexical bindings still observe their own initialization order. When a supported parameter list precedes a body CoreJS cannot execute, the checker can retain the callable with its captures and declared arity. This includes functions with defaults, methods, accessors and base constructors. Array, rest and nested destructuring parameters can also be retained with their original captures and arity. Invoking the retained body during initialization reports its original lowering failure. Ordinary declarations directly in a function body also hoist, provided their names are distinct and do not overlap parameters or `var` bindings. Block-level function declarations and generators remain outside this fragment. [Linked lowering](lean/EsmSplit/CoreJS/FromESTree.lean)
+
+Named parameters can have defaults such as `(x = 1, y = x) => y`. Missing and `undefined` arguments use the initializer. A `null` argument binds directly. Parameters initialize left to right and a read of the current or a later parameter before initialization throws, including inside `typeof`. Body lexical declarations are in a scope inside the parameter environment. The linked fragment refuses a body `var` whose name repeats a parameter or occurs free in an initializer. The function's `length` counts only parameters before the first default. CoreJS executes defaults on identifier parameters and on flat object patterns. It can retain other parameter patterns for deferred calls. Strict ordinary functions and methods bind each invocation's actual arguments before evaluating defaults. The object has independent indexed properties, `length`, a throwing `callee` accessor, and the intrinsic array-values iterator. An arrow captures the enclosing binding.
+
+Module-level `var`, `let`, and `const` declarations can use object binding patterns, including nested object patterns, computed keys, and defaults. The module linker creates a cell for each bound name. The declaration evaluates its initializer once, then reads properties and initializes bindings in source order. A getter keeps its receiver, and a default runs only for `undefined`. It can read an earlier binding, while a read of a later lexical binding throws in the temporal dead zone. An empty pattern still checks that the source is neither `null` nor `undefined`. Object rest remains unsupported.
+
+Local declarations use the same object binding rules. Linked ordinary functions and arrows also accept nonempty flat object patterns with identifier or string keys in parameters. For example, `function read(first, {x, label: name = first} = {})` has length one. If its second argument is missing or `undefined`, the function evaluates `{}` before reading `x` and then `label`. Passing `null` throws during parameter initialization. These rules also apply before the first `super()` in a derived constructor.
+
+Array binding patterns and synchronous `for…of` loops take the source's iterator and cache its `next` method. Array patterns support elisions, defaults, nested bindings and a trailing rest binding. An elision advances the iterator without reading the iterator result's `value` property. A lexical loop head creates fresh cells for each iteration. An assignment head can write an identifier or a property. The iterator's `return` method runs if binding or the body exits abruptly, and when a finite array pattern leaves the iterator open. The native array path checks the iterator method and the array iterator prototype. String iteration, host iterator methods, and `for await…of` remain unsupported.
+
+In linked programs, conditional expressions and `if` statements inside functions evaluate the test once and run the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes. Branch blocks have their own lexical scope, and `var` declarations in either branch belong to the enclosing function. A false test with no `else` continues to the following statement.
+
+Linked functions can use `switch` with a trailing `default` and case bodies that exit before the next clause. The discriminant is evaluated once, and case tests run in source order and match by strict equality. Empty labels share the following body. A break exits its nearest loop or switch. A continue inside a switch reaches the enclosing loop. Braced case bodies can declare their own lexical bindings.
+
+Linked sequence expressions evaluate their operands from left to right, stop at the first abrupt completion, and return the final operand's value. A sequence used as a call's callee supplies `undefined` as `this`, including when its last operand reads a member.
+
+Linked member expressions support dot access and computed keys with modeled primitive
+property names. A member call evaluates its receiver and key once, reads the callee before
+evaluating arguments, and passes the receiver as `this`. Ordinary functions have the call's
+receiver and arrows capture the surrounding `this`. Access to private members and to `super.property` is unsupported.
+
+In the `browser-page` profile, a class can define a method or accessor at `[Symbol.iterator]`.
+When a read executes, the certificate records the premise that the ambient `Symbol.iterator`
+returns the well-known iterator symbol without observable effects. Its descriptor is distinct
+from one named `"Symbol.iterator"`. For example, `this.path[Symbol.iterator]()` looks up the
+method on the path’s prototype chain and calls it with the path as its receiver.
+
+A browser-profile call to the ambient `Symbol()` or `Symbol("description")` creates a fresh
+symbol under an explicit premise that the binding holds the intrinsic Symbol function.
+A class can use a lexical identifier as a computed instance field key. Class definition
+captures the key once, and each construction creates an own data property for that key.
+
+A derived class initializes its public instance fields in declaration order on the object returned
+by its superclass. Its default constructor forwards the original arguments. An explicit constructor
+initializes the fields after `super(...)` succeeds and before its next expression. Initializers
+resolve lexical names in the class definition scope. Derived static fields remain unsupported.
+
+An explicit derived constructor can use named parameter defaults. Missing or `undefined` arguments
+trigger defaults from left to right, before the constructor body or its direct `super(...)` call.
+Later parameters stay in the temporal dead zone, and the first default determines the constructor's
+`length`. Defaults follow the same receiver restrictions as the prefix. A body binding that would
+shadow an outer name used in a default is rejected.
+Before `super()`, `var`, `let`, and `const` declarations can bind an object pattern. A trailing
+`...rest` copies enumerable own properties, including symbols, after the selected fields have
+been read. Each selected key must lower to a constant string for this rest binding.
+A direct read of `this` in the prefix or arguments is rejected. Arrows can capture the receiver
+cell and read it after the parent initializes it. The parent receives the evaluated arguments
+in source order. The rest of the constructor sees the same local bindings and the receiver returned by
+the parent, including a replacement object. If argument evaluation changes the active constructor’s
+prototype, CoreJS returns unknown because Node and ECMAScript can select different parents.
+
+Consecutive optional member reads such as `receiver?.field?.[key]` evaluate each reached receiver once. A null or undefined receiver yields `undefined` without computing a key or invoking a getter. A reached read keeps the original base as the getter's `this`, even if key evaluation changes the value of the receiver expression.
+
+A single named method call `receiver?.method(args)` skips lookup and arguments when the receiver is null or undefined. The form `receiver.method?.(args)` performs ordinary property lookup first and skips the arguments if the returned method is null or undefined. Both forms evaluate the receiver once and preserve it as `this`. Bare optional calls, computed optional method calls, combined optional receiver and callee, chains with non-optional continuations, and chain expressions used directly as call targets still receive a refusal.
+
+Linked `key in base` evaluates the key expression and then the base expression.
+A primitive base throws before the key is converted. On a modeled object, CoreJS
+converts the primitive key and looks for a property on the object or its prototype
+chain without calling a getter. Reached object-to-primitive conversion stops with
+an unknown result. Symbol keys, proxies, and unmodeled host objects are outside
+the fragment.
+
+Simple assignments to dot and computed properties, such as `record.name = value` and `record[key()] = value`, use CoreJS strict property writes. CoreJS evaluates the receiver, computed key expression, and right-hand side in that order, writes through the original receiver, and returns the assigned value. Object-key coercion, host writes, and array writes can produce an unknown result during initialization.
+
+Plain `=` also writes local and module bindings. It evaluates the right-hand side once before writing and returns the assigned value. An anonymous function on the right-hand side takes the target identifier's name. An assignment through an existing import evaluates its right-hand side and then throws a `TypeError`. An assignment reached before its lexical binding initializes or after a `const` binding initializes also throws in CoreJS. Placement still requires writes to source module bindings to stay with their declarations. Destructuring and global assignments remain outside the linked lowering.
+
+Arithmetic and bitwise compound assignments read the target before the right-hand side runs, apply the corresponding binary operator, and return the value they write. This includes `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, and `>>>=`. The logical assignments `&&=`, `||=`, and `??=` read the same kinds of targets and short-circuit both the right-hand side and the write. Their anonymous functions receive the same identifier name as with plain assignment. Prefix and postfix `++` and `--` convert a modeled primitive to a number, write the updated number, and return the new or old number respectively. Compound assignments and updates target local or module bindings or properties.
+
+Linked `delete` accepts dot and computed member expressions. It evaluates the receiver and key, then removes an own configurable property. A missing own property succeeds, while a nonconfigurable property throws in strict code. Reached deletion on unmodeled values or a computed key that requires object coercion stops the model.
+
+Linked object literals may contain static and computed data properties, static methods and accessors, and spread elements. A numeric literal key uses the JavaScript string form of its value, so `5e-1` names the property `"0.5"` and the quoted key `"5e-1"` keeps its spelling. Property values use the same linked expression lowering as other initializers. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. If one property's value throws, evaluation stops before the following property. A colon-form `__proto__` sets the prototype. A computed data property evaluates the key before its value and defines an own property even when the key is `"__proto__"`. Computed methods, accessors and values that take their function or class name from the computed key still require runtime name inference. A directly anonymous function or arrow takes its name from the static key. An explicitly named function keeps its name.
+
+Object spread evaluates its operand once and copies its enumerable own properties into the new object. Keys follow JavaScript enumeration order. Getters run with the source as their receiver and can change which later keys are copied. A nullish value, number, or boolean contributes no keys. A string contributes its indexed UTF-16 code units within the Basic Multilingual Plane. Copying a host value, an engine error, or a string containing a supplementary character yields an unknown result.
+
+A logical expression in a static data property, such as `{mode: config.mode || "default"}`, evaluates its left operand first. Only the selected operand supplies the property value, and an abrupt completion stops construction of the record.
+
+A linked `void` expression evaluates its operand and returns `undefined` on normal completion. Side effects and thrown exceptions from the operand are observable.
+
+Dense array literals, calls and constructors evaluate each ordinary or spread operand left to right. A spread operand consumes its synchronous iterator before evaluation proceeds to the next operand. The iterator model covers linked iterator methods and the native array iterator with its modeled next method. Array holes are rejected during lowering.
+
+Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.
+
+A tagged call evaluates its callee and preserves a member tag's receiver. Each lexical site has its own frozen cooked array and frozen `raw` array, shared across evaluations of that site in one linked realm. Invalid tagged escapes yield `undefined` cooked entries. Substitutions pass their actual values to the tag in evaluation order. Under browser assumptions for the intrinsic `Array` binding and its `from` method, `Array.from(strings)` copies template elements through the intrinsic iterator into a fresh mutable array. Replaced iterator methods and isolated UTF-16 surrogates are outside this replay path.
+
+Linked binary `+`, `-`, `*`, `/`, and `%` evaluate both operands in source order and then apply CoreJS primitive coercion. Addition concatenates when either primitive operand is a string. Numeric operations use binary64, including signed zero, infinities, NaN, and JavaScript’s signed remainder. Linked unary `+` and `-` convert a primitive operand to a number. The bitwise operators `~`, `&`, `|`, `^`, `<<`, `>>`, and `>>>` reduce numeric operands to 32 bits and mask shift counts to five bits. Unsigned right shift returns the unsigned result. Object-to-primitive conversion and host values reach an unknown result when evaluated. BigInt, Symbol, and exponentiation remain outside the linked fragment.
+
+Linked `<`, `<=`, `>`, and `>=` evaluate operands in source order. CoreJS compares two strings by UTF-16 code unit and converts other primitive pairs to numbers. A numeric comparison with NaN is false. String literals, template text and property keys can contain supplementary Unicode characters. String length and indexed reads use UTF-16 code units. For example, `"A😀B".length` is 4 and `"A😀B"[3]` is `"B"`. A read that would return an isolated surrogate gives an unknown result. The lowerer rejects literal and template text containing an isolated surrogate. Reached object-to-primitive conversion remains unknown.
+
+Linked expressions support `typeof`, `===` and `!==` on modeled operands. Strict comparisons evaluate both operands in source order and compare without coercion. Loose equality and inequality compare two strings by contents, compare ordinary objects by identity, and perform JavaScript numeric conversions for mixed string, number and boolean operands. A nullish comparison can finish without coercing an object. Reached comparisons requiring an object to produce a primitive or inspection of an opaque host value stop the checker. Looking up a host global still requires a model of that binding, including inside `typeof`.
+
+The linked fragment handles `try` inside function bodies with `catch`, `finally`, or both. A catch can bind one identifier or omit the binding. Inside functions, grouped `var`, `let` and `const` declarations with identifier binders initialize in source order. Each block has its own lexical scope, and an abrupt completion from `finally` takes precedence over a pending return or throw.
+The state includes the heap and captured bindings of exported closures. The checker
+runs both programs in a concrete `World.probe` to select an interpreter fuel witness.
+When both finish normally, it compares the complete final state: heap objects and
+closure code/environments, binding cells, allocation region, logged output, handed
+object handles, and the probe's unit world state. Floating-point values are compared
+by their IEEE bit patterns. If these probe states differ, `Ends.unique` proves that
+the programs cannot finish with one shared state in every world, so the checker
+refuses before generating the all-world proof. Matching probe states are only a
+necessary check; Lean still proves the guarantee for every modeled world.
+
+When both linked graphs run their units in the same order, Lean can reuse the
+source’s normal execution. It checks the state after hoisting and compares each
+unit’s original ordinal, full statement, receiver and free-name binding cells.
+The entry’s public names must resolve to the same cells in both graphs. A mismatch reports the counts of extra, missing, and retargeted names, with up to three examples of each. An address `@region.index` identifies a live cell: top-level unit `i` allocates its bindings in region `i + 1`. For a retargeted name, the two addresses show which declarations to inspect in the original and candidate graphs.
+
+The checker starts at 16 fuel and retries at 32 and 64 on fuel exhaustion. For a
+top-level record initializer it can make one more attempt with 64 plus the largest
+property count, capped at 2048. Exhausting the budget, unsupported syntax or an
+all-world proof that fails to reduce yields a rejection. A successful comparison
+reports `"scope":"linked-programs"`.
+[AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
+
+### Read a linked refusal
+
+Linked refusals from AST lowering and the concrete probe include a `reason_code`. A `linked_input` refusal means the input failed linked lowering or linkage. `probe_fuel` means the search exhausted its budget. `probe_mismatch` means both probe executions finished with different states. Its optional `observation` reports a differing exported value or object alias when one is visible in exported cells or their own data properties. Paths list the export name and, for an own property, the property name.
+
+### Measure certification
+
+Set `SPLIT_PROOF_TIMINGS=1` to write phase names and elapsed milliseconds as JSON lines on stderr. Stdout carries the certification verdict. One Lean process reports a combined execution and AST correspondence time. Staged proofs report the subprocesses individually, including any attempted checkpoint before a fallback.
+
+For public comparisons, use the wide-table reversal and the 48-reader linked module graph:
+
+```sh
+p=//devinfra/js/debundle/x/split_proof
+bbr test "$p/translation/linked:wide_table_reversal_test" "$p/translation/linked:module_graph_scale_test" \
+  --test_env=SPLIT_PROOF_TIMINGS=1 --test_output=all --nocache_test_results
+```
+
+Compare the same fixture, proof mode and runner across revisions. Record peak memory separately from the phase times.
+
+### Inspect an uncertified preview
+
+`lowersplit --diagnostic deployment.json output` runs the structural checks and prints model diagnostics. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
 
 ## The example
 
@@ -84,7 +374,9 @@ Spec, [`example/spec.json`](example/spec.json). A selector is a declared name, o
 }
 ```
 
-Output, `example/output/` (written by `./run.sh`, not committed). Lean writes the files. Statements are copied verbatim.
+Two optional keys set the order the modules run in. `"order": ["a.mjs", …]` is an import priority: the entry imports every module in that order. That does not fix the order of evaluation, because a module runs after the modules it imports. `"sequential": true` does: the modules run in exactly `order` (or, without `order`, in the order of their first statements), the entry last. The planner then makes a module that an earlier one mentions import that earlier module first, and every module between ([`Split.lean`](lean/EsmSplit/Split.lean), `nest`). `Valid` checks the resulting plan like any other.
+
+The `render` target writes these files to the output directory you pass it. Statements are copied verbatim.
 
 ```js
 // main.mjs
@@ -134,6 +426,10 @@ Both programs print `<circle> 12.56636 true` and `area,label`.
 
 ## What is proved
 
+The abstract theorem below applies to a plan and its stated footprints. No verdict states it
+directly; closed-declaration verdicts reuse its `Valid` checks. For the artifact guarantee of
+the normal splitter, see [CoreJS certification](#request-a-corejs-guarantee).
+
 [`lean/EsmSplit/Correct.lean`](lean/EsmSplit/Correct.lean):
 
 ```lean
@@ -146,21 +442,22 @@ def Correct (B : Bundle) (P : Plan) : Prop :=
 theorem split_correct {B : Bundle} {S : Spec} {P : Plan} (h : Valid B S P) : Correct B P
 ```
 
-"Equivalent-ish" means this: for every way of giving the statements a meaning that respects their footprints,
-the split leaves the same value in every top-level name and the same world (heap, console, …) as the bundle.
-It is not "the programs are equivalent". JavaScript is never formalized.
+For any statement semantics satisfying `Meaning`, an accepted plan executes
+each statement once, preserves binding resolution, and leaves the same
+top-level values and world state.
 
 `Valid` is a conjunction of decidable checks ([`Plan.lean`](lean/EsmSplit/Plan.lean)):
 
-| Check                       | Says                                                                                               |
-| --------------------------- | -------------------------------------------------------------------------------------------------- |
-| `Faithful`                  | each statement sits in exactly the module the spec names; no selector is dangling                  |
-| `Linkable`                  | each import names a real export of another module; no name is bound twice; each export is declared |
-| `Hygienic`                  | each name a statement mentions resolves, through imports, to the declaration it had in the bundle  |
-| `AssignsHome`               | code that assigns a name sits in the module that declares it (ES imports are read-only)            |
-| `Permutes`                  | the split runs every statement exactly once                                                        |
-| `OrderOk`                   | in the order the split runs them, conflicting statements keep their bundle order                   |
-| `UniqueDefs`, `ReadsClosed` | side conditions: one flat scope; read sets are closed under calls                                  |
+| Check                       | Says                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `Faithful`                  | each statement sits in exactly the module the spec names; no selector is dangling                                     |
+| `Linkable`                  | each import names a binding another module declares and exports; no name is bound twice; each glue export is declared |
+| `ExportsUnique`             | no module exports a name twice: its glue keeps clear of the names its own `export` statements publish                 |
+| `Hygienic`                  | each name a statement mentions resolves, through imports, to the declaration it had in the bundle                     |
+| `AssignsHome`               | code that assigns a name sits in the module that declares it (ES imports are read-only)                               |
+| `Permutes`                  | the split runs every statement exactly once                                                                           |
+| `OrderOk`                   | in the order the split runs them, conflicting statements keep their bundle order                                      |
+| `UniqueDefs`, `ReadsClosed` | side conditions: one flat scope; read sets are closed under calls                                                     |
 
 A statement **binds** the names it declares and the names it may assign (`writes`: reassigned variables, objects whose contents it changes,
 including what the functions it calls change; unknown code lists them all). These named mutable things are _cells_.
@@ -174,54 +471,41 @@ The order the split runs in is computed by `Plan.visit`: a model of ES module ev
 It goes depth first over `import`s in source order, runs each module once, and skips a module that is already being entered.
 That last rule cuts import cycles.
 
-The semantic core is [`Semantics.lean`](lean/EsmSplit/Semantics.lean). The proofs take about 100 lines.
-`step_comm`: two statements that do not conflict can run in either order.
-`exec_reorder`: take the last statement, slide it to the end past everything it does not conflict with, and induct.
-No trace theory is needed.
-
-The example itself is checked by the kernel, in [`Instance.lean`](lean/EsmSplit/Instance.lean) (generated):
-
-```lean
-theorem plan_valid : Valid bundle spec plan := by decide +kernel
-theorem plan_correct : Correct bundle plan := split_correct plan_valid
-```
-
-`decide +kernel` runs the decision procedure inside Lean's kernel, in about a second.
-The main development does not use `native_decide`, so the compiler is not trusted there. (`experiments/` has it as the last rung of a strategy ladder, § 8.)
-`lake env lean EsmSplit/Audit.lean` shows every theorem rests on at most `propext`, `Classical.choice` and `Quot.sound`: Lean's three standard axioms. No `sorry`.
-(Before the checks were indexed with `Std.TreeMap`, two axioms were enough. The `TreeMap` lemmas in Lean's library use `Classical.choice`.)
-`leanchecker` replays all declarations through the kernel again. It does not audit axioms; `#print axioms` does.
+[`Semantics.lean`](lean/EsmSplit/Semantics.lean) proves pairwise commutation of
+nonconflicting statements (`step_comm`) and lifts it to the plan's execution
+order (`exec_reorder`). The generated [example certificate](lean/EsmSplit/Instance.lean)
+uses `decide +kernel` for `Valid` and applies `split_correct`.
+`lean:axioms_test` checks axiom dependencies;
+`leanchecker` replays the declarations.
 
 ## What is not proved
 
-1. **Footprints.** [`Effects.lean`](lean/Experiments/Effects.lean) runs the bundle's top level once over abstract values and reports, per statement, whether it touches the world (`effect`), which names it may change (`writes`) and which names it reads through functions it calls but does not mention (`deps`).
-   [`Lower.lean`](lean/Experiments/Lower.lean) scans the same statement for what it declares, mentions eagerly or only inside function bodies, and assigns.
-   Code the interpreter can see is run, standard functions come from a table of summaries, and anything else is a call into the world: an effect, which keeps its order against every other effect.
-   A statement that touches only objects the program made is not an effect. One that touches the world also counts everything its closures mention as eager, since the world may call them.
-   The checker trusts the interpreter's rules and its printed premises ([`experiments/effects/`](experiments/effects/README.md): the intrinsics are not patched, evaluation completes, no other chunk runs meanwhile, and optionally that the world adds no accessors or hooks to program objects). Both are tested against Node, neither is proved:
-   golden cases with reorders, fuzzers over random bundles and splits, a mutation harness that removes one rule at a time. A wrong rule shows up as a wrong accept.
-   A `var` inside a top-level block declares a module-scope name ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md)).
-   [`extract/extract.mjs`](extract/extract.mjs), which writes the example's Lean instance, has footprint rules of its own (a call is an effect) and models a much smaller syntax: it rejects classes, destructuring, reassigning a top-level binding, `eval`, `import.meta` and async. Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines. `lowersplit --lean` writes a certificate from the interpreter's footprints instead.
-2. **The frame assumption.** A statement without effects depends only on the values it may read. A statement with effects may also read and change the world. `Meaning` has exactly this type. Real JavaScript is assumed to fit.
-   "May read" is the closure of reads through function bodies (`Bundle.reads`). Running a statement binds the names it declares and the names in `writes` to its value; a statement must list every name it may assign.
-3. **The ES order model**, `Plan.visit`: 10 lines. It matches Node on 500 random import graphs, 262 of them with cycles ([`experiments/README.md`](experiments/README.md) § 10). That is a test, not a proof.
-4. **Hygiene gives one flat environment.** The semantic theorem uses one environment keyed by name. `Hygienic` is the check that makes that fair. The join is argued here, not mechanized.
-5. **The printer**, [`Render.lean`](lean/EsmSplit/Render.lean): imports, then statements, then exports.
-6. **Two rules of the lowering front end that Lean does not check.** `lowersplit` rejects a split that puts an `export` statement outside the entry module (the entry's exports are the program's interface),
-   and one where the entry's glue exports a name that the entry's own `export` statements already publish (`ExportNames`: a duplicate export, or one name for two bindings).
-   The first was missing until the split experiment (`experiments/README.md` § 7) and the second until debundle's corpus (§ 11). When one fails, `lowersplit --lean` writes no certificate.
-   A third rule, that code assigning a name stays with its declaration, used to live here. It is now `AssignsHome`, a conjunct of `Valid` and of `Sound`. It was missing from the translation checker until a probe showed Node throwing on an accepted split (`experiments/translation/fixtures/assign`).
-   Moving the first into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof. The second needs a model of export names ([`PLAN.md`](PLAN.md) step 4).
+The abstract theorem assumes footprint soundness for the supplied program.
+[`Lower.lean`](lean/EsmSplit/Lower.lean) scans declarations, eager and deferred
+names, and assignment sites. [The Effects analysis](effects/README.md) supplies
+writes, indirect reads and world effects under its printed premises.
+`lowersplit --diagnostic … --lean` uses both for the checked-in example.
 
-7. **The translation checker's front end.** [`experiments/translation/frontend.mjs`](experiments/translation/frontend.mjs) trusts `acorn` for the parse and `eslint-scope` for which variable each identifier names.
-   Lean checks everything after that, but "renaming preserves meaning" is assumed, not proved, and it has an edge: a program that reads `fn.name`, calls `Function.prototype.toString` or prints a function sees the new spelling.
-   The checker refuses what a move or a rename visibly changes (`import.meta` except `new URL("/abs", import.meta.url)`, a direct `eval`, a top-level `await`).
-   Its soundness rests on a list of the ways a move can change behavior, so it is tested against Node by a [fuzzer](experiments/translation/README.md#fuzzer), which found two holes the fixtures had not: a pure read moving across a write, and `import.meta`.
+`Meaning` models one flat environment. Using that theorem for JavaScript assumes
+that `Hygienic` justifies flattening and that `Plan.visit` agrees with module
+evaluation. The [module-order experiment](experiments/README.md#10-does-the-models-module-order-match-node)
+compares that order with Node. In a structural preview, external imports count as
+preexisting bindings. The diagnostic admission check keeps source imports and
+exports in the entry. The emitter writes source imports before generated imports. Preserving external initialization order assumes synchronous dependencies
+and unchanged resolution of relative specifiers. Diagnostic glue exports may widen
+the entry's public surface.
+
+For the normal splitter, the [CoreJS artifact guarantee](#request-a-corejs-guarantee)
+states the parser, binding annotation, lowering, printer, model and compiler premises. The
+[footprint proof inventory](docs/footprint_soundness.md#current-proof-inventory)
+lists the Effects summaries already covered by separate CoreJS certificates.
+For validation of a separately authored tree, see the
+[translation validator's renaming premise](translation/README.md#trusted).
 
 ## Controls
 
 Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`, checked by the kernel) and a real failure in Node.
-`./run.sh --controls` shows the Node side.
+`lean:example_test` checks the Node behavior.
 
 | Control                                                                                                      | Failing check | Node, when written anyway                                          |
 | ------------------------------------------------------------------------------------------------------------ | ------------- | ------------------------------------------------------------------ |
@@ -238,7 +522,7 @@ Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`
 
 ## Checking the trusted parts
 
-These are tests, not proofs. `./run.sh --fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
+These are tests, not proofs. The Bazel target `fuzz:render_fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
 510 random placements of the 12 statements, each rendered and run in Node.
 
 - 157 accepted. All 157 print what the bundle prints. 95 of them run statements in a different order than the bundle.
@@ -257,55 +541,10 @@ These are tests, not proofs. `./run.sh --fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.p
 
 Running `example/output/` in Node also found a bug in the first printer (no `export` lines). The proof does not cover the printer.
 
-## Limits
+## Further reading
 
-- **Syntax.** The front end handles a small subset. It fails loudly outside it.
-- **Conservative.** Any call is an effect. `const banner = shout("x")` cannot move past a `register(...)`. A `/* @__PURE__ */` convention would lift this.
-- **Sufficient, not necessary.** A rejected spec may be fine.
-- **Scale.** Compiled, the whole check takes 0.04 s for lodash (670 statements), 0.2 s for zod (1,072) and 10 s for 21,440 statements
-  (32 renamed copies of lodash, 119 MB). Before the checks were indexed, lodash took 54 s and minified zod did not finish in 240 s.
-  The pair loop of `OrderOk` is still quadratic: 7 of those 10 s.
-  In the kernel it is slow and needs memory: `decide +kernel` takes 23 s for 96 statements, 45 s for 144; at 288 it hit my 12 GB limit (numeric names would make it 1.7× faster, not 10×).
-  `native_decide` runs the same decision procedure compiled and trusts Lean's compiler (2.3 s for lodash). The theorem does not depend on size.
-  All times and conditions: [`experiments/TIMINGS.md`](experiments/TIMINGS.md).
-- **Reassignment.** The JavaScript extractor `extract.mjs` rejects reassigned `let`/`var` top-level bindings. The Lean front end accepts them: writers are ordered as cells and must stay with the declaration (`AssignsHome`), because ES imports are read-only.
-- **Exceptions.** The model has none. Order is kept for effects, TDZ reads and reads of undeclared globals. Those are the only throws the front end allows an inert statement.
-
-## Going further
-
-[`experiments/README.md`](experiments/README.md):
-
-1. the `Sound` plan predicate and its correctness theorem;
-2. a real semantics for a tiny Turing-complete JS-like language that derives the frame assumption (337 lines);
-3. a two-tier scheme for automatic and hand-written commutation proofs;
-4. what `grind` can write;
-5. how far the check scales, compiled and in the kernel;
-6. lowering the AST into Lean;
-7. 2,740 real splits (halves, single cuts, blocks, random placements), each run in Node;
-8. how a proof is produced, with a strategy ladder;
-9. what already exists and what I would reuse;
-10. the module-order model against Node;
-11. debundle's 207 e2e cases through the checker, with causes for the ones that do not work ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md), plan in [`PLAN.md`](PLAN.md)).
-12. translation validation: is an output tree the bundle, renamed and reshuffled? ([`experiments/translation/`](experiments/translation/README.md)).
-
-## Files
-
-| Path                           | Role                                                                                                                                                                                                                         |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lean/EsmSplit/Bundle.lean`    | statement footprints, read closure (worklist over a `TreeMap` index, proved least and closed), conflict                                                                                                                      |
-| `lean/EsmSplit/Semantics.lean` | abstract semantics and the reorder theorem                                                                                                                                                                                   |
-| `lean/EsmSplit/Plan.lean`      | spec, plan, ES order model, the checks as plain statements                                                                                                                                                                   |
-| `lean/EsmSplit/Fast.lean`      | how each check is decided: table-based algorithms, each proved equal to its statement                                                                                                                                        |
-| `lean/EsmSplit/Split.lean`     | the splitter `mkPlan` (untrusted)                                                                                                                                                                                            |
-| `lean/EsmSplit/Correct.lean`   | `Correct` and `split_correct`                                                                                                                                                                                                |
-| `lean/EsmSplit/Render.lean`    | prints a module                                                                                                                                                                                                              |
-| `lean/EsmSplit/Instance.lean`  | generated: footprints, spec, kernel-checked theorems                                                                                                                                                                         |
-| `lean/EsmSplit/Controls.lean`  | buggy-splitter plans, semantic non-vacuity                                                                                                                                                                                   |
-| `lean/EsmSplit/Audit.lean`     | `#print axioms`                                                                                                                                                                                                              |
-| `lean/Main.lean`               | the `render` executable                                                                                                                                                                                                      |
-| `lean/Experiments/`            | experiments: mini-JS semantics, two tiers, lowering, strategy ladder, module order, translation checker                                                                                                                      |
-| `extract/`                     | JavaScript front end for the example (`extract.mjs`)                                                                                                                                                                         |
-| `example/`                     | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                                                                 |
-| `fuzz/`                        | fuzzer and mutation test                                                                                                                                                                                                     |
-| `experiments/`                 | [experiments](experiments/README.md) and [timings](experiments/TIMINGS.md); scripts in `lowering/`, `scaling/`, `splits/`, `proof_search/`, `es_order/`, `debundle_cases/`, `translation/`; raw timing records in `records/` |
-| `run.sh`                       | everything, end to end                                                                                                                                                                                                       |
+- [Production acceptance and proof work](PLAN.md)
+- [Structural checker experiments and Node comparisons](experiments/README.md)
+- [Historical scale measurements](experiments/TIMINGS.md)
+- [Lessons from the experiment](docs/lessons_learned.md)
+- [Excalidraw: certified placement, upstream ownership, and browser replay](integration/excalidraw/README.md#certified-placement)

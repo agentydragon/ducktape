@@ -14,7 +14,6 @@ runs:
   steps:
     # -- BuildBuddy remote cache --
     - name: Setup BuildBuddy
-      id: buildbuddy
       shell: bash
       env:
         BUILDBUDDY_API_KEY: ${{ inputs.buildbuddy_api_key }}
@@ -44,7 +43,6 @@ runs:
       run: echo "key=bazel-repo-cache-${BASE_HASH:0:16}" >> $GITHUB_OUTPUT
 
     - name: Restore/save Bazel repository cache
-      id: cache-restore
       uses: actions/cache@v6
       with:
         path: |

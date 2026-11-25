@@ -34,6 +34,7 @@ from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction
+from finance.augur.sim.testing.accounts import account
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import flat_parcel, property_tax
 from finance.augur.sim.testing.tax_authority import filer
@@ -79,11 +80,6 @@ DEFAULT_SALT_SCHEDULE = (
     SaltCap(effective_year_index=0, cap=USD.quanta(int(OBBBA_CAP))),
     SaltCap(effective_year_index=TCJA_CAP_YEAR, cap=USD.quanta(int(TCJA_CAP))),
 )
-
-
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=CHECKING), USD.quanta(balance)
 
 
 def deducts(

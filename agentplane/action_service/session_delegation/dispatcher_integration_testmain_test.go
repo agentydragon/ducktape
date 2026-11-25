@@ -11,5 +11,5 @@ import (
 var dispatcherDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &dispatcherDatabase))
+	os.Exit(postgres.RunIntegrationTests(m.Run, migrations.Up, &dispatcherDatabase))
 }

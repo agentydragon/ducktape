@@ -22,19 +22,3 @@ py_library(
         "@pypi//pytest",
     ],
 )
-
-test_suite(
-    name = "harness_tests",
-    tests = [
-        "//agentplane/native/claude:test_active_turn",
-        "//agentplane/native/claude:test_connection_loss",
-        "//agentplane/native/claude:test_tools",
-        "//agentplane/native/claude:test_turns",
-        "//agentplane/native/codex:test_active_turn",
-        "//agentplane/native/codex:test_client_user_message_id",
-        "//agentplane/native/codex:test_connection_loss",
-        "//agentplane/native/codex:test_tools",
-        "//agentplane/native/codex:test_turns",
-        "//agentplane/native/testing:test_model_endpoint",
-    ],
-)

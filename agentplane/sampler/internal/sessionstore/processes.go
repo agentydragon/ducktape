@@ -388,7 +388,7 @@ func (s *Store) RequestInterrupt(ctx context.Context, conversationID string, gen
 func (s *Store) PendingInterrupts(ctx context.Context, owner Owner) ([]string, error) {
 	var ids []string
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := lockOwner(ctx, tx, owner); err != nil {
+		if err := fenceOwner(ctx, tx, owner); err != nil {
 			return err
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT id::text FROM sampler_interrupt WHERE conversation_id=$1 AND generation=$2 AND result IS NULL ORDER BY id`, owner.ConversationID, owner.Generation)
@@ -514,7 +514,7 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 			}
 		}
 		conversation.Stopped = true
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return s.recordEvidence(ctx, tx, conversation, session, requestIDs[0], eventpb.ExecutionProgress_KIND_INTERRUPT, eventpb.ExecutionProgress_PHASE_RESULT, result)
@@ -531,12 +531,12 @@ func (s *Store) AppendInput(ctx context.Context, owner Owner, prompt string) err
 			return &protocol.UnknownEffectError{Reason: "unresolved intent blocks new input; automatic replay is unsafe"}
 		}
 		if err := conversation.apply(func(state protocol.Context) error {
-			return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}})
+			return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}, protocol.RecordOrigin{})
 		}); err != nil {
 			return err
 		}
 		conversation.Stopped = false
-		return updateConversation(ctx, tx, conversation)
+		return s.updateConversation(ctx, tx, conversation)
 	})
 }
 

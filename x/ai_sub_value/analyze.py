@@ -20,6 +20,14 @@ class Poll:
     used: float
     reset: datetime | None
 
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> Poll:
+        return cls(
+            parse_time(row["observed_at"]),
+            row["used_percent"],
+            parse_time(row["reset_at"]) if row["reset_at"] else None,
+        )
+
 
 @dataclass(frozen=True)
 class ObservedRate:
@@ -87,7 +95,21 @@ def read_rows(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in body.splitlines() if line]
 
 
+def require_single_quota_account(rows: list[dict[str, Any]]) -> None:
+    """Reject comparisons that cannot attribute token usage to quota accounts."""
+    accounts: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        accounts[row["provider"]].add(row.get("account_id") or "")
+    ambiguous = sorted(provider for provider, ids in accounts.items() if len(ids) > 1)
+    if ambiguous:
+        raise ValueError(
+            f"Multiple or unknown quota accounts for {', '.join(ambiguous)}; "
+            "filter quota and token evidence to the same verified account before analysis"
+        )
+
+
 def summarize_quota(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    require_single_quota_account(rows)
     groups: dict[tuple[str, int, str], list[Poll]] = defaultdict(list)
     seen: set[tuple[str, str, int, str]] = set()
     for row in rows:
@@ -96,13 +118,7 @@ def summarize_quota(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
         if identity in seen:
             continue
         seen.add(identity)
-        groups[key].append(
-            Poll(
-                parse_time(row["observed_at"]),
-                row["used_percent"],
-                parse_time(row["reset_at"]) if row["reset_at"] else None,
-            )
-        )
+        groups[key].append(Poll.from_row(row))
     cutoff = max(p.at for group in groups.values() for p in group)
     summaries, timelines = [], []
     for (provider, seconds, name), polls in groups.items():

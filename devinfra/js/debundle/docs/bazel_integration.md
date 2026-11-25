@@ -10,43 +10,31 @@ analysis when adding a spec variant.
 ```python
 load("@ducktape//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply")
 
-debundle_analysis(
-    name = "analysis",
-    analysis_threads = 2,
-    input_data = ["//path/to:bundle_inputs"],
-    package_roots = {"//:node_modules/react/dir": "react"},
-    tree_source_root = "//path/to:bundle_inputs",
-    tree_config = "spec/spec_config.yaml",
-    tree_modules = "spec/modules",
-    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
-    spec_tree_inputs = [":spec_data"],
-)
+_TREE = {
+    "input_data": ["//path/to:bundle_inputs"],
+    "package_roots": {"//:node_modules/react/dir": "react"},
+    "tree_source_root": "//path/to:bundle_inputs",
+    "tree_config": "spec/spec_config.yaml",
+    "tree_modules": "spec/modules",
+    "tree_vendor_marks": "spec/sources/vendor/vendor_marks.yaml",
+    "spec_tree_inputs": [":spec_data"],
+}
+
+debundle_analysis(name = "analysis", analysis_threads = 2, **_TREE)
 
 debundle_apply(
     name = "debundle",
     analysis = ":analysis",
-    input_data = ["//path/to:bundle_inputs"],
-    package_roots = {"//:node_modules/react/dir": "react"},
-    tree_source_root = "//path/to:bundle_inputs",
-    tree_config = "spec/spec_config.yaml",
-    tree_modules = "spec/modules",
-    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
-    spec_tree_inputs = [":spec_data"],
+    split_dependency_graphs = True,
+    **_TREE
 )
 
 debundle_apply(
     name = "debundle_passing",
     analysis = ":analysis",
     ownership_subset = "passing_subset.json",
-    input_data = ["//path/to:bundle_inputs"],
-    package_roots = {"//:node_modules/react/dir": "react"},
-    tree_source_root = "//path/to:bundle_inputs",
-    tree_config = "spec/spec_config.yaml",
-    tree_modules = "spec/modules",
-    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
-    spec_tree_inputs = [":spec_data"],
+    **_TREE
 )
-
 ```
 
 | Rule                | Registered actions                                                                            | Default output                                               |
@@ -81,8 +69,7 @@ package input labels do not prevent projection sharing; each apply action still
 declares its own source/package inputs and checks native analysis compatibility.
 A distinct spec keeps its own `DebundleProjectApply` action, even when its
 semantic analysis is compatible. `DebundleProjectApply` compiles the typed spec
-without parsing JavaScript. The canonical apply projection
-canonical output omits YAML comments, whitespace, and module-level `note` only.
+without parsing JavaScript. The apply projection omits YAML comments, whitespace, and module-level `note` only.
 The projection action reads the flat spec or tree config, vendor marks, and
 declared module YAML files; source and package paths are serialized as paths,
 without opening their contents. Package-root arguments are used by analysis
@@ -155,31 +142,23 @@ the build. A gate-rejected output is marked by `GATE_REJECTED` at its
 `write_js_tree` root and is never a runnable bundle (<../SPEC.md> § Reading-only
 output on gate rejection); name such targets `<name>_readable`.
 
-Default builds write small reports and emitted modules without full graph
-serialization, including when `split_dependency_graphs = True`. That attr
-registers a separate `DebundleExportGraphs` action and the `dependency_graphs`
-output group (`--output_groups=+dependency_graphs`). The action consumes the
-same projection/Analyze artifact as the normal pipeline, with the same source,
-spec and census inputs; it does not rerun interpreter/fact analysis. Its
-`<target>.dependency_graphs/reports/tree/` contains full graphs and run diagnostics.
-It uses `--emit-on-rejection` only with `--reports-only`, so a typed gate-only
-rejection still lets the action finish exporting every configured chunk. The
-reports-only marker is retained, no JavaScript is emitted, and other failures
-still fail the action. Exact gate counts remain in each `graph_summary.json`;
-the detailed rejection report follows the materializer's existing selection.
-Graph selection does not enable full effect-conflict JSONL or other full-detail
-evidence. The default output group never depends on this export action.
+Set `split_dependency_graphs = True` on an apply target to register a separate
+`DebundleExportGraphs` action. Request its `dependency_graphs` output group
+with `--output_groups=+dependency_graphs` or a filegroup. The default build
+writes emitted modules and bounded reports.
 
-A filegroup can select that group for graph refresh/query work; normal
-validation and source regeneration remain small. Gate-rejected reading trees
-retain their `GATE_REJECTED` marker and exit-3 contract. Without an exported
-graph their diagnostics explain how to request one instead of naming a
-nonexistent graph file.
+Graph export reads the same saved analysis as emission, along with original spec
+files, source and package inputs, and any ownership subset. It requests full graphs with
+`--graphs`, `--reports-only <dir>` and `--emit-on-rejection`, writing graphs and
+diagnostics under `<target>.dependency_graphs/reports/tree/`. A gate-only
+rejection succeeds when the CLI exits 3 and writes `GATE_REJECTED`. Other errors
+fail the action. Each `graph_summary.json` retains exact gate counts. Full-detail
+diagnostic streams belong to normal emission.
 
 ### Graph command launchers
 
-Use `debundle_cli.bzl` to run graph-backed commands with the graph output and
-relocation roots in runfiles (the family declares these as `<name>_cli*`):
+Declare a `debundle_cli` target for the graph you want to inspect. Its runfiles
+carry the exported graph and any generated relocation roots.
 
 ```python
 load("@ducktape//devinfra/js/debundle:debundle_cli.bzl", "debundle_cli")
@@ -194,7 +173,7 @@ debundle_cli(
     spec_root = "spec",
     graph_source_data = ":relocatable_inputs",
     package_roots = {
-        "//:node_modules/example_package/dir": "example_package",
+        "//:node_modules/react/dir": "react",
     },
 )
 ```
@@ -406,18 +385,18 @@ bbr test -c opt --nocache_test_results --remote_build_event_upload=all \
   //devinfra/js/debundle/perf:excalidraw_pipeline_bench
 ```
 
-The test executes fresh project, analyze and apply commands. GNU `time -v`
-output and each command's stdout/stderr go to `TEST_UNDECLARED_OUTPUTS_DIR`
-for attachment to the BuildBuddy test invocation. Inputs are read directly from
-Bazel runfiles; intermediate pipeline outputs stay in `TEST_TMPDIR`. The benchmark
-does not produce aggregate reports or automatic revision comparisons.
+Bazel sends the Excalidraw test action to the self-hosted `kvm-vm` pool. Its
+pinned tools image supplies GNU time, perf and Heaptrack. Each run reads the
+corpus from runfiles, writes intermediate outputs to `TEST_TMPDIR`, and
+executes project, analyze and apply in order. Each phase has a 30-minute timeout,
+a 16 GiB address-space limit per process and a 512 MiB limit per file. Look in
+the test outputs under each phase name for `gnu-time.txt`, `stdout.txt` and
+`stderr.txt`. Compare those outputs across runs of the revisions of interest.
 
-For a raw Analyze CPU profile or heap allocation profile, run the benchmark
-separately with `DEBUNDLE_BENCH_PROFILE=cpu` or `heap`. Profiling builds use the
-same optimized settings plus Rust line tables and frame pointers. The workflow
-sets these flags automatically. Rust normally strips debug information in opt
-mode independently of Bazel's `--strip` setting, so both strip flags are needed.
-For a direct Bazel invocation add:
+Use `profile=none` for native timings. Run CPU and heap profiles separately
+because Heaptrack affects CPU cost. The workflow adds Rust line tables, frame
+pointers and both Rust and Bazel strip overrides. For direct profiling, append
+these flags to the test command (substitute `heap` for an allocation profile):
 
 ```sh
 --@rules_rust//rust/settings:extra_rustc_flag=-Cdebuginfo=1 \
@@ -426,25 +405,12 @@ For a direct Bazel invocation add:
 --strip=never --test_env=DEBUNDLE_BENCH_PROFILE=cpu
 ```
 
-The CPU run writes `analyze/perf.data`; the heap run writes
-`analyze/heaptrack.raw.zst` (or `.raw.gz`). Each also attaches the matching
-`analyze/debundle_analyze` executable, including its debug information. To
-symbolize the raw allocation trace, make that executable available at its
-recorded path before running `heaptrack --interpret`; use the exact executable
-for CPU symbols as well. Run each mode separately: Heaptrack changes CPU costs,
-and `perf` should not be wrapped around it. Perf compresses its records inside
-`perf.data`; Heaptrack compresses its raw trace as it writes. Use `none` for
-native timing. Both profiled modes also pass `--metrics-file` to the project,
-analyze and apply commands. Their raw OpenTelemetry JSONL files are written as
-`project/metrics.jsonl`, `analyze/metrics.jsonl` and `apply/metrics.jsonl` beside
-the corresponding phase logs. The benchmark sets the standard
-`OTEL_METRIC_EXPORT_INTERVAL=1000` environment variable so short phases flush
-before exit; it performs no metrics postprocessing.
-
-The Excalidraw pipeline benchmark runs locally on the outer BuildBuddy runner,
-whose pinned image supplies the profiling tools. Tool builds and the synthetic
-benchmark tests use RBE. Each native command has a timeout, a 16 GiB per-process
-address-space limit and a 512 MiB per-file limit.
+CPU profiles attach compressed records in `analyze/perf.data`. Heap profiles
+attach `analyze/heaptrack.raw.zst` (or `.raw.gz`). Both attach the matching
+`analyze/debundle_analyze` for symbolization. Restore that executable at its
+recorded path before running `heaptrack --interpret`. In both modes each phase
+also writes raw OpenTelemetry data to its own `metrics.jsonl` with
+`OTEL_METRIC_EXPORT_INTERVAL=1000`.
 
 The optional
 [Debundle performance workflow](https://github.com/agentydragon/ducktape/actions/workflows/debundle-performance.yml)
@@ -470,6 +436,3 @@ gh workflow run debundle-performance.yml --ref devel \
   -f candidate_ref="$revision" -f suite=excalidraw \
   -f additional_test_flags=--runs_per_test=3 -f profile=none
 ```
-
-Use the BuildBuddy invocation's native tool outputs for subsequent analysis.
-Run each revision separately when comparing changes.

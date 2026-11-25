@@ -191,7 +191,6 @@ type StartRequest struct {
 	ProcessID   string
 	Argv        []string
 	Cwd         string
-	Env         map[string]string
 	Environment []string
 	TTY         bool
 	PipeStdin   bool
@@ -583,9 +582,6 @@ func (s *Session) Start(r StartRequest) error {
 				path = v
 			}
 		}
-		if v, ok := r.Env["PATH"]; ok {
-			path = v
-		}
 		found := ""
 		for _, part := range filepath.SplitList(path) {
 			if part == "" {
@@ -613,9 +609,6 @@ func (s *Session) Start(r StartRequest) error {
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append([]string{}, r.Environment...)
-	for k, v := range r.Env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
 	var stdout, stderr, stdoutWrite, stderrWrite *os.File
 	var stdin *os.File
 	stream := "stdout"

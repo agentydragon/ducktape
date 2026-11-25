@@ -53,9 +53,8 @@ type PromptCacheConfig struct {
 }
 
 type CompactionConfig struct {
-	MaxTokens         int  `json:"max_tokens"`
-	AutoCompactTokens *int `json:"auto_compact_tokens,omitempty"`
-	KeepRecentTurns   int  `json:"keep_recent_turns,omitempty"`
+	MaxTokens       int `json:"max_tokens"`
+	KeepRecentTurns int `json:"keep_recent_turns,omitempty"`
 }
 
 func (c Config) Validate() error {
@@ -93,9 +92,6 @@ func (c Config) Validate() error {
 	if c.Compaction != nil {
 		if c.Compaction.MaxTokens <= 0 {
 			return errors.New("compaction.max_tokens must be positive")
-		}
-		if c.Compaction.AutoCompactTokens != nil && *c.Compaction.AutoCompactTokens <= 0 {
-			return errors.New("compaction.auto_compact_tokens must be positive")
 		}
 		if c.Compaction.KeepRecentTurns < 0 {
 			return errors.New("compaction.keep_recent_turns must not be negative")
@@ -141,7 +137,7 @@ func compactionEqual(left, right *CompactionConfig) bool {
 	if left == nil || right == nil {
 		return left == right
 	}
-	return left.MaxTokens == right.MaxTokens && left.KeepRecentTurns == right.KeepRecentTurns && intPointerEqual(left.AutoCompactTokens, right.AutoCompactTokens)
+	return left.MaxTokens == right.MaxTokens && left.KeepRecentTurns == right.KeepRecentTurns
 }
 
 func intPointerEqual(left, right *int) bool {

@@ -331,6 +331,7 @@ rust_library(
         ":source_identity",
         ":source_match",
         ":spec",
+        ":spec_modules",
         ":spec_resolution",
         "@crates//:anyhow",
         "@crates//:swc_ecma_ast",
@@ -396,6 +397,7 @@ rust_library(
         ":graph_provenance",
         ":js_ast",
         ":output_layout",
+        ":report_io",
         ":source_identity",
         ":spec",
         "@crates//:anyhow",
@@ -428,9 +430,9 @@ rust_library(
         ":artifact",
         ":final_global_resolution",
         ":gate",
-        ":js_ast",
         ":lowering",
         ":output_layout",
+        ":report_io",
         ":source_identity",
         ":spec",
         ":validate_emitted_exports",
@@ -456,6 +458,7 @@ rust_library(
         ":identifier_rename_queue",
         ":output_layout",
         ":reconstruction",
+        ":report_io",
         ":source_identity",
         "@crates//:anyhow",
         "@crates//:rayon",
@@ -608,6 +611,7 @@ rust_library(
         ":artifact",
         ":output_layout",
         ":reconstruction",
+        ":report_io",
         ":source_identity",
         ":write_tree",
         "@crates//:anyhow",
@@ -1269,6 +1273,7 @@ rust_library(
         "frontend_elaboration.rs",
         "frontend_elaboration/chunk_ast.rs",
         "frontend_elaboration/elaboration.rs",
+        "frontend_elaboration/resolved_ownership.rs",
         "frontend_elaboration/source_ast.rs",
     ],
     crate_root = "frontend_elaboration.rs",
@@ -1326,7 +1331,6 @@ rust_library(
         "lowering/mod.rs",
         "lowering/module_output.rs",
         "lowering/naturalize.rs",
-        "lowering/ownership_subset.rs",
         "lowering/placement.rs",
         "lowering/plans.rs",
         "lowering/reentry_report.rs",
@@ -1351,6 +1355,7 @@ rust_library(
         ":graph_provenance",
         ":js_ast",
         ":output_layout",
+        ":ownership_subset",
         ":prune_dead_imports",
         ":prune_module_exports",
         ":report_io",
@@ -1460,7 +1465,10 @@ rust_library(
     name = "package_args",
     srcs = ["package_args.rs"],
     edition = "2024",
-    deps = ["@crates//:anyhow"],
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:clap",
+    ],
 )
 
 rust_library(
@@ -1499,19 +1507,74 @@ rust_library(
     srcs = ["transform_command.rs"],
     edition = "2024",
     deps = [
-        ":analysis",
         ":command_diagnostics",
-        ":package_args",
         ":pipeline",
-        ":spec_tree",
+        ":transform_inputs",
         "@crates//:anyhow",
         "@crates//:clap",
     ],
 )
 
+rust_library(
+    name = "ownership_subset",
+    srcs = ["ownership_subset.rs"],
+    edition = "2024",
+    deps = [
+        ":graph_provenance",
+        ":spec",
+        ":spec_resolution",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_library(
+    name = "transform_inputs",
+    srcs = ["transform_inputs.rs"],
+    edition = "2024",
+    deps = [
+        ":package_args",
+        ":spec",
+        ":spec_modules",
+        ":spec_tree",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde",
+    ],
+)
+
+rust_library(
+    name = "resolved_placement",
+    srcs = ["resolved_placement.rs"],
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":artifact",
+        ":command_diagnostics",
+        ":frontend_elaboration",
+        ":graph_provenance",
+        ":ownership_subset",
+        ":prepare_chunks",
+        ":spec",
+        ":transform_inputs",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
 rust_test(
-    name = "transform_command_test",
-    crate = ":transform_command",
+    name = "transform_inputs_test",
+    crate = ":transform_inputs",
+    edition = "2024",
+)
+
+rust_test(
+    name = "ownership_subset_test",
+    crate = ":ownership_subset",
     edition = "2024",
 )
 
@@ -1537,14 +1600,17 @@ rust_library(
         ":js_ast",
         ":lowering",
         ":output_layout",
+        ":ownership_subset",
         ":prepare_chunks",
         ":reconstruction",
+        ":report_io",
         ":source_identity",
         ":spec",
         ":spec_modules",
         ":spec_tree",
         ":spec_wire",
         ":spec_wire_rust_proto",
+        ":transform_inputs",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",
@@ -1612,11 +1678,13 @@ rust_library(
         ":js_ast",
         ":lowering",
         ":output_layout",
+        ":ownership_subset",
         ":package_args",
         ":peel",
         ":pipeline",
         ":prepare_chunks",
         ":report_io",
+        ":resolved_placement",
         ":selector_codemod",
         ":selector_debt",
         ":selector_outcome",
@@ -1997,6 +2065,21 @@ rust_binary(
     deps = [
         ":analysis_thread",
         ":transform_command",
+        "@crates//:anyhow",
+        "@crates//:clap",
+    ],
+)
+
+rust_binary(
+    name = "debundle_resolve_placement",
+    srcs = ["resolve_placement_main.rs"],
+    crate_root = "resolve_placement_main.rs",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":analysis_thread",
+        ":resolved_placement",
+        ":transform_inputs",
         "@crates//:anyhow",
         "@crates//:clap",
     ],

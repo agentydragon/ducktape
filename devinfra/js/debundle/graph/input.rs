@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use source_identity::SourceUnitId;
 
-use super::{DependencyEdgeId, DependencyGraph, UnresolvedDependencyEdgeEndpoint};
+use super::{DependencyEdgeId, DependencyGraph, GraphReportIdError};
 use crate::DependencyGraphReport;
 
 /// Immutable graph input shared by inspection, planning and edit validation.
@@ -34,19 +34,11 @@ impl DependencyGraphInput {
             .with_context(|| format!("reconstructing dependency graph {}", path.display()))
     }
 
-    pub fn from_report(
-        report: DependencyGraphReport,
-    ) -> Result<Self, UnresolvedDependencyEdgeEndpoint> {
-        let graph = Arc::new(DependencyGraph::from_report(&report)?);
-        let source_units_by_report_id = report
-            .nodes
-            .iter()
-            .enumerate()
-            .map(|(index, node)| (node.id.clone(), SourceUnitId(index)))
-            .collect();
+    pub fn from_report(report: DependencyGraphReport) -> Result<Self, GraphReportIdError> {
+        let (graph, source_units_by_report_id) = DependencyGraph::from_report(&report)?;
         Ok(Self {
             report,
-            graph,
+            graph: Arc::new(graph),
             source_units_by_report_id,
         })
     }
@@ -66,7 +58,7 @@ impl DependencyGraphInput {
         let mut facts_by_ordinal = HashMap::with_capacity(facts.len());
         for fact in facts {
             anyhow::ensure!(
-                facts_by_ordinal.insert(fact.ordinal, fact).is_none(),
+                facts_by_ordinal.insert(fact.ordinal, Some(fact)).is_none(),
                 "source declaration census repeats source-unit ordinal {}",
                 fact.ordinal
             );
@@ -79,19 +71,20 @@ impl DependencyGraphInput {
             self.report.nodes.len()
         );
 
-        let mut report_ordinals = std::collections::HashSet::with_capacity(self.report.nodes.len());
         let mut declarations_by_report_row = Vec::with_capacity(self.report.nodes.len());
         for node in &self.report.nodes {
-            anyhow::ensure!(
-                report_ordinals.insert(node.statement_ordinal),
-                "dependency graph report repeats source-unit ordinal {}",
-                node.statement_ordinal
-            );
             let fact = facts_by_ordinal
-                .get(&node.statement_ordinal)
+                .get_mut(&node.statement_ordinal)
                 .with_context(|| {
                     format!(
                         "source declaration census is missing report ordinal {}",
+                        node.statement_ordinal
+                    )
+                })?
+                .take()
+                .with_context(|| {
+                    format!(
+                        "dependency graph report repeats source-unit ordinal {}",
                         node.statement_ordinal
                     )
                 })?;

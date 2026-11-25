@@ -56,5 +56,3 @@ func (f *Failure) IntentEvidence() IntentEvidence {
 	}
 	return evidence
 }
-
-func outcomePointer(outcome Outcome) *Outcome { return &outcome }

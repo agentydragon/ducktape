@@ -314,9 +314,8 @@ console.log("same");"#],
 // `match` carries the JS source of the target statement verbatim;
 // the resolver parses it as a single `Stmt` and walks the chunk's
 // top-level statements looking for exactly one whose AST matches
-// (modulo spans). Resolved owners flow into the same
-// `selected_ordinals` set the materializer already builds for
-// named members.
+// (modulo spans). Resolved statements join the module's
+// `ModulePlan::anonymous_statements`, next to its named members.
 //
 // Per the user constraint, the selector must address statements
 // by **AST shape**, not line/column — the the upstream dump is prettified
@@ -329,11 +328,10 @@ fn round_trip_peels_anon_statement_with_named_member() {
     //   3. const Existing          - named const, stays in residual
     //   4. console.log(Existing)   - anon side-effect, stays in residual
     //
-    // The s-edge from owner(X) to owner(console.log("a")) makes the
-    // singleton {X} `BlockedResidualDependency`. The proposed peel
-    // is the closure {console.log("a"), X}, which the materializer
-    // can only emit if the spec carries an anon-statement entry
-    // pointing at the leading console.log.
+    // The s-edge from owner(X) to owner(console.log("a")) blocks peeling
+    // {X} alone. The proposed peel is the closure {console.log("a"), X},
+    // which the materializer can only emit if the spec carries an
+    // anon-statement entry pointing at the leading console.log.
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"console.log("a");

@@ -2,10 +2,8 @@ package rpc
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"slices"
-	"sort"
 	"strings"
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -18,13 +16,11 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policypb.GrantSandboxPolicyBindingRequest) (*policypb.GrantSandboxPolicyBindingResponse, error) {
-	if request == nil {
-		return nil, status.Error(codes.InvalidArgument, "Sandbox namespace, name, and UID are required")
-	}
 	target, err := s.requestTarget(request.GetSandboxNamespace(), request.GetSandboxName(), request.GetSandboxUid())
 	if err != nil {
 		return nil, err
@@ -112,9 +108,6 @@ func (s *Service) cleanupCreatedBinding(ctx context.Context, binding *policyapi.
 }
 
 func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *policypb.RevokeSandboxPolicyBindingRequest) (*policypb.RevokeSandboxPolicyBindingResponse, error) {
-	if request == nil {
-		return nil, status.Error(codes.InvalidArgument, "Sandbox namespace, name, and UID are required")
-	}
 	target, err := s.requestTarget(request.GetSandboxNamespace(), request.GetSandboxName(), request.GetSandboxUid())
 	if err != nil {
 		return nil, err
@@ -228,31 +221,25 @@ func (s *Service) requireKnownPolicySets(ctx context.Context, names []string) er
 		slog.ErrorContext(ctx, "PolicyService PolicySet read failed", "error", err)
 		return status.Error(codes.Unavailable, "PolicySet inventory is unavailable")
 	}
-	known := make(map[string]struct{}, len(list.Items))
+	known := sets.New[string]()
 	for _, set := range list.Items {
-		known[set.Name] = struct{}{}
+		known.Insert(set.Name)
 	}
-	missing := make(map[string]struct{})
-	seen := make(map[string]struct{}, len(names))
+	missing, seen := sets.New[string](), sets.New[string]()
 	for _, name := range names {
 		if name == "" {
 			return status.Error(codes.InvalidArgument, "PolicySet names must not be empty")
 		}
-		if _, duplicate := seen[name]; duplicate {
+		if seen.Has(name) {
 			return status.Error(codes.InvalidArgument, "PolicySet names must be unique")
 		}
-		seen[name] = struct{}{}
-		if _, ok := known[name]; !ok {
-			missing[name] = struct{}{}
+		seen.Insert(name)
+		if !known.Has(name) {
+			missing.Insert(name)
 		}
 	}
 	if len(missing) == 0 {
 		return nil
 	}
-	unknown := make([]string, 0, len(missing))
-	for name := range missing {
-		unknown = append(unknown, name)
-	}
-	sort.Strings(unknown)
-	return status.Error(codes.InvalidArgument, fmt.Sprintf("unknown PolicySets: %s", strings.Join(unknown, ", ")))
+	return status.Error(codes.InvalidArgument, "unknown PolicySets: "+strings.Join(sets.List(missing), ", "))
 }

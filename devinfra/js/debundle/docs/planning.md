@@ -12,9 +12,9 @@ residual-only baseline needs a tool/input investigation.
 ## Plan an assignment
 
 For “what can leave the residual?”, begin with unseeded
-[`modules propose`](module_proposals.md). Review the ownership map, source
-meaning, destinations and final import priority, then check, preview and apply
-that same plan. See [placement guarantees and composition](module_proposals.md).
+[`modules propose`](module_proposals.md). Review each chunk's proposed ownership
+map, source meaning, destinations and final import priority. Hand the complete
+checked plan to intake or a worker. The worker previews, applies and tests it.
 
 Use `graph-summary`, `coverage`, `describe`, `inspect-source --id` and `atoms` to
 understand discovered groups. Atoms are required co-location groups, not a list

@@ -32,18 +32,18 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
+from cluster.cdk8s.flux import ConfigMapArgs, write_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.home_assistant.db import DATABASE
 from cluster.cdk8s.home_assistant.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import initial_memory_request_annotations
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
@@ -80,7 +80,6 @@ CONFIG_CLAIM = "home-assistant-config-piraeus"
 _METRICS_TOKEN = SecretRef(namespace=NAMESPACE, name="home-assistant-metrics-token").key("password")
 _BACKUP = "home-assistant-config-restic"
 _BACKUP_LABELS = {"app.kubernetes.io/name": _BACKUP}
-_STORAGE_CLASS = "piraeus-ssd-local"
 IMAGE = "ghcr.io/home-assistant/home-assistant:2026.9.2"
 _ONBOARDING = "home-assistant-onboarding"
 _ONBOARDING_JOB = "onboarding"
@@ -187,17 +186,10 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
             name=_NAME,
             namespace=NAMESPACE,
             labels=SERVICE.pods.selector,
-            annotations=initial_memory_request_annotations(
+            annotations=initial_request_annotations(
                 # Peak 30-day working sets were 475Mi and 35Mi.
-                ContainerPolicy.memory_requests_only(
-                    _NAME,
-                    cpu_request=_APP_CPU_REQUEST,
-                    memory_floor=_APP_MEMORY_REQUEST,
-                    memory_limit=_APP_MEMORY_LIMIT,
-                ),
-                ContainerPolicy.memory_requests_only(
-                    "caddy", cpu_request=_CADDY_CPU_REQUEST, memory_floor="40Mi", memory_limit=_CADDY_MEMORY_LIMIT
-                ),
+                ContainerPolicy.cpu_and_memory_requests_only(_NAME, memory_floor=_APP_MEMORY_REQUEST),
+                ContainerPolicy.cpu_and_memory_requests_only("caddy", memory_floor="40Mi"),
             ),
         ),
         spec=k8s.DeploymentSpec(
@@ -469,9 +461,7 @@ def _metrics_token(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "metrics-token",
-        name=_METRICS_TOKEN.secret.name,
-        namespace=_METRICS_TOKEN.secret.namespace,
-        key=None,
+        target=_METRICS_TOKEN.secret,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
 
@@ -526,7 +516,7 @@ def _backup(scope: Construct) -> None:
         trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
         mover=direct_restic_mover(
             repository="home-assistant-config-restic-tenant",
-            cache_storage_class_name=_STORAGE_CLASS,
+            cache_storage_class_name=piraeus_storage.SSD_LOCAL,
             mover_pod_labels=_BACKUP_LABELS,
             mover_security_context=ReplicationSourceSpecResticMoverSecurityContext(
                 run_as_user=0,
@@ -560,7 +550,9 @@ def _backup(scope: Construct) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    volume_claim(chart, "config", name=CONFIG_CLAIM, namespace=NAMESPACE, storage_class=_STORAGE_CLASS, size="32Gi")
+    volume_claim(
+        chart, "config", name=CONFIG_CLAIM, namespace=NAMESPACE, storage_class=piraeus_storage.SSD_LOCAL, size="32Gi"
+    )
     # Retain storage class plus prune protection preserve these historical copies.
     # Pinned restore helpers bind them on OptiPlex before application startup.
     for name, capacity in (("recovered-config-608a0bc6", "32Gi"), ("recovered-cache-7e9d03f8", "1Gi")):
@@ -569,7 +561,7 @@ def chart(app: App) -> Chart:
             name,
             name=name,
             namespace=NAMESPACE,
-            storage_class=_STORAGE_CLASS,
+            storage_class=piraeus_storage.SSD_LOCAL,
             size=capacity,
             annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
         )
@@ -607,15 +599,13 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_yaml(
-        root / _OUTPUT_DIR / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[
-                write_charts(root, _OUTPUT_DIR, chart),
-                "break-glass-credentials.sops.yaml",
-                "home-location.sops.yaml",
-            ],
-            components=["./image-pins"],
-            config_map_generator=[_ONBOARDING_SETTINGS],
-        ),
+    write_kustomization(
+        root / _OUTPUT_DIR,
+        resources=[
+            write_charts(root, _OUTPUT_DIR, chart),
+            "break-glass-credentials.sops.yaml",
+            "home-location.sops.yaml",
+        ],
+        components=["./image-pins"],
+        config_map_generator=[_ONBOARDING_SETTINGS],
     )

@@ -11,11 +11,11 @@ All agent loops run inside Docker containers. Each container is a self-contained
 ```text
 Host Scaffold                      Container
 ─────────────                      ─────────
-run_loop_agent()
-├─ Create temp DB user
+AgentRegistry (agent_registry.py)
+├─ Create DB role (persistent)
 ├─ [Subagent spawn endpoint for critic-dev]
-└─ Create container ─────────────> Container starts (CMD)
-                                   ├─ props snapshot fetch (from Postgres)
+└─ Create container ─────────────> Container starts (image entrypoint)
+                                   ├─ Fetch snapshot from Postgres (critic, grader)
                                    ├─ Construct prompt, start agent loop
                                    ├─ Calls LLM via proxy (OPENAI_BASE_URL)
                                    ├─ Tool calls = subprocess (exec)
@@ -25,7 +25,7 @@ run_loop_agent()
 
 ### Key implementations
 
-- **Critic:** `props/agents/critic/main.py` — critic entry point and tools; `CMD ["/app/critic"]`.
+- **Critic:** `props/agents/critic/main.py` — critic entry point and tools; image entrypoint `/props/agents/critic/critic_bin`.
 - **Grader:** [`props/agents/grader/main.py`](../agents/grader/main.py) runs the persistent snapshot grader; [`props/agents/grader/tools.py`](../agents/grader/tools.py) defines its tool data models.
 - **Critic-dev:** [`props/agents/critic_dev/loop.py`](../agents/critic_dev/loop.py) builds optimizer/improver tools, including critic spawn and wait; [`grading.py`](../agents/critic_dev/grading.py) checks grading status.
 - **Host scaffold:** `props/orchestration/agent_registry.py` — creates agent DB role, starts container, waits for exit, captures logs, determines status from exit code.
@@ -36,7 +36,7 @@ run_loop_agent()
 
 | Aspect     | Decision                                                                  |
 | ---------- | ------------------------------------------------------------------------- |
-| Entrypoint | Standard Dockerfile `CMD` (not `/init` convention)                        |
+| Entrypoint | OCI image `entrypoint` (`py_image_entrypoint`), not an `/init` convention |
 | Completion | Exit code 0 = success, non-zero = failure                                 |
 | Status     | Host determines status (agents cannot update their own status due to RLS) |
 | Abort      | Host hard-kills container/Pod on timeout                                  |
@@ -63,7 +63,7 @@ The LLM proxy is a separate service (`props/llm_proxy`) that reuses the backend 
 | Token             | Same as existing Postgres password (`agent_{uuid}`)                             |
 | Token validation  | Via Postgres (lookup agent_runs by username pattern)                            |
 | Model restriction | One model per run, enforced by proxy                                            |
-| Cost budget       | Per-agent token counts, tracked via parent-child in agent_runs                  |
+| Cost budget       | USD per run (`agent_runs.budget_usd`); descendant runs count against it         |
 | Streaming         | Not supported (simplifies logging/budgeting)                                    |
 | Implementation    | LLM proxy routes at `/v1/responses`, `/v1/chat/completions`, and `/v1/messages` |
 | Port              | 8000                                                                            |
@@ -94,16 +94,8 @@ The registry proxy is a separate service (`props/registry_proxy`) that reuses th
 | Budget enforce  | LLM proxy checks budget before each request; rejects if exceeded         |
 | Timeout enforce | `agent_registry` uses `asyncio.wait_for()` to kill container on timeout  |
 
-**Budget enforcement by proxy:**
-
-1. On each LLM request, proxy queries `llm_run_costs` view to get current USD cost
-2. Sum cost for agent + all child agents (via `parent_agent_run_id` tree)
-3. Compare against `agent_runs.budget_usd` limit
-4. Reject request with 429 if budget exceeded
-5. Child agents inherit remaining budget from parent
-
-Note: USD cost accounts for model pricing differences, cached input token discounts, etc.
-The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing table.
+**Budget enforcement by proxy:** the proxy check, child-budget limits and overspend are in
+[budget_enforcement.md](budget_enforcement.md).
 
 **Timeout enforcement by agent_registry:**
 

@@ -35,7 +35,7 @@ const (
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
 	// On the Pod or VirtualMachine: the JSON of the spec rendered from the template when it was
 	// created or last started, so it can be diffed against what the template renders now. The
-	// The integration app reads this annotation to show the rendered workload differences.
+	// integration app reads this annotation to show the rendered workload differences.
 	RenderedSpecAnnotation = "agentplane.allegedly.works/rendered-spec"
 
 	templateIndex = "spec.template"
@@ -384,6 +384,20 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *sandboxapi.
 	if runtimeUID == "" || runtimeUID != string(pod.UID) {
 		return nil, nil
 	}
+	if pod == w.launcher && pod.Spec.NodeName == "" {
+		// Older controllers could publish an unassigned launcher. Delete that exact
+		// version before halting: if the scheduler bound it first, the delete
+		// conflicts and the next reconcile must seal it. Kubernetes will not bind
+		// a Pod once deletion has begun.
+		uid, version := pod.UID, pod.ResourceVersion
+		if err := client.IgnoreNotFound(r.Delete(ctx, pod, client.Preconditions{UID: &uid, ResourceVersion: &version})); err != nil {
+			return nil, err
+		}
+		if attempt := sandbox.Status.QuiesceAttempt; attempt != nil && attempt.RunnerPodUID == runtimeUID {
+			sandbox.Status.QuiesceAttempt = nil
+		}
+		return nil, nil
+	}
 	if !sandboxQuiescing(sandbox) {
 		if held := r.holdSuspend(sandbox, runtimeUID); held != nil {
 			return held, nil
@@ -419,8 +433,7 @@ func (r *Reconciler) holdSuspend(sandbox *sandboxapi.Sandbox, runtimeUID string)
 func (r *Reconciler) quiesce(ctx context.Context, sandbox *sandboxapi.Sandbox, runtimeUID string) (*unready, error) {
 	snapshot := r.States.Snapshot(sandbox, runtimeUID)
 	facts := snapshot.Facts
-	switch {
-	case snapshot.fresh(r.Now()) && facts.Stage == QuiesceQuiesced:
+	if snapshot.fresh(r.Now()) && facts.Stage == QuiesceQuiesced {
 		sandbox.Status.QuiescedIncarnation = &runtimeUID
 		sandbox.Status.QuiesceAttempt = nil
 		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "the Environment Runtime has quiesced every Session"}, nil
@@ -564,7 +577,6 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 			if err := r.deleteIfLive(ctx, w.pod); err != nil {
 				return w, nil, err
 			}
-			return w, nil, nil
 		}
 		return w, nil, nil
 	}
@@ -959,7 +971,7 @@ func podHasSchedulingFailure(pod *corev1.Pod) bool {
 	return failed
 }
 
-// SetupWithManager wires the watches: each Sandbox, its ConfigMap, Service and WorkloadCredential,
+// SetupWithManager wires the watches: each Sandbox, its ConfigMap and WorkloadCredential,
 // the Pods, VMIs and state PVC carrying its label, the Events about those Pods, and the templates
 // and Identity it names.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -1008,18 +1020,16 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.KubeVirt {
 		setup = setup.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
 	}
-	{
-		if err := mgr.GetFieldIndexer().IndexField(context.Background(), &sandboxapi.Sandbox{}, identityIndex, func(obj client.Object) []string {
-			if identity := obj.(*sandboxapi.Sandbox).Spec.Identity; identity != nil {
-				return []string{identity.Name}
-			}
-			return nil
-		}); err != nil {
-			return err
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &sandboxapi.Sandbox{}, identityIndex, func(obj client.Object) []string {
+		if identity := obj.(*sandboxapi.Sandbox).Spec.Identity; identity != nil {
+			return []string{identity.Name}
 		}
-		// An Identity appearing or going retries the Sandboxes that name it.
-		setup = setup.Watches(&policyapi.Identity{}, r.sandboxesNaming(identityIndex))
+		return nil
+	}); err != nil {
+		return err
 	}
+	// An Identity appearing or going retries the Sandboxes that name it.
+	setup = setup.Watches(&policyapi.Identity{}, r.sandboxesNaming(identityIndex))
 	return setup.Complete(r)
 }
 

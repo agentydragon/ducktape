@@ -11,11 +11,15 @@ pkg_files(
     # truth: the zip target, local devkit launcher, and render tests all
     # consume this package mapping.
     srcs = [
+        "dbus/daemon.xml",
+        "dbus/shell-test.xml",
         "extension.js",
         "icons/claude-symbolic.svg",
         "icons/openai-symbolic.svg",
         "icons/zai-symbolic.svg",
         "metadata.json",
+        "prefs.js",
+        "schemas/org.gnome.shell.extensions.aiquota.gschema.xml",
         "stylesheet.css",
     ],
     strip_prefix = strip_prefix.from_pkg(),
@@ -41,6 +45,7 @@ pkg_zip(
     srcs = [
         ":extension_files",
         ":shared_presentation_file",
+        "//gnome:dbus",
     ],
     out = "aiquota.zip",
     visibility = ["//visibility:public"],
@@ -50,6 +55,7 @@ js_library(
     name = "fake_daemon",
     testonly = True,
     srcs = ["fake-daemon.js"],
+    data = ["dbus/fake-control.xml"],
     deps = ["//gnome/testing:fake_daemon_js"],
 )
 
@@ -67,15 +73,15 @@ py_test(
         ":fake_daemon",
         "//aiquota/testing:fixtures",
     ],
+    env = {"GNOME_EXTENSION_ZIP": "$(rlocationpath :aiquota_zip)"},
     requires_docker = True,
     tags = ["visual"],
     deps = [
         "//:conftest",
         "//aiquota/testing:quota_fixtures",
-        "//devinfra/oci",
         "//devinfra/testing:output_writer",
-        "//gnome/test_image:gnome_shell_test",
         "//gnome/testing:fake_daemon",
+        "//gnome/testing:fixtures",  # keep: pytest_plugins
         "//gnome/testing:session",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

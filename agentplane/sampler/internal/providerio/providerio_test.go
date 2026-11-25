@@ -188,7 +188,7 @@ func TestProviderResponseHeaderTimeoutPreservesCallerCancellationCause(t *testin
 
 func TestProviderIdleTimeoutStartsAtDurableHeadAndResetsOnProgress(t *testing.T) {
 	t.Run("timeout starts when head is recorded", func(t *testing.T) {
-		ctx, hooks, stop := WithProviderIdleTimeout(context.Background(), 30*time.Millisecond, nil)
+		ctx, hooks, stop := WithProviderIdleTimeout(context.Background(), 30*time.Millisecond)
 		defer stop()
 		select {
 		case <-ctx.Done():
@@ -208,7 +208,7 @@ func TestProviderIdleTimeoutStartsAtDurableHeadAndResetsOnProgress(t *testing.T)
 	})
 
 	t.Run("durable progress renews the semantic idle budget", func(t *testing.T) {
-		ctx, hooks, stop := WithProviderIdleTimeout(context.Background(), 300*time.Millisecond, nil)
+		ctx, hooks, stop := WithProviderIdleTimeout(context.Background(), 300*time.Millisecond)
 		defer stop()
 		hooks.ResponseHeadRecorded()
 		for range 3 {
@@ -217,7 +217,7 @@ func TestProviderIdleTimeoutStartsAtDurableHeadAndResetsOnProgress(t *testing.T)
 				t.Fatalf("provider idle context ended before semantic progress: %v", context.Cause(ctx))
 			case <-time.After(120 * time.Millisecond):
 			}
-			if err := hooks.Progress(ctx); err != nil {
+			if err := hooks.Progress(); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -225,18 +225,6 @@ func TestProviderIdleTimeoutStartsAtDurableHeadAndResetsOnProgress(t *testing.T)
 			t.Fatalf("provider idle context ended despite progress: %v", cause)
 		}
 	})
-}
-
-func TestProviderProgressCallbackFailureHasDistinctType(t *testing.T) {
-	want := errors.New("fixture lease journal failure")
-	ctx, hooks, stop := WithProviderIdleTimeout(context.Background(), time.Second, func(context.Context) error { return want })
-	defer stop()
-	hooks.ResponseHeadRecorded()
-	err := hooks.Progress(ctx)
-	var progressErr *protocol.ProviderProgressError
-	if !errors.As(err, &progressErr) || !errors.Is(err, want) {
-		t.Fatalf("progress callback error=%v, want distinct wrapped journal failure", err)
-	}
 }
 
 func TestProviderTransportClassificationAndRetryAfter(t *testing.T) {

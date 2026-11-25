@@ -17,14 +17,27 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-RENDER = pathlib.Path(os.environ.get("RENDER", ROOT / "lean/.lake/build/bin/render"))
+ROOT = pathlib.Path(__file__).absolute().parent.parent
 # Selector for each statement of example/input/bundle.mjs, by position.
 SEL = ["PI", "square", "area", "isEven", "isOdd", "registry", "register", "#7", "label", "#9", "#10", "#11"]
 
 
-def run_node(directory, entry):
-    p = subprocess.run(["node", entry], check=False, cwd=directory, capture_output=True, text=True, timeout=30)
+def resolve_tool(name: str, default: str) -> str:
+    if key := os.environ.get(f"{name}_RUNFILE"):
+        from python.runfiles import Runfiles  # noqa: PLC0415 -- standalone use has no Bazel dependency.
+
+        runfiles = Runfiles.Create()
+        if runfiles is None:
+            raise RuntimeError("Bazel runfiles are unavailable")
+        path = runfiles.Rlocation(key)
+        if not path or not pathlib.Path(path).is_file():
+            raise FileNotFoundError(key)
+        return str(pathlib.Path(path).absolute())
+    return os.environ.get(name, default)
+
+
+def run_node(node, directory, entry):
+    p = subprocess.run([node, entry], check=False, cwd=directory, capture_output=True, text=True, timeout=30)
     return (p.returncode, p.stdout)
 
 
@@ -61,8 +74,10 @@ def gen(rng):
 def main():
     count = int(sys.argv[1]) if len(sys.argv) > 1 else 300
     rng = random.Random(int(sys.argv[2]) if len(sys.argv) > 2 else 0)
-    expected = run_node(ROOT / "example" / "input", "bundle.mjs")
-    tally = collections.Counter()
+    node = resolve_tool("NODE", "node")
+    render = resolve_tool("RENDER", str(ROOT / "lean/.lake/build/bin/render"))
+    expected = run_node(node, ROOT / "example" / "input", "bundle.mjs")
+    tally: collections.Counter[str] = collections.Counter()
     seen, examples = set(), []
     for _ in range(count):
         spec = gen(rng)
@@ -74,7 +89,7 @@ def main():
             tmp = pathlib.Path(tmp_name)
             (tmp / "spec.json").write_text(json.dumps(spec))
             r = subprocess.run(
-                [RENDER, str(tmp / "out"), "--spec", str(tmp / "spec.json"), "--force"],
+                [render, str(tmp / "out"), "--spec", str(tmp / "spec.json"), "--force"],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -83,7 +98,7 @@ def main():
                 raise SystemExit(f"render failed ({r.returncode}): {r.stderr}\n{spec}")
             valid = r.returncode == 0
             try:
-                got = run_node(tmp / "out", spec["entry"])
+                got = run_node(node, tmp / "out", spec["entry"])
             except subprocess.TimeoutExpired:
                 got = ("timeout", "")
             same = got == expected
@@ -92,9 +107,10 @@ def main():
                 tally["UNSOUND"] += 1
                 print("UNSOUND: accepted a split that behaves differently", json.dumps(spec), got, file=sys.stderr)
             elif valid:
-                order = re.search(
-                    r"\[[0-9, ]+\]", next(ln for ln in r.stdout.splitlines() if "statement order" in ln)
-                ).group(0)
+                match = re.search(r"\[[0-9, ]+\]", next(ln for ln in r.stdout.splitlines() if "statement order" in ln))
+                if match is None:
+                    raise RuntimeError(f"missing statement order: {r.stdout}")
+                order = match.group(0)
                 examples.append((order != str(list(range(len(SEL)))), json.dumps(spec["modules"]), order))
             elif same:
                 tally["rejected_but_harmless"] += 1
@@ -109,4 +125,5 @@ def main():
         raise SystemExit(1)
 
 
-main()
+if __name__ == "__main__":
+    main()

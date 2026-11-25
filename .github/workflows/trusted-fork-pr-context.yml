@@ -45,6 +45,9 @@ jobs:
           # Event-time base.sha can predate this helper on a long-lived PR.
           ref: devel
           fetch-depth: 1
+          # The resolver runs with the standard library only.
+          sparse-checkout: /devinfra/ci/pr_mergeability.py
+          sparse-checkout-cone-mode: false
       - name: Resolve the merge commit GitHub built for this PR head
         id: resolve
         env:

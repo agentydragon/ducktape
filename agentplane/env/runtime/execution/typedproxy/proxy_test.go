@@ -3,7 +3,6 @@ package typedproxy
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,27 +13,25 @@ import (
 	pb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedbackend"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 )
 
 func connect(t *testing.T, s pb.ExecutorServer) pb.ExecutorClient {
 	t.Helper()
-	l := bufconn.Listen(1 << 20)
-	g := grpc.NewServer()
-	pb.RegisterExecutorServer(g, s)
-	go func() { _ = g.Serve(l) }()
-	t.Cleanup(func() { g.Stop(); _ = l.Close() })
-	conn, err := grpc.NewClient("passthrough:///test", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return l.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	return pb.NewExecutorClient(conn)
+	server := grpc.NewServer()
+	pb.RegisterExecutorServer(server, s)
+	return pb.NewExecutorClient(grpcserver.ConnectInMemory(t, server))
+}
+
+// active reports whether an execution session is open or opening.
+func active(p *Proxy) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.opening > 0 || len(p.sessions) > 0
 }
 
 func TestProxyRetainsScopedSessionAndRunsProcess(t *testing.T) {
@@ -46,7 +43,7 @@ func TestProxyRetainsScopedSessionAndRunsProcess(t *testing.T) {
 			return status.Error(codes.PermissionDenied, "missing scope")
 		}
 		return fn(ctx)
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +61,7 @@ func TestProxyRetainsScopedSessionAndRunsProcess(t *testing.T) {
 		t.Fatalf("open = %v, %v", first, err)
 	}
 	id := first.GetExecutionSessionId()
-	if !p.Active() {
+	if !active(p) {
 		t.Fatal("open session not active")
 	}
 	_, err = client.StartProcess(context.Background(), &pb.StartProcessRequest{Scope: &pb.ExecutionScope{SessionId: "other"}, RequestId: "wrong", ExecutionSessionId: id, ProcessId: "p", Argv: []string{"/bin/echo", "hello"}, Cwd: "file:///tmp"})
@@ -79,13 +76,11 @@ func TestProxyRetainsScopedSessionAndRunsProcess(t *testing.T) {
 	if err != nil || out.GetStatus().GetOutcome() != pb.ExecutionStatus_OUTCOME_COMPLETED || len(out.Chunks) == 0 {
 		t.Fatalf("read = %v, %v", out, err)
 	}
-	drainCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
-	defer stop()
-	if err := p.Drain(drainCtx); err != nil {
+	if err := p.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if p.Active() {
-		t.Fatal("session remained active after drain")
+	if active(p) {
+		t.Fatal("session remained active after close")
 	}
 }
 
@@ -121,7 +116,7 @@ func TestCanceledCallerDoesNotCancelAdmittedMutation(t *testing.T) {
 	backend := connect(t, b)
 	p, err := New(context.Background(), backend, func(ctx context.Context, _ *pb.ExecutionScope, _ bool, fn func(context.Context) error) error {
 		return fn(ctx)
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,11 +165,11 @@ func (b *blockedOpenBackend) OpenSession(_ *pb.OpenSessionRequest, stream pb.Exe
 	return nil
 }
 
-func TestDrainCancelsOpeningSession(t *testing.T) {
+func TestCloseCancelsOpeningSession(t *testing.T) {
 	b := &blockedOpenBackend{entered: make(chan struct{})}
 	p, err := New(context.Background(), connect(t, b), func(ctx context.Context, _ *pb.ExecutionScope, _ bool, fn func(context.Context) error) error {
 		return fn(ctx)
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,12 +180,10 @@ func TestDrainCancelsOpeningSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-b.entered
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err = p.Drain(ctx); err != nil {
-		t.Fatalf("drain opening session: %v", err)
+	if err = p.Close(); err != nil {
+		t.Fatalf("close with opening session: %v", err)
 	}
-	if p.Active() {
+	if active(p) {
 		t.Fatal("opening session remains active")
 	}
 	if _, err = stream.Recv(); err == nil {
@@ -203,7 +196,7 @@ func TestResumeClosesPreviousConnectionFiles(t *testing.T) {
 	t.Cleanup(func() { _ = core.Close() })
 	p, err := New(context.Background(), connect(t, typedbackend.New(core)), func(ctx context.Context, _ *pb.ExecutionScope, _ bool, fn func(context.Context) error) error {
 		return fn(ctx)
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +266,7 @@ func TestResumeWaitsForPreviousHandleCleanup(t *testing.T) {
 	b := &delayedCloseBackend{entered: make(chan struct{}), release: make(chan struct{})}
 	p, err := New(context.Background(), connect(t, b), func(ctx context.Context, _ *pb.ExecutionScope, _ bool, fn func(context.Context) error) error {
 		return fn(ctx)
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +315,7 @@ func TestProcessChangeForwardedOnHeldSession(t *testing.T) {
 	t.Cleanup(func() { _ = core.Close() })
 	p, err := New(context.Background(), connect(t, typedbackend.New(core)), func(ctx context.Context, _ *pb.ExecutionScope, _ bool, fn func(context.Context) error) error {
 		return fn(ctx)
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,12 +359,12 @@ func (s *blockingStream) SetTrailer(metadata.MD)       {}
 func (s *blockingStream) Context() context.Context     { return s.ctx }
 func (s *blockingStream) SendMsg(any) error            { return nil }
 func (s *blockingStream) RecvMsg(any) error            { return nil }
-func TestDrainDoesNotWaitForBlockedResponseSend(t *testing.T) {
+func TestCloseDoesNotWaitForBlockedResponseSend(t *testing.T) {
 	core := native.New()
 	t.Cleanup(func() { _ = core.Close() })
 	p, err := New(context.Background(), connect(t, typedbackend.New(core)), func(ctx context.Context, _ *pb.ExecutionScope, _ bool, fn func(context.Context) error) error {
 		return fn(ctx)
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,12 +380,17 @@ func TestDrainDoesNotWaitForBlockedResponseSend(t *testing.T) {
 		close(stream.release)
 		t.Fatal("response send did not start")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	err = p.Drain(ctx)
-	close(stream.release)
-	if err != nil {
-		t.Fatalf("drain blocked: %v", err)
+	closed := make(chan error, 1)
+	go func() { closed <- p.Close() }()
+	select {
+	case err = <-closed:
+		close(stream.release)
+		if err != nil {
+			t.Fatalf("close: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		close(stream.release)
+		t.Fatal("close blocked on the response send")
 	}
 	select {
 	case <-done:
@@ -406,7 +404,7 @@ func TestClosedHandlesDoNotAccumulate(t *testing.T) {
 	t.Cleanup(func() { _ = core.Close() })
 	p, err := New(context.Background(), connect(t, typedbackend.New(core)), func(ctx context.Context, _ *pb.ExecutionScope, _ bool, fn func(context.Context) error) error {
 		return fn(ctx)
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

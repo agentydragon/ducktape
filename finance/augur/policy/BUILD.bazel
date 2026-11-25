@@ -112,6 +112,7 @@ py_test(
         "//finance/augur/sim:schedule",
         "//finance/augur/sim:tlh",
         "//finance/augur/sim:world",
+        "//finance/augur/sim/testing:tlh",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

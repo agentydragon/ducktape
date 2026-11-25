@@ -144,8 +144,7 @@ def main(argv: list[str] | None = None) -> None:
 
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
     if not project_dir_str:
-        print("CLAUDE_PROJECT_DIR not set", file=sys.stderr)
-        sys.exit(1)
+        raise SystemExit("CLAUDE_PROJECT_DIR not set")
     project_dir = Path(project_dir_str)
 
     token = decrypt_jwt(project_dir)

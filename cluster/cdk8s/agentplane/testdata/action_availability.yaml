@@ -1,0 +1,26 @@
+rule_files: [actions.yaml]
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: kube_deployment_spec_replicas{namespace="agentplane-test",deployment="actions"}
+        values: 2x30
+      - series: kube_deployment_status_replicas_available{namespace="agentplane-test",deployment="actions"}
+        values: 1x19 2x10
+      - series: kube_deployment_spec_replicas{namespace="other",deployment="actions"}
+        values: 2x30
+      - series: kube_deployment_status_replicas_available{namespace="other",deployment="actions"}
+        values: 0x30
+      - series: kube_deployment_spec_replicas{namespace="agentplane-test",deployment="other"}
+        values: 2x30
+      - series: kube_deployment_status_replicas_available{namespace="agentplane-test",deployment="other"}
+        values: 0x30
+    promql_expr_test:
+      - expr: &firing sum by (namespace, deployment) (ALERTS{alertname="AgentplaneActionServiceReplicasUnavailable",alertstate="firing"})
+        eval_time: 15m
+        exp_samples:
+          - labels: '{namespace="agentplane-test",deployment="actions"}'
+            value: 1
+      - expr: *firing
+        eval_time: 25m
+        exp_samples: []

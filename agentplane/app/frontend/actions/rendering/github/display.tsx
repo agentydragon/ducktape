@@ -3,7 +3,12 @@ import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
 import { definePreview, type PreviewProps } from "../entry";
-import { expandsForRejectedArguments, type ActionOutcome, type ActionPresentation } from "../presentation";
+import {
+  expandsForDetails,
+  expandsForRejectedArguments,
+  type ActionOutcome,
+  type ActionPresentation,
+} from "../presentation";
 import { defineResultPreview, renderResultPreview, type ResultPreview } from "../result_entry";
 import { GitHubLink, repositoryHref } from "./receipts";
 
@@ -42,6 +47,15 @@ export function RepoTarget({
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
       <GitHubLink href={`${repositoryHref(repo)}${path}`}>{children ?? `${repo.owner}/${repo.repo}`}</GitHubLink>
+    </Text>
+  );
+}
+
+/** The compact card line of an Action on one repository: `owner/repo`. */
+export function RepoSlug({ args }: PreviewProps<RepoArgs>): JSX.Element {
+  return (
+    <Text size="sm">
+      {args.owner}/{args.repo}
     </Text>
   );
 }
@@ -108,6 +122,8 @@ export function githubPresentation<S extends z.ZodType>({
   request,
   compact,
   staticCard = false,
+  hasFoldedArguments,
+  cardDecision = false,
   result,
   outcome,
 }: {
@@ -116,6 +132,8 @@ export function githubPresentation<S extends z.ZodType>({
   request?: (props: PreviewProps<z.infer<S>>) => ReactNode;
   compact?: (props: PreviewProps<z.infer<S>>) => ReactNode;
   staticCard?: boolean;
+  hasFoldedArguments?: (args: z.infer<S>) => boolean;
+  cardDecision?: boolean;
   result: ResultPreview | null;
   outcome?: (value: unknown) => ActionOutcome | undefined;
 }): ActionPresentation {
@@ -124,13 +142,17 @@ export function githubPresentation<S extends z.ZodType>({
   return {
     fallbackLabel: label,
     ...(outcome ? { outcome } : {}),
-    pane: { collapsed: compactPreview, ...(staticCard ? {} : { opened: preview }) },
+    pane: { collapsed: compactPreview, ...(!staticCard || hasFoldedArguments ? { opened: preview } : {}) },
     details: { arguments: preview, result },
     ...(staticCard
       ? {
-          compactCardExpands: expandsForRejectedArguments(schema),
-          offersCardDecisionButtons: (args: unknown) => schema.safeParse(args).success,
+          compactCardExpands: hasFoldedArguments
+            ? expandsForDetails(schema, hasFoldedArguments)
+            : expandsForRejectedArguments(schema),
         }
+      : {}),
+    ...(staticCard || cardDecision
+      ? { offersCardDecisionButtons: (args: unknown) => schema.safeParse(args).success }
       : {}),
   };
 }

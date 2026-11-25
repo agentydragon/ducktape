@@ -1,12 +1,18 @@
 import json
-from collections.abc import Callable
 
 import pytest
 import pytest_bazel
-from cdk8s import Chart, Testing as Cdk8sTesting
+from cdk8s import Chart
 
 from cluster.cdk8s.namespace_access import AgentReadable
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa, VpaProfile, namespace, namespace_patch
+from cluster.cdk8s.namespaces import (
+    VPA_UPDATE_MODE_LABEL,
+    Vpa,
+    VpaProfile,
+    initial_request_annotations,
+    namespace,
+    namespace_patch,
+)
 from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION, ContainerPolicy, ControlledValues
 
 
@@ -16,39 +22,47 @@ def test_extra_labels_cannot_restate_the_policy_labels(scratch_chart: Chart, key
         namespace(scratch_chart, "namespace", name="test-ns", vpa=Vpa.AUTO, labels={key: "false"})
 
 
-@pytest.mark.parametrize("construct", [namespace, namespace_patch])
-@pytest.mark.parametrize("vpa", [Vpa.AUTO, VpaProfile(Vpa.AUTO, min_replicas=1)])
-def test_auto_defaults_to_requests_only(
-    scratch_chart: Chart, construct: Callable[..., object], vpa: Vpa | VpaProfile
-) -> None:
-    construct(scratch_chart, "namespace", name="test-ns", vpa=vpa)
-    [rendered] = Cdk8sTesting.synth(scratch_chart)
-    assert json.loads(rendered["metadata"]["annotations"][VPA_RESOURCE_POLICY_ANNOTATION]) == {
+def test_auto_defaults_to_requests_only(scratch_chart: Chart) -> None:
+    ns = namespace(scratch_chart, "namespace", name="test-ns", vpa=Vpa.AUTO)
+    assert json.loads(ns.metadata.to_json()["annotations"][VPA_RESOURCE_POLICY_ANNOTATION]) == {
         "containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]
     }
-    if isinstance(vpa, VpaProfile):
-        assert rendered["metadata"]["annotations"]["goldilocks.fairwinds.com/vpa-min-replicas"] == "1"
 
 
-@pytest.mark.parametrize("construct", [namespace, namespace_patch])
-def test_auto_preserves_explicit_annotation(scratch_chart: Chart, construct: Callable[..., object]) -> None:
+def test_profile_preserves_explicit_policy_in_namespace_patch(scratch_chart: Chart) -> None:
     explicit = '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsAndLimits"}]}'
-    construct(
-        scratch_chart, "namespace", name="test-ns", vpa=Vpa.AUTO, annotations={VPA_RESOURCE_POLICY_ANNOTATION: explicit}
+    patch = namespace_patch(
+        scratch_chart,
+        "namespace",
+        name="test-ns",
+        vpa=VpaProfile(Vpa.AUTO, min_replicas=1),
+        annotations={VPA_RESOURCE_POLICY_ANNOTATION: explicit},
     )
-    [rendered] = Cdk8sTesting.synth(scratch_chart)
-    assert rendered["metadata"]["annotations"][VPA_RESOURCE_POLICY_ANNOTATION] == explicit
+    annotations = patch.metadata.to_json()["annotations"]
+    assert annotations[VPA_RESOURCE_POLICY_ANNOTATION] == explicit
+    assert annotations["goldilocks.fairwinds.com/vpa-min-replicas"] == "1"
 
 
 @pytest.mark.parametrize("vpa", [Vpa.DISABLED, Vpa.RECOMMEND, Vpa.INITIAL])
 def test_non_auto_does_not_acquire_a_default_policy(scratch_chart: Chart, vpa: Vpa) -> None:
-    namespace(scratch_chart, "namespace", name="test-ns", vpa=vpa)
-    [rendered] = Cdk8sTesting.synth(scratch_chart)
-    assert VPA_RESOURCE_POLICY_ANNOTATION not in rendered["metadata"].get("annotations", {})
+    rendered = namespace(scratch_chart, "namespace", name="test-ns", vpa=vpa)
+    assert VPA_RESOURCE_POLICY_ANNOTATION not in rendered.metadata.to_json().get("annotations", {})
+
+
+def test_initial_sizing_leaves_unlisted_containers_alone() -> None:
+    annotations = initial_request_annotations(ContainerPolicy.cpu_and_memory_requests_only("worker"))
+    [worker, fallback] = json.loads(annotations[VPA_RESOURCE_POLICY_ANNOTATION])["containerPolicies"]
+    assert worker == {
+        "containerName": "worker",
+        "controlledValues": "RequestsOnly",
+        "controlledResources": ["cpu", "memory"],
+    }
+    assert fallback["containerName"] == "*"
+    assert fallback["mode"] == "Off"
 
 
 def test_vpa_profile_renders_explicit_container_policies(scratch_chart: Chart) -> None:
-    namespace(
+    rendered = namespace(
         scratch_chart,
         "namespace",
         name="test-ns",
@@ -66,8 +80,7 @@ def test_vpa_profile_renders_explicit_container_policies(scratch_chart: Chart) -
         ),
     )
 
-    [rendered] = Cdk8sTesting.synth(scratch_chart)
-    metadata = rendered["metadata"]
+    metadata = rendered.metadata.to_json()
     assert metadata["labels"][VPA_UPDATE_MODE_LABEL] == "auto"
     assert metadata["annotations"]["goldilocks.fairwinds.com/vpa-min-replicas"] == "1"
     assert json.loads(metadata["annotations"][VPA_RESOURCE_POLICY_ANNOTATION]) == {

@@ -2,7 +2,6 @@
 
 import argparse
 import functools
-import posixpath
 from pathlib import Path
 
 from cdk8s import App
@@ -37,6 +36,7 @@ from cluster.cdk8s import (
     flux_image_automation_ghcr,
     flux_monitoring,
     flux_sources,
+    flux_system_vpa,
     flux_webhook,
     flux_webhook_token,
     gateway,
@@ -74,6 +74,7 @@ from cluster.cdk8s import (
     tana_mcp,
     terraform,
     tofu_controller_release,
+    tofu_state,
     user_agentydragon,
     valkey,
     volsync,
@@ -84,11 +85,11 @@ from cluster.cdk8s.activitywatch import app as activitywatch_app
 from cluster.cdk8s.agentplane import (
     binding_delegation,
     db_backups as agentplane_staging_db_backups,
+    gaffer_archive,
     generation as agentplane_generation,
     staging,
     staging_vpa,
 )
-from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
 from cluster.cdk8s.artifact_generators import (
     artifact,
     artifact_generators as artifact_generators_factory,
@@ -134,7 +135,6 @@ from cluster.cdk8s.external_secrets import (
     operator as external_secrets_operator,
 )
 from cluster.cdk8s.fleet_rules import add_fleet_rules
-from cluster.cdk8s.flux import SecretGeneratorArgs
 from cluster.cdk8s.forgejo import (
     app as forgejo_app,
     budget_namespace as forgejo_budget_namespace,
@@ -189,7 +189,12 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.infra_drift import drift_watch
-from cluster.cdk8s.kubevirt import app as kubevirt_app, cdi as kubevirt_cdi, operators as kubevirt_operators
+from cluster.cdk8s.kubevirt import (
+    app as kubevirt_app,
+    cdi as kubevirt_cdi,
+    operators as kubevirt_operators,
+    vpa as kubevirt_vpa,
+)
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
 from cluster.cdk8s.litellm import (
     buildbuddy_crossplane as litellm_buildbuddy_crossplane,
@@ -251,7 +256,6 @@ from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_co
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config, generation as ssh_mcp_generation
 from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flux_kustomizations
 from cluster.cdk8s.study_casino import app as study_casino_app
-from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
 from cluster.scripts import nebula_mesh
 from devinfra.bazel.workspace import get_build_workspace_directory
 
@@ -264,8 +268,6 @@ def generate_manifests(root: Path) -> None:
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
         root, staging.LAYOUT, staging.chart
     )
-    staging_assignable_grants = staging.assignable_grants()
-    binding_delegation.write_manifests(root, staging.ENV, staging_assignable_grants)
     agentplane_staging_health_checks = agentplane_generation.environment_health_checks(
         agentplane_staging_resource_chart, staging.ENV.namespace
     )
@@ -273,21 +275,14 @@ def generate_manifests(root: Path) -> None:
     ssh_config = ssh_mcp_config.load()
     seaweedfs_cluster.write_manifests(root)
     litellm_namespace.write_manifests(root)
-    litellm_proxy.write_manifests(root, mesh)
-    litellm_database.write_manifests(root)
+    litellm_proxy_chart = litellm_proxy.write_manifests(root, mesh)
+    litellm_database_chart = litellm_database.write_manifests(root)
     litellm_secrets.write_manifests(root)
-    tofu_state_namespace.write_manifests(root)
-    tofu_state_db.write_manifests(root)
-    mcp_oauth_state.write_manifests(root)
     authentik_namespace.write_manifests(root)
     authentik_db.write_manifests(root)
     authentik_app.write_manifests(root)
     authentik_proxy_routes.write_manifests(root)
-    forgejo_namespace.write_manifests(root)
-    forgejo_db.write_manifests(root)
-    forgejo_cache.write_manifests(root)
     home_assistant_namespace.write_manifests(root)
-    forgejo_app.write_manifests(root)
     home_assistant_app.write_manifests(root)
     home_assistant_backup.write_manifests(root)
     home_assistant_db.write_manifests(root)
@@ -332,9 +327,12 @@ def generate_manifests(root: Path) -> None:
     artifact_generators_factory(flux_chart)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
     flux_image_automation_ghcr_artifact = artifact("flux-image-automation-ghcr", flux_image_automation_ghcr.OUTPUT_DIR)
-    flux_image_automation_ghcr_kustomization = flux_image_automation_ghcr.flux_image_automation_ghcr(
+    flux_image_automation_ghcr_kustomization = flux.flux_kustomization(
         flux_chart,
+        "flux-image-automation-ghcr",
         write_directory(root, flux_image_automation_ghcr_artifact, flux_image_automation_ghcr.automation_chart),
+        retry_interval=None,
+        wait=None,
     )
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
     haku_namespace_kustomization = flux.flux_kustomization(
@@ -345,8 +343,16 @@ def generate_manifests(root: Path) -> None:
         wait=None,
         timeout="2m",
     )
+    kube_api_proxy_app = App()
+    kube_api_proxy_chart = kube_api_proxy.chart(kube_api_proxy_app)
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
-    kube_api_proxy.kube_api_proxy(flux_chart, write_directory(root, kube_api_proxy_artifact, kube_api_proxy.chart))
+    flux.flux_kustomization(
+        flux_chart,
+        kube_api_proxy.NAME,
+        write_directory(root, kube_api_proxy_artifact, app=kube_api_proxy_app),
+        wait=None,
+        health_checks=flux.health_checks(kube_api_proxy_chart, ["Deployment", "HTTPRoute"]),
+    )
     kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", kubevirt_operators.CDI_OPERATOR_DIR)
     cdi_operator_kustomization = flux.flux_kustomization(
         flux_chart,
@@ -421,14 +427,17 @@ def generate_manifests(root: Path) -> None:
     talos_cloud_controller_manager_artifact = artifact(
         "talos-cloud-controller-manager", talos_cloud_controller_manager.OUTPUT_DIR
     )
-    talos_cloud_controller_manager.talos_cloud_controller_manager(
+    flux.flux_kustomization(
         flux_chart,
+        talos_cloud_controller_manager.NAME,
         write_directory(
             root,
             talos_cloud_controller_manager_artifact,
             talos_cloud_controller_manager.helmrepository_chart,
             siblings=[talos_cloud_controller_manager.write_helmrelease(root)],
         ),
+        interval="30m",
+        target_namespace=talos_cloud_controller_manager.NAMESPACE,
     )
     user_agentydragon_artifact = artifact("user-agentydragon", user_agentydragon.OUTPUT_DIR)
     user_agentydragon_kustomization = flux.flux_kustomization(
@@ -441,8 +450,16 @@ def generate_manifests(root: Path) -> None:
         wait=None,
         timeout="10m",
     )
+    valkey_app = App()
+    valkey_chart = valkey.chart(valkey_app)
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
-    valkey_kustomization = valkey.valkey(flux_chart, write_directory(root, valkey_artifact, valkey.chart))
+    valkey_kustomization = flux.flux_kustomization(
+        flux_chart,
+        valkey.NAME,
+        write_directory(root, valkey_artifact, app=valkey_app),
+        wait=None,
+        health_checks=flux.health_checks(valkey_chart, ["HelmRelease"]),
+    )
     gaffer_private_source_artifact = artifact("gaffer-private-source", gaffer_private_source.OUTPUT_DIR)
     gaffer_private_source.gaffer_private_source(
         flux_chart,
@@ -476,8 +493,13 @@ def generate_manifests(root: Path) -> None:
         flux_chart, buildbuddy_executor_artifact, kubevirt_kustomization, kyverno_kustomization
     )
     kyverno_policies_artifact = artifact("kyverno-policies", kyverno_policies.OUTPUT_DIR)
-    kyverno_policies_kustomization = kyverno_policies.kyverno_policies(
-        flux_chart, write_directory(root, kyverno_policies_artifact, *kyverno_policies.CHARTS), kyverno_kustomization
+    kyverno_policies_kustomization = flux.flux_kustomization(
+        flux_chart,
+        kyverno_policies_artifact.name,
+        write_directory(root, kyverno_policies_artifact, *kyverno_policies.CHARTS),
+        depends_on=[flux.flux_kustomization_depends_on(kyverno_kustomization)],
+        interval="5m",
+        timeout="2m",
     )
     keda_artifact = artifact("keda", keda.OUTPUT_DIR)
     keda_kustomization = flux.flux_kustomization(
@@ -508,7 +530,9 @@ def generate_manifests(root: Path) -> None:
         timeout="5m",
         depends_on=[flux.flux_kustomization_depends_on(kyverno_kustomization)],
     )
-    kubevirt_cdi.cdi(flux_chart, write_directory(root, cdi_artifact, kubevirt_cdi.chart), cdi_operator_kustomization)
+    cdi_kustomization = kubevirt_cdi.cdi(
+        flux_chart, write_directory(root, cdi_artifact, kubevirt_cdi.chart), cdi_operator_kustomization
+    )
     clickhouse_operator_artifact = artifact("clickhouse-operator", clickhouse_operator.OUTPUT_DIR)
     clickhouse_operator_kustomization = clickhouse_operator.clickhouse_operator(
         flux_chart,
@@ -588,11 +612,14 @@ def generate_manifests(root: Path) -> None:
         ],
         description="Direct TCP and HTTPS connectivity probes from optiplex and wyrm2.",
     )
+    grafana_operator_app = App()
+    grafana_operator_chart = grafana_operator.chart(grafana_operator_app)
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
     grafana_operator_kustomization = grafana_operator.grafana_operator(
         flux_chart,
-        write_directory(root, grafana_operator_artifact, grafana_operator.chart),
+        write_directory(root, grafana_operator_artifact, app=grafana_operator_app),
         monitoring_namespace_kustomization,
+        health_checks=flux.health_checks(grafana_operator_chart, ["HelmRelease"]),
     )
     nvidia_device_plugin_artifact = artifact("nvidia-device-plugin", nvidia_device_plugin.OUTPUT_DIR)
     nvidia_device_plugin_kustomization = flux.flux_kustomization(
@@ -621,9 +648,12 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     seaweedfs_operator_artifact = artifact("seaweedfs-operator", seaweedfs_operator_release.OUTPUT_DIR)
-    seaweedfs_operator_kustomization = seaweedfs_operator_release.seaweedfs_operator(
+    seaweedfs_operator_kustomization = flux.flux_kustomization(
         flux_chart,
+        seaweedfs_operator_release.NAME,
         write_directory(root, seaweedfs_operator_artifact, seaweedfs_namespace.chart, seaweedfs_operator_release.chart),
+        suspend=False,
+        timeout="5m",
     )
     snapshot_controller_flux_kustomizations.snapshot_controller(flux_chart)
     haku_forgejo_tea_artifact = artifact(haku_forgejo_tea.NAME, haku_forgejo_tea.OUTPUT_DIR)
@@ -642,9 +672,14 @@ def generate_manifests(root: Path) -> None:
             "(parked) worker."
         ),
     )
+    claude_rbac_app = App()
+    claude_rbac_chart = agent_rbac_base.chart(claude_rbac_app)
     claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
     claude_rbac_kustomization = agent_rbac_base.claude_rbac(
-        flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
+        flux_chart,
+        write_directory(root, claude_rbac_artifact, app=claude_rbac_app),
+        kyverno_policies_kustomization,
+        health_checks=flux.health_checks(claude_rbac_chart, ["Namespace"]),
     )
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
     vpa_kustomization = flux.flux_kustomization(
@@ -653,6 +688,22 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, vpa_artifact, vpa.chart),
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(kyverno_kustomization),
+    )
+    kubevirt_vpa_artifact = artifact(kubevirt_vpa.NAME, kubevirt_vpa.OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        kubevirt_vpa.NAME,
+        write_directory(root, kubevirt_vpa_artifact, kubevirt_vpa.chart),
+        depends_on=flux.flux_kustomization_depends_on_many(
+            vpa_kustomization, kubevirt_kustomization, cdi_kustomization
+        ),
+    )
+    flux_system_vpa_artifact = artifact(flux_system_vpa.NAME, flux_system_vpa.OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        flux_system_vpa.NAME,
+        write_directory(root, flux_system_vpa_artifact, flux_system_vpa.chart),
+        depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization),
     )
     dcgm_exporter_artifact = artifact("dcgm-exporter", dcgm_exporter_exporter.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -699,15 +750,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_crds_kustomization,
         cert_manager_kustomization,
     )
-    crossplane_litellm_provider_artifact = artifact(
-        crossplane.LITELLM_PROVIDER_KUSTOMIZATION_NAME, crossplane.LITELLM_PROVIDER_OUTPUT_DIR
-    )
-    crossplane_provider_kustomization = crossplane.litellm_provider(
-        flux_chart,
-        write_directory(root, crossplane_litellm_provider_artifact, crossplane.litellm_provider_chart),
-        crossplane_kustomization,
-        external_secrets_operator_kustomization,
-    )
     crossplane_opentofu_provider_artifact = artifact(
         crossplane.OPENTOFU_PROVIDER_KUSTOMIZATION_NAME, crossplane.OPENTOFU_PROVIDER_OUTPUT_DIR
     )
@@ -719,6 +761,7 @@ def generate_manifests(root: Path) -> None:
             functools.partial(
                 crossplane.opentofu_provider_chart,
                 kubernetes_identities=(
+                    gitlab_spike_flux.KUBERNETES_IDENTITY,
                     sso_providers.KUBERNETES_IDENTITY,
                     agent_machine_access.KUBERNETES_IDENTITY,
                     forgejo_images.KUBERNETES_IDENTITY,
@@ -778,23 +821,23 @@ def generate_manifests(root: Path) -> None:
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(kyverno_kustomization),
     )
-    tofu_controller_artifact = artifact(
-        "tofu-controller", tofu_controller_release.OUTPUT_DIR, tofu_controller_release.PINS_DIR
-    )
+    tofu_controller_artifact = artifact("tofu-controller", tofu_controller_release.OUTPUT_DIR)
     tofu_controller_kustomization = flux.flux_kustomization(
         flux_chart,
         tofu_controller_release.NAME,
-        write_directory(
-            root,
-            tofu_controller_artifact,
-            tofu_controller_release.chart,
-            components=[posixpath.relpath(tofu_controller_release.PINS_DIR, tofu_controller_release.OUTPUT_DIR)],
-        ),
+        write_directory(root, tofu_controller_artifact, tofu_controller_release.chart),
         interval="10m0s",
         timeout="10m0s",
         depends_on=flux.flux_kustomization_depends_on_many(
             kyverno_kustomization, flux_image_automation_ghcr_kustomization
         ),
+    )
+    tofu_controller_vpa_artifact = artifact(tofu_controller_release.VPA_NAME, tofu_controller_release.VPA_OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        tofu_controller_release.VPA_NAME,
+        write_directory(root, tofu_controller_vpa_artifact, tofu_controller_release.vpa_chart),
+        depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization, tofu_controller_kustomization),
     )
     monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)
     home_switch_module = terraform.gitops_module(monitoring_home_switch.NAME)
@@ -844,20 +887,19 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, volsync_artifact, volsync.chart), monitoring_crds_kustomization
     )
     agent_shared_rbac_artifact = artifact("agent-shared-rbac", agent_shared_rbac.OUTPUT_DIR)
-    agent_shared_rbac.agent_shared_rbac(
-        flux_chart,
-        write_directory(root, agent_shared_rbac_artifact, agent_shared_rbac.chart),
-        claude_rbac_kustomization,
-    )
-    agent_shared_secrets_artifact = artifact("agent-shared-secrets", f"{HAND_WRITTEN_ROOT}/agents/shared-secrets")
     flux.flux_kustomization(
         flux_chart,
-        "agent-shared-secrets",
-        write_directory(root, agent_shared_secrets_artifact, siblings=["attic-push-token.sops.yaml"]),
+        agent_shared_rbac.NAME,
+        write_directory(root, agent_shared_rbac_artifact, agent_shared_rbac.chart),
         retry_interval=None,
         wait=None,
-        timeout="5m",
-        depends_on=[flux.flux_kustomization_depends_on(claude_rbac_kustomization)],
+        timeout="2m",
+        depends_on=flux.flux_kustomization_depends_on_many(claude_rbac_kustomization),
+        description=(
+            "Cluster-scoped agent RBAC (ClusterRoleBindings) + flux-system "
+            "RoleBindings only. Namespace-scoped RoleBindings live in per-service "
+            "agent-rbac/ directories."
+        ),
     )
     external_creds_artifact = artifact("external-creds", external_creds.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -913,14 +955,17 @@ def generate_manifests(root: Path) -> None:
             cert_manager_kustomization, cert_manager_trust_kustomization, external_secrets_operator_kustomization
         ),
     )
-    tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
-    tofu_state_db_kustomization = tofu_state_db.tofu_state_db(
-        flux_chart, tofu_state_db_artifact, cnpg_kustomization, seaweedfs_operator_kustomization
+    tofu_state_db_artifact = artifact("tofu-state-db", tofu_state.OUTPUT_DIR)
+    tofu_state_db_kustomization = tofu_state.tofu_state_db(
+        flux_chart,
+        write_directory(root, tofu_state_db_artifact, tofu_state.chart, siblings=[tofu_state.CREDENTIALS_FILE]),
+        cnpg_kustomization,
+        seaweedfs_operator_kustomization,
     )
     mcp_oauth_state_artifact = artifact("mcp-oauth-state", mcp_oauth_state.OUTPUT_DIR)
     mcp_oauth_state_kustomization = mcp_oauth_state.mcp_oauth_state_db(
         flux_chart,
-        mcp_oauth_state_artifact,
+        write_directory(root, mcp_oauth_state_artifact, mcp_oauth_state.chart),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
@@ -928,13 +973,15 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
     )
     website_artifact = artifact("website", website.OUTPUT_DIR, website.PINS_DIR)
-    website.website(
+    flux.flux_kustomization(
         flux_chart,
-        write_directory(
-            root, website_artifact, website.chart, components=[posixpath.relpath(website.PINS_DIR, website.OUTPUT_DIR)]
+        website_artifact.name,
+        write_directory(root, website_artifact, website.chart, include_copied_components=True),
+        timeout="5m",
+        # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+        depends_on=flux.flux_kustomization_depends_on_many(
+            external_secrets_operator_kustomization, kyverno_kustomization
         ),
-        external_secrets_operator_kustomization,
-        kyverno_kustomization,
     )
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
     proxmox_proxy_kustomization = flux.flux_kustomization(
@@ -971,18 +1018,25 @@ def generate_manifests(root: Path) -> None:
     )
     gaffer_private_source_flux_kustomizations.gaffer_private_bridge(flux_chart, kyverno_kustomization)
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
-    dns_automation_kustomization = dns_automation.dns_automation(
+    dns_automation_kustomization = flux.flux_kustomization(
         flux_chart,
+        dns_automation.NAME,
         write_directory(root, dns_automation_artifact, dns_automation.chart),
-        external_secrets_operator_kustomization,
+        depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
+        description="Make Route 53 credentials available to the Crossplane domain delegation Workspace.",
     )
     route53_domain_delegation_artifact = artifact(route53_domain_delegation.NAME, route53_domain_delegation.OUTPUT_DIR)
-    route53_domain_delegation.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        route53_domain_delegation.NAME,
         write_directory(root, route53_domain_delegation_artifact, route53_domain_delegation.chart),
-        crossplane_opentofu_provider_kustomization,
-        tofu_state_db_kustomization,
-        dns_automation_kustomization,
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            dns_automation_kustomization,
+        ],
+        timeout="10m",
+        description="Manage Route 53 domain registration and nameserver delegation using the existing dns_records state.",
     )
     external_dns_artifact = artifact("external-dns", external_dns.OUTPUT_DIR)
     external_dns_kustomization = flux.flux_kustomization(
@@ -999,17 +1053,27 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, external_dns_records_artifact, functools.partial(external_dns.records_chart, mesh=mesh)),
         depends_on=[flux.flux_kustomization_depends_on(external_dns_kustomization)],
     )
+    infra_drift_app = App()
+    infra_drift_chart = drift_watch.chart(infra_drift_app)
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
     drift_watch.infra_drift(
-        flux_chart, write_directory(root, infra_drift_artifact, drift_watch.chart), tofu_controller_kustomization
+        flux_chart,
+        write_directory(root, infra_drift_artifact, app=infra_drift_app),
+        tofu_controller_kustomization,
+        health_checks=flux.health_checks(infra_drift_chart, ["Terraform"]),
     )
     alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", alloy_otlp_bearer.OUTPUT_DIR)
-    alloy_otlp_bearer.alloy_otlp_bearer(
+    flux.flux_kustomization(
         flux_chart,
+        alloy_otlp_bearer.NAME,
         write_directory(
             root, alloy_otlp_bearer_artifact, alloy_otlp_bearer.chart, siblings=[f"{alloy_otlp_bearer.NAME}.sops.yaml"]
         ),
-        external_secrets_operator_kustomization,
+        retry_interval=None,
+        wait=None,
+        timeout="2m",
+        # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+        depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
     )
     github_secrets_sync_secrets_app = App()
     github_secrets_sync_secrets_chart = github_secrets_sync_secrets.chart(github_secrets_sync_secrets_app)
@@ -1050,6 +1114,7 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, ollama_app_artifact, ollama_app.chart),
         external_secrets_operator_kustomization,
         kyverno_kustomization,
+        monitoring_crds_kustomization,
     )
     seaweedfs_cluster_artifact = artifact("seaweedfs-cluster", seaweedfs_cluster.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -1127,11 +1192,13 @@ def generate_manifests(root: Path) -> None:
     forgejo_haku_state_artifact = artifact(
         forgejo_crossplane_roots.HAKU_STATE_NAME, forgejo_crossplane_roots.output_dir("haku-state")
     )
-    forgejo_haku_state_kustomization = forgejo_crossplane_roots.resources(
+    forgejo_haku_state_kustomization = opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_crossplane_roots.HAKU_STATE_NAME,
         write_directory(root, forgejo_haku_state_artifact, forgejo_crossplane_roots.haku_state_chart),
         forgejo_gitops_artifact,
-        module_name="haku-state",
+        timeout="10m",
+        description="Manage the haku-state Forgejo root with its existing OpenTofu state.",
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
@@ -1141,11 +1208,13 @@ def generate_manifests(root: Path) -> None:
     forgejo_budget_ledger_artifact = artifact(
         forgejo_crossplane_roots.BUDGET_LEDGER_NAME, forgejo_crossplane_roots.output_dir("budget-ledger")
     )
-    forgejo_crossplane_roots.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_crossplane_roots.BUDGET_LEDGER_NAME,
         write_directory(root, forgejo_budget_ledger_artifact, forgejo_crossplane_roots.budget_ledger_chart),
         forgejo_gitops_artifact,
-        module_name="budget-ledger",
+        timeout="10m",
+        description="Manage the budget-ledger Forgejo root with its existing OpenTofu state.",
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
@@ -1155,11 +1224,13 @@ def generate_manifests(root: Path) -> None:
     forgejo_cpap_data_artifact = artifact(
         forgejo_crossplane_roots.CPAP_DATA_NAME, forgejo_crossplane_roots.output_dir("cpap-data")
     )
-    forgejo_crossplane_roots.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_crossplane_roots.CPAP_DATA_NAME,
         write_directory(root, forgejo_cpap_data_artifact, forgejo_crossplane_roots.cpap_data_chart),
         forgejo_gitops_artifact,
-        module_name="cpap-data",
+        timeout="10m",
+        description="Manage the cpap-data Forgejo root with its existing OpenTofu state.",
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
@@ -1169,11 +1240,13 @@ def generate_manifests(root: Path) -> None:
     forgejo_finance_agent_artifact = artifact(
         forgejo_crossplane_roots.FINANCE_AGENT_NAME, forgejo_crossplane_roots.output_dir("finance-agent")
     )
-    forgejo_crossplane_roots.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_crossplane_roots.FINANCE_AGENT_NAME,
         write_directory(root, forgejo_finance_agent_artifact, forgejo_crossplane_roots.finance_agent_chart),
         forgejo_gitops_artifact,
-        module_name="finance-agent",
+        timeout="10m",
+        description="Manage the finance-agent Forgejo root with its existing OpenTofu state.",
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
@@ -1184,11 +1257,13 @@ def generate_manifests(root: Path) -> None:
         forgejo_crossplane_roots.AGENTYDRAGON_REPOS_NAME,
         forgejo_crossplane_roots.output_dir("forgejo-agentydragon-repos"),
     )
-    forgejo_crossplane_roots.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_crossplane_roots.AGENTYDRAGON_REPOS_NAME,
         write_directory(root, forgejo_agentydragon_repos_artifact, forgejo_crossplane_roots.agentydragon_repos_chart),
         forgejo_gitops_artifact,
-        module_name="forgejo-agentydragon-repos",
+        timeout="10m",
+        description="Manage the forgejo-agentydragon-repos Forgejo root with its existing OpenTofu state.",
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
@@ -1198,22 +1273,27 @@ def generate_manifests(root: Path) -> None:
     crossplane_forgejo_agentydragon_artifact = artifact(
         crossplane_forgejo_agentydragon.NAME, crossplane_forgejo_agentydragon.OUTPUT_DIR
     )
-    crossplane_forgejo_agentydragon.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        crossplane_forgejo_agentydragon.NAME,
         write_directory(root, crossplane_forgejo_agentydragon_artifact, crossplane_forgejo_agentydragon.chart),
-        crossplane_opentofu_provider_kustomization,
-        tofu_state_db_kustomization,
+        depends_on=[crossplane_opentofu_provider_kustomization, tofu_state_db_kustomization],
+        timeout="10m",
+        description="Manage Forgejo SSH keys with their existing OpenTofu state.",
     )
+    monitoring_stack_app = App()
+    monitoring_stack_chart = monitoring_stack.chart(monitoring_stack_app)
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
     monitoring_stack_kustomization = monitoring_stack.monitoring_stack(
         flux_chart,
         # The SOPS sibling turns on Flux decryption.
         write_directory(
-            root, monitoring_stack_artifact, monitoring_stack.chart, siblings=["grafana-admin-password.sops.yaml"]
+            root, monitoring_stack_artifact, app=monitoring_stack_app, siblings=["grafana-admin-password.sops.yaml"]
         ),
         monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
+        health_checks=flux.health_checks(monitoring_stack_chart, ["HelmRelease"]),
     )
     claude_sandbox_secrets_artifact = artifact("claude-sandbox-secrets", claude_sandbox_secrets.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -1300,15 +1380,18 @@ def generate_manifests(root: Path) -> None:
     seaweedfs_external_credentials_artifact = artifact(
         "seaweedfs-external-credentials", seaweedfs_external_credentials.OUTPUT_DIR
     )
-    seaweedfs_external_credentials.seaweedfs_external_credentials(
+    flux.flux_kustomization(
         flux_chart,
+        seaweedfs_external_credentials_artifact.name,
         write_directory(
             root,
             seaweedfs_external_credentials_artifact,
             seaweedfs_external_credentials.chart,
             siblings=["claude-reader-credentials.sops.yaml", "drivefs-artifacts-credentials.sops.yaml"],
         ),
-        seaweedfs_operator_kustomization,
+        depends_on=[flux.flux_kustomization_depends_on(seaweedfs_operator_kustomization)],
+        timeout="5m",
+        description="Externally managed SeaweedFS S3 credential source Secrets and grants.",
     )
     seaweedfs_loom_gym_bucket_artifact = artifact("seaweedfs-loom-gym-bucket", seaweedfs_loom_gym_bucket.OUTPUT_DIR)
     seaweedfs_loom_gym_bucket.seaweedfs_loom_gym_bucket(
@@ -1342,7 +1425,19 @@ def generate_manifests(root: Path) -> None:
     forgejo_artifact = artifact("forgejo", f"{HAND_WRITTEN_ROOT}/forgejo")
     forgejo_kustomization = forgejo_flux_kustomizations.forgejo(
         flux_chart,
-        forgejo_artifact,
+        write_directory(
+            root,
+            forgejo_artifact,
+            forgejo_namespace.chart,
+            forgejo_db.chart,
+            forgejo_cache.chart,
+            forgejo_app.chart,
+            siblings=[
+                "forgejo-db-ssd-creds.sops.yaml",
+                "forgejo-admin-password.sops.yaml",
+                "forgejo-secret-key.sops.yaml",
+            ],
+        ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
@@ -1379,32 +1474,34 @@ def generate_manifests(root: Path) -> None:
         timeout="15m",
         depends_on=flux.flux_kustomization_depends_on_many(gitlab_spike_app_kustomization),
     )
-    gitlab_spike_module = terraform.gitops_module("gitlab-spike")
     gitlab_spike_gitops_artifact = artifact(gitlab_spike_flux.GITOPS_NAME, gitlab_spike_flux.GITOPS_DIR)
     gitlab_spike_gitops_kustomization = gitlab_spike_flux.gitops(
         flux_chart,
-        write_directory(
-            root,
-            gitlab_spike_gitops_artifact,
-            lambda app: gitlab_spike_flux.gitops_chart(app, module=gitlab_spike_module),
-        ),
+        write_directory(root, gitlab_spike_gitops_artifact, gitlab_spike_flux.gitops_chart),
         gitlab_spike_bootstrap_kustomization,
-        tofu_controller_kustomization,
         forgejo_kustomization,
+        crossplane_opentofu_provider_kustomization,
     )
     gitlab_spike_integrations_artifact = artifact(
         gitlab_spike_flux.INTEGRATIONS_NAME, gitlab_spike_flux.INTEGRATIONS_DIR
     )
-    gitlab_spike_flux.integrations(
+    gitlab_spike_integrations_app = App()
+    gitlab_spike_runner_chart = gitlab_spike_runner.chart(gitlab_spike_integrations_app)
+    flux.flux_kustomization(
         flux_chart,
+        gitlab_spike_flux.INTEGRATIONS_NAME,
         write_directory(
             root,
             gitlab_spike_integrations_artifact,
-            gitlab_spike_runner.chart,
             gitlab_spike_delivery.chart,
             gitlab_spike_benchmark.chart,
+            app=gitlab_spike_integrations_app,
         ),
-        gitlab_spike_gitops_kustomization,
+        timeout="10m",
+        # The source and demo cannot become ready before the manual seed and first image.
+        wait=False,
+        health_checks=flux.health_checks(gitlab_spike_runner_chart, ["HelmRelease"]),
+        depends_on=flux.flux_kustomization_depends_on_many(gitlab_spike_gitops_kustomization),
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(
@@ -1454,11 +1551,16 @@ def generate_manifests(root: Path) -> None:
         ),
         timeout="2m",
     )
+    monitoring_alloy_app = App()
+    monitoring_alloy_chart = alloy.chart(monitoring_alloy_app)
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
     alloy.alloy(
         flux_chart,
-        write_directory(root, monitoring_alloy_artifact, alloy.chart, namespace=monitoring_namespace.NAMESPACE),
+        write_directory(
+            root, monitoring_alloy_artifact, app=monitoring_alloy_app, namespace=monitoring_namespace.NAMESPACE
+        ),
         monitoring_crds_kustomization,
+        health_checks=flux.health_checks(monitoring_alloy_chart, ["HelmRelease"]),
     )
     public_coder_agent_backup_artifact = artifact("public-coder-agent-backup", public_coder_backup.OUTPUT_DIR)
     public_coder_backup.public_coder_agent_backup(
@@ -1473,7 +1575,12 @@ def generate_manifests(root: Path) -> None:
     session_backup_artifact = artifact("session-backup", session_backup.OUTPUT_DIR)
     session_backup_kustomization = session_backup.session_backup(
         flux_chart,
-        write_directory(root, session_backup_artifact, session_backup.chart, siblings=["rest-server-auth.sops.yaml"]),
+        write_directory(
+            root,
+            session_backup_artifact,
+            functools.partial(session_backup.chart, importer=session_archive.IMPORTER),
+            siblings=["rest-server-auth.sops.yaml"],
+        ),
         piraeus_cluster_kustomization,
     )
     oci_cache_artifact = artifact("oci-cache", oci_cache_zot.OUTPUT_DIR)
@@ -1481,12 +1588,19 @@ def generate_manifests(root: Path) -> None:
         flux_chart, oci_cache_artifact, monitoring_crds_kustomization, piraeus_cluster_kustomization
     )
     seaweedfs_public_s3_artifact = artifact("seaweedfs-public-s3", seaweedfs_public_s3.OUTPUT_DIR)
-    seaweedfs_public_s3.seaweedfs_public_s3(
+    flux.flux_kustomization(
         flux_chart,
+        seaweedfs_public_s3_artifact.name,
         write_directory(root, seaweedfs_public_s3_artifact, seaweedfs_public_s3.chart),
-        seaweedfs_operator_kustomization,
-        kyverno_kustomization,
-        monitoring_crds_kustomization,
+        depends_on=flux.flux_kustomization_depends_on_many(
+            # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs
+            seaweedfs_operator_kustomization,
+            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
+            kyverno_kustomization,
+            # ServiceMonitor.
+            monitoring_crds_kustomization,
+        ),
+        timeout="5m",
     )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images_kustomization = flux.flux_kustomization(
@@ -1502,6 +1616,16 @@ def generate_manifests(root: Path) -> None:
             "kubernetes-forgejo-images-secret-store) + Crossplane Workspace that "
             "provisions the Forgejo user."
         ),
+    )
+    crossplane_litellm_provider_artifact = artifact(
+        crossplane.LITELLM_PROVIDER_KUSTOMIZATION_NAME, crossplane.LITELLM_PROVIDER_OUTPUT_DIR
+    )
+    crossplane_provider_kustomization = crossplane.litellm_provider(
+        flux_chart,
+        write_directory(root, crossplane_litellm_provider_artifact, crossplane.litellm_provider_chart),
+        crossplane_kustomization,
+        external_secrets_operator_kustomization,
+        forgejo_images_kustomization,
     )
     forgejo_images_workspace_artifact = artifact(forgejo_images.WORKSPACE_NAME, forgejo_images.WORKSPACE_DIR)
     opentofu.workspace_kustomization(
@@ -1559,12 +1683,19 @@ def generate_manifests(root: Path) -> None:
         ],
     )
     flux_webhook_artifact = artifact("flux-webhook", flux_webhook.OUTPUT_DIR)
-    flux_webhook.flux_webhook(
+    flux.flux_kustomization(
         flux_chart,
+        flux_webhook.NAME,
         write_directory(root, flux_webhook_artifact, flux_webhook.chart),
-        external_secrets_operator_kustomization,
-        kyverno_kustomization,
-        flux_webhook_token_kustomization,
+        retry_interval=None,
+        wait=None,
+        timeout="5m",
+        depends_on=flux.flux_kustomization_depends_on_many(
+            external_secrets_operator_kustomization,
+            # Kyverno's failurePolicy: Fail webhooks admit the HTTPRoute.
+            kyverno_kustomization,
+            flux_webhook_token_kustomization,
+        ),
     )
     cdviz_database_artifact = artifact("cdviz-database", cdviz_database.OUTPUT_DIR)
     cdviz_database_kustomization = cdviz_database.cdviz_database(
@@ -1604,11 +1735,14 @@ def generate_manifests(root: Path) -> None:
         keda_kustomization,
         external_secrets_operator_kustomization,
     )
+    flux_annotations_app = App()
+    flux_annotations_chart = flux_annotations.chart(flux_annotations_app)
     flux_annotations_artifact = artifact("flux-grafana-secrets", flux_annotations.OUTPUT_DIR)
     flux_annotations.flux_annotations(
         flux_chart,
-        write_directory(root, flux_annotations_artifact, flux_annotations.chart),
+        write_directory(root, flux_annotations_artifact, app=flux_annotations_app),
         grafana_operator_kustomization,
+        health_checks=flux.health_checks(flux_annotations_chart, ["GrafanaServiceAccount"]),
     )
     clickhouse_grafana_artifact = artifact("clickhouse-grafana", aiquota_analytics.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -1656,7 +1790,7 @@ def generate_manifests(root: Path) -> None:
         airlock_artifact,
         airlock.chart,
         siblings=airlock.SOPS_FILES,
-        components=[posixpath.relpath(airlock.PINS_DIR, airlock.OUTPUT_DIR)],
+        include_copied_components=True,
         config_map_generator=[airlock.CONFIG_MAP],
     )
     airlock_kustomization = flux.flux_kustomization(
@@ -1679,7 +1813,7 @@ def generate_manifests(root: Path) -> None:
             root,
             authentik_jwt_rotation_artifact,
             authentik_jwt_rotation.chart,
-            components=[posixpath.relpath(authentik_jwt_rotation.PINS_DIR, authentik_jwt_rotation.OUTPUT_DIR)],
+            include_copied_components=True,
             config_map_generator=[authentik_jwt_rotation.CONFIG_MAP],
         ),
         external_secrets_operator_kustomization,
@@ -1689,12 +1823,7 @@ def generate_manifests(root: Path) -> None:
     flux.flux_kustomization(
         flux_chart,
         loki_read_proxy.NAME,
-        write_directory(
-            root,
-            loki_read_proxy_artifact,
-            loki_read_proxy.chart,
-            components=[posixpath.relpath(loki_read_proxy.PINS_DIR, loki_read_proxy.OUTPUT_DIR)],
-        ),
+        write_directory(root, loki_read_proxy_artifact, loki_read_proxy.chart, include_copied_components=True),
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
         description="Read-only namespace-filtering Loki query proxy so Haku can read logs for allowlisted namespaces without touching Loki (auth_enabled:false) directly.",
@@ -1706,16 +1835,13 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         roaming_node_controller.NAME,
         write_directory(
-            root,
-            roaming_node_controller_artifact,
-            roaming_node_controller.chart,
-            components=[posixpath.relpath(roaming_node_controller.PINS_DIR, roaming_node_controller.OUTPUT_DIR)],
+            root, roaming_node_controller_artifact, roaming_node_controller.chart, include_copied_components=True
         ),
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
         description="Marks roaming laptop nodes out of service while their kubelet is silent, so offline laptops stop blocking DaemonSet rollouts, Helm waits and pod alerts.",
     )
-    agents_flux_kustomizations.plaid_spend_policy(flux_chart)
+    ducktape_flux.plaid_spend_policy(flux_chart)
     plaid_mcp_artifact = artifact("plaid-mcp", plaid_mcp_component.OUTPUT_DIR)
     plaid_mcp_directory = plaid_mcp_component.write_directory(root, plaid_mcp_artifact)
     plaid_mcp_kustomization = plaid_mcp_component.plaid_mcp(
@@ -1796,12 +1922,7 @@ def generate_manifests(root: Path) -> None:
     )
     claude_session_sync.claude_session_sync(
         flux_chart,
-        write_directory(
-            root,
-            claude_session_sync_artifact,
-            claude_session_sync.chart,
-            components=[posixpath.relpath(claude_session_sync.PINS_DIR, claude_session_sync.OUTPUT_DIR)],
-        ),
+        write_directory(root, claude_session_sync_artifact, claude_session_sync.chart, include_copied_components=True),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
@@ -1831,7 +1952,7 @@ def generate_manifests(root: Path) -> None:
             root,
             platform_sessions_remote_artifact,
             platform_sessions_remote.chart,
-            components=[posixpath.relpath(platform_sessions_remote.PINS_DIR, platform_sessions_remote.OUTPUT_DIR)],
+            include_copied_components=True,
             config_map_generator=[platform_sessions_remote.CONFIG, platform_sessions_remote.CANARY_CONFIG],
         ),
         platform_sessions_kustomization,
@@ -1840,14 +1961,10 @@ def generate_manifests(root: Path) -> None:
         piraeus_cluster_kustomization,
     )
     session_archive_artifact = artifact(
-        "ai-session-archive",
+        session_archive.NAME,
         session_archive.OUTPUT_DIR,
         session_archive.PINS_DIR,
-        files={
-            "secrets/shared/session-backup.yaml": (
-                f"{session_archive.OUTPUT_DIR}/{session_backup.IMPORTER_CREDENTIALS_SOURCE}"
-            )
-        },
+        files={"secrets/shared/session-backup.yaml": session_archive.CREDENTIALS_SOURCE},
     )
     session_archive.archive(
         flux_chart,
@@ -1855,14 +1972,8 @@ def generate_manifests(root: Path) -> None:
             root,
             session_archive_artifact,
             session_archive.chart,
-            components=[posixpath.relpath(session_archive.PINS_DIR, session_archive.OUTPUT_DIR)],
-            secret_generator=[
-                SecretGeneratorArgs(
-                    name=session_backup.IMPORTER_CREDENTIALS_SECRET,
-                    namespace=session_backup.NAMESPACE,
-                    files=[f"session-backup.yaml={session_backup.IMPORTER_CREDENTIALS_SOURCE}"],
-                )
-            ],
+            include_copied_components=True,
+            secret_generator=[session_archive.CREDENTIALS],
         ),
         session_backup_kustomization,
         cnpg_kustomization,
@@ -1875,12 +1986,7 @@ def generate_manifests(root: Path) -> None:
     flux.flux_kustomization(
         flux_chart,
         "github-exporter",
-        write_directory(
-            root,
-            github_exporter_artifact,
-            github_exporter_app.chart,
-            components=[posixpath.relpath(github_exporter_app.PINS_DIR, github_exporter_app.OUTPUT_DIR)],
-        ),
+        write_directory(root, github_exporter_artifact, github_exporter_app.chart, include_copied_components=True),
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(
             monitoring_namespace_kustomization,
@@ -1908,10 +2014,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         att_gateway_exporter_app.NAME,
         write_directory(
-            root,
-            att_gateway_exporter_artifact,
-            att_gateway_exporter_app.chart,
-            components=[posixpath.relpath(att_gateway_exporter_app.PINS_DIR, att_gateway_exporter_app.OUTPUT_DIR)],
+            root, att_gateway_exporter_artifact, att_gateway_exporter_app.chart, include_copied_components=True
         ),
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(
@@ -2004,10 +2107,7 @@ def generate_manifests(root: Path) -> None:
     matrix_user_provisioner.matrix_user_provisioner(
         flux_chart,
         write_directory(
-            root,
-            matrix_user_provisioner_artifact,
-            matrix_user_provisioner.chart,
-            components=[posixpath.relpath(matrix_user_provisioner.PINS_DIR, matrix_user_provisioner.OUTPUT_DIR)],
+            root, matrix_user_provisioner_artifact, matrix_user_provisioner.chart, include_copied_components=True
         ),
         external_secrets_operator_kustomization,
         matrix_kustomization,
@@ -2053,12 +2153,7 @@ def generate_manifests(root: Path) -> None:
     flux.flux_kustomization(
         flux_chart,
         google_mcp.NAME,
-        write_directory(
-            root,
-            google_mcp_artifact,
-            google_mcp.chart,
-            components=[posixpath.relpath(google_mcp.PINS_DIR, google_mcp.OUTPUT_DIR)],
-        ),
+        write_directory(root, google_mcp_artifact, google_mcp.chart, include_copied_components=True),
         description="Gmail/Calendar MCP backend for Agentplane staging.",
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
@@ -2070,7 +2165,7 @@ def generate_manifests(root: Path) -> None:
             root,
             study_casino_artifact,
             study_casino_app.chart,
-            components=[posixpath.relpath(study_casino_app.PINS_DIR, study_casino_app.OUTPUT_DIR)],
+            include_copied_components=True,
             config_map_generator=study_casino_app.config_maps(root),
         ),
         cnpg_kustomization,
@@ -2093,6 +2188,10 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
+        health_checks=[
+            *flux.health_checks(litellm_database_chart, ["Cluster"]),
+            *flux.health_checks(litellm_proxy_chart, ["Deployment", "HTTPRoute"]),
+        ],
     )
     aiquota_artifact = artifact("aiquota", aiquota.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -2145,9 +2244,7 @@ def generate_manifests(root: Path) -> None:
     ha_mcp_kustomization = flux.flux_kustomization(
         flux_chart,
         ha_mcp.NAME,
-        write_directory(
-            root, ha_mcp_artifact, ha_mcp.chart, components=[posixpath.relpath(ha_mcp.PINS_DIR, ha_mcp.OUTPUT_DIR)]
-        ),
+        write_directory(root, ha_mcp_artifact, ha_mcp.chart, include_copied_components=True),
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(
             external_secrets_operator_kustomization,
@@ -2166,7 +2263,7 @@ def generate_manifests(root: Path) -> None:
             root,
             forgejo_token_rotation_artifact,
             forgejo_token_rotation.chart,
-            components=[posixpath.relpath(forgejo_token_rotation.PINS_DIR, forgejo_token_rotation.OUTPUT_DIR)],
+            include_copied_components=True,
             config_map_generator=[forgejo_token_rotation.CONFIG_MAP],
         ),
         retry_interval=None,
@@ -2218,12 +2315,7 @@ def generate_manifests(root: Path) -> None:
     )
     buildbuddy_provider_kustomization = buildbuddy_provider.resources(
         flux_chart,
-        write_directory(
-            root,
-            buildbuddy_provider_artifact,
-            buildbuddy_provider.chart,
-            components=[posixpath.relpath(buildbuddy_provider.PINS_DIR, buildbuddy_provider.OUTPUT_DIR)],
-        ),
+        write_directory(root, buildbuddy_provider_artifact, buildbuddy_provider.chart, include_copied_components=True),
         crossplane_provider_kustomization,
         litellm_kustomization,
         cert_manager_environment_kustomization,
@@ -2275,6 +2367,17 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
         litellm_crossplane_keys_kustomization,
     )
+    archive_artifact = artifact(gaffer_archive.NAME, gaffer_archive.OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        gaffer_archive.NAME,
+        write_directory(root, archive_artifact, gaffer_archive.chart),
+        depends_on=flux.flux_kustomization_depends_on_many(
+            agentplane_staging_kustomization, external_secrets_operator_kustomization
+        ),
+        namespace=gaffer_archive.GITHUB_APP_NAMESPACE,
+        post_build=gaffer_archive.github_app_ids(),
+    )
     agentplane_staging_vpa_artifact = artifact(staging_vpa.NAME, staging_vpa.OUTPUT_DIR)
     flux.flux_kustomization(
         flux_chart,
@@ -2289,10 +2392,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         agentplane_staging_delivery_artifact.name,
         write_directory(
-            root,
-            agentplane_staging_delivery_artifact,
-            staging.delivery_chart,
-            components=[posixpath.relpath(staging.LAYOUT.image_pins, staging.LAYOUT.delivery_output_dir)],
+            root, agentplane_staging_delivery_artifact, staging.delivery_chart, include_copied_components=True
         ),
         timeout="10m",
         depends_on=flux.flux_kustomization_depends_on_many(agentplane_staging_kustomization),
@@ -2320,11 +2420,8 @@ def generate_manifests(root: Path) -> None:
         "cli-proxy-api": cli_proxy_api_kustomization,
         "clickhouse": clickhouse_kustomization,
         "cnpg-system": cnpg_kustomization,
-        "ducktape-flux": None,
         "external-dns": external_dns_kustomization,
         "haku-console": haku_console_kustomization,
-        # Bootstrap roots have no generated owner Kustomization to depend on.
-        "flux-system": None,
         "forgejo": forgejo_kustomization,
         "gatus": gatus_kustomization,
         "grocy-sf": grocy_sf_kustomization,
@@ -2349,15 +2446,15 @@ def generate_manifests(root: Path) -> None:
         "study-casino": study_casino_kustomization,
         "tana-mcp": tana_mcp_kustomization,
     }
-    binding_delegation.add_flux_kustomizations(
-        flux_chart, staging.ENV, namespace_dependencies, staging_assignable_grants
+    binding_delegation.write_delegations(
+        root, flux_chart, staging.ENV, namespace_dependencies, staging.ASSIGNABLE_GRANTS
     )
-    agent_namespace_rbac.write_manifests(root)
-    agent_namespace_rbac.add_flux_kustomizations(flux_chart, claude_rbac_kustomization)
+    agent_namespace_rbac.write_namespace_bindings(root, flux_chart, claude_rbac_kustomization)
     write_artifact_generators(
         root,
         ducktape=[
             agentplane_staging_artifact,
+            archive_artifact,
             agentplane_staging_delivery_artifact,
             agentplane_staging_db_backups_artifact,
             monitoring_stack_artifact,
@@ -2368,8 +2465,6 @@ def generate_manifests(root: Path) -> None:
             claude_rbac_artifact,
             authentik_artifact,
             authentik_tf_artifact,
-            sso_providers_artifact,
-            agent_machine_access_artifact,
             cert_manager_artifact,
             cert_manager_environment_artifact,
             cnpg_artifact,
@@ -2387,7 +2482,6 @@ def generate_manifests(root: Path) -> None:
             gitlab_spike_gitops_artifact,
             gitlab_spike_integrations_artifact,
             forgejo_images_artifact,
-            forgejo_images_workspace_artifact,
             gateway_artifact,
             kyverno_artifact,
             litellm_keys_tf_artifact,
@@ -2398,6 +2492,7 @@ def generate_manifests(root: Path) -> None:
             seaweedfs_cluster_artifact,
             seaweedfs_operator_artifact,
             tofu_controller_artifact,
+            tofu_controller_vpa_artifact,
             tofu_state_db_artifact,
             mcp_oauth_state_artifact,
             valkey_artifact,
@@ -2443,7 +2538,6 @@ def generate_manifests(root: Path) -> None:
             airlock_artifact,
             alloy_otlp_bearer_artifact,
             agent_shared_rbac_artifact,
-            agent_shared_secrets_artifact,
             aiquota_artifact,
             clickhouse_grafana_artifact,
             atuin_artifact,
@@ -2471,9 +2565,6 @@ def generate_manifests(root: Path) -> None:
             gaffer_private_source_artifact,
             gatus_artifact,
             github_tf_artifact,
-            github_branch_protection_artifact,
-            github_secrets_sync_artifact,
-            flux_webhook_token_artifact,
             github_exporter_artifact,
             att_gateway_exporter_artifact,
             att_gateway_access_code_artifact,
@@ -2496,6 +2587,7 @@ def generate_manifests(root: Path) -> None:
             kube_system_artifact,
             kubevirt_cdi_operator_artifact,
             kubevirt_operator_artifact,
+            kubevirt_vpa_artifact,
             langfuse_artifact,
             matrix_app_artifact,
             matrix_user_provisioner_artifact,
@@ -2527,10 +2619,10 @@ def generate_manifests(root: Path) -> None:
             user_agentydragon_artifact,
             talos_logs_artifact,
             vpa_artifact,
+            flux_system_vpa_artifact,
             agentplane_staging_vpa_artifact,
             website_artifact,
             home_switch_module,
-            gitlab_spike_module,
         ],
         flux_system=[external_creds_artifact],
     )

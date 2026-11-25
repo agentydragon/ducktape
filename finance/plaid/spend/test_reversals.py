@@ -330,35 +330,7 @@ def sustainability_result(
 def test_reconciled_history_has_no_artificial_credit_dip_or_original_spike(original_day: date) -> None:
     rows = legs()
     rows[0] = rows[0].model_copy(update={"date": original_day})
-    rows.append(transaction(date(2026, 1, 1), "0", "HISTORY", "coverage"))
-    configured = policy([pair(original_day=original_day)])
-    configured = configured.model_copy(update={"spending_account_ids": {"card"}})
-    result = sustainability_view(
-        calculate_sustainability(
-            SustainabilityPolicy(
-                portfolio=PortfolioPolicy(
-                    sources=PortfolioSources(plaid=PlaidSourcePolicy(asset_account_ids=["assets"]))
-                ),
-                withdrawal_tax=WithdrawalTax(
-                    rate=Decimal("0.2"), assumption_note="Synthetic assumption", as_of=date(2026, 1, 1)
-                ),
-            ),
-            configured,
-            rows,
-            PortfolioView(
-                status="ready",
-                assets_minor_units=1_000_000,
-                liabilities_minor_units=0,
-                excluded_minor_units=0,
-                net_minor_units=1_000_000,
-                sources=[],
-            ),
-            time_zone=_ZONE,
-            now=_NOW,
-            window_days=30,
-            source_issues=[],
-        )
-    )
+    result = sustainability_result(rows, policy([pair(original_day=original_day)]))
     assert result.status == "ready"
     assert result.spending_minor_units == 0
     assert result.estimated_annual_draw_minor_units == 0

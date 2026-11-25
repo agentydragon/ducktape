@@ -1,7 +1,5 @@
 # gazelle:ignore
 
-# gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
-# gazelle:resolve py kubevirt_virtualmachinepool_crds //cluster/cdk8s/providers/kubevirt:virtualmachinepool
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -26,6 +24,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/kubevirt:cdi",
         "//cluster/cdk8s/providers/kubevirt:storageprofile",
@@ -64,5 +63,16 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s/providers/kubevirt:virtualmachinepool",
+    ],
+)
+
+py_library(
+    name = "vpa",
+    srcs = ["vpa.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/vpa:policy",
+        "@pypi//cdk8s",
     ],
 )

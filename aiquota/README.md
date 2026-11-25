@@ -2,8 +2,8 @@
 
 `aiquota` can run as a small in-cluster API and an Authentik-gated browser
 dashboard in addition to the CLI and GNOME extension. Its Kubernetes manifests
-and Deployment are separate from CLIProxyAPI. The API's Codex adapter uses the
-CLIProxyAPI integration; it does not mount or access CLIProxyAPI's OAuth PVC.
+and Deployment are separate from CLIProxyAPI. The API's Claude and Codex adapters
+use the CLIProxyAPI integration; they do not mount or access CLIProxyAPI's OAuth PVC.
 
 ## Endpoints
 
@@ -89,14 +89,34 @@ timestamps. A NetworkManager online transition interrupts backoff or a stalled
 stream so the daemon can reconnect immediately; regular backoff remains active
 when network monitoring is unavailable.
 
-Responses use `Cache-Control: no-store`. The service keeps the most recent
-snapshot in process memory (default 120 seconds). One background quota collector
-runs at the configured poll interval (default 300 seconds), even when ClickHouse
-is not configured and no clients are connected. Authenticated GETs may refresh an
-expired in-memory snapshot on demand; each newly fetched snapshot is published to
-all active event streams. When ClickHouse is configured, that same collector also
-persists each snapshot and readiness continues to wait for the first successful
-write.
+## Provider polling
+
+The API server reads its polling policy from `/etc/aiquota/config.toml`
+(or the path in `AIQUOTA_CONFIG`) at startup. For example, this sets a
+10-minute quota interval with provider calls limited to the scheduled collectors.
+
+```toml
+[polling]
+poll_interval_seconds = 600
+history_interval_seconds = 3600
+refresh_on_read = false
+```
+
+The quota collector starts immediately and waits `poll_interval_seconds` after
+each collection (default 300 seconds). It runs with or without ClickHouse and
+whether or not clients are connected. With ClickHouse configured, the collector
+persists its snapshots and readiness waits for the first successful write.
+
+By default, `refresh_on_read` is true. Authenticated quota and raw GETs or a new
+event stream can refresh an in-memory snapshot once it reaches
+`cache_ttl_seconds` (default 120 seconds). With `refresh_on_read = false`, these
+endpoints serve the latest collector snapshot and return HTTP 503 until the first
+one is available. The response header is `Cache-Control: no-store` in both modes.
+Each new snapshot is published to all active event streams.
+
+Explicit TOML intervals override `AIQUOTA_POLL_INTERVAL_SECONDS`,
+`AIQUOTA_HISTORY_INTERVAL_SECONDS`, and `AIQUOTA_CACHE_TTL_SECONDS` respectively.
+Restart the API server to apply changes.
 
 ## Presentation
 
@@ -107,7 +127,7 @@ details add the original amount when it differs from remaining, and exact remain
 when rounding hides a fraction. The optional `original_repeats_remaining` presentation hint
 suppresses repeated originals; older payloads without the hint still show the existing
 `original` string.
-Monetary balances use the shared `Available balance` label within their provider and organization;
+Monetary balances use the shared `Balance` label within their provider and organization;
 Claude's separate subscription prepaid pool is identified in details. Banked resets are separate
 from monetary and paid-credit balances.
 Known zero banked resets remain available in details. The default shows zero only when
@@ -137,8 +157,9 @@ provider precision remains in the underlying response. Forecasts extrapolate ave
 since the window started.
 The meter fill shows quota used and its tick shows elapsed window time.
 
-Provider observations become stale after ten minutes (two default collector intervals),
-or immediately when falling back after a provider error. Transport connection state is
+Provider observations become stale after ten minutes or two configured quota poll
+intervals, whichever is longer. They become stale immediately when falling back
+after a provider error. Transport connection state is
 separate from provider freshness. CLI server failures retain the selected cached reading,
 show an offline warning, and refresh countdowns without fetching providers or choosing a
 different snapshot. Stale forecasts are suppressed. Current paid/extra signals, including
@@ -160,7 +181,7 @@ applies.
 
 ## Historical collection
 
-The in-cluster Deployment refreshes Claude and Codex every five minutes even
+The in-cluster Deployment refreshes every enabled provider every five minutes even
 when no API client is active. Each provider snapshot is appended to the shared
 analytics ClickHouse cluster:
 
@@ -185,7 +206,7 @@ GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits
 per day for the last twelve months. `rate-limit-reset-credits` returns each
 granted reset credit with its type, status and grant time. Both restate their
 whole series on every call, so the first successful poll backfills the period
-before aiquota existed, and a slower `AIQUOTA_HISTORY_INTERVAL_SECONDS`
+before aiquota existed, and a slower `history_interval_seconds`
 (default hourly) collects them without rewriting an unchanged year every five
 minutes.
 
@@ -294,8 +315,8 @@ over ClickHouse's HTTP interface, one statement per request, before it starts
 collecting (`ClickHouseSnapshotSink.apply_schema`); a failure ends the process,
 so the Pod restarts until the schema applies. A schema change therefore ships
 in the same PR as the code that needs it, with no Job or version number to
-bump. Every statement is `CREATE`/`ALTER ... IF NOT EXISTS`, so re-running it
-at every start is safe.
+bump. `CREATE` and column additions use `IF NOT EXISTS`; materialized view
+queries are replaced with the same definition on each start.
 
 ## Credential ownership
 
@@ -309,34 +330,35 @@ an additional writer alongside Claude Code itself. Use this mode only when that
 shared-file ownership and its concurrency risk are acceptable; it is not
 appropriate where another process is the declared sole refresh owner.
 
-### Initial API deployment
-
-The API has one Claude credential path: CLIProxyAPI's authenticated management
-integration. AIQuota does not receive the Claude setup token, mount the
-CLIProxyAPI PVC.
-
 ### CLIProxyAPI integration
 
-The Claude and Codex adapters discover their single available provider
-credential through CLIProxyAPI's authenticated integration endpoint, then ask
-CLIProxyAPI to call the provider's usage endpoint with that credential. The
-`$TOKEN$` substitution and OAuth refresh remain entirely inside CLIProxyAPI;
-aiquota never reads or writes the `ReadWriteOnce` PVC. The integration key is
-the SOPS-managed `cli-proxy-api-management` Secret, injected into both
-Deployments without putting it in the TOML config.
+The deployed API discovers Claude and Codex credentials through CLIProxyAPI's
+management endpoint and requests each account's usage separately. Both deployments
+receive the management key from the SOPS-managed `cli-proxy-api-management`
+Secret. CLIProxyAPI owns the setup token, credential PVC, `$TOKEN$` substitution,
+and OAuth refresh.
 
-CLIProxyAPI's current `/api-call` contract requires an opaque runtime
-`auth_index` for token substitution, so aiquota briefly discovers the one
-available credential for each provider through `/auth-files`. It does not read
-file names, file contents, access tokens, or refresh tokens. If CLIProxyAPI
-adds provider-based selection to `/api-call`, this discovery can be removed.
+`auth_index` selects a credential for a single request. AIQuota identifies
+Codex accounts by the provider account ID in CLIProxyAPI's parsed ID-token
+claims, and Claude accounts by account and organization UUIDs from the profile
+endpoint. The same organization UUID scopes the prepaid balance lookup.
+The API exposes an account ID and, when available, email and reported
+plan category in the authenticated quota response. An account's last success
+and errors are tracked separately. Legacy history has an unknown account; it is
+not attributed retroactively. Percentages from separate accounts are not added.
+If a raw endpoint has multiple matching accounts, pass `?account_id=...`.
 
-CLIProxyAPI can hold multiple credentials for a provider, for example when
-cycling between subscriptions. AIQuota deliberately does not choose between
-them: it fails unless exactly one matching credential is enabled and available.
-The current deployment therefore expects one Claude and one Codex credential;
-support for displaying or cycling multiple subscriptions would be a separate
-explicit feature.
+The server config can provide an owner-chosen label and tier for an account.
+Copy the exact account ID from the authenticated `/v1/quotas` response. A
+configured tier is a user annotation, distinct from `plan_type`, the category
+reported by the provider; the latter may not identify an exact subscription.
+For example:
+
+```toml
+[accounts."codex:provider-account-id"]
+label = "main"
+tier = "Pro"
+```
 
 The CLIProxyAPI management surface is not exposed through the public
 `cli-proxy-api.allegedly.works` route; that route only forwards `/v1` model

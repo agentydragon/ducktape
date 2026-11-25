@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { cleanupMounted, renderWithMantine } from "../../../../util/frontend/testing/react";
 
 import {
   type CallToolResult,
@@ -12,30 +11,13 @@ import {
   toolValue,
 } from "./call_tool_result";
 
-const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
-afterEach(async () => {
-  for (const { root, container } of mounted.splice(0)) {
-    await act(async () => root.unmount());
-    container.remove();
-  }
-});
+afterEach(cleanupMounted);
 
 /** `stored`, a result as the Action Service keeps it, decoded and drawn. */
 async function render(stored: unknown): Promise<HTMLDivElement> {
   const result = parseCallToolResult(stored);
   if (result === null) throw new Error("the fixture is not a CallToolResult");
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  mounted.push({ root, container });
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <CallToolResultView result={result} />
-      </MantineProvider>
-    )
-  );
-  return container;
+  return renderWithMantine(<CallToolResultView result={result} />);
 }
 
 // base64 of "test-image-bytes": nothing here decodes it.

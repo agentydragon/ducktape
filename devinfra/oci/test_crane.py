@@ -1,13 +1,4 @@
-"""Tests for devinfra.oci.crane.
-
-Focused on the `Crane._run` / `_arun` failure paths, since those are the bits
-that determine how a failed crane subprocess shows up in tracebacks. The
-original code wrapped the subprocess in `subprocess.run(check=True,
-capture_output=True)` and let the resulting `CalledProcessError` propagate,
-which only renders as the exit code — losing the actual error message. These
-tests pin the new behavior: stderr (and stdout, when present) are visible in
-the raised exception's message.
-"""
+"""Tests for devinfra.oci.crane's failure paths: error context, and absent-versus-failed classification."""
 
 from __future__ import annotations
 
@@ -23,12 +14,7 @@ from devinfra.oci.crane import Crane, CraneError, find_crane
 
 
 def test_run_wraps_called_process_error_with_full_context() -> None:
-    """Sync `_run` must re-raise as CraneError whose message contains stderr/stdout.
-
-    Crucial: the previous behavior was a bare CalledProcessError that hides
-    the captured streams in `__str__`, so trying to debug `crane push` failures
-    from a Bazel `bb run` log gave you only `exit status 1`.
-    """
+    """Sync `_run` re-raises as CraneError whose message contains stderr/stdout."""
     crane = Crane(path=Path("/nonexistent/crane"))
 
     fake_error = subprocess.CalledProcessError(

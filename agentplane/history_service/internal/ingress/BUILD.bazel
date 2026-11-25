@@ -57,6 +57,7 @@ go_test(
         "//agentplane/sampler/migrations",
         "//agentplane/sampler/protocol",
         "//agentplane/sampler/providers/anthropic",
+        "//agentplane/sampler/providers/chatcompletions",
         "//agentplane/sampler/providers/responses",
         "//agentplane/sampler/testing/exportfixture",
         "//agentplane/sandboxes/api",

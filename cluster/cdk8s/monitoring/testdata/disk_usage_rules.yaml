@@ -1,5 +1,5 @@
 rule_files:
-  - disk-usage.yaml
+  - disk-usage-rules.yaml
 evaluation_interval: 1m
 tests:
   # One node with four filesystems: an HDD system partition, an HDD data disk with ext4-style reserved

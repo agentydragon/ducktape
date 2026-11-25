@@ -12,13 +12,13 @@ This module also provides shared logic for loading training examples across spli
 
 from __future__ import annotations
 
-from sqlalchemy import Enum, Integer, String, func
+from sqlalchemy import Integer, String, func
 from sqlalchemy.orm import Mapped, Query, Session, mapped_column, relationship
 
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
-from props.db.models import Base, Snapshot, SnapshotSlugColumn
+from props.db.models import EXAMPLE_KIND_ENUM_TYPE, Base, Snapshot, SnapshotSlugColumn
 
 
 class Example(Base):
@@ -44,20 +44,12 @@ class Example(Base):
     """
 
     __tablename__ = "examples"
-    __table_args__ = ()
 
     # Composite primary key: (snapshot_slug, example_kind, COALESCE(files_hash, ''))
     # No FK constraint needed for VIEWs (underlying tables handle relationships)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(
-        Enum(
-            ExampleKind,
-            name="example_kind_enum",
-            create_constraint=False,  # VIEW, enum type already exists
-            values_callable=lambda x: [e.value for e in x],  # Use enum value not name
-        ),
-        primary_key=True,
-        comment="Example kind (whole_snapshot or file_set)",
+        EXAMPLE_KIND_ENUM_TYPE, primary_key=True, comment="Example kind (whole_snapshot or file_set)"
     )
     files_hash: Mapped[str | None] = mapped_column(
         String, primary_key=True, comment="File set hash for file_set examples, NULL for whole_snapshot"

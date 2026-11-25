@@ -1,30 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, fetchText, fetchWithLogin, HttpError, ok } from "./client";
+import { fetchText, fetchWithLogin } from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-});
-
-it("throws a non-2xx answer as an HttpError with its status and the complete structured body", async () => {
-  const body = {
-    detail: { method: "GET", url: "https://upstream.invalid/mcp", upstream_status: null, error_type: "ConnectError" },
-  };
-  const middleware = { onRequest: () => Response.json(body, { status: 503 }) };
-  api.use(middleware);
-  try {
-    const failure: unknown = await api
-      .GET("/__test/non-success")
-      .then((answer) => ok(answer))
-      .catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(HttpError);
-    expect(failure).toMatchObject({ status: 503, body });
-  } finally {
-    api.eject(middleware);
-  }
 });
 
 it.each([

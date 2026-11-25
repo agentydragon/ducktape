@@ -74,10 +74,21 @@ def test_rpc_auth_requires_a_spiffe_method() -> None:
 
 
 def test_disabled_service_callers_are_absent_from_serialized_settings() -> None:
-    serialized = Settings.model_validate(_settings_source()).model_dump(mode="json")
+    settings = Settings.model_validate(_settings_source())
+    assert not settings.ingress.compact_execution_evidence
+    serialized = settings.model_dump(mode="json")
     assert "reader_service_callers" not in serialized
     assert "service_delegation" not in serialized
     assert "sampler_service_actor" not in serialized["ingress"]
+    assert "compact_execution_evidence" not in serialized["ingress"]
+
+
+def test_execution_evidence_compaction_can_be_enabled_explicitly() -> None:
+    source = _settings_source()
+    source["ingress"]["compact_execution_evidence"] = True
+    settings = Settings.model_validate(source)
+    assert settings.ingress.compact_execution_evidence
+    assert settings.model_dump(mode="json")["ingress"]["compact_execution_evidence"]
 
 
 def test_file_settings_do_not_read_static_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:

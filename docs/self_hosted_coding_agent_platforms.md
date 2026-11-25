@@ -102,8 +102,8 @@ The pragmatic "use what's already running" path: keep OpenClaw, give it a dedica
 
 ### kagent (retired from this cluster)
 
-Apache-2.0. The former cluster deployment is preserved under
-<../cluster/archive/2026_07_kagent/>, but it is no longer active Flux configuration.
+Apache-2.0. The former cluster deployment was deleted; the retirement record in
+<../cluster/archive/2026_07_kagent/README.md> names a commit that still holds its manifests.
 Revival requires reviewing the archived assumptions against the current upstream release,
 not merely unsuspending old manifests.
 
@@ -127,9 +127,9 @@ So the UI does let you click "+ new chat" without authoring CRDs — but every s
 2. **CRD-per-task**: on "+ new task", stamp a fresh `Agent` CRD from a saved profile and route the new Session at it; delete on close. ~50–100 lines of glue (a Next.js page that POSTs Agent YAML, or a small operator that watches a higher-level "AgentProfile" CRD). Reuses the kagent UI's chat plumbing.
 3. **`SandboxClaim` from `kubernetes-sigs/agent-sandbox`**: pre-warm a `SandboxWarmPool`, claim one per task. More moving pieces, lower task-start latency. Worth it only if you're spinning up tasks faster than ~10s.
 
-See <../cluster/archive/2026_07_kagent/docs/kagent_persistent_agents.md> for the archived
-desktop-pod sketch (an unrelated angle: Kagent plus per-agent VNC desktop pods for
-"computer use" tasks).
+An unrelated angle, Kagent plus per-agent VNC desktop pods for "computer use" tasks, was
+sketched in `docs/kagent_persistent_agents.md` of the same archive; the retirement record
+names a commit that still holds it.
 
 ### Dify (langgenius)
 

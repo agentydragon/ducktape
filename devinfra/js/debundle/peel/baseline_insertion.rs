@@ -15,14 +15,11 @@ use super::{Owner, Partition, Scope, Token};
 use analysis::ModuleId;
 use anyhow::{Result, bail, ensure};
 use gate::{AssignmentConstraints, EsmImportSchedule};
-use petgraph::{
-    algo::{kosaraju_scc, toposort},
-    graphmap::DiGraphMap,
-};
+use petgraph::{algo::kosaraju_scc, graphmap::DiGraphMap};
 use source_identity::SourceUnitId;
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct Window {
     lower: usize,
     upper: usize,
@@ -95,14 +92,11 @@ fn summarize_scc_windows(
             dag.add_edge(from, to, ());
         }
     }
-    for component in toposort(&dag, None)
-        .expect("SCC condensation is acyclic")
-        .into_iter()
-        .rev()
-    {
+    // Kosaraju numbers SCCs in reverse topological order.
+    for component in 0..aggregate.len() {
+        let (dependencies, current) = aggregate.split_at_mut(component);
         for dependency in dag.neighbors(component) {
-            let dependency = aggregate[dependency].clone();
-            aggregate[component].include(&dependency);
+            current[0].include(&dependencies[dependency]);
         }
     }
 
@@ -189,7 +183,13 @@ pub(super) fn inventory(
     let baseline_to_arena: BTreeMap<_, _> = baseline
         .modules
         .iter()
-        .map(|(&id, path)| (id, module_ids[&Token::Owner(Owner::Module(path.clone()))]))
+        .enumerate()
+        .map(|(index, path)| {
+            (
+                ModuleId(index),
+                module_ids[&Token::Owner(Owner::Module(path.clone()))],
+            )
+        })
         .chain([(baseline.entry(), entry)])
         .collect();
     let clocks: BTreeMap<_, _> = event_clocks(schedule, baseline.entry())

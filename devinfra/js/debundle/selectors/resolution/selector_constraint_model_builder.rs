@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use selector_constraint_backend::{
     AllowedTupleRowsId, BackendValueId, BindingProjection, CompiledSelectorProblem,
-    CompiledSelectorProblemBuilder, CompiledSelectorProblemError, ConstraintValue,
-    ConstraintVariableId, SharedVariableDomainId, TargetBindingProjection,
+    CompiledSelectorProblemBuilder, CompiledSelectorProblemError, ConstraintVariableId,
+    SharedVariableDomainId, TargetBindingProjection,
 };
 use selector_ir::{
     SelectorAtom, SelectorFact, SelectorFactStore, SelectorOperand, SelectorProgram,
@@ -703,10 +703,7 @@ fn add_projected_allowed_tuples(
         .iter()
         .map(|variable| model_variable(variables, *variable))
         .collect::<Result<Vec<_>, _>>()?;
-    let tuples = rows
-        .iter()
-        .map(|row| row.iter().cloned().map(projected_value).collect())
-        .collect::<Vec<Vec<_>>>();
+    let tuples = rows.to_vec();
     if let [row] = tuples.as_slice() {
         for (variable, value) in constraint_variables.iter().zip(row) {
             let value = intern_constraint_value(model, value.clone())?;
@@ -731,18 +728,11 @@ fn add_projected_allowed_tuples(
 
 fn intern_constraint_value(
     model: &mut CompiledSelectorProblemBuilder,
-    value: ConstraintValue,
+    value: SelectorProjectedValue,
 ) -> Result<BackendValueId, CompiledSelectorProblemError> {
     match value {
-        ConstraintValue::SourceUnit(value) => model.intern_source_unit(value),
-        ConstraintValue::String(value) => model.intern_string(&value),
-    }
-}
-
-fn projected_value(value: SelectorProjectedValue) -> ConstraintValue {
-    match value {
-        SelectorProjectedValue::SourceUnit(value) => ConstraintValue::SourceUnit(value),
-        SelectorProjectedValue::String(value) => ConstraintValue::String(value),
+        SelectorProjectedValue::SourceUnit(value) => model.intern_source_unit(value),
+        SelectorProjectedValue::String(value) => model.intern_string(&value),
     }
 }
 
@@ -1138,19 +1128,19 @@ impl FactDomains {
         domains
     }
 
-    fn values_for(&self, domain: VariableDomain) -> Vec<ConstraintValue> {
+    fn values_for(&self, domain: VariableDomain) -> Vec<SelectorProjectedValue> {
         match domain {
             VariableDomain::SourceUnit => self
                 .source_units
                 .iter()
                 .copied()
-                .map(ConstraintValue::SourceUnit)
+                .map(SelectorProjectedValue::SourceUnit)
                 .collect(),
             VariableDomain::String => self
                 .strings
                 .iter()
                 .cloned()
-                .map(ConstraintValue::String)
+                .map(SelectorProjectedValue::String)
                 .collect(),
         }
     }
@@ -1494,7 +1484,7 @@ impl FactDomains {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use selector_constraint_backend::{AllowedTupleConstraintId, BackendValueId, ConstraintValue};
+    use selector_constraint_backend::{AllowedTupleConstraintId, BackendValueId};
     use selector_ir::ClaimKind;
     use selector_test_fixtures::{
         broad_specific_targets, declared_binding, member_read, module_member_use, source_unit_fact,
@@ -1505,15 +1495,15 @@ mod tests {
     struct AllowedTupleConstraint {
         id: AllowedTupleConstraintId,
         variables: Vec<ConstraintVariableId>,
-        tuples: Vec<Vec<ConstraintValue>>,
+        tuples: Vec<Vec<SelectorProjectedValue>>,
     }
 
-    fn source_unit(value: usize) -> ConstraintValue {
-        ConstraintValue::SourceUnit(SourceUnitId(value))
+    fn source_unit(value: usize) -> SelectorProjectedValue {
+        SelectorProjectedValue::SourceUnit(SourceUnitId(value))
     }
 
-    fn string(value: &str) -> ConstraintValue {
-        ConstraintValue::String(value.to_string())
+    fn string(value: &str) -> SelectorProjectedValue {
+        SelectorProjectedValue::String(value.to_string())
     }
 
     fn source_unit_reference(source_unit: usize, binding: &str) -> SelectorFact {
@@ -1565,7 +1555,7 @@ mod tests {
     fn satisfying_tuples_for(
         model: &CompiledSelectorProblem,
         variables: &[ConstraintVariableId],
-    ) -> Vec<Vec<ConstraintValue>> {
+    ) -> Vec<Vec<SelectorProjectedValue>> {
         let mut rows = BTreeSet::new();
         let mut assignment = BTreeMap::new();
         collect_satisfying_tuples(model, variables, 0, &mut assignment, &mut rows);
@@ -1577,7 +1567,7 @@ mod tests {
         variables: &[ConstraintVariableId],
         variable_index: usize,
         assignment: &mut BTreeMap<ConstraintVariableId, BackendValueId>,
-        rows: &mut BTreeSet<Vec<ConstraintValue>>,
+        rows: &mut BTreeSet<Vec<SelectorProjectedValue>>,
     ) {
         let Some(variable) = model.variables.get(variable_index) else {
             if model_constraints_satisfied(model, assignment)
@@ -1627,7 +1617,7 @@ mod tests {
         model: &CompiledSelectorProblem,
         variables: &[ConstraintVariableId],
         values: &[BackendValueId],
-    ) -> Vec<ConstraintValue> {
+    ) -> Vec<SelectorProjectedValue> {
         variables
             .iter()
             .zip(values.iter())
@@ -1639,7 +1629,7 @@ mod tests {
         model: &CompiledSelectorProblem,
         variable: ConstraintVariableId,
         value: BackendValueId,
-    ) -> ConstraintValue {
+    ) -> SelectorProjectedValue {
         let variable = &model.variables[variable.0];
         model
             .decode_value(variable.domain, value)
@@ -1649,7 +1639,7 @@ mod tests {
     fn decoded_variable_domain(
         model: &CompiledSelectorProblem,
         variable: ConstraintVariableId,
-    ) -> Vec<ConstraintValue> {
+    ) -> Vec<SelectorProjectedValue> {
         model
             .variable_domain_values(&model.variables[variable.0])
             .iter()

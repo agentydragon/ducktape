@@ -1,15 +1,50 @@
-genrule(
+load(":certificate.bzl", "lowered_certificate")
+
+_ROOT = "//devinfra/js/debundle/x/split_proof:"
+
+_EXAMPLE = _ROOT + "example/"
+
+_PROOF_FIXTURE = _ROOT + "proof_fixture/"
+
+_SPLITTER = "//devinfra/js/debundle/x/split_proof/lean:lowersplit"
+
+_VISIBILITY = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"]
+
+lowered_certificate(
     name = "generate_instance",
-    srcs = ["//devinfra/js/debundle/x/split_proof:generated_instance"],
-    outs = ["EsmSplit/Instance.lean"],
-    cmd = "cp $(location //devinfra/js/debundle/x/split_proof:generated_instance) $@",
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+    out = "EsmSplit/Instance.lean",
+    controls = [
+        _EXAMPLE + "controls/claimed_twice.json",
+        _EXAMPLE + "controls/cycle_tdz.json",
+        _EXAMPLE + "controls/effect_order.json",
+    ],
+    entry = "main.mjs",
+    namespace = "Example",
+    source = _EXAMPLE + "input/bundle.mjs",
+    spec = _EXAMPLE + "spec.json",
+    splitter = _SPLITTER,
+    variants = [_EXAMPLE + "variants/cycle.json"],
+    visibility = _VISIBILITY,
 )
 
-genrule(
+lowered_certificate(
     name = "generate_proof_fixture",
-    srcs = ["//devinfra/js/debundle/x/split_proof:proof_fixture_instance"],
-    outs = ["ProofFixture/Instance.lean"],
-    cmd = "cp $(location //devinfra/js/debundle/x/split_proof:proof_fixture_instance) $@",
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+    out = "ProofFixture/Instance.lean",
+    controls = [_PROOF_FIXTURE + "bad.json"],
+    entry = "main.mjs",
+    namespace = "Example",
+    source = _PROOF_FIXTURE + "bundle.mjs",
+    spec = _PROOF_FIXTURE + "spec.json",
+    splitter = _SPLITTER,
+    visibility = _VISIBILITY,
+)
+
+lowered_certificate(
+    name = "generate_lowered_example_certificate",
+    out = "Experiments/Generated.lean",
+    entry = "main.mjs",
+    source = _ROOT + "example_ast",
+    spec = _EXAMPLE + "spec.json",
+    splitter = _SPLITTER,
+    visibility = _VISIBILITY,
 )

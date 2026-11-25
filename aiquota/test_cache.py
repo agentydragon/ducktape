@@ -2,9 +2,11 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
-from aiquota.cache import QuotaCache, _assemble
+from aiquota.cache import QuotaCache, _assemble, _instantiate_accounts
+from aiquota.config import Config
 from aiquota.models import (
     AllQuotas,
     ExtraSpend,
@@ -16,6 +18,9 @@ from aiquota.models import (
     SuccessfulProviderFetch,
 )
 from aiquota.providers.base import Provider
+from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
+from aiquota.providers.client import provider_client
+from aiquota.providers.codex import CodexProvider
 from aiquota.render.view_model import AllQuotasView, DisplaySelection, to_view
 
 if __name__ == "__main__":
@@ -283,3 +288,38 @@ async def test_cached_view_recomputes_deadlines_without_rewriting_observations(t
     assert refreshed.providers[0].display_windows[0].reset_pending
     assert refreshed.providers[0].display.result == view.providers[0].display.result
     assert cache.path.read_text() == original
+
+
+async def test_discovers_separate_provider_accounts_and_tier_annotations(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def inventory(_self: CLIProxyAPIManagementClient) -> list[dict[str, object]]:
+        return [
+            {
+                "provider": "codex",
+                "auth_index": "selector-a",
+                "email": "a@example.test",
+                "id_token": {"chatgpt_account_id": "a", "plan_type": "promax"},
+            },
+            {
+                "provider": "codex",
+                "auth_index": "selector-b",
+                "email": "b@example.test",
+                "id_token": {"chatgpt_account_id": "b", "plan_type": "plus"},
+            },
+        ]
+
+    monkeypatch.setattr(CLIProxyAPIManagementClient, "list_auth_files", inventory)
+    config = Config.model_validate(
+        {
+            "cli_proxy_api": {"url": "http://proxy"},
+            "claude": {"enabled": False},
+            "accounts": {"codex:a": {"label": "main", "tier": "Pro"}},
+        }
+    )
+    accounts = [
+        p for p in await _instantiate_accounts(config, provider_client(False), "key") if isinstance(p, CodexProvider)
+    ]
+    assert [(p.account_id, p.account_label, p.account_tier, p.plan_type) for p in accounts] == [
+        ("a", "main", "Pro", "promax"),
+        ("b", "b@example.test", None, "plus"),
+    ]
+    assert [p.management_client.auth_index for p in accounts if p.management_client] == ["selector-a", "selector-b"]

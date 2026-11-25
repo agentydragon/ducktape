@@ -14,16 +14,23 @@ import (
 )
 
 const (
-	defaultSetupTimeoutSeconds                  = 3600
-	defaultCodeModeObservationTimeoutSeconds    = 300
-	defaultExecutorInitializeTimeoutSeconds     = 30
-	defaultExecutorReconnectTimeoutSeconds      = 120
-	defaultProviderResponseHeaderTimeoutSeconds = 120
-	defaultProviderIdleTimeoutSeconds           = 600
-	defaultShutdownDrainSeconds                 = 40
-	defaultShutdownBudgetSeconds                = 55
-	maxExecutorInitializeTimeoutSeconds         = int64((1<<63 - 1) / int64(time.Second))
+	defaultSetupTimeoutSeconds                    = 3600
+	defaultCodeModeObservationTimeoutSeconds      = 300
+	defaultExecutorInitializeTimeoutSeconds       = 30
+	defaultExecutorReconnectTimeoutSeconds        = 120
+	defaultProviderResponseHeaderTimeoutSeconds   = 120
+	defaultProviderIdleTimeoutSeconds             = 600
+	defaultProviderProgressLeaseCoalescingSeconds = 30
+	defaultProviderRetryInitialBackoffSeconds     = 1
+	defaultProviderRetryMaxBackoffSeconds         = 30
+	defaultProviderAttemptBudget                  = 3
+	defaultShutdownDrainSeconds                   = 40
+	defaultShutdownBudgetSeconds                  = 55
+	maxExecutorInitializeTimeoutSeconds           = int64((1<<63 - 1) / int64(time.Second))
 )
+
+// MaxProviderAttemptBudget is the maximum durable budget for one provider step.
+const MaxProviderAttemptBudget = 16
 
 // ValidationError identifies a setting and a static validation rule through Field and Rule. Its
 // wrapped cause may retain configured values for callers and must not be logged.
@@ -224,8 +231,11 @@ func (s Settings) Validate() error {
 		}
 	}
 	for name, seconds := range map[string]*int{
-		"provider_response_header_timeout_seconds": s.ProviderResponseHeaderTimeoutSeconds,
-		"provider_idle_timeout_seconds":            s.ProviderIdleTimeoutSeconds,
+		"provider_response_header_timeout_seconds":   s.ProviderResponseHeaderTimeoutSeconds,
+		"provider_idle_timeout_seconds":              s.ProviderIdleTimeoutSeconds,
+		"provider_progress_lease_coalescing_seconds": s.ProviderProgressLeaseCoalescingSeconds,
+		"provider_retry_initial_backoff_seconds":     s.ProviderRetryInitialBackoffSeconds,
+		"provider_retry_max_backoff_seconds":         s.ProviderRetryMaxBackoffSeconds,
 	} {
 		if seconds != nil && (*seconds <= 0 || int64(*seconds) > maxExecutorInitializeTimeoutSeconds) {
 			return invalidSetting(name, "must be positive and fit in time.Duration")
@@ -242,6 +252,16 @@ func (s Settings) Validate() error {
 		headerSeconds+idleSeconds > maxExecutorInitializeTimeoutSeconds-3*rpcSlack {
 		return invalidSetting("provider_response_header_timeout_seconds,provider_idle_timeout_seconds,rpc_timeout_seconds", "provider response-header timeout, idle timeout, and three RPC journal slack intervals must fit together in time.Duration")
 	}
+	coalescingSeconds := int64(s.ProviderProgressLeaseCoalescing() / time.Second)
+	if idleSeconds+2*rpcSlack > maxExecutorInitializeTimeoutSeconds-coalescingSeconds {
+		return invalidSetting("provider_progress_lease_coalescing_seconds,provider_idle_timeout_seconds,rpc_timeout_seconds", "coalescing, idle timeout, and two RPC journal slack intervals must fit together in time.Duration")
+	}
+	if s.ProviderRetryInitialBackoff() > s.ProviderRetryMaxBackoff() {
+		return invalidSetting("provider_retry_initial_backoff_seconds", "must not exceed provider_retry_max_backoff_seconds")
+	}
+	if budget := s.ProviderAttemptLimit(); budget < 1 || budget > MaxProviderAttemptBudget {
+		return invalidSetting("provider_attempt_budget", fmt.Sprintf("must be between 1 and %d", MaxProviderAttemptBudget))
+	}
 	for name, seconds := range map[string]*int{"shutdown_drain_seconds": s.ShutdownDrainSeconds, "shutdown_budget_seconds": s.ShutdownBudgetSeconds} {
 		if seconds != nil && (*seconds <= 0 || int64(*seconds) > maxExecutorInitializeTimeoutSeconds) {
 			return invalidSetting(name, "must be positive and fit in time.Duration")
@@ -249,9 +269,6 @@ func (s Settings) Validate() error {
 	}
 	if s.ShutdownBudgetTimeout()-s.ShutdownDrainTimeout() < 15*time.Second {
 		return invalidSetting("shutdown_budget_seconds,shutdown_drain_seconds", "must leave at least 15 seconds after shutdown_drain_seconds for cleanup")
-	}
-	if s.AutoCompactTokens != nil && *s.AutoCompactTokens <= 0 {
-		return invalidSetting("auto_compact_tokens", "must be positive")
 	}
 	return nil
 }
@@ -320,17 +337,57 @@ func (s Settings) ProviderIdleTimeout() time.Duration {
 }
 
 // ProviderAttemptLease covers response-header setup, one full semantic-idle interval, and three
-// bounded RPC operations for durable head/event/renewal writes. Each semantic event renews
-// the idle interval with two RPC operations reserved for evidence and the renewal.
+// RPC timeout intervals of headroom for durable writes.
 func (s Settings) ProviderAttemptLease(model ModelConfig) time.Duration {
 	phaseSeconds := int64(s.ProviderResponseHeaderTimeout(model)/time.Second) + int64(s.ProviderIdleTimeout()/time.Second) + 3*int64(s.RPCTimeoutSeconds)
 	return time.Duration(phaseSeconds) * time.Second
 }
 
-// ProviderProgressLease covers one semantic-idle interval and the bounded database operation
-// that follows it. The header phase has already completed when this renewal runs.
+// ProviderProgressLease preserves two RPC timeout intervals of headroom after semantic idle.
 func (s Settings) ProviderProgressLease() time.Duration {
 	return s.ProviderIdleTimeout() + 2*time.Duration(s.RPCTimeoutSeconds)*time.Second
+}
+
+func (s Settings) ProviderProgressLeaseCoalescing() time.Duration {
+	seconds := defaultProviderProgressLeaseCoalescingSeconds
+	if s.ProviderProgressLeaseCoalescingSeconds != nil {
+		seconds = *s.ProviderProgressLeaseCoalescingSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (s Settings) ProviderRetryInitialBackoff() time.Duration {
+	seconds := defaultProviderRetryInitialBackoffSeconds
+	if s.ProviderRetryInitialBackoffSeconds != nil {
+		seconds = *s.ProviderRetryInitialBackoffSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (s Settings) ProviderRetryMaxBackoff() time.Duration {
+	seconds := defaultProviderRetryMaxBackoffSeconds
+	if s.ProviderRetryMaxBackoffSeconds != nil {
+		seconds = *s.ProviderRetryMaxBackoffSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// ProviderRetryBackoff doubles the configured delay for each failed attempt, subject to
+// the provider's retry hint and the configured cap.
+func (s Settings) ProviderRetryBackoff(attempt int, hint time.Duration) time.Duration {
+	delay := s.ProviderRetryInitialBackoff()
+	limit := s.ProviderRetryMaxBackoff()
+	for i := 1; i < attempt && delay < limit; i++ {
+		delay += min(delay, limit-delay)
+	}
+	return min(max(delay, hint), limit)
+}
+
+func (s Settings) ProviderAttemptLimit() int {
+	if s.ProviderAttemptBudget == nil {
+		return defaultProviderAttemptBudget
+	}
+	return *s.ProviderAttemptBudget
 }
 
 func (s Settings) ShutdownDrainTimeout() time.Duration {

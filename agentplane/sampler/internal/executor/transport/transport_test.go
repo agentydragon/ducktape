@@ -237,6 +237,18 @@ func TestReadBlockReturnsBytesAndJournalsOnlyBase64Digest(t *testing.T) {
 	}
 }
 
+// recordOpens records every OpenSession request that client receives and otherwise keeps the
+// fake's default stream.
+func recordOpens(client *executorfake.Client) func() []*executorpb.OpenSessionRequest {
+	var opens []*executorpb.OpenSessionRequest
+	defaultOpen := &executorfake.Client{}
+	client.OnOpenSession = func(ctx context.Context, request *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
+		opens = append(opens, proto.Clone(request).(*executorpb.OpenSessionRequest))
+		return defaultOpen.OpenSession(ctx, request)
+	}
+	return func() []*executorpb.OpenSessionRequest { return opens }
+}
+
 func TestReadRetryReusesRequestIdentity(t *testing.T) {
 	client := &executorfake.Client{}
 	var reads []*executorpb.ReadProcessRequest
@@ -250,15 +262,7 @@ func TestReadRetryReusesRequestIdentity(t *testing.T) {
 			NextSeq: 8, Exited: true, Closed: true,
 		}, nil
 	}
-	var opens []*executorpb.OpenSessionRequest
-	client.OnOpenSession = func(ctx context.Context, request *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
-		opens = append(opens, proto.Clone(request).(*executorpb.OpenSessionRequest))
-		sessionID := request.GetResumeSessionId()
-		if sessionID == "" {
-			sessionID = "fake-execution-session"
-		}
-		return &executorfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: executorfake.CompletedStatus(), ExecutionSessionId: sessionID}}, nil
-	}
+	opens := recordOpens(client)
 	transport, _ := newTestTransport(client, nil, "", transportOptions{})
 	t.Cleanup(func() { _ = transport.Close() })
 
@@ -270,8 +274,8 @@ func TestReadRetryReusesRequestIdentity(t *testing.T) {
 	if len(reads) != 2 || !proto.Equal(reads[0], reads[1]) {
 		t.Fatalf("cursor read changed on retry: %+v", reads)
 	}
-	if reads[0].GetRequestId() == "" || len(opens) != 2 || opens[1].GetResumeSessionId() != "fake-execution-session" {
-		t.Fatalf("retry identity/session not retained: reads=%+v opens=%+v", reads, opens)
+	if reads[0].GetRequestId() == "" || len(opens()) != 2 || opens()[1].GetResumeSessionId() != "fake-execution-session" {
+		t.Fatalf("retry identity/session not retained: reads=%+v opens=%+v", reads, opens())
 	}
 }
 
@@ -284,15 +288,7 @@ func TestUnknownCursorReadRetriesAtMostOnce(t *testing.T) {
 			Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "fake adapter cannot recover read outcome",
 		}}, nil
 	}
-	var opens []*executorpb.OpenSessionRequest
-	client.OnOpenSession = func(ctx context.Context, request *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
-		opens = append(opens, proto.Clone(request).(*executorpb.OpenSessionRequest))
-		sessionID := request.GetResumeSessionId()
-		if sessionID == "" {
-			sessionID = "fake-execution-session"
-		}
-		return &executorfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: executorfake.CompletedStatus(), ExecutionSessionId: sessionID}}, nil
-	}
+	opens := recordOpens(client)
 	transport, _ := newTestTransport(client, nil, "", transportOptions{})
 	t.Cleanup(func() { _ = transport.Close() })
 
@@ -301,8 +297,8 @@ func TestUnknownCursorReadRetriesAtMostOnce(t *testing.T) {
 	if err != nil || operation.Outcome != Unknown || operation.Failure == nil || operation.Failure.Kind != FailureTransport {
 		t.Fatalf("read operation=%+v error=%v, want explicit unknown outcome", operation, err)
 	}
-	if len(reads) != 2 || !proto.Equal(reads[0], reads[1]) || len(opens) != 2 || opens[1].GetResumeSessionId() != "fake-execution-session" {
-		t.Fatalf("read retry count=%d open count=%d requests=%+v opens=%+v", len(reads), len(opens), reads, opens)
+	if len(reads) != 2 || !proto.Equal(reads[0], reads[1]) || len(opens()) != 2 || opens()[1].GetResumeSessionId() != "fake-execution-session" {
+		t.Fatalf("read retry count=%d open count=%d requests=%+v opens=%+v", len(reads), len(opens()), reads, opens())
 	}
 }
 
@@ -358,8 +354,8 @@ func TestRecoveryNeverSubstitutesMissingRetainedSession(t *testing.T) {
 		openErr  error
 	}{
 		{name: "unknown outcome", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "fake session outcome unknown"}}},
-		{name: "rejection", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "fake access denied", UpstreamCode: int32Pointer(-32600)}}},
-		{name: "different rejected session", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "unknown session id fake-other-session", UpstreamCode: int32Pointer(-32600)}}},
+		{name: "rejection", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "fake access denied", UpstreamCode: new(int32(-32600))}}},
+		{name: "different rejected session", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "unknown session id fake-other-session", UpstreamCode: new(int32(-32600))}}},
 		{name: "different completed session", response: &executorpb.OpenSessionResponse{Status: executorfake.CompletedStatus(), ExecutionSessionId: "fake-other-session"}},
 		{name: "unavailable adapter", openErr: status.Error(codes.Unavailable, "fake adapter unavailable")},
 	} {
@@ -399,7 +395,7 @@ func TestOpenRejectionRequiresNativeEvidenceBeforeRecovery(t *testing.T) {
 	journal := &memoryJournal{frameErr: frameErr}
 	transport, _ := newTestTransport(&executorfake.Client{}, journal, "", transportOptions{})
 	response := &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
-		Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: int32Pointer(-32600), Message: "unknown session id fake-retained-session",
+		Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: new(int32(-32600)), Message: "unknown session id fake-retained-session",
 	}}
 	frameErrObserved := transport.recordNativeFrames(t.Context(), "fake-intent", "fake-retained-session", MethodInitialize, []*executorpb.ExecutionNativeFrame{{Direction: "response", Payload: []byte("fake frame")}})
 	err := transport.finishOpenFailure(t.Context(), "fake-intent", response, frameErrObserved)
@@ -423,15 +419,7 @@ func TestNextOperationResumesAfterMutationFailureWithoutReplay(t *testing.T) {
 		reads++
 		return &executorpb.ReadProcessResponse{Status: executorfake.CompletedStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}, nil
 	}
-	var opens []*executorpb.OpenSessionRequest
-	client.OnOpenSession = func(ctx context.Context, request *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
-		opens = append(opens, proto.Clone(request).(*executorpb.OpenSessionRequest))
-		sessionID := request.GetResumeSessionId()
-		if sessionID == "" {
-			sessionID = "fake-execution-session"
-		}
-		return &executorfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: executorfake.CompletedStatus(), ExecutionSessionId: sessionID}}, nil
-	}
+	opens := recordOpens(client)
 	transport, _ := newTestTransport(client, nil, "", transportOptions{})
 	t.Cleanup(func() { _ = transport.Close() })
 
@@ -443,8 +431,8 @@ func TestNextOperationResumesAfterMutationFailureWithoutReplay(t *testing.T) {
 	if err != nil || read.Outcome != Completed {
 		t.Fatalf("next read operation=%+v error=%v", read, err)
 	}
-	if starts != 1 || reads != 1 || len(opens) != 2 || opens[1].GetResumeSessionId() != "fake-execution-session" {
-		t.Fatalf("starts=%d reads=%d resumes=%+v", starts, reads, opens)
+	if starts != 1 || reads != 1 || len(opens()) != 2 || opens()[1].GetResumeSessionId() != "fake-execution-session" {
+		t.Fatalf("starts=%d reads=%d resumes=%+v", starts, reads, opens())
 	}
 }
 
@@ -762,8 +750,6 @@ func (b *testBroadcaster) SignalProcessChange() {
 	b.count++
 	b.mu.Unlock()
 }
-
-func int32Pointer(value int32) *int32 { return &value }
 
 func boolInt(value bool) int {
 	if value {

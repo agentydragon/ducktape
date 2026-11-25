@@ -61,6 +61,7 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.accounts import account, ref
 from finance.augur.sim.testing.rollouts import book, cash
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
@@ -88,15 +89,6 @@ HOME_VALUE = HomeValueKey(location_id=LocationId(SF))
 # $500k house, 20% land: the building basis §168 depreciates, and the ceiling on the total.
 BUILDING_BASIS_QUANTA = 400_000 * 100
 MUNI_INTEREST = InterestIncome(character=Municipal(state=CALIFORNIA))
-
-
-def ref(agent_id: AgentId) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=CHECKING)
-
-
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return ref(agent_id), USD.quanta(balance)
 
 
 def indexed(base_amount: Decimal | int) -> IndexedAmount:

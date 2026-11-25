@@ -20,8 +20,5 @@ func SetupIntegrationDatabase(ctx context.Context, db *sql.DB) error {
 
 // RunIntegrationTests runs the package with its History database and kube-apiserver fixtures.
 func RunIntegrationTests(m *testing.M, destination **postgres.Database, setUp func(*kubeapiserver.Server) error) int {
-	return postgres.RunIntegrationTests(SetupIntegrationDatabase, func(database *postgres.Database) int {
-		*destination = database
-		return kubeapiserver.Run(m, setUp)
-	})
+	return postgres.RunIntegrationTests(func() int { return kubeapiserver.Run(m, setUp) }, SetupIntegrationDatabase, destination)
 }

@@ -79,6 +79,26 @@ struct SnapshotRun {
     fail_fast: bool,
 }
 
+impl SnapshotRun {
+    /// Inputs that must resolve inside the worker before returning the replay command.
+    fn input_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        let Self {
+            config,
+            modules,
+            vendor_marks,
+            package_roots,
+            packages_root,
+            ownership_subset,
+            fail_fast: _,
+        } = self;
+        [config, modules, vendor_marks]
+            .into_iter()
+            .chain(package_roots.values())
+            .chain(packages_root)
+            .chain(ownership_subset)
+    }
+}
+
 #[derive(Serialize)]
 struct SnapshotOutcome {
     directory: PathBuf,
@@ -185,28 +205,21 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
     {
         fs::create_dir_all(staging.path().join(root))?;
     }
+    let staged_input = |root: &InputRoot, path: &Path| -> Result<PathBuf> {
+        let original = provenance.resolve(root, path, &CurrentRoots::default())?;
+        Ok(staging.path().join(placement(&original)?))
+    };
     for file in &provenance.files {
-        let original = provenance.resolve(&file.root, &file.path, &CurrentRoots::default())?;
+        let target = staged_input(&file.root, &file.path)?;
         let source = provenance.resolve(&file.root, &file.path, &current)?;
-        copy_verified(
-            &source,
-            &staging.path().join(placement(&original)?),
-            &file.sha256,
-        )?;
+        copy_verified(&source, &target, &file.sha256)?;
     }
     for directory in &provenance.present_directories {
-        let original =
-            provenance.resolve(&directory.root, &directory.path, &CurrentRoots::default())?;
-        fs::create_dir_all(staging.path().join(placement(&original)?))?;
+        fs::create_dir_all(staged_input(&directory.root, &directory.path)?)?;
     }
     // Empty module roots still participate in membership verification.
     for membership in &provenance.yaml_memberships {
-        let original = provenance.resolve(
-            &membership.root,
-            &membership.directory,
-            &CurrentRoots::default(),
-        )?;
-        fs::create_dir_all(staging.path().join(placement(&original)?))?;
+        fs::create_dir_all(staged_input(&membership.root, &membership.directory)?)?;
     }
     let options = CompileSpecTreeOptions {
         config_path: staging.path().join(&run.config),
@@ -355,21 +368,10 @@ fn actual_input(
 }
 
 fn relative_in_snapshot(root: &Path, path: &Path) -> Result<PathBuf> {
-    let relative = path
-        .strip_prefix(root)
-        .context("snapshot input escapes its directory")?;
-    let mut normalized = PathBuf::new();
-    for component in relative.components() {
-        match component {
-            Component::Normal(name) => normalized.push(name),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                ensure!(normalized.pop(), "snapshot input escapes its directory");
-            }
-            Component::RootDir | Component::Prefix(_) => bail!("snapshot input is not relative"),
-        }
-    }
-    Ok(normalized)
+    lexically_within(
+        path.strip_prefix(root)
+            .context("snapshot input escapes its directory")?,
+    )
 }
 
 fn source_files(root: &Path) -> Result<Vec<PathBuf>> {
@@ -422,18 +424,15 @@ fn placement(path: &Path) -> Result<PathBuf> {
         "captured path must be absolute: {}",
         path.display()
     );
+    let relative = path
+        .strip_prefix("/")
+        .with_context(|| format!("unsupported captured path {}", path.display()))?;
     let mut result = PathBuf::from("inputs");
-    for component in path.components() {
-        match component {
-            Component::RootDir | Component::CurDir => {}
-            Component::Normal(name) => result.push(name),
-            Component::ParentDir => {
-                ensure!(result != Path::new("inputs"), "captured path escapes root");
-                result.pop();
-            }
-            Component::Prefix(_) => bail!("unsupported captured path {}", path.display()),
-        }
-    }
+    result.extend(
+        lexically_within(relative)
+            .context("captured path escapes root")?
+            .components(),
+    );
     Ok(result)
 }
 
@@ -517,37 +516,31 @@ fn verify(directory: &Path) -> Result<SnapshotOutcome> {
             .map(|(name, root)| Ok((name.clone(), contained(&directory, root)?)))
             .collect::<Result<_>>()?,
     };
-    for file in &provenance.files {
+    for (root, input_path) in provenance
+        .files
+        .iter()
+        .map(|file| (&file.root, &file.path))
+        .chain(
+            provenance
+                .present_directories
+                .iter()
+                .map(|input| (&input.root, &input.path)),
+        )
+    {
         ensure!(
-            file.root != InputRoot::Absolute,
+            *root != InputRoot::Absolute,
             "snapshot graph has an unrelocated absolute input"
         );
-        let path = provenance.resolve(&file.root, &file.path, &current)?;
+        let path = provenance.resolve(root, input_path, &current)?;
         let relative = path
             .strip_prefix(&directory)
             .context("snapshot input escapes its directory")?;
         contained(&directory, relative)?;
     }
-    for input in &provenance.present_directories {
-        ensure!(
-            input.root != InputRoot::Absolute,
-            "snapshot graph has an unrelocated absolute input"
-        );
-        let path = provenance.resolve(&input.root, &input.path, &current)?;
-        let relative = path
-            .strip_prefix(&directory)
-            .context("snapshot input escapes its directory")?;
-        contained(&directory, relative)?;
-    }
-    for path in [
-        &manifest.run.config,
-        &manifest.run.modules,
-        &manifest.run.vendor_marks,
-        &manifest.selector_source_root,
-    ]
-    .into_iter()
-    .chain(manifest.run.package_roots.values())
-    .chain(manifest.run.packages_root.iter())
+    for path in manifest
+        .run
+        .input_paths()
+        .chain([&manifest.selector_source_root])
     {
         contained(&directory, path)?;
     }
@@ -672,4 +665,26 @@ fn outcome(directory: &Path, manifest: &SnapshotManifest) -> Result<SnapshotOutc
         modules: directory.join(&manifest.run.modules),
         regeneration_argv: argv,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placement_normalizes_within_the_captured_root() {
+        for (captured, placed) in [
+            ("/", "inputs"),
+            ("/one/..", "inputs"),
+            ("/old/../new/./file", "inputs/new/file"),
+        ] {
+            assert_eq!(
+                placement(Path::new(captured)).unwrap().as_os_str(),
+                Path::new(placed).as_os_str()
+            );
+        }
+        for invalid in ["relative/file", "/old/../../outside"] {
+            assert!(placement(Path::new(invalid)).is_err(), "{invalid}");
+        }
+    }
 }

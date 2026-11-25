@@ -1,0 +1,104 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
+load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
+load("//devinfra/lint:linters.bzl", "eslint_test")
+load(":sweep.bzl", "real_split_sweeps")
+
+npm_link_all_packages(name = "node_modules")
+
+js_binary(
+    name = "prepare",
+    data = glob(["entries/*.mjs"]) + [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":node_modules/lodash-es",
+        ":node_modules/semver",
+        ":node_modules/zod",
+        "//:node_modules/esbuild",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "prepare.mjs",
+)
+
+js_test(
+    name = "standalone_parser_dump_test",
+    size = "small",
+    data = [
+        "entries/acorn.mjs",
+        "entries/semver.mjs",
+        "prepare.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":node_modules/semver",
+        "//:node_modules/esbuild",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "standalone_parser_dump_test.mjs",
+)
+
+js_binary(
+    name = "real_split",
+    data = [
+        "gen_spec.mjs",
+        "smoke.mjs",
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
+        "//devinfra/js/debundle/x/split_proof/lean:lower",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    ],
+    entry_point = "run_splits.mjs",
+    env = {
+        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    },
+    tags = ["manual"],
+)
+
+js_binary(
+    name = "summarize_real_splits",
+    data = ["//devinfra/js/debundle/x/split_proof:reporting"],
+    entry_point = "summarize.mjs",
+    tags = ["manual"],
+)
+
+real_split_sweeps()
+
+_LIBRARY_SOURCES = [
+    ":real_bundles/" + library + ".mjs"
+    for library in [
+        "acorn",
+        "semver",
+    ]
+]
+
+js_test(
+    name = "library_certificate_test",
+    size = "medium",
+    args = ["$(rootpath " + src + ")" for src in _LIBRARY_SOURCES],
+    data = _LIBRARY_SOURCES + [src.removesuffix(".mjs") + ".json" for src in _LIBRARY_SOURCES] + [
+        "gen_spec.mjs",
+        "smoke.mjs",
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    ],
+    entry_point = "certificate_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
+js_library(
+    name = "lint_sources",
+    testonly = True,
+    srcs = glob([
+        "*.mjs",
+        "entries/*.mjs",
+    ]),
+)
+
+eslint_test(
+    name = "eslint_test",
+    srcs = [":lint_sources"],
+)

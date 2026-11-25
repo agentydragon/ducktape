@@ -2,34 +2,28 @@
 Command-line interface for the Habitify MCP server.
 """
 
-import asyncio
 import logging
 import os
 import signal
 import subprocess
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Annotated
 
 import typer
-from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
+from util.typer import async_run
 from x import habitify_mcp
+from x.habitify_mcp.config import load_api_key
 from x.habitify_mcp.habitify_client import HabitifyClient, HabitifyError
 from x.habitify_mcp.server import create_habitify
 from x.habitify_mcp.types import Status
-from x.habitify_mcp.utils.cli_utils import (
-    format_rich_status,
-    get_api_key_from_param_or_env,
-    get_status_color,
-    resolve_habit_for_cli,
-)
-
-# Load environment variables
-load_dotenv()
+from x.habitify_mcp.utils.cli_utils import format_rich_status, get_status_color, resolve_habit_for_cli
 
 # Set up logging to stderr
 logging.basicConfig(
@@ -44,6 +38,20 @@ app = typer.Typer(help="Habitify CLI and MCP Server")
 # Two consoles - one for stderr (server mode) and one for stdout (normal CLI usage)
 err_console = Console(stderr=True)  # For server logs and errors
 console = Console()  # For normal CLI output
+
+
+ApiKeyOption = Annotated[
+    str | None, typer.Option("--api-key", "-k", help="Habitify API key (overrides environment variable)")
+]
+
+
+def _require_api_key(api_key: str | None) -> str:
+    key = load_api_key(api_key)
+    if not key:
+        err_console.print("[bold red]Error:[/] Habitify API key is required.")
+        err_console.print("Please set the HABITIFY_API_KEY environment variable or use --api-key.")
+        raise typer.Exit(code=1)
+    return key
 
 
 # Signal handling for graceful shutdown
@@ -62,44 +70,18 @@ def setup_signal_handlers() -> None:
 def mcp(
     transport: str = typer.Option("stdio", "--transport", "-t", help="Transport type: stdio or sse"),
     port: int = typer.Option(3000, "--port", "-p", help="Port for SSE transport"),
-    api_key: str | None = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
-    ),
+    api_key: ApiKeyOption = None,
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Disable debug output"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
 ) -> None:
     """Start the Habitify MCP server with the specified transport."""
-    # Configure logging
-    if debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logger.setLevel(logging.DEBUG)
-    elif quiet:
-        logging.getLogger().setLevel(logging.WARNING)
-        logger.setLevel(logging.WARNING)
+    if debug or quiet:
+        level = logging.DEBUG if debug else logging.WARNING
+        logging.getLogger().setLevel(level)
+        logger.setLevel(level)
 
-    # Get API key from command line or environment
-    habitify_api_key = get_api_key_from_param_or_env(api_key)
-
-    # Check if API key is set
-    if not habitify_api_key:
-        err_console.print("[bold red]Error:[/] Habitify API key is required.")
-        err_console.print("Please set the HABITIFY_API_KEY environment variable or use --api-key.")
-        raise typer.Exit(code=1)
-
-    # Set up signal handlers
+    habitify_api_key = _require_api_key(api_key)
     setup_signal_handlers()
-
-    # Configure logging level for the server
-    server_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-    if debug:
-        server_log_level = "DEBUG"
-    elif quiet:
-        server_log_level = "WARNING"
-    else:
-        server_log_level = "INFO"
-
-    # Configure logging
-    logging.basicConfig(level=server_log_level)
 
     # Create server with API key
     server = create_habitify(api_key=habitify_api_key)
@@ -129,19 +111,10 @@ def mcp(
 @app.command("install")
 def install(
     name: str = typer.Option("Habitify", "--name", "-n", help="Name to register the server as"),
-    api_key: str | None = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
-    ),
+    api_key: ApiKeyOption = None,
 ) -> None:
     """Install the Habitify MCP server to Claude Desktop."""
-    # Get API key from command line or environment
-    habitify_api_key = get_api_key_from_param_or_env(api_key)
-
-    # Check if API key is set
-    if not habitify_api_key:
-        err_console.print("[bold red]Error:[/] Habitify API key is required.")
-        err_console.print("Please set the HABITIFY_API_KEY environment variable or use --api-key.")
-        raise typer.Exit(code=1)
+    habitify_api_key = _require_api_key(api_key)
 
     # Get full path to the server module
     server_path = Path(habitify_mcp.__file__).parent
@@ -170,117 +143,97 @@ def install(
         raise typer.Exit(code=1)
 
 
+@asynccontextmanager
+async def _cli_client(api_key: str | None) -> AsyncIterator[HabitifyClient]:
+    try:
+        async with HabitifyClient(api_key=api_key) as client:
+            yield client
+    except HabitifyError as exc:
+        err_console.print(f"[bold red]Error:[/] {exc!s}")
+        raise typer.Exit(code=1)
+
+
 @app.command("list")
-def list_habits(
+@async_run
+async def list_habits(
     include_archived: bool = typer.Option(False, "--include-archived", "-a", help="Include archived habits"),
-    api_key: str | None = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
-    ),
+    api_key: ApiKeyOption = None,
 ) -> None:
     """List habits, excluding archived ones by default."""
-    # Run the async implementation in an event loop
-    asyncio.run(_list_habits_async(include_archived=include_archived, api_key=api_key))
+    async with _cli_client(load_api_key(api_key)) as client:
+        habits = await client.get_habits()
 
+        # Filter out archived habits unless include_archived is True
+        if not include_archived:
+            habits = [h for h in habits if not h.archived]
 
-async def _list_habits_async(*, include_archived: bool = False, api_key: str | None = None) -> None:
-    """Async implementation of the list command."""
-    # Get API key from command line or environment
-    habitify_api_key = get_api_key_from_param_or_env(api_key)
+        table = Table(title="Habitify Habits")
+        table.add_column("ID", style="dim")
+        table.add_column("Name", style="green")
+        table.add_column("Category", style="blue")
+        table.add_column("Goal Type", style="yellow")
+        table.add_column("Archived", style="red")
 
-    try:
-        # Use async context manager
-        async with HabitifyClient(api_key=habitify_api_key) as client:
-            habits = await client.get_habits()
+        for habit in habits:
+            # Access attributes directly since we're using Pydantic models
+            table.add_row(
+                habit.id, habit.name, habit.category or "", habit.goal_type or "", "Yes" if habit.archived else "No"
+            )
 
-            # Filter out archived habits unless include_archived is True
-            if not include_archived:
-                habits = [h for h in habits if not h.archived]
+        # Print summary
+        if not include_archived:
+            console.print(f"Showing {len(habits)} active habits (use --include-archived to show all)")
+        else:
+            archived_count = sum(1 for h in habits if h.archived)
+            console.print(f"Showing all {len(habits)} habits ({archived_count} archived)")
 
-            table = Table(title="Habitify Habits")
-            table.add_column("ID", style="dim")
-            table.add_column("Name", style="green")
-            table.add_column("Category", style="blue")
-            table.add_column("Goal Type", style="yellow")
-            table.add_column("Archived", style="red")
-
-            for habit in habits:
-                # Access attributes directly since we're using Pydantic models
-                table.add_row(
-                    habit.id, habit.name, habit.category or "", habit.goal_type or "", "Yes" if habit.archived else "No"
-                )
-
-            # Print summary
-            if not include_archived:
-                console.print(f"Showing {len(habits)} active habits (use --include-archived to show all)")
-            else:
-                archived_count = sum(1 for h in habits if h.archived)
-                console.print(f"Showing all {len(habits)} habits ({archived_count} archived)")
-
-            console.print(table)
-    except HabitifyError as e:
-        err_console.print(f"[bold red]Error:[/] {e!s}")
-        raise typer.Exit(code=1)
+        console.print(table)
 
 
 @app.command("status")
-def status(
+@async_run
+async def status(
     habit: str = typer.Argument(..., help="Habit ID or name"),
     date: str | None = typer.Option(None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)"),
-    api_key: str | None = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
-    ),
+    api_key: ApiKeyOption = None,
 ) -> None:
     """Check a habit's status for a specific date."""
-    # Run the async implementation in an event loop
-    asyncio.run(_status_async(habit=habit, date=date, api_key=api_key))
+    async with _cli_client(load_api_key(api_key)) as client:
+        # Resolve habit ID and name
+        habit_id, habit_name = await resolve_habit_for_cli(habit, client, err_console)
 
+        # Check status
+        status = await client.check_habit_status(habit_id, date)
 
-async def _status_async(habit: str, date: str | None = None, api_key: str | None = None) -> None:
-    """Async implementation of the status command."""
-    # Get API key from command line or environment
-    habitify_api_key = get_api_key_from_param_or_env(api_key)
+        # Create a nice table
+        assert status.date is not None, "Status date should not be None"
+        formatted_date = status.date.strftime("%B %d, %Y")
 
-    try:
-        # Use async context manager
-        async with HabitifyClient(api_key=habitify_api_key) as client:
-            # Resolve habit ID and name
-            habit_id, habit_name = await resolve_habit_for_cli(habit, client, err_console)
+        console.print(f"Status for [bold green]{habit_name}[/] on [bold]{formatted_date}[/]:")
 
-            # Check status
-            status = await client.check_habit_status(habit_id, date)
+        table = Table(show_header=False, box=None)
+        table.add_column("Property", style="blue")
+        table.add_column("Value", style="green")
 
-            # Create a nice table
-            assert status.date is not None, "Status date should not be None"
-            formatted_date = status.date.strftime("%B %d, %Y")
+        # Format status with color
+        status_value = status.status
+        status_color = format_rich_status(status_value)
 
-            console.print(f"Status for [bold green]{habit_name}[/] on [bold]{formatted_date}[/]:")
+        table.add_row("Status", status_color)
+        table.add_row("Date", formatted_date)
 
-            table = Table(show_header=False, box=None)
-            table.add_column("Property", style="blue")
-            table.add_column("Value", style="green")
+        if status.value is not None:
+            table.add_row("Value", str(status.value))
 
-            # Format status with color
-            status_value = status.status
-            status_color = format_rich_status(status_value)
+        if status.note:
+            table.add_row("Note", status.note)
 
-            table.add_row("Status", status_color)
-            table.add_row("Date", formatted_date)
-
-            if status.value is not None:
-                table.add_row("Value", str(status.value))
-
-            if status.note:
-                table.add_row("Note", status.note)
-
-            console.print(table)
-
-    except HabitifyError as e:
-        err_console.print(f"[bold red]Error:[/] {e!s}")
-        raise typer.Exit(code=1)
+        console.print(table)
 
 
 @app.command("log")
-def log(
+@async_run
+async def log(
     habit: str = typer.Argument(..., help="Habit ID or name"),
     status: Status = typer.Option(  # noqa: B008
         Status.COMPLETED, "--status", "-s", help="Status to set (completed, skipped, failed, none, in_progress)"
@@ -288,26 +241,10 @@ def log(
     date: str | None = typer.Option(None, "--date", "-d", help="Date in YYYY-MM-DD format (defaults to today)"),
     note: str | None = typer.Option(None, "--note", "-n", help="Optional note to attach"),
     value: float | None = typer.Option(None, "--value", "-v", help="Optional value (for number/timer habits)"),
-    api_key: str | None = typer.Option(
-        None, "--api-key", "-k", help="Habitify API key (overrides environment variable)"
-    ),
+    api_key: ApiKeyOption = None,
 ) -> None:
     """Log a habit with a specific status."""
-    # Run the async implementation in an event loop
-    asyncio.run(_log_async(habit=habit, status=status, date=date, note=note, value=value, api_key=api_key))
-
-
-async def _log_async(
-    habit: str,
-    status: Status,
-    date: str | None = None,
-    note: str | None = None,
-    value: float | None = None,
-    api_key: str | None = None,
-) -> None:
-    """Async implementation of the log command."""
-    # Get API key from command line or environment
-    habitify_api_key = get_api_key_from_param_or_env(api_key)
+    habitify_api_key = load_api_key(api_key)
 
     # Validate status
     valid_statuses = ["completed", "skipped", "failed", "none"]
@@ -316,33 +253,27 @@ async def _log_async(
         console.print(f"Valid statuses: {', '.join(valid_statuses)}")
         raise typer.Exit(code=1)
 
-    try:
-        # Use async context manager
-        async with HabitifyClient(api_key=habitify_api_key) as client:
-            # Resolve habit ID and name
-            habit_id, habit_name = await resolve_habit_for_cli(habit, client, err_console)
+    async with _cli_client(habitify_api_key) as client:
+        # Resolve habit ID and name
+        habit_id, habit_name = await resolve_habit_for_cli(habit, client, err_console)
 
-            # Log the habit
-            result = await client.set_habit_status(habit_id=habit_id, status=status, date=date, note=note, value=value)
+        # Log the habit
+        result = await client.set_habit_status(habit_id=habit_id, status=status, date=date, note=note, value=value)
 
-            # Format date
-            if result and result.date:
-                formatted_date = result.date.strftime("%B %d, %Y")
-            elif date:
-                formatted_date = datetime.fromisoformat(date).strftime("%B %d, %Y")
-            else:
-                formatted_date = datetime.now().strftime("%B %d, %Y")
+        # Format date
+        if result and result.date:
+            formatted_date = result.date.strftime("%B %d, %Y")
+        elif date:
+            formatted_date = datetime.fromisoformat(date).strftime("%B %d, %Y")
+        else:
+            formatted_date = datetime.now().strftime("%B %d, %Y")
 
-            # Success message with color based on status
-            status_color = get_status_color(status)
+        # Success message with color based on status
+        status_color = get_status_color(status)
 
-            console.print(
-                f"Set habit [bold]{habit_name}[/] status to [bold {status_color}]{status}[/] for {formatted_date}"
-            )
-
-    except HabitifyError as e:
-        err_console.print(f"[bold red]Error:[/] {e!s}")
-        raise typer.Exit(code=1)
+        console.print(
+            f"Set habit [bold]{habit_name}[/] status to [bold {status_color}]{status}[/] for {formatted_date}"
+        )
 
 
 @app.callback()

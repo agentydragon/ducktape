@@ -23,7 +23,6 @@ import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -84,11 +83,7 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bearerConn, err := grpc.NewClient(service.address, grpc.WithTransportCredentials(bearerCredentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { bearerConn.Close() })
+	bearerConn := dialService(t, service.address, bearerCredentials)
 	bearerCtx, bearerCancel := context.WithTimeout(t.Context(), callDeadline)
 	defer bearerCancel()
 	bearerCtx = metadata.AppendToOutgoingContext(bearerCtx, "authorization", "Bearer "+readerToken)
@@ -96,16 +91,7 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 		t.Fatalf("bearer call on the shared listener: %v", err)
 	}
 	for i, workload := range []workloadauthtesting.Workload{owner, other} {
-		config := ca.Issue(t, workload.URI)
-		transportCredentials, err := config.ClientCredentials(peertls.ActionsURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		conn, err := grpc.NewClient(service.address, grpc.WithTransportCredentials(transportCredentials))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { conn.Close() })
+		conn := dialServiceAs(t, service.address, ca, workload.URI)
 		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 		defer cancel()
 		response, err := action_servicepb.NewActionServiceClient(conn).ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
@@ -164,11 +150,7 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 				t.Fatal(err)
 			}
 			security.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return &pair, nil }
-			conn, err := grpc.NewClient(service.address, grpc.WithTransportCredentials(credentials.NewTLS(security)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer conn.Close()
+			conn := dialService(t, service.address, credentials.NewTLS(security))
 			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 			defer cancel()
 			_, err = action_servicepb.NewActionServiceClient(conn).ListActionRequests(
@@ -234,16 +216,7 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	connect := func(workload workloadauthtesting.IdentityWorkload) action_servicepb.ActionServiceClient {
-		transportCredentials, err := ca.Issue(t, workload.URI).ClientCredentials(peertls.ActionsURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		conn, err := grpc.NewClient(service.address, grpc.WithTransportCredentials(transportCredentials))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { conn.Close() })
-		return action_servicepb.NewActionServiceClient(conn)
+		return action_servicepb.NewActionServiceClient(dialServiceAs(t, service.address, ca, workload.URI))
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
@@ -282,16 +255,7 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 	if err != nil || !proto.Equal(policy.GetActionPolicy().GetIdentity(), wantCaller) || len(policy.GetActionPolicy().GetAutoApproveIf()) != 1 {
 		t.Errorf("the Identity's own policy: %v, %v", policy, err)
 	}
-	transportCredentials, err := ca.Issue(t, peertls.MCPEdgeURI).ClientCredentials(peertls.ActionsURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	edgeConn, err := grpc.NewClient(service.address, grpc.WithNoProxy(), grpc.WithTransportCredentials(transportCredentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = edgeConn.Close() })
-	edgeClient := action_servicepb.NewActionServiceClient(edgeConn)
+	edgeClient := action_servicepb.NewActionServiceClient(dialServiceAs(t, service.address, ca, peertls.MCPEdgeURI))
 	for _, subject := range []*identitypb.Identity{wantCaller, {Name: unbound.Identity.Name, Uid: string(unbound.Identity.UID)}, {Name: wantCaller.Name, Uid: uuid.NewString()}} {
 		envelope := &delegationpb.Delegation{EffectiveCaller: &delegationpb.Delegation_Identity{Identity: subject}, Provenance: &delegationpb.Delegation_Connection{Connection: &delegationpb.ConnectionProvenance{ConnectionId: uuid.NewString(), GrantId: uuid.NewString()}}}
 		encoded, err := auth.MarshalDelegation(envelope)
@@ -327,15 +291,7 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 		}
 	}
 
-	samplerCredentials, err := ca.Issue(t, peertls.CentralSamplerURI).ClientCredentials(peertls.ActionsURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	samplerConn, err := grpc.NewClient(service.address, grpc.WithNoProxy(), grpc.WithTransportCredentials(samplerCredentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = samplerConn.Close() })
+	samplerConn := dialServiceAs(t, service.address, ca, peertls.CentralSamplerURI)
 	sampler := action_servicepb.NewActionServiceClient(samplerConn)
 	sessionID := uuid.NewString()
 	sessionEnvelope := &delegationpb.Delegation{
@@ -470,19 +426,11 @@ func TestServiceReaderAdmissionIsReadOnlyAndNotAnOperator(t *testing.T) {
 	waitReady(t, service)
 	for _, actor := range []string{peertls.NotificationsURI, peertls.MCPEdgeURI} {
 		t.Run(actor, func(t *testing.T) {
-			security, err := ca.Issue(t, actor).ClientCredentials(peertls.ActionsURI)
-			if err != nil {
-				t.Fatal(err)
-			}
-			conn, err := grpc.NewClient(service.address, grpc.WithNoProxy(), grpc.WithTransportCredentials(security))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer conn.Close()
+			conn := dialServiceAs(t, service.address, ca, actor)
 			client := action_servicepb.NewActionServiceClient(conn)
 			ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 			defer cancel()
-			_, err = client.ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
+			_, err := client.ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
 			if actor == peertls.NotificationsURI {
 				if err != nil {
 					t.Fatal(err)
@@ -521,14 +469,5 @@ func (r running) workloadCaller(t *testing.T) (action_servicepb.ActionServiceCli
 			t.Fatal(err)
 		}
 	}
-	security, err := r.ca.Issue(t, workload.URI).ClientCredentials(peertls.ActionsURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection, err := grpc.NewClient(r.address, grpc.WithTransportCredentials(security))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
-	return action_servicepb.NewActionServiceClient(connection), workload.Subject.Identity
+	return action_servicepb.NewActionServiceClient(dialServiceAs(t, r.address, r.ca, workload.URI)), workload.Subject.Identity
 }

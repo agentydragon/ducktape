@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-PROMPTS_SHA256 = "6c3741d0b8be9dd9adeb29eae100372b891cb0939484b5dcfc0b973604de8cbd"
+from x.local_llm.eval.frozen_inputs import PROMPTS_SHA256, read_frozen_cohort, read_frozen_prompts
+
 SEEDS = (20261013, 20261014, 20261015)
 OPTIONS = {"temperature": 0.2, "top_p": 0.95, "max_completion_tokens": 2048, "reasoning_effort": "none"}
 
@@ -55,14 +56,13 @@ def _post_json(url: str, payload: dict[str, object], timeout: float) -> tuple[di
 
 
 def _load_prompts(prompts_path: Path, cohort_path: Path) -> tuple[list[dict[str, Any]], str]:
-    if _sha256(prompts_path.read_bytes()) != PROMPTS_SHA256:
-        raise ValueError(f"frozen prompts do not match the expected SHA-256: {prompts_path}")
-    cohort = _read_object(cohort_path)
+    raw = read_frozen_prompts(prompts_path)
+    cohort, cohort_digest = read_frozen_cohort(cohort_path)
     task_ids = cohort.get("task_ids")
     if not isinstance(task_ids, list) or not all(isinstance(value, str) for value in task_ids):
         raise ValueError("cohort task_ids must be a list of strings")
     records = []
-    for line_number, line in enumerate(prompts_path.read_text().splitlines(), start=1):
+    for line_number, line in enumerate(raw.decode().splitlines(), start=1):
         if not line.strip():
             continue
         record = json.loads(line)
@@ -73,7 +73,7 @@ def _load_prompts(prompts_path: Path, cohort_path: Path) -> tuple[list[dict[str,
     records.sort(key=lambda record: task_ids.index(record["task_id"]))
     if [record.get("task_id") for record in records] != task_ids:
         raise ValueError("frozen prompts do not cover the cohort task_ids in order")
-    return records, _sha256(cohort_path.read_bytes())
+    return records, cohort_digest
 
 
 def _request_body(model: str, record: dict[str, Any], seed: int) -> dict[str, object]:

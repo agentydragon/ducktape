@@ -10,14 +10,6 @@ describe("time formatting", () => {
 
     expect(timestamp.text).toBe("2 hours ago");
     expect(timestamp.title).not.toBe("");
-    expect(timestamp.isFresh).toBe(false);
-  });
-
-  it("marks a fresh observation without changing the library's relative label", () => {
-    const timestamp = formatTimestamp("2026-08-29T11:59:59Z", now);
-
-    expect(timestamp.text).toBe("1 second ago");
-    expect(timestamp.isFresh).toBe(true);
   });
 
   it("returns null for an absent short date", () => {

@@ -11,14 +11,15 @@ from python.runfiles import Runfiles
 
 from agentplane.env.config import (
     Codex,
+    CompanionExecutorOwner,
     Configuration,
-    ContainerExecutor,
     DebugCheckpoint,
     Endpoint,
     EnvironmentRuntimeControl,
     EnvironmentVariables,
+    Executor,
     Harness,
-    PodEnvironment,
+    PID1Environment,
 )
 from agentplane.env.e2e.testing.config import NativeLaunch, RunnerTestConfig, SandboxLaunch
 from agentplane.native.claude.testing import model as claude_model
@@ -76,8 +77,8 @@ def config(
     sandbox: SandboxIdentity,
     state_dir: Path,
     home: Path,
-    codex_executor_url: str | None = None,
-    codex_executor_socket: Path | None = None,
+    executor_url: str | None = None,
+    executor_socket: Path | None = None,
 ) -> RunnerTestConfig:
     return RunnerTestConfig(
         state_dir=state_dir,
@@ -85,8 +86,8 @@ def config(
         harness_environment=environment(home),
         claude=claude_launch(endpoint) if harness == session_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == session_pb2.HARNESS_CODEX else None,
-        codex_executor_url=codex_executor_url,
-        codex_executor_socket=codex_executor_socket,
+        executor_url=executor_url,
+        executor_socket=executor_socket,
     )
 
 
@@ -132,8 +133,8 @@ def runner_command(
     claude = claude_launch(endpoint) if harness == session_pb2.HARNESS_CLAUDE else None
     codex = codex_launch(endpoint) if harness == session_pb2.HARNESS_CODEX else None
     config = Configuration(
-        version=2,
-        environment=PodEnvironment(supervision="pid1"),
+        version=3,
+        environment=PID1Environment(supervision="pid1"),
         state_dir=str(state_dir),
         initialization_cwd=str(state_dir),
         control=control,
@@ -177,7 +178,7 @@ def command(
         json.dumps({"sandbox": config.launch.sandbox.model_dump(), "bootstrap": config.launch.bootstrap})
     )
     file = Configuration(
-        version=2,
+        version=3,
         state_dir=str(config.state_dir),
         initialization_cwd=str(config.state_dir),
         control=control,
@@ -193,16 +194,16 @@ def command(
         codex=Codex(binary=str(config.codex.binary), base_url=config.codex.base_url, token_env="OPENAI_API_KEY")
         if config.codex
         else None,
-        environment=PodEnvironment(
+        environment=PID1Environment(
             supervision="pid1",
-            executor=ContainerExecutor(
-                url=config.codex_executor_url,
-                socket=str(config.codex_executor_socket),
+            executor=Executor(
+                url=config.executor_url,
+                owner=CompanionExecutorOwner(socket=str(config.executor_socket)),
                 implementation=config.executor_implementation,
                 placement="direct",
                 limits=config.executor_limits,
             )
-            if config.codex_executor_url is not None
+            if config.executor_url is not None
             else None,
         ),
         debug_checkpoint=DebugCheckpoint(name=config.debug_checkpoint[0], command_id=config.debug_checkpoint[1])

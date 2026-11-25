@@ -62,8 +62,7 @@ pub enum ClaimKind {
 pub struct SelectorTarget {
     pub id: SelectorTargetId,
     pub source_unit: SelectorVariableId,
-    /// The target's module as `<chunk>::<path>`, which `selector_resolve`
-    /// parses the path back out of.
+    /// The target's logical module path within the chunk being solved.
     pub logical_module: String,
     pub claim: ClaimKind,
 }
@@ -450,7 +449,7 @@ fn remap_string_term(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SelectorProjectedValue {
     SourceUnit(SourceUnitId),
     String(String),

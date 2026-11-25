@@ -165,10 +165,10 @@ func TestGitHubCheckRunSnapshotUsesLatestAttemptPerAppOnCurrentHead(t *testing.T
 	g.observePullRequest(t, sub, githubmodel.PullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: githubmodel.PullRequestOpen, Mergeability: githubmodel.MergeabilityUnknown})
 
 	for _, run := range []githubmodel.CheckRun{
-		{RepositoryID: g.repository, HeadSHA: commitA, ID: 301, AppID: 202, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("success")},
-		{RepositoryID: g.repository, HeadSHA: commitA, ID: 302, AppID: 203, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("success")},
-		{RepositoryID: g.repository, HeadSHA: commitA, ID: 303, AppID: 202, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("failure")},
-		{RepositoryID: g.repository, HeadSHA: commitB, ID: 404, AppID: 202, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("success")},
+		{RepositoryID: g.repository, HeadSHA: commitA, ID: 301, AppID: 202, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: new("success")},
+		{RepositoryID: g.repository, HeadSHA: commitA, ID: 302, AppID: 203, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: new("success")},
+		{RepositoryID: g.repository, HeadSHA: commitA, ID: 303, AppID: 202, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: new("failure")},
+		{RepositoryID: g.repository, HeadSHA: commitB, ID: 404, AppID: 202, Name: "unit", Status: githubmodel.CheckRunCompleted, Conclusion: new("success")},
 	} {
 		g.ingest(t, normalizedCheckRunDelivery(g, run))
 	}
@@ -191,8 +191,6 @@ func TestGitHubCheckRunSnapshotUsesLatestAttemptPerAppOnCurrentHead(t *testing.T
 		t.Errorf("current check-run attempts = %v, want App 202 run 303 and App 203 run 302", got)
 	}
 }
-
-func stringPointer(value string) *string { return &value }
 
 func TestGitHubCommitObservationSelectionAndActionFilters(t *testing.T) {
 	t.Run("default check runs only completed", func(t *testing.T) {

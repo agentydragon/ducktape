@@ -14,7 +14,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecution,
     RedisReplicationSpecAffinityNodeAffinityPreferredDuringSchedulingIgnoredDuringExecutionPreference,
@@ -24,7 +23,6 @@ from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
 )
 
 from cluster.cdk8s import disruption_budget, namespaces, node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -128,17 +126,3 @@ def valkey_instance(
         scope, f"{name}-disruption-budget", name=name, pods=Pods(namespace=namespace, labels=(("app", name),))
     )
     return replication
-
-
-def valkey(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=_RELEASE, namespace=NAMESPACE
-            )
-        ],
-    )

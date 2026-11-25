@@ -155,7 +155,7 @@ type Adapter interface {
 // ProcessAdapter is an Adapter whose Session runs its own native harness process.
 type ProcessAdapter interface {
 	Adapter
-	Command() ([]string, error)
+	Command() []string
 	// Environment is the harness's own variables; the Runtime adds them to the Runtime-wide harness
 	// environment and the Session's Environment.
 	Environment() (map[string]string, error)

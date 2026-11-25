@@ -63,36 +63,6 @@ pub enum AssetCategory {
     #[serde(rename = "STK")]
     Stock,
 }
-/*
-if openPosition.Multiplier != "1" {
-    return nil, errors.New("multiplier not supported")
-}
-if openPosition.AssetCategory != "STK" {
-    return nil, errors.New("only stocks supported")
-}
-if openPosition.PutCall != "" || openPosition.Issuer != "" || openPosition.Expiry != "" ||
-    openPosition.LevelOfDetail != "SUMMARY" {
-    return nil, errors.New("unexpected fields populated")
-}
-if openPosition.Side != "Long" {
-    return nil, errors.New("only Long positions supported")
-}
-
-if existing, ok := exchangeRates[openPosition.Currency]; ok {
-    if existing != openPosition.FxRateToBase {
-        return nil, errors.New("inconsistent rate for currency")
-    }
-} else {
-    exchangeRates[openPosition.Currency] = openPosition.FxRateToBase
-}
-self.logger.Println(openPosition.Symbol, openPosition.Description,
-    // Position:"6",
-    openPosition.Position,
-    // market price per unit
-    openPosition.MarkPrice,
-    // currency of market price
-    openPosition.Currency)
-    */
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub enum Side {

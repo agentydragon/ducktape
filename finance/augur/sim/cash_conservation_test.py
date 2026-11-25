@@ -59,6 +59,7 @@ from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
+from finance.augur.sim.testing.accounts import ref
 from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
 from finance.augur.sim.testing.rollouts import book
@@ -99,10 +100,6 @@ def account(world: World, agent_id: AgentId, balance: Decimal | int = 0) -> None
     world.declare_account(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=USD.quanta(balance)
     )
-
-
-def ref(agent_id: AgentId) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
 def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int) -> tuple[Series, ...]:

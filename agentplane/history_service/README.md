@@ -192,7 +192,13 @@ one to an unassociated legacy Session. Configured platform readers can still rea
 compressed blocks during ingress, before an item completes. The default is false. Original events,
 native JSON, cursors and evidence references are reconstructed by every reader, including after the
 flag is disabled. Existing completion-based settlement applies independently to both storage forms.
-The [read contract](api/history/README.md) defines pagination, replay, atomicity and rollout requirements.
+
+`ingress.compact_execution_evidence: true` separately packs BoundaryRecord and ExecutionProgress
+events. It defaults to false so this reader support can roll out to every History replica first;
+older versions cannot read those block kinds. Keep the gate off during mixed-version deployment.
+Historical compaction includes them only with `--include-execution-evidence`, after all readers have
+been updated. Disabling the gate does not unpack existing blocks. The [read contract](api/history/README.md)
+defines pagination, replay, atomicity and rollout requirements.
 
 This packs retained events; it does not share bodies across raw history and projection tables or
 backfill old Sessions. Ordinary insertion/deletion still generates WAL.
@@ -206,13 +212,17 @@ The ingress flag independently controls new writes.
 
 Each Session's opening watermark bounds its pass. Apply commits one block per transaction under
 the Session writer lock, with a 30-second deadline, a 1-second lock timeout and a 50 ms pause between
-blocks to pace WAL. Each moved event is read through the production block reader and compared with
+blocks to pace WAL. If the Session writer lock times out, `--all --apply` logs the Session ID,
+continues with the next Session, and reports `skipped_busy_sessions` on completion. Rerun the
+pass or target the skipped Session later. A single-Session apply reports the timeout as an error. Each moved event is read through the production block reader and compared with
 its original protobuf before commit. Event identities, projection state and acknowledged watermarks
 stay unchanged, so there are no settlement/removal notifications or projection write leases.
 
 Existing blocks remain intact and bound each candidate span, preserving the per-kind non-overlap
-invariant. Ordinary entries inside an existing block's span (possible after flag toggles) stay ordinary
-and are reported as `skipped_inside_blocks`. Oversized entries and small tails also stay ordinary.
+invariant. By default the command packs native frames and streamed deltas; pass
+`--include-execution-evidence` to also pack BoundaryRecord and ExecutionProgress events after the
+reader rollout. Ordinary entries inside an existing block's span (possible after flag toggles) stay
+ordinary and are reported as `skipped_inside_blocks`. Oversized entries and small tails also stay ordinary.
 Dry runs are read-only and report logical protobuf bytes and encoded block bytes, excluding physical
 row/index costs. Rerunning is safe; cancellation preserves already committed blocks.
 
@@ -347,6 +357,11 @@ the whole server; a `Health/Check` for that service on a replica's gRPC port sho
 Session summaries (`GetSessionSummary`, and `BatchGetSessionSummaries` for up to 200 named Sessions
 at once, leaving out any it has no history for) read that fold and report the committed cursor beside
 the folded one.
+
+`WatchSessionSummaries` in selected mode follows up to 200 named Sessions in the caller's read scope. It
+subscribes before reading and sends a full snapshot first, then changed summaries and removals.
+Notifications are wakeups, not data: after listener recovery the service rereads the selected rows.
+A reconnect starts with a new snapshot and fresh authorization.
 
 `WatchSessionSummaries` tells a reader when to re-read: each fold commit NOTIFYs the history
 database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens

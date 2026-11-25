@@ -1,36 +1,22 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { cleanupMounted, mountWithMantine, type Mounted } from "../../util/frontend/testing/react";
 import type { AllQuotasView, WindowView } from "./schema";
 import { QuotaBoard } from "./board";
 
-let root: Root;
+let mounted: Mounted;
 let container: HTMLDivElement;
 
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+beforeEach(async () => {
+  mounted = await mountWithMantine(null);
+  container = mounted.container;
 });
 
-afterEach(() => {
-  act(() => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
+afterEach(cleanupMounted);
 
-function render(quotas: AllQuotasView, now = Date.parse("2026-01-15T12:00:00Z")): void {
-  act(() =>
-    root.render(
-      <MantineProvider env="test">
-        <QuotaBoard quotas={quotas} now={now} />
-      </MantineProvider>
-    )
-  );
+function render(quotas: AllQuotasView, now = Date.parse("2026-01-15T12:00:00Z")): Promise<void> {
+  return mounted.rerender(<QuotaBoard quotas={quotas} now={now} />);
 }
 
 function sampleQuotas(): AllQuotasView {
@@ -59,7 +45,7 @@ function sampleQuotas(): AllQuotasView {
       {
         provider: "codex",
         label: "Codex",
-        balances: [{ label: "Paid credits", value: "450 credits" }],
+        balances: [{ label: "", value: "450 credits" }],
         grants: [
           {
             label: "Promo grant",
@@ -108,7 +94,7 @@ function sampleQuotas(): AllQuotasView {
       {
         provider: "anthropic_platform",
         label: "Anthropic API",
-        balances: [{ label: "Available balance", value: "$75.00", group: "Research org" }],
+        balances: [{ label: "Balance", value: "$75.00", group: "Research org" }],
         grants: [
           {
             label: "Promo grant",
@@ -143,26 +129,26 @@ function sampleQuotas(): AllQuotasView {
 }
 
 describe("QuotaBoard", () => {
-  it("keeps exhaustion visible without repeating it in status; pending resets remain warnings", () => {
+  it("keeps exhaustion visible without repeating it in status; pending resets remain warnings", async () => {
     const quotas = sampleQuotas();
     const exhausted = quotas.providers[0]!.display_windows[0]!;
     exhausted.exhausted = true;
     exhausted.used_percent = 100;
     exhausted.used = 100;
-    render(quotas);
+    await render(quotas);
     let card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
     expect(card.querySelector(".aiquota-status-row")).toBeNull();
     expect(card.textContent).toContain("100%");
     expect(card.textContent).toContain("exhausted");
 
-    render(quotas, Date.parse("2026-01-15T14:31:00Z"));
+    await render(quotas, Date.parse("2026-01-15T14:31:00Z"));
     card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
     const status = card.querySelector(".aiquota-status-row")!;
     expect(status.textContent).toContain("awaiting updated usage");
     expect(status.classList.contains("aiquota-status-urgent")).toBe(false);
   });
 
-  it("puts current extra enablement on the monthly row instead of duplicating exhausted status", () => {
+  it("puts current extra enablement on the monthly row instead of duplicating exhausted status", async () => {
     const quotas = sampleQuotas();
     const codex = quotas.providers[0]!;
     codex.display_windows[0]!.exhausted = true;
@@ -170,7 +156,7 @@ describe("QuotaBoard", () => {
     codex.display_windows[0]!.used_percent = 100;
     codex.currently_over_plan = true;
     codex.extra_status = "active";
-    render(quotas);
+    await render(quotas);
 
     const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
     expect(card.querySelector(".aiquota-status-row")).toBeNull();
@@ -179,13 +165,13 @@ describe("QuotaBoard", () => {
     expect(card.textContent).not.toContain("Included quota exhausted");
   });
 
-  it("keeps a status fallback when active extra usage has no monthly-spend row", () => {
+  it("keeps a status fallback when active extra usage has no monthly-spend row", async () => {
     const quotas = sampleQuotas();
     const codex = quotas.providers[0]!;
     codex.display_windows[0]!.exhausted = true;
     codex.currently_over_plan = true;
     codex.monthly_extra_spend = null;
-    render(quotas);
+    await render(quotas);
 
     const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
     expect(card.querySelector(".aiquota-status-row")?.textContent).toBe("Extra usage enabled");
@@ -198,12 +184,12 @@ describe("QuotaBoard", () => {
     { raw: 99.9, displayed: 99, value: 99 },
     { raw: 100, displayed: 100, value: 100 },
     { raw: 105, displayed: 105, value: 100 },
-  ])("exposes displayed usage $displayed within the meter range", ({ raw, displayed, value }) => {
+  ])("exposes displayed usage $displayed within the meter range", async ({ raw, displayed, value }) => {
     const quotas = sampleQuotas();
     const window = quotas.providers[0]!.display_windows[0]!;
     window.used_percent = raw;
     window.used = displayed;
-    render(quotas);
+    await render(quotas);
 
     const meter = container.querySelector('[role="meter"]');
     expect(meter?.getAttribute("aria-valuenow")).toBe(String(value));
@@ -217,9 +203,9 @@ describe("QuotaBoard", () => {
     );
   });
 
-  it("groups providers, renders normalized balances and grants, and keeps paid windows visible", () => {
+  it("groups providers, renders normalized balances and grants, and keeps paid windows visible", async () => {
     const quotas = sampleQuotas();
-    render(quotas);
+    await render(quotas);
 
     expect(container.querySelector(".aiquota-board")?.hasAttribute("aria-live")).toBe(false);
     expect(container.querySelectorAll(".aiquota-provider-group")).toHaveLength(2);
@@ -227,7 +213,7 @@ describe("QuotaBoard", () => {
     expect(container.textContent).toContain("Meter: fill = quota used; tick = time elapsed.");
     expect(container.textContent).toContain("Forecasts use average usage since the window started.");
     expect(container.querySelector(".aiquota-board-help")?.hasAttribute("open")).toBe(false);
-    expect(container.textContent).toContain("Paid credits");
+    expect(container.textContent).toContain("450 credits");
     expect(container.textContent).toContain("5h");
     expect(container.textContent).toContain("On pace");
     expect(container.textContent).toContain("Numeric pace: +10 pp");
@@ -250,8 +236,8 @@ describe("QuotaBoard", () => {
     );
   });
 
-  it("places subscription usage before balances and reset details", () => {
-    render(sampleQuotas());
+  it("places subscription usage before balances and reset details", async () => {
+    await render(sampleQuotas());
     const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
     const window = card.querySelector(".aiquota-window")!;
     const readings = card.querySelector(".aiquota-readings")!;
@@ -260,39 +246,37 @@ describe("QuotaBoard", () => {
     expect(window.compareDocumentPosition(resets) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("uses the optional grant hint while keeping older payloads compatible", () => {
+  it("uses the optional grant hint while keeping older payloads compatible", async () => {
     const quotas = sampleQuotas();
     const grant = quotas.providers[0]!.grants![0]!;
     grant.remaining = "$100";
     grant.original = "$100.00";
-    render(quotas);
+    await render(quotas);
     expect(container.querySelector(".aiquota-reading-row .aiquota-details")?.textContent).toContain("Original amount");
 
     grant.original_repeats_remaining = true;
-    render(quotas);
+    await render(quotas);
     expect(container.querySelector(".aiquota-reading-row .aiquota-details")?.textContent).not.toContain(
       "Original amount"
     );
   });
 
-  it("does not add exact spend details when whole-dollar values are already exact", () => {
+  it("does not add exact spend details when whole-dollar values are already exact", async () => {
     const quotas = sampleQuotas();
     quotas.providers[0]!.monthly_extra_spend!.used_usd = 20;
     quotas.providers[0]!.monthly_extra_spend!.monthly_limit_usd = 100;
-    render(quotas);
+    await render(quotas);
     expect(container.textContent).toContain("Extra spend this month: $20 of $100 limit");
     expect(container.textContent).not.toContain("Extra spend details");
   });
 
-  it("updates only reset countdown and pending state as time advances without a new payload", () => {
+  it("updates only reset countdown and pending state as time advances without a new payload", async () => {
     const quotas = sampleQuotas();
-    render(quotas, Date.parse("2026-01-15T12:00:00Z"));
-    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain(
-      "Resets in 2h 30m"
-    );
+    await render(quotas, Date.parse("2026-01-15T12:00:00Z"));
+    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain("↻ in 2h 30m");
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain("On pace");
 
-    render(quotas, Date.parse("2026-01-15T14:31:00Z"));
+    await render(quotas, Date.parse("2026-01-15T14:31:00Z"));
 
     const codex = container.querySelector('.aiquota-card[aria-label="Codex quota"]');
     expect(codex?.textContent).not.toContain("paid credits available");
@@ -304,7 +288,7 @@ describe("QuotaBoard", () => {
     expect(codex?.querySelector(".aiquota-badge-stale")).toBeNull();
   });
 
-  it("renders an explicitly stale observation even with no provider fetch error", () => {
+  it("renders an explicitly stale observation even with no provider fetch error", async () => {
     const quotas = sampleQuotas();
     const codex = quotas.providers[0]!;
     codex.display_windows[0]!.exhausted = true;
@@ -317,12 +301,12 @@ describe("QuotaBoard", () => {
       fetched_at: "2026-01-15T12:00:00Z",
       result: { kind: "success", windows: [], reset_credit_expiry_lookup_failed: false },
     };
-    render(quotas);
+    await render(quotas);
     expect(container.textContent).not.toContain("Included quota exhausted");
     expect(container.textContent).not.toContain("paid credits available");
-    expect(container.textContent).toContain("Paid credits");
+    expect(container.textContent).toContain("450 credits");
     expect(container.textContent).toContain("exhausted");
-    render(quotas, Date.parse("2026-01-15T12:11:00Z"));
+    await render(quotas, Date.parse("2026-01-15T12:11:00Z"));
 
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"] .aiquota-badge-stale')?.textContent).toBe(
       "Data stale · 11m"
@@ -336,7 +320,7 @@ describe("QuotaBoard", () => {
     expect(card?.textContent).not.toContain("Numeric pace");
   });
 
-  it("moves known zero resets into details after any displayed reset deadline passes", () => {
+  it("moves known zero resets into details after any displayed reset deadline passes", async () => {
     const quotas = sampleQuotas();
     const codex = quotas.providers[0]!;
     const exhausted = codex.display_windows[0]!;
@@ -345,15 +329,15 @@ describe("QuotaBoard", () => {
     codex.display_windows.push(other);
     const result = codex.display.result!;
     result.available_reset_credits = 0;
-    render(quotas);
+    await render(quotas);
     const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
     expect(card.querySelector(".aiquota-strip-line")?.textContent).toBe("Banked resets: 0");
 
-    render(quotas, Date.parse("2026-01-15T12:01:00Z"));
+    await render(quotas, Date.parse("2026-01-15T12:01:00Z"));
     expect(card.querySelector(".aiquota-strip-line")).toBeNull();
     expect(card.querySelector(".aiquota-strip details p")?.textContent).toBe("Banked resets: 0");
 
-    render(quotas, Date.parse("2026-01-15T14:45:00Z"));
+    await render(quotas, Date.parse("2026-01-15T14:45:00Z"));
     expect(card.querySelector(".aiquota-badge-stale")).not.toBeNull();
     expect(card.querySelector(".aiquota-strip details p")?.textContent).toBe("Banked resets: 0");
   });

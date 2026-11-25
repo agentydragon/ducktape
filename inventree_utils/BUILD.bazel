@@ -7,7 +7,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_binary(
     name = "import_samplebooks",
-    main_module = "import_samplebooks2",
+    main_module = "inventree_utils.samplebooks_import.import_samplebooks2",
     deps = ["//inventree_utils/samplebooks_import:import_samplebooks2"],
 )
 

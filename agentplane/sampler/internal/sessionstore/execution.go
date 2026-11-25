@@ -7,6 +7,7 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
@@ -48,11 +49,11 @@ func (s *Store) BindInitialExecutorSession(ctx context.Context, owner Owner, san
 		session.Configuration = wire
 		conversation.ExecutorSession = &sessionID
 		conversation.ExecutorShell = shell
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		// Advance History's metadata snapshot together with the new incarnation fence.
-		return appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
+		return s.appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
 			OperationId: sessionID, Kind: eventpb.ExecutionProgress_KIND_EXECUTOR, Phase: eventpb.ExecutionProgress_PHASE_OPENED,
 		})
 	})
@@ -79,37 +80,48 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 		}
 		conversation.ExecutorSession = &sessionID
 		conversation.ExecutorShell = shell
-		return updateConversation(ctx, tx, conversation)
+		return s.updateConversation(ctx, tx, conversation)
 	})
 }
 
-func (s *Store) environmentContext(conversation *Conversation, session *Session) (environmentcontext.Context, error) {
-	return s.CurrentEnvironmentContext(session.Configuration, conversation.ExecutorShell)
-}
-
-// CurrentEnvironmentContext renders the model-visible environment baseline for the stored
-// session launch configuration and executor shell.
-func (s *Store) CurrentEnvironmentContext(configuration []byte, shell *string) (environmentcontext.Context, error) {
+// recordEnvironmentContext advances the environment baseline. A replacement
+// receives the full current environment while the transcript receives any diff.
+func (s *Store) recordEnvironmentContext(objects content.ContentWriter, conversation *Conversation, session *Session, refreshCompacted bool) error {
 	request := &sessionconfig.Configuration{}
-	if err := proto.Unmarshal(configuration, request); err != nil {
-		return environmentcontext.Context{}, err
-	}
-	return environmentcontext.Current(request.GetSpec().GetCwd(), shell, s.now()), nil
-}
-
-// recordEnvironmentContext appends the update from the conversation's baseline to the Session's
-// current environment, then advances the baseline. The caller persists the conversation.
-func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Session) error {
-	current, err := s.environmentContext(conversation, session)
-	if err != nil {
+	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return err
 	}
-	if update := environmentcontext.Update(conversation.EnvironmentContext, current); update != "" {
-		if err := conversation.apply(func(state protocol.Context) error {
-			return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: update}})
-		}); err != nil {
-			return err
+	current := environmentcontext.Current(request.GetSpec().GetCwd(), conversation.ExecutorShell, s.now())
+	var sourceID string
+	if err := conversation.apply(func(state protocol.Context) error {
+		afterCompaction := refreshCompacted && state == conversation.ActiveContext
+		previous := conversation.EnvironmentContext
+		if afterCompaction {
+			previous = nil
 		}
+		update := environmentcontext.Update(previous, current)
+		if update == "" {
+			return nil
+		}
+		if s.contextSourceWrites && sourceID == "" {
+			var err error
+			sourceID, err = putRecordObject(objects, EnvironmentUpdateObject{
+				SessionID: session.ID, Before: conversation.EnvironmentContext, After: current,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		var origin protocol.RecordOrigin
+		if sourceID != "" {
+			origin = protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, ObjectID: sourceID}
+			if previous != nil {
+				origin.Projection = protocol.RecordProjectionEnvironmentDiff
+			}
+		}
+		return state.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: update}}, afterCompaction, origin)
+	}); err != nil {
+		return err
 	}
 	conversation.EnvironmentContext = &current
 	return nil
@@ -133,7 +145,7 @@ func (s *Store) PreparedWorkspace(ctx context.Context, owner Owner, sessionID st
 			return err
 		}
 		session.WorkspacePrepared = true
-		if err := appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{OperationId: sessionID, Kind: eventpb.ExecutionProgress_KIND_WORKSPACE, Phase: eventpb.ExecutionProgress_PHASE_PREPARED}); err != nil {
+		if err := s.appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{OperationId: sessionID, Kind: eventpb.ExecutionProgress_KIND_WORKSPACE, Phase: eventpb.ExecutionProgress_PHASE_PREPARED}); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)
@@ -155,7 +167,7 @@ func (s *Store) StartSetup(ctx context.Context, owner Owner, sessionID string) (
 			return s.settleSetup(ctx, tx, conversation, session, nil)
 		}
 		session.SetupStarted = true
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupStarted{SetupStarted: &eventpb.SetupStarted{}}}); err != nil {
+		if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupStarted{SetupStarted: &eventpb.SetupStarted{}}}); err != nil {
 			return err
 		}
 		started = true
@@ -182,7 +194,7 @@ func (s *Store) SetupOutput(ctx context.Context, owner Owner, sessionID, stream 
 		} else {
 			output.Stream = &eventpb.SetupOutput_Stderr{Stderr: append([]byte(nil), data...)}
 		}
-		_, err = appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupOutput{SetupOutput: output}})
+		_, err = s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupOutput{SetupOutput: output}})
 		if err != nil {
 			return err
 		}
@@ -212,7 +224,7 @@ func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conve
 	session.BlockedReason = nil
 	if exitCode == nil {
 		session.SetupState = sessionpb.SetupState_SETUP_STATE_INTERRUPTED
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupInterrupted{SetupInterrupted: &eventpb.SetupInterrupted{}}}); err != nil {
+		if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupInterrupted{SetupInterrupted: &eventpb.SetupInterrupted{}}}); err != nil {
 			return err
 		}
 	} else {
@@ -221,14 +233,14 @@ func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conve
 		} else {
 			session.SetupState = sessionpb.SetupState_SETUP_STATE_FAILED
 		}
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupFinished{
+		if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupFinished{
 			SetupFinished: &eventpb.SetupFinished{ExitCode: int32(*exitCode)},
 		}}); err != nil {
 			return err
 		}
 	}
 	if exitCode != nil && *exitCode == 0 {
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}); err != nil {
+		if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}); err != nil {
 			return err
 		}
 	} else {
@@ -244,14 +256,14 @@ func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conve
 		if err := s.blockQueue(ctx, tx, session, reason); err != nil {
 			return err
 		}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 	}
 	return persistSession(ctx, tx, session)
 }
 
-func appendProgress(ctx context.Context, tx *sql.Tx, session *Session, progress *eventpb.ExecutionProgress) error {
-	_, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: progress}})
+func (s *Store) appendProgress(ctx context.Context, tx *sql.Tx, session *Session, progress *eventpb.ExecutionProgress) error {
+	_, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: progress}})
 	return err
 }

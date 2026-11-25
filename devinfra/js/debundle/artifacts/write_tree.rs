@@ -8,11 +8,12 @@ use anyhow::{Result, bail};
 use artifact::metrics::DecompositionMetrics;
 use artifact::reports::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, ChunksReport,
-    PackageManifest, RootLogicalModulesSummary, SelectedModuleLowering, write_json,
+    PackageManifest, RootLogicalModulesSummary, SelectedModuleLowering,
 };
 use identifier_rename_queue::compute_identifier_rename_queue;
 use output_layout::{DebundleOutputLayout, GATE_REJECTED_MARKER};
 use reconstruction::{EmittablePlan, RejectedPlan, ValidatedPlan};
+use report_io::write_json;
 
 mod script_output;
 
@@ -44,7 +45,6 @@ pub struct WriteTreeInput<'a> {
     /// Chunk records of the emission set — the caller drops records of
     /// excluded chunks before passing them in.
     pub chunk_records: &'a [ArtifactChunkRecord],
-    pub module_count: usize,
     pub decomposition_by_chunk: &'a HashMap<ChunkId, ChunkDecompositionOutput>,
 }
 
@@ -84,12 +84,16 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         input.decomposition_by_chunk,
     )?;
     let manifest = ArtifactManifest {
-        counts: input.counts.clone(),
-        chunks: input.chunk_records.to_vec(),
+        counts: input.counts,
+        chunks: input.chunk_records,
         logical_modules: RootLogicalModulesSummary {
-            module_count: input.module_count,
+            module_count: input
+                .decomposition_by_chunk
+                .values()
+                .map(|d| d.logical_modules.module_paths.len())
+                .sum(),
         },
-        selected_module_lowerings: input.lowerings.to_vec(),
+        selected_module_lowerings: input.lowerings,
         output_metrics: materialized.output_metrics,
         decomposition_metrics,
     };

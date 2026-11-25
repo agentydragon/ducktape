@@ -1,31 +1,25 @@
 # Public coder tooling and access playbook
 
 This is the repository-owned operating guide for `public-coder-agent`. It explains which identity and
-tool surface to prefer and how to check the current Kubernetes authority without borrowing the
-Operator's credentials.
-
-The live credential, RBAC, and Haku Console configuration remain authoritative. This guide describes
-how to inspect and use them; it does not grant access by itself.
+tool surface to prefer. The live credential and egress configuration remain authoritative; this guide
+does not grant access by itself.
 
 ## Golden rule
 
-Use the narrowest identity that already has the required authority. Haku Console only authorizes
-Kubernetes API requests for this Agent; it is not a general shell or tool gateway.
+Use the narrowest identity that already has the required authority.
 
 Operations on the public-coder Pod's own state are local operations. Files, checkouts, worktrees,
 Git metadata, processes, caches, command output, installed tools, and tests inside the Pod must use
-OpenClaw's local file, shell, and process tools. Do not send these operations through a Kubernetes
-authorization proxy. It is not an alternate shell for the Pod in which the Agent is already running.
+OpenClaw's local file, shell, and process tools.
 
 Use this order:
 
-1. local workspace files, processes, tests, and desired-state Git;
-2. direct Git or GitHub REST as `agentydragon-agent` through Agentplane egress; and
-3. direct reader kubectl after checking its live RBAC when necessary.
+1. local workspace files, processes, tests, and desired-state Git; and
+2. direct Git or GitHub REST as `agentydragon-agent` through Agentplane egress.
 
 ## Check the current capabilities
 
-Do not rely indefinitely on a remembered RBAC or policy summary.
+Do not rely indefinitely on a remembered policy summary.
 
 ### Local and repository tools
 
@@ -99,38 +93,6 @@ and quota. It has no `system.*`, DDL, or write access. `NO_PROXY` intentionally 
 ClickHouse Service, so bypassing egress would send the useless placeholder and
 fail; do not add `.svc.cluster.local` or the Service CIDR to it.
 
-### Kubernetes RBAC
-
-Use the mounted kubeconfig and direct `kubectl`. Check uncertain operations with, for example:
-
-```sh
-kubectl auth can-i get pods -n public-coder-agent
-kubectl auth can-i get nodes
-kubectl auth can-i get secrets -n public-coder-agent
-```
-
-The current repository sources are under `k8s-reader/`. The standing
-`haku:access-profile:public-coder` synthetic group has secret-free read-only diagnostics plus
-one explicit per-service exception: the existing Agentplane staging lifecycle RoleBinding. It
-permits no Secret reads. Console derives that group only from the
-deploy-owned access profile; it is not a caller credential. Selected Node and cross-namespace
-projections may be available. Trust `kubectl auth can-i` and the API server's decision over this
-prose summary.
-
-When standing SAR denies a needed Kubernetes request, ask the Operator to issue a temporary grant
-through Haku Console. Recheck with `kubectl auth can-i` before retrying the request, and ask the
-Operator to release the grant when the work is complete.
-
-The proxy's static execution ceiling is `cluster-admin`, but the standing SAR group remains the
-same narrow read-only subject. The ceiling alone grants nothing: without standing SAR coverage or a
-matching active Agent-owned grant, the proxy denies the request. Exact grants may therefore include
-Secrets, RBAC, writes, and other cluster-admin capabilities when the Operator explicitly approves
-them. Long-running `watch`/log-follow and upgrades other than pod `exec`/port-forward remain
-rejected. Active exec and port-forward streams are reauthorized every five seconds; a release,
-revocation, or authorization failure closes them within that interval plus the Console
-authorization timeout (eight seconds with the deployed defaults). Do not invent a competing
-cluster-access mechanism in response to an RBAC denial.
-
 ## Current preferred surfaces
 
 ### Public GitHub development
@@ -163,17 +125,10 @@ Pod.
 This Pod has no host-execution capability. If the answer depends on workstation-local state that the
 Pod and public GitHub cannot show, ask the Operator to collect that evidence.
 
-### Kubernetes diagnostics
+### Cluster changes
 
-Try direct kubectl first for reads covered by the public-coder RBAC. Typical examples include the
-agent namespace, Node inventory, Pod logs where granted, and Ducktape Flux status projections.
-
-For Flux-managed systems, change desired state in Git and verify reconciliation. Do not patch live
-objects as a substitute for the Git change.
-
-When standing RBAC denies a necessary operation, ask the Operator to issue a temporary grant in
-Haku Console. Secrets, Pod exec, cluster writes, and privileged node operations are not routine
-direct-reader diagnostics.
+This Pod has no Kubernetes API access. Change desired state of Flux-managed systems in Git, and ask
+the Operator for live cluster state.
 
 The retired public-coder devbox was the controlled host for Agentplane's manual live acceptance
 targets. No replacement host is implied by this guide; choose an explicitly authorized environment

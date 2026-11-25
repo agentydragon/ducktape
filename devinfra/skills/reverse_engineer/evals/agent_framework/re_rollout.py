@@ -8,7 +8,7 @@ transcript + the agent's /work workspace to --output-dir.
 `Agent.run()` drives the tool-dispatch loop. JSONL transcript writes go
 through `JsonlTranscriptProvider` (AF's standard `HistoryProvider`-shaped
 audit log via `Message.to_json()`). The `submit` tool sets
-`SubmitState.summary`; `terminate_when` raises `MiddlewareTermination`
+`_SubmitState.summary`; `terminate_when` raises `MiddlewareTermination`
 once that is set. Wall-clock enforcement comes from `asyncio.wait_for`
 around `agent.run()`.
 

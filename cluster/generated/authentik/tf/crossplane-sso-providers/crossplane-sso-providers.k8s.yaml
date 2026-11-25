@@ -208,17 +208,6 @@ rules:
   - apiGroups:
       - ""
     resourceNames:
-      - paperless-sso-providers
-    resources:
-      - secrets
-    verbs:
-      - get
-      - update
-      - patch
-      - delete
-  - apiGroups:
-      - ""
-    resourceNames:
       - plaid-link-oidc-config
     resources:
       - secrets
@@ -923,7 +912,7 @@ spec:
               name               = "openid_connect"
               scope              = ["openid", "profile", "email"]
               response_type      = "code"
-              issuer             = "https://auth.allegedly.works/application/o/gitlab-spike/"
+              issuer             = "https://auth.allegedly.works/application/o/${authentik_application.gitlab_spike.slug}/"
               discovery          = true
               client_auth_method = "query"
               uid_field          = "sub"
@@ -990,7 +979,7 @@ spec:
         data = {
           OIDC_CLIENT_ID     = authentik_provider_oauth2.providers["headlamp"].client_id
           OIDC_CLIENT_SECRET = authentik_provider_oauth2.providers["headlamp"].client_secret
-          OIDC_ISSUER_URL    = "https://auth.allegedly.works/application/o/headlamp/"
+          OIDC_ISSUER_URL    = "https://auth.allegedly.works/application/o/${authentik_application.headlamp.slug}/"
           OIDC_SCOPES        = "profile,email,offline_access"
         }
       }
@@ -1056,79 +1045,6 @@ spec:
         target = authentik_application.matrix.uuid
         group  = data.authentik_group.admins.id
         order  = 0
-      }
-
-      # Paperless-ngx — OIDC login for the document management system.
-      # Single-user (agentydragon): access and Django superuser status are gated by the
-      # dedicated `paperless_admins` group. The Paperless bootstrap Job creates the
-      # matching local groups and their permissions; Authentik owns membership.
-
-      resource "authentik_group" "paperless_admins" {
-        name  = "paperless_admins"
-        users = [tonumber(authentik_user.agentydragon.id)]
-      }
-
-      # Paperless's group synchronizer expects the claim values to be names of existing
-      # local Django groups. Keep this mapping app-specific rather than exposing every
-      # Authentik group to Paperless.
-      resource "authentik_property_mapping_provider_scope" "paperless_groups" {
-        name       = "paperless-groups"
-        scope_name = "groups"
-        expression = <<-EXPR
-          authentik_groups = [group.name for group in request.user.ak_groups.all()]
-          if "paperless_admins" in authentik_groups:
-              return {"groups": ["paperless_admins"]}
-          return {"groups": []}
-        EXPR
-      }
-
-      resource "authentik_application" "paperless" {
-        name              = "Paperless-ngx"
-        slug              = "paperless"
-        protocol_provider = authentik_provider_oauth2.providers["paperless"].id
-        meta_description  = "Document management system"
-        meta_publisher    = "Paperless-ngx"
-        meta_icon         = "https://raw.githubusercontent.com/paperless-ngx/paperless-ngx/main/resources/logo/web/svg/square.svg"
-        open_in_new_tab   = true
-      }
-
-      resource "authentik_policy_binding" "paperless_admins" {
-        target = authentik_application.paperless.uuid
-        group  = authentik_group.paperless_admins.id
-        order  = 0
-      }
-
-      # Paperless reads PAPERLESS_SOCIALACCOUNT_PROVIDERS as a JSON blob.
-      resource "kubernetes_secret" "paperless_sso_providers" {
-        metadata {
-          name      = "paperless-sso-providers"
-          namespace = "authentik"
-          annotations = {
-            "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "paperless"
-            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "paperless"
-          }
-        }
-
-        data = {
-          providers = jsonencode({
-            openid_connect = {
-              OAUTH_PKCE_ENABLED = true
-              SCOPE              = ["openid", "profile", "email", "groups"]
-              APPS = [{
-                provider_id = "authentik"
-                name        = "Log in via Authentik"
-                client_id   = authentik_provider_oauth2.providers["paperless"].client_id
-                secret      = authentik_provider_oauth2.providers["paperless"].client_secret
-                settings = {
-                  server_url     = "https://auth.allegedly.works/application/o/paperless/.well-known/openid-configuration"
-                  fetch_userinfo = true
-                }
-              }]
-            }
-          })
-        }
       }
 
       # Plaid Link's app handles its own Authentik login. The browser receives only a
@@ -1284,7 +1200,7 @@ spec:
           namespace = "platform-sessions"
         }
         data = {
-          PLATFORM_SESSIONS_ISSUER          = "https://auth.allegedly.works/application/o/platform-sessions/"
+          PLATFORM_SESSIONS_ISSUER          = "https://auth.allegedly.works/application/o/${authentik_application.platform_sessions.slug}/"
           PLATFORM_SESSIONS_CLIENT_ID       = authentik_provider_oauth2.platform_sessions.client_id
           PLATFORM_SESSIONS_CLIENT_SECRET   = authentik_provider_oauth2.platform_sessions.client_secret
           PLATFORM_SESSIONS_SESSION_SECRET  = random_password.platform_sessions_session_secret.result
@@ -1381,7 +1297,7 @@ spec:
           namespace = "quest-diagnostics"
         }
         data = {
-          QUEST_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/quest-diagnostics/"
+          QUEST_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/${authentik_application.quest_diagnostics.slug}/"
           QUEST_OIDC_CLIENT_ID       = authentik_provider_oauth2.providers["quest_diagnostics"].client_id
           QUEST_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.providers["quest_diagnostics"].client_secret
           QUEST_OIDC_SESSION_SECRET  = random_password.quest_diagnostics_session_secret.result
@@ -1565,16 +1481,6 @@ spec:
             client_type   = "public"
             callback_urls = ["https://home.allegedly.works/auth/oidc/callback"]
           }
-          paperless = {
-            name      = "paperless-oauth2"
-            client_id = "paperless"
-            property_mappings = concat(
-              local.oidc_property_mappings.email_profile,
-              [authentik_property_mapping_provider_scope.paperless_groups.id],
-            )
-            # django-allauth openid_connect callback (provider_id = "authentik").
-            callback_urls = ["https://paperless.allegedly.works/accounts/oidc/authentik/login/callback/"]
-          }
           plaid_link = {
             name                  = "plaid-link-oidc"
             client_id             = "plaid-link"
@@ -1688,11 +1594,6 @@ spec:
       moved {
         from = authentik_provider_oauth2.home_assistant
         to   = authentik_provider_oauth2.providers["home_assistant"]
-      }
-
-      moved {
-        from = authentik_provider_oauth2.paperless
-        to   = authentik_provider_oauth2.providers["paperless"]
       }
 
       moved {
@@ -1818,7 +1719,7 @@ spec:
           # The application pins the numeric subject too, preserving owner-only authorization if the
           # Authentik policy changes. These keys are consumed by the AI session archive deployment.
           ai_session_archive = {
-            AI_SESSION_ARCHIVE_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/ai-session-archive/"
+            AI_SESSION_ARCHIVE_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/${authentik_application.ai_session_archive.slug}/"
             AI_SESSION_ARCHIVE_OIDC_CLIENT_ID       = authentik_provider_oauth2.providers["ai_session_archive"].client_id
             AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.providers["ai_session_archive"].client_secret
             AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET  = random_password.ai_session_archive_session_secret.result
@@ -1826,14 +1727,14 @@ spec:
           }
           # The session sync Deployment reads these keys as the web app's `WebSettings` env vars.
           claude_session_sync = {
-            SESSION_SYNC_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/claude-session-sync/"
+            SESSION_SYNC_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/${authentik_application.claude_session_sync.slug}/"
             SESSION_SYNC_OIDC_CLIENT_ID       = authentik_provider_oauth2.providers["claude_session_sync"].client_id
             SESSION_SYNC_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.providers["claude_session_sync"].client_secret
             SESSION_SYNC_OIDC_SESSION_SECRET  = random_password.claude_session_sync_session_secret.result
             SESSION_SYNC_OIDC_ALLOWED_SUBJECT = tostring(authentik_user.agentydragon.id)
           }
           cli_proxy_api_admin = {
-            MANAGEMENT_OIDC_ISSUER           = "https://auth.allegedly.works/application/o/cli-proxy-api-admin/"
+            MANAGEMENT_OIDC_ISSUER           = "https://auth.allegedly.works/application/o/${authentik_application.cli_proxy_api_admin.slug}/"
             MANAGEMENT_OIDC_CLIENT_ID        = authentik_provider_oauth2.providers["cli_proxy_api_admin"].client_id
             MANAGEMENT_OIDC_CLIENT_SECRET    = authentik_provider_oauth2.providers["cli_proxy_api_admin"].client_secret
             MANAGEMENT_OIDC_REDIRECT_URL     = "https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback"
@@ -1860,7 +1761,7 @@ spec:
                 oidc_providers:
                   - idp_id: authentik
                     idp_name: "Authentik SSO"
-                    issuer: "https://auth.allegedly.works/application/o/matrix/"
+                    issuer: "https://auth.allegedly.works/application/o/${authentik_application.matrix.slug}/"
                     client_id: "${authentik_provider_oauth2.confidential["matrix"].client_id}"
                     client_secret: "${authentik_provider_oauth2.confidential["matrix"].client_secret}"
                     discover: true

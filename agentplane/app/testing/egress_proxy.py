@@ -16,7 +16,6 @@ from agentplane.egress.api.admin import egress_admin_pb2 as pb, egress_admin_pb2
 class FakeEgressAdmin(rpc.EgressAdminServicer):
     def __init__(self) -> None:
         self.decisions: dict[tuple[str, str], list[pb.Decision]] = {}
-        self.reachable = True
         self.changed = asyncio.Event()
         self.tokens: list[str | None] = []
 
@@ -31,16 +30,12 @@ class FakeEgressAdmin(rpc.EgressAdminServicer):
         self.tokens.append(
             next((str(value) for key, value in context.invocation_metadata() or () if key == "authorization"), None)
         )
-        if not self.reachable:
-            await context.abort(grpc.StatusCode.UNAVAILABLE, "egress proxy unavailable")
 
         previous = {item.event_id: item for item in self.decisions.get(subject, [])}
         yield pb.WatchDecisionsResponse(snapshot=pb.DecisionSnapshot(decisions=list(previous.values())))
         while True:
             await self.changed.wait()
             self.changed.clear()
-            if not self.reachable:
-                await context.abort(grpc.StatusCode.UNAVAILABLE, "egress proxy unavailable")
             current = {item.event_id: item for item in self.decisions.get(subject, [])}
             delta = pb.DecisionDelta(
                 added=[item for key, item in current.items() if key not in previous],
@@ -51,15 +46,7 @@ class FakeEgressAdmin(rpc.EgressAdminServicer):
                 yield pb.WatchDecisionsResponse(delta=delta)
 
 
-def decision(
-    at: str,
-    method: str,
-    host: str,
-    outcome: str,
-    *,
-    reason: pb.Decision.Reason | None = None,
-    address: str | None = None,
-) -> pb.Decision:
+def decision(at: str, method: str, host: str, outcome: str) -> pb.Decision:
     """One admission record as the proxy returns it over gRPC."""
     timestamp = Timestamp()
     timestamp.FromJsonString(at)
@@ -72,12 +59,8 @@ def decision(
         outcome=pb.Decision.OUTCOME_ALLOW if outcome == "allow" else pb.Decision.OUTCOME_DENY,
         substituted=outcome == "allow" and method != "CONNECT",
     )
-    if reason is not None:
-        row.reason = reason
     if outcome == "allow":
         row.binding = "test-sandbox-github-writes"
         row.policy = "test-github-writes"
         row.rule = 0
-        if address is not None:
-            row.address = address
     return row

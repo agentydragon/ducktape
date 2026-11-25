@@ -32,12 +32,7 @@ pub(crate) fn unshadowed_global_names(
         }
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
             for spec in &import.specifiers {
-                let local = match spec {
-                    ImportSpecifier::Named(named) => named.local.sym.as_ref(),
-                    ImportSpecifier::Default(default) => default.local.sym.as_ref(),
-                    ImportSpecifier::Namespace(namespace) => namespace.local.sym.as_ref(),
-                };
-                declared.insert(local.to_string());
+                declared.insert(spec.local().sym.to_string());
             }
         }
     }

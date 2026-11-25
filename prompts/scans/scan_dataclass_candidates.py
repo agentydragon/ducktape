@@ -5,7 +5,6 @@ This script finds classes with boilerplate __init__ methods and manual dunder me
 that could be replaced with @dataclass or Pydantic BaseModel.
 
 Usage (from the repository root):
-    python -m prompts.scans.scan_dataclass_candidates [directory]
     bb run //prompts/scans:scan_dataclass_candidates_bin -- [directory]
 
 Output:

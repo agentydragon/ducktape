@@ -43,8 +43,8 @@ These guarantees hold for both CLI and web profiles.
 9. Background command output and explicit `/mailbox` messages are queued and
    delivered to the model on the next REPL hook through `systemMessage`.
 10. Mailbox output is not flushed on non-REPL hooks such as `SessionStart`,
-    `Setup`, `WorktreeCreate`, and `ConfigChange`, because Claude Code only
-    displays those outputs in the UI.
+    `Setup`, and `ConfigChange`, because Claude Code only displays those
+    outputs in the UI.
 11. If the profile enables `idle_watchdog`, the daemon exits after 30 minutes
     with no hook, health, or mailbox requests.
 
