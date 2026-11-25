@@ -1447,6 +1447,13 @@ the sampler's [snapshot writer](../sampler/internal/sessionstore/execution_conte
 append a developer message listing the live cell and another showing an empty inventory.
 Decide whether a notice conveys additional information **before** the model samples.
 
+Use the upstream JS host's tool-result contract: return the opaque cell ID on yield for
+`wait`; return the process session ID to the JS caller of `exec_command` for `write_stdin`.
+A script can print that handle if the model needs it. Do not turn either lifecycle into a
+second stream of provider messages. Keep the sampler's owner-fenced handle records for
+validation, interruption and recovery. Distinguish losing the JS host from observing a
+remote process exit; an unavailable handle does not establish the outcome of an effect.
+
 Once an OpenAI model has sampled against a prefix, preserve it exactly when continuing with
 its encrypted reasoning. A notice that was true when sampled remains part of that prefix:
 do not delete, replace, coalesce or reorder it when handle state changes. If a model needs
@@ -1458,6 +1465,23 @@ at insertion and the resulting input bytes or tokens. Demonstrate that ordinary 
 suffice, while a change learned outside a tool result and recovery into a new context still
 communicate the state needed to continue. Include an encrypted reasoning item and verify
 that subsequent requests preserve the previously sampled items and their order exactly.
+
+### `CENTRAL_SAMPLER_NOTIFY_ORDER` — preserve the arrival order of explicit JS notifications and steering
+
+**Open; independent of handle notices.** Codex injects nonblank `notify(text)` as extra output
+of the originating `exec` on the active turn. The [sampler queue](../sampler/internal/sessionstore/notification.go)
+already commits a notification before acknowledging the host, but the
+[turn loop](../sampler/internal/residentruntime/session/turn.go) drains notifications before
+steering even when user input was admitted first. Give both a common per-session admission
+order in PostgreSQL; let the current lease owner consume eligible inputs at a settled step
+boundary, atomically with their context update. Preserve the originating call and output
+budget across a delayed drain. This does not require interrupting an in-flight provider request.
+
+**Exit:** compare provider input for both interleavings of user steering and explicit cell
+notification against the pinned CLI. Exercise owner loss around durable admission and drain:
+preserve already-committed output, fence stale writers, and neither repeat an effect nor
+attach an output to an unrelated call. Cover blank notifications, no active turn, abort,
+and a compacted context without the originating call.
 
 ### `CENTRAL_SAMPLER_COMPACTION_TIMELINE` — show when the sampler compacts context
 
