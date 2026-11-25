@@ -456,16 +456,17 @@ fn validate_module_roots(module_roots: &BTreeMap<PathBuf, String>) -> Result<()>
             );
         }
     }
-    let roots = module_roots.keys().collect::<Vec<_>>();
-    for (index, left) in roots.iter().enumerate() {
-        for right in &roots[index + 1..] {
-            if left.starts_with(right) || right.starts_with(left) {
-                bail!(
-                    "module_roots entries `{}` and `{}` overlap",
-                    left.display(),
-                    right.display()
-                );
-            }
+    for root in module_roots.keys() {
+        if let Some(parent) = root
+            .ancestors()
+            .skip(1)
+            .find(|ancestor| module_roots.contains_key(*ancestor))
+        {
+            bail!(
+                "module_roots entries `{}` and `{}` overlap",
+                parent.display(),
+                root.display()
+            );
         }
     }
     Ok(())
