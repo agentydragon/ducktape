@@ -1017,26 +1017,20 @@ impl GraphProvenance {
             )
             .into());
         }
-        let mut chunk_ids = std::collections::BTreeSet::new();
+        let mut sources_by_chunk = BTreeMap::new();
         for source in &self.chunk_sources {
             anyhow::ensure!(
-                chunk_ids.insert(source.chunk_id.as_str()),
+                sources_by_chunk
+                    .insert(source.chunk_id.as_str(), source)
+                    .is_none(),
                 "graph provenance has multiple source mappings for chunk {}",
                 source.chunk_id
             );
         }
         let source = if let Some(chunk_id) = chunk_id {
-            let mut matches = self
-                .chunk_sources
-                .iter()
-                .filter(|source| source.chunk_id == chunk_id);
-            let source = matches.next().with_context(|| {
+            let source = sources_by_chunk.get(chunk_id).copied().with_context(|| {
                 format!("graph provenance lacks source mapping for chunk {chunk_id}")
             })?;
-            anyhow::ensure!(
-                matches.next().is_none(),
-                "graph provenance has multiple source mappings for chunk {chunk_id}"
-            );
             let matching_files = self.files.iter().filter(|file| {
                 file.root == source.input_file.root && file.path == source.input_file.path
             });
