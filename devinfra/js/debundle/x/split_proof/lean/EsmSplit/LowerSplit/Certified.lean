@@ -245,6 +245,18 @@ private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
   unless ok do
     throw (IO.userError "source placement or module linkage checks failed")
 
+private def replayForPair (timings : Bool) (phase : String) (profile : CoreJS.HostProfile)
+    (program providers files : Json) (plan : Plan) (original candidate : CoreJS.Program)
+    (witness : CoreJS.HostPremises × Nat) : IO (Option CoreJS.HostPremises) := do
+  let (premises, fuel) := witness
+  timePhase timings phase fun _ => IO.lazyPure fun _ =>
+    match CoreJS.LinkedBehavior.replayPremisedPrograms premises fuel original candidate with
+    | none => none
+    | some semantics =>
+      match CoreJS.LinkedBehavior.certifyASTs profile premises program providers files plan original candidate semantics.down with
+      | .error _ => none
+      | .ok _ => some premises
+
 /-- Preserve singleton declarations and executable linked certificates,
 with the original bundle at the virtual root for authored inputs. -/
 private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
@@ -314,9 +326,29 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
       | .ok (original, candidate) => do
         let probe ← timePhase timings "compiled_slice_probe" fun _ =>
           IO.lazyPure fun _ => CoreJS.LinkedBehavior.probeWitness profile original candidate
+        -- An accessor and a property-read blocker trigger a real replay
+        -- preflight. Its result controls strategy order; only successful
+        -- replay permits the slice to replace this existing fallback path.
+        let replayKinds := CoreJS.LinkedBehavior.replayPremisedBlockerKinds original candidate
+        let hasAccessorRead := replayKinds.contains "object-accessor" && replayKinds.contains "property-read"
+        let replayForSlice ← match probe with
+          | .ok witness =>
+            if hasAccessorRead then
+              replayForPair timings "compiled_replay_slice_guard" profile program providers files P original candidate witness
+            else pure none
+          | .error _ => pure none
+        let skipSliceForReplay := match probe with
+          | .ok _ => hasAccessorRead && replayForSlice.isNone
+          | .error _ => false
         let sliceResult ← match probe with
           | .error refusal => pure (.error (probeRefusal refusal))
-          | .ok _ => timePhase timings "compiled_slice" fun _ =>
+          | .ok _ =>
+            if skipSliceForReplay then
+              pure (.error ({
+                reason := "compiled replay declined a property read; retaining the generated proof path"
+                reasonCode := some "slice_replay_guard"
+              } : CertificationRefusal))
+            else timePhase timings "compiled_slice" fun _ =>
               IO.lazyPure fun _ => certifySlice profile program providers files P B S
         match sliceResult with
         | .ok (kind, _statement) =>
@@ -331,19 +363,13 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
             pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
           else do
             let census ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
-            let replayBlockers :=
-              if census == some "1" then
-                CoreJS.LinkedBehavior.replayPremisedBlockerKinds original candidate
-              else []
+            let replayBlockers := if census == some "1" then replayKinds else []
             let replayed : Option CoreJS.HostPremises ← match probe with
               | .error _ => pure none
-              | .ok (premises, fuel) => timePhase timings "compiled_replay" fun _ => IO.lazyPure fun _ =>
-                  match CoreJS.LinkedBehavior.replayPremisedPrograms premises fuel original candidate with
-                  | none => none
-                  | some semantics =>
-                    match CoreJS.LinkedBehavior.certifyASTs profile premises program providers files P original candidate semantics.down with
-                    | .error _ => none
-                    | .ok _ => some premises
+              | .ok witness =>
+                if let some premises := replayForSlice then pure (some premises)
+                else if skipSliceForReplay then pure none
+                else replayForPair timings "compiled_replay" profile program providers files P original candidate witness
             if let some premises := replayed then
               pure (.ok (none, premises, "compiled-replay-premised", []))
             else

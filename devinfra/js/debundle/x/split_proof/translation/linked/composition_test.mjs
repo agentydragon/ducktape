@@ -130,7 +130,11 @@ for (const [width, reversedKeys, readPosition] of [
   const { verdict, log } = lower(files.sourceFile, files.specFile, out);
   assertCertified(verdict, log);
   assert.equal(verdict.strategy, "generated-proof", log);
-  const result = await import(pathToFileURL(path.join(out, entry)).href);
-  assert.equal(result.chosen, 1);
-  assert.equal(result.count, 1);
+  assert(verdict.replay_blockers.includes("property-read"), log);
+  assert(verdict.replay_blockers.includes("object-accessor"), log);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    const result = await import(pathToFileURL(file).href);
+    assert.equal(result.chosen, 1);
+    assert.equal(result.count, 1);
+  }
 }
