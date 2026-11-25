@@ -1431,6 +1431,22 @@ def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile :=
     linkedDeclarator (linkedExpr profile imports false) moduleBinding (← field j "kind") d
   | _ => throw "expected a module declaration"
 
+/-- `export default …`: the binding the module exports as `default`, and its declaration. A named
+function or class keeps its binding. Otherwise the binding is `default`, a reserved word that no
+source identifier can name: an anonymous function is hoisted, an anonymous class and an expression
+are initialized where they stand, and an anonymous definition is named `default`. -/
+def linkedDefaultExport (imports : List Name) (d : Json) (profile : HostProfile := .empty) :
+    Except String (Name × Stmt) := do
+  let kind ← field d "type"
+  if kind == "FunctionDeclaration" || kind == "ClassDeclaration" then
+    if (d.getObjVal? "id").toOption.getD .null != .null then
+      let ([name], s) ← linkedDeclaration imports d profile | throw "expected one default binding"
+      return (name, s)
+    if kind == "FunctionDeclaration" then
+      return ("default", .funDecl (← linkedFunction profile imports .normal "default" false d))
+    return ("default", .decl .let_ "default" (← linkedClass profile imports false "default" d))
+  return ("default", .decl .const "default" (← linkedExpr profile imports false "default" d))
+
 /-- A top-level executable statement of the linked fragment. -/
 def linkedUnit (imports : List Name) (j : Json) (profile : HostProfile := .empty) : Except String Stmt := do
   if ["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"].contains (← field j "type") then

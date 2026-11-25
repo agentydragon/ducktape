@@ -92,9 +92,12 @@ pub fn normalized_chunk_ids(
 pub fn chunk_runtime_entry<'a>(
     artifact: &'a ChunkBundle,
     chunk_id: &str,
-    chunk_id_interned: ChunkId,
     file: Option<&str>,
-) -> Result<(String, &'a JsFile, &'a ParsedJsModule)> {
+) -> Result<(ChunkId, &'a JsFile, &'a ParsedJsModule)> {
+    let chunk_id_interned = artifact
+        .chunk_table
+        .get(chunk_id)
+        .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
     let target_file = file
         .map(normalize_module_path)
         .transpose()?
@@ -113,7 +116,7 @@ pub fn chunk_runtime_entry<'a>(
     let runtime_ast = runtime_file.ast().with_context(|| {
         format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
     })?;
-    Ok((target_file, runtime_file, runtime_ast))
+    Ok((chunk_id_interned, runtime_file, runtime_ast))
 }
 
 pub fn prune_artifact_to_chunk_ids(artifact: &mut ChunkBundle, selected: &[String]) {

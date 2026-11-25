@@ -38,18 +38,14 @@ pub fn analyze_logical_chunk(
         file,
         export_reentry_policies,
     } = context;
-    let chunk_id_interned = artifact
-        .chunk_table
-        .get(chunk_id)
-        .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-    let (target_file, runtime_file, runtime_ast) =
-        chunk_runtime_entry(artifact, chunk_id, chunk_id_interned, file)?;
-    let source_path = runtime_file.metadata.source_path.clone();
+    let (chunk_id_interned, runtime_file, runtime_ast) =
+        chunk_runtime_entry(artifact, chunk_id, file)?;
+    let source_path = runtime_file.metadata.source_path.as_str();
     let line_index = runtime_ast.line_index();
     let structural_analysis = analysis::facts::collect_chunk_source_facts(
         &runtime_ast.module,
         Some(SourceLocator {
-            source_path: &source_path,
+            source_path,
             lines: &line_index,
         }),
     );
@@ -61,9 +57,9 @@ pub fn analyze_logical_chunk(
             chunk_id,
             diagnostics,
             chunk_id_interned,
-            target_file: &target_file,
+            target_file: &runtime_file.path,
             runtime_ast,
-            source_path: &source_path,
+            source_path,
             export_reentry_policy: export_reentry_policies
                 .get(&chunk_id_interned)
                 .unwrap_or(&ExportReentryPolicy::Conservative),

@@ -50,7 +50,7 @@ use analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::join_module_path;
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
-use artifact::{ArtifactIndexes, ChunkBundle, FileRole, JsFile};
+use artifact::{ArtifactIndexes, ChunkBundle, JsFile};
 use chunk_analysis::build_chunk_graph;
 use frontend_elaboration::chunk_ast::{ChunkAstAnalysis, SourceExportIdentity};
 use frontend_elaboration::{FrontendChunk, MemberClaimProjection};
@@ -123,7 +123,6 @@ pub(super) struct MaterializedLogicalChunk {
     target_file: String,
     source_path: String,
     pub(super) files: Vec<JsFile>,
-    pub(super) file_records: Vec<(String, FileRole)>,
     pub(super) applied: Vec<SelectedModuleLowering>,
     pub(super) directory_dependency_facts: Vec<DirectoryDependencyFact>,
     pub(super) validation: ChunkValidationSummary,
@@ -152,39 +151,29 @@ pub(super) enum FinishedLogicalChunk {
     },
 }
 
-/// Lowering state prepared before the shared spec-resolution service projects
-/// and solves selector entities.
+/// Chunk plan and frontend claims still to apply.
 pub(super) struct PreparedLogicalChunk<'a> {
-    pub(super) context: ChunkContext<'a>,
-    pub(super) spec: ChunkSpec<'a>,
-    chunk_unassigned_mode: UnassignedMode,
-    chunk_id_interned: ChunkId,
-    pub(super) target_file: String,
-    runtime_ast: &'a ParsedJsModule,
-    header_lines: Vec<String>,
-    pub(super) source_path: String,
-    ast_analysis: ChunkAstAnalysis,
-    requests: Vec<LogicalRequest>,
+    plan: LogicalChunkPlan<'a>,
     explicit_requests: Vec<LogicalRequest>,
     resolution: selector_resolve::Resolution,
-    placement_anchors: Option<selector_resolve::PlacementAnchors>,
     resolved_members: Vec<Vec<usize>>,
     member_claims: MemberClaimProjection,
-    structural_analysis: Option<StructuralChunkSourceFacts<'a>>,
+}
+
+pub(super) struct LogicalChunkPlan<'a> {
+    context: ChunkContext<'a>,
+    spec: ChunkSpec<'a>,
+    chunk_unassigned_mode: UnassignedMode,
+    chunk_id_interned: ChunkId,
+    runtime_file: &'a JsFile,
+    runtime_ast: &'a ParsedJsModule,
+    ast_analysis: ChunkAstAnalysis,
+    requests: Vec<LogicalRequest>,
+    placement_anchors: Option<selector_resolve::PlacementAnchors>,
+    structural_analysis: StructuralChunkSourceFacts<'a>,
     source_only_initializer_bindings: BTreeSet<String>,
     external_initializer_contracts: BTreeMap<String, spec::InitializerExternalEffects>,
     builder: ChunkPlanBuilder,
-}
-
-/// A prepared chunk after exact selector resolution has claimed its selected
-/// members and anonymous statements. The structural facts are retained for the
-/// hint-sensitive analysis that follows claim application.
-pub(super) struct ClaimedLogicalChunk<'a> {
-    prepared: PreparedLogicalChunk<'a>,
-    structural_analysis: StructuralChunkSourceFacts<'a>,
-    /// Selector-resolved author overlay, applied after raw facts are computed or loaded.
-    source_only_initializer_bindings: BTreeSet<String>,
-    external_initializer_contracts: BTreeMap<String, spec::InitializerExternalEffects>,
 }
 
 /// Construct output-plan state from source-level facts and the exact shared
@@ -218,10 +207,8 @@ pub(super) fn prepare_logical_chunk<'a>(
     let FrontendChunk {
         chunk_id: frontend_chunk_id,
         chunk_id_interned,
-        target_file,
+        runtime_file,
         runtime_ast,
-        header_lines,
-        source_path,
         ast_analysis,
         requests,
         explicit_requests,
@@ -254,7 +241,7 @@ pub(super) fn prepare_logical_chunk<'a>(
         chunk_top_level_mark,
         target_dir,
         chunk_id,
-        target_file: &target_file,
+        target_file: &runtime_file.path,
         runtime_import_facts: &ast_analysis.runtime_import_facts,
     };
     for (index, request) in explicit_requests.iter_mut().enumerate() {
@@ -270,25 +257,25 @@ pub(super) fn prepare_logical_chunk<'a>(
     builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups);
 
     Ok(PreparedLogicalChunk {
-        context,
-        spec,
-        chunk_unassigned_mode,
-        chunk_id_interned,
-        target_file,
-        runtime_ast,
-        header_lines,
-        source_path,
-        ast_analysis,
-        requests,
+        plan: LogicalChunkPlan {
+            context,
+            spec,
+            chunk_unassigned_mode,
+            chunk_id_interned,
+            runtime_file,
+            runtime_ast,
+            ast_analysis,
+            requests,
+            placement_anchors,
+            structural_analysis,
+            source_only_initializer_bindings,
+            external_initializer_contracts,
+            builder,
+        },
         explicit_requests,
         resolution,
-        placement_anchors,
         resolved_members,
         member_claims,
-        structural_analysis: Some(structural_analysis),
-        source_only_initializer_bindings,
-        external_initializer_contracts,
-        builder,
     })
 }
 
@@ -315,50 +302,39 @@ fn validate_partial_atomic_group_completion_owners(
     Ok(())
 }
 
-/// The file a chunk's modules are cut from (`materialize_logical_modules.file`,
-/// else the chunk's entry) and its retained AST.
-/// Resolve source-selected bindings before the cross-chunk purity oracle runs.
-/// The same resolved hints are later used by this chunk's source unit analysis.
-pub(super) fn claim_prepared_chunk<'a>(
-    mut prepared: PreparedLogicalChunk<'a>,
-) -> Result<ClaimedLogicalChunk<'a>> {
-    let chunk_top_level_mark = prepared.runtime_ast.top_level_mark;
-    prepared.builder.claim_resolution_at_offset(
+/// Apply source-selected claims before the cross-chunk purity analysis.
+pub(super) fn claim_prepared_chunk(
+    prepared: PreparedLogicalChunk<'_>,
+) -> Result<LogicalChunkPlan<'_>> {
+    let PreparedLogicalChunk {
+        mut plan,
+        explicit_requests,
+        resolution,
+        resolved_members,
+        member_claims,
+    } = prepared;
+    let chunk_top_level_mark = plan.runtime_ast.top_level_mark;
+    plan.builder.claim_resolution_at_offset(
         0,
-        &prepared.explicit_requests,
-        std::mem::take(&mut prepared.resolution),
-        std::mem::take(&mut prepared.resolved_members),
-        &prepared.member_claims,
+        &explicit_requests,
+        resolution,
+        resolved_members,
+        &member_claims,
         chunk_top_level_mark,
-        prepared.context.chunk_id,
-        &prepared.runtime_ast.module.body,
-        &prepared.ast_analysis.declaration_by_name,
+        plan.context.chunk_id,
+        &plan.runtime_ast.module.body,
+        &plan.ast_analysis.declaration_by_name,
     )?;
-    prepared
-        .builder
-        .apply_destructuring_group_placement(&prepared.ast_analysis.destructuring_groups);
-    prepared
-        .builder
-        .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
-    let source_only_initializer_bindings =
-        std::mem::take(&mut prepared.source_only_initializer_bindings);
-    let external_initializer_contracts =
-        std::mem::take(&mut prepared.external_initializer_contracts);
-    let structural_analysis = prepared
-        .structural_analysis
-        .take()
-        .expect("prepared frontend structure is present");
-    Ok(ClaimedLogicalChunk {
-        prepared,
-        structural_analysis,
-        source_only_initializer_bindings,
-        external_initializer_contracts,
-    })
+    plan.builder
+        .apply_destructuring_group_placement(&plan.ast_analysis.destructuring_groups);
+    plan.builder
+        .adopt_bindings_of_claimed_anonymous_statements(&plan.ast_analysis.declarations);
+    Ok(plan)
 }
 
-impl ClaimedLogicalChunk<'_> {
+impl LogicalChunkPlan<'_> {
     pub(super) fn chunk_id(&self) -> &str {
-        self.prepared.context.chunk_id
+        self.context.chunk_id
     }
 }
 
@@ -376,10 +352,8 @@ pub(super) struct SelectedAssignmentBuildInput<'a, 'p, 's> {
     spec: ChunkSpec<'a>,
     chunk_unassigned_mode: UnassignedMode,
     chunk_id_interned: ChunkId,
-    target_file: String,
+    runtime_file: &'a JsFile,
     runtime_ast: &'a ParsedJsModule,
-    header_lines: Vec<String>,
-    source_path: String,
     ast_analysis: ChunkAstAnalysis,
     requests: Vec<LogicalRequest>,
     builder: ChunkPlanBuilder,
@@ -393,10 +367,8 @@ pub(super) struct SelectedAssignmentBuildInput<'a, 'p, 's> {
 pub(super) struct FinalizedLogicalAssignment<'a> {
     chunk_unassigned_mode: UnassignedMode,
     pub(super) chunk_id_interned: ChunkId,
-    target_file: String,
+    runtime_file: &'a JsFile,
     pub(super) runtime_ast: &'a ParsedJsModule,
-    header_lines: Vec<String>,
-    source_path: String,
     pub(super) ast_analysis: ChunkAstAnalysis,
     requests: Vec<LogicalRequest>,
     selected_ownership: Option<BTreeSet<SelectedModule>>,
@@ -419,10 +391,8 @@ fn finalize_selected_assignment<'a, 'p, 's>(
         spec,
         chunk_unassigned_mode,
         chunk_id_interned,
-        target_file,
+        runtime_file,
         runtime_ast,
-        header_lines,
-        source_path,
         ast_analysis,
         requests,
         mut builder,
@@ -527,7 +497,7 @@ fn finalize_selected_assignment<'a, 'p, 's>(
             chunk_top_level_mark,
             target_dir,
             chunk_id,
-            target_file: &target_file,
+            target_file: &runtime_file.path,
             runtime_import_facts,
         };
         let mut imported_binding_resolver =
@@ -719,10 +689,8 @@ fn finalize_selected_assignment<'a, 'p, 's>(
     Ok(FinalizedLogicalAssignment {
         chunk_unassigned_mode,
         chunk_id_interned,
-        target_file,
+        runtime_file,
         runtime_ast,
-        header_lines,
-        source_path,
         ast_analysis,
         requests,
         selected_ownership: ownership_subset,
@@ -741,30 +709,24 @@ fn finalize_selected_assignment<'a, 'p, 's>(
 /// Reuse the same plan finalization for a selected view whose dependency
 /// topology comes from a source-bound saved graph rather than semantic facts.
 pub(super) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
-    claimed: ClaimedLogicalChunk<'a>,
+    claimed: LogicalChunkPlan<'a>,
     graph: analysis::DependencyGraphInput,
     projection: &'p AnalysisProjection<'s>,
 ) -> Result<FinalizedLogicalAssignment<'a>> {
-    let ClaimedLogicalChunk {
-        prepared,
+    let LogicalChunkPlan {
         structural_analysis,
-        ..
-    } = claimed;
-    let PreparedLogicalChunk {
         context,
         spec,
         chunk_unassigned_mode,
         chunk_id_interned,
-        target_file,
+        runtime_file,
         runtime_ast,
-        header_lines,
-        source_path,
         ast_analysis,
         requests,
         builder,
         placement_anchors,
         ..
-    } = prepared;
+    } = claimed;
     let chunk_id = context.chunk_id;
     let placement_modules = context
         .ownership_subset
@@ -790,10 +752,8 @@ pub(super) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
         spec,
         chunk_unassigned_mode,
         chunk_id_interned,
-        target_file,
+        runtime_file,
         runtime_ast,
-        header_lines,
-        source_path,
         ast_analysis,
         requests,
         builder,
@@ -807,35 +767,29 @@ pub(super) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
 
 /// Analyze, plan and lower a chunk whose selector claims are already resolved.
 pub(super) fn finish_logical_chunk(
-    claimed: ClaimedLogicalChunk<'_>,
+    claimed: LogicalChunkPlan<'_>,
     projection: &AnalysisProjection<'_>,
     program_summary: &super::program_summary::ProgramSummary,
     loaded_facts: Option<ChunkFactAnalysis>,
     program_graph: &ProgramGraphOutput<'_>,
     graph_context: GraphConstructionContext<'_>,
 ) -> Result<FinishedLogicalChunk> {
-    let ClaimedLogicalChunk {
-        prepared,
+    let LogicalChunkPlan {
         structural_analysis,
         source_only_initializer_bindings,
         external_initializer_contracts,
-        ..
-    } = claimed;
-    let PreparedLogicalChunk {
         context,
         spec,
         chunk_unassigned_mode,
         chunk_id_interned,
-        target_file,
+        runtime_file,
         runtime_ast,
-        header_lines,
-        source_path,
         ast_analysis,
         requests,
         builder,
         placement_anchors,
         ..
-    } = prepared;
+    } = claimed;
     let ChunkContext {
         artifact,
         artifact_indexes,
@@ -897,9 +851,9 @@ pub(super) fn finish_logical_chunk(
             artifact_indexes,
             chunk_id,
             chunk_id_interned,
-            target_file: &target_file,
+            target_file: &runtime_file.path,
             runtime_ast,
-            source_path: &source_path,
+            source_path: &runtime_file.metadata.source_path,
             diagnostics: context.diagnostics,
             export_reentry_policy: export_reentry_policies
                 .get(&chunk_id_interned)
@@ -1012,10 +966,8 @@ pub(super) fn finish_logical_chunk(
         spec,
         chunk_unassigned_mode,
         chunk_id_interned,
-        target_file,
+        runtime_file,
         runtime_ast,
-        header_lines,
-        source_path,
         ast_analysis,
         requests,
         builder,
@@ -1028,10 +980,8 @@ pub(super) fn finish_logical_chunk(
     let FinalizedLogicalAssignment {
         chunk_unassigned_mode,
         chunk_id_interned,
-        target_file,
+        runtime_file,
         runtime_ast,
-        header_lines,
-        source_path,
         ast_analysis,
         requests,
         selected_ownership: ownership_subset,
@@ -1128,9 +1078,9 @@ pub(super) fn finish_logical_chunk(
             artifact_indexes,
             chunk_id,
             chunk_id_interned,
-            source_path: &source_path,
-            entry_file: &target_file,
-            header_lines: &header_lines,
+            source_path: &runtime_file.metadata.source_path,
+            entry_file: &runtime_file.path,
+            header_lines: &runtime_file.header_lines,
             vendor_import_oracle,
         },
         ast: LowerChunkAst {
@@ -1158,7 +1108,6 @@ pub(super) fn finish_logical_chunk(
     }
     let LoweredChunk {
         files,
-        file_records,
         applied,
         vendor_reference_rewrites,
     } = prepared_emission.emit();
@@ -1173,7 +1122,7 @@ pub(super) fn finish_logical_chunk(
         .catchall_file_target()
         .map(|target| target_file_for_request(target_dir, target))
         .transpose()?
-        .unwrap_or_else(|| target_file.clone());
+        .unwrap_or_else(|| runtime_file.path.clone());
     let directory_dependency_facts = build_directory_dependency_facts(
         chunk_id,
         &entry_destination_report_target_file,
@@ -1220,10 +1169,9 @@ pub(super) fn finish_logical_chunk(
         MaterializedLogicalChunk {
             chunk_id: chunk_id_interned,
             unmatched_spec_claims,
-            target_file,
-            source_path,
+            target_file: runtime_file.path.clone(),
+            source_path: runtime_file.metadata.source_path.clone(),
             files,
-            file_records,
             applied,
             directory_dependency_facts,
             validation,
