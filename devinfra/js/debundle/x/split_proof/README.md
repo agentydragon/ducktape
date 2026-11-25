@@ -141,13 +141,13 @@ With the `browser-page` host profile, `--deployment-preset native-browser-record
 
 [Lean's initializer](lean/EsmSplit/CoreJS/NativeRecord.lean) allocates that receiver and its nonconstructible resolver in a private model dependency before original module bodies run. The entry captures its immutable binding. The resolver runs in the common opaque world with its actual receiver and arguments. The record's properties can subsequently change; getter calls and objects reachable from them remain subject to the ordinary structural frame checks. All metadata sites, including deferred ones, must stay in the checked entry. The model dependency is never emitted. Pass the same preset to `--check-output`; without it the original deployment checks still apply.
 
-The verdict's `scope` identifies the proof about the original annotated ESTree and the [generated module ASTs](lean/EsmSplit/ESTreeEmit.lean):
+The verdict's `scope` identifies which theorem the run established. Each theorem is about the CoreJS programs that Lean lowers from the original annotated ESTree and the [generated module ASTs](lean/EsmSplit/ESTreeEmit.lean):
 
-- [Closed declarations](lean/EsmSplit/CoreJS/Declaration/Artifacts.lean): `prepare?` checks the plan, footprints and order. Its `certify` function decodes the output modules, checks the entry's public surface, and proves the reported level for those modules. Kept order gives equal results and states for every world and fuel, including throws. Checked moves give the same successful states in both directions.
-- [Structural order and moves](lean/EsmSplit/CoreJS/StructuralCertificate.lean): `certifyStructuralASTs` checks both linked schedules. Its result proves that each entry exports the same live cells and that either graph reaches a successful final state exactly when the other does, under the opaque-world and deployment interpretation above.
-- [Linked execution](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean): `certifyASTs` checks that the supplied ASTs decode to the programs in the execution proof. Both initialize normally in the same state for every world satisfying the reported host premises and export the same live cells.
+- [Closed declarations](lean/EsmSplit/CoreJS/Declaration/Artifacts.lean): `prepare?` checks the plan, footprints and order. Its `certify` function is a proven checker that runs as compiled code. It decodes the output modules, checks the entry's public surface, and proves the reported level for those modules. Kept order gives equal results and states for every world and fuel, including throws. Checked moves give the same successful states in both directions.
+- [Structural order and moves](lean/EsmSplit/CoreJS/StructuralCertificate.lean): `certifyStructuralASTs` is a proven checker that runs as compiled code. It checks both linked schedules. Its result proves that each entry exports the same live cells and that either graph reaches a successful final state exactly when the other does, under the opaque-world and deployment interpretation above.
+- [Linked execution](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean): each run writes a Lean proof about the two lowered programs, and the kernel checks it in a separate Lean process. `certifyASTs` then runs as compiled code and checks that the supplied ASTs lower to those programs. Both initialize normally in the same state for every world satisfying the reported host premises and export the same live cells.
 
-[Publication](lean/EsmSplit/SplitFiles.lean) passes the same AST map to the chosen check and then to the printer. The theorem ends at the ASTs: interpreting it as a statement about JavaScript files relies on faithful parsing and scope annotation, printing, file IO, and the CoreJS model of the supported syntax. `--check-output` [reparses an existing directory](translation/module_io.mjs), compares the module set, syntax and callable spelling, requires copied providers to match the source text, and checks the certificate against the expected ASTs. It can accept regrouped declarations whose ordered units still match.
+[Publication](lean/EsmSplit/SplitFiles.lean) passes the same AST map to the chosen check and then to the printer. The theorems start and end at CoreJS. Interpreting a verdict as a statement about JavaScript files relies on faithful parsing and scope annotation, the Lean lowering from annotated ESTree to CoreJS, printing, file IO, the CoreJS model of the supported syntax, and Lean's compiler for the checks that run as compiled code. The lowering uses `partial` definitions, which the kernel cannot unfold, so running it establishes its result. `--check-output` [reparses an existing directory](translation/module_io.mjs), compares the module set, syntax and callable spelling, requires copied providers to match the source text, and checks the certificate against the expected ASTs. It can accept regrouped declarations whose ordered units still match. The [convergence plan](PLAN.md#convergence) removes the printer from this list.
 
 For a module that calls functions or imports named bindings from relative JavaScript files, use
 the normal three-positional command with the original source path. The splitter parses
@@ -394,8 +394,9 @@ Both programs print `<circle> 12.56636 true` and `area,label`.
 
 ## What is proved
 
-The structural theorem below applies to a plan and its stated footprints. For the
-artifact guarantee of the normal splitter, see [CoreJS certification](#request-a-corejs-guarantee).
+The abstract theorem below applies to a plan and its stated footprints. No verdict states it
+directly; closed-declaration verdicts reuse its `Valid` checks. For the artifact guarantee of
+the normal splitter, see [CoreJS certification](#request-a-corejs-guarantee).
 
 [`lean/EsmSplit/Correct.lean`](lean/EsmSplit/Correct.lean):
 
@@ -447,7 +448,7 @@ uses `decide +kernel` for `Valid` and applies `split_correct`.
 
 ## What is not proved
 
-The structural theorem assumes footprint soundness for the supplied program.
+The abstract theorem assumes footprint soundness for the supplied program.
 [`Lower.lean`](lean/EsmSplit/Lower.lean) scans declarations, eager and deferred
 names, and assignment sites. [The Effects analysis](effects/README.md) supplies
 writes, indirect reads and world effects under its printed premises.
@@ -463,7 +464,7 @@ and unchanged resolution of relative specifiers. Diagnostic glue exports may wid
 the entry's public surface.
 
 For the normal splitter, the [CoreJS artifact guarantee](#request-a-corejs-guarantee)
-states the parser, binding annotations, printer and model premises. The
+states the parser, binding annotation, lowering, printer, model and compiler premises. The
 [footprint proof inventory](docs/footprint_soundness.md#current-proof-inventory)
 lists the Effects summaries already covered by separate CoreJS certificates.
 For validation of a separately authored tree, see the

@@ -197,7 +197,7 @@ The Node comparison suites ([`model/README.md`](model/README.md)) exercise the s
 
 The code reaches the [target](#target) through the steps below. Until they land, new work does not add a lowering, a proof mode or an uncertified output.
 
-[Check the printed files](#check-the-printed-files), [no unchecked output](#no-unchecked-output) and [documentation](#documentation-states-what-each-verdict-proves) are small and independent. [One lowering](#one-lowering-in-lean) comes before [one proven checker](#one-proven-checker), because the theorem is stated over that lowering's output. [One guarantee](#one-guarantee) can remove the mode flags before the proven checker exists by picking a strategy automatically.
+[Check the printed files](#check-the-printed-files) and [no unchecked output](#no-unchecked-output) are small and independent. [One lowering](#one-lowering-in-lean) comes before [one proven checker](#one-proven-checker), because the theorem is stated over that lowering's output. [One guarantee](#one-guarantee) can remove the mode flags before the proven checker exists by picking a strategy automatically.
 
 ### One lowering, in Lean
 
@@ -298,14 +298,6 @@ The broad Node comparison runs through `to_core.mjs`. [`corejs_ast_lowering_test
 **Target.** The spec carries renames, and `split` checks them, including code that observes function names or source text.
 
 **Done when.** A certified split emits readable names without a renaming premise.
-
-### Documentation states what each verdict proves
-
-**Now.** The README's "What is proved" section is about `split_correct`, a theorem over abstract statement meanings; the verdicts state CoreJS theorems. The README says the theorem ends at the ASTs, but the AST-to-CoreJS step is executable Lean with `partial` helpers that the kernel cannot unfold, and closed-declaration and structural verdicts come from proven checkers run as compiled code. [`docs/footprint_soundness.md`](docs/footprint_soundness.md) cites `LowerSplit.sliceLines`, which no longer exists.
-
-**Target.** The README states the target guarantee, the [trusted parts](#trusted-and-tested) and which evidence each verdict used. Until [one guarantee](#one-guarantee) lands, it states each scope's theorem.
-
-**Done when.** The README describes exactly the verdicts the CLI emits.
 
 ## Next steps
 

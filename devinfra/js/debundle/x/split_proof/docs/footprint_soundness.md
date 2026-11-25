@@ -89,8 +89,9 @@ The executable path is `bindingCertificate` → `bindingMayMove` →
 `bindingMayMove_sound` connects accepted summaries to semantic commutation using
 `Stmt.bindingFootprint` and `declareTops_bundleEnv_injective`;
 `moves_preserve_of_certifiedMovesOk` supplies the whole-program result.
-`LowerSplit.sliceLines` reports this as `moves (certified bindings)` when the
-existing syntax-only rule cannot cover a plan.
+The diagnostic model report (`modelDiagnostics` in
+[`LowerSplit/Diagnostic.lean`](../lean/EsmSplit/LowerSplit/Diagnostic.lean)) calls this
+`moves (certified bindings)` when the existing syntax-only rule cannot cover a plan.
 
 The integration regressions swap independent assignments such as `x = 1` and
 `y = 2`, keeping each assignment with its declaration as `AssignsHome` requires.
