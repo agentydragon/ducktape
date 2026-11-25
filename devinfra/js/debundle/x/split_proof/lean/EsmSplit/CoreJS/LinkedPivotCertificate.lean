@@ -26,11 +26,11 @@ private theorem runUnits_move {W : World} {ready : State W} {pre crossed suffix}
   case ok v t => exact ⟨trivial, result.2⟩
   all_goals exact result
 
-private def CheckedLink.forWorld {p : Program} (checked : CheckedLink p World.probe) (w : World) :
+def CheckedLink.forWorld {p : Program} (checked : CheckedLink p World.probe) (w : World) :
     CheckedLink p w :=
   ⟨checked.linked, linkState w checked.ready, link_from_probe checked w⟩
 
-private def checkLink (p : Program) : Except String (CheckedLink p World.probe) :=
+def checkLink (p : Program) : Except String (CheckedLink p World.probe) :=
   match h : link p (initialState World.probe p.regions) with
   | .ok linked ready => .ok ⟨linked, ready, h⟩
   | .unknown reason _ => .error reason
@@ -273,12 +273,12 @@ private def checkRuns (intrinsics : List StableIntrinsic) (ready : State World.p
     rw [← runUnits_same n same]
     simpa [List.map_map, Function.comp_def, PreparedUnit.ofUnit] using schedule.equivalent w hw n final⟩)
 
-/-- Select the rule from the linked schedules, then validate the witness in all worlds. -/
-def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidate : Program)
+/-- Check the complete linked schedules. Callers checking additional public
+interfaces can use the same linker witnesses. -/
+def checkLinkedSchedules (intrinsics : List StableIntrinsic) {source candidate : Program}
+    (before : CheckedLink source World.probe) (after : CheckedLink candidate World.probe)
     (recordPivots : Std.HashSet Nat) :
     Except String (StructuralProof × PLift (NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate ∧ SameExports source candidate)) := do
-  let before ← (checkLink source).mapError ("original linker: " ++ ·)
-  let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
   let some ⟨initial⟩ := StateMatch.probe before.ready after.ready |
     throw "the linked initial states differ"
   let ⟨exportsEqual⟩ ←
@@ -317,5 +317,12 @@ def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidat
     | 1 => .singlePivot
     | _ => .multiplePivots
   return (method, ⟨⟨equivalent, sameExports⟩⟩)
+
+def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidate : Program)
+    (recordPivots : Std.HashSet Nat) :
+    Except String (StructuralProof × PLift (NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate ∧ SameExports source candidate)) := do
+  let before ← (checkLink source).mapError ("original linker: " ++ ·)
+  let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
+  checkLinkedSchedules intrinsics before after recordPivots
 
 end CoreJS.LinkedBehavior

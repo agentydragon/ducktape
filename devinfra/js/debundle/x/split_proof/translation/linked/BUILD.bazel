@@ -36,6 +36,20 @@ _TEST_DATA = [
 
 _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
 
+js_test(
+    name = "joint_static_test",
+    size = "medium",
+    data = _TEST_DATA + [
+        "//devinfra/js/debundle/x/split_proof/lean:joint_static_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+    ],
+    entry_point = "joint_static_test.mjs",
+    env = dict(
+        _TEST_ENV,
+        JOINT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:joint_static_test_runner)",
+    ),
+)
+
 [
     js_test(
         name = name,
