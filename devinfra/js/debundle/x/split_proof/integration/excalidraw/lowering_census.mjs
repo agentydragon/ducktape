@@ -12,6 +12,7 @@ const astFile = path.join(tmp, "ast.json");
 const outputFile = path.join(out, "lowering-census.jsonl");
 writeFileSync(outputFile, "");
 const rows = [];
+const checkedMoves = new Set();
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
 if (process.env.TEST_SHARD_STATUS_FILE) writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
@@ -50,6 +51,23 @@ function stub(ast, kind, name) {
 }
 function census(corpus, name, profile, ast) {
   const result = lower(profile, ast);
+  // Check one actual input per corpus and shard against the move census.
+  // Refusals remain visible even if the movement report retains a unit opaque.
+  if (!checkedMoves.has(corpus)) {
+    checkedMoves.add(corpus);
+    const contract = path.join(tmp, `${profile}.json`);
+    const moves = JSON.parse(
+      execFileSync(process.env.COREJS, ["--moves-ast", astFile, "--host-contract", contract], {
+        encoding: "utf8",
+        maxBuffer: 128 * 1024 * 1024,
+      })
+    );
+    assert.equal(moves.hostProfile, profile, `${corpus}/${name}: move profile`);
+    assert.equal(moves.units, result.units, `${corpus}/${name}: executable units`);
+    assert.deepEqual(moves.lowering_refusals, result.lowering_refusals, `${corpus}/${name}: concrete refusals`);
+    assert(moves.refused <= result.lowering_refusals.length, `${corpus}/${name}: opaque fallback`);
+    assert(moves.opaque >= result.lowering_refusals.length - moves.refused, `${corpus}/${name}: retained refusals`);
+  }
   const retries = {};
   const globals = new Set(
     result.lowering_refusals

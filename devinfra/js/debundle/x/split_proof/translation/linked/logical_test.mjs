@@ -65,6 +65,7 @@ for (const [operator, shortCircuit, evaluateRight] of [
         forcePreview(files, candidate);
       } else {
         assert.equal(verdict.status, "certified", log);
+        assert.equal(verdict.strategy, operator === "||" ? "generated-proof" : "compiled-replay-premised", log);
         assert.deepEqual(observe(files.sourceFile, "result"), { result: wrap(left) });
       }
       assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry]);
@@ -72,6 +73,36 @@ for (const [operator, shortCircuit, evaluateRight] of [
         result: wrap(readsLate ? "ready" : left),
       });
     }
+  }
+}
+
+// The right operand also replays when it is reached and returns a primitive.
+for (const [operator, left, right] of [
+  ["&&", true, "and"],
+  ["||", "", "or"],
+  ["??", null, "nullish"],
+]) {
+  const dir = path.join(root, `selected-right-${operator}`);
+  const files = prepare(dir, {
+    source: program([
+      variable("const", "value", { type: "LogicalExpression", operator, left: literal(left), right: literal(right) }),
+      variable("const", "late", literal("ready")),
+      exportNamed([["value", "result"]]),
+    ]),
+    provider: "",
+    spec: {
+      entry: "entry.mjs",
+      modules: { "use.mjs": ["#0"], "late.mjs": ["#1"], "entry.mjs": ["#2"] },
+      order: ["late.mjs", "use.mjs"],
+      sequential: true,
+    },
+  });
+  const out = path.join(dir, "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.strategy, "compiled-replay-premised", log);
+  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
+    assert.deepEqual(observe(file, "result"), { result: right });
   }
 }
 
@@ -87,6 +118,7 @@ for (const [operator, shortCircuit, evaluateRight] of [
   const out = path.join(dir, "out");
   const { verdict, log } = lower(files.sourceFile, files.specFile, out);
   assert.equal(verdict.status, "certified", log);
+  assert.equal(verdict.strategy, "generated-proof", log);
   for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
     assert.deepEqual(observe(file, "observed"), { observed: "" });
   }

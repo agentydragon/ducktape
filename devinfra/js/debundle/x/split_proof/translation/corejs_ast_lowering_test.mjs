@@ -65,6 +65,107 @@ async function nodeOutcome(url) {
   }
 }
 
+// The move census lowers the annotated source units through the linked rules.
+// The static field is allocation-only; the call is not. The exponentiation
+// initializer falls back to opaque, while top-level await is refused even as opaque.
+const censusSource = `
+  import { value } from "external-package";
+  function f() {}
+  function deferred() { return 2 ** 3; }
+  const a = 1, b = class { field = value; static field = 1; },
+    c = class { static field = console.log("effect"); };
+  const { x } = value;
+  const unmodeled = 2 ** 3;
+  await 1;
+  export { a };
+`;
+const censusJs = file("census.mjs", censusSource);
+const censusAst = JSON.parse(execFileSync(process.env.DUMP_AST, [censusJs, "--opaque-captures"], { encoding: "utf8" }));
+assert.deepEqual(censusAst, dumpSource(censusSource, { includeOpaqueCaptures: true }));
+assert.deepEqual(
+  JSON.parse(execFileSync(process.env.DUMP_AST, [censusJs], { encoding: "utf8" })),
+  dumpSource(censusSource)
+);
+const censusFile = file("census.json", JSON.stringify(censusAst));
+const census = JSON.parse(
+  execFileSync(process.env.COREJS, ["--moves-ast", censusFile, "--node-recording"], { encoding: "utf8" })
+);
+assert.equal(census.hostProfile, "node-recording");
+assert.deepEqual(
+  [census.units, census.inert, census.allocate, census.opaque, census.other, census.refused],
+  [8, 2, 2, 1, 3, 1]
+);
+assert.deepEqual([census.may_move, census.may_move_denominator], [4, 8]);
+assert.match(census.problems[0], /await/i);
+const censusConcrete = JSON.parse(
+  execFileSync(process.env.COREJS, ["--lowering-census", censusFile], { encoding: "utf8" })
+);
+const emptyMoves = JSON.parse(execFileSync(process.env.COREJS, ["--moves-ast", censusFile], { encoding: "utf8" }));
+assert.deepEqual(emptyMoves.lowering_refusals, censusConcrete.lowering_refusals);
+assert.equal(emptyMoves.unit_details.length, censusConcrete.units);
+
+// An ambient host read must not become allocation-only under production
+// profiles merely because recorded Node replay treats it as a host value.
+const globalsFile = file("census-globals.json", JSON.stringify(dumpSource("const a = Object, b = Math;")));
+function censusFor(args = []) {
+  return JSON.parse(execFileSync(process.env.COREJS, ["--moves-ast", globalsFile, ...args], { encoding: "utf8" }));
+}
+function contract(name, value) {
+  return file(`${name}.json`, JSON.stringify(value));
+}
+const emptyCensus = censusFor();
+assert.deepEqual([emptyCensus.hostProfile, emptyCensus.allocate, emptyCensus.opaque], ["empty", 0, 2]);
+const emptyPath = contract("empty", { profile: "empty" });
+assert.deepEqual(censusFor(["--host-contract", emptyPath]), emptyCensus);
+const ecmaPath = contract("ecma", { profile: "ecmascript" });
+const ecmaCensus = censusFor(["--host-contract", ecmaPath]);
+assert.deepEqual([ecmaCensus.hostProfile, ecmaCensus.allocate, ecmaCensus.opaque], ["ecmascript", 0, 1]);
+const browserPath = contract("browser", { profile: "browser-page" });
+const browserCensus = censusFor(["--host-contract", browserPath]);
+assert.deepEqual([browserCensus.hostProfile, browserCensus.allocate, browserCensus.opaque], ["browser-page", 0, 0]);
+const nodeCensus = censusFor(["--node-recording"]);
+assert.deepEqual([nodeCensus.hostProfile, nodeCensus.allocate, nodeCensus.opaque], ["node-recording", 2, 0]);
+const ecmaStable = contract("ecma-stable", {
+  profile: "ecmascript",
+  stableIntrinsicValues: ["Object.defineProperty@1"],
+});
+assert.deepEqual(censusFor(["--host-contract", ecmaStable]), ecmaCensus);
+const browserStable = contract("browser-stable", { profile: "browser-page", stableIntrinsicValues: ["Math.PI@1"] });
+assert.deepEqual(censusFor(["--host-contract", browserStable]), browserCensus);
+// Both reports use the certified contract reader and preserve the same
+// first refusals, including for supported stable-intrinsic contracts.
+for (const [contractPath, expected] of [
+  [ecmaStable, ecmaCensus],
+  [browserStable, browserCensus],
+]) {
+  const concrete = JSON.parse(
+    execFileSync(process.env.COREJS, ["--lowering-census", globalsFile, "--host-contract", contractPath], {
+      encoding: "utf8",
+    })
+  );
+  assert.equal(concrete.hostProfile, expected.hostProfile);
+  assert.deepEqual(concrete.lowering_refusals, expected.lowering_refusals);
+}
+const invalidContract = contract("invalid-stable", {
+  profile: "browser-page",
+  stableIntrinsicValues: ["Object.defineProperty@1"],
+});
+const malformedContract = file("malformed-contract.json", "{");
+for (const mode of ["--moves-ast", "--lowering-census"]) {
+  for (const invalidContractPath of [invalidContract, malformedContract]) {
+    const invalid = spawnSync(process.env.COREJS, [mode, globalsFile, "--host-contract", invalidContractPath]);
+    assert.notEqual(invalid.status, 0, `${mode} must reject malformed or mismatched contracts`);
+  }
+}
+
+const forbidden = contract("bad-profile", { profile: "node-recording" });
+assert.notEqual(spawnSync(process.env.COREJS, ["--moves-ast", globalsFile, "--host-contract", forbidden]).status, 0);
+assert.notEqual(
+  spawnSync(process.env.COREJS, ["--moves-ast", globalsFile, "--node-recording", "--host-contract", browserPath])
+    .status,
+  0
+);
+
 // Each seed builds a fresh module and binding chain. Throwing the last value
 // makes precision, shadowing and initialization observable in Node and CoreJS.
 const literals = [

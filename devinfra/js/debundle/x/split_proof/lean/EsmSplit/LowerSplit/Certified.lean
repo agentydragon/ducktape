@@ -132,12 +132,7 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sy
     | none => pure (CoreJS.HostProfile.empty, [])
     | some path => do
       let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
-      let presets : List (CoreJS.HostProfile × CoreJS.StableIntrinsic) :=
-        [(.browserPage, .mathPI), (.ecmascript, .objectDefineProperty)]
-      match presets.find? (fun (p, d) => j == Json.mkObj [("profile", toJson p.label),
-          ("stableIntrinsicValues", toJson [d.id])]) with
-      | some (p, d) => pure (p, [d])
-      | none => pure (← IO.ofExcept (CoreJS.HostProfile.read j), [])
+      IO.ofExcept (CoreJS.StableIntrinsic.readContract j)
   let structural := args.contains "--structural"
   unless structural || intrinsics.isEmpty do
     throw (IO.userError "stableIntrinsicValues requires --structural")
