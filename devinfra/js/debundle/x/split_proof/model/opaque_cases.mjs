@@ -73,6 +73,8 @@ export const opaqueCases = [
   },
   {
     name: "opaque class bodies do not run during moved class creation",
+    // The class bodies assign calls, which the midpoint cut places in the entry.
+    consecutiveSplitRefusal: "invalid logical placement before entry facade",
     source: `
       class Box {
         constructor() { const [unused] = []; calls++; throw "eager constructor"; }
@@ -115,6 +117,8 @@ export const opaqueCases = [
   },
   {
     name: "opaque named class methods retain the immutable inner class name",
+    // The write to Alias falls after the cut, and its declaration falls before it.
+    consecutiveSplitRefusal: "source placement or module linkage checks failed",
     source: `
       let Alias = class Inner { self() { const [unused] = []; return Inner; } };
       const Original = Alias;
@@ -167,6 +171,8 @@ export const opaqueCases = [
   },
   {
     name: "opaque class accessors read live captures and receive the instance",
+    // The write to captured crosses the cut from its declaration.
+    consecutiveSplitRefusal: "source placement or module linkage checks failed",
     source: `
       class Box {
         get value() { const [unused] = []; return captured; }
@@ -505,6 +511,8 @@ export const opaqueCases = [
   },
   {
     name: "opaque code writes a binding and a property that the program reads",
+    // The switch writes count, which is declared before the cut.
+    consecutiveSplitRefusal: "source placement or module linkage checks failed",
     source: `
       let count = 0;
       const box = { v: 1 };
