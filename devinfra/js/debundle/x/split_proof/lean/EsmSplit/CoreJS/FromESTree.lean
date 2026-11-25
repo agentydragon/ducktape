@@ -724,6 +724,21 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let elements ← j.getObjValAs? (List Json) "elements"
     let lower := linkedExpr profile imports inFunction ""
     return .arr (← elements.mapM (linkedArgument lower))
+  | "TaggedTemplateExpression" =>
+    let slot ← field j ":template-binding"
+    let callee ← j.getObjVal? "tag"
+    let quasi ← j.getObjVal? "quasi"
+    let substitutions ← quasi.getObjValAs? (List Json) "expressions"
+    let lower := linkedExpr profile imports inFunction ""
+    let args := Expr.var slot :: (← substitutions.mapM lower)
+    match ← field callee "type" with
+    | "MemberExpression" =>
+      if (field (← callee.getObjVal? "object") "type").toOption == some "Super" then
+        return .callSuper (← memberKey lower callee) args false
+      let (base, key) ← linkedMember lower callee
+      return .callMethod base key args
+    | "ChainExpression" => throw "unsupported optional chain as a template tag"
+    | _ => return .call (← lower callee) args
   | "TemplateLiteral" => linkedTemplate (linkedExpr profile imports inFunction "") j
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
@@ -808,6 +823,16 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let lower := linkedExpr profile imports inFunction ""
     let callee ← j.getObjVal? "callee"
     let args ← j.getObjValAs? (List Json) "arguments"
+    if profile == .browserPage && (field callee "type").toOption == some "MemberExpression" &&
+        (callee.getObjValAs? Bool "computed").toOption == some false &&
+        (callee.getObjVal? "object" >>= (field · "k")).toOption == some "G" &&
+        (callee.getObjVal? "object" >>= identifier).toOption == some "Array" &&
+        (callee.getObjVal? "property" >>= identifier).toOption == some "from" then
+      if let [source] := args then
+        unless (field source "type").toOption == some "SpreadElement" do
+          -- Observe the constructor and method before evaluating the argument. On the
+          -- supported fresh-realm template iterable, Array.from creates a mutable copy.
+          return .seq (.prim .checkArrayFrom []) (.arr [.spreadArg (.prim .templateIterable [← lower source])])
     if profile == .browserPage && (field callee "type").toOption == some "Identifier" &&
         (field callee "k").toOption == some "G" && (identifier callee).toOption == some "Symbol" then
       match args with

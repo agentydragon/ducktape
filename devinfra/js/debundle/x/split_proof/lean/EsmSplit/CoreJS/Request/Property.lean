@@ -511,6 +511,8 @@ theorem reachFrame_defineOwn {r R cells A} (away : Away r R A) {a : Addr} (ha : 
   apply (reachFrame_getObj away ha).bind
   intro current currentSafe
   split
+  · exact reachFrame_throwErr r R cells A _ _ _
+  split
   · exact reachFrame_unknown r R cells A _ _
   · have ownSafe : ∀ p, p ∈ current.props.lookup key → ∀ node ∈ p.nodes, A node := by
       intro p hp node edge
@@ -779,8 +781,10 @@ private theorem reachFrame_checkPrototype {r R cells A} (away : Away r R A)
     (safeParent : ∀ a ∈ parent, A (.obj a)) :
     ReachFrame r R cells A (fun _ => True) (do
       let s ← getState
-      if (← getObj target).proto == parent then pure false
-      else if reaches s target s.objectCount parent then throwErr .type "cyclic __proto__ value"
+      let object ← getObj target
+      if object.proto == parent then pure false
+      else if object.frozen || reaches s target s.objectCount parent then
+        throwErr .type (if object.frozen then "cannot change the prototype of a frozen object" else "cyclic __proto__ value")
       else pure true : M W Bool) := by
   constructor
   · intro s H C hs _
@@ -826,16 +830,20 @@ private theorem reachFrame_setPrototype {r R cells A} (away : Away r R A)
     (safeParent : ∀ a ∈ parent, A (.obj a)) :
     ReachFrame r R cells A (SafeVal A) (do
       let s ← getState
-      if (← getObj target).proto == parent then pure (.obj target)
-      else if reaches s target s.objectCount parent then throwErr .type "cyclic __proto__ value"
+      let object ← getObj target
+      if object.proto == parent then pure (.obj target)
+      else if object.frozen || reaches s target s.objectCount parent then
+        throwErr .type (if object.frozen then "cannot change the prototype of a frozen object" else "cyclic __proto__ value")
       else
         modifyObj target fun o => { o with proto := parent }
         pure (.obj target) : M W Val) := by
   have operation : ReachFrame r R cells A (SafeVal A) (do
       let update ← (do
         let s ← getState
-        if (← getObj target).proto == parent then pure false
-        else if reaches s target s.objectCount parent then throwErr .type "cyclic __proto__ value"
+        let object ← getObj target
+        if object.proto == parent then pure false
+        else if object.frozen || reaches s target s.objectCount parent then
+          throwErr .type (if object.frozen then "cannot change the prototype of a frozen object" else "cyclic __proto__ value")
         else pure true)
       if update then modifyObj target fun o => { o with proto := parent }
       pure (.obj target) : M W Val) := by
@@ -905,8 +913,10 @@ theorem reachFrame_prim_setPrototypeOf {r R cells A} (away : Away r R A) (call :
   let finish (parent : Option Addr) : M W Val := match v with
     | .obj target => do
       let s ← getState
-      if (← getObj target).proto == parent then pure v
-      else if reaches s target s.objectCount parent then throwErr .type "cyclic __proto__ value"
+      let object ← getObj target
+      if object.proto == parent then pure v
+      else if object.frozen || reaches s target s.objectCount parent then
+        throwErr .type (if object.frozen then "cannot change the prototype of a frozen object" else "cyclic __proto__ value")
       else
         modifyObj target fun o => { o with proto := parent }
         pure v

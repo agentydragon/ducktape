@@ -124,6 +124,7 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         ("sequence_test", 3),
         ("super_members_test", 3),
         ("templates_test", 3),
+        ("tagged_templates_test", 3),
     ]
 ]
 
