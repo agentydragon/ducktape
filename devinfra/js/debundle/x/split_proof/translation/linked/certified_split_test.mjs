@@ -185,7 +185,7 @@ assert.equal(movedVerdict.scope, "closed-declarations");
 assert.equal(movedVerdict.guarantee, normal);
 assert.deepEqual(check(reordered, normal, "certified", "--check-output"), movedVerdict);
 assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["result", 1]]);
-prepare("const sparse = [1, , 2];", { [entry]: ["#0"] }, []);
+prepare("const sparse = [1, , (() => 2)()];", { [entry]: ["#0"] }, []);
 const unsupported = path.join(root, "unsupported");
 assert.match(check(unsupported, normal, "rejected").reason, /unsupported array hole/);
 check(unsupported, undefined, "rejected", "--force");

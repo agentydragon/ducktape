@@ -219,6 +219,22 @@ private theorem templateArray_nodes {A : HeapNode → Prop} (root : A (.obj arra
     · cases hnode
     · exact rawSafe v (Option.mem_toList.mp hv) node hnode
 
+theorem sparseArray_nodes {A : HeapNode → Prop} (root : A (.obj arrayProto))
+    (holes : List Nat) (values : List Val) (safe : ∀ v ∈ values, SafeVal A v) :
+    ∀ n ∈ (sparseArrayObject holes values).nodes, A n := by
+  intro node hn
+  simp only [sparseArrayObject, Obj.nodes, List.mem_append, List.mem_flatMap, List.mem_map,
+    List.mem_filter, Option.toList_some, List.mem_singleton, Option.toList_none, List.flatMap_nil,
+    List.mem_nil_iff, or_false] at hn
+  rcases hn with hroot | ⟨p, hmem, hnode⟩
+  · obtain ⟨_, rfl, rfl⟩ := hroot
+    exact root
+  · rcases hmem with ⟨item, ⟨hitem, _⟩, rfl⟩ | rfl
+    · exact safe item.1 (List.fst_mem_of_mem_zipIdx hitem) node hnode
+    · cases hnode
+
+#print axioms sparseArray_nodes
+
 theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : CallFramed r R cells A call)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (root : A (.obj objectProto))
     (arrayRoot : A (.obj arrayProto)) (p : Prim) (args : List Val) (safe : ∀ x ∈ args, SafeVal A x) :
@@ -286,6 +302,9 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
       cases cooked
       · cases hv
       · exact safe v (List.mem_of_mem_head? hv)
+  | sparseArray holes =>
+    exact (reachFrame_alloc _ (sparseArray_nodes arrayRoot holes args safe) objects).bind fun a ha =>
+      reachFrame_pure r R cells A (Val.obj a) (safeVal_obj.2 ha)
   | forInKeys => exact reachFrame_forInKeys away objects _ (safe_arg safe 0)
   | checkForInWrite =>
     exact reachFrame_checkForInWrite away _ _ _ (safe_arg safe 0) (safe_arg safe 1)

@@ -624,6 +624,19 @@ private def linkedArgument (lower : Json → Except String Expr) (j : Json) : Ex
   if (← field j "type") == "SpreadElement" then return .spreadArg (← lower (← j.getObjVal? "argument"))
   lower j
 
+/-- Primitive constant operands cannot observe the array's not-yet-exposed allocation. -/
+private def sparseConstant (j : Json) : Bool := Id.run do
+  if j == .null then return true
+  if (field j "type").toOption == some "Literal" then
+    return ((field j "lit").toOption.bind fun key => (literal key).toOption).isSome
+  if (field j "type").toOption == some "Identifier" && (field j "k").toOption == some "G" then
+    return (field j "name").toOption.any fun name => ["undefined", "NaN", "Infinity"].contains name
+  if (field j "type").toOption == some "UnaryExpression" && (field j "operator").toOption == some "-" then
+    let arg := (j.getObjVal? "argument").toOption.getD .null
+    return (field arg "type").toOption == some "Literal" &&
+      ((field arg "lit").toOption.any fun key => key.startsWith "n:")
+  return false
+
 /-- Named defaults initialize lexical parameter cells in order from the raw argument slots.
 Ordinary functions then enter a body block; derived constructors run their prefix before super. -/
 private inductive LinkedFunctionParts where
@@ -732,6 +745,11 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "ArrayExpression" =>
     let elements ← j.getObjValAs? (List Json) "elements"
     let lower := linkedExpr profile imports inFunction ""
+    if elements.contains .null then
+      unless elements.all sparseConstant do throw "unsupported array hole"
+      let holes := (elements.zipIdx.filterMap fun (j, i) => if j == .null then some i else none)
+      let values ← elements.mapM fun j => if j == .null then pure .undef else lower j
+      return .prim (.sparseArray holes) values
     return .arr (← elements.mapM (linkedArgument lower))
   | "TaggedTemplateExpression" =>
     let slot ← field j ":template-binding"
