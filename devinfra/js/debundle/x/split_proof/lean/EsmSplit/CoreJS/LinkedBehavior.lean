@@ -2,6 +2,18 @@ import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.Fuel
 import EsmSplit.CoreJS.Scope
 
+namespace CoreJS
+
+inductive Guarantee where
+  | allOutcomes | normalCompletion
+  deriving DecidableEq
+
+def Guarantee.label : Guarantee → String
+  | .allOutcomes => "all-outcomes"
+  | .normalCompletion => "normal-completion"
+
+end CoreJS
+
 namespace CoreJS.LinkedBehavior
 
 /-- Both module graphs finish normally with the same entire state in each world. -/
@@ -22,6 +34,13 @@ binding, heap, output and world state. A source that throws before the pivot
 does not promise the candidate throws with an identical partial state. -/
 def NormalEquivalent (worlds : World → Prop) (source candidate : Program) : Prop :=
   ∀ w, worlds w → ∀ (final : State w), Ends w source (.ok () final) ↔ Ends w candidate (.ok () final)
+
+/-- An exact schedule agrees at every evaluator bound, including abrupt or
+unknown results and their states. A move proof can establish normal outcomes. -/
+def ScheduleEquivalent (level : Guarantee) (worlds : World → Prop) (source candidate : Program) : Prop :=
+  match level with
+  | .allOutcomes => ∀ w, worlds w → ∀ n, runProgram w n source = runProgram w n candidate
+  | .normalCompletion => NormalEquivalent worlds source candidate
 
 theorem normalEquivalent_of_bounded {worlds : World → Prop} {source candidate : Program}
     (run : ∀ w, worlds w → ∀ n (final : State w),

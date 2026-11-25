@@ -29,23 +29,24 @@ def SamePublicCells (paths : List String) (before after : Program) : Prop :=
     ∀ path ∈ paths, CellsMatch path a.linked b.linked
 
 /-- The resolved assignment covers the decoded executable units in the
-actual output modules. The entry-rooted schedules relate all normal final
-states under the returned stable-intrinsic premises. -/
+actual output modules. The entry-rooted schedules agree at the stated level
+under the returned stable-intrinsic premises. -/
 def DeploymentEquivalent (entry : String) (parts : List LinkedInput.StaticSplit) (shared : Lean.Json)
-    (inputs : Option LinkedDeployment.Input) (profile : HostProfile) (offered used : List StableIntrinsic) : Prop :=
+    (inputs : Option LinkedDeployment.Input) (profile : HostProfile) (offered used : List StableIntrinsic) (level : Guarantee) : Prop :=
   used ⊆ offered ∧ ∃ hints deployment paths,
     LinkedInput.decodeDeployment entry parts shared inputs profile hints = .ok deployment ∧
     LinkedInput.publicPaths parts shared = .ok paths ∧
     Places deployment.assignment deployment.before deployment.after ∧
-    NormalEquivalent (StableIntrinsic.Worlds used) deployment.before deployment.after ∧
+    ScheduleEquivalent level (StableIntrinsic.Worlds used) deployment.before deployment.after ∧
     SameExports deployment.before deployment.after ∧
     SamePublicCells paths deployment.before deployment.after
 
 abbrev DeploymentResult (entry : String) (parts : List LinkedInput.StaticSplit) (shared : Lean.Json)
     (inputs : Option LinkedDeployment.Input) (profile : HostProfile) (offered : List StableIntrinsic) :=
-  (used : List StableIntrinsic) × StructuralProof × PLift (DeploymentEquivalent entry parts shared inputs profile offered used)
+  (used : List StableIntrinsic) × (level : Guarantee) × StructuralProof ×
+    PLift (DeploymentEquivalent entry parts shared inputs profile offered used level)
 
-private def certifyGraph (entry : String) (parts : List LinkedInput.StaticSplit) (shared : Lean.Json)
+def certifyDeployment (entry : String) (parts : List LinkedInput.StaticSplit) (shared : Lean.Json)
     (inputs : Option LinkedDeployment.Input) (profile : HostProfile) (offered : List StableIntrinsic) :
     Except String (DeploymentResult entry parts shared inputs profile offered) := do
   let mut primary : Std.HashMap String (List Nat) := {}
@@ -71,9 +72,9 @@ private def certifyGraph (entry : String) (parts : List LinkedInput.StaticSplit)
         let b ← (checkLink after).mapError ("candidate linker: " ++ ·)
         let ⟨cells⟩ ← checkPublicCells a.linked b.linked paths
         let used := usedIntrinsics offered before
-        let (method, ⟨normal, exports⟩) ← checkLinkedSchedules used a b recordPivots
-        return ⟨used, method, ⟨usedIntrinsics_subset offered before, hints, deployment, paths,
-          decoded, publicPaths, placed, normal, exports, fun w => ⟨a.forWorld w, b.forWorld w, cells⟩⟩⟩
+        let ⟨level, method, ⟨equivalent, exports⟩⟩ ← checkLinkedSchedules used a b recordPivots
+        return ⟨used, level, method, ⟨usedIntrinsics_subset offered before, hints, deployment, paths,
+          decoded, publicPaths, placed, equivalent, exports, fun w => ⟨a.forWorld w, b.forWorld w, cells⟩⟩⟩
   match check primary with
   | .ok result => return result
   | .error why =>
@@ -88,15 +89,5 @@ private def certifyGraph (entry : String) (parts : List LinkedInput.StaticSplit)
         retry := true
     unless retry do throw why
     check expanded
-
-def certifyDeployment (entry : String) (parts : List LinkedInput.StaticSplit) (shared : Lean.Json)
-    (inputs : LinkedDeployment.Input) (profile : HostProfile) (offered : List StableIntrinsic) :
-    Except String (DeploymentResult entry parts shared (some inputs) profile offered) :=
-  certifyGraph entry parts shared (some inputs) profile offered
-
-def certifyStaticDeployment (entry : String) (parts : List LinkedInput.StaticSplit) (shared : Lean.Json)
-    (profile : HostProfile) (offered : List StableIntrinsic) :
-    Except String (DeploymentResult entry parts shared none profile offered) :=
-  certifyGraph entry parts shared none profile offered
 
 end CoreJS.LinkedBehavior

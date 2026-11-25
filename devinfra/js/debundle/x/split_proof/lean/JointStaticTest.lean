@@ -21,7 +21,7 @@ private def check (input : Json) : Except String Unit := do
   let provider ← fragment (← input.getObjVal? "provider")
   let parts := [app, provider]
   let shared := Json.mkObj []
-  let _ ← CoreJS.LinkedBehavior.certifyStaticDeployment app.plan.entry parts shared .empty []
+  let _ ← CoreJS.LinkedBehavior.certifyDeployment app.plan.entry parts shared none .empty []
   -- Test the placement checker on bodies lowered from the parsed fixture.
   -- Invalid assignments exercised here would be refused earlier by the decoder.
   let decoded ← CoreJS.LinkedInput.decodeDeployment app.plan.entry parts shared none .empty (fun _ => [])

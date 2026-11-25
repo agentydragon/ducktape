@@ -228,11 +228,11 @@ The Node comparison suites run their whole programs through `corejs --ast` under
 
 **Now.** Certified verdicts have three scopes, and each proves a different statement:
 
-| Scope                 | Selected by                                                                       | Proves                                                                           |
-| --------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `closed-declarations` | Automatically, for a closed module of simple declarations, without `--structural` | Order kept: every ending matches. Moves: same successful states, both directions |
-| `linked-programs`     | Default                                                                           | In every allowed world, both programs finish normally in the same state          |
-| `linked-structural-*` | `--structural`                                                                    | Same successful final states, both directions (`NormalEquivalent`)               |
+| Scope                 | Selected by                                                                       | Proves                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `closed-declarations` | Automatically, for a closed module of simple declarations, without `--structural` | Order kept: every ending matches. Moves: same successful states, both directions                  |
+| `linked-programs`     | Default                                                                           | In every allowed world, both programs finish normally in the same state                           |
+| `linked-structural-*` | `--structural`                                                                    | Exact linked schedule: every ending matches. Moves: same successful final states, both directions |
 
 `--require all-outcomes|normal-completion` asks for a level.
 
@@ -285,7 +285,7 @@ The linked statement implies `NormalEquivalent` over the worlds that satisfy its
 **How.**
 
 1. Bridge the slices to decoded programs. Either state the slice theorems for named modules with exports, or prove that the module name and exports of a single module do not change a run. Then check that the decoded source is the single program of `ss` and the decoded emitted files are `splitProgram ss B P`, with `ss` from the linked lowering.
-2. Add the slice checks to the certified checker as strategies, ahead of the per-split linked proof. The order-kept slice gives every ending and replaces the closed-declaration path's `all-outcomes`.
+2. Add the remaining slice checks to the certified checker as strategies, ahead of the per-split linked proof. The structural checker already proves `all-outcomes` when the reparsed output links to the original initial state and ordered units.
 3. Move the split checks of the Node comparison suites and the other diagnostic tests to the certified path. A refused plan is counted as a refusal; its program still runs unsplit through the model.
 4. Move `--lean` example generation to its own generator and the integration scripts to the certified command.
 5. Delete `--diagnostic`.

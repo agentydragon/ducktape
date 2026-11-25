@@ -254,7 +254,7 @@ export function workerSplit(name, source, entryUnits = ["#1"]) {
 
 export function assertCertified(verdict, log) {
   assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), log);
 }
 
 export function assertCertifiedResult({ files, out, verdict, log }, result) {
