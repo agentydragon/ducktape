@@ -22,15 +22,15 @@ def label : HostProfile → String
 /-- Fresh `Symbol(…)` calls and the ambient well-known symbols are host observations. -/
 def ambientSymbols (p : HostProfile) : Bool := p == .browserPage || p == .nodeRecording
 
-/-- Under the recorded host, the host catalog's globals are opaque host values. The world answers calls of
-`hostFunctions` and of the members of `hostNamespaces`. -/
+/-- Under the recorded host, the host catalog's globals and `eval` are opaque host values. The world
+answers calls of `hostFunctions` and of the members of `hostNamespaces`. -/
 def recordedHostValue (p : HostProfile) (name : String) : Bool :=
-  p == .nodeRecording && (hostFunctions.contains name || (hostNamespaces.lookup name).isSome ||
+  p == .nodeRecording && (name == "eval" || hostFunctions.contains name || (hostNamespaces.lookup name).isSome ||
     BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
 
 /-- Under the recorded host, a name outside the host catalog is undeclared: reading it throws. -/
 def undeclaredGlobal (p : HostProfile) (name : String) : Bool :=
-  p == .nodeRecording && !(BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
+  p == .nodeRecording && !p.recordedHostValue name
 
 /-- The recorded host's primitive calls: `console.log` and the `Object` functions the model defines. -/
 def recordedPrim (p : HostProfile) (owner key : String) : Option Prim := do
