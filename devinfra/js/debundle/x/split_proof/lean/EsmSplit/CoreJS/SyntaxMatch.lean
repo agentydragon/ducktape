@@ -247,7 +247,10 @@ private partial def propEq : MatchEq PropDef
     let ⟨fn⟩ ← funcEq f f'
     return ⟨key ▸ fn ▸ rfl⟩
   | .proto v, .proto v' => (exprEq v v').map fun h => ⟨congrArg PropDef.proto h.down⟩
-  | .spread a, .spread b => (exprEq a b).map fun h => ⟨congrArg PropDef.spread h.down⟩
+  | .spread a keys, .spread b keys' => do
+    let ⟨source⟩ ← exprEq a b
+    let ⟨excluded⟩ ← scalarEq keys keys'
+    return ⟨source ▸ excluded ▸ rfl⟩
   | _, _ => none
 
 private partial def objectBindingEq : MatchEq (Expr × BindingPattern)

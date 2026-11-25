@@ -1222,15 +1222,17 @@ def copySpreadKeys (call : Call W) (target source : Addr) : List PropertyKey →
       createData target key (← getFrom call source (.obj source) key)
     copySpreadKeys call target source rest
 
-/-- CopyDataProperties for an object literal. Snapshot keys before the first getter runs. -/
-def copySpread (call : Call W) (target : Addr) : Val → M W Unit
+/-- CopyDataProperties for spread and static-key object rest. Filter the key snapshot before
+reading any descriptors or getters. Symbols never equal an excluded string. -/
+def copySpread (call : Call W) (target : Addr) (excluded : List Name) : Val → M W Unit
   | .obj source => do
-    copySpreadKeys call target source (← ownKeys (.obj source))
+    let keys ← ownKeys (.obj source)
+    copySpreadKeys call target source (keys.filter fun k => !k.string?.any excluded.contains)
   | .undef | .null | .num _ | .bool _ | .wellKnownSymbol _ | .symbol _ => pure ()
   | .str s => do
     unless s.toList.all (·.toNat ≤ 0xffff) do
       unknown "object spread would copy an isolated UTF-16 surrogate"
-    for (c, i) in s.toList.zipIdx do
+    for (c, i) in s.toList.zipIdx.filter (fun item => !excluded.contains (toString item.2)) do
       createData target (toString i) (.str (String.singleton c))
   | .host name => unknown s!"object spread inspects host value {name}"
   | .error .. => unknown "object spread inspects an engine error"
