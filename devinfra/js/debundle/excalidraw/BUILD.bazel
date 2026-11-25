@@ -217,6 +217,26 @@ filegroup(
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
 )
 
+debundle_resolve_placement(
+    name = "selected_main_placement",
+    canonical_out = "canonical_main_placement.json",
+    chunk = "main",
+    ownership_subset = "main_smoke_subset.json",
+    package_roots = _PACKAGE_ROOTS,
+    spec_tree_inputs = [":spec"],
+    tree_config = "config.yaml",
+    tree_modules = "spec/modules",
+    tree_source_root = ":source",
+    tree_vendor_marks = "spec/vendor_marks.yaml",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+)
+
+filegroup(
+    name = "canonical_main_placement",
+    srcs = ["canonical_main_placement.json"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+)
+
 py_test(
     name = "test_proposal_fragments",
     srcs = ["test_proposal_fragments.py"],
