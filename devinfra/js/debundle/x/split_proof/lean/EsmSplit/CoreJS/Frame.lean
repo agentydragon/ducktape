@@ -307,7 +307,7 @@ theorem addPrototype_keeps (a : Addr) (kind : FuncKind) {base s : State W} (hb :
   unfold addPrototype
   exact keeps_bind (alloc_keeps _ hb) fun p s' _ hb' => modifyObj_keeps a _ hb' ha
 
-theorem makeFunc_keeps (env : Env) (f : Func) {base s : State W} (hb : Extends base s) : (makeFunc env f s).Keeps base := by
+theorem makeFunc_keeps (env : Env) (f : Func) {base s : State W} (hb : Extends base s) : (makeFunc env f f.name s).Keeps base := by
   unfold makeFunc
   refine keeps_bind (selfScope_keeps _ _ _ hb) fun env1 s1 h1 hb1 => ?_
   refine keeps_bind (alloc_keeps _ hb1) fun a s2 h2 hb2 => ?_
