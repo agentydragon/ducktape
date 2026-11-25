@@ -9,6 +9,8 @@ import (
 
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -244,7 +246,6 @@ func TestACommitSeenLaterBringsInTheDeliveriesThatWaitedForIt(t *testing.T) {
 					g.deliver(t, "check_run", withAction("completed"), atCommit(commitB), labelled("check run of the new commit"))
 				}
 				g.reconcileAll(t, sub)
-				g.reconcileAll(t, sub)
 
 				if ciFirst {
 					g.requireDelivered(t, "check run of the known commit", "check run of the new commit", "association")
@@ -253,6 +254,39 @@ func TestACommitSeenLaterBringsInTheDeliveriesThatWaitedForIt(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestHistoricalCIFactsMatchLatePRAssociationAcrossWorkerRestart(t *testing.T) {
+	g := newGitHubFixture(t)
+	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
+
+	failure := g.deliver(t, "check_run", withAction("completed"), atCommit(commitA), labelled("failure"))
+	success := g.deliver(t, "check_run", withAction("completed"), atCommit(commitA), labelled("success"))
+	g.deliver(t, "check_run", withAction("completed"), inInstallation(g.installation+100), atCommit(commitA), labelled("ungranted"))
+
+	// The receipts are durable before the PR is associated with their commit.
+	g.reconcileAll(t, sub)
+	g.requireDelivered(t)
+
+	g.deliver(t, "pull_request", withAction("synchronize"), onPullRequest(7), atCommit(commitA), labelled("association"))
+
+	// Recreate the source objects as a restarted worker would; its only state is the committed database.
+	g.state = githubstate.New(g.db, g.runner, testFreshness, publication.Adapter{})
+	g.coordinator = New(g.db, g.runner, g.Store)
+	g.reconcileAll(t, sub)
+	g.requireDelivered(t, "failure", "success", "association")
+
+	// Delivery matching uses the normalized fact. Neither rendering nor a duplicate receipt retry needs the body.
+	g.exec(t, `UPDATE github_delivery SET payload = 'null'::jsonb WHERE delivery_id IN ($1, $2)`,
+		failure.DeliveryID, success.DeliveryID)
+	if g.ingest(t, failure) || g.ingest(t, success) {
+		t.Fatal("a redelivery was accepted as new after its body was removed")
+	}
+	g.reconcileAll(t, sub)
+	g.requireDelivered(t, "failure", "success", "association")
+	if got := g.count(t, "SELECT count(*) FROM entry WHERE inbox_id = $1", g.inbox); got != 3 {
+		t.Fatalf("inbox has %d entries, want exactly three", got)
 	}
 }
 

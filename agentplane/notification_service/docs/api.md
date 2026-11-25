@@ -234,18 +234,25 @@ are all `issues` lifecycle actions and ordinary `issue_comment` events; explicit
 can narrow these. Issue subjects do not accept CI events or PR numbers; PR comments remain PR
 events rather than ordinary issue events.
 
-`workflow_job` payloads contribute their repository-qualified `head_sha` and optional branch
+`workflow_job` facts contribute their repository-qualified `head_sha` and optional branch
 reference. They can match PR/branch/commit subscriptions that explicitly select `workflow_job`,
 including an action filter such as `completed`. A job has no authoritative PR-number list:
 PR matches use observed head associations rather than inferring a PR from its branch name.
-Delivered job payloads contain the accepted job/run IDs, steps, status and conclusion.
+Delivered job facts contain the accepted job/run IDs, steps, status and conclusion.
 
 GitHub subscriptions consider accepted deliveries after their creation boundary. Catch-up,
 late PR/commit association matching and delivery-ID deduplication are bounded by the configured
-[raw delivery retention](../README.md#github-event-retention). A delivery that expires before
+[receipt/fact retention](../README.md#github-event-retention). A receipt that expires before
 matching is no longer available for catch-up. Redelivery after expiry is accepted as new, but an
 inbox already containing the event still deduplicates it. Delivered inbox payload copies have
 their own 30-day lifetime.
+
+Webhook `payload` is a normalized event-specific projection, not the signed request body. It retains the exact
+`projectionVersion: 1`, the exact action, repository and subject/revision details, plus notification content such as original comment/review text,
+check and job identifiers, status/conclusion, steps, URLs and full SHAs. The projection is explicitly defined by
+the [GitHub notification guide](agents/github.md#follow-github-activity); arbitrary fields from the upstream body
+are omitted. The raw body remains stored with its receipt under the existing receipt retention setting and is never
+read to match or render ordinary notifications.
 
 PR, issue, exact branch and fixed-commit subjects use native GitHub event/action names. Default CI means completed
 `check_run` and `status`; `check_suite`, `workflow_run` and `workflow_job` require explicit selection. PR comments/reviews,
@@ -278,7 +285,7 @@ object and carries no `event` or `action`; the event category is in the identity
 `repositoryId`, `sha`, `id`, `context`, `state`, `targetUrl`, optional `updatedAt` and `observedAt`; states are
 `error`, `failure`, `pending` and `success`.
 These are current facts for the followed PR head, not full event or action history; facts no longer exposed by
-GitHub cannot be recovered. Branch and fixed-commit CI notifications continue to use raw webhook events.
+GitHub cannot be recovered. Branch and fixed-commit CI notifications use the retained webhook fact projections.
 
 Observations retained from before the native-resource split keep their original payload and identity. Those
 legacy payloads use `headSha`, `name`, `status`, `detailsUrl`, `event` and optional `action`/`checkAppId` for both

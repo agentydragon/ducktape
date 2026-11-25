@@ -48,15 +48,20 @@ does not invent or replay actions. A check run whose current state is completed 
 subscription even when its `created` webhook was missed, without claiming that the created action was recovered.
 The existing subscribe command and default filters stay the same. This reads current facts GitHub exposes for the
 followed PR head, not complete event or action history; facts no longer represented by GitHub cannot be recovered.
-Branch and fixed-commit CI notifications continue to use raw webhook events.
+Branch and fixed-commit CI notifications continue to use receipt-backed webhook facts.
 
 **Subscribe first, then read current GitHub state.** This is live follow from subscription creation,
 not historical webhook replay. Confirm creation before relying on monitoring. After reading current
 state, continue independent work or end your turn; subsequent notices can start another turn while
 the harness remains running.
 
-Webhook entries contain `event.github` (`deliveryId`, `repositoryId`, `event`, `action`) and the actual
-webhook body in `payload`. A generated mergeability entry instead uses `event.githubMergeability`,
+Webhook entries contain `event.github` (`deliveryId`, `repositoryId`, `event`, `action`) and a compact,
+versioned event-specific projection in `payload`. Its top-level `projectionVersion` is `1`. The projection keeps the exact action and repository identity;
+pull-request and issue facts retain their number, title, body, state and relevant refs; comments and reviews retain
+their original text, IDs, author and URLs; and CI activity retains the relevant run/check IDs, status, conclusion,
+steps or context, and full commit SHA. Push facts retain the ref and before/after SHAs. Optional fields are omitted
+when absent and upstream fields outside the projection are not part of the notification contract. Consumers must
+not treat `payload` as the signed GitHub body or expect arbitrary upstream fields. A generated mergeability entry instead uses `event.githubMergeability`,
 identified by `appId`, `repositoryId`, and `pullRequestNumber`, with an `observation` oneof. A subscriber
 joining an already-conflicted PR receives a current snapshot identified by `snapshotVersion`, which
 increases when relevant state changes. A mergeability transition observed after subscription carries a

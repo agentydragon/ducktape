@@ -375,7 +375,7 @@ func TestDeliveryAlreadyRecordedIsNotRecordedAgain(t *testing.T) {
 		AppID: g.app, DeliveryID: delivery.DeliveryID, RepositoryID: g.repository,
 		Event: githubmodel.EventIssueComment, Action: &action,
 	})
-	if err := g.appendEvent(t.Context(), g.inbox, sub.ID, event, delivery.Payload); err != nil {
+	if err := g.appendEvent(t.Context(), g.inbox, sub.ID, event, delivery.Fact); err != nil {
 		t.Fatal(err)
 	}
 

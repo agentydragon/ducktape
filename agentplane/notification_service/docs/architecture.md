@@ -35,6 +35,8 @@ see [`migrations`](../migrations/migrations.go) and the deployment instructions.
 An inbox row lock serializes cursor allocation, payload insertion, overlapping subscription
 matches and source-checkpoint advancement. Inbox entries hold their own payload copies, independent
 of the raw GitHub receipt journal. Event identities survive inbox payload expiry for deduplication.
+GitHub matching reads the compact event-specific fact projection stored with each receipt; the signed request body
+is retained for compatibility but is not part of delivery or notification rendering.
 
 One PostgreSQL LISTEN connection per replica distributes committed invalidations, never payloads.
 Workers drain durable state at startup and after reconnect. Inbox claims, source generations and

@@ -22,6 +22,7 @@ go_library(
         "//agentplane/notification_service/internal/sourceadapter",
         "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/sources/github/client",
+        "//agentplane/notification_service/internal/sources/github/facts",
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/publication/fanout",
         "//agentplane/notification_service/internal/sources/github/settings",
@@ -46,6 +47,7 @@ go_test(
     deps = [
         "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/sources/github/client",
+        "//agentplane/notification_service/internal/sources/github/facts",
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/settings",
         "//agentplane/notification_service/internal/sources/github/state",

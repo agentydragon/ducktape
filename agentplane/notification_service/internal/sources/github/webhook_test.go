@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/facts"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
@@ -56,6 +57,10 @@ func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
 			want := githubstate.Ingest{
 				AppID: vector.Ingest.AppID, DeliveryID: vector.DeliveryID, InstallationID: vector.Ingest.InstallationID,
 				Event: vector.Event, Digest: digest, Action: vector.Ingest.Action, HeadSHA: vector.Ingest.HeadSHA,
+			}
+			want.Fact, err = facts.Project(vector.Event, []byte(vector.Raw))
+			if err != nil {
+				t.Fatal(err)
 			}
 			if vector.Ingest.RepositoryID != nil {
 				want.Repository = &githubmodel.Repository{ID: *vector.Ingest.RepositoryID, Name: *vector.Ingest.RepositoryName}
