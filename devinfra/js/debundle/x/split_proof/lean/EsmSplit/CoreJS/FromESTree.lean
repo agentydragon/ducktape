@@ -410,11 +410,15 @@ private partial def linkedMember (lower : Json → Except String Expr) (j : Json
     | none => reason
   return (base, ← memberKey lower j)
 
-private def linkedTarget (profile : HostProfile) (imports : List Name) (inFunction : Bool)
+private structure LinkedExprScope where
+  inFunction : Bool
+  allowClassLocals : Bool
+
+private def linkedTarget (profile : HostProfile) (imports : List Name) (scope : LinkedExprScope)
     (lower : Json → Except String Expr) (j : Json) : Except String Target := do
   match ← field j "type" with
   | "Identifier" =>
-    let .var name ← reference imports inFunction j profile
+    let .var name ← reference imports (scope.inFunction || scope.allowClassLocals) j profile
       | throw "expected a binding in linked assignment"
     -- Glue imports keep the original module reference annotation. Local references shadow imports.
     let scope ← field j "k"
@@ -671,7 +675,7 @@ private inductive LinkedFunctionParts where
 
 mutual
 
-private partial def linkedExpr (profile : HostProfile) (imports : List Name) (inFunction : Bool) (nameHint : Name)
+private partial def linkedExprScoped (profile : HostProfile) (imports : List Name) (scope : LinkedExprScope) (nameHint : Name)
     (j : Json) : Except String Expr := do
   let kind ← field j "type"
   match kind with
@@ -684,15 +688,15 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       return .regexp ⟨pattern, flags⟩
     if key.startsWith "s:" then return .str (← stringLiteral j)
     literal key
-  | "Identifier" => reference imports inFunction j profile
+  | "Identifier" => reference imports (scope.inFunction || scope.allowClassLocals) j profile
   | "ThisExpression" => return .this
   | "CoreJSDerivedReceiver" => return .var derivedReceiverName
   | "CoreJSNewTarget" => return .var newTargetName
   | "MemberExpression" =>
     if let some sym := (ambientSymbolMember? j).bind WellKnownSymbol.ofMember? then
       if profile.ambientSymbols then return .prim (.wellKnownSymbol sym) []
-      if inFunction then return .prim (.opaqueAmbientMemberRef "Symbol" sym.member) []
-    let lower := linkedExpr profile imports inFunction ""
+      if scope.inFunction then return .prim (.opaqueAmbientMemberRef "Symbol" sym.member) []
+    let lower := linkedExprScoped profile imports scope ""
     if let some name := privateMember? j then
       return .prim (.privateSlot .get) [.var (privateTable name), ← lower (← j.getObjVal? "object")]
     if isSuperMember j then return .getSuper (← memberKey lower j)
@@ -700,7 +704,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     return .get base key
   | "ChainExpression" =>
     let body ← j.getObjVal? "expression"
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     let (body, property) ← if (← field body "type") == "MemberExpression" &&
         (body.getObjValAs? Bool "optional").toOption == some false then do
       let base ← body.getObjVal? "object"
@@ -729,18 +733,18 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     return .getOptional base key
   | "AssignmentExpression" =>
     let op ← field j "operator"
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     let left ← j.getObjVal? "left"
     if let some name := privateMember? left then
       unless op == "=" do throw "unsupported compound private field assignment"
       return .prim (.privateSlot .set) [.var (privateTable name), ← lower (← left.getObjVal? "object"),
         ← lower (← j.getObjVal? "right")]
-    let target ← linkedTarget profile imports inFunction lower left
+    let target ← linkedTarget profile imports scope lower left
     let rhs ← j.getObjVal? "right"
     let targetName := match target with
       | .var name | .frozen name => name
       | _ => ""
-    let named := linkedExpr profile imports inFunction targetName
+    let named := linkedExprScoped profile imports scope targetName
     match op with
     | "=" => return .assign target (← named rhs)
     | "+=" => return .assignOp target .add (← lower rhs)
@@ -763,13 +767,13 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | "++" => pure true
       | "--" => pure false
       | op => throw s!"unsupported linked update operator {op}"
-    let target ← j.getObjVal? "argument" >>= linkedTarget profile imports inFunction (linkedExpr profile imports inFunction "")
+    let target ← j.getObjVal? "argument" >>= linkedTarget profile imports scope (linkedExprScoped profile imports scope "")
     return .update target inc (← j.getObjValAs? Bool "prefix")
   | "ObjectExpression" =>
-    linkedObject (linkedExpr profile imports inFunction) (fun name => linkedFunction profile imports .method name false) j
+    linkedObject (linkedExprScoped profile imports scope) (fun name => linkedFunction profile imports .method name false) j
   | "ArrayExpression" =>
     let elements ← j.getObjValAs? (List Json) "elements"
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     if elements.contains .null then
       unless elements.all sparseConstant do throw "unsupported array hole"
       let holes := (elements.zipIdx.filterMap fun (j, i) => if j == .null then some i else none)
@@ -781,7 +785,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let callee ← j.getObjVal? "tag"
     let quasi ← j.getObjVal? "quasi"
     let substitutions ← quasi.getObjValAs? (List Json) "expressions"
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     let args := Expr.var slot :: (← substitutions.mapM lower)
     match ← field callee "type" with
     | "MemberExpression" =>
@@ -791,11 +795,11 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       return .callMethod base key args
     | "ChainExpression" => throw "unsupported optional chain as a template tag"
     | _ => return .call (← lower callee) args
-  | "TemplateLiteral" => linkedTemplate (linkedExpr profile imports inFunction "") j
+  | "TemplateLiteral" => linkedTemplate (linkedExprScoped profile imports scope "") j
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
     let operator ← field j "operator"
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     if operator == "delete" then
       unless (← field argument "type") == "MemberExpression" do
         throw "expected a member expression after delete"
@@ -812,10 +816,10 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     if op == .typeof && (← field argument "type") == "Identifier" && (field argument "k").toOption == some "G" then
       let name ← identifier argument
       if (profile.bindingType name).isSome then return .prim (.globalTypeof name) []
-    return .unary op (← linkedExpr profile imports inFunction "" argument)
+    return .unary op (← linkedExprScoped profile imports scope "" argument)
   | "BinaryExpression" =>
     let op ← field j "operator"
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     let left ← lower (← j.getObjVal? "left")
     let right ← lower (← j.getObjVal? "right")
     match op with
@@ -847,20 +851,20 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | "||" => pure .or
       | "??" => pure .nullish
       | other => throw s!"unsupported linked logical operator {other}"
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     return .logical op (← lower (← j.getObjVal? "left")) (← lower (← j.getObjVal? "right"))
   | "ConditionalExpression" =>
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     return .cond (← lower (← j.getObjVal? "test")) (← lower (← j.getObjVal? "consequent"))
       (← lower (← j.getObjVal? "alternate"))
   | "SequenceExpression" =>
     let expressions ← j.getObjValAs? (List Json) "expressions"
     let first :: second :: rest := expressions | throw "expected at least two sequence operands"
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     return sequenceTree (← lower first) (← (second :: rest).mapM lower)
-  | "ClassExpression" => linkedClass profile imports inFunction nameHint j
+  | "ClassExpression" => linkedClassScoped profile imports scope nameHint j
   | "NewExpression" =>
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     let args ← j.getObjValAs? (List Json) "arguments"
     let callee ← j.getObjVal? "callee"
     if (field callee "k").toOption == some "G" && (← field callee "type") == "Identifier" then
@@ -872,7 +876,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     return .new (← lower callee) (← args.mapM (linkedArgument lower))
   | "CallExpression" =>
     if ← j.getObjValAs? Bool "optional" then throw "unsupported optional call"
-    let lower := linkedExpr profile imports inFunction ""
+    let lower := linkedExprScoped profile imports scope ""
     let callee ← j.getObjVal? "callee"
     let args ← j.getObjValAs? (List Json) "arguments"
     if profile == .browserPage && (field callee "type").toOption == some "MemberExpression" &&
@@ -932,6 +936,11 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let name ← if id == .null then pure nameHint else localBinding id
     return .func (← linkedFunction profile imports (if arrow then .arrow else .normal) name (id != .null) j)
   | _ => throw s!"unsupported linked expression {kind}"
+
+
+private partial def linkedExpr (profile : HostProfile) (imports : List Name) (inFunction : Bool) (nameHint : Name)
+    (j : Json) : Except String Expr :=
+  linkedExprScoped profile imports ⟨inFunction, false⟩ nameHint j
 
 private partial def linkedFunction (profile : HostProfile) (imports : List Name) (kind : FuncKind) (name : Name) (self : Bool)
     (j : Json) : Except String Func := do
@@ -1174,10 +1183,14 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     return (initializers ++ before, args, .withDefaults name .classCtor false slots arity body)
 
 /-- Class elements with default or explicit derived constructors. -/
-private partial def linkedClass (profile : HostProfile) (imports : List Name) (inFunction : Bool) (hint : Name) (j : Json) :
+private partial def linkedClassScoped (profile : HostProfile) (imports : List Name) (scope : LinkedExprScope) (hint : Name) (j : Json) :
     Except String Expr := do
   let id ← j.getObjVal? "id"
   let name ← if id == .null then pure hint else identifier id
+  -- A named class gets an immutable inner binding around its heritage and body.
+  -- The frontend annotates references to that cell as function-local even when
+  -- the class appears at module scope.
+  let classScope := { scope with allowClassLocals := scope.allowClassLocals || id != .null }
   let parent ← j.getObjVal? "superClass"
   let body ← j.getObjVal? "body"
   unless (← field body "type") == "ClassBody" do throw "expected class body"
@@ -1207,7 +1220,7 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
       let table := Expr.var (privateTable spelling)
       let label := "#" ++ spelling
       if tag == "PropertyDefinition" then
-        let init ← if value == .null then pure .undef else linkedExpr profile imports inFunction label value
+        let init ← if value == .null then pure .undef else linkedExprScoped profile imports classScope label value
         members := members.push (.field false (.str "") (.prim (.privateSlot .addField) [table, .this, init]))
       else
         unless (← field member "kind") == "method" do throw "unsupported private accessor"
@@ -1225,16 +1238,16 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
         if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
           unless profile.ambientSymbols do throw "unsupported computed class key"
           pure (s!"[{sym.description}]", Expr.prim (.wellKnownSymbol sym) [])
-        else pure ("", ← linkedExpr profile imports inFunction "" keyNode)
+        else pure ("", ← linkedExprScoped profile imports classScope "" keyNode)
       else if !static then
         if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed field key"
-        pure ("", ← linkedExpr profile imports inFunction "" keyNode)
+        pure ("", ← linkedExprScoped profile imports classScope "" keyNode)
       else throw "unsupported computed class key"
     else do
       let name ← moduleExportName keyNode
       pure (name, Expr.str name)
     if tag == "PropertyDefinition" then
-      let init ← if value == .null then pure .undef else linkedExpr profile imports inFunction key value
+      let init ← if value == .null then pure .undef else linkedExprScoped profile imports classScope key value
       members := members.push (.field static keyExpr init)
     else
       match ← field member "kind" with
@@ -1247,7 +1260,7 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
       | other => throw s!"unsupported class method kind {other}"
   let ordered := brands.toList ++ members.toList
   let cls ← if parent == .null then pure (Expr.cls name (id != .null) ctor ordered)
-    else pure (Expr.derived name (id != .null) (← linkedExpr profile imports inFunction "" parent) ordered derivedCtor)
+    else pure (Expr.derived name (id != .null) (← linkedExprScoped profile imports classScope "" parent) ordered derivedCtor)
   if declarations.isEmpty then return cls
   return .call (.func (.mk "" .arrow false [] (declarations ++ [.ret cls]))) []
 
@@ -1399,7 +1412,8 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     | "BlockStatement" => return ← linkedBlock profile imports blockScope j
     | "ClassDeclaration" =>
       let name ← j.getObjVal? "id" >>= localBinding
-      return .decl .let_ name (← linkedClass profile imports true name j)
+      let classScope : LinkedExprScope := ⟨scope == .function, false⟩
+      return .decl .let_ name (← linkedClassScoped profile imports classScope name j)
     | "EmptyStatement" => return .block []
     | "IfStatement" =>
       let test ← linkedExpr profile imports true "" (← j.getObjVal? "test")
@@ -1465,7 +1479,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       let source ← lower "" (← j.getObjVal? "right")
       let body ← linkedStatement profile imports blockScope (← j.getObjVal? "body")
       if (← field left "type") != "VariableDeclaration" then
-        let target ← linkedTarget profile imports true (lower "") left
+        let target ← linkedTarget profile imports ⟨true, false⟩ (lower "") left
         let slot := ":for-of"
         return .forOf .const (.name slot) source (.block [.expr (.assign target (.var slot)), body])
       let #[d] ← left.getObjValAs? (Array Json) "declarations" | throw "expected one for-of binding declarator"
@@ -1506,7 +1520,7 @@ def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile :=
     return ([name], .funDecl (← linkedFunction profile imports .normal name false j))
   | "ClassDeclaration" =>
     let name ← j.getObjVal? "id" >>= moduleBinding
-    return ([name], .decl .let_ name (← linkedClass profile imports false name j))
+    return ([name], .decl .let_ name (← linkedClassScoped profile imports ⟨false, false⟩ name j))
   | "VariableDeclaration" =>
     let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
     linkedDeclarator (linkedExpr profile imports false) moduleBinding (← field j "kind") d
@@ -1525,7 +1539,7 @@ def linkedDefaultExport (imports : List Name) (d : Json) (profile : HostProfile 
       return (name, s)
     if kind == "FunctionDeclaration" then
       return ("default", .funDecl (← linkedFunction profile imports .normal "default" false d))
-    return ("default", .decl .let_ "default" (← linkedClass profile imports false "default" d))
+    return ("default", .decl .let_ "default" (← linkedClassScoped profile imports ⟨false, false⟩ "default" d))
   return ("default", .decl .const "default" (← linkedExpr profile imports false "default" d))
 
 /-- A top-level executable statement of the linked fragment. -/
