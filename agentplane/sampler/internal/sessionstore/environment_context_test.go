@@ -226,6 +226,7 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 				t.Fatal(err)
 			}
 			store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
+			store.contextSourceWrites = true
 			store.now = func() time.Time { return today }
 			// Read the persisted roots and check that an unchanged next step adds no
 			// second environment message.
