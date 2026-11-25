@@ -232,6 +232,45 @@ const defaultVerdict = JSON.parse(defaultRun.stdout.trim().split("\n").at(-1));
 assert.equal(defaultVerdict.status, "certified", defaultRun.stdout + defaultRun.stderr);
 assert.equal((await import(pathToFileURL(path.join(defaultOut, "entry.mjs")).href)).default, 42);
 
+// Top-level blocks, loops and switches: a var binds a module cell; let and const stay in the block.
+// A function declaration in a top-level block is still refused (function_declaration_test).
+const blockSource = [
+  "{ let hidden = 1; var visible = hidden + 1; const made = () => visible; console.log(made()); }",
+  "console.log(visible, typeof hidden, typeof made);",
+  'let i = 0; while (i < 3) { i++; if (i === 2) continue; console.log("loop", i); }',
+  'switch (i) { case 3: console.log("three"); break; default: console.log("other"); }',
+].join("\n");
+const [blocks] = run([dumpSource(blockSource)], true);
+const blocksNode = spawnSync(process.execPath, ["--input-type=module", "-e", blockSource], { encoding: "utf8" });
+assert.equal(blocksNode.status, 0, blocksNode.stderr);
+assert.deepEqual([blocks.end, blocks.detail, blocks.out], ["normal", "", blocksNode.stdout.split("\n").slice(0, -1)]);
+
+// A certified split moves a top-level block that updates its module's binding to a worker.
+const blockSplit = path.join(dir, "block-split");
+mkdirSync(blockSplit, { recursive: true });
+writeFileSync(
+  path.join(blockSplit, "bundle.mjs"),
+  "let total = 1;\n{ const step = 2; total += step; }\nexport const result = total;\n"
+);
+writeFileSync(
+  path.join(blockSplit, "spec.json"),
+  JSON.stringify({
+    entry: "entry.mjs",
+    modules: { "worker.mjs": ["#0", "#1"], "entry.mjs": ["#2"] },
+    order: ["worker.mjs"],
+    sequential: true,
+  })
+);
+const blockOut = path.join(blockSplit, "out");
+const blockRun = spawnSync(
+  process.env.LOWERSPLIT,
+  [path.join(blockSplit, "bundle.mjs"), path.join(blockSplit, "spec.json"), blockOut],
+  { encoding: "utf8" }
+);
+const blockVerdict = JSON.parse(blockRun.stdout.trim().split("\n").at(-1));
+assert.equal(blockVerdict.status, "certified", blockRun.stdout + blockRun.stderr);
+assert.equal((await import(pathToFileURL(path.join(blockOut, "entry.mjs")).href)).result, 3);
+
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {
   const ast = file("bundle.json", JSON.stringify(dumpSource(source)));

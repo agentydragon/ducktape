@@ -1312,10 +1312,11 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     Except String Stmt := do
   let kind ← field j "type"
   let nested := scope != .module
-  if nested || ["IfStatement", "TryStatement", "ForStatement", "ForOfStatement", "ForInStatement"].contains kind then
+  if nested || ["BlockStatement", "IfStatement", "TryStatement", "ForStatement", "ForOfStatement", "ForInStatement",
+      "WhileStatement", "SwitchStatement"].contains kind then
     let blockScope := if nested then scope else LinkedScope.moduleBlock
     match kind with
-    | "BlockStatement" => return ← linkedBlock profile imports scope j
+    | "BlockStatement" => return ← linkedBlock profile imports blockScope j
     | "ClassDeclaration" =>
       let name ← j.getObjVal? "id" >>= localBinding
       return .decl .let_ name (← linkedClass profile imports true name j)
@@ -1326,14 +1327,14 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       let alternate ← j.getObjVal? "alternate"
       let elseBranch ← if alternate == .null then pure (.block []) else linkedStatement profile imports blockScope alternate
       return .ite test consequent elseBranch
-    | "SwitchStatement" => return ← linkedSwitch profile imports scope j
+    | "SwitchStatement" => return ← linkedSwitch profile imports blockScope j
     | "VariableDeclaration" =>
       -- An unbraced branch can declare vars, which already belong to the enclosing module or function.
       unless (← field j "kind") == "var" do throw "expected a var declaration in statement position"
       return .block (← linkedBlockDeclarations profile imports scope j).toList
     | "WhileStatement" =>
       let test ← linkedExpr profile imports true "" (← j.getObjVal? "test")
-      return .loop [] test .undef (← linkedStatement profile imports scope (← j.getObjVal? "body"))
+      return .loop [] test .undef (← linkedStatement profile imports blockScope (← j.getObjVal? "body"))
     | "ForInStatement" =>
       let declaration ← j.getObjVal? "left"
       unless (← field declaration "type") == "VariableDeclaration" do
