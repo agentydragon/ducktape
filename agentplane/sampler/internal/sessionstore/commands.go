@@ -130,7 +130,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 		default:
 			return protocol.ErrInvalid
 		}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)
@@ -245,7 +245,7 @@ func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID s
 			}
 		}
 		drained = true
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)
@@ -395,7 +395,7 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 				return err
 			}
 		}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)
@@ -675,7 +675,7 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Con
 			return err
 		}
 	}
-	if err := updateConversation(ctx, tx, conversation); err != nil {
+	if err := s.updateConversation(ctx, tx, conversation); err != nil {
 		return err
 	}
 	return persistSession(ctx, tx, session)

@@ -281,7 +281,7 @@ func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
 				}
 				switch change {
 				case "head":
-					if err := current.Transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: intervening}}); err != nil {
+					if err := current.Transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: intervening}}, protocol.RecordOrigin{}); err != nil {
 						return err
 					}
 				case "control":
@@ -289,16 +289,20 @@ func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
 						Cells: []modelCell{{CellID: "fixture-intervening-cell", Status: executionstate.CellLive}}, Processes: []modelProcess{},
 					}
 				case "origins":
-					if current.Transcript.Origins().Len() == 0 {
-						t.Fatal("fixture has no stored environment origin")
+					records, err := current.Transcript.Records()
+					if err != nil {
+						return err
 					}
-					// Keep the same native context bytes and remove its origin root, as an older
-					// writer may do. The old provider snapshot must not restore stale controls.
-					_, err := tx.ExecContext(ctx, `UPDATE sampler_conversation
-						SET transcript_control=transcript_control - 'origin_context_id' WHERE id=$1`, current.ID)
-					return err
+					bare, err := newNativeContext(current.API)
+					if err != nil {
+						return err
+					}
+					if err := bare.AppendRecords(records); err != nil {
+						return err
+					}
+					current.Transcript = bare
 				}
-				return updateConversation(ctx, tx, current)
+				return store.updateConversation(ctx, tx, current)
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -331,8 +335,7 @@ func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
 				t.Fatal("finish replaced the current context control with the snapshot control")
 			}
 			providerOrigin := protocol.RecordOrigin{Kind: protocol.RecordOriginProviderResult, SourceID: id}
-			origins := after.Transcript.Origins()
-			if change == "origins" && (origins.Len() != 1 || origins.OriginAt(after.Transcript.RecordCount()-1) != providerOrigin) {
+			if change == "origins" && (after.Transcript.OriginAt(0).Kind != protocol.RecordOriginUnknown || after.Transcript.OriginAt(after.Transcript.RecordCount()-1) != providerOrigin) {
 				t.Fatal("finish restored an origin root from the stale snapshot")
 			}
 		})

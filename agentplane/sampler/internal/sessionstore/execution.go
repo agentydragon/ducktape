@@ -49,7 +49,7 @@ func (s *Store) BindInitialExecutorSession(ctx context.Context, owner Owner, san
 		session.Configuration = wire
 		conversation.ExecutorSession = &sessionID
 		conversation.ExecutorShell = shell
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		// Advance History's metadata snapshot together with the new incarnation fence.
@@ -80,7 +80,7 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 		}
 		conversation.ExecutorSession = &sessionID
 		conversation.ExecutorShell = shell
-		return updateConversation(ctx, tx, conversation)
+		return s.updateConversation(ctx, tx, conversation)
 	})
 }
 
@@ -103,7 +103,7 @@ func (s *Store) recordEnvironmentContext(objects content.ContentWriter, conversa
 		if update == "" {
 			return nil
 		}
-		if sourceID == "" {
+		if s.contextSourceWrites && sourceID == "" {
 			var err error
 			sourceID, err = putRecordObject(objects, EnvironmentUpdateObject{
 				SessionID: session.ID, Before: conversation.EnvironmentContext, After: current,
@@ -112,16 +112,11 @@ func (s *Store) recordEnvironmentContext(objects content.ContentWriter, conversa
 				return err
 			}
 		}
-		index, err := state.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: update}}, afterCompaction)
-		if err != nil {
-			return err
-		}
-		origin := protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, SourceID: sourceID, ContentSource: true}
+		origin := protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, ObjectID: sourceID}
 		if previous != nil {
 			origin.Projection = protocol.RecordProjectionEnvironmentDiff
 		}
-		state.Origins().Insert(index, origin)
-		return nil
+		return state.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: update}}, afterCompaction, origin)
 	}); err != nil {
 		return err
 	}
@@ -258,7 +253,7 @@ func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conve
 		if err := s.blockQueue(ctx, tx, session, reason); err != nil {
 			return err
 		}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 	}

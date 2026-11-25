@@ -58,8 +58,8 @@ func (s *Store) ReadRecordObject(ctx context.Context, owner Owner, transcript bo
 		if transcript {
 			state = conversation.Transcript
 		}
-		origin := state.Origins().OriginAt(index)
-		if !origin.ContentSource {
+		origin := state.OriginAt(index)
+		if origin.ObjectID == "" {
 			return protocol.ErrMissing
 		}
 		var wantKind content.ContentKind
@@ -71,9 +71,9 @@ func (s *Store) ReadRecordObject(ctx context.Context, owner Owner, transcript bo
 		default:
 			return protocol.ErrMissing
 		}
-		row, err := newContentDB(ctx, tx).GetContent(content.ContentID(origin.SourceID))
+		row, err := newContentDB(ctx, tx).GetContent(content.ContentID(origin.ObjectID))
 		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("missing semantic object %q: %w", origin.SourceID, protocol.ErrInvalid)
+			return fmt.Errorf("missing semantic object %q: %w", origin.ObjectID, protocol.ErrInvalid)
 		}
 		if err != nil {
 			return err

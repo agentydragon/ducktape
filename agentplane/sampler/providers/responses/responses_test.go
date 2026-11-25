@@ -420,7 +420,7 @@ func TestValidateCompactionPreservesOpaqueProviderRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	records := []json.RawMessage{[]byte(`{"type":"compaction","encrypted_content":"opaque","provider_number":9007199254740993}`)}
-	replacement, err := ValidateCompaction(original, records, &Audit{}, nil)
+	replacement, err := ValidateCompaction(original, records, &Audit{}, nil, "fixture-compaction")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +439,7 @@ func TestValidateCompactionRejectsUnusableSummary(t *testing.T) {
 		{[]byte(`{"type":"message","role":"assistant","content":"not a compaction"}`)},
 		{[]byte(`{"type":"compaction"}`)},
 	} {
-		if _, err := ValidateCompaction(original, records, nil, nil); err == nil {
+		if _, err := ValidateCompaction(original, records, nil, nil, "fixture-compaction"); err == nil {
 			t.Fatalf("accepted unusable summary %s", records)
 		}
 	}
@@ -452,7 +452,7 @@ func TestValidateCompactionFailureKeepsTransientEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	audit := &Audit{Response: &Terminal{Raw: json.RawMessage(`{"status":"completed","provider_terminal_marker":"fixture"}`)}}
-	_, err := ValidateCompaction(original, nil, audit, []Event{event})
+	_, err := ValidateCompaction(original, nil, audit, []Event{event}, "fixture-compaction")
 	var known *protocol.KnownFailureError
 	if !errors.As(err, &known) {
 		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
@@ -559,10 +559,10 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "result"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "result"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "later"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "later"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	items := state.items
@@ -704,10 +704,10 @@ func TestContextTracksPendingCallsAndRepeatedOutputs(t *testing.T) {
 		t.Fatalf("unknown call error=%v, want protocol.ErrMissing", err)
 	}
 	parts := []protocol.ContentPart{{Type: "input_text", Text: "first"}}
-	if err := state.AppendToolResult(call, parts); err != nil {
+	if err := state.AppendToolResult(call, parts, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "async"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "async"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if state.items[2].Type != ItemFunctionOutput || state.items[3].Type != ItemFunctionOutput {
@@ -729,7 +729,7 @@ func TestContextUsesCustomOutputForFreeformCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "1"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "1"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := state.items[1].Type; got != ItemCustomToolOutput {
@@ -773,13 +773,13 @@ func TestContextRejectsDuplicateOrOrphanToolRecords(t *testing.T) {
 
 func TestContextTerminalAndAdapterOnlyState(t *testing.T) {
 	state := &Context{}
-	if err := state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "question"}}); err != nil {
+	if err := state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "question"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if state.TurnComplete() {
 		t.Fatal("user message completed a turn")
 	}
-	if err := state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "recovery notice"}}); err != nil {
+	if err := state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "recovery notice"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if state.items[1].Type != ItemMessage || state.items[1].Role != "developer" || state.TurnComplete() {

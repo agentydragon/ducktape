@@ -70,7 +70,7 @@ type sampleResult struct {
 
 type compactionPlan struct {
 	Preparation *providerrequest.Preparation
-	Apply       func(*sampleResult) (protocol.Context, error)
+	Apply       func(*sampleResult, string) (protocol.Context, error)
 	// ValidateReplacement runs after the environment refresh and before new notifications.
 	ValidateReplacement func(protocol.Context) error
 }
@@ -174,8 +174,8 @@ func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *ses
 	return &compactionPlan{Preparation: &providerrequest.Preparation{
 		ModelConfig: a.config, SessionEffort: s.Effort,
 		SessionConfiguration: append([]byte(nil), s.Configuration...), Attribution: attribution, Compaction: true,
-	}, Apply: func(result *sampleResult) (protocol.Context, error) {
-		return responses.ValidateCompaction(c.Context().(*responses.Context), result.Records, result.Audit.(*responses.Audit), result.ResponsesEvents)
+	}, Apply: func(result *sampleResult, intentID string) (protocol.Context, error) {
+		return responses.ValidateCompaction(c.Context().(*responses.Context), result.Records, result.Audit.(*responses.Audit), result.ResponsesEvents, intentID)
 	}}, nil
 }
 
@@ -204,8 +204,8 @@ func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *ses
 		ModelConfig: a.config, SessionEffort: s.Effort,
 		SessionConfiguration: append([]byte(nil), s.Configuration...), Compaction: true,
 		AnthropicCompactionRequest: &plan.Body,
-	}, Apply: func(result *sampleResult) (protocol.Context, error) {
-		return plan.Apply(result.Records, result.Audit.(*anthropic.Audit), result.AnthropicEvents)
+	}, Apply: func(result *sampleResult, intentID string) (protocol.Context, error) {
+		return plan.Apply(result.Records, result.Audit.(*anthropic.Audit), result.AnthropicEvents, intentID)
 	}}, nil
 }
 
@@ -248,8 +248,8 @@ func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *se
 		Preparation: &providerrequest.Preparation{
 			ModelConfig: a.config, SessionEffort: session.Effort, Compaction: true,
 		},
-		Apply: func(result *sampleResult) (protocol.Context, error) {
-			return plan.Apply(result.Records, result.Audit.(chatcompletions.Audit))
+		Apply: func(result *sampleResult, intentID string) (protocol.Context, error) {
+			return plan.Apply(result.Records, result.Audit.(chatcompletions.Audit), intentID)
 		},
 		ValidateReplacement: func(replacement protocol.Context) error {
 			return plan.CheckReduction(replacement.(*chatcompletions.Context))

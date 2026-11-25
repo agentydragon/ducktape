@@ -298,7 +298,7 @@ func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentI
 			}
 		}
 		conversation.Pending = nil
-		return updateConversation(ctx, tx, conversation)
+		return s.updateConversation(ctx, tx, conversation)
 	})
 }
 
@@ -377,9 +377,21 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 		if err != nil {
 			return err
 		}
-		if request.SourceNativeContextID == "" || request.SourceNativeContextID != conversation.nativeContextID() ||
-			len(request.SourceControl) == 0 || !sameJSONValue(request.SourceControl, currentControl) {
+		if request.SourceNativeContextID == "" || len(request.SourceControl) == 0 ||
+			!sameJSONValue(request.SourceControl, currentControl) {
 			return fmt.Errorf("provider retry source context changed: %w", protocol.ErrPrecondition)
+		}
+		if current := conversation.nativeContextID(); request.SourceNativeContextID != current {
+			if kind != PendingIntentSampling {
+				return fmt.Errorf("compaction retry source context changed: %w", protocol.ErrPrecondition)
+			}
+			same, err := sameNativeContextRefs(newContentDB(ctx, tx), request.SourceNativeContextID, current)
+			if err != nil {
+				return err
+			}
+			if !same {
+				return fmt.Errorf("sampling retry native context changed: %w", protocol.ErrPrecondition)
+			}
 		}
 		wire, err = renderProviderRequest(newContentDB(ctx, tx), *request.ProviderRequest)
 		if err != nil {

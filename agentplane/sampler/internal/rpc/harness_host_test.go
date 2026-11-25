@@ -513,7 +513,7 @@ func TestChatGPTResponsesModelChangeContinuesRetainedConversation(t *testing.T) 
 				if err != nil {
 					t.Fatal(err)
 				}
-				compacted, err := responses.ValidateCompaction(conversation.Context().(*responses.Context), []json.RawMessage{compactionItem}, nil, nil)
+				compacted, err := responses.ValidateCompaction(conversation.Context().(*responses.Context), []json.RawMessage{compactionItem}, nil, nil, "fixture-compaction")
 				if err != nil {
 					t.Fatal(err)
 				}

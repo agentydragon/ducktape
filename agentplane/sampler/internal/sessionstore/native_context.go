@@ -14,24 +14,30 @@ import (
 )
 
 type contextCheckpoint struct {
-	Head       string
-	Count      int
-	OriginHead string
-	Origins    protocol.RecordOrigins
+	Head  string
+	Count int
 }
 
 type nativeControl struct {
 	PendingEffort     *string                 `json:"pending_effort,omitempty"`
 	ExecutionSnapshot *modelExecutionSnapshot `json:"execution_snapshot,omitempty"`
-	OriginContextID   string                  `json:"origin_context_id,omitempty"`
 }
 
-const originContentKind content.ContentKind = "sampler_record_origin"
+const contextRecordKind content.ContentKind = "sampler_context_record"
 
-// Bind metadata to a native occurrence by both its index and content identity.
-type storedOrigin struct {
-	protocol.OriginEntry
-	NativeID content.ContentID `json:"native_id"`
+// A context node stores this reference pair when the native record has a source.
+// Provider requests continue to point at the native content directly.
+type storedContextRecord struct {
+	NativeID content.ContentID     `json:"native_id"`
+	Origin   protocol.RecordOrigin `json:"origin"`
+}
+
+func (r storedContextRecord) validate() error {
+	if r.NativeID == "" || r.Origin.Kind == protocol.RecordOriginUnknown ||
+		(r.Origin.SourceID == "") == (r.Origin.ObjectID == "") {
+		return fmt.Errorf("invalid sourced context record: %w", protocol.ErrInvalid)
+	}
+	return nil
 }
 
 func newNativeContext(api protocol.APIStyle) (protocol.Context, error) {
@@ -47,18 +53,7 @@ func newNativeContext(api protocol.APIStyle) (protocol.Context, error) {
 	}
 }
 
-func decodeNativeRecords(api protocol.APIStyle, records []json.RawMessage) (protocol.Context, error) {
-	state, err := newNativeContext(api)
-	if err != nil {
-		return nil, err
-	}
-	if err := state.AppendRecords(records); err != nil {
-		return nil, err
-	}
-	return state, nil
-}
-
-func (conversation *Conversation) storeContext(store *contentdb.Store, native protocol.Context) (string, error) {
+func (conversation *Conversation) storeContext(store *contentdb.Store, native protocol.Context, writeSources bool) (string, error) {
 	if conversation.storedContexts == nil {
 		conversation.storedContexts = map[protocol.Context]contextCheckpoint{}
 	}
@@ -68,54 +63,39 @@ func (conversation *Conversation) storeContext(store *contentdb.Store, native pr
 		return "", err
 	}
 	ids := make([]content.ContentID, 0, len(records))
-	for _, record := range records {
+	for i, record := range records {
 		id, err := providerrequest.StoreRecord(store, native.API(), record)
 		if err != nil {
 			return "", err
 		}
+		origin := native.OriginAt(base.Count + i)
+		if writeSources && origin.Kind != protocol.RecordOriginUnknown {
+			entry := storedContextRecord{NativeID: id, Origin: origin}
+			if err := entry.validate(); err != nil {
+				return "", err
+			}
+			payload, err := json.Marshal(entry)
+			if err != nil {
+				return "", err
+			}
+			id, err = store.PutContent(contextRecordKind, payload)
+			if err != nil {
+				return "", err
+			}
+		}
 		ids = append(ids, id)
-	}
-	entries := native.Origins().EntriesFrom(base.Count)
-	if base.Origins.Len()+len(entries) != native.Origins().Len() || !native.Origins().Extends(&base.Origins) {
-		return "", fmt.Errorf("stored origin prefix changed: %w", protocol.ErrPrecondition)
-	}
-	originIDs := make([]content.ContentID, 0, len(entries))
-	for _, entry := range entries {
-		index := entry.Index - base.Count
-		if index < 0 || index >= len(ids) || entry.Origin.Kind == protocol.RecordOriginUnknown {
-			return "", fmt.Errorf("invalid origin for record %d: %w", entry.Index, protocol.ErrInvalid)
-		}
-		payload, err := json.Marshal(storedOrigin{OriginEntry: entry, NativeID: ids[index]})
-		if err != nil {
-			return "", err
-		}
-		id, err := store.PutContent(originContentKind, payload)
-		if err != nil {
-			return "", err
-		}
-		originIDs = append(originIDs, id)
 	}
 	head, err := store.AppendContextIDs(native.API(), base.Head, base.Count, ids)
 	if err != nil {
 		return "", err
 	}
-	originHead := base.OriginHead
-	if len(originIDs) > 0 {
-		originHead, err = store.AppendContextIDs(native.API(), originHead, base.Origins.Len(), originIDs)
-		if err != nil {
-			return "", err
-		}
-	}
-	conversation.storedContexts[native] = contextCheckpoint{
-		Head: head, Count: native.RecordCount(), OriginHead: originHead, Origins: native.Origins().Clone(),
-	}
+	conversation.storedContexts[native] = contextCheckpoint{Head: head, Count: native.RecordCount()}
 	return head, nil
 }
 
 func (conversation *Conversation) contextControl(native protocol.Context) (json.RawMessage, error) {
 	control := nativeControl{
 		ExecutionSnapshot: conversation.executionSnapshots[native],
-		OriginContextID:   conversation.storedContexts[native].OriginHead,
 	}
 	if c, ok := native.(*anthropic.Context); ok {
 		control.PendingEffort = c.PendingEffort
@@ -130,47 +110,91 @@ func (conversation *Conversation) loadNativeContext(store *contentdb.Store, api 
 			return nil, err
 		}
 	}
-	ids, err := store.LoadContext(id)
+	records, err := loadContextRecords(store, api, id)
 	if err != nil {
 		return nil, err
 	}
-	originIDs, err := store.LoadContext(state.OriginContextID)
+	native, err := newNativeContext(api)
 	if err != nil {
 		return nil, err
 	}
-	if err := store.Prefetch(append(ids, originIDs...)); err != nil {
-		return nil, err
-	}
-	records, err := providerrequest.RestoreRecords(store, api, ids)
-	if err != nil {
-		return nil, err
-	}
-	native, err := decodeNativeRecords(api, records)
-	if err != nil {
-		return nil, err
-	}
-	entries := make([]protocol.OriginEntry, 0, len(originIDs))
-	for _, originID := range originIDs {
-		row, err := store.GetContent(originID)
-		if err != nil {
-			return nil, err
-		}
-		var origin storedOrigin
-		if row.Kind != originContentKind || json.Unmarshal(row.Payload, &origin) != nil ||
-			origin.Index < 0 || origin.Index >= len(ids) || origin.NativeID != ids[origin.Index] {
-			return nil, fmt.Errorf("origin %s does not match its native record: %w", originID, protocol.ErrInvalid)
-		}
-		entries = append(entries, origin.OriginEntry)
-	}
-	if err := native.Origins().Restore(entries, native.RecordCount()); err != nil {
+	if err := native.AppendContextRecords(records); err != nil {
 		return nil, err
 	}
 	if c, ok := native.(*anthropic.Context); ok {
 		c.PendingEffort = state.PendingEffort
 	}
 	conversation.executionSnapshots[native] = state.ExecutionSnapshot
-	conversation.storedContexts[native] = contextCheckpoint{
-		Head: id, Count: native.RecordCount(), OriginHead: state.OriginContextID, Origins: native.Origins().Clone(),
-	}
+	conversation.storedContexts[native] = contextCheckpoint{Head: id, Count: native.RecordCount()}
 	return native, nil
+}
+
+// nativeContextReferences unwraps source-bearing entries. Bare native references
+// are also valid and represent records with unknown origin.
+func nativeContextReferences(store *contentdb.Store, head string) ([]storedContextRecord, error) {
+	ids, err := store.LoadContext(head)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.Prefetch(ids); err != nil {
+		return nil, err
+	}
+	refs := make([]storedContextRecord, len(ids))
+	for i, id := range ids {
+		row, err := store.GetContent(id)
+		if err != nil {
+			return nil, err
+		}
+		if row.Kind != contextRecordKind {
+			refs[i].NativeID = id
+			continue
+		}
+		if err := json.Unmarshal(row.Payload, &refs[i]); err != nil {
+			return nil, err
+		}
+		if err := refs[i].validate(); err != nil {
+			return nil, err
+		}
+	}
+	return refs, nil
+}
+
+func loadContextRecords(store *contentdb.Store, api protocol.APIStyle, head string) ([]protocol.ContextRecord, error) {
+	refs, err := nativeContextReferences(store, head)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]content.ContentID, len(refs))
+	for i, ref := range refs {
+		ids[i] = ref.NativeID
+	}
+	native, err := providerrequest.RestoreRecords(store, api, ids)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]protocol.ContextRecord, len(refs))
+	for i, ref := range refs {
+		records[i] = protocol.ContextRecord{Native: native[i], Origin: ref.Origin}
+	}
+	return records, nil
+}
+
+func sameNativeContextRefs(store *contentdb.Store, left, right string) (bool, error) {
+	first, err := nativeContextReferences(store, left)
+	if err != nil {
+		return false, err
+	}
+	second, err := nativeContextReferences(store, right)
+	if err != nil {
+		return false, err
+	}
+	if len(first) != len(second) {
+		return false, nil
+	}
+	for i, ref := range first {
+		if ref.NativeID != second[i].NativeID {
+			return false, nil
+		}
+	}
+	return true, nil
 }

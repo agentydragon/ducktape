@@ -127,7 +127,7 @@ func (s *Store) FailProviderCommand(ctx context.Context, owner Owner, sessionID,
 		}
 		session.ActiveCommand = nil
 		conversation.Stopped = false
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)

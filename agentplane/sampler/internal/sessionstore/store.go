@@ -40,6 +40,7 @@ type Store struct {
 	providerProgressCoalescing time.Duration
 	providerRetryMaxBackoff    time.Duration
 	eventBlockWrites           bool
+	contextSourceWrites        bool
 	// now dates the model-visible environment context.
 	now func() time.Time
 }
@@ -54,6 +55,7 @@ func New(db *sql.DB, operationTimeout time.Duration, settings *samplersettings.S
 		providerProgressCoalescing: settings.ProviderProgressLeaseCoalescing(),
 		providerRetryMaxBackoff:    settings.ProviderRetryMaxBackoff(),
 		eventBlockWrites:           settings.EventBlockWrites,
+		contextSourceWrites:        settings.ContextSourceWrites,
 	}
 }
 

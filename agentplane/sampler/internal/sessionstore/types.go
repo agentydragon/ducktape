@@ -73,31 +73,20 @@ func (c *Conversation) apply(change func(protocol.Context) error) error {
 }
 
 func (c *Conversation) appendUserCommand(commandID, text string) error {
+	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: commandID}
 	return c.apply(func(state protocol.Context) error {
-		index := state.RecordCount()
-		if err := state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: text}}); err != nil {
-			return err
-		}
-		state.Origins().Insert(index, protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: commandID})
-		return nil
+		return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: text}}, origin)
 	})
 }
 
-func (c *Conversation) appendProviderRecords(records []json.RawMessage, attemptID string) error {
-	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginProviderResult, SourceID: attemptID}
-	return c.apply(func(state protocol.Context) error {
-		start := state.RecordCount()
-		if err := state.AppendRecords(records); err != nil {
-			return err
-		}
-		for index := start; index < state.RecordCount(); index++ {
-			state.Origins().Insert(index, origin)
-		}
-		return nil
+func (c *Conversation) appendProviderRecords(records []json.RawMessage, intentID string) error {
+	sourced := protocol.ContextRecords(records, protocol.RecordOrigin{
+		Kind: protocol.RecordOriginProviderResult, SourceID: intentID,
 	})
+	return c.apply(func(state protocol.Context) error { return state.AppendContextRecords(sourced) })
 }
 
-func (c *Conversation) appendToolResult(call protocol.ToolInvocation, output []protocol.ContentPart) error {
+func (c *Conversation) appendToolResult(call protocol.ToolInvocation, output []protocol.ContentPart, origin protocol.RecordOrigin) error {
 	// The transcript ordinal is authoritative. Compacted active context has different local ordinals.
 	original, err := c.Transcript.FindCall(call.CallID)
 	if err != nil {
@@ -115,7 +104,7 @@ func (c *Conversation) appendToolResult(call protocol.ToolInvocation, output []p
 		if local.Encoding != call.Encoding || local.Name != call.Name || local.Input != call.Input {
 			return protocol.ErrInvalid
 		}
-		return state.AppendToolResult(local, output)
+		return state.AppendToolResult(local, output, origin)
 	})
 }
 
@@ -241,8 +230,8 @@ type ProviderRequest struct {
 	ContextID       string            `json:"context_id,omitempty"`
 	ProfileID       content.ContentID `json:"profile_id"`
 	SourceContextID string            `json:"source_context_id,omitempty"`
-	// SourceNativeContextID pins the native conversation head independently of the provider's
-	// projected content prefix in SourceContextID.
+	// SourceNativeContextID pins the conversation head before request projection. The persisted JSON
+	// key predates source references on context entries.
 	SourceNativeContextID string `json:"source_native_context_id,omitempty"`
 	// SourceControl pins model-visible control state (execution handles and, for Anthropic,
 	// pending effort) alongside the native record head for a durable provider retry.

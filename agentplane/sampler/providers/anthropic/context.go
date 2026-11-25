@@ -14,8 +14,7 @@ import (
 // Context stores one native Messages API message per record. Messages are kept as raw
 // JSON so provider-owned fields, content block boundaries, signatures, and usage survive replay.
 type Context struct {
-	protocol.RecordOrigins
-	messages      []json.RawMessage
+	messages      []protocol.ContextRecord
 	PendingEffort *string `json:"pending_effort,omitempty"`
 }
 
@@ -24,7 +23,7 @@ func (*Context) API() protocol.APIStyle { return protocol.APIStyleAnthropicMessa
 func (c *Context) RecordCount() int { return len(c.messages) }
 
 func (c *Context) Clone() protocol.Context {
-	return &Context{RecordOrigins: c.RecordOrigins.Clone(), messages: append([]json.RawMessage(nil), c.messages...), PendingEffort: cloneString(c.PendingEffort)}
+	return &Context{messages: slices.Clone(c.messages), PendingEffort: cloneString(c.PendingEffort)}
 }
 
 func (c *Context) Records() ([]json.RawMessage, error) { return c.RecordsFrom(0) }
@@ -38,10 +37,10 @@ func (c *Context) RecordsFrom(start int) ([]json.RawMessage, error) {
 	}
 	result := make([]json.RawMessage, len(c.messages)-start)
 	for i, record := range c.messages[start:] {
-		if err := validateAnthropicMessage(record); err != nil {
+		if err := validateAnthropicMessage(record.Native); err != nil {
 			return nil, fmt.Errorf("Anthropic record %d: %w", i+1, err)
 		}
-		result[i] = slices.Clone(record)
+		result[i] = slices.Clone(record.Native)
 	}
 	return result, nil
 }
@@ -73,22 +72,34 @@ func (c *Context) ProjectRecords(start int) ([]json.RawMessage, error) {
 	return wire, nil
 }
 
+func (c *Context) OriginAt(i int) protocol.RecordOrigin {
+	if i < 0 || i >= len(c.messages) {
+		return protocol.RecordOrigin{}
+	}
+	return c.messages[i].Origin
+}
+
 func (c *Context) AppendRecords(records []json.RawMessage) error {
+	return c.AppendContextRecords(protocol.ContextRecords(records, protocol.RecordOrigin{}))
+}
+
+func (c *Context) AppendContextRecords(records []protocol.ContextRecord) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
 	for i, record := range records {
-		if err := validateAnthropicMessage(record); err != nil {
+		if err := validateAnthropicMessage(record.Native); err != nil {
 			return fmt.Errorf("Anthropic record %d: %w", i+1, err)
 		}
 	}
 	for _, record := range records {
-		c.messages = append(c.messages, slices.Clone(record))
+		record.Native = slices.Clone(record.Native)
+		c.messages = append(c.messages, record)
 	}
 	return nil
 }
 
-func (c *Context) AppendUser(parts []protocol.ContentPart) error {
+func (c *Context) AppendUser(parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
@@ -100,7 +111,7 @@ func (c *Context) AppendUser(parts []protocol.ContentPart) error {
 	if err != nil {
 		return err
 	}
-	if err := c.AppendRecords([]json.RawMessage{record}); err != nil {
+	if err := c.AppendContextRecords([]protocol.ContextRecord{{Native: record, Origin: origin}}); err != nil {
 		return err
 	}
 	if c.PendingEffort != nil {
@@ -114,7 +125,7 @@ func (c *Context) AppendUser(parts []protocol.ContentPart) error {
 
 // AppendNotice adds server-generated context as a native user message without activating a
 // deferred effort restoration. Recovery notices are not new user input.
-func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
+func (c *Context) AppendNotice(parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
@@ -126,19 +137,16 @@ func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
 	if err != nil {
 		return err
 	}
-	return c.AppendRecords([]json.RawMessage{record})
+	return c.AppendContextRecords([]protocol.ContextRecord{{Native: record, Origin: origin}})
 }
 
-func (c *Context) AddEnvironment(parts []protocol.ContentPart, _ bool) (int, error) {
+func (c *Context) AddEnvironment(parts []protocol.ContentPart, _ bool, origin protocol.RecordOrigin) error {
 	// Leave the signed summary and kept turns adjacent. Only authored user
 	// input may activate deferred effort restoration.
-	if err := c.AppendNotice(parts); err != nil {
-		return 0, err
-	}
-	return c.RecordCount() - 1, nil
+	return c.AppendNotice(parts, origin)
 }
 
-func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart) error {
+func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
@@ -167,13 +175,13 @@ func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protoco
 			return err
 		}
 		text := "Asynchronous output from exec call " + call.CallID + ":\n" + string(encoded)
-		return c.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: text}})
+		return c.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: text}}, origin)
 	}
 	record, err := json.Marshal(inputMessage{Role: RoleUser, Content: []inputBlock{newToolResultBlock(call.CallID, blocks)}})
 	if err != nil {
 		return err
 	}
-	return c.AppendRecords([]json.RawMessage{record})
+	return c.AppendContextRecords([]protocol.ContextRecord{{Native: record, Origin: origin}})
 }
 
 func (c *Context) ChangeEffort(effort string) error {
@@ -260,7 +268,7 @@ func (c *Context) PendingCalls() ([]protocol.ToolInvocation, error) {
 
 func (c *Context) visitToolBlocks(role Role, kind BlockType, visit func(int, map[string]json.RawMessage) error) error {
 	for index, record := range c.messages {
-		fields := messageFields(record)
+		fields := messageFields(record.Native)
 		if len(fields) == 0 {
 			return fmt.Errorf("decode Anthropic record %d", index+1)
 		}
@@ -355,7 +363,7 @@ func (c *Context) TurnComplete() bool {
 		Role       Role       `json:"role"`
 		StopReason StopReason `json:"stop_reason"`
 	}
-	if json.Unmarshal(c.messages[len(c.messages)-1], &message) != nil {
+	if json.Unmarshal(c.messages[len(c.messages)-1].Native, &message) != nil {
 		return false
 	}
 	return message.Role == RoleAssistant && message.StopReason == StopEndTurn
@@ -365,15 +373,12 @@ func (c *Context) MarshalJSON() ([]byte, error) {
 	if c == nil {
 		return []byte("null"), nil
 	}
-	if _, err := c.Records(); err != nil {
+	messages, err := c.Records()
+	if err != nil {
 		return nil, err
 	}
 	if c.PendingEffort != nil && strings.TrimSpace(*c.PendingEffort) == "" {
 		return nil, errors.New("Anthropic pending effort must be non-empty")
-	}
-	messages := c.messages
-	if messages == nil {
-		messages = []json.RawMessage{}
 	}
 	return json.Marshal(struct {
 		Messages      []json.RawMessage `json:"messages"`
@@ -421,7 +426,7 @@ func (c *Context) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("Anthropic record %d: %w", i+1, err)
 		}
 	}
-	*c = Context{messages: messages, PendingEffort: pending}
+	*c = Context{messages: protocol.ContextRecords(messages, protocol.RecordOrigin{}), PendingEffort: pending}
 	return nil
 }
 

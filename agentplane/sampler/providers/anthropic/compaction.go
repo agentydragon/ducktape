@@ -12,7 +12,7 @@ type CompactionPlan struct {
 	Body Request
 
 	original      *Context
-	suffix        []json.RawMessage
+	cut           int
 	restoreEffort *string
 }
 
@@ -38,12 +38,8 @@ func PrepareCompaction(params RequestParams, config Config, previousMessageID, r
 	if cut == 0 {
 		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"reason": "no settled prefix remains after keeping recent turns"}}
 	}
-	originalContext := &Context{
-		RecordOrigins: params.Context.RecordOrigins.Clone(),
-		messages:      cloneRecords(records),
-		PendingEffort: cloneString(params.Context.PendingEffort),
-	}
-	prefix := &Context{messages: records[:cut]}
+	originalContext := params.Context.Clone().(*Context)
+	prefix := &Context{messages: originalContext.messages[:cut:cut]}
 	if err := prefix.CheckSettled(); err != nil {
 		return nil, err
 	}
@@ -58,10 +54,10 @@ func PrepareCompaction(params RequestParams, config Config, previousMessageID, r
 	if config.PerMessageEffort {
 		restore = &restoreEffort
 	}
-	return &CompactionPlan{Body: body, original: originalContext, suffix: cloneRecords(records[cut:]), restoreEffort: restore}, nil
+	return &CompactionPlan{Body: body, original: originalContext, cut: cut, restoreEffort: restore}, nil
 }
 
-func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit, events []json.RawMessage) (*Context, error) {
+func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit, events []json.RawMessage, intentID string) (*Context, error) {
 	if p == nil || p.original == nil {
 		return nil, errors.New("Anthropic compaction plan is unavailable")
 	}
@@ -97,9 +93,12 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit, events [
 	if err := json.Unmarshal(blocks[0], &block); err != nil || blockTypeOf(block) != BlockCompaction || rawString(block, "content") == "" || rawString(block, "signature") == "" {
 		return reject("compaction must produce exactly one signed compaction block")
 	}
-	replacement := &Context{messages: []json.RawMessage{slices.Clone(records[0])}, PendingEffort: cloneString(p.original.PendingEffort)}
-	replacement.messages = append(replacement.messages, cloneRecords(p.suffix)...)
-	replacement.RecordOrigins = p.original.Origins().RetainSuffix(len(p.original.messages)-len(p.suffix), 1)
+	handoff := protocol.ContextRecord{
+		Native: slices.Clone(records[0]),
+		Origin: protocol.RecordOrigin{Kind: protocol.RecordOriginCompaction, SourceID: intentID},
+	}
+	replacement := &Context{messages: []protocol.ContextRecord{handoff}, PendingEffort: cloneString(p.original.PendingEffort)}
+	replacement.messages = append(replacement.messages, p.original.messages[p.cut:]...)
 	if p.restoreEffort != nil {
 		replacement.PendingEffort = cloneString(p.restoreEffort)
 	}
@@ -120,14 +119,6 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit, events [
 		audit.Replacement = replacement
 	}
 	return replacement, nil
-}
-
-func cloneRecords(records []json.RawMessage) []json.RawMessage {
-	cloned := make([]json.RawMessage, len(records))
-	for i, record := range records {
-		cloned[i] = slices.Clone(record)
-	}
-	return cloned
 }
 
 func cloneString(value *string) *string {

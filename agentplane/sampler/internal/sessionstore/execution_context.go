@@ -29,7 +29,7 @@ type (
 	}
 )
 
-func (conversation *Conversation) appendExecutionState(objects content.ContentWriter, state *protocol.ExecutionState) error {
+func (s *Store) appendExecutionState(objects content.ContentWriter, conversation *Conversation, state *protocol.ExecutionState) error {
 	if state == nil {
 		return nil
 	}
@@ -58,13 +58,15 @@ func (conversation *Conversation) appendExecutionState(objects content.ContentWr
 		if reflect.DeepEqual(previous, &snapshot) {
 			return nil
 		}
-		if sourceID == "" {
-			var err error
-			sourceID, err = putRecordObject(objects, ExecutionSnapshotObject{
-				ConversationID: conversation.ID, modelExecutionSnapshot: snapshot,
-			})
-			if err != nil {
-				return err
+		if notice == "" {
+			if s.contextSourceWrites {
+				var err error
+				sourceID, err = putRecordObject(objects, ExecutionSnapshotObject{
+					ConversationID: conversation.ID, modelExecutionSnapshot: snapshot,
+				})
+				if err != nil {
+					return err
+				}
 			}
 			raw, err := json.Marshal(snapshot)
 			if err != nil {
@@ -72,12 +74,10 @@ func (conversation *Conversation) appendExecutionState(objects content.ContentWr
 			}
 			notice = "Active execution handles: " + string(raw)
 		}
-		if err := native.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}); err != nil {
+		origin := protocol.RecordOrigin{Kind: protocol.RecordOriginExecutionSnapshot, ObjectID: sourceID}
+		if err := native.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}, origin); err != nil {
 			return err
 		}
-		native.Origins().Insert(native.RecordCount()-1, protocol.RecordOrigin{
-			Kind: protocol.RecordOriginExecutionSnapshot, SourceID: sourceID, ContentSource: true,
-		})
 		conversation.executionSnapshots[native] = &snapshot
 		return nil
 	})

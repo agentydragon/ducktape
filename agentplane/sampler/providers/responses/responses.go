@@ -40,6 +40,7 @@ const (
 // Item is a native Responses record. Raw retains provider-owned fields and numeric precision
 // when an item is read from the provider or durable conversation.
 type Item struct {
+	origin           protocol.RecordOrigin  `json:"-"`
 	Type             ItemType               `json:"type"`
 	ID               string                 `json:"id,omitempty"`
 	Role             string                 `json:"role,omitempty"`

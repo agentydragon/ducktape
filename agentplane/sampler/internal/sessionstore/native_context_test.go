@@ -21,7 +21,7 @@ func TestToolResultsResolveTranscriptProvenanceInCompactedContext(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "earlier turn"}}); err != nil {
+			if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "earlier turn"}}, protocol.RecordOrigin{}); err != nil {
 				t.Fatal(err)
 			}
 			completed := json.RawMessage(`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"earlier answer"}]}`)
@@ -35,7 +35,7 @@ func TestToolResultsResolveTranscriptProvenanceInCompactedContext(t *testing.T) 
 			if err := transcript.AppendRecords([]json.RawMessage{completed}); err != nil {
 				t.Fatal(err)
 			}
-			if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "current turn"}}); err != nil {
+			if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "current turn"}}, protocol.RecordOrigin{}); err != nil {
 				t.Fatal(err)
 			}
 			if err := transcript.AppendRecords([]json.RawMessage{callRecord}); err != nil {
@@ -48,7 +48,7 @@ func TestToolResultsResolveTranscriptProvenanceInCompactedContext(t *testing.T) 
 			if err := active.AppendRecords([]json.RawMessage{summary}); err != nil {
 				t.Fatal(err)
 			}
-			if err := active.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "current turn"}}); err != nil {
+			if err := active.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "current turn"}}, protocol.RecordOrigin{}); err != nil {
 				t.Fatal(err)
 			}
 			if err := active.AppendRecords([]json.RawMessage{callRecord}); err != nil {
@@ -74,10 +74,10 @@ func TestToolResultsResolveTranscriptProvenanceInCompactedContext(t *testing.T) 
 			}
 			forged := call
 			forged.SourceRecord++
-			if err := conversation.appendToolResult(forged, []protocol.ContentPart{{Type: "input_text", Text: "result"}}); !errors.Is(err, protocol.ErrInvalid) {
+			if err := conversation.appendToolResult(forged, []protocol.ContentPart{{Type: "input_text", Text: "result"}}, protocol.RecordOrigin{}); !errors.Is(err, protocol.ErrInvalid) {
 				t.Fatalf("incorrect source record was accepted: %v", err)
 			}
-			if err := conversation.appendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "result"}}); err != nil {
+			if err := conversation.appendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "result"}}, protocol.RecordOrigin{}); err != nil {
 				t.Fatal(err)
 			}
 			for _, state := range []protocol.Context{transcript, active} {
@@ -160,7 +160,7 @@ func TestCompactionNotificationsRetainAnsweredCallProvenanceAfterReload(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			origins := conversation.Transcript.Origins()
+			origins := conversation.Transcript
 			if origins.OriginAt(call.SourceRecord-1) != (protocol.RecordOrigin{Kind: protocol.RecordOriginProviderResult, SourceID: sampling}) ||
 				origins.OriginAt(conversation.Transcript.RecordCount()-1) != (protocol.RecordOrigin{Kind: protocol.RecordOriginToolResult, SourceID: cell}) {
 				t.Fatal("the accepted call and tool result did not retain their own intent IDs")
@@ -177,7 +177,7 @@ func TestCompactionNotificationsRetainAnsweredCallProvenanceAfterReload(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := replacement.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "compacted summary"}}); err != nil {
+			if err := replacement.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "compacted summary"}}, protocol.RecordOrigin{}); err != nil {
 				t.Fatal(err)
 			}
 			if err := store.FinishCompaction(ctx, owner, compaction, map[string]any{}, conversation.Context(), replacement, nil); err != nil {

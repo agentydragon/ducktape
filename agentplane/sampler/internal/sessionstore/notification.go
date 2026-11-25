@@ -77,7 +77,7 @@ func (s *Store) DrainNotifications(ctx context.Context, owner Owner) (bool, erro
 		if drained, err = s.settleNotifications(ctx, tx, conversation, session, true); err != nil {
 			return err
 		}
-		return updateConversation(ctx, tx, conversation)
+		return s.updateConversation(ctx, tx, conversation)
 	})
 	return drained, err
 }
@@ -148,7 +148,7 @@ func appendNotification(conversation *Conversation, callID, cellID, text string)
 	if callID == "" {
 		// A sampler-generated executor notice can arrive while a provider request owns
 		// the context. It shares the durable queue but has no originating model call.
-		return conversation.apply(func(state protocol.Context) error { return state.AppendNotice(output) })
+		return conversation.apply(func(state protocol.Context) error { return state.AppendNotice(output, protocol.RecordOrigin{}) })
 	}
 	call, err := conversation.Transcript.FindCall(callID)
 	if err != nil {
@@ -158,15 +158,15 @@ func appendNotification(conversation *Conversation, callID, cellID, text string)
 		if _, err := active.FindCall(callID); errors.Is(err, protocol.ErrMissing) {
 			// The transcript still has the answered origin. The replacement has no
 			// call to pair with, so give it the output as ordinary context.
-			if err := conversation.Transcript.AppendToolResult(call, output); err != nil {
+			if err := conversation.Transcript.AppendToolResult(call, output, protocol.RecordOrigin{}); err != nil {
 				return err
 			}
 			return active.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: fmt.Sprintf(
 				"Asynchronous output from exec call %s (cell %s):\n%s", callID, cellID, text,
-			)}})
+			)}}, protocol.RecordOrigin{})
 		} else if err != nil {
 			return err
 		}
 	}
-	return conversation.appendToolResult(call, output)
+	return conversation.appendToolResult(call, output, protocol.RecordOrigin{})
 }

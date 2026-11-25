@@ -112,7 +112,7 @@ func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, conversation *Con
 		return err
 	}
 	conversation.Pending = &PendingIntent{ID: id, Kind: request.Kind}
-	if err := updateConversation(ctx, tx, conversation); err != nil {
+	if err := s.updateConversation(ctx, tx, conversation); err != nil {
 		return err
 	}
 	return s.recordEvidence(ctx, tx, conversation, session, id, IntentKind(request.Kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
@@ -126,17 +126,7 @@ func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result
 
 func (s *Store) FinishTool(ctx context.Context, owner Owner, intentID string, result map[string]any, call protocol.ToolInvocation, output []protocol.ContentPart) error {
 	return s.finish(ctx, owner, intentID, result, nil, nil, func(c *Conversation) error {
-		transcriptIndex := c.Transcript.RecordCount()
-		activeIndex := c.Context().RecordCount()
-		if err := c.appendToolResult(call, output); err != nil {
-			return err
-		}
-		origin := protocol.RecordOrigin{Kind: protocol.RecordOriginToolResult, SourceID: intentID}
-		c.Transcript.Origins().Insert(transcriptIndex, origin)
-		if c.ActiveContext != nil {
-			c.ActiveContext.Origins().Insert(activeIndex, origin)
-		}
-		return nil
+		return c.appendToolResult(call, output, protocol.RecordOrigin{Kind: protocol.RecordOriginToolResult, SourceID: intentID})
 	})
 }
 
@@ -197,7 +187,7 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 			conversation.ContextTokens = contextTokens
 		}
 		conversation.Pending = nil
-		return updateConversation(ctx, tx, conversation)
+		return s.updateConversation(ctx, tx, conversation)
 	})
 }
 
@@ -245,7 +235,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 				return err
 			}
 			conversation.Stopped = true
-			if err := updateConversation(ctx, tx, conversation); err != nil {
+			if err := s.updateConversation(ctx, tx, conversation); err != nil {
 				return err
 			}
 			session, err := sessionForConversation(ctx, tx, conversation.ID)
@@ -273,7 +263,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 
 		conversation.Stopped = true
 		conversation.Pending = nil
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
@@ -429,7 +419,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if _, err := s.settleNotifications(ctx, tx, conversation, session, true); err != nil {
 			return err
 		}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return s.completeCompactionCommand(ctx, tx, session, sources)
@@ -553,7 +543,15 @@ func pendingMatches(pending *PendingIntent, id string, kind PendingIntentKind) b
 }
 
 func sameCompactionSource(left, right protocol.Context) bool {
-	return left.Origins().Equal(right.Origins()) && sameNativeContext(left, right)
+	if left.RecordCount() != right.RecordCount() {
+		return false
+	}
+	for i := range left.RecordCount() {
+		if left.OriginAt(i) != right.OriginAt(i) {
+			return false
+		}
+	}
+	return sameNativeContext(left, right)
 }
 
 func sameNativeContext(left, right protocol.Context) bool {
@@ -654,7 +652,7 @@ func settlePendingCalls(conversation *Conversation, message func(protocol.ToolIn
 	outputs := make([]map[string]any, 0, len(calls))
 	for _, call := range calls {
 		content := []protocol.ContentPart{{Type: "input_text", Text: message(call)}}
-		if err := conversation.appendToolResult(call, content); err != nil {
+		if err := conversation.appendToolResult(call, content, protocol.RecordOrigin{}); err != nil {
 			return nil, err
 		}
 		outputs = append(outputs, map[string]any{"call_id": call.CallID, "output": content})

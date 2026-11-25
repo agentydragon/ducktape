@@ -403,21 +403,17 @@ Each conversation is pinned to its API and retains its native items or messages.
 call/result pairing, completion, effort controls, and compaction. They derive generic tool invocations
 with call IDs and native source-record ordinals; these execution decisions are not extra conversation
 records. The shared runtime owns effect intents, execution, leases, interruption, and recovery.
-The sampler records semantic origin separately from native items. Each origin links a kind and
-source identifier to a record ordinal and its native content ID. Environment records link to an
+A context entry can pair a native record with a sampler source. Environment records point to an
 immutable update with the Session ID and the typed before and after values. Execution-handle
-records link to an immutable snapshot with the conversation ID and the cells and processes
+records point to an immutable snapshot with the conversation ID and the cells and processes
 included in the notice. Submitted and steering user input reference their commands. Sampling
-output and settled tool results reference their sampler intents. Older unmarked records have
-unknown origin, including text identical to generated notices.
+output, settled tool results, and compaction handoffs reference their sampler intents.
+Records without a source have unknown origin.
 
-The context controls point to a separate immutable origin chain. Appends extend that chain with
-new entries, and compaction remaps entries for retained records. Multiple native records may
-reference one object. For example, the transcript may render an environment diff while the compacted
-context renders the full value. The projection identifies the diff or shortened user text when
-applicable. Content traversal follows linked objects, and provider requests use only native content.
-The origin chain can carry future Agentplane notification objects with their own stable identity.
-Current `notify()` output uses its existing tool-call and cell provenance.
+A retained item carries its source through compaction. Two native occurrences can reference the
+same source, such as an environment diff in the transcript and a full rendering in the active
+context. The projection on each entry identifies a diff or shortened user text. Provider requests
+use the native payload. Current `notify()` output uses its existing tool-call and cell provenance.
 
 The native API packages receive execution snapshots and a provider-neutral evidence sink. Each
 stream event and its derived History observations commit atomically before parsing continues;
@@ -954,16 +950,16 @@ content hashing and integrity checks. The content package imports neither provid
 protocol packages and does not interpret provider payloads. The shared `protocol` package defines
 semantic contracts, not persisted records. The sampler owns PostgreSQL, transactions, context roots,
 authorization and request history. The shared table holds native item/block JSON, small
-provider-specific message/profile references, and sampler origin entries.
+provider-specific message/profile references, and sampler context entries with sources.
 
-`sampler_context` represents an immutable ordered prefix plus a content record. Appending an item
-shares the entire prior prefix. The conversation transcript retains the full native conversation
-across compaction. Transcript and optional active roots reference these contexts; small controls
-retain Anthropic deferred effort, the execution snapshot baseline, and the root of each sparse
-origin chain. Provider attempts also freeze the source controls for retry validation. An older
-writer may omit the origin root when updating controls. The current sampler then reports unknown
-origins for that context while replaying the same native content. With no replacement context,
-the transcript is the active context.
+`sampler_context` represents an immutable ordered prefix plus a content reference. Each entry
+points either to bare native content or to a `sampler_context_record` containing the native
+content ID and its source reference. Identical native content can be shared by entries with
+different sources. Appending an item shares the prior prefix. The conversation retains the full
+transcript across compaction. With no replacement context, the transcript is the active context.
+Small controls retain Anthropic deferred effort and the execution snapshot baseline. A frozen
+sampling retry compares native records and controls. A frozen compaction retry also pins the
+source-bearing context because its sources can affect retention.
 `sampler_model_request` links each provider request to a frozen profile, ordered request-only
 prefix/suffix references, and a provider-ready history root. A source root and versioned API/dialect/
 encoding projection key permit projecting only newly appended native records. A changed prefix

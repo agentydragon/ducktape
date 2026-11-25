@@ -22,8 +22,9 @@ type toolCall struct {
 }
 
 type message struct {
-	Role string `json:"role"`
-	// Marks the generated handoff. Older records also used this for environment notices.
+	Origin protocol.RecordOrigin `json:"-"`
+	Role   string                `json:"role"`
+	// The legacy storage format needs this marker during rollout. Older records also use it for environment notices.
 	CompactionGenerated bool       `json:"sampler_compaction_summary,omitempty"`
 	Content             string     `json:"content,omitempty"`
 	Reasoning           string     `json:"reasoning_content,omitempty"`
@@ -44,7 +45,6 @@ func (m message) MarshalJSON() ([]byte, error) {
 }
 
 type Context struct {
-	protocol.RecordOrigins
 	messages []message
 }
 
@@ -56,7 +56,7 @@ func (*Context) ChangeEffort(string) error { return nil }
 func (c *Context) MarshalJSON() ([]byte, error) { return json.Marshal(c.messages) }
 func (c *Context) RecordCount() int             { return len(c.messages) }
 func (c *Context) Clone() protocol.Context {
-	return &Context{RecordOrigins: c.RecordOrigins.Clone(), messages: slices.Clone(c.messages)}
+	return &Context{messages: slices.Clone(c.messages)}
 }
 func (c *Context) Records() ([]json.RawMessage, error) { return c.RecordsFrom(0) }
 
@@ -86,13 +86,25 @@ func (c *Context) recordsFrom(start int, project bool) ([]json.RawMessage, error
 	return records, nil
 }
 
+func (c *Context) OriginAt(i int) protocol.RecordOrigin {
+	if i < 0 || i >= len(c.messages) {
+		return protocol.RecordOrigin{}
+	}
+	return c.messages[i].Origin
+}
+
 func (c *Context) AppendRecords(records []json.RawMessage) error {
+	return c.AppendContextRecords(protocol.ContextRecords(records, protocol.RecordOrigin{}))
+}
+
+func (c *Context) AppendContextRecords(records []protocol.ContextRecord) error {
 	candidate := slices.Clone(c.messages)
 	for _, raw := range records {
 		var m message
-		if err := json.Unmarshal(raw, &m); err != nil {
+		if err := json.Unmarshal(raw.Native, &m); err != nil {
 			return err
 		}
+		m.Origin = raw.Origin
 		candidate = append(candidate, m)
 	}
 	if _, _, err := inspect(candidate); err != nil {
@@ -102,27 +114,24 @@ func (c *Context) AppendRecords(records []json.RawMessage) error {
 	return nil
 }
 
-func (c *Context) AppendUser(parts []protocol.ContentPart) error {
-	return c.appendText("user", parts)
+func (c *Context) AppendUser(parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
+	return c.appendText("user", parts, origin)
 }
 
-func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
-	return c.appendText("system", parts)
+func (c *Context) AppendNotice(parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
+	return c.appendText("system", parts, origin)
 }
 
-func (c *Context) AddEnvironment(parts []protocol.ContentPart, _ bool) (int, error) {
-	if err := c.AppendNotice(parts); err != nil {
-		return 0, err
-	}
-	return c.RecordCount() - 1, nil
+func (c *Context) AddEnvironment(parts []protocol.ContentPart, _ bool, origin protocol.RecordOrigin) error {
+	return c.AppendNotice(parts, origin)
 }
 
-func (c *Context) appendText(role string, parts []protocol.ContentPart) error {
+func (c *Context) appendText(role string, parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
 	text, err := textParts(parts)
 	if err != nil {
 		return err
 	}
-	c.messages = append(c.messages, message{Role: role, Content: text})
+	c.messages = append(c.messages, message{Role: role, Content: text, Origin: origin})
 	return nil
 }
 
@@ -137,7 +146,7 @@ func textParts(parts []protocol.ContentPart) (string, error) {
 	return strings.Join(text, "\n"), nil
 }
 
-func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart) error {
+func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
 	calls, answered, err := inspect(c.messages)
 	if err != nil {
 		return err
@@ -161,10 +170,10 @@ func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protoco
 	if answered[call.CallID] {
 		// Repeated notifications are context messages. Chat Completions permits one
 		// tool result for each call in the preceding assistant message.
-		c.messages = append(c.messages, message{Role: "system", Content: "Asynchronous output from exec call " + call.CallID + ":\n" + text})
+		c.messages = append(c.messages, message{Origin: origin, Role: "system", Content: "Asynchronous output from exec call " + call.CallID + ":\n" + text})
 		return nil
 	}
-	c.messages = append(c.messages, message{Role: "tool", ToolID: call.CallID, Content: text})
+	c.messages = append(c.messages, message{Origin: origin, Role: "tool", ToolID: call.CallID, Content: text})
 	return nil
 }
 
@@ -205,7 +214,7 @@ func (c *Context) TurnComplete() bool {
 		return false
 	}
 	last := c.messages[len(c.messages)-1]
-	return last.Role == "assistant" && len(last.ToolCalls) == 0 && !last.CompactionGenerated
+	return last.Role == "assistant" && len(last.ToolCalls) == 0 && !last.isCompactionHandoff()
 }
 
 func inspect(messages []message) ([]protocol.ToolInvocation, map[string]bool, error) {

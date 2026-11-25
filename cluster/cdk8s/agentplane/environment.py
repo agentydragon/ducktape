@@ -66,6 +66,7 @@ class CentralSamplerProps:
     turn_timeout_seconds: int | None = None
     auto_compact_tokens: int | None = None
     actions: settings.ActionsConfig | None = None
+    context_source_writes: bool = False
     event_block_writes: bool = False
 
 

@@ -157,7 +157,7 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 			return err
 		}
 		current.ActiveContext = replacement
-		return updateConversation(ctx, tx, current)
+		return store.updateConversation(ctx, tx, current)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -169,9 +169,9 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 		t.Fatal("compaction failed to reinject state only into the active context")
 	}
 	originalIndex := first.Transcript.RecordCount() - 1
-	origin := first.Transcript.Origins().OriginAt(originalIndex)
-	if compacted.Context().Origins().OriginAt(0).Kind != protocol.RecordOriginUnknown ||
-		compacted.Context().Origins().OriginAt(1) != origin || origin.Kind != protocol.RecordOriginExecutionSnapshot || origin.SourceID == "" {
+	origin := first.Transcript.OriginAt(originalIndex)
+	if compacted.Context().OriginAt(0).Kind != protocol.RecordOriginUnknown ||
+		compacted.Context().OriginAt(1) != origin || origin.Kind != protocol.RecordOriginExecutionSnapshot || origin.ObjectID == "" {
 		t.Fatal("fresh active context did not share the original execution snapshot object")
 	}
 	// The opaque summary may mention handles even when none remain now. A fresh
@@ -182,7 +182,7 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 			return err
 		}
 		current.ActiveContext = responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "another-summary"}})
-		return updateConversation(ctx, tx, current)
+		return store.updateConversation(ctx, tx, current)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -200,10 +200,10 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 	if unchanged.Context().RecordCount() != cleared.Context().RecordCount() {
 		t.Fatal("empty compacted snapshot repeated after reload")
 	}
-	clearedOrigin := unchanged.Context().Origins().OriginAt(1)
-	if clearedOrigin.Kind != protocol.RecordOriginExecutionSnapshot || clearedOrigin.SourceID == "" ||
-		clearedOrigin.SourceID == origin.SourceID || unchanged.Context().Origins().Len() != 1 ||
-		cleared.Transcript.Origins().OriginAt(cleared.Transcript.RecordCount()-1) != clearedOrigin {
+	clearedOrigin := unchanged.Context().OriginAt(1)
+	if clearedOrigin.Kind != protocol.RecordOriginExecutionSnapshot || clearedOrigin.ObjectID == "" ||
+		clearedOrigin.ObjectID == origin.ObjectID ||
+		cleared.Transcript.OriginAt(cleared.Transcript.RecordCount()-1) != clearedOrigin {
 		t.Fatal("the empty active snapshot did not retain exactly one origin")
 	}
 	store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
@@ -271,7 +271,7 @@ func TestChatCompactionPreservesExecutionSnapshotObjectsAcrossRoots(t *testing.T
 	}
 	raw := []json.RawMessage{json.RawMessage(`{"role":"assistant","content":"An older handoff can mention fixture-cell."}`)}
 	audit := chatcompletions.Audit{FinishReason: "stop"}
-	replacement, err := plan.Apply(raw, audit)
+	replacement, err := plan.Apply(raw, audit, intent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,15 +310,16 @@ func TestChatCompactionPreservesExecutionSnapshotObjectsAcrossRoots(t *testing.T
 			t.Fatal(err)
 		}
 		snapshot, ok := object.(ExecutionSnapshotObject)
-		origin := native.Origins().OriginAt(index)
+		origin := native.OriginAt(index)
 		if !ok || snapshot.ConversationID != owner.ConversationID ||
-			origin.Kind != protocol.RecordOriginExecutionSnapshot || !origin.ContentSource || origin.SourceID == "" {
+			origin.Kind != protocol.RecordOriginExecutionSnapshot || origin.ObjectID == "" {
 			t.Fatalf("invalid execution snapshot association: origin=%+v object=%+v", origin, object)
 		}
-		return origin.SourceID, snapshot
+		return origin.ObjectID, snapshot
 	}
 
 	store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
+	store.contextSourceWrites = true
 	store.now = clock
 	compacted := snapshotFixtureRead(t, store, owner)
 	const running = `Active execution handles: {"cells":[{"cell_id":"fixture-cell","status":"live"}],"processes":[{"session_id":42,"status":"running","tty":true,"exit_code":null}]}`
@@ -404,7 +405,7 @@ func TestRecordOriginsDistinguishIdenticalRecordsAndPreserveUnknownKinds(t *test
 	if !sameJSONValue(records[authoredIndex], records[snapshotIndex]) {
 		t.Fatalf("fixture did not produce identical native messages: %s", records)
 	}
-	future := protocol.RecordOrigin{Kind: "future_origin", ContentSource: true, Projection: "future_projection"}
+	future := protocol.RecordOrigin{Kind: "future_origin", Projection: "future_projection"}
 	if err := store.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -418,31 +419,33 @@ func TestRecordOriginsDistinguishIdenticalRecordsAndPreserveUnknownKinds(t *test
 		if err := objects.Save(); err != nil {
 			return err
 		}
-		future.SourceID = string(id)
+		future.ObjectID = string(id)
 		native := conversation.Transcript
 		// Simulate a legacy unmarked record and a new future-kind record with identical bytes.
-		if err := native.AppendRecords([]json.RawMessage{records[authoredIndex], records[authoredIndex]}); err != nil {
+		if err := native.AppendContextRecords([]protocol.ContextRecord{
+			{Native: records[authoredIndex]},
+			{Native: records[authoredIndex], Origin: future},
+		}); err != nil {
 			return err
 		}
-		native.Origins().Insert(snapshotIndex+2, future)
-		return updateConversation(ctx, tx, conversation)
+		return store.updateConversation(ctx, tx, conversation)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
 	reopened := snapshotFixtureRead(t, store, owner)
 	after := reopened.Context()
-	origin := before.Context().Origins().OriginAt(snapshotIndex)
+	origin := before.Context().OriginAt(snapshotIndex)
 	authoredOrigin := protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: commandID}
-	if origin.Kind != protocol.RecordOriginExecutionSnapshot || origin.SourceID == "" ||
-		after.Origins().OriginAt(authoredIndex) != authoredOrigin ||
-		after.Origins().OriginAt(snapshotIndex) != origin ||
-		after.Origins().OriginAt(snapshotIndex+1).Kind != protocol.RecordOriginUnknown ||
-		after.Origins().OriginAt(snapshotIndex+2) != future {
+	if origin.Kind != protocol.RecordOriginExecutionSnapshot || origin.ObjectID == "" ||
+		after.OriginAt(authoredIndex) != authoredOrigin ||
+		after.OriginAt(snapshotIndex) != origin ||
+		after.OriginAt(snapshotIndex+1).Kind != protocol.RecordOriginUnknown ||
+		after.OriginAt(snapshotIndex+2) != future {
 		t.Fatal("identical content, generated state and an unknown future origin were conflated")
 	}
 	cloned := after.Clone()
-	if !cloned.Origins().Equal(after.Origins()) {
+	if cloned.OriginAt(snapshotIndex+2) != future || cloned.OriginAt(authoredIndex) != authoredOrigin {
 		t.Fatal("clone changed record origins")
 	}
 	wire, err := cloned.(*anthropic.Context).WireMessages()
@@ -454,14 +457,41 @@ func TestRecordOriginsDistinguishIdenticalRecordsAndPreserveUnknownKinds(t *test
 		!sameJSONValue(wire[authoredIndex], wire[snapshotIndex+2]) {
 		t.Fatalf("origin changed native provider messages: %s", wire)
 	}
-	entries := after.Origins().EntriesFrom(0)
-	entries[len(entries)-1].Origin.SourceID = "different object"
-	if err := after.Origins().Restore(entries, after.RecordCount()); err != nil {
+}
+
+func TestContextSourceWritesCanRollForwardAndBack(t *testing.T) {
+	ctx := t.Context()
+	store, session, owner := claimedSession(t)
+	store.contextSourceWrites = false
+	admitProviderCommand(t, store, owner, session.ID, "before-source-writes", false)
+	legacy := snapshotFixtureRead(t, store, owner)
+	for i := range legacy.Transcript.RecordCount() {
+		if legacy.Transcript.OriginAt(i).Kind != protocol.RecordOriginUnknown {
+			t.Fatal("read-only stage wrote a sourced record")
+		}
+	}
+	if rows := tableRowCount(t, store, "sampler_content"); rows == 0 {
+		t.Fatal("fixture did not persist the legacy records")
+	}
+	store.contextSourceWrites = true
+	live := &ExecutionState{Cells: []LiveCell{{ID: "during-source-writes", Status: executionstate.CellLive}}}
+	if _, err := store.PrepareSamplingContext(ctx, owner, live); err != nil {
 		t.Fatal(err)
 	}
-	if reopened.hasContextCheckpoint(after, reopened.transcriptContextID, reopened.transcriptControl) ||
-		cloned.Origins().OriginAt(snapshotIndex+2) != future {
-		t.Fatal("an origin-only mutation reused the stored checkpoint or changed a clone")
+	store.contextSourceWrites = false
+	if _, err := store.PrepareSamplingContext(ctx, owner, &ExecutionState{}); err != nil {
+		t.Fatal(err)
+	}
+	after := snapshotFixtureRead(t, store, owner)
+	if after.Transcript.RecordCount() != legacy.Transcript.RecordCount()+2 {
+		t.Fatal("mixed context lost a notice")
+	}
+	index := legacy.Transcript.RecordCount()
+	if origin := after.Transcript.OriginAt(index); origin.Kind != protocol.RecordOriginExecutionSnapshot || origin.ObjectID == "" {
+		t.Fatalf("reader lost the existing source after disabling writes: %+v", origin)
+	}
+	if after.Transcript.OriginAt(index+1).Kind != protocol.RecordOriginUnknown {
+		t.Fatal("disabled writer kept writing sources")
 	}
 }
 
@@ -520,23 +550,23 @@ func TestExecutionSnapshotsOrderHandlesAndExcludePrivateProcesses(t *testing.T) 
 				Cells:     []protocol.ActiveCell{{ID: "b", Status: executionstate.CellLive}, {ID: "a", Status: executionstate.CellLive}},
 				Processes: []protocol.ActiveProcess{{ModelSessionID: &secondID, Status: executionstate.ProcessRunning}, {ModelSessionID: &firstID, Status: executionstate.ProcessRunning}, {Status: executionstate.ProcessStarting}},
 			}
-			if err := conversation.appendExecutionState(objects, state); err != nil {
+			if err := store.appendExecutionState(objects, conversation, state); err != nil {
 				t.Fatal(err)
 			}
 			state.Cells[0], state.Cells[1] = state.Cells[1], state.Cells[0]
 			state.Processes[0], state.Processes[1] = state.Processes[1], state.Processes[0]
 			state.Processes[2].Status = executionstate.ProcessUnknown
-			if err := conversation.appendExecutionState(objects, state); err != nil {
+			if err := store.appendExecutionState(objects, conversation, state); err != nil {
 				t.Fatal(err)
 			}
 			if native.RecordCount() != 1 {
 				t.Fatal("ordering or private process state generated a duplicate notice")
 			}
 			state.Cells[0].Status = executionstate.CellCompleted
-			if err := conversation.appendExecutionState(objects, state); err != nil {
+			if err := store.appendExecutionState(objects, conversation, state); err != nil {
 				t.Fatal(err)
 			}
-			if err := conversation.appendExecutionState(objects, &protocol.ExecutionState{}); err != nil {
+			if err := store.appendExecutionState(objects, conversation, &protocol.ExecutionState{}); err != nil {
 				t.Fatal(err)
 			}
 			if native.RecordCount() != 3 {

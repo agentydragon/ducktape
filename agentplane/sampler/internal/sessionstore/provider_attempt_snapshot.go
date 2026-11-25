@@ -51,7 +51,7 @@ func (s *Store) BeginPreparedSampling(ctx context.Context, owner Owner, source *
 			return err
 		}
 		// Request projection needs durable context references for the just-appended records.
-		if err := checkpointConversationContexts(ctx, tx, conversation); err != nil {
+		if err := s.checkpointConversationContexts(ctx, tx, conversation); err != nil {
 			return err
 		}
 		wire, err = s.beginIntent(ctx, tx, owner, conversation, session, id, request, requestPreparationFor(preparation), &policy)
@@ -118,7 +118,7 @@ func (conversation *Conversation) hasContextCheckpoint(native protocol.Context, 
 		return head == "" && len(control) == 0
 	}
 	checkpoint, ok := conversation.storedContexts[native]
-	if !ok || checkpoint.Head != head || checkpoint.Count != native.RecordCount() || !native.Origins().Equal(&checkpoint.Origins) {
+	if !ok || checkpoint.Head != head || checkpoint.Count != native.RecordCount() {
 		return false
 	}
 	currentControl, err := conversation.contextControl(native)
