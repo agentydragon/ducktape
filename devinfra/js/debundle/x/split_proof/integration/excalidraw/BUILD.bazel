@@ -298,3 +298,32 @@ js_test(
     env = {"EXCALIDRAW_PACKAGE": "$(rootpath //:node_modules/@excalidraw/excalidraw/dir)"},
     tags = ["manual"],
 )
+
+# The app-rooted checker proves both moves and checks one assembled tree.
+py_test(
+    name = "joint_deployment_test",
+    size = "large",
+    srcs = ["joint_deployment_test.py"],
+    data = [
+        "main_static_sha256.json",
+        _CANONICAL_MAIN_PLACEMENT,
+        _CANONICAL_PLACEMENT,
+        "//devinfra/js/debundle/excalidraw:bundle",
+        "//devinfra/js/debundle/x/split_proof/lean:joint_deployment_trial",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
+    env = {
+        "BUNDLE": "$(rlocationpaths //devinfra/js/debundle/excalidraw:bundle)",
+        "EDITOR": "$(rlocationpath " + _CANONICAL_PLACEMENT + ")",
+        "FRONTEND": "$(rlocationpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+        "MAIN": "$(rlocationpath " + _CANONICAL_MAIN_PLACEMENT + ")",
+        "PINS": "$(rlocationpath main_static_sha256.json)",
+        "TRIAL": "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:joint_deployment_trial)",
+    },
+    deps = [
+        "//:conftest",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)

@@ -27,15 +27,36 @@ def JointStaticEquivalent (app provider : LinkedInput.StaticSplit) : Prop :=
     NormalEquivalent (fun _ => True) before after ∧ SameExports before after ∧
     SamePublicCells provider.plan.entry before after
 
+private def checkRooted (provider : String) (before after : Program) :
+    Except String (PLift (NormalEquivalent (fun _ => True) before after ∧ SameExports before after ∧
+      SamePublicCells provider before after)) := do
+  let a ← (checkLink before).mapError ("original linker: " ++ ·)
+  let b ← (checkLink after).mapError ("candidate linker: " ++ ·)
+  let ⟨cells⟩ ← checkPublicCells provider a b
+  let (_, ⟨eqv, exports⟩) ← checkLinkedSchedules [] a b {}
+  return ⟨fun w _ => eqv w (by simp [StableIntrinsic.Worlds]), exports, cells⟩
+
 def certifyJointStatic (app provider : LinkedInput.StaticSplit) :
     Except String (PLift (JointStaticEquivalent app provider)) := do
   match decoded : LinkedInput.decodeStaticSplits app provider with
   | .error why => throw why
   | .ok (before, after) =>
-    let a ← (checkLink before).mapError ("original linker: " ++ ·)
-    let b ← (checkLink after).mapError ("candidate linker: " ++ ·)
-    let ⟨cells⟩ ← checkPublicCells provider.plan.entry a b
-    let (_, ⟨eqv, exports⟩) ← checkLinkedSchedules [] a b {}
-    return ⟨⟨before, after, decoded, fun w _ => eqv w (by simp [StableIntrinsic.Worlds]), exports, cells⟩⟩
+    let ⟨proof⟩ ← checkRooted provider.plan.entry before after
+    return ⟨before, after, decoded, proof⟩
+
+/-- Both programs are the app-rooted result of the deployment decoder. The
+deployment and host interpretation are premises at the artifact boundary. -/
+def JointDeploymentEquivalent (app provider : LinkedInput.StaticSplit) (shared : Lean.Json)
+    (inputs : LinkedDeployment.Input) (profile : HostProfile) : Prop :=
+  ∃ before after, LinkedInput.decodeJointDeployment app provider shared inputs profile = .ok (before, after) ∧
+    NormalEquivalent (fun _ => True) before after ∧ SameExports before after ∧ SamePublicCells provider.plan.entry before after
+
+def certifyJointDeployment (app provider : LinkedInput.StaticSplit) (shared : Lean.Json)
+    (inputs : LinkedDeployment.Input) (profile : HostProfile) : Except String (PLift (JointDeploymentEquivalent app provider shared inputs profile)) := do
+  match decoded : LinkedInput.decodeJointDeployment app provider shared inputs profile with
+  | .error why => throw why
+  | .ok (before, after) =>
+    let ⟨proof⟩ ← checkRooted provider.plan.entry before after
+    return ⟨before, after, decoded, proof⟩
 
 end CoreJS.LinkedBehavior

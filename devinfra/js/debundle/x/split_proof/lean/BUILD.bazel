@@ -402,6 +402,18 @@ lean_binary(
 )
 
 lean_binary(
+    name = "joint_deployment_trial",
+    testonly = True,
+    srcs = ["JointDeploymentTrial.lean"],
+    entry = "JointDeploymentTrial.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+    deps = [
+        ":corejs_structural",
+        ":lowersplit_workflows",
+    ],
+)
+
+lean_binary(
     name = "joint_static_test_runner",
     testonly = True,
     srcs = ["JointStaticTest.lean"],
@@ -546,6 +558,7 @@ lean_axiom_test(
     theorems = [
         "CoreJS.evaluatorFrames",
         "CoreJS.LinkedBehavior.certifyJointStatic",
+        "CoreJS.LinkedBehavior.certifyJointDeployment",
         "CoreJS.LinkedBehavior.certifyStructuralASTs",
         "CoreJS.DenseArray.reduce",
         "CoreJS.evalExpr_obj_string_fields",

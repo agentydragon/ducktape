@@ -77,7 +77,7 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
   return (← FromESTree.linkedUnit imports ast profile, [])
 
 private def parse (format : BodyFormat) (profile : HostProfile) (path : String) (nodes : Array Json)
-    (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Bool := false) : Except String Parsed := do
+    (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Option String := none) : Except String Parsed := do
   let mut imports := #[]
   for j in nodes do
     if (← typ j) == "ImportDeclaration" then
@@ -92,7 +92,7 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         | some ids =>
           let some id := ids[units.size]? | throw "emitted body length differs from the placement"
           pure id
-      format.lower profile names origin (if provider then some (path, i) else none) ast exported
+      format.lower profile names origin (provider.map fun referrer => (referrer, origin - base)) ast exported
     match ← typ j with
     | "ImportDeclaration" => pure ()
     -- Neither statement changes the modeled state, so neither gets a unit.
@@ -121,13 +121,13 @@ private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module w
   body := p.units.map fun (i, s, _) => (base + i, s)
   exports := p.exports
 
-private def readProviders (format : BodyFormat) (profile : HostProfile) (providers : List (String × Json)) (base : Nat) : Except String (List Module) := do
-  let names := providers.map Prod.fst
+private def readProviders (format : BodyFormat) (profile : HostProfile) (providers : List (String × Json)) (base : Nat) (roots : List String := []) : Except String (List Module) := do
+  let names := roots ++ providers.map Prod.fst
   let mut modules := #[]
   let mut offset := base
   for (name, file) in providers do
     let nodes ← (ESTreeUnits.nodes file).mapError fun why => s!"{name}: {why}"
-    let p ← (parse format profile name nodes offset (provider := true)).mapError fun why => s!"{name}: {why}"
+    let p ← (parse format profile name nodes offset (provider := some name)).mapError fun why => s!"{name}: {why}"
     for req in p.imports do
       unless names.contains req.source do throw s!"{name}: missing provider dependency {req.source}"
     modules := modules.push (p.numbered name offset)
@@ -135,10 +135,10 @@ private def readProviders (format : BodyFormat) (profile : HostProfile) (provide
   return modules.toList
 
 private def readSplit (format : BodyFormat) (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
-    (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) (base : Nat := 0) : Except String Module := do
+    (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) (base : Nat := 0) (provider : Option String := none) : Except String Module := do
   let nodes ← ESTreeUnits.nodes (← files.getObjVal? m.name)
   let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (base + i, ·)
-  let p ← parse format profile m.name nodes (origins := some (placed.map Prod.fst).toArray)
+  let p ← parse format profile m.name nodes base (some (placed.map Prod.fst).toArray) provider
   let (external, glue) := p.imports.partition fun req => providers.contains req.source
   if m.name == P.entry then
     unless p.imports.take original.imports.length == original.imports && external == original.imports do
@@ -201,7 +201,7 @@ private structure Fragment where
   unitCount : Nat
 
 private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source files : Json) (P : EsmSplit.Plan)
-    (sourcePath : String) (providerNames : List String) (base : Nat) : Except String Fragment := do
+    (sourcePath : String) (providerNames : List String) (base : Nat) (provider : Option String := none) : Except String Fragment := do
   let fs := (← files.getObj?).toList.map Prod.fst
   EsmSplit.validateModulePaths (P.entry :: fs ++ providerNames)
   unless fs.Perm (P.mods.map (·.name)) && fs.contains P.entry do throw "output filenames differ from the plan"
@@ -213,16 +213,16 @@ private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source
   for (j, i) in nodes.zipIdx do
     if ["ImportDeclaration", "ExportNamedDeclaration"].contains (← typ j) then
       unless entry.stmts.contains i do throw s!"original import or export unit {i} must stay in the entry"
-  let original ← parse format profile sourcePath nodes base
+  let original ← parse format profile sourcePath nodes base (provider := provider)
   if let .structural pivots _ := format then
-    let bodyIds := Std.HashSet.ofList (original.units.map (·.1))
+    let bodyIds := Std.HashSet.ofList (original.units.map fun u => base + u.1)
     for pivot in pivots do
       unless bodyIds.contains pivot do throw s!"pivot {pivot} is not an executable source unit"
   for req in original.imports do
     unless providerNames.contains req.source do throw s!"missing original dependency {req.source}"
   let originalSyntax := Std.HashMap.ofList (original.units.map fun (i, _, ast) => (i, ast))
   let split ← P.mods.mapM fun m =>
-    (readSplit format profile files P providerNames original originalSyntax m base).mapError fun why => s!"{m.name}: {why}"
+    (readSplit format profile files P providerNames original originalSyntax m base provider).mapError fun why => s!"{m.name}: {why}"
   return ⟨original.numbered P.entry base, split, nodes.size⟩
 
 private def decode (format : BodyFormat) (source providers files : Json) (P : EsmSplit.Plan)
@@ -296,5 +296,36 @@ def program (source providers : Json) (profile : HostProfile := .empty) : Except
   let p : Program := { entry := "main", modules := original.numbered "main" 0 :: shared }
   let _ ← scopes p
   return p
+
+/-- Lower both changed chunks against the same closure of providers and
+loader capabilities. The split provider keeps its original referrer and
+local ordinal even when its executable unit ID is rebased. -/
+def decodeJointDeployment (app provider : StaticSplit) (shared : Json) (inputs : LinkedDeployment.Input)
+    (profile : HostProfile) : Except String (Program × Program) := do
+  let names := (app.plan.mods ++ provider.plan.mods).map (·.name)
+  unless names.Nodup do throw "joint output path collision"
+  let others := (← shared.getObj?).toList
+  let otherNames := others.map Prod.fst
+  unless !names.any otherNames.contains do throw "shared provider overlaps joint output"
+  unless inputs.entry == app.plan.entry do throw "joint deployment root differs"
+  let access ← LinkedDeployment.check inputs app.source
+    (.mkObj ((provider.plan.entry, provider.source) :: others)) app.plan
+  let resources (path : String) := inputs.before[path]?
+  -- 'check' above already collected this provider's capabilities in the app
+  -- graph. Check that the editor split leaves its location-sensitive sites
+  -- in that very referrer, and that its new routes are fresh too.
+  let _ ← ModuleLocation.check provider.source provider.plan.entry provider.plan resources resources inputs.options
+  let moved (p : EsmSplit.Plan) (base : Nat) := Std.HashSet.ofList <|
+    (p.mods.filter (fun m => m.name != p.entry)).flatMap fun m => m.stmts.map (base + ·)
+  let a ← decodeFragment (.structural (moved app.plan 0) access) profile app.source app.files app.plan
+    app.plan.entry (provider.plan.entry :: otherNames) 0
+  let b ← decodeFragment (.structural (moved provider.plan a.unitCount) access) profile provider.source provider.files provider.plan
+    provider.plan.entry (app.plan.entry :: otherNames) a.unitCount (some provider.plan.entry)
+  let fixed ← readProviders (.structural {} access) profile others (a.unitCount + b.unitCount)
+    [app.plan.entry, provider.plan.entry]
+  let before ← access.attach ⟨app.plan.entry, a.sourceModule :: b.sourceModule :: fixed⟩
+  let after ← access.attach ⟨app.plan.entry, a.emitted ++ b.emitted ++ fixed⟩
+  checkScopes before after
+  return (before, after)
 
 end CoreJS.LinkedInput

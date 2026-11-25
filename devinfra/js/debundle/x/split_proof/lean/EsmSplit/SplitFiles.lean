@@ -115,7 +115,7 @@ def outputDirectory (out : System.FilePath) : Except String System.FilePath := d
   return dir
 
 /-- Reparse a module directory and require the planned programs and the copied providers. -/
-private def compareDirectory (manifest : System.FilePath) (providers : Json) (input dir work : System.FilePath) :
+def compareDirectory (manifest : System.FilePath) (providers : Json) (input dir work : System.FilePath) :
     IO Unit := do
   let providerManifest := work / "provider-programs.json"
   IO.FS.writeFile providerManifest providers.compress
