@@ -178,7 +178,6 @@ debundle_resolve_placement(
     canonical_out = "canonical_editor_placement.json",
     chunk = "editor",
     ownership_subset = "editor_smoke_subset.json",
-    package_roots = _PACKAGE_ROOTS,
     proposal_fragments = {
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/polygon_ellipse:polygon.yaml": "packages/math/polygon",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/polygon_ellipse:ellipse.yaml": "packages/math/ellipse",
@@ -225,7 +224,6 @@ debundle_resolve_placement(
     canonical_out = "canonical_main_placement.json",
     chunk = "main",
     ownership_subset = "main_smoke_subset.json",
-    package_roots = _PACKAGE_ROOTS,
     spec_tree_inputs = [":spec"],
     tree_config = "config.yaml",
     tree_modules = "spec/modules",

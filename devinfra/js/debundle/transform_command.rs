@@ -6,7 +6,7 @@ use anyhow::{Result, bail};
 use clap::Args as ClapArgs;
 use pipeline::{RunOutput, project_analysis_and_apply};
 pub use transform_inputs::{
-    TransformContextArgs, TransformContextAuxArgs, is_inactive_transform_default,
+    SpecSourceArgs, TransformContextArgs, TransformContextAuxArgs, is_inactive_transform_default,
     validate_transform_arg_matches,
 };
 

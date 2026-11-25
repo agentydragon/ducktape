@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use transform_command::{TransformContextArgs, TransformContextAuxArgs};
+use transform_command::{SpecSourceArgs, TransformContextArgs, TransformContextAuxArgs};
 
 use anyhow::{Context, Result, ensure};
 use graph_provenance::VerifiedGraphSourceContext;
@@ -89,8 +89,8 @@ impl CandidateEffectAssessmentArgs {
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
         let Some(analysis_path) = self.analysis else {
             ensure!(
-                self.transform.spec.is_none()
-                    && self.transform.tree_config.is_none()
+                self.transform.source.spec.is_none()
+                    && self.transform.source.tree_config.is_none()
                     && !self.transform.has_explicit_auxiliary_inputs(),
                 "transform context arguments require --analysis for candidate effect assessment"
             );
@@ -108,7 +108,7 @@ impl CandidateEffectAssessmentArgs {
         let graph_source = source_context
             .context("candidate effect assessment requires a verified graph source context")?;
         ensure!(
-            self.transform.tree_config.is_some() && self.transform.spec.is_none(),
+            self.transform.source.tree_config.is_some() && self.transform.source.spec.is_none(),
             "candidate effect assessment currently requires the full --tree-config transform context"
         );
         ResolvedCandidateEffectAssessment::new(
@@ -142,10 +142,13 @@ impl CandidateEffectAssessmentExistingTreeArgs {
             .context("candidate effect assessment requires a verified graph source context")?;
         ResolvedCandidateEffectAssessment::new(
             TransformContextArgs {
-                spec: None,
-                tree_config: Some(tree_config.to_path_buf()),
-                tree_modules: Some(modules_root.to_path_buf()),
-                auxiliary: self.auxiliary,
+                source: SpecSourceArgs {
+                    spec: None,
+                    tree_config: Some(tree_config.to_path_buf()),
+                    tree_modules: Some(modules_root.to_path_buf()),
+                    tree: self.auxiliary.tree,
+                },
+                package_sources: self.auxiliary.package_sources,
             },
             analysis,
             graph_source,

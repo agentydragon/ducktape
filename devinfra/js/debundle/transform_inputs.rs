@@ -41,6 +41,14 @@ pub fn load_transform_spec_with_roots(
 /// Spec, source and package inputs shared by runs and assessment-only callers.
 #[derive(ClapArgs, Debug, Clone, Default)]
 pub struct TransformContextArgs {
+    #[command(flatten)]
+    pub source: SpecSourceArgs,
+    #[command(flatten)]
+    pub package_sources: PackageRootArgs,
+}
+
+#[derive(ClapArgs, Debug, Clone, Default)]
+pub struct SpecSourceArgs {
     /// Path to a flat transform spec YAML. Pass exactly one of `--spec`
     /// / `--tree-config`.
     #[arg(long)]
@@ -53,13 +61,21 @@ pub struct TransformContextArgs {
     #[arg(long = "tree-modules")]
     pub tree_modules: Option<PathBuf>,
     #[command(flatten)]
-    pub auxiliary: TransformContextAuxArgs,
+    pub tree: TreePathArgs,
 }
 
 /// Common source, output and package inputs shared by transform context
 /// consumers that already own the tree config and module root arguments.
 #[derive(ClapArgs, Debug, Clone, Default)]
 pub struct TransformContextAuxArgs {
+    #[command(flatten)]
+    pub tree: TreePathArgs,
+    #[command(flatten)]
+    pub package_sources: PackageRootArgs,
+}
+
+#[derive(ClapArgs, Debug, Clone, Default)]
+pub struct TreePathArgs {
     /// Path to tree-shaped vendor marks YAML.
     #[arg(long = "tree-vendor-marks")]
     pub tree_vendor_marks: Option<PathBuf>,
@@ -71,65 +87,67 @@ pub struct TransformContextAuxArgs {
     /// Output root used when compiling tree-shaped authoring sources.
     #[arg(long = "out-root", env = "DEBUNDLE_OUT")]
     pub out_root: Option<PathBuf>,
-    #[command(flatten)]
-    pub package_sources: PackageRootArgs,
 }
 
 impl TransformContextArgs {
     /// Collapse `--package-root` pairs into a `HashMap` and validate spec source.
     pub fn resolve(self) -> Result<TransformRequest> {
-        let spec_source = resolve_spec_source(&self)?;
+        let spec_source = self.source.resolve()?;
         Ok(TransformRequest {
             spec_source,
-            package_roots: collect_package_roots(self.auxiliary.package_sources.package_roots)?
+            package_roots: collect_package_roots(self.package_sources.package_roots)?
                 .into_iter()
                 .collect(),
-            packages_root: self.auxiliary.package_sources.packages_root,
+            packages_root: self.package_sources.packages_root,
         })
     }
 
     pub fn has_explicit_auxiliary_inputs(&self) -> bool {
-        self.tree_modules.is_some() || self.auxiliary.has_explicit_inputs()
+        self.source.tree_modules.is_some()
+            || self.source.tree.has_explicit_inputs()
+            || !self.package_sources.package_roots.is_empty()
+            || self.package_sources.packages_root.is_some()
+    }
+}
+
+impl TreePathArgs {
+    fn has_explicit_inputs(&self) -> bool {
+        self.tree_vendor_marks.is_some() || self.out_root.is_some()
     }
 }
 
 impl TransformContextAuxArgs {
-    pub fn has_explicit_inputs(&self) -> bool {
-        self.tree_vendor_marks.is_some()
-            || self.out_root.is_some()
+    pub fn has_any_inputs(&self) -> bool {
+        self.tree.tree_source_root.is_some()
+            || self.tree.has_explicit_inputs()
             || !self.package_sources.package_roots.is_empty()
             || self.package_sources.packages_root.is_some()
     }
-
-    /// Whether any transform input is present, including environment values.
-    /// `modules apply` uses this after its command
-    /// registrations disable the source/output environment defaults.
-    pub fn has_any_inputs(&self) -> bool {
-        self.tree_source_root.is_some() || self.has_explicit_inputs()
-    }
 }
 
-fn resolve_spec_source(args: &TransformContextArgs) -> Result<TransformSpecSource> {
-    match (&args.spec, &args.tree_config) {
-        (Some(_), Some(_)) => {
-            bail!("pass either --spec or --tree-config, not both");
-        }
-        (Some(path), None) => Ok(TransformSpecSource::Flat { path: path.clone() }),
-        (None, Some(config_path)) => {
-            let modules_root = required_tree_arg("--tree-modules", &args.tree_modules)?;
-            let vendor_marks_path =
-                required_tree_arg("--tree-vendor-marks", &args.auxiliary.tree_vendor_marks)?;
-            let out_root = required_tree_arg("--out-root", &args.auxiliary.out_root)?;
-            Ok(TransformSpecSource::Tree(CompileSpecTreeOptions {
-                config_path: config_path.clone(),
-                modules_root,
-                vendor_marks_path,
-                source_root: args.auxiliary.tree_source_root.clone(),
-                out_root,
-            }))
-        }
-        (None, None) => {
-            bail!("pass either --spec or --tree-config");
+impl SpecSourceArgs {
+    pub fn resolve(&self) -> Result<TransformSpecSource> {
+        match (&self.spec, &self.tree_config) {
+            (Some(_), Some(_)) => {
+                bail!("pass either --spec or --tree-config, not both");
+            }
+            (Some(path), None) => Ok(TransformSpecSource::Flat { path: path.clone() }),
+            (None, Some(config_path)) => {
+                let modules_root = required_tree_arg("--tree-modules", &self.tree_modules)?;
+                let vendor_marks_path =
+                    required_tree_arg("--tree-vendor-marks", &self.tree.tree_vendor_marks)?;
+                let out_root = required_tree_arg("--out-root", &self.tree.out_root)?;
+                Ok(TransformSpecSource::Tree(CompileSpecTreeOptions {
+                    config_path: config_path.clone(),
+                    modules_root,
+                    vendor_marks_path,
+                    source_root: self.tree.tree_source_root.clone(),
+                    out_root,
+                }))
+            }
+            (None, None) => {
+                bail!("pass either --spec or --tree-config");
+            }
         }
     }
 }
@@ -149,7 +167,7 @@ const TREE_INPUT_FLAGS: &[(&str, &str)] = &[
 ];
 
 fn is_flat_context(matches: &ArgMatches) -> bool {
-    let context_group = <TransformContextArgs as clap::Args>::group_id()
+    let context_group = <SpecSourceArgs as clap::Args>::group_id()
         .expect("transform context has a Clap argument group");
     matches.try_contains_id(context_group.as_str()).is_ok()
         && matches
