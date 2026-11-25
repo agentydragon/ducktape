@@ -228,6 +228,27 @@ Flat object-rest parameters remove the first refusal in Excalidraw `main.js` uni
 
 **Done when.** One Lean function lowers an annotated ESTree module graph to CoreJS, CI runs the Node comparison suites through it, and nothing imports `to_core.mjs`.
 
+**Public lowering census.** [Per-file results and retries](experiments/records/public_lowering_census.jsonl); [runner](integration/excalidraw/lowering_census.mjs); BuildBuddy [`d6cda86f-053a-438a-8d3d-df6dc02f2e35`](https://app.buildbuddy.io/invocation/d6cda86f-053a-438a-8d3d-df6dc02f2e35). The `empty` debundle corpus has 720 executable units in 196 parsed inputs and 246 first refusals; three deliberately invalid inputs do not parse. The `ecmascript` library corpus has 4,488 units and 125 refusals in eight variants. The `browser-page` Excalidraw build has 5,083 units and 26 refusals across 79 chunks. Minified and unminified library variants count separately.
+
+Ranked by units with no further refusal after the diagnostic retry:
+
+| First blocker  | Corpus                | First refusals | No next refusal |
+| -------------- | --------------------- | -------------: | --------------: |
+| `console`      | debundle              |            177 |             168 |
+| `Error`        | libraries             |             18 |              18 |
+| `import.meta`  | debundle + Excalidraw |             17 |              17 |
+| `Set`          | libraries             |             16 |              16 |
+| dynamic import | debundle + Excalidraw |             15 |              15 |
+| `Symbol`       | libraries             |             14 |              14 |
+| `Object`       | debundle              |             12 |              12 |
+| `globalThis`   | debundle              |             10 |              10 |
+| `Math`         | libraries             |             10 |              10 |
+| `Proxy`        | debundle              |             10 |               7 |
+
+The 232 debundle and 123 library host-global first refusals dominate the census. Standard globals belong to the ECMAScript profile work; `console`, Node globals, and the `empty` profile need their own host contracts. Three debundle `URL` refusals next reach `import.meta`; four library `WeakSet` refusals next reach `Error`. Two library variants first refuse an array hole; Excalidraw has one rest-parameter and one object-pattern refusal. These last three shapes were not retried.
+
+The retry isolates the selected original unit, keeps its imports and ordinal, and replaces the named global's references with hypothetical module references, or replaces each selected `import.meta` or dynamic-import expression with `null`. It is a syntactic counterfactual, not a faithful JavaScript implementation, a split certificate, or a guarantee that the feature alone can be implemented safely. It records the next refusal, if any. Callable bodies can themselves be deferred opaque code. The census does not link modules or check `UniqueDefs`, and therefore does not measure repeated-`var` link failures or newly certified splits. Run `bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:lowering_census --remote_build_event_upload=all` to regenerate the four JSONL artifacts.
+
 ### One guarantee
 
 **Now.** Certified verdicts have three scopes, and each proves a different statement:

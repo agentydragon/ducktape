@@ -474,6 +474,38 @@ def program (source providers : Json) (scripts : Std.HashSet (Nat × Nat)) (entr
   let _ ← scopes p
   return p
 
+/-- Diagnose concrete linked lowering in isolation. Providers are not linked,
+and each unit records only its first refusal. -/
+def concreteCensus (source : Json) (profile : HostProfile) : Except String Json := do
+  let nodes ← ESTreeUnits.nodes source
+  let mut imports : List Name := []
+  for j in nodes do
+    if (← typ j) == "ImportDeclaration" then
+      for spec in ← j.getObjValAs? (Array Json) "specifiers" do
+        imports := imports ++ [← FromESTree.identifier (← spec.getObjVal? "local")]
+  let mut units : Nat := 0
+  let mut refusals : Array Json := #[]
+  for (j, i) in nodes.zipIdx do
+    let kind ← typ j
+    if ["ImportDeclaration", "ExportAllDeclaration", "EmptyStatement", "DebuggerStatement"].contains kind then
+      continue
+    let ast ← if kind == "ExportNamedDeclaration" || kind == "ExportDefaultDeclaration" then
+      j.getObjVal? "declaration"
+    else pure j
+    if ast == .null then continue
+    units := units + 1
+    let result : Except String Unit := do
+      if kind == "ExportDefaultDeclaration" then
+        let _ ← BodyFormat.lowerDefault .linked profile imports i none ast
+        pure ()
+      else
+        let _ ← BodyFormat.lower .linked profile imports i none ast (kind == "ExportNamedDeclaration")
+        pure ()
+    if let .error why := result then
+      refusals := refusals.push (Json.mkObj [("unit", Lean.toJson i), ("reason", .str why)])
+  return Json.mkObj [("hostProfile", Lean.toJson profile.label), ("units", Lean.toJson units),
+    ("lowering_refusals", .arr refusals)]
+
 /-- Public paths are the original module records, including unchanged dependencies.
 The candidate can also contain private files and model-only helper modules. -/
 def publicPaths (parts : List StaticSplit) (shared : Json) : Except String (List String) := do

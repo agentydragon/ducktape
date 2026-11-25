@@ -32,6 +32,30 @@ function run(programs, ast) {
     .map((line) => JSON.parse(line));
 }
 
+// Census counts concrete refusals even if structural mode could retain the unit.
+const concreteCensusSource = `import { imported } from "./provider.mjs";
+  const a = 1, b = imported;
+  ${Array.from({ length: 25 }, (_, i) => `const f${i} = 2 ** 3;`).join("\n")}
+  const date = new Date();
+  export { a };`;
+const concretePath = file(
+  "concrete-census.json",
+  JSON.stringify(dumpSource(concreteCensusSource, { includeOpaqueCaptures: true }))
+);
+const concreteBrowserContract = file("concrete-browser.json", JSON.stringify({ profile: "browser-page" }));
+const concreteCensus = (args = []) =>
+  JSON.parse(execFileSync(process.env.COREJS, ["--lowering-census", concretePath, ...args], { encoding: "utf8" }));
+const concreteEmpty = concreteCensus();
+const concreteBrowser = concreteCensus(["--host-contract", concreteBrowserContract]);
+assert.equal(concreteEmpty.units, 28);
+assert.equal(concreteBrowser.units, concreteEmpty.units);
+assert.equal(concreteBrowser.lowering_refusals.length, 25);
+assert.equal(concreteEmpty.lowering_refusals.length, 26);
+assert.deepEqual(
+  concreteBrowser.lowering_refusals.map(({ unit }) => unit),
+  Array.from({ length: 25 }, (_, i) => i + 3)
+);
+
 async function nodeOutcome(url) {
   try {
     await import(url);

@@ -12,6 +12,30 @@ _DUMP_DATA = [
 
 _LOWERSPLIT_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
 
+js_test(
+    name = "lowering_census",
+    data = [
+        "//devinfra/js/debundle/e2e:corpus_files",
+        "//devinfra/js/debundle/excalidraw:bundle",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:prepare",
+        "//devinfra/js/debundle/x/split_proof/lean:corejs",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "lowering_census.mjs",
+    env = {
+        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
+        "CORPUS_MANIFEST": "$(rootpath //devinfra/js/debundle/e2e:corpus_files)",
+        "EXCALIDRAW_OUTPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
+        "LIBRARY_PREPARE": "$(rootpath //devinfra/js/debundle/x/split_proof/integration/library_splits:prepare)",
+    },
+    shard_count = 4,
+    tags = [
+        "bench",
+        "manual",
+    ],
+)
+
 # Bounded public-workload investigation; reports refusals without treating them as proof failures.
 js_test(
     name = "excalidraw_certificate_census",
