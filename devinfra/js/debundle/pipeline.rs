@@ -1488,20 +1488,8 @@ fn provenance_roots(cli: &TransformRequest) -> Result<(ProvenanceRoots, Option<P
         TransformSpecSource::Flat { .. } => None,
     }
     .unwrap_or(std::env::current_dir()?);
-    let mut packages = std::collections::BTreeMap::new();
-    anyhow::ensure!(
-        !cli.package_roots.contains_key("__packages_root__"),
-        "package name __packages_root__ is reserved for the shared packages root in graph provenance"
-    );
-    for (name, root) in &cli.package_roots {
-        packages.insert(name.clone(), graph_provenance::absolute(root)?);
-    }
-    if let Some(root) = &cli.packages_root {
-        packages.insert(
-            "__packages_root__".to_string(),
-            graph_provenance::absolute(root)?,
-        );
-    }
+    let packages =
+        graph_provenance::capture_package_roots(&cli.package_roots, cli.packages_root.as_deref())?;
     Ok((
         ProvenanceRoots {
             spec: spec_root,
@@ -1523,11 +1511,14 @@ fn canonical_generation_command(
     roots: &ProvenanceRoots,
     loaded_analysis: Option<&Path>,
 ) -> Result<Vec<String>> {
-    fn path_arg(path: &Path) -> Result<String> {
-        Ok(graph_provenance::absolute(path)?
+    fn resolved_arg(path: &Path) -> Result<String> {
+        Ok(path
             .to_str()
             .with_context(|| format!("non-UTF-8 generation path {}", path.display()))?
             .to_string())
+    }
+    fn path_arg(path: &Path) -> Result<String> {
+        resolved_arg(&graph_provenance::absolute(path)?)
     }
     let mut argv = vec![path_arg(&std::env::current_exe()?)?, "run".to_string()];
     match &cli.spec_source {
@@ -1543,23 +1534,26 @@ fn canonical_generation_command(
             ]);
             // Explicitly preserve the effective compile root when it came
             // from DEBUNDLE_TREE_SOURCE_ROOT or the original cwd.
-            argv.extend(["--tree-source-root".to_string(), path_arg(&roots.source)?]);
+            argv.extend([
+                "--tree-source-root".to_string(),
+                resolved_arg(&roots.source)?,
+            ]);
             argv.extend(["--out-root".to_string(), path_arg(&tree.out_root)?]);
         }
     }
-    let mut package_roots = cli.package_roots.iter().collect::<Vec<_>>();
-    package_roots.sort_by_key(|(name, _)| *name);
-    for (name, path) in package_roots {
-        argv.extend([
-            "--package-root".to_string(),
-            format!("{name}={}", path_arg(path)?),
-        ]);
+    for (name, path) in &roots.packages {
+        if name != graph_provenance::SHARED_PACKAGES_ROOT {
+            argv.extend([
+                "--package-root".to_string(),
+                format!("{name}={}", resolved_arg(path)?),
+            ]);
+        }
     }
     if let Some(input) = &options.ownership_subset_input {
         argv.extend(["--ownership-subset".to_string(), path_arg(&input.path)?]);
     }
-    if let Some(root) = &cli.packages_root {
-        argv.extend(["--packages-root".to_string(), path_arg(root)?]);
+    if let Some(root) = roots.packages.get(graph_provenance::SHARED_PACKAGES_ROOT) {
+        argv.extend(["--packages-root".to_string(), resolved_arg(root)?]);
     }
     match options.output {
         RunOutput::DryRun => argv.push("--dry-run".to_string()),
