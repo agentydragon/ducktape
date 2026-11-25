@@ -34,7 +34,7 @@ DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mj
 ## Which accepted cases have artifact certificates?
 
 [Per-case certificate results](results/certificates.jsonl) are separate from the diagnostic report.
-Of 122 saved `agree-accept` cases, 108 certified with the structural checker, passed a fresh
+Of 122 saved `agree-accept` cases, 109 certified with the structural checker, passed a fresh
 `--check-output` on the published files, and matched the fixture's expected stdout and exit status
 in Node for both original and emitted entry. With `privateEntryBody: true`, the planner may split the declaration prefix of the entry into
 a private implementation module to keep glue exports off the public entry namespace. The
@@ -57,7 +57,7 @@ CLI. It tries the structural checker first and the default checker on emission r
 tree that fails recheck is an error. Review a new census before updating the report: keep existing
 successes and add newly certified cases.
 
-### What to do about the 14 refusals
+### What to do about the 13 refusals
 
 These are first blockers, not claims that the splits are safe:
 
@@ -72,8 +72,6 @@ These are first blockers, not claims that the splits are safe:
 - **Reordered initializers (4):** three fail the local-allocation rule; `frozen_callback` fails
   because a callback can reach the moved region. Reduce the first crossed pair, try an
   order-preserving placement, and extend a move rule only with evidence for allocation and reads.
-- **Default-exported class (1):** the static block in `export_default/static_class` mutates
-  `globalThis.seq`. Preserve the default export cell and prove the block runs once in order.
 
 ## What the adapter does
 
