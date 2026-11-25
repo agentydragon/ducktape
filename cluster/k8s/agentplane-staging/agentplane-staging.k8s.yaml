@@ -3337,6 +3337,7 @@ data:
         "chatgpt-sub/oai-responses/gpt-6.2-astra": {
           "connection": "llm-ingress",
           "provider_model": "chatgpt-sub/oai-responses/gpt-6.2-astra",
+          "auto_compact_tokens": 244800,
           "api": "responses",
           "responses": {
             "dialect": "lite"
@@ -3354,6 +3355,7 @@ data:
         "chatgpt-sub/oai-responses/gpt-6-luna": {
           "connection": "llm-ingress",
           "provider_model": "chatgpt-sub/oai-responses/gpt-6-luna",
+          "auto_compact_tokens": 244800,
           "api": "responses",
           "responses": {
             "dialect": "lite"
@@ -3371,6 +3373,7 @@ data:
         "chatgpt-sub/oai-responses/gpt-6.2-sol": {
           "connection": "llm-ingress",
           "provider_model": "chatgpt-sub/oai-responses/gpt-6.2-sol",
+          "auto_compact_tokens": 450000,
           "api": "responses",
           "responses": {
             "dialect": "lite"
@@ -3388,6 +3391,7 @@ data:
         "chatgpt-sub/oai-responses/gpt-6.1-terra": {
           "connection": "llm-ingress",
           "provider_model": "chatgpt-sub/oai-responses/gpt-6.1-terra",
+          "auto_compact_tokens": 450000,
           "api": "responses",
           "responses": {
             "dialect": "lite"
@@ -3500,6 +3504,7 @@ data:
         "anthropic-api/ant-messages/claude-opus-5-5": {
           "connection": "anthropic-api",
           "provider_model": "claude-opus-5-5",
+          "auto_compact_tokens": 900000,
           "api": "anthropic_messages",
           "anthropic_messages": {
             "max_tokens": 32768,
@@ -3518,7 +3523,6 @@ data:
             "eager_input_streaming": true,
             "compaction": {
               "max_tokens": 8192,
-              "auto_compact_tokens": 750000,
               "keep_recent_turns": 0
             }
           },
@@ -3534,6 +3538,7 @@ data:
         "anthropic-api/ant-messages/claude-sonnet-5-5": {
           "connection": "anthropic-api",
           "provider_model": "claude-sonnet-5-5",
+          "auto_compact_tokens": 900000,
           "api": "anthropic_messages",
           "anthropic_messages": {
             "max_tokens": 32768,
@@ -3552,7 +3557,6 @@ data:
             "eager_input_streaming": true,
             "compaction": {
               "max_tokens": 8192,
-              "auto_compact_tokens": 750000,
               "keep_recent_turns": 0
             }
           },
@@ -3568,6 +3572,7 @@ data:
         "anthropic-api/ant-messages/claude-haiku-5-5": {
           "connection": "anthropic-api",
           "provider_model": "claude-haiku-5-5",
+          "auto_compact_tokens": 900000,
           "api": "anthropic_messages",
           "anthropic_messages": {
             "max_tokens": 32768,
@@ -3586,7 +3591,6 @@ data:
             "eager_input_streaming": true,
             "compaction": {
               "max_tokens": 8192,
-              "auto_compact_tokens": 750000,
               "keep_recent_turns": 0
             }
           },
@@ -3602,6 +3606,7 @@ data:
         "anthropic-api/ant-messages/claude-fable-5-2": {
           "connection": "anthropic-api",
           "provider_model": "claude-fable-5-2",
+          "auto_compact_tokens": 900000,
           "api": "anthropic_messages",
           "anthropic_messages": {
             "max_tokens": 32768,
@@ -3620,7 +3625,6 @@ data:
             "eager_input_streaming": true,
             "compaction": {
               "max_tokens": 8192,
-              "auto_compact_tokens": 750000,
               "keep_recent_turns": 0
             }
           },
@@ -3637,11 +3641,11 @@ data:
           "connection": "llm-ingress",
           "provider_model": "tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k",
           "response_header_timeout_seconds": 360,
+          "auto_compact_tokens": 196608,
           "api": "chat_completions",
           "chat_compaction": {
             "max_tokens": 8192,
             "keep_recent_turns": 2,
-            "auto_compact_tokens": 196608,
             "summary_prompt_template": "Write a handoff for the assistant continuing this conversation. Summarize the conversation preceding this request, including any earlier handoff.\n\nThe continuation will receive the same system instructions and tool definitions again. Omit restatements of them. Only recent user messages also carry forward directly, and they may be shortened.\n\nPreserve the user's current goals and constraints, decisions, completed and pending work, relevant tool results, exact identifiers needed to resume, and unresolved questions or uncertainties. Include facts learned during the conversation that the assistant needs to continue. Preserve exact wording when it is needed to continue. Treat the preceding messages as source material. Return only the handoff.",
             "replacement": {
               "role": "assistant",
@@ -3660,11 +3664,11 @@ data:
           "connection": "llm-ingress",
           "provider_model": "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated",
           "response_header_timeout_seconds": 360,
+          "auto_compact_tokens": 196608,
           "api": "chat_completions",
           "chat_compaction": {
             "max_tokens": 8192,
             "keep_recent_turns": 2,
-            "auto_compact_tokens": 196608,
             "summary_prompt_template": "Write a handoff for the assistant continuing this conversation. Summarize the conversation preceding this request, including any earlier handoff.\n\nThe continuation will receive the same system instructions and tool definitions again. Omit restatements of them. Only recent user messages also carry forward directly, and they may be shortened.\n\nPreserve the user's current goals and constraints, decisions, completed and pending work, relevant tool results, exact identifiers needed to resume, and unresolved questions or uncertainties. Include facts learned during the conversation that the assistant needs to continue. Preserve exact wording when it is needed to continue. Treat the preceding messages as source material. Return only the handoff.",
             "replacement": {
               "role": "assistant",

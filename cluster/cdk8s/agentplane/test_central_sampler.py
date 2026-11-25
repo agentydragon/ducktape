@@ -34,7 +34,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_completions_id
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
-from model_catalog.catalog import Provider
+from model_catalog.catalog import Provider, TokenLimits
 
 
 def _admits(policy: dict[str, Any], *, source: str, port: int) -> bool:
@@ -250,13 +250,18 @@ def test_staging_sampler_routes_use_the_provider_protocol() -> None:
                 route.model.id,
                 "anthropic-api",
             )
+            limits = route.model.limits
+            assert isinstance(limits, TokenLimits)
+            assert model.auto_compact_tokens == limits.max_input_tokens * 9 // 10
         else:
             assert (model.api, model.provider_model, model.connection) == ("responses", route.id, "llm-ingress")
             assert model.responses is not None
             if route.upstream.provider == Provider.CHATGPT:
                 assert (model.responses.dialect, model.exec_encoding) == ("lite", "freeform")
+                assert model.auto_compact_tokens is not None
             else:
                 assert (model.responses.dialect, model.exec_encoding) == ("standard", "json")
+                assert model.auto_compact_tokens is None
 
 
 if __name__ == "__main__":

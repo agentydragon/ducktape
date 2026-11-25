@@ -95,7 +95,6 @@ class CentralSampler(Construct):
             executor_initialize_timeout_seconds=props.executor_initialize_timeout_seconds,
             lease_seconds=props.lease_seconds,
             turn_timeout_seconds=props.turn_timeout_seconds,
-            auto_compact_tokens=props.auto_compact_tokens,
         )
         settings_file = SettingsFile(
             self,

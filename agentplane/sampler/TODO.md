@@ -1,11 +1,5 @@
 # TODO — sampler
 
-## Configure compaction thresholds per model
-
-Make automatic compaction thresholds configurable for each model route across provider APIs,
-including Responses. Chat Completions and Anthropic already have per-route thresholds; Responses
-currently uses the sampler-wide setting. Account for each route's context window and headroom.
-
 ## Compare sampler and notification-service notifications
 
 Consider whether the sampler's Codex-derived in-turn notifications and the Notification Service's
