@@ -113,6 +113,7 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         ("identifier_assignment_test", 3),
         ("loops_test", 4),
         ("numeric_property_keys_test", 2),
+        ("object_parameter_defaults_test", 2),
         ("optional_chain_test", 3),
         ("sequence_test", 3),
         ("super_members_test", 3),

@@ -252,11 +252,18 @@ for (let seed = 0; seed < 6; seed++) {
   }
 }
 
+if (runCase("shorthand-parameter-default")) {
+  const source = "function read({a=1}) { return a; } const answer = [read({}), read({a: 0})]; export {answer};";
+  const { files, out, verdict, log } = sequentialSplit("shorthand-parameter-default", source);
+  assert.equal(verdict.status, "certified", log);
+  assert.deepEqual(observe(files.sourceFile, "answer"), { answer: [1, 0] });
+  assert.deepEqual(observe(path.join(out, entry), "answer"), { answer: [1, 0] });
+}
+
 for (const [name, param] of [
   ["empty", "{}"],
   ["computed", "{[key]:value}"],
   ["nested", "{a:{b}}"],
-  ["default", "{a=1}"],
   ["rest", "{...props}"],
 ]) {
   if (!runCase(`unsupported-parameter-${name}`)) continue;

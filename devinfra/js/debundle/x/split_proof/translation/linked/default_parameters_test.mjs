@@ -170,11 +170,7 @@ for (const [name, expression, args, length, expected] of [
 }
 
 for (const [name, expression, reason] of [
-  [
-    "redeclared-parameter",
-    "function (value = 1) { var value; return value; }",
-    /body var overlaps named default parameters/,
-  ],
+  ["redeclared-parameter", "function (value = 1) { var value; return value; }", /body var overlaps default parameters/],
   [
     "implicit-arguments",
     "function (value = arguments[0]) { return value; }",
@@ -199,7 +195,7 @@ if (includesCase("body-var-shadows-default")) {
     export const result = pick();`
   );
   assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, /body var overlaps named default parameters or their references/);
+  assert.match(verdict.reason, /body var overlaps default parameters or their references/);
   assert(!existsSync(out));
 }
 

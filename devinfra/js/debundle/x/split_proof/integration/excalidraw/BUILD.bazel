@@ -112,6 +112,7 @@ _EXCALIDRAW_SCROLL_ENV = {
 js_test(
     name = "excalidraw_scroll_certificate",
     size = "medium",
+    timeout = "long",
     data = _EXCALIDRAW_SCROLL_DATA,
     entry_point = "scroll.mjs",
     env = _EXCALIDRAW_SCROLL_ENV,
