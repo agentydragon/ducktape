@@ -28,3 +28,14 @@
       Options: keep them failed, rebuild their projection from validated binary History (verify first
       that every input decodes and the projection is reconstructible), or retire them. A rebuild or
       retirement needs separate operator authorization.
+- [ ] Settle on one placement of harnesses and their tool commands. In Pods today a Claude harness
+      runs in the runner container with its direct Bash children, sharing one memory budget, while the
+      shared Codex app-server runs in Environment Runtime and every Codex Session's commands run in the
+      separate executor container ([execution isolation](env/runtime/execution/ISOLATION.md)). The two
+      harnesses therefore have different resource boundaries and failure coupling, and the container
+      that runs an agent's commands is not the one its harness runs in. On 2026-11-25 an eight-Session
+      staging sandbox's executor (2 GiB limit) was OOM-killed, which fenced the backend and dropped
+      every Session's in-flight commands (PR #19996 raised the limit). Investigate a single topology
+      for every harness, so a harness and the commands it runs live in the same environment, while
+      still keeping the harness outside its commands' memory budget (for example per-command or
+      per-Session cgroups inside one container).
