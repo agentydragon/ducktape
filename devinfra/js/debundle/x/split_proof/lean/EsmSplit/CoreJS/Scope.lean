@@ -486,7 +486,7 @@ theorem Same.cls_succ (env env' : Env) (name : String) (self : Bool) (ctor : Fun
         List.mem_append_right _ (staticInitializers_free members keys step hstep x hx))
 
 theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
-    (ctor : Option (List Stmt × Option (List Expr) × Func))
+    (ctor : Option (List Stmt × SuperCall × Func))
     (hN : Agree (Expr.derived name self parent members ctor).free env env') :
     (evalExpr (n + 1) env (.derived name self parent members ctor) : M W _) =
       evalExpr (n + 1) env' (.derived name self parent members ctor) := by

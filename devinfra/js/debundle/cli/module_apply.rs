@@ -88,8 +88,8 @@ pub fn run_modules_apply(
         args.assignments.as_deref(),
         args.import_order.as_deref(),
     )?;
+    let input = analysis::DependencyGraphInput::read(&args.graph)?;
     if args.plan.is_some() {
-        let input = analysis::DependencyGraphInput::read(&args.graph)?;
         assignments = physical_plan_changes(
             assignments,
             &input,
@@ -114,6 +114,7 @@ pub fn run_modules_apply(
         stderr,
         &args.modules_root,
         &args.graph,
+        input,
         &args.source_root,
         source_context,
         SourceUnitApplyOptions {

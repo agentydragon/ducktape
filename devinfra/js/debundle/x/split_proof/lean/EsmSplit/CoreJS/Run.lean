@@ -273,9 +273,11 @@ def hostRefs (j : Json) : Except String (List (HostRef × String)) := do
     | .ok value => value.getBool?
     | .error _ => pure false
   let iteratorSymbol ← observed "iteratorSymbol"
+  let hasInstance ← observed "hasInstanceSymbol"
   let tag ← observed "toStringTagSymbol"
   let symbolConstructor ← observed "symbolConstructor"
   return (if iteratorSymbol then [(.property "Symbol" "iterator", "Symbol.iterator")] else []) ++
+    (if hasInstance then [(.property "Symbol" "hasInstance", "Symbol.hasInstance")] else []) ++
     (if tag then [(.property "Symbol" "toStringTag", "Symbol.toStringTag")] else []) ++
     (if symbolConstructor then [(.binding "Symbol", "intrinsic.Symbol")] else [])
 
@@ -330,7 +332,11 @@ def showCode : Code → String
   | .derivedFields env fields =>
     s!"derived fields {env.vars.map fun (x, a) => (x, showAddr a)} {fields.map fun (key, _) => showKey key}"
   | .derivedBody before args f env fields =>
-    let base := s!"derived {f.name} {f.params} {before.length} {args.elim "forward" (toString ·.length)} {env.vars.map fun (x, a) => (x, showAddr a)}"
+    let argumentShape := match args with
+      | .forward => "forward"
+      | .explicit es => toString es.length
+      | .conditional _ yes no => s!"if({yes.length},{no.length})"
+    let base := s!"derived {f.name} {f.params} {before.length} {argumentShape} {env.vars.map fun (x, a) => (x, showAddr a)}"
     if fields.isEmpty then base else s!"{base} {fields.map fun (key, _) => showKey key}"
   | .closure f env fields =>
     s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map fun (k, _) => showKey k}"

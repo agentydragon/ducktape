@@ -26,7 +26,7 @@ theorem stableRead_newEmpty {w : World} {identity : String}
 These describe both a new native weak map and an ordinary lookalike, even if
 both prototypes have been changed to null. -/
 private def PlainShape (proto : Option Addr) (o : Obj) : Prop :=
-  o.proto = proto ∧ o.props = [] ∧ o.code = none ∧ o.array = false ∧ o.regexp = none
+  o.proto = proto ∧ o.props = [] ∧ o.code = none ∧ o.array = false ∧ o.frozen = false ∧ o.regexp = none
 
 /-- No brand observation based on these object records alone can accept the
 native receiver while rejecting the ordinary one. This is a statement about

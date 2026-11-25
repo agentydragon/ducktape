@@ -6,10 +6,19 @@ import { dumpParsed } from "./annotated_estree.mjs";
 import { parseModule } from "./scope_metadata.mjs";
 
 const source = readFileSync(new URL("./scope_metadata.mjs", import.meta.url), "utf8");
-const serialized = JSON.stringify(dump(source));
+// Pin parser output for a fixed source. The implementation itself remains a larger
+// differential corpus below and can change without invalidating the reference digest.
+const fixture = `import { external as alias } from "./dep.mjs";
+export class Holder {
+  #value = 0.5;
+  read(key = this.#value) { return () => alias(key, this.#value); }
+}
+const tag = (strings, ...values) => [strings.raw, values];
+export const message = tag\`line\\n\${new Holder().read()}\`;`;
+const serialized = JSON.stringify(dump(fixture));
 assert.equal(
   createHash("sha256").update(serialized).digest("hex"),
-  "9fbbe8ec8a5fb79575d1183191522e40403e4c0d0a4fa7dc011fbe0c14065d1e"
+  "fb53ad32644d6ff8708d965153b49e9ab1fcfbd7a90081b350048b395e627fb3"
 );
 
 for (const options of [

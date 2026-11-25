@@ -416,6 +416,20 @@ private theorem reachFrame_parameterBindings {r R cells A} (root : A (.obj array
     · rcases List.mem_singleton.mp extra with rfl
       exact (safeVal_obj.mpr hp) node (by simpa [Binding.nodes] using hn)
 
+private theorem strictArguments_nodes {A : HeapNode → Prop} (root : A (.obj objectProto))
+    (vs : List Val) (h : ∀ v ∈ vs, SafeVal A v) :
+    ∀ node ∈ (strictArgumentsObject vs).nodes, A node := by
+  intro node hn
+  simp only [strictArgumentsObject, Obj.nodes, List.mem_append, List.mem_flatMap, List.mem_map,
+    Option.toList_some, List.mem_singleton, Option.toList_none, List.flatMap_nil, List.mem_nil_iff, or_false] at hn
+  rcases hn with hroot | ⟨p, hmem, hnode⟩
+  · obtain ⟨_, rfl, rfl⟩ := hroot
+    exact root
+  · rcases hmem with ⟨item, _, rfl⟩ | extras
+    · exact h item.1 (List.fst_mem_of_mem_zipIdx (by assumption)) node hnode
+    · simp only [List.mem_cons, List.mem_nil_iff, or_false] at extras
+      rcases extras with rfl | rfl | rfl <;> cases hnode
+
 theorem reachFrame_enterFunction {r R cells A} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a))
     (prototypeRoot : ∀ kind : FuncKind, A (.obj kind.instanceProto))
@@ -424,9 +438,22 @@ theorem reachFrame_enterFunction {r R cells A} (away : Away r R A)
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (f : Func) (closed : Env) (safe : ∀ node ∈ closed.nodes, A node) (this : Val) (ht : SafeVal A this)
-    (args : List Val) (ha : ∀ arg ∈ args, SafeVal A arg) :
-    ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterFunction f closed this args : M W Env) := by
+    (args : List Val) (ha : ∀ arg ∈ args, SafeVal A arg) (newTarget : Val) (safeTarget : SafeVal A newTarget) :
+    ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterFunction f closed this args newTarget : M W Env) := by
   unfold enterFunction
+  have implicitSafe : ReachFrame r R cells A (fun ps => ∀ p ∈ ps, ∀ node ∈ p.2.nodes, A node)
+      (strictArgumentsBindings f args : M W (List (Name × Binding))) := by
+    unfold strictArgumentsBindings
+    split
+    · apply (allocate _ (strictArguments_nodes (prototypeRoot .normal) args ha)).bind
+      intro a aa
+      apply reachFrame_pure r R cells A _
+      intro p hp node hn
+      obtain rfl := List.mem_singleton.mp hp
+      exact (safeVal_obj.mpr aa) node (by simpa [Binding.nodes] using hn)
+    · exact reachFrame_pure r R cells A [] (by simp)
+  apply implicitSafe.bind
+  intro implicitArgs safeArgs
   apply (reachFrame_parameterBindings arrayRoot allocate f args ha).bind
   intro bindings bindingsSafe
   apply (reachFrame_declare away outside _ _ (Env.nodes_setThis safe ?_) ?_).bind
@@ -436,9 +463,17 @@ theorem reachFrame_enterFunction {r R cells A} (away : Away r R A)
     · exact Env.nodes_this safe
     · exact ht
   · intro p hp node hn
-    rcases List.mem_append.mp hp with params | vars
-    · exact bindingsSafe p params node hn
-    · obtain ⟨_, _, rfl⟩ := List.mem_map.mp vars
-      cases hn
+    rcases List.mem_append.mp hp with ordinary | target
+    · rcases List.mem_append.mp ordinary with ordinary | extra
+      · rcases List.mem_append.mp ordinary with params | vars
+        · exact bindingsSafe p params node hn
+        · obtain ⟨_, _, rfl⟩ := List.mem_map.mp vars
+          cases hn
+      · exact safeArgs p extra node hn
+    · unfold newTargetBindings at target
+      split at target
+      · rcases List.mem_singleton.mp target with rfl
+        exact safeTarget node (by simpa [Binding.nodes] using hn)
+      · cases target
 
 end CoreJS

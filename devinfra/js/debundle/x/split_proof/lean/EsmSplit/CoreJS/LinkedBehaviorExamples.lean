@@ -307,7 +307,7 @@ private def changedSuperclass (inPrefix : Bool) : Program :=
   .single [
     superclass "Base" "base",
     superclass "Alternate" "alternate",
-    .decl .const "Child" (.derived "Child" false (.var "Base") [] (some (before, some args, tail))),
+    .decl .const "Child" (.derived "Child" false (.var "Base") [] (some (before, .explicit args, tail))),
     .expr (.new (.var "Child") [])
   ]
 

@@ -43,10 +43,7 @@ for (const [controls, reason] of [
   [{ glueBinding: "alternate" }, /unit 1: reference to extra resolves to a different linked cell/],
   [{ request: "./providers/maker.mjs" }, /entry requests for providers differ/],
   [{ entryExports: "export { deferred as changed };" }, /named exports differ/],
-  [
-    { maker: "var make = function (cb) { return () => arguments; }; export { make as build };" },
-    /unsupported implicit arguments reference/,
-  ],
+  [{ maker: "var make = function (cb) { return () => arguments; }; export { make as build };" }, orders],
 ]) {
   cases.push({ kind: "linked", input: linked(controls), expected: reason });
 }

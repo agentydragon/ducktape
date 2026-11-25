@@ -301,6 +301,8 @@ theorem local_defineOwn {a : Addr} (ha : a.region = r) (k : PropertyKey) (d : De
   unfold defineOwn
   refine (local_getObj ha).bind' fun o => ?_
   split
+  · exact local_throwErr _ _
+  split
   · exact local_unknown _
   · refine (local_lift _).bind' fun p => ?_
     split

@@ -533,8 +533,7 @@ if (runCase("eager-observes-later-binding")) {
   assert(!existsSync(out), "a behavior-changing eager provider move publishes no modules");
 }
 
-// The linked-module decoder rejects implicit `arguments` references: CoreJS
-// does not allocate the ordinary function's arguments object.
+// The provider's returned arrow keeps the arguments object of its creating call.
 if (runCase("implicit-arguments")) {
   const dir = path.join(root, "implicit-arguments");
   const files = prepare(dir, {
@@ -555,8 +554,11 @@ if (runCase("implicit-arguments")) {
     },
   });
   const out = path.join(dir, "out");
-  const refused = lower(files.sourceFile, files.specFile, out);
-  assert.equal(refused.verdict.status, "rejected", refused.log);
-  assert.match(refused.verdict.reason, /unsupported implicit arguments reference/i);
-  assert(!existsSync(out));
+  const run = lower(files.sourceFile, files.specFile, out);
+  assertCertified(run.verdict, run.log);
+  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
+    const { result } = await import(pathToFileURL(file).href);
+    assert.equal(result().length, 1);
+    assert.equal(result()[0](), 1);
+  }
 }

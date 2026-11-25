@@ -89,7 +89,6 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
   | "T" => return .var x
   | "L" =>
     unless inFunction do throw s!"unexpected function-local name {x}"
-    if x == "arguments" then throw "unsupported implicit arguments reference"
     return .var x
   | "V" =>
     unless imports.contains x do throw s!"unlinked imported name {x}"
@@ -313,6 +312,40 @@ private def ambientSymbolMember? (j : Json) : Option Name := do
     let prop ← (j.getObjVal? "property").toOption
     (identifier prop).toOption
 
+/-- Source identifiers cannot name these cells. A new evaluation of the class
+allocates a separate table for every declared private name. -/
+private def privateTable (name : String) := ":private:" ++ name
+private def privateMethodValue (name : String) := ":private-method:" ++ name
+
+private def privateName? (node : Json) : Option String := do
+  guard (["PrivateIdentifier", "CoreJSInstancePrivateIdentifier"].contains (← (field node "type").toOption))
+  (field node "name").toOption
+
+private partial def markPrivateNames (names : List String) (j : Json) : Json := Id.run do
+  match j with
+  | .obj fields =>
+    if let some name := privateName? j then
+      if names.contains name then return .obj (fields.insert "type" "CoreJSInstancePrivateIdentifier")
+    return Json.mkObj (fields.toList.map fun (key, child) => (key, markPrivateNames names child))
+  | .arr items => return .arr (items.map (markPrivateNames names))
+  | _ => return j
+
+private partial def namesOfType (kind : String) (j : Json) : List String :=
+  match j with
+  | .obj fields =>
+    if (field j "type").toOption == some kind then [(field j "name").toOption.getD ""]
+    else fields.toList.flatMap fun (_, child) => namesOfType kind child
+  | .arr items => items.toList.flatMap (namesOfType kind)
+  | _ => []
+
+private def privateMember? (j : Json) : Option String := do
+  guard ((field j "type").toOption == some "MemberExpression" &&
+    (j.getObjValAs? Bool "computed").toOption == some false &&
+    (j.getObjValAs? Bool "optional").toOption == some false)
+  let prop ← (j.getObjVal? "property").toOption
+  guard ((field prop "type").toOption == some "CoreJSInstancePrivateIdentifier")
+  (field prop "name").toOption
+
 private def memberKey (lower : Json → Except String Expr) (j : Json) : Except String Expr := do
   let prop ← j.getObjVal? "property"
   if (← field prop "type") == "PrivateIdentifier" then throw "unsupported private member access"
@@ -409,6 +442,56 @@ private def directSuper? (stmt : Json) : Option (List Json × Json × Option Jso
   let fields ← stmt.getObj?.toOption
   return (prior, call, some (.obj (fields.insert fieldName residual)))
 
+/-- An if/else can select the superclass call when both arms end with a direct call.
+Keep each arm's prefix, including lexical declaration scope. -/
+private def terminalSuper? (arm : Json) : Option (List Json × Json) := do
+  let statements ← if (field arm "type").toOption == some "BlockStatement" then
+    (arm.getObjValAs? (List Json) "body").toOption else pure [arm]
+  let last ← statements.getLast?
+  let (earlier, call, residual) ← directSuper? last
+  if residual.isNone then some (statements.dropLast ++ earlier, call) else none
+
+private def conditionalSuper? (stmt : Json) : Option (Json × (List Json × Json) × (List Json × Json)) := do
+  guard ((field stmt "type").toOption == some "IfStatement")
+  let test ← (stmt.getObjVal? "test").toOption
+  let yes ← (stmt.getObjVal? "consequent").toOption >>= terminalSuper?
+  let no ← (stmt.getObjVal? "alternate").toOption >>= terminalSuper?
+  return (test, yes, no)
+
+/-- Each closure reads the selected arm's actual cells. Creating it does not
+evaluate its argument. A spread still attempts iteration at the original argument position. -/
+private def delayedSuperArguments (arm : Nat) (args : List Expr) : List Name × List Stmt × List Expr :=
+  let wrapped := args.zipIdx.map fun (arg, i) =>
+    let slot := s!":super-argument:{arm}:{i}"
+    let (spread, operand) := arg.argument
+    let thunk := Expr.func (.mk "" .arrow false [] [.ret operand])
+    let call := Expr.call (.var slot) []
+    (slot, Stmt.expr (.assign (.var slot) thunk), if spread then Expr.spreadArg call else call)
+  (wrapped.map (·.1), wrapped.map (·.2.1), wrapped.map (·.2.2))
+
+/-- Lower new.target only within its owning function and lexical arrows. A nested ordinary
+function is prepared at its own entry. Nested classes have separate contexts for methods,
+fields and keys, so leave those nodes for class lowering. -/
+private partial def prepareNewTarget (j : Json) : Json :=
+  match j with
+  | .obj fields =>
+    let kind := (field j "type").toOption.getD ""
+    if kind == "MetaProperty" &&
+        (j.getObjVal? "meta" >>= identifier).toOption == some "new" &&
+        (j.getObjVal? "property" >>= identifier).toOption == some "target" then
+      Json.mkObj [("type", .str "CoreJSNewTarget")]
+    else if ["FunctionExpression", "FunctionDeclaration", "ClassExpression", "ClassDeclaration"].contains kind then
+      j
+    else Json.mkObj (fields.toList.map fun (key, value) => (key, prepareNewTarget value))
+  | .arr entries => .arr (entries.map prepareNewTarget)
+  | _ => j
+
+private def prepareNewTargetFunction (j : Json) : Except String Json := do
+  let fields ← j.getObj?
+  let params := prepareNewTarget (← j.getObjVal? "params")
+  let body := prepareNewTarget (← j.getObjVal? "body")
+  return .obj ((fields.insert "params" params).insert "body" body)
+
 /-- Resolve lexical `this` in prefix and argument arrows to the constructor's
 receiver cell. Ordinary functions, including object methods, bind their own receiver. -/
 private partial def prepareBeforeSuper (j : Json) (allowFunctions : Bool) (underArrow := false) : Except String Json := do
@@ -456,7 +539,7 @@ private partial def opaqueContext? (checkPrivateNames wholeUnit moduleLocationCh
     let retainedMember := retainedSuperMembers && (match parents with
       | ("object", parent) :: _ => isSuperMember parent
       | _ => false)
-    if kind == "CoreJSDerivedReceiver" ||
+    if kind == "CoreJSDerivedReceiver" || kind == "CoreJSNewTarget" ||
         (kind == "Super" && !retainedMember && !(wholeUnit && enclosedSuperCall parents)) ||
         (kind == "ImportExpression" && !moduleLocationChecked) ||
         (kind == "MetaProperty" && !(moduleLocationChecked &&
@@ -500,9 +583,8 @@ private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : 
   let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw (refusal "missing capture list")
   let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw (refusal "missing source unit")
   let .ok part := j.getObjValAs? Nat ":opaque-part" | throw (refusal "missing callable site")
-  -- CoreJS does not allocate the enclosing function's implicit arguments cell.
-  if captures.contains "arguments" then throw (refusal "captures the enclosing arguments cell")
-  return .opaque name kind self arity code part captures (some reason)
+  let privateCells := (namesOfType "CoreJSInstancePrivateIdentifier" j).eraseDups.map privateTable
+  return .opaque name kind self arity code part (captures ++ privateCells) (some reason)
 
 -- Every admitted body leaves the enumerated keys and prototype chain intact.
 -- A plain local assignment may bind a new object. Property writes must name a
@@ -558,11 +640,14 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "Identifier" => reference imports inFunction j profile
   | "ThisExpression" => return .this
   | "CoreJSDerivedReceiver" => return .var derivedReceiverName
+  | "CoreJSNewTarget" => return .var newTargetName
   | "MemberExpression" =>
     if let some sym := (ambientSymbolMember? j).bind WellKnownSymbol.ofMember? then
       if profile == .browserPage then return .prim (.wellKnownSymbol sym) []
       if inFunction then return .prim (.opaqueAmbientMemberRef "Symbol" sym.member) []
     let lower := linkedExpr profile imports inFunction ""
+    if let some name := privateMember? j then
+      return .prim (.privateSlot .get) [.var (privateTable name), ← lower (← j.getObjVal? "object")]
     if isSuperMember j then return .getSuper (← memberKey lower j)
     let (base, key) ← linkedMember lower j
     return .get base key
@@ -598,7 +683,12 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "AssignmentExpression" =>
     let op ← field j "operator"
     let lower := linkedExpr profile imports inFunction ""
-    let target ← j.getObjVal? "left" >>= linkedTarget imports inFunction (op == "=") lower
+    let left ← j.getObjVal? "left"
+    if let some name := privateMember? left then
+      unless op == "=" do throw "unsupported compound private field assignment"
+      return .prim (.privateSlot .set) [.var (privateTable name), ← lower (← left.getObjVal? "object"),
+        ← lower (← j.getObjVal? "right")]
+    let target ← linkedTarget imports inFunction (op == "=") lower left
     let rhs ← j.getObjVal? "right"
     let targetName := match target with
       | .var name | .frozen name => name
@@ -634,6 +724,21 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let elements ← j.getObjValAs? (List Json) "elements"
     let lower := linkedExpr profile imports inFunction ""
     return .arr (← elements.mapM (linkedArgument lower))
+  | "TaggedTemplateExpression" =>
+    let slot ← field j ":template-binding"
+    let callee ← j.getObjVal? "tag"
+    let quasi ← j.getObjVal? "quasi"
+    let substitutions ← quasi.getObjValAs? (List Json) "expressions"
+    let lower := linkedExpr profile imports inFunction ""
+    let args := Expr.var slot :: (← substitutions.mapM lower)
+    match ← field callee "type" with
+    | "MemberExpression" =>
+      if (field (← callee.getObjVal? "object") "type").toOption == some "Super" then
+        return .callSuper (← memberKey lower callee) args false
+      let (base, key) ← linkedMember lower callee
+      return .callMethod base key args
+    | "ChainExpression" => throw "unsupported optional chain as a template tag"
+    | _ => return .call (← lower callee) args
   | "TemplateLiteral" => linkedTemplate (linkedExpr profile imports inFunction "") j
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
@@ -679,6 +784,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     | ">=" => return .binary .ge left right
     | "===" => return .binary .strictEq left right
     | "!==" => return .binary .strictNe left right
+    | "instanceof" => return .prim .instanceOf [left, right]
     | "in" => return .hasProp left right
     | "==" => return .binary .eq left right
     | "!=" => return .binary .ne left right
@@ -717,6 +823,16 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let lower := linkedExpr profile imports inFunction ""
     let callee ← j.getObjVal? "callee"
     let args ← j.getObjValAs? (List Json) "arguments"
+    if profile == .browserPage && (field callee "type").toOption == some "MemberExpression" &&
+        (callee.getObjValAs? Bool "computed").toOption == some false &&
+        (callee.getObjVal? "object" >>= (field · "k")).toOption == some "G" &&
+        (callee.getObjVal? "object" >>= identifier).toOption == some "Array" &&
+        (callee.getObjVal? "property" >>= identifier).toOption == some "from" then
+      if let [source] := args then
+        unless (field source "type").toOption == some "SpreadElement" do
+          -- Observe the constructor and method before evaluating the argument. On the
+          -- supported fresh-realm template iterable, Array.from creates a mutable copy.
+          return .seq (.prim .checkArrayFrom []) (.arr [.spreadArg (.prim .templateIterable [← lower source])])
     if profile == .browserPage && (field callee "type").toOption == some "Identifier" &&
         (field callee "k").toOption == some "G" && (identifier callee).toOption == some "Symbol" then
       match args with
@@ -726,6 +842,13 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | _ => pure ()
     match ← field callee "type" with
     | "MemberExpression" =>
+      if let some name := privateMember? callee then
+        let receiver := Expr.var ":private-receiver"
+        let method := Expr.prim (.privateSlot .get) [.var (privateTable name), receiver]
+        let argv ← args.mapM (linkedArgument lower)
+        let invoke := Expr.prim .callWithReceiver (method :: receiver :: argv)
+        return .call (.func (.mk "" .arrow false [":private-receiver"] [.ret invoke]))
+          [← lower (← callee.getObjVal? "object")]
       if isSuperMember callee then
         return .callSuper (← memberKey lower callee) (← args.mapM (linkedArgument lower)) false
       if ambientSymbolMember? callee == some "for" then
@@ -768,6 +891,8 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
     -- makeFunc captures the enclosing this as well as named cells. No async
     -- callable enters the ordinary function evaluator.
     return .complete (← deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics")
+  let j ← if kind == .arrow then pure j else prepareNewTargetFunction j
+  let parameters ← j.getObjValAs? (Array Json) "params"
   let deferPattern := deferredFunction j kind name self arity (checkPrivateNames := true)
   let hasNamedDefaults := tags.contains "AssignmentPattern"
   let hasDefaults := hasNamedDefaults || parameters.any hasObjectParameterDefault
@@ -851,10 +976,39 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   if initializers.isEmpty then return .complete (.mk name kind self slots.toList stmts)
   return .objectBindings slots.toList initializers.toList stmts
 
-/-- Split a derived constructor at its direct super call, including a call among
-comma operands. All three parts run with the same parameter and local cells. -/
+private partial def linkedBeforeSuper (profile : HostProfile) (imports : List Name)
+    (statements : List Json) : Except String (List Stmt) := do
+  let mut before := #[]
+  for stmt in statements do
+    match ← field stmt "type" with
+    | "VariableDeclaration" =>
+      let prepared ← prepareBeforeSuper stmt true
+      let kind ← field prepared "kind"
+      for d in ← prepared.getObjValAs? (Array Json) "declarations" do
+        before := before ++ (← linkedPrefixDeclarator (linkedExpr profile imports true) kind d before.size)
+    | "ExpressionStatement" =>
+      let expr ← prepareBeforeSuper (← stmt.getObjVal? "expression") true
+      before := before.push (.expr (← linkedExpr profile imports true "" expr))
+    | other => throw s!"unsupported {other} before super"
+  return before.toList
+
+private partial def linkedSuperArguments (profile : HostProfile) (imports : List Name)
+    (rawArgs : List Json) : Except String (List Expr) :=
+  rawArgs.mapM fun arg => do
+    linkedArgument (linkedExpr profile imports true "") (← prepareBeforeSuper arg true)
+
+private partial def linkedSuperArm (profile : HostProfile) (imports : List Name) (arm : Nat)
+    (statements : List Json) (call : Json) : Except String (List Name × Stmt × List Expr) := do
+  let before ← linkedBeforeSuper profile imports statements
+  let args ← linkedSuperArguments profile imports (← call.getObjValAs? (List Json) "arguments")
+  let (slots, assign, delayed) := delayedSuperArguments arm args
+  return (slots, .block (before ++ assign), delayed)
+
+/-- Split a derived constructor around the superclass call. The prefix and
+the remaining function body run with the same parameter and local cells. -/
 private partial def linkedDerivedConstructor (profile : HostProfile) (imports : List Name)
-    (name : Name) (fn : Json) : Except String (List Stmt × Option (List Expr) × Func) := do
+    (name : Name) (fn : Json) : Except String (List Stmt × SuperCall × Func) := do
+  let fn ← prepareNewTargetFunction fn
   for param in ← fn.getObjValAs? (Array Json) "params" do
     if (← field param "type") == "AssignmentPattern" then
       discard <| localBinding (← param.getObjVal? "left")
@@ -867,34 +1021,35 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     else discard <| localBinding param
   let block ← fn.getObjVal? "body"
   let statements ← block.getObjValAs? (List Json) "body"
-  let (prefixStmts, remaining) := statements.span (fun stmt => (directSuper? stmt).isNone)
+  let (prefixStmts, remaining) := statements.span fun stmt =>
+    (directSuper? stmt).isNone && (conditionalSuper? stmt).isNone
   let first :: tail := remaining | throw "expected a direct super call"
-  let some (commaPrefix, call, rest) := directSuper? first | throw "expected a direct super call"
-  let mut before := #[]
-  for stmt in prefixStmts ++ commaPrefix do
-    match ← field stmt "type" with
-    | "VariableDeclaration" =>
-      let prepared ← prepareBeforeSuper stmt true
-      let kind ← field prepared "kind"
-      for d in ← prepared.getObjValAs? (Array Json) "declarations" do
-        before := before ++ (← linkedPrefixDeclarator (linkedExpr profile imports true) kind d before.size)
-    | "ExpressionStatement" =>
-      let expr ← prepareBeforeSuper (← stmt.getObjVal? "expression") true
-      before := before.push (.expr (← linkedExpr profile imports true "" expr))
-    | other => throw s!"unsupported {other} before super"
-  let rawArgs ← call.getObjValAs? (List Json) "arguments"
-  let forward := match rawArgs with
-    | [arg] => (field arg "type").toOption == some "SpreadElement" &&
-      (arg.getObjVal? "argument" >>= identifier).toOption == some "arguments" &&
-      (arg.getObjVal? "argument" >>= (field · "k")).toOption == some "L"
-    | _ => false
-  let args ← if forward && before.isEmpty && (← fn.getObjValAs? (Array Json) "params").isEmpty then
-    pure none
-  else some <$> rawArgs.mapM fun arg => do
-    linkedArgument (linkedExpr profile imports true "") (← prepareBeforeSuper arg true)
-  let stmts := rest.toList ++ tail
+  let (before, args, stmts) ←
+    if let some (commaPrefix, call, rest) := directSuper? first then do
+      let before ← linkedBeforeSuper profile imports (prefixStmts ++ commaPrefix)
+      let rawArgs ← call.getObjValAs? (List Json) "arguments"
+      let forward := match rawArgs with
+        | [arg] => (field arg "type").toOption == some "SpreadElement" &&
+          (arg.getObjVal? "argument" >>= identifier).toOption == some "arguments" &&
+          (arg.getObjVal? "argument" >>= (field · "k")).toOption == some "L"
+        | _ => false
+      let args ← if forward && before.isEmpty && (← fn.getObjValAs? (Array Json) "params").isEmpty then
+        pure SuperCall.forward
+      else SuperCall.explicit <$> linkedSuperArguments profile imports rawArgs
+      pure (before, args, rest.toList ++ tail)
+    else if let some (test, (yesPrefix, yesCall), (noPrefix, noCall)) := conditionalSuper? first then do
+      let before ← linkedBeforeSuper profile imports prefixStmts
+      let test ← linkedExpr profile imports true "" (← prepareBeforeSuper test true)
+      let (yesSlots, yes, yesArgs) ← linkedSuperArm profile imports 0 yesPrefix yesCall
+      let (noSlots, no, noArgs) ← linkedSuperArm profile imports 1 noPrefix noCall
+      let choice := ":super-branch"
+      let declareSlots := (yesSlots ++ noSlots).map fun slot => Stmt.decl .let_ slot .undef
+      let testChoice := Stmt.decl .const choice (.cond test (.bool true) (.bool false))
+      let branch := Stmt.ite (.var choice) yes no
+      pure (before ++ declareSlots ++ [testChoice, branch], SuperCall.conditional choice yesArgs noArgs, tail)
+    else throw "expected a direct super call"
   let post := Json.obj ((← block.getObj?).insert "body" (.arr stmts.toArray))
-  let prefixVars := varNamesOf before.toList
+  let prefixVars := varNamesOf before
   let checkFunctionOverlap := fun body =>
     if (funDecls body).any (fun f => prefixVars.contains f.name) then
       throw "local function declaration overlaps a var binding before super"
@@ -904,23 +1059,23 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     -- The argument slots are already bound. A getter or coercion can throw before
     -- any constructor statement, superclass call or instance-field initializer runs.
     checkFunctionOverlap body
-    return (initializers ++ before.toList, args, .mk name .classCtor false slots body)
+    return (initializers ++ before, args, .mk name .classCtor false slots body)
   | .complete body =>
     -- An opaque body may depend on the derived constructor's home object or new.target.
     if let some (_, _, _, why) := body.opaqueBody then throw (why.getD "unsupported derived constructor body")
     checkFunctionOverlap body.body
-    return (before.toList, args, body)
+    return (before, args, body)
   | .defaults slots arity initializers body =>
     -- derivedScope enters both halves of the body at once. A body lexical binding must
     -- not hide an outer name used by a default. Check prefix vars against the parameter
     -- cells and default references, as linkedFunctionParts does for vars in the tail.
     let reads := freeStmts initializers
-    if (lexNames (before.toList ++ body)).any reads.contains then
+    if (lexNames (before ++ body)).any reads.contains then
       throw "derived constructor body binding shadows a default parameter reference"
     if prefixVars.any reads.contains then
       throw "var before super overlaps default parameters or their references"
     checkFunctionOverlap body
-    return (initializers ++ before.toList, args, .withDefaults name .classCtor false slots arity body)
+    return (initializers ++ before, args, .withDefaults name .classCtor false slots arity body)
 
 /-- Public, static-name class elements with default or explicit derived constructors. -/
 private partial def linkedClass (profile : HostProfile) (imports : List Name) (inFunction : Bool) (hint : Name) (j : Json) :
@@ -933,7 +1088,15 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
   let mut ctor := Func.mk name .classCtor false [] []
   let mut derivedCtor := none
   let mut members := #[]
-  for member in ← body.getObjValAs? (Array Json) "body" do
+  let elements ← body.getObjValAs? (Array Json) "body"
+  let privateNames := elements.toList.filterMap fun m => (m.getObjVal? "key").toOption.bind privateName?
+  unless privateNames.Nodup do throw "unsupported private accessor pair"
+  if (namesOfType "CoreJSInstancePrivateIdentifier" parent).any privateNames.contains then
+    throw "shadowed private name in class heritage"
+  let mut declarations := privateNames.map fun n => Stmt.decl .const (privateTable n) (.obj [.proto .null])
+  let mut brands := #[]
+  for raw in elements do
+    let member := if privateNames.isEmpty then raw else markPrivateNames privateNames raw
     let tag ← field member "type"
     if tag == "StaticBlock" then
       let body ← linkedBlockBody profile imports .function member
@@ -943,6 +1106,24 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
     let keyNode ← member.getObjVal? "key"
     let static ← member.getObjValAs? Bool "static"
     let value ← member.getObjVal? "value"
+    if let some spelling := privateName? keyNode then
+      if static then throw "unsupported static private member"
+      let table := Expr.var (privateTable spelling)
+      let label := "#" ++ spelling
+      if tag == "PropertyDefinition" then
+        let init ← if value == .null then pure .undef else linkedExpr profile imports inFunction label value
+        members := members.push (.field false (.str "") (.prim (.privateSlot .addField) [table, .this, init]))
+      else
+        unless (← field member "kind") == "method" do throw "unsupported private accessor"
+        unless (namesOfType "Super" value).isEmpty do throw "unsupported super in private method"
+        let f ← linkedFunction profile imports .method label false value
+        let binding := privateMethodValue spelling
+        declarations := declarations ++ [.decl .let_ binding .undef]
+        -- Class members see the inner class-name binding. Create the one shared
+        -- function there; every instance receives the same immutable method value.
+        let make := Expr.seq (.assign (.var binding) (.func f)) (.str "")
+        brands := brands.push (.field false make (.prim (.privateSlot .addMethod) [table, .this, .var binding]))
+      continue
     let (key, keyExpr) ← if ← member.getObjValAs? Bool "computed" then do
       if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
         unless tag == "MethodDefinition" && profile == .browserPage do throw "unsupported computed class key"
@@ -968,8 +1149,11 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
       | "get" => members := members.push (.getter static keyExpr (← linkedFunction profile imports .method ("get " ++ key) false value))
       | "set" => members := members.push (.setter static keyExpr (← linkedFunction profile imports .method ("set " ++ key) false value))
       | other => throw s!"unsupported class method kind {other}"
-  if parent == .null then return .cls name (id != .null) ctor members.toList
-  return .derived name (id != .null) (← linkedExpr profile imports inFunction "" parent) members.toList derivedCtor
+  let ordered := brands.toList ++ members.toList
+  let cls ← if parent == .null then pure (Expr.cls name (id != .null) ctor ordered)
+    else pure (Expr.derived name (id != .null) (← linkedExpr profile imports inFunction "" parent) ordered derivedCtor)
+  if declarations.isEmpty then return cls
+  return .call (.func (.mk "" .arrow false [] (declarations ++ [.ret cls]))) []
 
 private partial def linkedBindingPattern (lower : Name → Json → Except String Expr)
     (binder : Json → Except String Name) (j : Json) : Except String BindingPattern := do

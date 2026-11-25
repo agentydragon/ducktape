@@ -157,11 +157,21 @@ private partial def targetEq : MatchEq Target
     return ⟨base ▸ key ▸ rfl⟩
   | _, _ => none
 
-private partial def derivedCtorEq : MatchEq (Option (List Stmt × Option (List Expr) × Func))
+partial def superCallEq : MatchEq SuperCall
+  | .forward, .forward => some ⟨rfl⟩
+  | .explicit args, .explicit args' => (listEq exprEq args args').map fun h => ⟨congrArg SuperCall.explicit h.down⟩
+  | .conditional choice yes no, .conditional choice' yes' no' => do
+    let ⟨c⟩ ← scalarEq choice choice'
+    let ⟨y⟩ ← listEq exprEq yes yes'
+    let ⟨n⟩ ← listEq exprEq no no'
+    return ⟨c ▸ y ▸ n ▸ rfl⟩
+  | _, _ => none
+
+private partial def derivedCtorEq : MatchEq (Option (List Stmt × SuperCall × Func))
   | none, none => some ⟨rfl⟩
   | some (before, args, f), some (before', args', g) => do
     let ⟨p⟩ ← listEq stmtEq before before'
-    let ⟨a⟩ ← optionEq (listEq exprEq) args args'
+    let ⟨a⟩ ← superCallEq args args'
     let ⟨b⟩ ← funcEq f g
     return ⟨p ▸ a ▸ b ▸ rfl⟩
   | _, _ => none

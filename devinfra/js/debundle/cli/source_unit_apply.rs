@@ -95,11 +95,11 @@ pub fn run_source_unit_apply(
     stderr: &mut (dyn std::io::Write + Send),
     modules_root: &Path,
     dependency_graph_path: &Path,
+    graph_input: analysis::DependencyGraphInput,
     source_root: &Path,
     source_context: Option<&graph_provenance::VerifiedGraphSourceContext>,
     options: SourceUnitApplyOptions<'_>,
 ) -> Result<SourceUnitApplyOutcome> {
-    let graph_input = analysis::DependencyGraphInput::read(dependency_graph_path)?;
     if graph_input.report().ownership_subset.is_some() {
         return crate::selected_view_apply::run(
             stderr,

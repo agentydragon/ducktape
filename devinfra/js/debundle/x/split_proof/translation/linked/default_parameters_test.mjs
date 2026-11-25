@@ -169,21 +169,24 @@ for (const [name, expression, args, length, expected] of [
   );
 }
 
-for (const [name, expression, reason] of [
-  ["redeclared-parameter", "function (value = 1) { var value; return value; }", /body var overlaps default parameters/],
-  [
-    "implicit-arguments",
-    "function (value = arguments[0]) { return value; }",
-    /unsupported (?:implicit arguments reference|global arguments)/,
-  ],
-]) {
-  if (!includesCase(name)) continue;
+if (includesCase("arguments-before-defaults")) {
+  assertCertifiedResult(
+    workerSplit(
+      "arguments-before-defaults",
+      `function pick(first = arguments[1], second = 3) { return [first, second, arguments.length]; }
+       export const result = pick(undefined, 4);`
+    ),
+    [4, 4, 2]
+  );
+}
+
+if (includesCase("redeclared-parameter")) {
   const { out, verdict, log } = sequentialSplit(
-    name,
-    `const pick = ${expression}; const result = true; export { result };`
+    "redeclared-parameter",
+    "const pick = function (value = 1) { var value; return value; }; const result = true; export { result };"
   );
   assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, reason, log);
+  assert.match(verdict.reason, /body var overlaps default parameters/, log);
   assert(!existsSync(out));
 }
 

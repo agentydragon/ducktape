@@ -101,7 +101,7 @@ inductive Code where
   /-- An implicit derived constructor with public instance fields initialized on the superclass result. -/
   | derivedFields (closed : Env) (fields : List (PropertyKey × Expr))
   /-- Execute the prefix, call super, initialize fields, then run the remaining body. -/
-  | derivedBody (before : List Stmt) (superArgs : Option (List Expr)) (body : Func) (closed : Env)
+  | derivedBody (before : List Stmt) (superArgs : SuperCall) (body : Func) (closed : Env)
       (fields : List (PropertyKey × Expr))
   | closure (f : Func) (env : Env) (fields : List (PropertyKey × Expr))
   | host (name : String)
@@ -116,6 +116,7 @@ structure Obj where
   /-- An array: defining a property on it changes `length`, which is not modelled. -/
   array : Bool := false
   regexp : Option RegExpData := none
+  frozen : Bool := false
 
 /-- A binding: `value` is `none` until it is initialized (the temporal dead zone). -/
 structure Binding where
@@ -474,6 +475,7 @@ def builtins : Array Obj := #[
   { proto := none, props := hostMembers "Object.prototype" objectProtoNames ++ [hostAccessor "Object.prototype" "__proto__"] },
   { proto := some objectProto, code := some (.host "Function.prototype"),
     props := [(PropertyKey.str "length", Property.data (.num 0) false false true), ("name", .data (.str "") false false true),
+      (.wellKnownSymbol .hasInstance, .data (.host "Function.prototype[Symbol.hasInstance]") false false false),
       hostAccessor "Function.prototype" "arguments", hostAccessor "Function.prototype" "caller"] ++
       hostMembers "Function.prototype" functionProtoNames },
   { proto := some objectProto, array := true,
@@ -548,6 +550,7 @@ def fromWorld (s : State W) : HostResult → Res W Val
 
 /-- A call of the host function `name`: the world's step, if the world answers for it. -/
 def hostCall (name : String) (this : Val) (args : List Val) : M W Val :=
+  if name == "%ThrowTypeError%" then throwErr .type "strict arguments callee" else
   match worldArgs name this args with
   | none => unknown s!"host function {name} is called"
   | some (this, args) => fun s =>
@@ -796,7 +799,8 @@ def applyDesc (current : Option Property) (d : Desc) : Except Abort (Option Prop
 /-- `DefinePropertyOrThrow` on the object at `a`. -/
 def defineOwn (a : Addr) (k : PropertyKey) (d : Desc) : M W Unit := do
   let o ← getObj a
-  if o.array && k.string?.isSome then unknown "a property is defined on an array" else
+  if o.frozen && (o.props.lookup k).isNone then throwErr .type "cannot add property to a frozen object" else
+  if o.array && !o.frozen && k.string?.isSome then unknown "a property is defined on an array" else
   match ← lift (applyDesc (o.props.lookup k) d) with
   | some p => modifyObj a fun o => { o with props := setOwn o.props k p }
   | none => throwErr .type s!"cannot redefine property: {k}"
@@ -849,7 +853,7 @@ def readHostRef (ref : HostRef) : M W Val := fun s =>
 /-- Receivers whose property lookup can be answered by a host observation.
 The portable Object contract exposes only the saved method reference. -/
 def observedHostProperty (owner key : String) : Bool :=
-  owner == "window" || owner.startsWith "window." || (owner == "intrinsic.Object" && key == "defineProperty")
+  owner == "window" || owner.startsWith "window." || owner == "intrinsic.Array" || (owner == "intrinsic.Object" && key == "defineProperty")
 
 /-- A member of a global of the host: a function the world answers for. -/
 def hostMember (name k : String) : M W Val :=
@@ -972,6 +976,40 @@ def reaches (s : State W) (a : Addr) : Nat → Option Addr → Bool
   | _, none | 0, _ => false
   | steps + 1, some b => b == a || reaches s a steps ((s.objAt b).bind (·.proto))
 
+/-- Test the prototype chain, starting at the instance's parent. Both addresses
+come from modeled objects. Check the target exists before traversing the heap. -/
+def chainContains (target : Addr) (parent : Option Addr) : M W Bool := do
+  let _ ← getObj target
+  let s ← getState
+  pure (reaches s target s.objectCount parent)
+
+/-- OrdinaryHasInstance, after the callable check. A primitive left operand
+returns false before looking up the constructor's prototype. -/
+def ordinaryInstance (call : Call W) (value ctor : Val) : M W Val := do
+  match value with
+  | .obj a =>
+    let proto ← getProp call ctor (.str "prototype")
+    let target ← requireObj "constructor prototype" proto
+    let o ← getObj a
+    return .bool (← chainContains target o.proto)
+  | .error .. | .host _ => unknown "instanceof on an unmodeled object"
+  | _ => pure (.bool false)
+
+/-- InstanceofOperator reads @@hasInstance before testing callability. A
+custom method receives the RHS as its receiver and the LHS as its argument. -/
+def instanceOf (call : Call W) (value ctor : Val) : M W Val := do
+  let _ ← requireObj "right-hand side of instanceof" ctor
+  let method ← getProp call ctor (.wellKnownSymbol .hasInstance)
+  if method == .host "Function.prototype[Symbol.hasInstance]" then
+    if ← (do pure (isCallable (← getState) ctor) : M W Bool) then ordinaryInstance call value ctor
+    else pure (.bool false)
+  else if method == .null || method == .undef then
+    if ← (do pure (isCallable (← getState) ctor) : M W Bool) then ordinaryInstance call value ctor
+    else throwErr .type "right-hand side of instanceof is not callable"
+  else
+    let result ← call method ctor [value]
+    return .bool (← lift (toBoolean result))
+
 def observeGlobalTypeof (name : String) : M W Val := fun s =>
   match W.globalTypeof name s.world.state with
   | some (result, state) => fromWorld { s with world := { s.world with state } } result
@@ -1075,6 +1113,34 @@ def checkForInWrite (base target key : Val) : M W Val := do
       unknown "for-in body writes through an accessor"
     else pure .undef
 
+/-- Each private name owns a fresh, unreachable null-prototype table. Keys encode
+heap receiver identity; the associated descriptor distinguishes writable fields
+from methods. JavaScript reflection only sees the receiver's public properties. -/
+def privateSlot (op : PrivateOp) (table receiver value : Val) : M W Val := do
+  let table ← requireObj "private name table" table
+  let receiver ← requireObj "private member receiver" receiver
+  let key := PropertyKey.symbol receiver
+  let present ← lookupProp table key
+  match op, present with
+  | .get, some (.data v ..) => pure v
+  | .set, some (.data _ true ..) =>
+    defineOwn table key { value := some value }
+    pure value
+  | .set, some (.data _ false ..) => throwErr .type "cannot assign to a private method"
+  | .addField, none | .addMethod, none =>
+    defineOwn table key { value := some value, writable := some (op == .addField) }
+    pure value
+  | .addField, some _ | .addMethod, some _ => throwErr .type "duplicate private element"
+  | _, _ => throwErr .type "receiver does not have this private element"
+
+/-- The raw and cooked objects have Array.prototype, frozen own indices and frozen length.
+The cooked object's non-enumerable raw property points to the separately frozen raw array. -/
+def templateArrayObject (values : List Val) (raw : Option Val) : Obj :=
+  let items := values.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v false true false)
+  let length := (PropertyKey.str "length", Property.data (.num (Float.ofNat values.length)) false false false)
+  let extra := raw.toList.map fun v => (PropertyKey.str "raw", Property.data v false false false)
+  { proto := some arrayProto, array := true, frozen := true, props := items ++ [length] ++ extra }
+
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
@@ -1095,6 +1161,27 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   | .opaqueAmbientRef name => unknown s!"ambient binding {name} is reached"
   | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
   | .opaqueAmbientMemberRef receiver member => unknown s!"ambient member {receiver}.{member} is reached"
+  | .instanceOf => instanceOf call (arg 0) (arg 1)
+  | .privateSlot op => privateSlot op (arg 0) (arg 1) (arg 2)
+  | .callWithReceiver => call (arg 0) (arg 1) (args.drop 2)
+  | .checkArrayFrom =>
+    let .host "intrinsic.Array" ← readHostRef (.binding "Array")
+      | unknown "Array.from requires the intrinsic Array constructor"
+    let .host "intrinsic.Array.from" ← readHostRef (.property "intrinsic.Array" "from")
+      | unknown "Array.from requires the intrinsic method"
+    pure .undef
+  | .templateIterable =>
+    let v := arg 0
+    let .obj a := v | unknown "Array.from source needs a modeled iterable"
+    let o ← getObj a
+    if !(o.array && o.frozen) then unknown "Array.from source is not a template array" else
+    match ← lookupProp a (.wellKnownSymbol .iterator) with
+    | some (.data (.host "Array.prototype.values") ..) => pure v
+    | _ => unknown "template Array.from requires the intrinsic array iterator"
+  | .templateArray cooked =>
+    let values := if cooked then args.drop 1 else args
+    let raw := if cooked then args.head? else none
+    return .obj (← alloc (templateArrayObject values raw))
   | .forInKeys => forInKeys (arg 0)
   | .checkForInWrite => checkForInWrite (arg 0) (arg 1) (arg 2)
   | .log =>
@@ -1125,8 +1212,10 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
     match arg 0 with
     | .obj a =>
       let s ← getState
-      if (← getObj a).proto == parent then pure (arg 0)
-      else if reaches s a s.objectCount parent then throwErr .type "cyclic __proto__ value"
+      let object ← getObj a
+      if object.proto == parent then pure (arg 0)
+      else if object.frozen || reaches s a s.objectCount parent then
+        throwErr .type (if object.frozen then "cannot change the prototype of a frozen object" else "cyclic __proto__ value")
       else
         modifyObj a fun o => { o with proto := parent }
         pure (arg 0)

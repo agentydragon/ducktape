@@ -10,14 +10,14 @@ namespace CoreJS
 /-- Strict assignment adds an own writable, enumerable, configurable data property
 when lookup misses throughout the prototype chain of an ordinary object. -/
 theorem setProp_fresh_data {s : State W} {a : Addr} {o : Obj} {key : String}
-    (obj : s.objAt a = some o) (ordinary : o.array = false)
+    (obj : s.objAt a = some o) (ordinary : o.array = false) (extensible : o.frozen = false)
     (absent : findProp s s.objectCount a (.str key) = none)
     (own : o.props.lookup (PropertyKey.str key) = none) (call : Call W) (value : Val) :
     setProp call (.obj a) (.str key) value s =
       modifyObj a (fun obj => { obj with props := setOwn obj.props (.str key) (.data value true true true) }) s := by
   have converted : (toKey (.str key) : M W PropertyKey) = pure (.str key) := rfl
   simp [setProp, converted, lift, lookupProp, getState, bind, pure, Except.pure, absent,
-    getObj, obj, defineOwn, ordinary, own, applyDesc]
+    getObj, obj, defineOwn, ordinary, extensible, own, applyDesc]
 
 
 private theorem key_absent (props : List (PropertyKey × Property)) (key : PropertyKey)
@@ -62,7 +62,7 @@ private theorem modify_at_known (xs : Array α) (i : Nat) (f g : α → α)
 one heap update appending writable, enumerable, configurable data properties in order.
 The ordinary receiver's prototype has no parent and contains none of the keys. -/
 theorem setProp_many_fresh {s : State W} (call : Call W) (fields : List (String × Val))
-    (obj : s.objAt a = some o) (ordinary : o.array = false)
+    (obj : s.objAt a = some o) (ordinary : o.array = false) (extensible : o.frozen = false)
     (proto : o.proto = some parent) (hne : parent ≠ a)
     (root : s.objAt parent = some p) (top : p.proto = none)
     (unique : (fields.map Prod.fst).Nodup)
@@ -85,7 +85,7 @@ theorem setProp_many_fresh {s : State W} (call : Call W) (fields : List (String 
     have miss := findProp_absent obj proto root top absent (inherited (k, v) (by simp)) s.objectCount
     let add := fun (old : Obj) => { old with props := setOwn old.props (.str k) (.data v true true true)}
     let u := { s with heap := s.heap.modify a.region (·.modify a.index add)}
-    have first : setProp call (.obj a) (.str k) v s = .ok () u := setProp_fresh_data obj ordinary miss absent call v
+    have first : setProp call (.obj a) (.str k) v s = .ok () u := setProp_fresh_data obj ordinary extensible miss absent call v
     have changed : u.objAt a = some (add o) := modifyObj_self obj (show modifyObj a add s = .ok () u from rfl)
     have other (b : Addr) (ne : b ≠ a) : u.objAt b = s.objAt b := objAt_modify _ _ _ _ ne
     have props : (add o).props = o.props ++ [(PropertyKey.str k, Property.data v true true true)] := by simp [add, setOwn, noKey]
@@ -93,7 +93,7 @@ theorem setProp_many_fresh {s : State W} (call : Call W) (fields : List (String 
       intro f hf
       have diff : f.1 ≠ k := fun eq => unique.1 (eq ▸ List.mem_map.mpr ⟨f, hf, rfl⟩)
       simpa [props, diff] using fresh f (by simp [hf])
-    have restRun := ih changed ordinary proto (other parent hne ▸ root) unique.2 stillFresh
+    have restRun := ih changed ordinary extensible proto (other parent hne ▸ root) unique.2 stillFresh
       (fun f hf => inherited f (by simp [hf]))
     change (setProp call (.obj a) (.str k) v >>= fun _ =>
         rest.forM (fun (k, v) => setProp call (.obj a) (.str k) v)) s = _

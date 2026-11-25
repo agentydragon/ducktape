@@ -99,6 +99,8 @@ def logOp : String → D LogOp
 def primOf : String → D Prim
   | "log" => pure .log | "defineProperty" => pure .defineProperty | "create" => pure .create
   | "getPrototypeOf" => pure .getPrototypeOf | "setPrototypeOf" => pure .setPrototypeOf
+  | "instanceof" => pure .instanceOf
+  | "hasInstanceSymbol" => pure (.wellKnownSymbol .hasInstance)
   | "iteratorSymbol" => pure (.wellKnownSymbol .iterator)
   | "toStringTagSymbol" => pure (.wellKnownSymbol .toStringTag)
   | "freshSymbol" => pure .freshSymbol
