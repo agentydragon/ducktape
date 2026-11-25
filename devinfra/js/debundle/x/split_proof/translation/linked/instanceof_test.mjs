@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertifiedResult, caseShard, lower, root, threeUnitFixture as fixture } from "./harness.mjs";
+import {
+  assertCertifiedResult,
+  assertRejected,
+  caseShard,
+  lower,
+  observe,
+  root,
+  threeUnitFixture as fixture,
+} from "./harness.mjs";
 
 const profile = path.join(root, "browser.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
@@ -84,13 +92,17 @@ checkProtocol(
   "GCGC"
 );
 
-checkProtocol(
-  "instanceof-non-callable-hook",
-  `const primitiveHook = { [Symbol.hasInstance]: 7 };`,
-  `try { 2 instanceof primitiveHook; } catch (e) { return typeof e; }
-   return "did not throw";`,
-  "object"
-);
+if (runCase("instanceof-non-callable-hook")) {
+  const f = fixture(
+    "instanceof-non-callable-hook",
+    `const primitiveHook = { [Symbol.hasInstance]: 7 };
+     const result = 2 instanceof primitiveHook;
+     export { result };`
+  );
+  const run = lower(f.sourceFile, f.specFile, f.out, options);
+  assertRejected({ ...run, out: f.out }, /original threw during linked initialization/);
+  assert.deepEqual(observe(f.sourceFile, "result"), { error: "TypeError" });
+}
 
 checkProtocol(
   "instanceof-throwing-getter",
