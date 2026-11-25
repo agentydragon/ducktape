@@ -40,6 +40,28 @@ async function nodeOutcome(url) {
   }
 }
 
+// The move census lowers the annotated source units through the linked rules.
+// The static field is allocation-only; the call is not. The exponentiation
+// function falls back to opaque, while top-level await is refused even as opaque.
+const censusSource = `
+  import { value } from "external-package";
+  function f() {}
+  function deferred() { return 2 ** 3; }
+  const a = 1, b = class { field = value; static field = 1; },
+    c = class { static field = console.log("effect"); };
+  const { x } = value;
+  await 1;
+  export { a };
+`;
+const censusFile = file("census.json", JSON.stringify(dumpSource(censusSource)));
+const census = JSON.parse(execFileSync(process.env.COREJS, ["--moves-ast", censusFile], { encoding: "utf8" }));
+assert.deepEqual(
+  [census.units, census.inert, census.allocate, census.opaque, census.other, census.refused],
+  [7, 2, 2, 1, 2, 1]
+);
+assert.deepEqual([census.may_move, census.may_move_denominator], [4, 7]);
+assert.match(census.problems[0], /await/i);
+
 // Each seed builds a fresh module and binding chain. Throwing the last value
 // makes precision, shadowing and initialization observable in Node and CoreJS.
 const literals = [

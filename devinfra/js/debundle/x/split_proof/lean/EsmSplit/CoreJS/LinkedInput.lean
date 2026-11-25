@@ -449,6 +449,39 @@ def program (source providers : Json) (scripts : Std.HashSet (Nat × Nat)) (entr
   let _ ← scopes p
   return p
 
+/-- Lower each executable source unit for a diagnostic census. This uses the same
+linked unit lowering as replay, falling back to the structural opaque lowering when
+that lowering refuses. It does not link providers or certify a split; refused units
+remain errors, including units that cannot safely be retained opaque. -/
+def censusUnits (source : Json) : Except String (Array (Nat × Except String Stmt)) := do
+  let nodes ← ESTreeUnits.nodes source
+  let mut imports : List Name := []
+  for j in nodes do
+    if (← typ j) == "ImportDeclaration" then
+      for spec in ← j.getObjValAs? (Array Json) "specifiers" do
+        imports := imports ++ [← FromESTree.identifier (← spec.getObjVal? "local")]
+  let mut units := #[]
+  for (j, i) in nodes.zipIdx do
+    let kind ← typ j
+    if ["ImportDeclaration", "ExportAllDeclaration", "EmptyStatement", "DebuggerStatement"].contains kind then
+      continue
+    let ast ← if kind == "ExportNamedDeclaration" || kind == "ExportDefaultDeclaration" then
+      j.getObjVal? "declaration"
+    else pure j
+    if ast == .null then continue
+    let lowered : Except String Stmt := do
+      if kind == "ExportDefaultDeclaration" then
+        return (← BodyFormat.lowerDefault (.recorded {}) .nodeRecording imports i none ast).1
+      return (← BodyFormat.lower (.recorded {}) .nodeRecording imports i none ast
+        (kind == "ExportNamedDeclaration")).1
+    let result := match lowered with
+      | .ok stmt => .ok stmt
+      | .error why => match OpaqueInput.unit i ast with
+        | .ok stmt => .ok stmt
+        | .error opaqueWhy => .error s!"{why}; opaque: {opaqueWhy}"
+    units := units.push (i, result)
+  return units
+
 /-- Public paths are the original module records, including unchanged dependencies.
 The candidate can also contain private files and model-only helper modules. -/
 def publicPaths (parts : List StaticSplit) (shared : Json) : Except String (List String) := do
