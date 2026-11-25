@@ -169,7 +169,7 @@ The theorem starts and ends at CoreJS. These parts connect it to JavaScript. The
 - Acorn's parse and eslint-scope's annotations.
 - One lowering from annotated ESTree to CoreJS, written in Lean. It lowers the original graph and the reparsed output.
 - CoreJS semantics and the world model for the supported fragment, including the host function table (`worldFunction` in [`Value.lean`](lean/EsmSplit/CoreJS/Value.lean)).
-- Lean's kernel, plus its compiler when a proven checker runs as compiled code.
+- Lean's kernel, which checks every proof when the tool is built, and Lean's compiler, which builds the checker that a split run executes.
 
 The Node comparison suites ([`model/README.md`](model/README.md)) exercise the same lowering and interpreter as certification. The emitter and printer are not trusted: publication reparses the printed files and checks that they lower to `Y`.
 
@@ -178,6 +178,7 @@ The Node comparison suites ([`model/README.md`](model/README.md)) exercise the s
 - **One lowering, in Lean.** The same Lean code lowers annotated ESTree for certification, for the `corejs` interpreter and for the Node comparison suites.
 - **One guarantee.** Callers do not choose a proof technique or level. The verdict reports the evidence and premises it used.
 - **No unchecked output.** Every written module graph is certified. Diagnostics report and write no modules.
+- **No Lean at split time.** A certified split runs only compiled code. Host premises are data in a fixed vocabulary; adding a kind of premise is a code change, proved once when the tool is built.
 - **The planner stays unproved.** Heuristics such as `Effects.lean` propose candidates. Their output counts as evidence only after a proved check accepts it ([footprint soundness](docs/footprint_soundness.md)).
 - **A proved rule for a narrow fragment is worth landing.** It widens what the one checker accepts.
 - **No new precision rule goes into the unproved footprint analysis** unless a measurement shows it is blocking. Fixing a wrong rule is always in scope, and its cost on the large bundle is measured before it is adopted.
@@ -260,9 +261,8 @@ The broad Node comparison runs through `to_core.mjs`. [`corejs_ast_lowering_test
 2. Define `Places` and prove that the placement check establishes it.
 3. Add whole-program evaluation to the checker as a proven justification: a symbolic evaluator with a soundness theorem, so a move can rest on evaluating the units it crosses, as linked mode does today.
 4. Retire per-run proof generation once the proven evaluator certifies the linked test corpus.
-5. Optionally let the kernel replay the checker's decision on small inputs. That run then does not trust the compiler.
 
-**Done when.** The certified CLI calls only `split`, `split`'s type states the target theorem, and no run writes a proof module.
+**Done when.** The certified CLI calls only `split`, `split`'s type states the target theorem, and no split run starts Lean.
 
 ### Check the printed files
 
