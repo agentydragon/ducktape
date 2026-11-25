@@ -108,7 +108,7 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
     )
     for name, shards in [
         ("browser_globals_test", 4),
-        ("default_parameters_test", 3),
+        ("default_parameters_test", 6),
         ("flat_patterns_test", 6),
         ("generator_test", 4),
         ("identifier_assignment_test", 3),
@@ -173,7 +173,7 @@ js_test(
     data = _TEST_DATA,
     entry_point = "programs_test.mjs",
     env = _TEST_ENV,
-    shard_count = 3,
+    shard_count = 6,
 )
 
 js_test(
