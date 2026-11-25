@@ -102,6 +102,11 @@ private def emitRefusal (requested : String) (refusal : CertificationRefusal)
 private def structuralRefusal (refusal : CoreJS.LinkedBehavior.StructuralRefusal) : CertificationRefusal :=
   { reason := refusal.reason, reasonCode := refusal.reasonCode }
 
+private def probeRefusal (refusal : CoreJS.LinkedBehavior.Refusal) : CertificationRefusal :=
+  { reason := refusal.reason
+    reasonCode := some refusal.code.label
+    observation := refusal.observation }
+
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
   if profile == .empty then [] else [("hostProfile", toJson profile.label)]
 
@@ -307,8 +312,12 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
       match decoded with
       | .error reason => pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
       | .ok (original, candidate) => do
-        let sliceResult ← timePhase timings "compiled_slice" fun _ =>
-          IO.lazyPure fun _ => certifySlice profile program providers files P B S
+        let probe ← timePhase timings "compiled_slice_probe" fun _ =>
+          IO.lazyPure fun _ => CoreJS.LinkedBehavior.probeWitness profile original candidate
+        let sliceResult ← match probe with
+          | .error refusal => pure (.error (probeRefusal refusal))
+          | .ok _ => timePhase timings "compiled_slice" fun _ =>
+              IO.lazyPure fun _ => certifySlice profile program providers files P B S
         match sliceResult with
         | .ok (kind, _statement) =>
           if request == .allOutcomes && kind.level != .allOutcomes then
@@ -326,11 +335,9 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
               if census == some "1" then
                 CoreJS.LinkedBehavior.replayPremisedBlockerKinds original candidate
               else []
-            let replayed : Option CoreJS.HostPremises ←
-              timePhase timings "compiled_replay" fun _ => IO.lazyPure fun _ =>
-                match CoreJS.LinkedBehavior.probeWitness profile original candidate with
-                | .error _ => none
-                | .ok (premises, fuel) =>
+            let replayed : Option CoreJS.HostPremises ← match probe with
+              | .error _ => pure none
+              | .ok (premises, fuel) => timePhase timings "compiled_replay" fun _ => IO.lazyPure fun _ =>
                   match CoreJS.LinkedBehavior.replayPremisedPrograms premises fuel original candidate with
                   | none => none
                   | some semantics =>
@@ -343,23 +350,21 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
               let prepared : Except CertificationRefusal
                   (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
                 timePhase timings "certificate_preparation" fun _ => do
-                  let result ← IO.lazyPure fun _ =>
-                    CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
-                  match result with
-                  | .error refusal =>
-                    pure (.error ({
-                      reason := refusal.reason
-                      reasonCode := some refusal.code.label
-                      observation := refusal.observation
-                    } : CertificationRefusal))
-                  | .ok (cert, terms) =>
-                    try
-                      pure (.ok (cert, ← writeCertificateData work terms))
-                    catch err =>
-                      pure (.error ({
-                        reason := err.toString
-                        reasonCode := some "proof_preparation"
-                      } : CertificationRefusal))
+                  match probe with
+                  | .error refusal => pure (.error (probeRefusal refusal))
+                  | .ok witness => do
+                    let result ← IO.lazyPure fun _ =>
+                      CoreJS.LinkedBehavior.certificateWithWitness profile program providers files P original candidate witness
+                    match result with
+                    | .error refusal => pure (.error (probeRefusal refusal))
+                    | .ok (cert, terms) =>
+                      try
+                        pure (.ok (cert, ← writeCertificateData work terms))
+                      catch err =>
+                        pure (.error ({
+                          reason := err.toString
+                          reasonCode := some "proof_preparation"
+                        } : CertificationRefusal))
               match prepared with
               | .error refusal => pure (.error refusal)
               | .ok (cert, dataArts) => do
