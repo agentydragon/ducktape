@@ -35,7 +35,9 @@ _PROBE = "//devinfra/js/debundle/e2e:cases/emission/catchall_export_consumer/rea
 
 js_test(
     name = "corpus_certificate_test",
+    size = "medium",
     data = [
+        "//devinfra/js/debundle/x/split_proof:case_shard",
         _CORPUS_CHUNK,
         _PROBE,
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
@@ -50,6 +52,7 @@ js_test(
         _CORPUS_CHUNK,
         _PROBE,
     ],
+    shard_count = 2,
 )
 
 js_test(

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
+  caseShard,
   assertRejected,
   exportNamed,
   forcePreview,
@@ -15,6 +16,8 @@ import {
   sequentialSplit,
   variable,
 } from "./harness.mjs";
+
+const runCase = caseShard();
 
 const entry = "entry.mjs";
 for (const [name, source, expected] of [
@@ -58,6 +61,7 @@ for (const [name, source, expected] of [
     "after",
   ],
 ]) {
+  if (!runCase(name)) continue;
   const test = sequentialSplit(name, source, { "class.mjs": ["#0"], [entry]: ["#1", "#2"] }, ["class.mjs"]);
   assert.equal(test.verdict.status, "certified", name + ": " + test.log);
   if (name === "eager-heritage") {
@@ -111,6 +115,7 @@ for (const [name, source] of [
     export const result = checked;`,
   ],
 ]) {
+  if (!runCase(name)) continue;
   const test = sequentialSplit(name, source, { "first.mjs": ["#0"], [entry]: ["#1", "#2", "#3", "#4", "#5"] }, [
     "first.mjs",
   ]);
@@ -121,6 +126,7 @@ for (const [name, base, body] of [
   ["primitive-derived-return", "class Base {}", "super(); return 1;"],
   ["throwing-super", "class Base { constructor() { null.missing; } }", "super(); return {};"],
 ]) {
+  if (!runCase(name)) continue;
   const source = `${base}
     class Child extends Base { constructor() { ${body} } }
     export const result = new Child();`;
@@ -133,6 +139,7 @@ for (const [name, base, body] of [
 // for instance fields. Force the defining module ahead of its sibling in both variants.
 for (const isStatic of [false, true]) {
   for (const dependent of [false, true]) {
+    if (!runCase(`field-${isStatic}-${dependent}`)) continue;
     const field = {
       type: "PropertyDefinition",
       static: isStatic,
@@ -195,6 +202,7 @@ for (const [name, source, expectedReason] of [
   ],
   ["computed", "const B = class { ['x']() {} }; export const result = 1;", /computed class key/],
 ]) {
+  if (!runCase(name)) continue;
   const test = sequentialSplit(name, source, { "class.mjs": ["#0"], [entry]: ["#1"] }, ["class.mjs"]);
   assert.equal(test.verdict.status, "rejected", test.log);
   assert.match(test.verdict.reason, expectedReason);

@@ -52,8 +52,9 @@ def opaqueBindings : List String :=
 -- Browser bundles commonly guard platform shims. An absence test needs a premise;
 -- directly reading such a binding remains opaque.
 def shims : List String :=
-  ["Buffer", "WorkerGlobalScope", "__filename", "exports", "global", "importScripts", "module",
-   "process", "require", "setImmediate"]
+  ["Buffer", "MozWebSocket", "WorkerGlobalScope", "__MOBX_DEVTOOLS_GLOBAL_HOOK__", "__SENTRY_DEBUG__",
+   "__filename", "exports", "firebaseui", "global", "importScripts", "module", "process",
+   "regeneratorRuntime", "require", "setImmediate"]
 
 def methods : List (String × List String) := [
   ("Array", ["from", "isArray"]),

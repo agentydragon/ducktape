@@ -8,6 +8,7 @@ js_library(
     name = "harness",
     srcs = ["harness.mjs"],
     deps = [
+        "//devinfra/js/debundle/x/split_proof:case_shard",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
     ],
@@ -51,7 +52,6 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "async_methods_test",
         "bitwise_test",
         "browser_error_test",
-        "classes_test",
         "derived_defaults_test",
         "derived_object_parameters_test",
         "derived_fields_test",
@@ -61,7 +61,6 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "if_test",
         "import_cells_test",
         "initializer_moves_test",
-        "literal_records_test",
         "logical_test",
         "member_test",
         "module_graph_test",
@@ -70,7 +69,6 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "object_elements_test",
         "object_spread_test",
         "optional_callee_test",
-        "pre_super_test",
         "prefix_record_creation_test",
         "provider_location_test",
         "realm_constructors_test",
@@ -101,6 +99,10 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
     js_test(
         name = name,
         size = "medium",
+        timeout = "long" if name in [
+            "classes_test",
+            "default_parameters_test",
+        ] else "moderate",
         data = _TEST_DATA,
         entry_point = name + ".mjs",
         env = _TEST_ENV,
@@ -108,14 +110,17 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
     )
     for name, shards in [
         ("browser_globals_test", 4),
-        ("default_parameters_test", 3),
+        ("classes_test", 4),
+        ("default_parameters_test", 6),
         ("flat_patterns_test", 6),
         ("generator_test", 4),
         ("identifier_assignment_test", 3),
+        ("literal_records_test", 4),
         ("loops_test", 4),
         ("numeric_property_keys_test", 2),
         ("object_parameter_defaults_test", 2),
         ("optional_chain_test", 3),
+        ("pre_super_test", 4),
         ("sequence_test", 3),
         ("super_members_test", 3),
         ("templates_test", 3),
@@ -173,7 +178,7 @@ js_test(
     data = _TEST_DATA,
     entry_point = "programs_test.mjs",
     env = _TEST_ENV,
-    shard_count = 3,
+    shard_count = 6,
 )
 
 js_test(
@@ -213,12 +218,13 @@ js_test(
     data = _TEST_DATA,
     entry_point = "mutations_test.mjs",
     env = _TEST_ENV,
-    shard_count = 3,
+    shard_count = 6,
 )
 
 js_test(
     name = "property_assignment_test",
     size = "medium",
+    timeout = "long",
     data = _TEST_DATA,
     entry_point = "property_assignment_test.mjs",
     env = _TEST_ENV,
@@ -251,12 +257,15 @@ js_test(
 
 js_test(
     name = "certified_split_test",
+    size = "medium",
     data = [
+        "//devinfra/js/debundle/x/split_proof:case_shard",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "certified_split_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    shard_count = 8,
 )
 
 js_library(
