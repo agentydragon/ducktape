@@ -28,16 +28,18 @@ def SamePublicCells (paths : List String) (before after : Program) : Prop :=
   ∀ w, ∃ (a : CheckedLink before w) (b : CheckedLink after w),
     ∀ path ∈ paths, CellsMatch path a.linked b.linked
 
-/-- The decoder checks source placement, emitted syntax, capture resolution,
-and (with a snapshot) loader capabilities. One pair of entry-rooted schedules
-relates all normal final states under the returned stable-intrinsic premises. -/
+/-- The resolved assignment covers the decoded executable units in the
+actual output modules. The entry-rooted schedules relate all normal final
+states under the returned stable-intrinsic premises. -/
 def DeploymentEquivalent (entry : String) (parts : List LinkedInput.StaticSplit) (shared : Lean.Json)
     (inputs : Option LinkedDeployment.Input) (profile : HostProfile) (offered used : List StableIntrinsic) : Prop :=
-  used ⊆ offered ∧ ∃ hints before after paths,
-    LinkedInput.decodeDeployment entry parts shared inputs profile hints = .ok (before, after) ∧
+  used ⊆ offered ∧ ∃ hints deployment paths,
+    LinkedInput.decodeDeployment entry parts shared inputs profile hints = .ok deployment ∧
     LinkedInput.publicPaths parts shared = .ok paths ∧
-    NormalEquivalent (StableIntrinsic.Worlds used) before after ∧ SameExports before after ∧
-    SamePublicCells paths before after
+    Places deployment.assignment deployment.before deployment.after ∧
+    NormalEquivalent (StableIntrinsic.Worlds used) deployment.before deployment.after ∧
+    SameExports deployment.before deployment.after ∧
+    SamePublicCells paths deployment.before deployment.after
 
 abbrev DeploymentResult (entry : String) (parts : List LinkedInput.StaticSplit) (shared : Lean.Json)
     (inputs : Option LinkedDeployment.Input) (profile : HostProfile) (offered : List StableIntrinsic) :=
@@ -58,7 +60,10 @@ private def certifyGraph (entry : String) (parts : List LinkedInput.StaticSplit)
     let hints := fun (name : String) => table[name]?.getD []
     match decoded : LinkedInput.decodeDeployment entry parts shared inputs profile hints with
     | .error why => throw why
-    | .ok (before, after) =>
+    | .ok deployment =>
+      let before := deployment.before
+      let after := deployment.after
+      let ⟨placed⟩ ← checkPlaces deployment.assignment before after
       match publicPaths : LinkedInput.publicPaths parts shared with
       | .error why => throw why
       | .ok paths =>
@@ -67,8 +72,8 @@ private def certifyGraph (entry : String) (parts : List LinkedInput.StaticSplit)
         let ⟨cells⟩ ← checkPublicCells a.linked b.linked paths
         let used := usedIntrinsics offered before
         let (method, ⟨normal, exports⟩) ← checkLinkedSchedules used a b recordPivots
-        return ⟨used, method, ⟨usedIntrinsics_subset offered before, hints, before, after, paths,
-          decoded, publicPaths, normal, exports, fun w => ⟨a.forWorld w, b.forWorld w, cells⟩⟩⟩
+        return ⟨used, method, ⟨usedIntrinsics_subset offered before, hints, deployment, paths,
+          decoded, publicPaths, placed, normal, exports, fun w => ⟨a.forWorld w, b.forWorld w, cells⟩⟩⟩
   match check primary with
   | .ok result => return result
   | .error why =>

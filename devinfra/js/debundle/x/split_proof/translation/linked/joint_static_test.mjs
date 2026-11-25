@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { dump } from "../parser.mjs";
+import { acorn, dump } from "../parser.mjs";
 import { forcePreview, lower, root } from "./harness.mjs";
 
 const app = `import { value as external, bump as change } from "./provider.mjs";
@@ -106,6 +106,24 @@ const ok = check(left, right, joint);
 assert.equal(ok.status, 0, ok.stderr);
 assert.equal(ok.stdout.trim(), "certified");
 assert.deepEqual(await observe(joint), expected);
+
+// Swap the cells exposed by two public names.
+const retargeted = assemble("retargeted-exports", left, right);
+const retargetedEntry = path.join(retargeted, "app.mjs");
+const appText = readFileSync(retargetedEntry, "utf8");
+const imports = acorn
+  .parse(appText, { ecmaVersion: "latest", sourceType: "module" })
+  .body.filter((node) => node.type === "ImportDeclaration")
+  .map((node) => appText.slice(node.start, node.end));
+writeFileSync(
+  retargetedEntry,
+  [...imports, "export { external as value, bump, value as external, change };"].join("\n")
+);
+const swapped = await import(pathToFileURL(retargetedEntry));
+assert.deepEqual([swapped.value, swapped.external], [20, 10]);
+const retargetedVerdict = check(left, right, retargeted);
+assert.equal(retargetedVerdict.status, 1, retargetedVerdict.stdout);
+assert.match(retargetedVerdict.stderr, /module's named exports differ from the plan/);
 
 // Individually valid placements request the same private URL. Both public
 // bindings now reach one cell and both bumps update it.

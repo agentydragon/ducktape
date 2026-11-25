@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.DeploymentPlacement
 import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.LinkedDeployment
 import EsmSplit.CoreJS.Eval
@@ -374,12 +375,25 @@ The candidate can also contain private files and model-only helper modules. -/
 def publicPaths (parts : List StaticSplit) (shared : Json) : Except String (List String) := do
   return parts.map (·.plan.entry) ++ (← shared.getObj?).toList.map Prod.fst
 
+structure DecodedDeployment where
+  before : Program
+  after : Program
+  assignment : List UnitPlacement
+
+/-- Plans also number import and export lists. Keep only the ordinals present
+in the original executable body when building the CoreJS assignment. -/
+private def plannedPlacements (plan : EsmSplit.Plan) (source : Module) (base : Nat) : List UnitPlacement :=
+  let ids := Std.HashSet.ofList (source.body.map Prod.fst)
+  plan.mods.flatMap fun m => m.stmts.filterMap fun ordinal =>
+    let id := base + ordinal
+    if ids.contains id then some (id, m.name) else none
+
 /-- Decode all placements in one namespace. IDs follow the input list and the
 sorted fixed-file map, independently of either graph's evaluation order. In
 structural mode each fragment's hints and capabilities use its local ordinals. -/
 def decodeDeployment (entry : String) (parts : List StaticSplit) (shared : Json)
     (inputs : Option LinkedDeployment.Input) (profile : HostProfile)
-    (hints : String → List Nat) : Except String (Program × Program) := do
+    (hints : String → List Nat) : Except String DecodedDeployment := do
   let fixedFiles := (← shared.getObj?).toList
   let originals ← publicPaths parts shared
   let outputs := parts.flatMap fun part => part.plan.mods.map (·.name)
@@ -399,12 +413,14 @@ def decodeDeployment (entry : String) (parts : List StaticSplit) (shared : Json)
   let format (ids : List Nat) : BodyFormat :=
     if inputs.isSome then .structural (Std.HashSet.ofList ids) access else .linked
   let mut fragments := #[]
+  let mut planned := #[]
   let mut base := 0
   for part in parts do
     let name := part.plan.entry
     let f ← (decodeFragment (format ((hints name).map (base + ·))) profile part.source part.files part.plan
       name (originals.erase name) base (some name)).mapError fun why => s!"{name}: {why}"
     fragments := fragments.push f
+    planned := planned ++ (plannedPlacements part.plan f.sourceModule base).toArray
     base := base + f.unitCount
   let (fixed, fixedSites) ← readProviders (format []) profile fixedFiles base (parts.map (·.plan.entry))
   let fs := fragments.toList
@@ -415,6 +431,6 @@ def decodeDeployment (entry : String) (parts : List StaticSplit) (shared : Json)
   let before ← access.attach before
   let after ← access.attach after
   checkScopes before after
-  return (before, after)
+  return ⟨before, after, planned.toList ++ fixed.flatMap Module.unitPlacements⟩
 
 end CoreJS.LinkedInput
