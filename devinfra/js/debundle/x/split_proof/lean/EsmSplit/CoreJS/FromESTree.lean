@@ -448,8 +448,8 @@ private def terminalSuper? (arm : Json) : Option (List Json × Json) := do
   let statements ← if (field arm "type").toOption == some "BlockStatement" then
     (arm.getObjValAs? (List Json) "body").toOption else pure [arm]
   let last ← statements.getLast?
-  let (prefix, call, residual) ← directSuper? last
-  if residual.isNone then some (statements.dropLast ++ prefix, call) else none
+  let (earlier, call, residual) ← directSuper? last
+  if residual.isNone then some (statements.dropLast ++ earlier, call) else none
 
 private def conditionalSuper? (stmt : Json) : Option (Json × (List Json × Json) × (List Json × Json)) := do
   guard ((field stmt "type").toOption == some "IfStatement")
@@ -466,7 +466,7 @@ private def delayedSuperArguments (arm : Nat) (args : List Expr) : List Name × 
     let (spread, operand) := arg.argument
     let thunk := Expr.func (.mk "" .arrow false [] [.ret operand])
     let call := Expr.call (.var slot) []
-    (slot, Stmt.expr (.assign (.var slot) thunk), if spread then .spreadArg call else call)
+    (slot, Stmt.expr (.assign (.var slot) thunk), if spread then Expr.spreadArg call else call)
   (wrapped.map (·.1), wrapped.map (·.2.1), wrapped.map (·.2.2))
 
 /-- Lower new.target only within its owning function and lexical arrows. A nested ordinary
@@ -973,8 +973,8 @@ private partial def linkedSuperArguments (profile : HostProfile) (imports : List
     linkedArgument (linkedExpr profile imports true "") (← prepareBeforeSuper arg true)
 
 private partial def linkedSuperArm (profile : HostProfile) (imports : List Name) (arm : Nat)
-    (prefix : List Json) (call : Json) : Except String (List Name × Stmt × List Expr) := do
-  let before ← linkedBeforeSuper profile imports prefix
+    (statements : List Json) (call : Json) : Except String (List Name × Stmt × List Expr) := do
+  let before ← linkedBeforeSuper profile imports statements
   let args ← linkedSuperArguments profile imports (← call.getObjValAs? (List Json) "arguments")
   let (slots, assign, delayed) := delayedSuperArguments arm args
   return (slots, .block (before ++ assign), delayed)
