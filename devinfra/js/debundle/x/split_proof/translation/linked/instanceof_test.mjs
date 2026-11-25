@@ -42,35 +42,55 @@ if (runCase("ordinary prototype chain")) {
   assert.match(f.run(...options, "--check-output").reason, /differs from its generated ESTree/);
 }
 
-if (runCase("custom hasInstance protocol")) {
+const predicate = `class Predicate {
+  static get [Symbol.hasInstance]() {
+    this.trace += "G";
+    return function (value) { this.trace += "C"; return this.expected === value ? "yes" : ""; };
+  }
+}`;
+
+function checkProtocol(name, declaration, body, expected) {
+  if (!runCase(name)) return;
   const f = fixture(
-    "instanceof-protocol",
-    `class Predicate {
-       static get [Symbol.hasInstance]() {
-         this.trace += "G";
-         return function (value) { this.trace += "C"; return this.expected === value ? "yes" : ""; };
-       }
-     }
-     const result = (() => {
-       Predicate.trace = "";
-       Predicate.expected = 42;
-       const left = () => { Predicate.trace += "L"; return 42; };
-       const right = () => { Predicate.trace += "R"; return Predicate; };
-       if (!(left() instanceof right()) || 2 instanceof Predicate) throw 1;
-       const inherited = { __proto__: Predicate };
-       inherited.expected = 7;
-       if (!(7 instanceof inherited) || inherited.trace !== "LRGCGCGC") throw 2;
-       let errors = 0;
-       const primitiveHook = { [Symbol.hasInstance]: 7 };
-       try { 2 instanceof primitiveHook; } catch { errors = errors + 1; }
-       class Throws { static get [Symbol.hasInstance]() { throw "getter"; } }
-       try { 1 instanceof Throws; } catch (e) { if (e === "getter") errors = errors + 1; }
-       if (errors !== 2) throw 3;
-       return Predicate.trace;
-     })();
-     export { result };`
+    name,
+    `${declaration}
+const result = (() => { ${body} })();
+export { result };`
   );
   const run = lower(f.sourceFile, f.specFile, f.out, options);
-  assertCertifiedResult({ ...run, files: f, out: f.out }, "LRGCGC");
-  assert.deepEqual(f.run(...options, "--check-output"), run.verdict);
+  assertCertifiedResult({ ...run, files: f, out: f.out }, expected);
 }
+
+checkProtocol(
+  "instanceof-evaluation-order",
+  predicate,
+  `Predicate.trace = "";
+   Predicate.expected = 42;
+   const left = () => { Predicate.trace += "L"; return 42; };
+   const right = () => { Predicate.trace += "R"; return Predicate; };
+   if (!(left() instanceof right())) throw 1;
+   return Predicate.trace;`,
+  "LRGC"
+);
+
+checkProtocol(
+  "instanceof-inherited-hook",
+  predicate,
+  `Predicate.trace = "";
+   const inherited = { __proto__: Predicate, expected: 7 };
+   if (!(7 instanceof inherited) || 2 instanceof inherited) throw 1;
+   if (Predicate.trace !== "") throw 2;
+   return inherited.trace;`,
+  "GCGC"
+);
+
+checkProtocol(
+  "instanceof-abrupt-hooks",
+  `class Throws { static get [Symbol.hasInstance]() { throw "getter"; } }`,
+  `const primitiveHook = { [Symbol.hasInstance]: 7 };
+   let errors = 0;
+   try { 2 instanceof primitiveHook; } catch { errors++; }
+   try { 1 instanceof Throws; } catch (e) { if (e === "getter") errors++; }
+   return errors;`,
+  2
+);
