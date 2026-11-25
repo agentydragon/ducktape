@@ -100,3 +100,24 @@ const hidden = lower(
 ).verdict;
 assert.equal(hidden.status, "rejected");
 assert.match(hidden.reason, /linked state already exposes the region of unit 2/);
+
+// Both providers export the same names. Retargeting a relocated namespace
+// import must still fail disk verification, even with byte-identical providers.
+const nsDir = path.join(root, "static-namespace");
+const moduleText = "export let value = 1; export function read() { return this.value; }";
+const nsFiles = prepare(nsDir, {
+  sourceName: entry,
+  source:
+    'import * as ns from "./provider.mjs"; import "./other.mjs"; function sample(){return ns.read();} export {sample};',
+  provider: moduleText,
+  extras: { "other.mjs": moduleText },
+  spec: { entry, modules: { [entry]: ["#0", "#1", "#3"], [worker]: ["#2"] }, order: [worker], sequential: true },
+});
+const nsOut = path.join(nsDir, "out");
+const nsCheck = (args, scope) => lower(nsFiles.sourceFile, nsFiles.specFile, nsOut, args, scope).verdict;
+assert.equal(nsCheck(opts, "linked-structural-order").status, "certified");
+const relocated = path.join(nsOut, worker);
+const emitted = readFileSync(relocated, "utf8");
+assert.match(emitted, /provider\.mjs/);
+writeFileSync(relocated, emitted.replace("provider.mjs", "other.mjs"));
+assert.equal(nsCheck([...opts, "--check-output"], "linked-structural").status, "rejected");

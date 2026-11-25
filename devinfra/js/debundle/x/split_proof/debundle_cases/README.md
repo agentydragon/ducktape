@@ -34,13 +34,16 @@ DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mj
 ## Which accepted cases have artifact certificates?
 
 [Per-case certificate results](results/certificates.jsonl) are separate from the diagnostic report.
-Of 122 saved `agree-accept` cases, 109 certified with the structural checker, passed a fresh
+Of 122 saved `agree-accept` cases, 111 certified with the structural checker, passed a fresh
 `--check-output` on the published files, and matched the fixture's expected stdout and exit status
 in Node for both original and emitted entry. With `privateEntryBody: true`, the planner may split the declaration prefix of the entry into
 a private implementation module to keep glue exports off the public entry namespace. The
 export-alias collision case exercises this layout. For nested entries with fixed providers,
 the checker sees their original routes in a deployment rooted at the fixture directory.
-The report records the synthetic deployment origin; emitted entries run as Node ES modules. These certificates request **normal completion**
+For a retained unit that uses a namespace import, the checker requires a fixed provider
+with inline named exports and checks the cells of every export. The emitted JavaScript
+keeps its namespace receiver: the delegator fixture increments an exported binding and
+reads its new value through `this.value`. The report records the synthetic deployment origin; emitted entries run as Node ES modules. These certificates request **normal completion**
 under the default host profile; no fixture-specific host assumptions are supplied. This checks the
 diagnostic runner's stdout observation, not every Rust export or probe assertion.
 
@@ -57,12 +60,10 @@ CLI. It tries the structural checker first and the default checker on emission r
 tree that fails recheck is an error. Review a new census before updating the report: keep existing
 successes and add newly certified cases.
 
-### What to do about the 13 refusals
+### What to do about the 11 refusals
 
 These are first blockers, not claims that the splits are safe:
 
-- **Namespace imports (2):** the `member_of_module` cases use `import * as`. Model namespace
-  properties as live bindings to the provider; cover a changing export before accepting these cases.
 - **Referrer-sensitive code (3):** dynamic import, `import.meta.url`, and URL rebasing need the
   original referrer. Replay with an explicit deployment origin and test the resolved URL before
   moving a unit across modules.

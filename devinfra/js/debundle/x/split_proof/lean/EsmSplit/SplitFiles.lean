@@ -85,14 +85,14 @@ def loadProviders (entry : String) (originals : Std.HashMap String Json)
     for (name, ast) in frontier do
       for node in ← IO.ofExcept (ast.getObjValAs? (Array Json) "body") do
         if (node.getObjValAs? String "type").toOption == some "ImportDeclaration" then
-          let imp ← IO.ofExcept (CoreJS.ModuleInput.importDecl name node)
-          unless imp.source.endsWith ".mjs" || imp.source.endsWith ".js" do
-            throw (IO.userError s!"expected a JavaScript module dependency, got {imp.source}")
-          if !allowEntryImport && imp.source == entry then
+          let source ← IO.ofExcept (CoreJS.ModuleInput.importSource name node)
+          unless source.endsWith ".mjs" || source.endsWith ".js" do
+            throw (IO.userError s!"expected a JavaScript module dependency, got {source}")
+          if !allowEntryImport && source == entry then
             throw (IO.userError s!"unsupported request back to the source entry: {entry}")
-          unless seen.contains imp.source do
-            seen := seen.insert imp.source
-            requests := requests.push imp.source
+          unless seen.contains source do
+            seen := seen.insert source
+            requests := requests.push source
     if requests.isEmpty then break
     let missing := requests.filter (!originals.contains ·)
     let parsed ← if missing.isEmpty then pure (Json.mkObj []) else do

@@ -157,7 +157,7 @@ the existing local host-binding proof.
 
 The [ownership subset](../../../../excalidraw/deployment_smoke_subset.json)
 selects the main renderer and 365 editor bindings in 45 upstream modules.
-Rust's `spec resolve-placements` solves selectors across both chunks and exports
+The standalone Rust placement resolver solves selectors across both chunks and exports
 the canonical and selected placements. The smoke verifies the source hashes,
 checks each selected owner against the canonical result, and retains unselected
 units in their original entries. See the [recovery notes](recovery.md) for
@@ -167,6 +167,14 @@ for choosing an owner from the pinned upstream source.
 ```sh
 p=//devinfra/js/debundle/x/split_proof/integration/excalidraw
 bbr test --config=ci "${p}:excalidraw_certified_browser_smoke"
+```
+
+To check the boundary in the build graph, query the smoke target's dependencies.
+Of these targets, only the placement resolver should appear:
+
+```sh
+d=//devinfra/js/debundle
+bazel query "deps(${p}:excalidraw_certified_browser_smoke) intersect set(${d}:debundle_resolve_placement ${d}:gate ${d}:lowering ${d}:pipeline ${d}/excalidraw:debundle)"
 ```
 
 Lean emits both splits and the fixed static providers as one deployment rooted

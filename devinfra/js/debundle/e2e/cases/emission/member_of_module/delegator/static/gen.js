@@ -1,3 +1,5 @@
+export let value = 6;
 export function next() {
-  return 7;
+  value++;
+  return this.value;
 }
