@@ -300,6 +300,7 @@ js_test(
 js_test(
     name = "certified_split_test",
     data = [
+        ":harness",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
         "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
@@ -307,6 +308,7 @@ js_test(
     ],
     entry_point = "certified_split_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    shard_count = 6,
 )
 
 js_library(
