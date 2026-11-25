@@ -409,7 +409,7 @@ impl ArtifactIndexes {
                 bail!("Duplicate chunk id {chunk_name} at index {index}");
             }
             let chunk = &chunk_artifact.js;
-            if let Some(entry) = chunk_entry_path(chunk_artifact) {
+            if let Some(entry) = chunk_artifact.entry_path() {
                 entry_files.insert(chunk_id, entry.to_string());
             }
             let source_path = chunk_artifact.analysis.source_path.clone();
@@ -620,20 +620,17 @@ pub fn load_js_chunks(input_root: &Path, js_list_path: &Path) -> Result<LoadedJs
     })
 }
 
-pub fn get_chunk_entry_path(artifact: &ChunkBundle, chunk_id: ChunkId) -> Option<String> {
-    chunk_entry_path(artifact.find_chunk(chunk_id)?).map(str::to_string)
-}
-
-fn chunk_entry_path(chunk: &ChunkArtifact) -> Option<&str> {
-    select_entry_file(
-        &chunk.js.entry_file,
-        &chunk.analysis.entry_file,
-        chunk
-            .js
-            .files
-            .iter()
-            .map(|file| (file.path.as_str(), file.metadata.role)),
-    )
+impl ChunkArtifact {
+    pub fn entry_path(&self) -> Option<&str> {
+        select_entry_file(
+            &self.js.entry_file,
+            &self.analysis.entry_file,
+            self.js
+                .files
+                .iter()
+                .map(|file| (file.path.as_str(), file.metadata.role)),
+        )
+    }
 }
 
 /// Prefer a present recorded entry, then the analyzed entry, then the first

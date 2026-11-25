@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use super::paths::normalize_module_path;
 
 use super::indexed_files::IndexedFiles;
-use super::{ArtifactIndexes, ChunkBundle, JsFile, get_chunk_entry_path};
+use super::{ArtifactIndexes, ChunkBundle, JsFile};
 
 #[derive(Clone)]
 pub struct SourceProgram {
@@ -98,21 +98,19 @@ pub fn chunk_runtime_entry<'a>(
         .chunk_table
         .get(chunk_id)
         .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-    let target_file = file
-        .map(normalize_module_path)
-        .transpose()?
-        .or_else(|| get_chunk_entry_path(artifact, chunk_id_interned))
-        .with_context(|| {
-            format!(
-                "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
-            )
-        })?;
-    let runtime_file = artifact
-        .js_chunk(chunk_id_interned)?
-        .get_file(&target_file)
-        .with_context(|| {
-            format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
-        })?;
+    let runtime_file = if let Some(file) = file {
+        let path = normalize_module_path(file)?;
+        artifact
+            .js_chunk(chunk_id_interned)?
+            .get_file(&path)
+            .with_context(|| {
+                format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
+            })?
+    } else {
+        artifact.find_chunk(chunk_id_interned)
+            .and_then(|chunk| chunk.js.get_file(chunk.entry_path()?))
+            .with_context(|| format!("materialize_logical_modules could not determine entry file for chunk: {chunk_id}"))?
+    };
     let runtime_ast = runtime_file.ast().with_context(|| {
         format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
     })?;
