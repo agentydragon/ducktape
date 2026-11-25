@@ -583,6 +583,12 @@
       "module": "packages/math/triangle",
       "bindings": ["triangleIncludesPoint"],
       "anonymous_statements": []
+    },
+    {
+      "chunk": "main",
+      "module": "packages/excalidraw/renderer/interactivescene",
+      "bindings": ["strokeEllipseWithRotation"],
+      "anonymous_statements": []
     }
   ]
 }

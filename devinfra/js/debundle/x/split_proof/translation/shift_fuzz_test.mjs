@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dump as dumpSource } from "./parser.mjs";
 import { shiftCandidate } from "./shift_candidate.mjs";
 import { walk } from "./syntax_inventory.mjs";
+import { writeDeployment } from "./testing/deployment_manifest.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
 
 // Named source-syntax families from the input requirements. Counts describe
@@ -291,7 +292,7 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   writeFileSync(path.join(dir, "spec.json"), JSON.stringify(spec));
   const emitter = spawnSync(
     process.env.LOWERSPLIT,
-    ["--diagnostic", path.join(dir, "ast.json"), path.join(dir, "spec.json"), out],
+    ["--diagnostic", writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), out), out],
     {
       encoding: "utf8",
       // A cold Lean process loads the compiler before the splitter can read the case.

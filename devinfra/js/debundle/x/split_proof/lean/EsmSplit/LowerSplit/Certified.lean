@@ -1,9 +1,11 @@
 import EsmSplit.Cli
 import EsmSplit.CoreJS.Declaration.Artifacts
+import EsmSplit.CoreJS.JointStatic
 import EsmSplit.CoreJS.LinkedCertificate
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.StructuralCertificate
+import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
 import EsmSplit.ReadDeployment
 
@@ -103,9 +105,8 @@ private structure CertifiedOptions where
   deploymentOrigin : Option String
   checkOnly : Bool
   browserOptions : CoreJS.ModuleLocation.BrowserOptions
-  resolvedChunk : Option String
 
-private def parseCertifiedOptions (label : String) (args : List String) : IO (SplitPaths × CertifiedOptions) := do
+private def parseCertifiedOptions (label : String) (args : List String) : IO (System.FilePath × System.FilePath × CertifiedOptions) := do
   let request ← match label with
     | "all-outcomes" => pure Guarantee.allOutcomes
     | "normal-completion" => pure Guarantee.normalCompletion
@@ -136,37 +137,33 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
   let emptyMap := mapProfile == some "empty@1"
   if mapProfile.isSome && !(emptyMap && deploymentOrigin.isSome && profile == .browserPage) then
     throw (IO.userError "empty@1 requires a browser-page profile and deployment origin")
-  let (resolvedChunk, args) := EsmSplit.takeFlag "--resolved-placement" args
   let checkOnly := args.contains "--check-output"
   let args := args.filter (· != "--check-output")
-  let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1] [--deployment-import-map empty@1]]]; use --diagnostic for plan and preview options"
-  let [bundle, spec, out] := args | throw usage
+  let usage := IO.userError "usage: lowersplit <deployment.json> <outdir> [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1] [--deployment-import-map empty@1]]]; use --diagnostic for plan and preview options"
+  let [manifest, out] := args | throw usage
   if args.any (·.startsWith "--") then throw usage
   let out ← IO.ofExcept (outputDirectory out)
-  return (⟨bundle, spec, out⟩, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, browserOptions := { nativeRecord, emptyMap }, resolvedChunk })
+  return (manifest, out, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, browserOptions := { nativeRecord, emptyMap } })
 
-private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work : System.FilePath) : IO UInt32 := do
-  let { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, browserOptions, resolvedChunk } := options
-  let { bundle := bundlePath, spec := specPath, out } := paths
-  let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
-  let resolved ← resolvedChunk.mapM fun chunk => do
-    let j ← readJson specPath
-    let digest ← IO.ofExcept (j.getObjValAs? String "source_sha256")
-    return (chunk, j, digest)
-  let ⟨program, source, input⟩ ← readBundle bundlePath work true timings (resolved.map (·.2.2))
+private structure Part where
+  original : Json
+  bundle : Bundle
+  spec : Spec
+  plan : Plan
+  output : OutputPart
+
+private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : System.FilePath)
+    (profile : CoreJS.HostProfile) (sourcePath : String) (timings : Bool)
+    (declarations : Option (List CoreJS.DeclarationGroup)) : IO Part := do
+  let { program, source, input } := input
   let asts ← IO.ofExcept (ESTreeUnits.checkedNodes program source)
   if let some reason := asts.findSome? unsupportedStatement then throw (IO.userError reason)
   let units := Effects.footprintUnits asts
-  let declarations := (CoreJS.DeclarationInput.decode program).toOption
   let B ← if declarations.isSome then do
       let (fps, _) ← analyzeFootprints asts units {} timings
       pure (bundleOfFootprints asts fps #[])
     else timePhase timings "layout_scan" fun _ => IO.lazyPure fun _ => linkedLayoutBundle asts units
-  let S ← match resolved with
-    | none => loadSpec specPath
-    | some (chunk, j, _) => do
-      let some entry := bundlePath.fileName | throw (IO.userError "source is missing its entry filename")
-      IO.ofExcept (parseResolvedSpec j chunk entry asts.size)
+  let S ← IO.ofExcept (chunk.spec asts.size)
   for name in S.entry :: S.modules.map Prod.fst do
     let moduleExtension := name.endsWith ".mjs" || (profile == .browserPage && name.endsWith ".js")
     unless CoreJS.ModuleInput.supportedFilename name && moduleExtension do
@@ -174,6 +171,54 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
   for (ast, i) in asts.zipIdx do
     if let some reason := entryPlacementProblem B S ast i then throw (IO.userError reason)
   let P ← planSplit B S timings
+  let programs ← timePhase timings "output_ast" fun _ =>
+    IO.ofExcept (ESTreeEmit.programs asts B P source sourcePath)
+  return { original := program, bundle := B, spec := S, plan := P, output := { programs, source, input, work } }
+
+private def emitStructural (options : CertifiedOptions) (used : List CoreJS.StableIntrinsic)
+    (proof : CoreJS.LinkedBehavior.StructuralProof) : IO UInt32 := do
+  let scope := match proof with
+    | .preservedOrder => "linked-structural-order"
+    | .singlePivot => "linked-structural-pivot"
+    | .multiplePivots => "linked-structural-moves"
+  let assumptions :=
+    ["Retained source units use the same capability-closed opaque world in both layouts."] ++
+    (if options.browserOptions.nativeRecord then [s!"{CoreJS.NativeRecord.preset}: Initializing retained module metadata is unobservable except for a fresh null-prototype object with only native writable, enumerable, configurable url and resolve data properties. Each per-record resolver uses the unchanged module URL and static resolution context."] else []) ++
+    (if options.browserOptions.emptyMap then ["empty@1: The browser's import map remains empty and the native module resolver is unchanged. Retained bare imports reject their promises on resolution failure, with ordinary browser promise scheduling and rejection reporting."] else []) ++
+    used.map (·.assumption) ++
+    (options.deploymentOrigin.toList.flatMap fun origin => [
+      s!"The static deployment at {origin} overlays only the planned module paths.",
+      "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
+    ])
+  emitVerdict options.request.label (.ok .normalCompletion) scope
+    (profileFields options.profile ++ [("assumptions", toJson assumptions)])
+
+private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
+  let ok ← timePhase timings "plan_checks" fun _ => checkLayout part.bundle part.plan (some part.spec) false
+  unless ok do
+    throw (IO.userError "source placement or module linkage checks failed")
+
+/-- Preserve singleton declarations and executable linked certificates,
+with the original bundle at the virtual root for authored inputs. -/
+private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
+    (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
+  let request := options.request
+  let profile := options.profile
+  let intrinsics := options.intrinsics
+  let structural := options.structural
+  let checkOnly := options.checkOnly
+  let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
+  let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
+  let part ← prepare chunk src work profile "bundle.mjs" timings declarations
+  let { original := program, bundle := B, spec := S, plan := P, output } := part
+  let verify {α : Type} (providers : Json) (check : Json → IO (Except CertificationRefusal α)) :=
+    certifyOutput [output] providers out work checkOnly timings check
+  let providers := fun _ => timePhase timings "provider_loading" fun _ => do
+    let (entry, root) ← if javascriptSource chunk.source then
+        let path ← IO.FS.realPath chunk.source
+        pure (path.fileName.getD "bundle.mjs", path.parent)
+      else pure ("bundle.mjs", none)
+    Json.mkObj <$> loadProviders entry (Std.HashMap.ofList [(entry, program)]) root work (allowEntryImport := false)
   let declaration := if structural then none else declarations.bind fun groups =>
     CoreJS.DeclarationArtifacts.prepare? program (CoreJS.DeclarationProgram.statements groups) B S P
   if let some prepared := declaration then
@@ -181,7 +226,7 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
     try
       if request == .allOutcomes && level != .allOutcomes then
         throw (IO.userError "the checked reorder proves only normal-completion")
-      let checked ← certifyOutput (Json.mkObj []) B P out work input checkOnly timings asts source fun files => do
+      let checked ← verify (Json.mkObj []) fun files => do
         timePhase timings "closed_declarations" fun _ => do
           let _ ← IO.ofExcept (prepared.certify files)
           pure (.ok ())
@@ -189,46 +234,26 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
       | .ok _ => return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
       | .error refusal => return ← emitRefusal request.label refusal "closed-declarations"
     catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
-  let layoutOk ← timePhase timings "plan_checks" fun _ => checkLayout B P (some S) false
   if structural then
     try
       unless request == .normalCompletion do
         throw (IO.userError "the structural schedule certificate proves only normal-completion")
-      unless layoutOk do
-        throw (IO.userError "source placement or module linkage checks failed")
-      let providers ← timePhase timings "provider_loading" fun _ => loadProviders program bundlePath work
-      let deployment ← deploymentOrigin.mapM fun origin =>
-        timePhase timings "deployment_loading" fun _ => readDeployment program providers bundlePath work origin P browserOptions
-      let checked ← certifyOutput providers B P out work input checkOnly timings asts source fun files => do
+      checkPartLayout part timings
+      let shared ← providers ()
+      let checked ← verify shared fun files => do
         timePhase timings "structural_certificate" fun _ => do
           let result ← IO.lazyPure fun _ =>
-            CoreJS.LinkedBehavior.certifyStructuralASTs profile intrinsics program providers files P deployment
+            CoreJS.LinkedBehavior.certifyStructuralASTs profile intrinsics program shared files P none
           let value ← IO.ofExcept (result.map fun r => (r.1, r.2.1))
           pure (.ok value)
-      let (used, proof) ← match checked with
-        | .ok value => pure value
-        | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
-      let scope := match proof with
-        | .preservedOrder => "linked-structural-order"
-        | .singlePivot => "linked-structural-pivot"
-        | .multiplePivots => "linked-structural-moves"
-      let assumptions :=
-        ["Retained source units use the same capability-closed opaque world in both layouts."] ++
-        (if browserOptions.nativeRecord then [s!"{CoreJS.NativeRecord.preset}: Initializing the retained entry's metadata is unobservable except for a fresh null-prototype object with only native writable, enumerable, configurable url and resolve data properties. Its per-record resolver uses the unchanged entry URL and static resolution context."] else []) ++
-        (if browserOptions.emptyMap then ["empty@1: The browser's import map remains empty and the native module resolver is unchanged. Retained bare imports reject their promises on resolution failure, with ordinary browser promise scheduling and rejection reporting."] else []) ++
-        used.map (·.assumption) ++
-        (deploymentOrigin.toList.flatMap fun origin => [
-          s!"The static deployment at {origin} overlays only the planned module paths.",
-          "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
-        ])
-      return ← emitVerdict request.label (.ok .normalCompletion) scope
-        (profileFields profile ++ [("assumptions", toJson assumptions)])
+      match checked with
+      | .ok (used, proof) => return ← emitStructural options used proof
+      | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
   try
-    unless layoutOk do throw (IO.userError "source placement or module linkage checks failed")
-    let providers ← timePhase timings "provider_loading" fun _ => do
-      loadProviders program bundlePath work
-    let checked ← certifyOutput providers B P out work input checkOnly timings asts source fun files => do
+    checkPartLayout part timings
+    let providers ← providers ()
+    let checked ← verify providers fun files => do
       let decoded ← timePhase timings "linked_lowering" fun _ =>
         IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program providers files P profile
       match decoded with
@@ -267,12 +292,76 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 
+/-- Load and check the actual static graph, then certify the union of its
+changed parts and the byte-identical modules shared by both schedules. -/
+private def runDeployment (manifest : DeploymentManifest) (out work : System.FilePath)
+    (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
+  let { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, browserOptions } := options
+  try
+    unless structural do throw (IO.userError "a deployment with multiple chunks requires --structural")
+    unless request == .normalCompletion do
+      throw (IO.userError "the structural schedule certificate proves only normal-completion")
+    let root ← deploymentRoot manifest
+    let mut originals := #[]
+    let mut parts := #[]
+    for (chunk, index) in manifest.chunks.zipIdx do
+      let dir := work / toString index
+      IO.FS.createDir dir
+      match chunk.placement with
+      | .fixed =>
+        originals := originals.push (chunk.path, ← loadProgram chunk.source dir true)
+      | _ =>
+        let source ← readBundle chunk.source dir true timings (← IO.ofExcept chunk.sourceHash)
+        let part ← prepare chunk source dir profile chunk.path timings none
+        checkPartLayout part timings
+        parts := parts.push part
+        originals := originals.push (chunk.path, source.program)
+    if parts.isEmpty then throw (IO.userError "expected at least one chunk placement")
+    let paths := parts.toList.flatMap fun part =>
+      (part.plan.mods.map (·.name)).filter (· != part.plan.entry)
+    checkNewRoutes root work paths
+    let supplied := Std.HashMap.ofList originals.toList
+    let providers ← timePhase timings "provider_loading" fun _ =>
+      loadProviders manifest.entry supplied (some root) work
+    let reachable := Std.HashSet.ofList (manifest.entry :: providers.map Prod.fst)
+    for (name, _) in originals do
+      unless reachable.contains name do throw (IO.userError s!"original chunk is unreachable from the entry: {name}")
+    let some main := supplied[manifest.entry]? | throw (IO.userError "missing deployment entry")
+    let linked := (manifest.entry, main) :: providers
+    let changed := Std.HashSet.ofList (parts.toList.map (·.plan.entry))
+    let shared := Json.mkObj (linked.filter fun (name, _) => !changed.contains name)
+    let deployment ← deploymentOrigin.mapM fun origin =>
+      timePhase timings "deployment_loading" fun _ =>
+        readDeployment manifest.entry linked root work origin browserOptions
+    let checked ← certifyOutput (parts.toList.map (·.output)) shared out work checkOnly timings fun files => do
+      let actual ← IO.ofExcept <| parts.toList.mapM fun part => do
+        let outputs ← part.plan.mods.mapM fun m => do
+          return (m.name, ← files.getObjVal? m.name)
+        pure ({ source := part.original, files := Json.mkObj outputs, plan := part.plan } : CoreJS.LinkedInput.StaticSplit)
+      timePhase timings "structural_certificate" fun _ => do
+        let result ← IO.lazyPure fun _ =>
+          match deployment with
+          | none =>
+            (CoreJS.LinkedBehavior.certifyStaticDeployment manifest.entry actual shared profile intrinsics).map fun r => (r.1, r.2.1)
+          | some inputs =>
+            (CoreJS.LinkedBehavior.certifyDeployment manifest.entry actual shared inputs profile intrinsics).map fun r => (r.1, r.2.1)
+        pure (.ok (← IO.ofExcept result))
+    match checked with
+    | .ok (used, proof) => emitStructural options used proof
+    | .error refusal => emitRefusal request.label refusal "linked-structural"
+  catch e => emitVerdict request.label (.error e.toString) "linked-structural"
+
 def certified (args : List String) : IO UInt32 := do
   let (level?, args) := EsmSplit.takeFlag "--require" args
   let label := level?.getD Guarantee.normalCompletion.label
   try
-    let (paths, options) ← parseCertifiedOptions label args
-    IO.FS.withTempDir fun work => runCertified paths options work
+    let (manifestPath, out, options) ← parseCertifiedOptions label args
+    let manifest ← readDeploymentManifest manifestPath
+    let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
+    IO.FS.withTempDir fun work =>
+      match manifest.chunks, options.deploymentOrigin with
+      | [chunk], none => runSingleton chunk out work options timings
+      | _, _ => runDeployment manifest out work options timings
   catch e => emitVerdict label (.error e.toString)
 
 end EsmSplit.LowerSplit

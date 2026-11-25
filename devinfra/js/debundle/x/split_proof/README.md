@@ -46,10 +46,10 @@ For a closed module containing only identifier declarations, the checker also ha
 
 ## Request a CoreJS guarantee
 
-Pass the source module, placement spec and a fresh output directory to the normal splitter command. Its default request is `normal-completion`; an order-preserving split may prove the stronger `all-outcomes` guarantee too.
+Pass the deployment manifest and a fresh output directory to the splitter. Its default request is `normal-completion`; an order-preserving split may prove the stronger `all-outcomes` guarantee too.
 
 ```sh
-bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- bundle.mjs spec.json output
+bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- deployment.json output
 ```
 
 An ordinary call to ambient `Symbol.for` can be retained in deferred code without a host assumption. If initialization reaches the callee, the model reports an unknown result before evaluating the arguments.
@@ -102,16 +102,27 @@ property `defineProperty` must return the same method reference. Both reads must
 state. Deployments that replace the method or install an observable getter can violate the premise.
 The contract grants no behavior for invoking the method and does not require browser globals.
 
-Given the JSON from `debundle spec resolve-placement`, pass it directly to the checker:
+Use one deployment manifest for the original loader graph. Each changed chunk
+embeds one record from `debundle spec resolve-placements`; a fixed chunk has
+only its original route and source. Resolve physical source paths relative to
+the manifest. The following shell assembles a manifest for two changed chunks
+from a batch export:
 
 ```sh
-lowersplit app.mjs resolved.json out --resolved-placement app --structural
-lowersplit app.mjs resolved.json out --resolved-placement app --structural --check-output
+jq '{entry:"main.js", chunks:[.placements[] | {
+  path:(.chunk_id + ".js"), source:("bundle/" + .chunk_id + ".js"), placement:.
+}]}' resolved.json > deployment.json
+printf '%s\n' '{"profile":"browser-page"}' > browser.json
+lowersplit deployment.json out --structural --host-contract browser.json --deployment-origin https://example.test
+lowersplit deployment.json out --structural --host-contract browser.json --deployment-origin https://example.test --check-output
 ```
 
-Use the resolver's chunk ID after `--resolved-placement`. The checker verifies the SHA-256 of the
-bytes it parses, requires one owner row per source unit, and keeps unclaimed units in the original
-entry filename. Each selected owner gets its own `.mjs` file. The readable member names are metadata.
+Use the original module routes in `path`, including hashed filenames when the
+loader uses them. Multi-chunk structural checks read the routes from one original asset tree. The checker verifies each source digest and ordinal, keeps
+unclaimed units at their original routes, and checks one staged tree against
+the linked execution from `entry`. Each selected owner gets a distinct `.mjs`
+route. A fixture can supply `spec` in place of `placement` to use a handcrafted
+positional or binding-name plan.
 
 The untrusted planner derives module requests from the bindings each owner needs. Capturing a
 binding can require an import without reading its value at initialization. The authored priority
@@ -147,15 +158,15 @@ A regex literal can move as a fresh allocation, including as the value of a name
 
 Both proofs establish equality of normally terminating CoreJS states. Retained opaque statements use the same world on both sides, with access through their checked live cells and object handles. For a retained generator declaration, the structural checker uses the linked generator model at instantiation, including its distinct prototype and captured cells. This does not model generator execution or resumption. The verdict records the assumptions for interpreting the JavaScript artifacts.
 
-[Checking two static splits](docs/joint_static.md) describes the scoped joint checker and the additional deployment premises needed for a main/editor split.
+[Checking an assembled deployment](docs/joint_static.md) describes the scoped joint checker and the additional deployment premises needed for a main/editor split.
 
 A static browser deployment with retained `import.meta.url` and literal relative `import()` can supply `--deployment-origin ORIGIN`. The source entry keeps its effective URL, the split overlays its planned file paths, and the other assets keep their bytes and URLs. The checker parses the actual lazy-module dependency closure, accounts for its imports from linked modules, and checks the live cells those imports resolve to. The host uses native module caching and promise scheduling. Source positions and fetch timing are outside the modeled observations. Pass the same options to `--check-output` to repeat the proof after reparsing the emitted JavaScript.
 
-With the `browser-page` host profile, `--deployment-preset native-browser-record@1` adds an **initialization** premise to `--deployment-origin`. Each execution starts the retained entry's metadata with the native browser shape: a fresh null-prototype object with writable, enumerable, configurable own `url` and `resolve` data properties. The per-record resolver uses the original entry URL and the same static resolution context. Creating these objects has no observable side effect. A loader that preinstalls an `env` getter does not satisfy this premise; the splitter does not detect a lying host declaration.
+With the `browser-page` host profile, `--deployment-preset native-browser-record@1` adds an **initialization** premise to `--deployment-origin`. Each original referrer's metadata starts with the native browser shape: a fresh null-prototype object with writable, enumerable, configurable own `url` and `resolve` data properties. The per-record resolver uses its original referrer URL and the same static resolution context. Creating these objects has no observable side effect. A loader that preinstalls an `env` getter does not satisfy this premise; the splitter does not detect a lying host declaration.
 
 For a page whose import map remains empty, `--deployment-import-map empty@1` recognizes literal, unmapped package requests in retained units, for example `import("@scope/diagram")`. This is a deployment premise, including when a deferred callback runs. It requires the browser profile and checked deployment origin. The location checker records a rejected import: native resolution fails before there is a target URL, fetch, or module namespace. The original import stays in the opaque code. Each call still returns a promise, including the browser's rejection, reaction jobs, and unhandled-rejection reporting. Use the same flag for disk verification. A page that installs a map later, or uses a custom resolver, does not meet this premise. Computed requests, URL schemes and absolute paths do not use this rule.
 
-[Lean's initializer](lean/EsmSplit/CoreJS/NativeRecord.lean) allocates that receiver and its nonconstructible resolver in a private model dependency before original module bodies run. The entry captures its immutable binding. The resolver runs in the common opaque world with its actual receiver and arguments. The record's properties can subsequently change; getter calls and objects reachable from them remain subject to the ordinary structural frame checks. All metadata sites, including deferred ones, must stay in the checked entry. The model dependency is never emitted. Pass the same preset to `--check-output`; without it the original deployment checks still apply.
+[Lean's initializer](lean/EsmSplit/CoreJS/NativeRecord.lean) allocates that receiver and its nonconstructible resolver in a private model dependency before original module bodies run. Each referrer captures its immutable binding. The resolver runs in the common opaque world with its actual receiver and arguments. The record's properties can subsequently change; getter calls and objects reachable from them remain subject to the ordinary structural frame checks. All metadata sites, including deferred ones, must stay at their original referrer. The model dependency is never emitted. Pass the same preset to `--check-output`; without it the original deployment checks still apply.
 
 The verdict's `scope` identifies which theorem the run established. Each theorem is about the CoreJS programs that Lean lowers from the original annotated ESTree and the [generated module ASTs](lean/EsmSplit/ESTreeEmit.lean):
 
@@ -163,10 +174,10 @@ The verdict's `scope` identifies which theorem the run established. Each theorem
 - [Structural order and moves](lean/EsmSplit/CoreJS/StructuralCertificate.lean): `certifyStructuralASTs` is a proven checker that runs as compiled code. It checks both linked schedules. Its result proves that each entry exports the same live cells and that either graph reaches a successful final state exactly when the other does, under the opaque-world and deployment interpretation above.
 - [Linked execution](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean): each run writes a Lean proof about the two lowered programs, and the kernel checks it in a separate Lean process. `certifyASTs` then runs as compiled code and checks that the supplied ASTs lower to those programs. Both initialize normally in the same state for every world satisfying the reported host premises and export the same live cells.
 
-[Publication](lean/EsmSplit/SplitFiles.lean) passes the same AST map to the chosen check and then to the printer. The theorems start and end at CoreJS. Interpreting a verdict as a statement about JavaScript files relies on faithful parsing and scope annotation, the Lean lowering from annotated ESTree to CoreJS, printing, file IO, the CoreJS model of the supported syntax, and Lean's compiler for the checks that run as compiled code. The lowering uses `partial` definitions, which the kernel cannot unfold, so running it establishes its result. `--check-output` [reparses an existing directory](translation/module_io.mjs), compares the module set, syntax and callable spelling, requires copied providers to match the source text, and checks the certificate against the expected ASTs. It can accept regrouped declarations whose ordered units still match. The [convergence plan](PLAN.md#convergence) removes the printer from this list.
+[Publication](lean/EsmSplit/SplitFiles.lean) prints to staging, reparses the files, and checks their module set, syntax, and callable spelling. It requires copied providers to match the source text. The certificate consumes the annotated ASTs from those disk reads. `--check-output` repeats the same checks on an existing directory, including for regrouped declarations with the same ordered units. The theorems relate CoreJS programs. Their application to the files relies on the parser and scope annotator, the lowering and CoreJS model, and Lean's compiler and file IO.
 
 For a module that calls functions or imports named bindings from relative JavaScript files, use
-the normal three-positional command with the original source path. The splitter parses
+the manifest command with the same original source path. The splitter parses
 reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
 Lean lowers the original and generated module ASTs to CoreJS, checking statement placement, live binding addresses and the entry’s exports. The kernel checks a theorem about the two concrete CoreJS programs. The generated certificate then runs a proof-producing Lean check on the same in-memory AST data and plan to establish that they lower to those particular programs, including their deferred closure bodies. Both programs must initialize normally in the same final state for every modeled world satisfying the reported host premises.
 
@@ -319,7 +330,7 @@ Compare the same fixture, proof mode and runner across revisions. Record peak me
 
 ### Inspect an uncertified preview
 
-`lowersplit --diagnostic bundle.mjs spec.json output` runs the structural checks and prints model diagnostics. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
+`lowersplit --diagnostic deployment.json output` runs the structural checks and prints model diagnostics. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
 
 ## The example
 

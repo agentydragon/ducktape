@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { dump } from "../parser.mjs";
@@ -32,7 +32,7 @@ function split(entry, owner, owners, inputDir = dir, preview = false) {
   const spec = path.join(root, chunk + "-" + owner + ".json");
   writeFileSync(spec, JSON.stringify(placement));
   const out = spec + ".out";
-  const opts = ["--structural", "--resolved-placement", chunk];
+  const opts = ["--structural"];
   if (preview) {
     const modules = { [entry]: [], [owner + ".mjs"]: [] };
     for (const row of placement.units) modules[row.owner === null ? entry : owner + ".mjs"].push("#" + row.ordinal);
@@ -200,3 +200,64 @@ for (const directory of [tagDir, tagOutput]) {
 const tagged = check(tagApp, tagProvider, tagOutput);
 assert.equal(tagged.status, 0, tagged.stderr);
 assert.equal(tagged.stdout.trim(), "certified");
+
+// An unchanged root observes all three changed providers in one initialization.
+{
+  const original = path.join(root, "three-providers");
+  mkdirSync(original);
+  const entry = "app.mjs";
+  const providers = ["first", "second", "third"];
+  const source = providers
+    .map((name) => `import { value as ${name} } from "./${name}.mjs";`)
+    .concat("export const total = first + second + third;")
+    .join("\n");
+  writeFileSync(path.join(original, entry), source);
+  const chunks = [{ path: entry, source: entry }];
+  for (const [i, name] of providers.entries()) {
+    const route = name + ".mjs";
+    const owner = name + "-body";
+    const bytes = `const value = ${i + 1}; export { value };`;
+    writeFileSync(path.join(original, route), bytes);
+    chunks.push({
+      path: route,
+      source: route,
+      placement: {
+        chunk_id: name,
+        source_sha256: createHash("sha256").update(bytes).digest("hex"),
+        import_order: [owner],
+        units: [
+          { ordinal: 0, owner },
+          { ordinal: 1, owner: null },
+        ],
+      },
+    });
+  }
+  const manifest = path.join(original, "deployment.json");
+  const out = path.join(root, "three-providers-out");
+  writeFileSync(manifest, JSON.stringify({ entry, chunks }));
+  const run = (target, ...args) =>
+    spawnSync(
+      process.env.LOWERSPLIT,
+      [manifest, target, "--structural", "--deployment-origin", "https://deployment.test", ...args],
+      { encoding: "utf8" }
+    );
+  const emitted = run(out);
+  assert.equal(emitted.status, 0, emitted.stdout + emitted.stderr);
+  assert.equal((await import(pathToFileURL(path.join(out, entry)))).total, 6);
+  const checked = run(out, "--check-output");
+  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
+  assert.deepEqual(JSON.parse(checked.stdout), JSON.parse(emitted.stdout));
+
+  const third = path.join(out, "third-body.mjs");
+  writeFileSync(third, readFileSync(third, "utf8").replace("= 3", "= 4"));
+  const tampered = run(out, "--check-output");
+  assert.equal(tampered.status, 1, tampered.stdout + tampered.stderr);
+  assert.equal(JSON.parse(tampered.stdout).status, "rejected");
+
+  writeFileSync(path.join(original, "second-body.mjs"), "export const existing = 20;");
+  const collisionPath = path.join(root, "collision-out");
+  const collision = run(collisionPath);
+  assert.equal(collision.status, 1, collision.stdout + collision.stderr);
+  assert.match(JSON.parse(collision.stdout).reason, /output path already exists: second-body\.mjs/);
+  assert(!existsSync(collisionPath));
+}

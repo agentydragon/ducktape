@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { acorn, dump } from "./parser.mjs";
 import { assertSourceUnitsReparse } from "./testing/ast_assertions.mjs";
+import { writeDeployment } from "./testing/deployment_manifest.mjs";
 
 const temp = process.env.TEST_TMPDIR;
 assert(temp, "TEST_TMPDIR is required");
@@ -72,8 +73,7 @@ function split(name, { code, outside = {}, modules, force = false, spec = {} }) 
     process.env.LOWERSPLIT,
     [
       "--diagnostic",
-      path.join(dir, "ast.json"),
-      path.join(dir, "spec.json"),
+      writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir),
       dir,
       "--plan",
       path.join(dir, "plan.json"),

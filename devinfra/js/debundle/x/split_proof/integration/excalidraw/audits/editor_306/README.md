@@ -64,9 +64,11 @@ valid deployment origin for that static tree and the same host contract:
 
 ```sh
 echo '{"profile":"browser-page","stableIntrinsicValues":["Math.PI@1"]}' > host.json
-lowersplit "$source" proposal.json out --resolved-placement editor --structural \
+jq --arg path "$(basename "$source")" --arg source "$source" \
+  '{entry:$path, chunks:[{path:$path, source:$source, placement:.}]}' proposal.json > deployment.json
+lowersplit deployment.json out --structural \
   --require normal-completion --host-contract host.json --deployment-origin "$origin"
-lowersplit "$source" proposal.json out --resolved-placement editor --structural \
+lowersplit deployment.json out --structural \
   --require normal-completion --host-contract host.json --deployment-origin "$origin" --check-output
 ```
 

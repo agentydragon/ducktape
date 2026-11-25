@@ -5,6 +5,7 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } fro
 import path from "node:path";
 import { promisify } from "node:util";
 import { splitInputs } from "../../translation/split_dump.mjs";
+import { writeDeployment } from "../../translation/testing/deployment_manifest.mjs";
 import { topLevelStatements } from "../../translation/scope_metadata.mjs";
 
 const execute = promisify(execFile);
@@ -151,8 +152,7 @@ for (const chunk of selected) {
       process.env.LOWERSPLIT,
       [
         "--diagnostic",
-        astFile,
-        specFile,
+        writeDeployment(astFile, specFile, path.join(dir, name)),
         path.join(dir, name),
         "--footprints",
         fpFile,

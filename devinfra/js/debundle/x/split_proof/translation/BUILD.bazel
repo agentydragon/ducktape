@@ -73,6 +73,7 @@ eslint_test(
 _SEEDED_RANDOM = "//devinfra/js/debundle/x/split_proof:seeded_random"
 
 _SHIFT_FUZZ_DATA = [
+    "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ":parser",
     "shift_fuzz_worker.mjs",
     ":shift_candidate",
@@ -156,6 +157,7 @@ js_test(
         ":parser",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
     ],
     entry_point = "identity_emission_test.mjs",
@@ -166,6 +168,7 @@ js_test(
 )
 
 _LOWER_CALLBACK_FUZZ_DATA = [
+    "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ":parser",
     ":scope_metadata",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
@@ -619,6 +622,7 @@ js_test(
         "//devinfra/js/debundle/x/split_proof/lean:corejs",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/model:to_core",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ],
     entry_point = "corejs_ast_lowering_test.mjs",
     env = {

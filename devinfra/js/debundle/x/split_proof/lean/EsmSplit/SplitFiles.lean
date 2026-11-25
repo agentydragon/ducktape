@@ -1,6 +1,6 @@
 import EsmSplit.ESTreeUnits
-import EsmSplit.ESTreeEmit
 import EsmSplit.CoreJS.ModuleInput
+import EsmSplit.ModulePath
 
 namespace EsmSplit.SplitFiles
 
@@ -66,40 +66,52 @@ def writeProgramManifest (programs : Json) (work : System.FilePath) : IO System.
   IO.FS.writeFile manifest programs.compress
   return manifest
 
-def readModules (bundlePath work : System.FilePath) (requests : Array String) : IO Json := do
+def readModules (root work : System.FilePath) (requests : Array String) : IO Json := do
   let names := work / "requests.json"
   let output := work / "providers.json"
   IO.FS.writeFile names (toJson requests).compress
-  javascript #["--read-modules"] #[bundlePath, names, output]
+  javascript #["--read-modules"] #[root, names, output]
   readJson output
 
-/-- Read the actual provider graph. Lean resolves each edge from the parsed import declaration;
-the shared JavaScript frontend reads only the next batch of filenames. -/
-partial def loadProviders (source : Json) (bundlePath work : System.FilePath) : IO Json := do
+/-- Walk the root's static imports, reusing the programs already parsed for supplied chunks. -/
+def loadProviders (entry : String) (originals : Std.HashMap String Json)
+    (root : Option System.FilePath) (work : System.FilePath) (allowEntryImport : Bool := true) : IO (List (String × Json)) := do
+  let some ast := originals[entry]? | throw (IO.userError s!"missing entry program: {entry}")
   let mut providers := #[]
-  let mut seen : Std.HashSet String := {}
-  let mut frontier := #[("bundle.mjs", source)]
+  let mut seen := Std.HashSet.ofList [entry]
+  let mut frontier := #[(entry, ast)]
   while !frontier.isEmpty do
     let mut requests := #[]
     for (name, ast) in frontier do
       for node in ← IO.ofExcept (ast.getObjValAs? (Array Json) "body") do
-        if Lower.typ node == "ImportDeclaration" then
+        if (node.getObjValAs? String "type").toOption == some "ImportDeclaration" then
           let imp ← IO.ofExcept (CoreJS.ModuleInput.importDecl name node)
           unless imp.source.endsWith ".mjs" || imp.source.endsWith ".js" do
             throw (IO.userError s!"expected a JavaScript module dependency, got {imp.source}")
+          if !allowEntryImport && imp.source == entry then
+            throw (IO.userError s!"unsupported request back to the source entry: {entry}")
           unless seen.contains imp.source do
             seen := seen.insert imp.source
             requests := requests.push imp.source
     if requests.isEmpty then break
-    unless bundlePath.extension == some "mjs" || bundlePath.extension == some "js" do
-      throw (IO.userError "supply the original JavaScript file to resolve its relative imports")
-    let parsed ← readModules bundlePath work requests
-    frontier := #[]
-    for name in requests do
-      let ast ← IO.ofExcept (parsed.getObjVal? name)
-      providers := providers.push (name, ast)
-      frontier := frontier.push (name, ast)
-  return Json.mkObj providers.toList
+    let missing := requests.filter (!originals.contains ·)
+    let parsed ← if missing.isEmpty then pure (Json.mkObj []) else do
+      let some root := root | throw (IO.userError "supply the original JavaScript file to resolve its relative imports")
+      readModules root work missing
+    frontier ← requests.mapM fun name => do
+      let ast ← match originals[name]? with
+        | some ast => pure ast
+        | none => IO.ofExcept (parsed.getObjVal? name)
+      pure (name, ast)
+    providers := providers ++ frontier
+  return providers.toList
+
+/-- Planned modules may replace their own original entry only. The remaining
+paths must be fresh even if an original asset is outside the static graph. -/
+def checkNewRoutes (root work : System.FilePath) (paths : List String) : IO Unit := do
+  let names := work / "new-routes.json"
+  IO.FS.writeFile names (toJson paths).compress
+  javascript #["--check-new-routes"] #[root, names]
 
 /-- Preserve module headers and compare the same ordered declaration units used by the linker. -/
 private def unitProgram (ast : Json) : Except String Json := do
@@ -114,54 +126,73 @@ def outputDirectory (out : System.FilePath) : Except String System.FilePath := d
   unless dir.fileName.isSome do throw s!"output path {out} must end in a directory name"
   return dir
 
-/-- Reparse a module directory and require the planned programs and the copied providers. -/
-def compareDirectory (manifest : System.FilePath) (providers : Json) (input dir work : System.FilePath) :
-    IO Unit := do
-  let providerManifest := work / "provider-programs.json"
-  IO.FS.writeFile providerManifest providers.compress
-  let grouped := work / "grouped-output.json"
-  javascript #["--check-output"] #[manifest, input, providerManifest, dir, grouped]
-  for pair in ← IO.ofExcept (← readJson grouped).getArr? do
+structure OutputPart where
+  programs : Json
+  source : String
+  input : System.FilePath
+  work : System.FilePath
+
+/-- Reparse the complete tree, comparing its syntax and preserving the
+observed scope annotations for the certificate. Copied providers must have
+the exact source text that supplied the original graph. -/
+private def compareDirectory (parts : List OutputPart) (providers : List (String × String))
+    (dir work : System.FilePath) : IO Json := do
+  let manifest := work / "deployment-programs.json"
+  let descriptors := parts.map fun part => Json.mkObj [("programs", part.programs), ("source", toJson part.source)]
+  let copied := Json.mkObj (providers.map fun (name, source) => (name, .str source))
+  IO.FS.writeFile manifest (Json.mkObj [("parts", toJson descriptors), ("providers", copied)]).compress
+  let checked := work / "checked-output.json"
+  javascript #["--check-output"] #[manifest, dir, checked]
+  let observed ← readJson checked
+  for pair in ← IO.ofExcept (observed.getObjValAs? (Array Json) "grouped") do
     let name ← IO.ofExcept (pair.getObjValAs? String "name")
     let planned ← IO.ofExcept (pair.getObjVal? "planned" >>= unitProgram)
-    let observed ← IO.ofExcept (pair.getObjVal? "observed" >>= unitProgram)
-    unless planned == observed do throw (IO.userError s!"output module {name} differs from its generated ESTree")
+    let actual ← IO.ofExcept (pair.getObjVal? "observed" >>= unitProgram)
+    unless planned == actual do throw (IO.userError s!"output module {name} differs from its generated ESTree")
+  let files ← IO.ofExcept (observed.getObjVal? "files" >>= Json.getObj?)
+  return Json.mkObj (← files.toList.mapM fun (name, ast) => do
+    return (name, ← IO.ofExcept (unitProgram ast)))
 
-/-- Certify the exact program map handed to the printer or compared with an existing directory. -/
-def certifyOutput {α : Type} (providers : Json) (B : Bundle) (P : Plan)
-    (out work input : System.FilePath) (checkOnly timings : Bool) (asts : Array Json) (source : String)
+/-- Finish comparison and proof before publishing the complete tree by rename.
+Existing trees use the same gate and are left untouched. -/
+def certifyOutput {α : Type} (parts : List OutputPart) (providers : Json)
+    (out work : System.FilePath) (checkOnly timings : Bool)
     (check : Json → IO (Except CertificationRefusal α)) : IO (Except CertificationRefusal α) := do
-  let dependencies := (← IO.ofExcept providers.getObj?).toList
-  for (name, _) in dependencies do
-    if (P.find name).isSome then throw (IO.userError s!"provider {name} collides with a planned output module")
-  let programs ← timePhase timings "output_ast" fun _ => do
-    IO.ofExcept (ESTreeEmit.programs asts B P source)
-  if checkOnly then
-    let manifest ← writeProgramManifest programs work
-    timePhase timings "output_comparison" fun _ => compareDirectory manifest providers input out work
-    check programs
-  else
-    match ← check programs with
-    | .error refusal => pure (.error refusal)
-    | .ok certified => do
-      timePhase timings "output_publication" fun _ => do
-        let manifest ← writeProgramManifest programs work
-        let parent := out.parent.getD "."
-        IO.FS.createDirAll parent
-        -- A sibling directory makes publication a single same-filesystem rename.
-        let stage := parent / (".split-proof-" ++ work.fileName.get!)
-        IO.FS.createDir stage
-        try
-          javascript #["--print"] #[manifest, stage, input]
-          for (name, ast) in dependencies do
-            let dest := stage / name
-            IO.FS.createDirAll (dest.parent.getD stage)
-            IO.FS.writeFile dest (← IO.ofExcept (ast.getObjValAs? String "sourceText"))
-          -- The printer is outside the proof: publish only files that reparse to the certified ASTs.
-          compareDirectory manifest providers input stage work
-          IO.FS.rename stage out
-        finally
-          if ← stage.pathExists then IO.FS.removeDirAll stage
-      return .ok certified
+  let groups ← IO.ofExcept <| parts.mapM fun part => do
+    return (← part.programs.getObj?).toList.map Prod.fst
+  let dependencies ← IO.ofExcept (providers.getObj?)
+  let names := groups.flatten ++ dependencies.toList.map Prod.fst
+  IO.ofExcept (EsmSplit.validateModulePaths names)
+  unless names.Nodup do throw (IO.userError "output module path collision")
+  let routes := Std.HashSet.ofList names
+  for name in names do
+    let mut ancestor := ""
+    for segment in (name.splitOn "/").dropLast do
+      ancestor := if ancestor.isEmpty then segment else ancestor ++ "/" ++ segment
+      if routes.contains ancestor then throw (IO.userError s!"output module {name} crosses output file {ancestor}")
+  let sources ← dependencies.toList.mapM fun (name, ast) => do
+    return (name, ← IO.ofExcept (ast.getObjValAs? String "sourceText"))
+  let verify dir := do
+    let observed ← timePhase timings "output_comparison" fun _ => compareDirectory parts sources dir work
+    check observed
+  if checkOnly then return ← verify out
+  let parent := out.parent.getD "."
+  IO.FS.createDirAll parent
+  let stage := parent / (".split-proof-" ++ work.fileName.get!)
+  IO.FS.createDir stage
+  try
+    timePhase timings "output_staging" fun _ => do
+      for part in parts do
+        let manifest ← writeProgramManifest part.programs part.work
+        javascript #["--print"] #[manifest, stage, part.input]
+      for (name, source) in sources do
+        let dest := stage / name
+        IO.FS.createDirAll (dest.parent.getD stage)
+        IO.FS.writeFile dest source
+    let result ← verify stage
+    if result.isOk then timePhase timings "output_publication" fun _ => IO.FS.rename stage out
+    return result
+  finally
+    if ← stage.pathExists then IO.FS.removeDirAll stage
 
 end EsmSplit.SplitFiles

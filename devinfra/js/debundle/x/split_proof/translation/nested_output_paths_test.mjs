@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { writeDeployment } from "./testing/deployment_manifest.mjs";
 import { dump } from "./parser.mjs";
 
 const temp = process.env.TEST_TMPDIR;
@@ -29,7 +30,9 @@ writeFileSync(
 
 const out = path.join(work, "generated");
 assert(!existsSync(out), "the output root starts absent");
-const emitted = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", astPath, specPath, out], { encoding: "utf8" });
+const emitted = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(astPath, specPath, out), out], {
+  encoding: "utf8",
+});
 assert.equal(emitted.status, 0, emitted.stdout + "\n" + emitted.stderr);
 assert(existsSync(path.join(out, "public", "entry.mjs")), "the nested entry is written");
 assert(existsSync(path.join(out, "lib", "math.mjs")), "a sibling module directory is written");
@@ -59,9 +62,13 @@ writeFileSync(
   unsafeSpec,
   JSON.stringify({ entry: "../escape.mjs", modules: { "../escape.mjs": ["#0", "#1", "#2", "#3"] } })
 );
-const rejected = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", astPath, unsafeSpec, unsafeOut], {
-  encoding: "utf8",
-});
+const rejected = spawnSync(
+  process.env.LOWERSPLIT,
+  ["--diagnostic", writeDeployment(astPath, unsafeSpec, unsafeOut), unsafeOut],
+  {
+    encoding: "utf8",
+  }
+);
 assert.notEqual(rejected.status, 0, "project traversal in a module path is rejected");
 assert.match(rejected.stdout + "\n" + rejected.stderr, /unsafe output module path/);
 assert(!existsSync(unsafeOut), "an invalid spec does not create its output root");
@@ -83,9 +90,13 @@ writeFileSync(
   })
 );
 const certifiedOut = path.join(work, "certified-nested");
-const certified = spawnSync(process.env.LOWERSPLIT, [astPath, specPath, certifiedOut, "--require", "all-outcomes"], {
-  encoding: "utf8",
-});
+const certified = spawnSync(
+  process.env.LOWERSPLIT,
+  [writeDeployment(astPath, specPath, certifiedOut), certifiedOut, "--require", "all-outcomes"],
+  {
+    encoding: "utf8",
+  }
+);
 const certifiedVerdict = JSON.parse(certified.stdout.trim().split("\n").at(-1));
 assert.equal(certified.status, 0, certified.stdout + certified.stderr);
 assert.equal(certifiedVerdict.status, "certified", JSON.stringify(certifiedVerdict));
@@ -111,7 +122,7 @@ assert(certifiedText.includes(expectedTarget), certifiedText);
 writeFileSync(certifiedEntry, certifiedText.replace(expectedTarget, 'from "../other/right.mjs"'));
 const wrongTarget = spawnSync(
   process.env.LOWERSPLIT,
-  [astPath, specPath, certifiedOut, "--require", "all-outcomes", "--check-output"],
+  [writeDeployment(astPath, specPath, certifiedOut), certifiedOut, "--require", "all-outcomes", "--check-output"],
   { encoding: "utf8" }
 );
 const wrongTargetVerdict = JSON.parse(wrongTarget.stdout.trim().split("\n").at(-1));
@@ -123,7 +134,7 @@ assert.match(wrongTargetVerdict.reason, /output module public\/entry\.mjs differ
 const slashOut = path.join(work, "certified-trailing-slash");
 const slashed = spawnSync(
   process.env.LOWERSPLIT,
-  [astPath, specPath, slashOut + path.sep, "--require", "all-outcomes"],
+  [writeDeployment(astPath, specPath, slashOut), slashOut + path.sep, "--require", "all-outcomes"],
   { encoding: "utf8" }
 );
 const slashedVerdict = JSON.parse(slashed.stdout.trim().split("\n").at(-1));
@@ -138,7 +149,9 @@ assert.deepEqual(
 
 // A path ending in .. names no new directory and is refused before certification.
 const parentOut = path.join(work, "certified-parent") + path.sep + "..";
-const parent = spawnSync(process.env.LOWERSPLIT, [astPath, specPath, parentOut], { encoding: "utf8" });
+const parent = spawnSync(process.env.LOWERSPLIT, [writeDeployment(astPath, specPath, parentOut), parentOut], {
+  encoding: "utf8",
+});
 const parentVerdict = JSON.parse(parent.stdout.trim().split("\n").at(-1));
 assert.equal(parent.status, 1, parent.stdout + parent.stderr);
 assert.equal(parentVerdict.status, "rejected", JSON.stringify(parentVerdict));

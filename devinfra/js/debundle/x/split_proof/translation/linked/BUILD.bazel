@@ -10,6 +10,7 @@ js_library(
     deps = [
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ],
 )
 
@@ -221,7 +222,7 @@ js_test(
 js_test(
     name = "staged_ast_gate_test",
     size = "medium",
-    data = _TEST_DATA,
+    data = _TEST_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest"],
     entry_point = "staged_ast_gate_test.mjs",
     env = dict(
         _TEST_ENV,
@@ -276,6 +277,7 @@ js_test(
     data = [
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ],
     entry_point = "certified_split_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},

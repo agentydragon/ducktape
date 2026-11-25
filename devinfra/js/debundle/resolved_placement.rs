@@ -13,11 +13,16 @@ use std::str::FromStr;
 use transform_inputs::{TransformContextArgs, TransformSpecSource, load_transform_spec_source};
 
 #[derive(Serialize)]
-struct ResolvedPlacement<'a> {
-    chunk_id: &'a str,
-    source_sha256: &'a str,
+struct ResolvedPlacement {
+    chunk_id: String,
+    source_sha256: String,
     import_order: Vec<ModulePath>,
     units: Vec<ResolvedUnit>,
+}
+
+#[derive(Serialize)]
+struct ResolvedPlacements<'a> {
+    placements: &'a [ResolvedPlacement],
 }
 
 #[derive(Serialize)]
@@ -53,6 +58,33 @@ impl FromStr for ProposalFragment {
     }
 }
 
+/// Add source-backed ownership claims to a module in a batch export.
+#[derive(Clone, Debug)]
+pub struct ChunkProposalFragment {
+    chunk: String,
+    fragment: ProposalFragment,
+}
+
+impl FromStr for ChunkProposalFragment {
+    type Err = anyhow::Error;
+
+    fn from_str(arg: &str) -> Result<Self> {
+        let (chunk_owner, path) = arg.split_once('=').context("expected CHUNK::OWNER=YAML")?;
+        let (chunk, owner) = chunk_owner
+            .split_once("::")
+            .context("expected CHUNK::OWNER=YAML")?;
+        ensure!(
+            !chunk.is_empty(),
+            "missing chunk in proposal fragment {arg:?}"
+        );
+        let fragment = format!("{owner}={path}").parse()?;
+        Ok(Self {
+            chunk: chunk.to_owned(),
+            fragment,
+        })
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SelectorFragment {
@@ -61,7 +93,7 @@ struct SelectorFragment {
 
 /// Keep the tree's spelling (e.g. `scene/Shape`) and every existing field.
 /// New owners follow the shared tree's priority, in fragment argument order.
-fn assemble(spec: &mut TransformSpec, chunk: &str, fragments: &[ProposalFragment]) -> Result<()> {
+fn assemble(spec: &mut TransformSpec, chunk: &str, fragments: &[&ProposalFragment]) -> Result<()> {
     if fragments.is_empty() {
         return Ok(());
     }
@@ -75,7 +107,9 @@ fn assemble(spec: &mut TransformSpec, chunk: &str, fragments: &[ProposalFragment
             "duplicate canonical owner {chunk}::{owner}"
         );
     }
-    for ProposalFragment { owner, path } in fragments {
+    for fragment in fragments {
+        let owner = &fragment.owner;
+        let path = &fragment.path;
         let contents =
             std::fs::read(path).with_context(|| format!("read fragment {}", path.display()))?;
         let fragment: SelectorFragment = serde_yaml::from_slice(&contents).with_context(|| {
@@ -121,32 +155,131 @@ pub fn resolve_placement(
         canonical_out != Some(out),
         "canonical and selected outputs must be distinct"
     );
+    let qualified_fragments = fragments
+        .iter()
+        .cloned()
+        .map(|fragment| (chunk.to_owned(), fragment))
+        .collect::<Vec<_>>();
+    let chunks = [chunk.to_owned()];
+    let (selected, canonical) = resolve_placements_inner(
+        source,
+        &chunks,
+        subset,
+        &qualified_fragments,
+        canonical_out.is_some(),
+        diagnostics,
+    )?;
+    // Proposal inputs may live anywhere. Never truncate an authored file via
+    // an output path (including symlinks or hard links) in these modes.
+    let fresh = canonical_out.is_some() || !fragments.is_empty();
+    if let Some(path) = canonical_out {
+        let canonical = canonical.context("missing canonical placement output")?;
+        write_placement(path, &canonical[0], fresh)?;
+    }
+    write_placement(out, &selected[0], fresh)
+}
+
+/// Export ownership for several chunks after one shared artifact preparation and selector solve.
+pub fn resolve_placements(
+    source: &TransformSpecSource,
+    chunks: &[String],
+    subset: Option<&Path>,
+    out: &Path,
+    fragments: &[ChunkProposalFragment],
+    canonical_out: Option<&Path>,
+    diagnostics: &analysis::diagnostics::Diagnostics,
+) -> Result<()> {
+    ensure!(
+        canonical_out.is_none() || subset.is_some(),
+        "--canonical-out requires --ownership-subset"
+    );
+    ensure!(
+        canonical_out != Some(out),
+        "canonical and selected outputs must be distinct"
+    );
+    let qualified_fragments = fragments
+        .iter()
+        .map(|fragment| (fragment.chunk.clone(), fragment.fragment.clone()))
+        .collect::<Vec<_>>();
+    let (selected, canonical) = resolve_placements_inner(
+        source,
+        chunks,
+        subset,
+        &qualified_fragments,
+        canonical_out.is_some(),
+        diagnostics,
+    )?;
+    // Proposal inputs may live anywhere. Never truncate an authored file via
+    // an output path (including symlinks or hard links) in these modes.
+    let fresh = canonical_out.is_some() || !fragments.is_empty();
+    if let Some(path) = canonical_out {
+        let canonical = canonical.context("missing canonical placement output")?;
+        write_placements(path, &canonical, fresh)?;
+    }
+    write_placements(out, &selected, fresh)
+}
+
+fn resolve_placements_inner(
+    source: &TransformSpecSource,
+    chunks: &[String],
+    subset: Option<&Path>,
+    fragments: &[(String, ProposalFragment)],
+    include_canonical: bool,
+    diagnostics: &analysis::diagnostics::Diagnostics,
+) -> Result<(Vec<ResolvedPlacement>, Option<Vec<ResolvedPlacement>>)> {
+    ensure!(!chunks.is_empty(), "at least one --chunk is required");
+    let mut unique_chunks = BTreeSet::new();
+    for chunk in chunks {
+        ensure!(
+            unique_chunks.insert(chunk.clone()),
+            "duplicate requested chunk {chunk:?}"
+        );
+    }
+
     let mut spec = load_transform_spec_source(source)?;
     let chunk_ids = spec.materialize_chunk_ids();
-    ensure!(
-        chunk_ids.contains(chunk),
-        "unknown materialized chunk {chunk:?}"
-    );
-    assemble(&mut spec, chunk, fragments)?;
+    let materialized = chunk_ids.iter().cloned().collect::<BTreeSet<_>>();
+    for chunk in chunks {
+        ensure!(
+            materialized.contains(chunk),
+            "unknown materialized chunk {chunk:?}"
+        );
+    }
+    for (chunk, _) in fragments {
+        ensure!(
+            unique_chunks.contains(chunk),
+            "proposal fragment targets unrequested chunk {chunk:?}"
+        );
+    }
+    for chunk in chunks {
+        let chunk_fragments = fragments
+            .iter()
+            .filter(|(fragment_chunk, _)| fragment_chunk == chunk)
+            .map(|(_, fragment)| fragment)
+            .collect::<Vec<_>>();
+        assemble(&mut spec, chunk, &chunk_fragments)?;
+    }
+
     let loaded = load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
     // Hash the actual bytes supplied to SWC. SourceMap can normalize a UTF-8 BOM.
-    let id = loaded
-        .chunk_table
-        .get(chunk)
-        .with_context(|| format!("missing input chunk {chunk}"))?;
-    let source = loaded.chunks.get(id.0).context("missing chunk input")?;
-    let source_sha256 = graph_provenance::sha256(
-        source
-            .get_file(&source.entry_file)
-            .and_then(|f| f.source())
-            .context("missing chunk source")?
-            .as_bytes(),
-    );
+    let mut source_hashes = BTreeMap::new();
+    for chunk in chunks {
+        let id = loaded
+            .chunk_table
+            .get(chunk)
+            .with_context(|| format!("missing input chunk {chunk}"))?;
+        let source = loaded.chunks.get(id.0).context("missing chunk input")?;
+        let hash = graph_provenance::sha256(
+            source
+                .get_file(&source.entry_file)
+                .and_then(|f| f.source())
+                .context("missing chunk source")?
+                .as_bytes(),
+        );
+        source_hashes.insert(chunk.clone(), hash);
+    }
     let source = prepare_js_chunks(&chunk_ids, &BTreeSet::new(), &BTreeMap::new(), loaded)?;
     let mut resolved = resolve_ownership(source.artifact(), &spec, diagnostics)?;
-    let canonical = resolved
-        .remove(chunk)
-        .context("chunk lacks canonical ownership")?;
 
     let subset = subset.map(OwnershipSubset::read).transpose()?;
     if let Some(view) = &subset {
@@ -159,24 +292,46 @@ pub fn resolve_placement(
             &chunk_ids.into_iter().collect::<Vec<_>>(),
         )?;
     }
-    let priority = spec
-        .import_order
-        .get(chunk)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
-    let view = |subset| placement_view(&canonical, chunk, &source_sha256, priority, subset);
-    let selected = view(subset.as_ref())?;
-    // Proposal inputs may live anywhere. Never truncate an authored file via
-    // an output path (including symlinks or hard links) in these modes.
-    let fresh = canonical_out.is_some() || !fragments.is_empty();
-    if let Some(path) = canonical_out {
-        let full = view(None)?;
-        write_placement(path, &full, fresh)?;
+
+    let mut selected = Vec::with_capacity(chunks.len());
+    let mut canonical = include_canonical.then(|| Vec::with_capacity(chunks.len()));
+    for chunk in chunks {
+        let ownership = resolved
+            .remove(chunk)
+            .with_context(|| format!("chunk {chunk} lacks canonical ownership"))?;
+        let source_sha256 = source_hashes
+            .remove(chunk)
+            .context("missing chunk source hash")?;
+        let priority = spec
+            .import_order
+            .get(chunk)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let selection =
+            placement_view(&ownership, chunk, &source_sha256, priority, subset.as_ref())?;
+        if let Some(canonical) = &mut canonical {
+            canonical.push(placement_view(
+                &ownership,
+                chunk,
+                &source_sha256,
+                priority,
+                None,
+            )?);
+        }
+        selected.push(selection);
     }
-    write_placement(out, &selected, fresh)
+    Ok((selected, canonical))
 }
 
-fn write_placement(path: &Path, placement: &ResolvedPlacement<'_>, fresh: bool) -> Result<()> {
+fn write_placement(path: &Path, placement: &ResolvedPlacement, fresh: bool) -> Result<()> {
+    write_json(path, placement, fresh)
+}
+
+fn write_placements(path: &Path, placements: &[ResolvedPlacement], fresh: bool) -> Result<()> {
+    write_json(path, &ResolvedPlacements { placements }, fresh)
+}
+
+fn write_json<T: Serialize>(path: &Path, value: &T, fresh: bool) -> Result<()> {
     let file = if fresh {
         std::fs::File::create_new(path)
     } else {
@@ -186,17 +341,17 @@ fn write_placement(path: &Path, placement: &ResolvedPlacement<'_>, fresh: bool) 
     use std::io::Write;
     // Buffer the whole document, rather than issuing a syscall per JSON token.
     (&file)
-        .write_all(&serde_json::to_vec(placement)?)
+        .write_all(&serde_json::to_vec(value)?)
         .with_context(|| format!("write resolved placement {}", path.display()))
 }
 
-fn placement_view<'a>(
+fn placement_view(
     canonical: &CanonicalOwnership,
-    chunk: &'a str,
-    source_sha256: &'a str,
+    chunk: &str,
+    source_sha256: &str,
     priority: &[ModulePath],
     subset: Option<&OwnershipSubset>,
-) -> Result<ResolvedPlacement<'a>> {
+) -> Result<ResolvedPlacement> {
     let keep = subset.map(|view| {
         view.modules_for_chunk(chunk)
             .into_iter()
@@ -259,8 +414,8 @@ fn placement_view<'a>(
         "retained owners absent from authored import priority in {chunk}: {owners:?}"
     );
     Ok(ResolvedPlacement {
-        chunk_id: chunk,
-        source_sha256,
+        chunk_id: chunk.to_owned(),
+        source_sha256: source_sha256.to_owned(),
         import_order,
         units,
     })
@@ -292,6 +447,44 @@ impl ResolvePlacementArgs {
     pub fn run(self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
         command_diagnostics::run(stderr, |diagnostics| {
             resolve_placement(
+                &self.context.resolve()?.spec_source,
+                &self.chunk,
+                self.ownership_subset.as_deref(),
+                &self.out,
+                &self.proposal_fragment,
+                self.canonical_out.as_deref(),
+                diagnostics,
+            )
+        })
+    }
+}
+
+/// Export several chunks' resolved ownership with one shared source preparation and selector solve.
+#[derive(Debug, ClapArgs)]
+pub struct ResolvePlacementsArgs {
+    #[command(flatten)]
+    context: TransformContextArgs,
+    /// Materialized chunk IDs from the canonical spec; repeat to export a batch.
+    #[arg(long, required = true, value_name = "CHUNK")]
+    chunk: Vec<String>,
+    /// Retain only these canonical modules, member names and anonymous indices.
+    #[arg(long)]
+    ownership_subset: Option<PathBuf>,
+    /// Append a source_matches-only fragment to CHUNK::OWNER in this batch; repeat for multiple files.
+    #[arg(long, value_name = "CHUNK::OWNER=YAML")]
+    proposal_fragment: Vec<ChunkProposalFragment>,
+    /// Also write the unfiltered view of this solve.
+    #[arg(long, requires = "ownership_subset")]
+    canonical_out: Option<PathBuf>,
+    /// Destination batch JSON file.
+    #[arg(long)]
+    out: PathBuf,
+}
+
+impl ResolvePlacementsArgs {
+    pub fn run(self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
+        command_diagnostics::run(stderr, |diagnostics| {
+            resolve_placements(
                 &self.context.resolve()?.spec_source,
                 &self.chunk,
                 self.ownership_subset.as_deref(),
