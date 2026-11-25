@@ -187,6 +187,7 @@ debundle_resolve_placement(
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:segment.yaml": "packages/math/segment",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:rectangle.yaml": "packages/math/rectangle",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:curve.yaml": "packages/math/curve",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:triangle.yaml": "packages/math/triangle",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/size_resize:size_helpers.yaml": "packages/excalidraw/element/sizehelpers",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/size_resize:resize_test.yaml": "packages/excalidraw/element/resizetest",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/heading:packages/excalidraw/element/heading.yaml": "packages/excalidraw/element/heading",

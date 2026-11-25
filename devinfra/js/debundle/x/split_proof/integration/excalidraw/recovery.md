@@ -361,3 +361,8 @@ to their upstream owners. Chromium checks that a polygon ring closes with the
 same point object, tests inside and boundary points, and distinguishes secant,
 tangent and disjoint lines for an ellipse. These calls exercise the recovered
 modules after the independent disk certificate.
+
+The triangle selector matches the three signed-area comparisons in editor unit
+540 to [`triangleIncludesPoint`](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/math/triangle.ts).
+Chromium calls the recovered predicate on interior and exterior points and
+checks crossing and parallel lines through the existing line module exports.

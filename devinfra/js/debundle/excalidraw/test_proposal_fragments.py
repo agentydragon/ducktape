@@ -30,6 +30,10 @@ def test_editor_proposal_fragments(runfiles: Runfiles) -> None:
     assert names["generateRoughOptions"] == "packages/excalidraw/scene/shape"
     assert names["getCurvePathOps"] == "packages/utils/geometry/shape"
 
+    selected_owners = {name: unit["owner"] for unit in selected["units"] for name in unit.get("members", {}).values()}
+    assert selected_owners["line"] == selected_owners["linesIntersectAt"] == "packages/math/line"
+    assert selected_owners["triangleIncludesPoint"] == "packages/math/triangle"
+
     for full, retained in zip(canonical["units"], selected["units"], strict=True):
         assert full["ordinal"] == retained["ordinal"]
         if retained["owner"] is not None:

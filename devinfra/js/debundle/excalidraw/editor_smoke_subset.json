@@ -577,6 +577,12 @@
       "chunk": "editor",
       "bindings": ["ellipse", "ellipseDistanceFromPoint", "ellipseLineIntersectionPoints"],
       "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/triangle",
+      "bindings": ["triangleIncludesPoint"],
+      "anonymous_statements": []
     }
   ]
 }
