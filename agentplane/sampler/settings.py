@@ -194,8 +194,8 @@ class ChatCompactionConfig(BaseModel):
     # CLEANUP(added 2026-11-24): Remove after staging has rolled out settings with keep_recent_tokens.
     keep_recent_turns: int | None = Field(default=None, gt=0)
 
-    summary_prompt_template: str | None = None
-    replacement: ChatCompactionReplacement | None = None
+    summary_prompt_template: str = Field(min_length=1)
+    replacement: ChatCompactionReplacement
 
     @model_validator(mode="after")
     def one_recent_history_budget(self) -> Self:

@@ -929,7 +929,16 @@ async def test_chat_completions_tool_round_trip(
         api="chat_completions",
         exec_encoding="json",
         auto_compact_tokens=256 if compact else None,
-        chat_compaction=ChatCompactionConfig(max_tokens=1024, keep_recent_tokens=128) if compact else None,
+        chat_compaction=ChatCompactionConfig(
+            max_tokens=1024,
+            keep_recent_tokens=128,
+            summary_prompt_template="Write a handoff.",
+            replacement=ChatCompactionReplacement(
+                role="assistant", template="Summary of earlier conversation:\n{{.Summary}}"
+            ),
+        )
+        if compact
+        else None,
     )
     request = create_request(tmp_path)
     request.spec.reasoning_effort = "medium"
@@ -1122,10 +1131,10 @@ async def test_chat_completions_compaction(
         chat_compaction=ChatCompactionConfig(
             max_tokens=8192,
             keep_recent_tokens=12,
-            summary_prompt_template=None
-            if automatic
-            else "Write a handoff. The user message budget is {{.KeepRecentTokens}} tokens.",
-            replacement=None
+            summary_prompt_template="Write a handoff. The user message budget is {{.KeepRecentTokens}} tokens.",
+            replacement=ChatCompactionReplacement(
+                role="assistant", template="Summary of earlier conversation:\n{{.Summary}}"
+            )
             if automatic
             else ChatCompactionReplacement(role="user", template="<handoff>{{.Summary}}</handoff>"),
         ),
@@ -1173,10 +1182,7 @@ async def test_chat_completions_compaction(
             assert {"role": "user", "content": recent} in messages
             assert ({"role": "assistant", "content": "recent answer"} in messages) == (not automatic)
             assert messages[-1]["role"] == "user"
-            if automatic:
-                assert "handoff" in messages[-1]["content"]
-            else:
-                assert messages[-1]["content"] == ("Write a handoff. The user message budget is 12 tokens.")
+            assert messages[-1]["content"] == "Write a handoff. The user message budget is 12 tokens."
             if case == "context_limit":
                 await exchange.respond(JsonResponse(b'{"error":{"code":"context_length_exceeded"}}', 400))
             elif automatic:

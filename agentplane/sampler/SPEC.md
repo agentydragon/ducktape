@@ -458,15 +458,9 @@ Recovery rejects an in-flight summary prepared under a different retention or re
 Automatic compaction requires a settled context with material the replacement can discard.
 A prior handoff alone does not trigger another compaction.
 
-`chat_compaction.summary_prompt_template` and `chat_compaction.replacement.template` are Go text
-templates. Both receive `.KeepRecentTokens`. The replacement also receives `.Summary` and must
-include it verbatim. Choose `assistant` or `user` for the replacement role. During rollout, omitted
-templates use the built-in handoff prompt and assistant-message wrapper.
-
-After staging has rolled out a release with both templates explicitly configured for every Chat
-Completions model that enables compaction, require both fields and remove the built-in fallbacks.
-Before removing recovery support for omitted replacements, check that no pending compaction
-still uses the old representation.
+Each model with `chat_compaction` must configure `summary_prompt_template` and `replacement`.
+Both Go text templates receive `.KeepRecentTokens`. The replacement template also receives
+`.Summary` and must include it verbatim. Choose `assistant` or `user` for `replacement.role`.
 
 ```yaml
 auto_compact_tokens: 160000
@@ -474,7 +468,8 @@ chat_compaction:
   max_tokens: 8192
   keep_recent_tokens: 16000
   summary_prompt_template: |
-    Write a handoff for the conversation above with goals, decisions, and open work.
+    Write a handoff with the user’s goals, decisions, and open work.
+    The continuation receives the same system instructions and tool definitions. Omit restatements of them.
   replacement:
     role: user
     template: |
