@@ -293,6 +293,23 @@ with ThreadPoolExecutor() as executor:
 
 ---
 
+### Docstrings that state what the signature cannot
+
+Docstring-worthy content: side effects and mutation, caching, when it raises, edge cases,
+complexity or blocking I/O, business rules, and preconditions.
+
+```python
+def truncate_files_by_tokens(files: list[FileInfo], max_tokens: int) -> list[FileInfo]:
+    """Greedy truncation: whole files first (largest to smallest), then binary-search
+    truncates the remainder. Stops early if the budget is below 1000 tokens."""
+
+def first_assistant_text(response: ResponsesResult) -> str:
+    """Raises ValueError when the response carries no assistant text."""
+```
+
+Keep public-API documentation: callers of a module or library need the contract even when
+the implementation looks obvious to you.
+
 ## Detection Strategy
 
 **Goal**: Find ALL useless comments for manual review (100% recall target).
@@ -379,7 +396,25 @@ rg --type py '#.*\b(is a|is an|type of|instance of)\b' --line-number --ignore-ca
 
 # Find section header comments
 rg --type py '^\s*#\s*-+.*-+\s*$' --line-number
+
+# Find Javadoc-style docstring sections (candidates, not verdicts)
+rg --type py '""".*\n.*Args:' --line-number
+rg --type py -A2 'Returns:\s*$' --line-number
+rg --type py '^\s+\w+: The \w+' --line-number
 ```
+
+### Signature-only skeleton review
+
+For docstring review across many functions, build a helper that strips bodies and keeps
+signatures, annotations and docstrings, then ask a coding model which docstrings add nothing
+beyond the signature. Its output is candidates only: whether something is obvious depends on
+the reader, so verify each one in context.
+
+Docstring shapes worth a second look:
+
+- Every parameter documented as `param: The param`
+- A `Returns:` section that repeats the return annotation
+- A first sentence that is the function name rephrased
 
 ### Manual Review Process (Required)
 
@@ -458,44 +493,41 @@ counter += 1
 counter += 1
 ```
 
-## Output Format for Manual Review
-
-Generate a review document with all comments, including their context (+/- 3 lines) and content.
-
-## Examples from Codebase
-
-### Duplicating Decorator Semantics
+### Priority 5: Compress Javadoc-style docstrings
 
 ```python
-# ✗ BEFORE: Comment duplicates decorator + type annotations
-# Tool: container exec (flat MCP payload, validated via ExecInput)
-@mcp.tool(name="exec", flat=True)
-async def tool_exec(input: ExecInput, ctx: Context) -> BaseExecResult:
-    """Run a shell command inside the per-session Docker container."""
-    ...
+# Before: the docstring restates the signature
+def truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
+    """Truncate text to max_length with optional suffix.
 
-# ✓ AFTER: Decorator and types are self-documenting
-@mcp.tool(name="exec", flat=True)
-async def tool_exec(input: ExecInput, ctx: Context) -> BaseExecResult:
-    """Run a shell command inside the per-session Docker container."""
-    ...
+    Args:
+        text: The text to truncate
+        max_length: Maximum length to truncate to
+        suffix: The suffix to add (default: "...")
+
+    Returns:
+        The truncated text string
+    """
+
+# After: the signature carries names, types and the default; the docstring keeps behavior
+def truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
+    """Truncation is byte-safe: the suffix is inserted at a UTF-8 boundary."""
 ```
 
-### Obvious Statements
+## Validation
 
-```python
-# ✗ BEFORE: Obvious from method name
-# Close the client
-await client.close()
-
-# ✓ AFTER: Only comment if non-obvious
-await client.close()  # Must close before exit to flush pending writes
+```bash
+git diff | rg -B3 -A3 '"""|^#'
 ```
 
----
+Read the removed lines: if one carried a constraint the code cannot express, keep it beside
+the code it constrains.
 
 ## References
 
 - [PEP 8 - Comments](https://peps.python.org/pep-0008/#comments)
 - [Google Python Style Guide - Comments and Docstrings](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings)
 - [Code Complete - Self-Documenting Code](https://www.oreilly.com/library/view/code-complete-2nd/0735619670/)
+- House style: [STYLE.md](../../STYLE.md) Documentation section and the [repository parsimony goal](../../x/goals/parsimony.md)
+- [PEP 257 - Docstring Conventions](https://peps.python.org/pep-0257/)
+- [Best practices for writing code comments](https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/)

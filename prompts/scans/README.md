@@ -34,7 +34,6 @@ lives in <../../STYLE.md>; these scans operationalize specific rules from it.
 | <trivial_forwarders.md>             | Functions that should be inlined                   |
 | <type_ignore_suppressions.md>       | Type-checker suppression comments                  |
 | <unnecessary_verbosity.md>          | Unnecessary verbosity                              |
-| <useless_comments_and_docs.md>      | Useless comments and documentation                 |
-| <useless_documentation.md>          | Useless documentation                              |
+| <useless_comments_and_docs.md>      | Useless comments, docstrings and documentation     |
 | <useless_test_classes.md>           | Useless test classes                               |
 | <walrus_get_pattern.md>             | Walrus operator (`:=`) opportunities               |
