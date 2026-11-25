@@ -478,6 +478,7 @@ lean_axiom_test(
         "ProviderBoundaryFixture.certify",
         "ProviderBoundaryFixture.commonProviderBehavior",
         "ProviderBoundaryFixture.sourceFreeLinkedBoundary",
+        "ProviderBoundaryFixture.sourceFreeContext",
     ],
     deps = [
         ":corejs_linked_input",
