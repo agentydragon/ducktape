@@ -8,6 +8,7 @@ namespace CoreJS.LinkedBehavior
 
 deriving instance Lean.ToExpr for EsmSplit.Module
 deriving instance Lean.ToExpr for EsmSplit.Plan
+deriving instance Lean.ToExpr for ModuleLocation.Resource
 
 structure ProofModule where
   name : Lean.Name
@@ -101,7 +102,8 @@ private partial def expandedBytes (expr : Lean.Expr) : Nat :=
   | _ => 0
 
 private def certificateText (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan)
-    (source candidate : Program) : EsmSplit.CertificateData.Quotes Refusal Certificate := do
+    (source candidate : Program) (deployment : Option LinkedDeployment.Input) :
+    EsmSplit.CertificateData.Quotes Refusal Certificate := do
   let records := RecordQuotes.collect source candidate
   let sourceTerm := Lean.toExpr source
   let candidateTerm := Lean.toExpr candidate
@@ -125,8 +127,16 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let recordTerms ← records.definitions sourceTerm candidateTerm move.isSome
   let writeTerms ← writes.definitions
   let p ← EsmSplit.CertificateData.quote "plan" (Lean.toExpr plan)
-  let (asts, astData) := jsonDefinitions [("sourceAST", sourceAST), ("providers", providers), ("files", files)]
+  let (asts, astData) := jsonDefinitions ([("sourceAST", sourceAST), ("providers", providers), ("files", files)] ++
+    deployment.toList.map fun input => ("deploymentAssets", input.assets))
   modify (· ++ astData)
+  let deploymentTerm ← match deployment with
+    | none => pure "none"
+    | some input => do
+      let resources := input.before.toList.mergeSort fun a b => a.1 ≤ b.1
+      let routes ← EsmSplit.CertificateData.quote "deploymentResources" (Lean.toExpr resources)
+      pure ("some { entry := " ++ input.entry.quote ++ s!", nativeRecord := {input.nativeRecord}, " ++
+        "assets := deploymentAssets, before := Std.HashMap.ofList " ++ routes ++ " }")
   -- The generated declarations are short. Estimate the compiler's workload from
   -- the quoted terms when deciding whether to run correspondence separately.
   let stagedGate := astData.foldl (fun bytes (_, term) => bytes + expandedBytes term) 0 ≥ 512 * 1024
@@ -154,7 +164,8 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let preamble := "import EsmSplit.CertificateData\nimport EsmSplit.CoreJS.LinkedCertificate.Proof\n" ++
     s!"import {EsmSplit.CertificateData.moduleName}\n" ++ writeImports ++ options
   let data := recordTerms ++ writeTerms
-  let raw := String.join asts.toList ++ "private def plan : EsmSplit.Plan := " ++ p ++ "\n"
+  let raw := String.join asts.toList ++ "private def plan : EsmSplit.Plan := " ++ p ++ "\n" ++
+    "private def deployment : Option LinkedDeployment.Input := " ++ deploymentTerm ++ "\n"
   let programs := s!"def source : Program := {s}\ndef candidate : Program := {c}\n"
   let profiles := fun (visibility : String) =>
     s!"{visibility}def profile := {profileTerm profile}\n" ++
@@ -163,8 +174,8 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
     "theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
     tactic ++ "end LinkedExecutionProof\n"
   let gate :=
-    "private def verified : Except String (PLift (LinkedBehavior.ASTEquivalent profile premises sourceAST providers files plan)) :=\n" ++
-    "  LinkedBehavior.certifyASTs profile premises sourceAST providers files plan source candidate executions\n" ++
+    "private def verified : Except String (PLift (LinkedBehavior.ASTEquivalent profile premises sourceAST providers files plan deployment)) :=\n" ++
+    "  LinkedBehavior.certifyASTs profile premises sourceAST providers files plan source candidate executions deployment\n" ++
     "#audit_linked_programs verified\n" ++
     "#eval IO.ofExcept (verified.map fun _ => ())\n"
 
@@ -192,7 +203,8 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
 
 /-- Both proof layouts check the same all-world execution claim and exact ASTs. -/
 def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan)
-    (source candidate : Program) : Except Refusal (Certificate × EsmSplit.CertificateData.Entries) :=
-  (certificateText profile sourceAST providers files plan source candidate).run #[]
+    (source candidate : Program) (deployment : Option LinkedDeployment.Input := none) :
+    Except Refusal (Certificate × EsmSplit.CertificateData.Entries) :=
+  (certificateText profile sourceAST providers files plan source candidate deployment).run #[]
 
 end CoreJS.LinkedBehavior
