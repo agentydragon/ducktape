@@ -216,6 +216,21 @@ private def linkedParameterBinding (j : Json) : Except String (Name × Option Js
   let (target, fallback) ← splitBindingDefault j
   return (← linkedPatternIdentifier localBinding target, fallback)
 
+/-- A trailing rest binding with static exclusions and no parameter expressions. -/
+private def linkedObjectRestParameter (j : Json) : Except String (List (Name × Name) × Name) := do
+  let props ← j.getObjValAs? (Array Json) "properties"
+  let some tail := props.back? | throw "expected an object rest parameter"
+  unless (← field tail "type") == "RestElement" do throw "expected an object rest parameter"
+  let rest ← tail.getObjVal? "argument" >>= localBinding
+  let selected := props.pop
+  let fields ← if selected.isEmpty then pure [] else do
+    let object := Json.obj ((← j.getObj?).insert "properties" (.arr selected))
+    linkedObjectPattern object linkedParameterBinding
+  let fields ← fields.mapM fun (key, name, fallback) => do
+    if fallback.isSome then throw "unsupported default in object rest parameter"
+    return (key, name)
+  return (fields, rest)
+
 /-- Flat rest-array bindings still use the array iterator, including for elisions. -/
 private def linkedRestArrayPattern (j : Json) : Except String BindingPattern := do
   unless (← field j "type") == "ArrayPattern" do throw "expected an array rest pattern"
@@ -966,6 +981,20 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
         let value ← fallback.mapM (linkedExpr profile imports true x)
         initializers := initializers.push (.decl .let_ x (withBindingDefault slot value))
     | "ObjectPattern" =>
+      let props ← target.getObjValAs? (Array Json) "properties"
+      if props.back?.any (fun p => (field p "type").toOption == some "RestElement") then
+        if hasDefaults then
+          return .complete (← deferPattern "unsupported defaults with object rest parameters")
+        let (fields, restName) ← match linkedObjectRestParameter target with
+          | .ok result => pure result
+          | .error reason => return .complete (← deferPattern reason)
+        slots := slots.push slot
+        bound := (bound ++ (fields.map Prod.snd).toArray).push restName
+        let bindings := fields.map fun (key, name) => (Expr.str key, BindingPattern.name name)
+        -- Even a rest-only pattern checks coercibility before copying properties.
+        initializers := initializers.push (.bind .var (.object bindings) (.var slot))
+        initializers := initializers.push (.decl .var restName (.obj [.spread (.var slot) (fields.map Prod.fst)]))
+        continue
       let fields ← match linkedObjectPattern target linkedParameterBinding with
         | .ok fields => pure fields
         | .error reason => return .complete (← deferPattern reason)

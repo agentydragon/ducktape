@@ -1,9 +1,48 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertifiedResult, assertRejected, caseShard, lower, observe, sequentialSplit } from "./harness.mjs";
+import {
+  assertCertifiedResult,
+  assertRejected,
+  caseShard,
+  lower,
+  observe,
+  sequentialSplit,
+  workerSplit,
+} from "./harness.mjs";
 
 const includesCase = caseShard();
+
+if (includesCase("object-rest-parameter")) {
+  const test = workerSplit(
+    "object-rest-parameter",
+    `function pick({ tab: first, tab: second, ...rest }) {
+       var first;
+       return [first, second, rest];
+     }
+     export const result = (() => {
+       let trace = "";
+       const source = { get tab() { trace += "t"; return 3; }, get extra() { trace += "e"; return 4; } };
+       const [first, second, rest] = pick(source);
+       let nullThrows = false;
+       try { pick(null); } catch { nullThrows = true; }
+       return [first, second, rest.extra, "tab" in rest, trace, nullThrows, pick.length];
+     })();`
+  );
+  assertCertifiedResult(test, [3, 3, 4, false, "tte", true, 1]);
+  assert.deepEqual(
+    lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]).verdict,
+    test.verdict
+  );
+}
+
+for (const [name, expression] of [
+  ["object-rest-default", "({ tab = 1, ...rest }) => tab"],
+  ["object-rest-computed", "({ ['tab']: tab, ...rest }) => tab"],
+]) {
+  if (!includesCase(name)) continue;
+  assertRejected(workerSplit(name, `const pick = ${expression}; export const result = pick({});`), /deferred function/);
+}
 
 if (includesCase("derived-getter-and-default-order")) {
   const test = sequentialSplit(

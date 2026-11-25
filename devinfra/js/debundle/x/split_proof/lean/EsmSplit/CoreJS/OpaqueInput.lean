@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.FromESTree
+import EsmSplit.CoreJS.StructuralRefusal
 import EsmSplit.Lower
 
 /-! Build a top-level opaque statement for structural proofs from a parsed, scope-annotated source unit.
@@ -7,6 +8,7 @@ to the same original source unit on both sides of a move and check its captures 
 
 namespace CoreJS.OpaqueInput
 
+open CoreJS.LinkedBehavior
 open Lean (Json)
 
 private structure Names where
@@ -72,5 +74,15 @@ def unit (origin : Nat) (j : Json) (loaderNames : Option (List Name) := none) : 
     | other => throw s!"unsupported opaque declaration kind {other}"
   else pure (if kind == "ClassDeclaration" then .let_ else .var)
   return .opaque origin (declared.map (·, declKind)) [] free .world
+
+/-- Structural lowering preserves the stable category from the exact context
+check that rejects an opaque source unit. -/
+def unitStructural (origin : Nat) (j : Json) (loaderNames : Option (List Name) := none) :
+    Except StructuralRefusal Stmt := do
+  if let some why := Lower.outsideModel false j then
+    throw (.unclassified why)
+  if FromESTree.needsOpaqueContext j (wholeUnit := true) (moduleLocationChecked := loaderNames.isSome) then
+    throw (.coded .opaqueUnitContext "opaque unit requires source-module or method context")
+  (unit origin j loaderNames).mapError StructuralRefusal.unclassified
 
 end CoreJS.OpaqueInput

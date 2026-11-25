@@ -58,6 +58,20 @@ const eagerFieldVerdict = eagerField.run(refusalScope);
 assert.equal(eagerFieldVerdict.status, "rejected");
 assert.match(eagerFieldVerdict.reason, /unit 1 is not a local allocating declaration/);
 
+const opaqueContext = structuralFixture(
+  "retained-dynamic-import-needs-module-context",
+  `const load = () => import("./lazy.mjs");
+   const phase = 1;
+   export { load, phase };`,
+  ["#1"],
+  ["#0", "#2"]
+);
+const opaqueContextVerdict = opaqueContext.run(refusalScope);
+assert.equal(opaqueContextVerdict.status, "rejected", JSON.stringify(opaqueContextVerdict));
+assert.match(opaqueContextVerdict.reason, /opaque unit requires source-module or method context/);
+assert.equal(opaqueContextVerdict.reason_code, "structural_opaque_unit_context");
+assert(!existsSync(opaqueContext.out));
+
 const typedArraySource = `import { seed } from "./provider.mjs";
    const bytes = new Uint8Array([seed, 17]);
    const read = (position) => bytes[position];
@@ -118,6 +132,7 @@ const laterCapture = structuralFixture(
 const capture = laterCapture.run(refusalScope);
 assert.equal(capture.status, "rejected", JSON.stringify(capture));
 assert.match(capture.reason, /unit 1 has access to the moved region of unit 3/);
+assert.equal(capture.reason_code, "structural_moved_region_access");
 assert(!existsSync(laterCapture.out));
 
 const deferredPair = structuralFixture(
@@ -224,4 +239,5 @@ const two = structuralFixture("retained-capture-two-pivots", retainedReader, ["#
 const twoVerdict = two.run(refusalScope);
 assert.equal(twoVerdict.status, "rejected", JSON.stringify(twoVerdict));
 assert.match(twoVerdict.reason, /unit 0 has access to the moved region of unit 3/);
+assert.equal(twoVerdict.reason_code, "structural_moved_region_access");
 assert(!existsSync(two.out));

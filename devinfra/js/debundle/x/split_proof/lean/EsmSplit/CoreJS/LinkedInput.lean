@@ -4,6 +4,7 @@ import EsmSplit.CoreJS.LinkedDeployment
 import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.ModuleInput
 import EsmSplit.CoreJS.OpaqueInput
+import EsmSplit.CoreJS.StructuralRefusal
 import EsmSplit.Plan
 import EsmSplit.ESTreeUnits
 import EsmSplit.ModulePath
@@ -15,6 +16,7 @@ gives both programs their bodies and links. -/
 
 namespace CoreJS.LinkedInput
 
+open CoreJS.LinkedBehavior
 open Lean (Json)
 
 private def field (j : Json) (key : String) := j.getObjValAs? String key
@@ -103,16 +105,19 @@ private def BodyFormat.scripts : BodyFormat → Std.HashSet (Nat × Nat)
   | _ => {}
 
 private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (imports : List Name)
-    (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) (exported : Bool) : Except String (Stmt × List Name × List TemplateSite) := do
+    (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) (exported : Bool) :
+    Except StructuralRefusal (Stmt × List Name × List TemplateSite) := do
   let retain (loaderNames : Option (List Name)) := do
-    let s ← OpaqueInput.unit origin j loaderNames
+    let s ← match format with
+      | .structural _ _ _ => OpaqueInput.unitStructural origin j loaderNames
+      | _ => (OpaqueInput.unit origin j loaderNames).mapError StructuralRefusal.unclassified
     return (s, (if exported then (Lower.topDefs j).eraseDups else []), [])
   match format with
   | .structural pivots location _ =>
     unless pivots.contains origin do
       -- Generators need their own intrinsic and fresh prototype.
       if Lower.typ j == "FunctionDeclaration" && Lower.flag j "generator" then
-        if let some why := Lower.outsideModel false j then throw why
+        if let some why := Lower.outsideModel false j then throw (.unclassified why)
       else
         let names := match providerSite with
           | none => location.entryAccess.unitNames[origin]?
@@ -123,26 +128,27 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
   | .linked => pure ()
   let (ast, sites) := numberSites origin format.scripts j
   if exported then
-    let (bindings, s) ← FromESTree.linkedDeclaration imports ast profile
+    let (bindings, s) ← (FromESTree.linkedDeclaration imports ast profile).mapError StructuralRefusal.unclassified
     return (s, bindings, sites.templates.toList)
-  return (← FromESTree.linkedUnit imports ast profile, [], sites.templates.toList)
+  return (← (FromESTree.linkedUnit imports ast profile).mapError StructuralRefusal.unclassified, [], sites.templates.toList)
 
 /-- A named default declaration exports its module binding. A retained named
 declaration uses the same checked captures and execution as the corresponding
 ordinary declaration. Anonymous defaults still require concrete lowering. -/
 private def BodyFormat.lowerDefault (format : BodyFormat) (profile : HostProfile) (imports : List Name)
-    (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) : Except String (Stmt × Name × List TemplateSite) := do
+    (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) :
+    Except StructuralRefusal (Stmt × Name × List TemplateSite) := do
   if let .structural pivots _ _ := format then
     unless pivots.contains origin do
       unless ["FunctionDeclaration", "ClassDeclaration"].contains (Lower.typ j) &&
-          Lower.typ (Lower.fld j "id") == "Identifier" do throw "unsupported opaque default export"
-      let name ← j.getObjVal? "id" >>= FromESTree.moduleBinding
+          Lower.typ (Lower.fld j "id") == "Identifier" do throw (.unclassified "unsupported opaque default export")
+      let name ← (j.getObjVal? "id" >>= FromESTree.moduleBinding).mapError StructuralRefusal.unclassified
       let (s, bindings, sites) ← format.lower profile imports origin providerSite j true
-      unless bindings == [name] do throw "expected one named default binding"
+      unless bindings == [name] do throw (.unclassified "expected one named default binding")
       return (s, name, sites)
-  if format.scripts.contains (origin, 0) then throw "unsupported opaque default export"
+  if format.scripts.contains (origin, 0) then throw (.unclassified "unsupported opaque default export")
   let (ast, sites) := numberSites origin format.scripts j
-  let (name, s) ← FromESTree.linkedDefaultExport imports ast profile
+  let (name, s) ← (FromESTree.linkedDefaultExport imports ast profile).mapError StructuralRefusal.unclassified
   return (s, name, sites.templates.toList)
 
 /-- A retained unit can observe every live export through a namespace, even when the
@@ -179,62 +185,68 @@ private def namespaceCaptures (captures : List (Name × List Name)) (stmt : Stmt
     return stmt
 
 private def parse (format : BodyFormat) (profile : HostProfile) (path : String) (nodes : Array Json)
-    (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Option String := none) : Except String Parsed := do
+    (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Option String := none) :
+    Except StructuralRefusal Parsed := do
   let mut imports := #[]
   let mut namespaces := #[]
   for j in nodes do
-    if (← typ j) == "ImportDeclaration" then
+    if (← (typ j).mapError StructuralRefusal.unclassified) == "ImportDeclaration" then
       if let .structural _ _ fixed := format then
         if let #[sp] := Lower.items (Lower.fld j "specifiers") then
           if Lower.typ sp == "ImportNamespaceSpecifier" then
-            let (req, capture) ← namespaceImport fixed path j sp
+            let (req, capture) ← (namespaceImport fixed path j sp).mapError StructuralRefusal.unclassified
             imports := imports.push req
             namespaces := namespaces.push capture
             continue
-      imports := imports.push (← ModuleInput.importDecl path j)
+      imports := imports.push (← (ModuleInput.importDecl path j).mapError StructuralRefusal.unclassified)
   let names := namespaces.toList.map Prod.fst ++ imports.toList.flatMap fun i => i.names.map Prod.snd
   let mut units := #[]
   let mut exports := #[]
   let mut templates := #[]
   for (j, i) in nodes.zipIdx do
-    let origin : Except String Nat := match origins with
+    let origin : Except StructuralRefusal Nat := match origins with
       | none => pure (base + i)
       | some ids => match ids[units.size]? with
         | some id => pure id
-        | none => throw "emitted body length differs from the placement"
-    let decode (ast : Json) (exported : Bool) : Except String (Stmt × List Name × List TemplateSite) := do
+        | none => throw (.unclassified "emitted body length differs from the placement")
+    let decode (ast : Json) (exported : Bool) :
+        Except StructuralRefusal (Stmt × List Name × List TemplateSite) := do
       let unitOrigin ← origin
       format.lower profile names unitOrigin (provider.map fun referrer => (referrer, unitOrigin - base)) ast exported
-    match ← typ j with
+    match ← (typ j).mapError StructuralRefusal.unclassified with
     | "ImportDeclaration" => pure ()
     -- Neither statement changes the modeled state, so neither gets a unit.
     | "EmptyStatement" | "DebuggerStatement" => pure ()
     | "ExportNamedDeclaration" =>
-      ModuleInput.noAttributes j
-      unless (← j.getObjVal? "source") == .null do throw "unsupported re-export from another module"
-      let declaration ← j.getObjVal? "declaration"
-      let specs ← j.getObjValAs? (Array Json) "specifiers"
+      (ModuleInput.noAttributes j).mapError StructuralRefusal.unclassified
+      unless (← (j.getObjVal? "source").mapError StructuralRefusal.unclassified) == .null do
+        throw (.unclassified "unsupported re-export from another module")
+      let declaration ← (j.getObjVal? "declaration").mapError StructuralRefusal.unclassified
+      let specs ← (j.getObjValAs? (Array Json) "specifiers").mapError StructuralRefusal.unclassified
       if declaration == .null then
         for sp in specs do
-          exports := exports.push (← FromESTree.exportSpec sp)
+          exports := exports.push (← (FromESTree.exportSpec sp).mapError StructuralRefusal.unclassified)
       else
-        unless specs.isEmpty do throw "expected an inline declaration export"
+        unless specs.isEmpty do throw (.unclassified "expected an inline declaration export")
         let (s, names, sites) ← decode declaration true
         templates := templates ++ sites.toArray
-        units := units.push (i, ← namespaceCaptures namespaces.toList s, declaration)
+        units := units.push (i, ← (namespaceCaptures namespaces.toList s).mapError StructuralRefusal.unclassified, declaration)
         for name in names do exports := exports.push (name, name)
     | "ExportDefaultDeclaration" =>
       let unitOrigin ← origin
-      let (s, name, sites) ← (format.lowerDefault profile names unitOrigin
-        (provider.map fun referrer => (referrer, unitOrigin - base)) (← j.getObjVal? "declaration")).mapError
-        fun why => s!"statement {i}: {why}"
+      let lowered := format.lowerDefault profile names unitOrigin
+        (provider.map fun referrer => (referrer, unitOrigin - base))
+        (← (j.getObjVal? "declaration").mapError StructuralRefusal.unclassified)
+      let (s, name, sites) ← lowered.mapError
+        (StructuralRefusal.mapReason fun why => s!"statement {i}: {why}")
       templates := templates ++ sites.toArray
-      units := units.push (i, ← namespaceCaptures namespaces.toList s, j)
+      units := units.push (i, ← (namespaceCaptures namespaces.toList s).mapError StructuralRefusal.unclassified, j)
       exports := exports.push ("default", name)
     | _ =>
-      let (s, _, sites) ← (decode j false).mapError fun why => s!"statement {i}: {why}"
+      let (s, _, sites) ← (decode j false).mapError
+        (StructuralRefusal.mapReason fun why => s!"statement {i}: {why}")
       templates := templates ++ sites.toArray
-      units := units.push (i, ← namespaceCaptures namespaces.toList s, j)
+      units := units.push (i, ← (namespaceCaptures namespaces.toList s).mapError StructuralRefusal.unclassified, j)
   return { imports := imports.toList, units := units.toList, exports := exports.toList, templates := templates.toList }
 
 private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module where
@@ -244,17 +256,18 @@ private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module w
   exports := p.exports
 
 private def readProviders (format : BodyFormat) (profile : HostProfile) (providers : List (String × Json))
-    (base : Nat) (roots : List String := []) : Except String (List Module × List TemplateSite) := do
+    (base : Nat) (roots : List String := []) : Except StructuralRefusal (List Module × List TemplateSite) := do
   let mut templates := #[]
   let names := roots ++ providers.map Prod.fst
   let mut modules := #[]
   let mut offset := base
   for (name, file) in providers do
-    let nodes ← (ESTreeUnits.nodes file).mapError fun why => s!"{name}: {why}"
-    let p ← (parse format profile name nodes offset (provider := some name)).mapError fun why => s!"{name}: {why}"
+    let nodes ← (ESTreeUnits.nodes file).mapError fun why => StructuralRefusal.unclassified s!"{name}: {why}"
+    let p ← (parse format profile name nodes offset (provider := some name)).mapError
+      (StructuralRefusal.mapReason fun why => s!"{name}: {why}")
     for req in p.imports do
       unless names.contains req.source do
-        throw s!"{name}: missing provider dependency {req.source}"
+        throw (.unclassified s!"{name}: missing provider dependency {req.source}")
     templates := templates ++ p.templates.toArray
     modules := modules.push (p.numbered name offset)
     offset := offset + nodes.size
@@ -262,28 +275,30 @@ private def readProviders (format : BodyFormat) (profile : HostProfile) (provide
 
 private def readSplit (format : BodyFormat) (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
     (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) (base : Nat := 0)
-    (provider : Option String := none) : Except String (Module × List TemplateSite) := do
-  let nodes ← ESTreeUnits.nodes (← files.getObjVal? m.name)
+    (provider : Option String := none) : Except StructuralRefusal (Module × List TemplateSite) := do
+  let file ← (files.getObjVal? m.name).mapError StructuralRefusal.unclassified
+  let nodes ← (ESTreeUnits.nodes file).mapError StructuralRefusal.unclassified
   let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (base + i, ·)
   let p ← parse format profile m.name nodes base (some (placed.map Prod.fst).toArray) provider
   let (external, glue) := p.imports.partition fun req => providers.contains req.source
   if m.name == P.entry then
     unless p.imports.take original.imports.length == original.imports && external == original.imports do
-      throw "entry requests for providers differ from the original entry"
+      throw (.unclassified "entry requests for providers differ from the original entry")
   else
     for req in external do
       unless !req.names.isEmpty && original.imports.any (fun i =>
           i.source == req.source && req.names.all i.names.contains) do
-        throw s!"unexpected provider import from {req.source}"
+        throw (.unclassified s!"unexpected provider import from {req.source}")
   let exportsOf (md : EsmSplit.Module) := md.exports ++ (if md.name == P.entry then original.exports else [])
   let expectedGlue : List Import := m.imports.map fun (source, names) =>
     let exports := ((P.find source).map exportsOf).getD []
     { source, names := names.map fun localName => (EsmSplit.exportNameFor exports localName, localName) }
-  unless glue = expectedGlue do throw "module's glue imports differ from the plan"
-  unless p.exports.Perm (exportsOf m) do throw "module's named exports differ from the plan"
-  unless p.units.length == placed.length do throw "emitted body length differs from the placement"
+  unless glue = expectedGlue do throw (.unclassified "module's glue imports differ from the plan")
+  unless p.exports.Perm (exportsOf m) do throw (.unclassified "module's named exports differ from the plan")
+  unless p.units.length == placed.length do throw (.unclassified "emitted body length differs from the placement")
   let body ← (p.units.zip placed).mapM fun ((_, actual, ast), (id, expected)) => do
-    unless unitSyntax ast == unitSyntax expected do throw s!"emitted syntax differs from original unit {id}"
+    unless unitSyntax ast == unitSyntax expected do
+      throw (.unclassified s!"emitted syntax differs from original unit {id}")
     return (id, actual)
   return ({ name := m.name, imports := p.imports, body, exports := p.exports }, p.templates)
 
@@ -367,44 +382,52 @@ private structure Fragment where
   emittedTemplates : List TemplateSite
 
 private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source files : Json) (P : EsmSplit.Plan)
-    (sourcePath : String) (providerNames : List String) (base : Nat) (provider : Option String := none) : Except String Fragment := do
-  let fs := (← files.getObj?).toList.map Prod.fst
-  EsmSplit.validateModulePaths (P.entry :: fs ++ providerNames)
-  unless fs.Perm (P.mods.map (·.name)) && fs.contains P.entry do throw "output filenames differ from the plan"
-  unless !fs.any providerNames.contains do throw "providers overlap emitted modules"
-  let nodes ← ESTreeUnits.nodes source
+    (sourcePath : String) (providerNames : List String) (base : Nat) (provider : Option String := none) :
+    Except StructuralRefusal Fragment := do
+  let fs := (← (files.getObj?).mapError StructuralRefusal.unclassified).toList.map Prod.fst
+  (EsmSplit.validateModulePaths (P.entry :: fs ++ providerNames)).mapError StructuralRefusal.unclassified
+  unless fs.Perm (P.mods.map (·.name)) && fs.contains P.entry do
+    throw (.unclassified "output filenames differ from the plan")
+  unless !fs.any providerNames.contains do throw (.unclassified "providers overlap emitted modules")
+  let nodes ← (ESTreeUnits.nodes source).mapError StructuralRefusal.unclassified
   unless (P.mods.flatMap (·.stmts)).Perm (List.range nodes.size) do
-    throw "placement must cover every original unit once"
-  let some entry := P.find P.entry | throw "missing entry placement"
+    throw (.unclassified "placement must cover every original unit once")
+  let some entry := P.find P.entry | throw (.unclassified "missing entry placement")
   for (j, i) in nodes.zipIdx do
-    if ["ImportDeclaration", "ExportNamedDeclaration", "ExportDefaultDeclaration"].contains (← typ j) then
-      unless entry.stmts.contains i do throw s!"original import or export unit {i} must stay in the entry"
+    if ["ImportDeclaration", "ExportNamedDeclaration", "ExportDefaultDeclaration"].contains
+        (← (typ j).mapError StructuralRefusal.unclassified) then
+      unless entry.stmts.contains i do
+        throw (.unclassified s!"original import or export unit {i} must stay in the entry")
   let original ← parse format profile sourcePath nodes base (provider := provider)
   if let .structural pivots _ _ := format then
     let bodyIds := Std.HashSet.ofList (original.units.map fun u => base + u.1)
     for pivot in pivots do
-      unless bodyIds.contains pivot do throw s!"pivot {pivot} is not an executable source unit"
+      unless bodyIds.contains pivot do
+        throw (.unclassified s!"pivot {pivot} is not an executable source unit")
   for req in original.imports do
-    unless providerNames.contains req.source do throw s!"missing original dependency {req.source}"
+    unless providerNames.contains req.source do
+      throw (.unclassified s!"missing original dependency {req.source}")
   let originalSyntax := Std.HashMap.ofList (original.units.map fun (i, _, ast) => (i, ast))
   let split ← P.mods.mapM fun m =>
-    (readSplit format profile files P providerNames original originalSyntax m base provider).mapError fun why => s!"{m.name}: {why}"
+    (readSplit format profile files P providerNames original originalSyntax m base provider).mapError
+      (StructuralRefusal.mapReason fun why => s!"{m.name}: {why}")
   return ⟨original.numbered P.entry base, split.map Prod.fst, nodes.size, original.templates, split.flatMap Prod.snd⟩
 
 private def decode (format : BodyFormat) (source providers files : Json) (P : EsmSplit.Plan)
-    (profile : HostProfile) : Except String (Program × Program) := do
-  let ps := (← providers.getObj?).toList
+    (profile : HostProfile) : Except StructuralRefusal (Program × Program) := do
+  let ps := (← (providers.getObj?).mapError StructuralRefusal.unclassified).toList
   let fragment ← decodeFragment format profile source files P "bundle.mjs" (ps.map Prod.fst) 0
   let (shared, providerSites) ← readProviders format profile ps fragment.unitCount
-  let before ← installTemplates { entry := P.entry, modules := fragment.sourceModule :: shared }
-    (fragment.sourceTemplates ++ providerSites)
-  let after ← installTemplates { entry := P.entry, modules := fragment.emitted ++ shared }
-    (fragment.emittedTemplates ++ providerSites)
+  let before ← (installTemplates { entry := P.entry, modules := fragment.sourceModule :: shared }
+    (fragment.sourceTemplates ++ providerSites)).mapError StructuralRefusal.unclassified
+  let after ← (installTemplates { entry := P.entry, modules := fragment.emitted ++ shared }
+    (fragment.emittedTemplates ++ providerSites)).mapError StructuralRefusal.unclassified
   let (before, after) ← match format with
     | .linked | .recorded _ => pure (before, after)
     | .structural _ location _ =>
-      pure (← location.attach before, ← location.attach after)
-  checkScopes before after
+      pure (← (location.attach before).mapError StructuralRefusal.unclassified,
+        ← (location.attach after).mapError StructuralRefusal.unclassified)
+  (checkScopes before after).mapError StructuralRefusal.unclassified
   return (before, after)
 
 /-- The original entry is at the virtual root. Provider and emitted file keys are canonical
@@ -412,7 +435,8 @@ relative filenames in that same root, with no overlap. Plan ordinals refer to th
 source unit array, including imports and export lists. The two programs share the
 providers, whose stable identities start after that array. -/
 def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : HostProfile := .empty) :
-    Except String (Program × Program) := decode .linked source providers files P profile
+    Except String (Program × Program) :=
+  (decode .linked source providers files P profile).mapError StructuralRefusal.reason
 
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use
@@ -422,8 +446,9 @@ This verifies placement, unchanged unit syntax, import/export links and resolved
 of the order change and correspondence with the emitted source files are separate obligations. -/
 def decodeStructuralPair (source providers files : Json) (P : EsmSplit.Plan) (pivots : List Nat)
     (profile : HostProfile := .empty) (deployment : Option LinkedDeployment.Input := none) :
-    Except String (Program × Program) := do
-  let location ← deployment.mapM (LinkedDeployment.check · source providers P)
+    Except StructuralRefusal (Program × Program) := do
+  let location ← deployment.mapM fun d =>
+    (LinkedDeployment.check d source providers P).mapError StructuralRefusal.unclassified
   decode (.structural (Std.HashSet.ofList pivots) (location.getD {}) (if deployment.isSome then providers else .null)) source providers files P profile
 
 /-- One original path and the reparsed output files of its plan. Filenames
@@ -437,13 +462,13 @@ structure StaticSplit where
 include the entry's import and export syntax. Provider ordinals follow the entry. -/
 def program (source providers : Json) (scripts : Std.HashSet (Nat × Nat)) (entry : String := "main") :
     Except String Program := do
-  let nodes ← ESTreeUnits.nodes source
+  let nodes ← (ESTreeUnits.nodes source).mapError id
   let format := BodyFormat.recorded scripts
-  let original ← parse format .nodeRecording entry nodes
+  let original ← (parse format .nodeRecording entry nodes).mapError StructuralRefusal.reason
   let ps := (← providers.getObj?).toList
   for req in original.imports do
     unless ps.any (·.1 == req.source) do throw s!"missing original dependency {req.source}"
-  let (shared, providerSites) ← readProviders format .nodeRecording ps nodes.size [entry]
+  let (shared, providerSites) ← (readProviders format .nodeRecording ps nodes.size [entry]).mapError StructuralRefusal.reason
   let p ← installTemplates { entry, modules := original.numbered entry 0 :: shared }
     (original.templates ++ providerSites)
   let _ ← scopes p
@@ -472,22 +497,23 @@ sorted fixed-file map, independently of either graph's evaluation order. In
 structural mode each fragment's hints and capabilities use its local ordinals. -/
 def decodeDeployment (entry : String) (parts : List StaticSplit) (shared : Json)
     (inputs : Option LinkedDeployment.Input) (profile : HostProfile)
-    (hints : String → List Nat) : Except String DecodedDeployment := do
-  let fixedFiles := (← shared.getObj?).toList
-  let originals ← publicPaths parts shared
+    (hints : String → List Nat) : Except StructuralRefusal DecodedDeployment := do
+  let fixedFiles := (← (shared.getObj?).mapError StructuralRefusal.unclassified).toList
+  let originals ← (publicPaths parts shared).mapError StructuralRefusal.unclassified
   let outputs := parts.flatMap fun part => part.plan.mods.map (·.name)
   let all := outputs ++ fixedFiles.map Prod.fst
-  EsmSplit.validateModulePaths (entry :: originals ++ all)
-  unless originals.Nodup && all.Nodup do throw "joint output path collision"
-  unless originals.contains entry do throw s!"missing deployment root: {entry}"
+  (EsmSplit.validateModulePaths (entry :: originals ++ all)).mapError StructuralRefusal.unclassified
+  unless originals.Nodup && all.Nodup do throw (.unclassified "joint output path collision")
+  unless originals.contains entry do throw (.unclassified s!"missing deployment root: {entry}")
   let access ← match inputs with
     | some snapshot => do
-      unless snapshot.entry == entry do throw "deployment root differs"
-      LinkedDeployment.checkGraph snapshot (parts.map fun p => (p.source, p.plan)) shared
+      unless snapshot.entry == entry do throw (.unclassified "deployment root differs")
+      (LinkedDeployment.checkGraph snapshot (parts.map fun p => (p.source, p.plan)) shared).mapError
+        StructuralRefusal.unclassified
     | none => do
       for (path, ast) in parts.map (fun p => (p.plan.entry, p.source)) ++ fixedFiles do
-        unless (← ModuleLocation.uses path ast).isEmpty do
-          throw s!"{path}: joint static split requires location-independent units"
+        unless (← (ModuleLocation.uses path ast).mapError StructuralRefusal.unclassified).isEmpty do
+          throw (.unclassified s!"{path}: joint static split requires location-independent units")
       pure {}
   let format (ids : List Nat) : BodyFormat :=
     if inputs.isSome then .structural (Std.HashSet.ofList ids) access shared else .linked
@@ -497,19 +523,20 @@ def decodeDeployment (entry : String) (parts : List StaticSplit) (shared : Json)
   for part in parts do
     let name := part.plan.entry
     let f ← (decodeFragment (format ((hints name).map (base + ·))) profile part.source part.files part.plan
-      name (originals.erase name) base (some name)).mapError fun why => s!"{name}: {why}"
+      name (originals.erase name) base (some name)).mapError
+      (StructuralRefusal.mapReason fun why => s!"{name}: {why}")
     fragments := fragments.push f
     planned := planned ++ (plannedPlacements part.plan f.sourceModule base).toArray
     base := base + f.unitCount
   let (fixed, fixedSites) ← readProviders (format []) profile fixedFiles base (parts.map (·.plan.entry))
   let fs := fragments.toList
-  let before ← installTemplates ⟨entry, fs.map (·.sourceModule) ++ fixed⟩
-    (fs.flatMap (·.sourceTemplates) ++ fixedSites)
-  let after ← installTemplates ⟨entry, fs.flatMap (·.emitted) ++ fixed⟩
-    (fs.flatMap (·.emittedTemplates) ++ fixedSites)
-  let before ← access.attach before
-  let after ← access.attach after
-  checkScopes before after
+  let before ← (installTemplates ⟨entry, fs.map (·.sourceModule) ++ fixed⟩
+    (fs.flatMap (·.sourceTemplates) ++ fixedSites)).mapError StructuralRefusal.unclassified
+  let after ← (installTemplates ⟨entry, fs.flatMap (·.emitted) ++ fixed⟩
+    (fs.flatMap (·.emittedTemplates) ++ fixedSites)).mapError StructuralRefusal.unclassified
+  let before ← (access.attach before).mapError StructuralRefusal.unclassified
+  let after ← (access.attach after).mapError StructuralRefusal.unclassified
+  (checkScopes before after).mapError StructuralRefusal.unclassified
   return ⟨before, after, planned.toList ++ fixed.flatMap Module.unitPlacements⟩
 
 end CoreJS.LinkedInput
