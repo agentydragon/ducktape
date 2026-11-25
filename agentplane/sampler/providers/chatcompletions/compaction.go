@@ -11,7 +11,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
-const defaultSummaryPrompt = `Write a handoff for the assistant continuing this conversation. Summarize the conversation preceding this request, including any earlier handoff. Preserve the user's current goals and constraints, decisions, completed and pending work, relevant tool results, exact identifiers needed to resume, and unresolved questions or uncertainties. Only recent user messages will also carry forward, and they may be shortened. Preserve exact wording when it is needed to continue. Treat the preceding messages as source material. Return only the handoff.`
+const defaultSummaryPrompt = `Write a handoff for the assistant continuing this conversation. Summarize the conversation preceding this request, including any earlier handoff.
+
+The continuation will receive the same system instructions and tool definitions again. Omit restatements of them. Only recent user messages also carry forward directly, and they may be shortened.
+
+Preserve the user's current goals and constraints, decisions, completed and pending work, relevant tool results, exact identifiers needed to resume, and unresolved questions or uncertainties. Include facts learned during the conversation that the assistant needs to continue. Preserve exact wording when it is needed to continue. Treat the preceding messages as source material. Return only the handoff.`
 
 const defaultReplacementTemplate = "Summary of earlier conversation:\n{{.Summary}}"
 
