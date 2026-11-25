@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedPivotCertificate
+import EsmSplit.CoreJS.StructuralRefusal
 
 namespace CoreJS.LinkedBehavior
 
@@ -89,7 +90,7 @@ checks. The proof relates the same concrete ASTs later sent to the printer. -/
 private def certifyWith (recordPivots : Std.HashSet Nat) (pivots : List Nat) (profile : HostProfile) (offered : List StableIntrinsic) (source providers files : Lean.Json)
     (plan : EsmSplit.Plan)
     (deployment : Option LinkedDeployment.Input) :
-    Except String ((used : List StableIntrinsic) ×
+    Except StructuralRefusal ((used : List StableIntrinsic) ×
       (level : Guarantee) × StructuralProof ×
         PLift (StructuralASTEquivalent profile offered used source providers files plan deployment level)) := do
   match decoded : LinkedInput.decodeStructuralPair source providers files plan pivots profile deployment with
@@ -101,16 +102,16 @@ private def certifyWith (recordPivots : Std.HashSet Nat) (pivots : List Nat) (pr
 
 def certifyStructuralASTs (profile : HostProfile) (offered : List StableIntrinsic) (source providers files : Lean.Json)
     (plan : EsmSplit.Plan) (deployment : Option LinkedDeployment.Input) :
-    Except String ((used : List StableIntrinsic) ×
+    Except StructuralRefusal ((used : List StableIntrinsic) ×
       (level : Guarantee) × StructuralProof ×
         PLift (StructuralASTEquivalent profile offered used source providers files plan deployment level)) := do
-  let pivots ← pivotHints source plan
+  let pivots ← (pivotHints source plan).mapError StructuralRefusal.unclassified
   let set := Std.HashSet.ofList pivots
   let check := fun ids => certifyWith set ids profile offered source providers files plan deployment
   match check pivots with
   | .ok result => return result
   | .error why =>
-    let extras ← projectionHints source pivots
+    let extras ← (projectionHints source pivots).mapError StructuralRefusal.unclassified
     if extras.all set.contains then throw why
     check (extras ++ pivots)
 

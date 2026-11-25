@@ -260,11 +260,18 @@ if (runCase("shorthand-parameter-default")) {
   assert.deepEqual(observe(path.join(out, entry), "answer"), { answer: [1, 0] });
 }
 
+if (runCase("rest-only-parameter")) {
+  const source = "function read({...props}) { return props.a; } const answer = read({a: 3}); export {answer};";
+  const result = sequentialSplit("rest-only-parameter", source, { [entry]: ["#0", "#1", "#2"] }, []);
+  assertCertified(result.verdict, result.log);
+  assert.deepEqual(observe(result.files.sourceFile, "answer"), { answer: 3 });
+  assert.deepEqual(observe(path.join(result.out, entry), "answer"), { answer: 3 });
+}
+
 for (const [name, param] of [
   ["empty", "{}"],
   ["computed", "{[key]:value}"],
   ["nested", "{a:{b}}"],
-  ["rest", "{...props}"],
 ]) {
   if (!runCase(`unsupported-parameter-${name}`)) continue;
   const source = `function read(${param}) {} read({}); export {read};`;

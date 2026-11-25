@@ -90,6 +90,8 @@ inductive Prim where
   | instanceOf
   /-- Construct the immutable dense array used for a template site. The cooked array receives the raw array first. -/
   | templateArray (cooked : Bool)
+  /-- Allocate an array whose listed indices have no own property. -/
+  | sparseArray (holes : List Nat)
   | checkArrayFrom
   | templateIterable
   | forInKeys
