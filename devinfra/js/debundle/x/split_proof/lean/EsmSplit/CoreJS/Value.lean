@@ -1141,6 +1141,13 @@ def templateArrayObject (values : List Val) (raw : Option Val) : Obj :=
   let extra := raw.toList.map fun v => (PropertyKey.str "raw", Property.data v false false false)
   { proto := some arrayProto, array := true, frozen := true, props := items ++ [length] ++ extra }
 
+/-- Array elisions increase length without defining the corresponding index. -/
+def sparseArrayObject (holes : List Nat) (values : List Val) : Obj :=
+  let items := (values.zipIdx.filter fun (_, i) => !(holes.contains i)).map fun (v, i) =>
+    (PropertyKey.str (toString i), Property.data v true true true)
+  { proto := some arrayProto, array := true,
+    props := items ++ [(PropertyKey.str "length", Property.data (.num (Float.ofNat values.length)) true false false)] }
+
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
@@ -1182,6 +1189,7 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
     let values := if cooked then args.drop 1 else args
     let raw := if cooked then args.head? else none
     return .obj (← alloc (templateArrayObject values raw))
+  | .sparseArray holes => .obj <$> alloc (sparseArrayObject holes args)
   | .forInKeys => forInKeys (arg 0)
   | .checkForInWrite => checkForInWrite (arg 0) (arg 1) (arg 2)
   | .log =>
