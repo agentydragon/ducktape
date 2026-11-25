@@ -55,8 +55,6 @@ type PromptCacheConfig struct {
 type CompactionConfig struct {
 	MaxTokens       int `json:"max_tokens"`
 	KeepRecentTurns int `json:"keep_recent_turns,omitempty"`
-	// CLEANUP(added 2026-11-24): Remove after staging uses the model-level setting.
-	LegacyAutoCompactTokens *int `json:"auto_compact_tokens,omitempty"`
 }
 
 func (c Config) Validate() error {
@@ -94,9 +92,6 @@ func (c Config) Validate() error {
 	if c.Compaction != nil {
 		if c.Compaction.MaxTokens <= 0 {
 			return errors.New("compaction.max_tokens must be positive")
-		}
-		if c.Compaction.LegacyAutoCompactTokens != nil && *c.Compaction.LegacyAutoCompactTokens <= 0 {
-			return errors.New("compaction.auto_compact_tokens must be positive")
 		}
 		if c.Compaction.KeepRecentTurns < 0 {
 			return errors.New("compaction.keep_recent_turns must not be negative")
