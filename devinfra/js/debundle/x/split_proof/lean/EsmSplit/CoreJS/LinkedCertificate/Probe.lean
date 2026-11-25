@@ -88,12 +88,10 @@ private def premisedStateAgreement (premises : HostPremises)
 
 private theorem replayPremisedEquivalentFor {premises : HostPremises} {source candidate : Program} {fuel : Nat}
     {sourceState candidateState : State (premises.specialize World.probe)}
-    (sourceChecked : CheckedLink source World.probe)
-    (candidateChecked : CheckedLink candidate World.probe)
-    (sourceSupported : ReplayableSchedule (unitsOf sourceChecked.linked))
-    (candidateSupported : ReplayableSchedule (unitsOf candidateChecked.linked))
-    (sourceProbeRun : runProgram (premises.specialize World.probe) fuel source = .ok () sourceState)
-    (candidateProbeRun : runProgram (premises.specialize World.probe) fuel candidate = .ok () candidateState)
+    (sourceReplay : ∀ w, runProgram (premises.specialize w) fuel source =
+      .ok () (replaceWorld (premises.specialize w) sourceState))
+    (candidateReplay : ∀ w, runProgram (premises.specialize w) fuel candidate =
+      .ok () (replaceWorld (premises.specialize w) candidateState))
     (statesAgree : sourceState = candidateState) : EquivalentFor premises source candidate := by
   by_cases empty : premises = {}
   · subst premises
@@ -101,9 +99,9 @@ private theorem replayPremisedEquivalentFor {premises : HostPremises} {source ca
     intro w
     have satisfied : ({} : HostPremises).Satisfied w := by
       simp [HostPremises.Satisfied]
-    obtain ⟨sourceRun, candidateRun⟩ :=
-      replayPremised_pair sourceChecked candidateChecked sourceSupported candidateSupported
-        sourceProbeRun candidateProbeRun statesAgree w
+    have sourceRun := sourceReplay w
+    have candidateRun := candidateReplay w
+    rw [← statesAgree] at candidateRun
     have specialized := HostPremises.specialize_eq ({} : HostPremises) w satisfied
     have sourceRunAtWorld : runProgram w fuel source = .ok () (replaceWorld w sourceState) := by
       have transport := congrArg
@@ -118,9 +116,9 @@ private theorem replayPremisedEquivalentFor {premises : HostPremises} {source ca
     exact ⟨_, sourceRunAtWorld, candidateRunAtWorld⟩
   · simp [EquivalentFor, empty]
     intro w satisfied
-    obtain ⟨sourceRun, candidateRun⟩ :=
-      replayPremised_pair sourceChecked candidateChecked sourceSupported candidateSupported
-        sourceProbeRun candidateProbeRun statesAgree w
+    have sourceRun := sourceReplay w
+    have candidateRun := candidateReplay w
+    rw [← statesAgree] at candidateRun
     have specialized := premises.specialize_eq w satisfied
     have sourceRunAtWorld : runProgram w fuel source = .ok () (replaceWorld w sourceState) := by
       have transport := congrArg
@@ -150,8 +148,8 @@ private theorem replayPremisedSameExports {source candidate : Program}
   exact exportsMatched
 
 /-- A compiled replay check. It accepts only when both programs have a
-successful probe run, their complete probe states match, both linked schedules
-fit the proved replay fragment, and their public exports match. -/
+successful probe run, their complete probe states match, both reached schedules
+have replay witnesses, and their public exports match. -/
 def replayPremisedPrograms (premises : HostPremises) (fuel : Nat) (source candidate : Program) :
     Option (PLift (EquivalentFor premises source candidate ∧ SameExports source candidate)) := do
   let world := premises.specialize World.probe
@@ -161,13 +159,14 @@ def replayPremisedPrograms (premises : HostPremises) (fuel : Nat) (source candid
     | .ok () candidateState => do
       let sourceChecked ← checkedProbeLink source
       let candidateChecked ← checkedProbeLink candidate
-      let some sourceSupported := replayableScheduleWitness (unitsOf sourceChecked.linked) | none
-      let some candidateSupported := replayableScheduleWitness (unitsOf candidateChecked.linked) | none
+      let some sourceSupported := replayPremisedDynamicWitness (premises := premises) fuel sourceChecked | none
+      let some candidateSupported := replayPremisedDynamicWitness (premises := premises) fuel candidateChecked | none
       let some stateAgreement := premisedStateAgreement premises sourceState candidateState | none
       if exportsMatched : exportsMatchFrom sourceChecked candidateChecked then
         let semantics : EquivalentFor premises source candidate ∧ SameExports source candidate :=
-          ⟨replayPremisedEquivalentFor sourceChecked candidateChecked sourceSupported.down
-              candidateSupported.down sourceRun candidateRun stateAgreement.down,
+          ⟨replayPremisedEquivalentFor
+              (sourceSupported.down sourceState sourceRun) (candidateSupported.down candidateState candidateRun)
+              stateAgreement.down,
             replayPremisedSameExports sourceChecked candidateChecked exportsMatched⟩
         return PLift.up semantics
       else none

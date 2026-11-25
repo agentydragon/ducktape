@@ -708,6 +708,7 @@ lean_axiom_test(
         "CoreJS.LinkedBehavior.replayPremised_hoisted",
         "CoreJS.LinkedBehavior.replayPremised",
         "CoreJS.LinkedBehavior.replayPremised_pair",
+        "CoreJS.LinkedBehavior.replayPremisedDynamicWitness",
         "CoreJS.LinkedBehavior.checkPivot",
         "CoreJS.local_frame_units_commute",
         "CoreJS.frame_local_units_commute",

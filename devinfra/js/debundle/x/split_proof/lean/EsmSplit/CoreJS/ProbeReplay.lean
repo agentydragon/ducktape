@@ -2,15 +2,16 @@ import EsmSplit.CoreJS.HostProfile
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.Fragment
 import EsmSplit.CoreJS.Frame
+import EsmSplit.CoreJS.ClassParents
 
 /-!
 # Replay of world-independent linked initialization
 
-Replay transports a successful probe run across worlds when its linked units
-use only CoreJS operations whose results depend on the CoreJS state, not on
-host answers. The first executable fragment covers allocation-only
-initializers and deferred opaque closures; it includes reads from any already
-linked binding, even when that binding belongs to another allocation region.
+Replay transports a successful probe run across worlds when the reached CoreJS
+operations do not depend on host answers. The executable check covers
+allocation-only initializers, deferred opaque closures, and own data-property
+reads inside arrays and records. It checks each descriptor in the reached heap;
+an accessor or unsupported operation falls back to the generated proof.
 -/
 
 namespace CoreJS.LinkedBehavior
@@ -886,6 +887,163 @@ private theorem replay_evalReplayable {source target : World} (fuel : Nat) (env 
   rcases supported with ⟨allocOnly, noClass, resolved⟩
   exact (replay_allocOnly (source := source) (target := target) fuel).1 env expr allocOnly noClass resolved
 
+/-- A successful probe computation together with its transport to every world.
+The witnesses are constructed by compiled checks on the reached probe states. -/
+private structure ReplaySuccess {source : World} {α : Type}
+    (m : (w : World) → M w α) (s : State source) where
+  value : α
+  next : State source
+  run : m source s = .ok value next
+  replay : ∀ target, m target (replaceWorld target s) = .ok value (replaceWorld target next)
+
+private def replaySuccessOfPure {source : World} {α : Type} (value : α) (s : State source) :
+    ReplaySuccess (fun w => (pure value : M w α)) s :=
+  ⟨value, s, rfl, by intro target; rfl⟩
+
+private def replaySuccessBind {source : World} {α β : Type}
+    {m : (w : World) → M w α} {f : (w : World) → α → M w β} {s : State source}
+    (first : ReplaySuccess m s) (second : ReplaySuccess (fun w => f w first.value) first.next) :
+    ReplaySuccess (fun w => m w >>= f w) s where
+  value := second.value
+  next := second.next
+  run := by simp only [M.bind_apply, first.run, second.run]
+  replay := by
+    intro target
+    simp only [M.bind_apply, first.replay target, second.replay target]
+
+private def replaySuccessOfEquivalent {source : World} {α : Type}
+    (m : (w : World) → M w α) (s : State source)
+    (same : ∀ target, ReplayEquivalent (m source) (m target)) : Option (ReplaySuccess m s) :=
+  match h : m source s with
+  | .ok value next => some {
+      value := value
+      next := next
+      run := h
+      replay := by
+        intro target
+        rw [same target s, h]
+        rfl }
+  | .throw .. | .unknown .. | .fuel => none
+
+/-- Check the actual own descriptor before bypassing the accessor branch.
+The ordinary evaluator still performs the read in both worlds. -/
+private def replaySuccessOwnData {source : World} (fuel : Nat) (base key : Val) (s : State source) :
+    Option (ReplaySuccess (fun w => getProp (callFn (W := w) fuel) base key) s) :=
+  match base, key with
+  | .obj addr, .str name =>
+    match object : s.objAt addr with
+    | none => none
+    | some obj =>
+      match property : obj.props.lookup (.str name) with
+      | some (.data value writable enumerable configurable) => some {
+          value := value
+          next := s
+          run := getProp_ownData (callFn fuel) object property
+          replay := by
+            intro target
+            exact getProp_ownData (callFn fuel)
+              (show (replaceWorld target s).objAt addr = some obj from object) property }
+      | _ => none
+  | _, _ => none
+
+mutual
+
+private def checkReplayExpr {source : World} : (fuel : Nat) → (env : Env) → (expr : Expr) →
+    (s : State source) → Option (ReplaySuccess (fun w => evalExpr (W := w) fuel env expr) s)
+  | 0, _, _, _ => none
+  | n + 1, env, expr, s =>
+    if supported : replayableExpr env expr then
+      replaySuccessOfEquivalent (fun w => evalExpr (W := w) (n + 1) env expr) s
+        (fun _ => replay_evalReplayable (n + 1) env expr supported)
+    else
+      match expr with
+      | .get object key => do
+        let objectRun ← checkReplayExpr n env object s
+        let keyRun ← checkReplayExpr n env key objectRun.next
+        let readRun ← replaySuccessOwnData n objectRun.value keyRun.value keyRun.next
+        let keyStep := replaySuccessBind
+          (f := fun w keyValue => getProp (callFn (W := w) n) objectRun.value keyValue) keyRun readRun
+        let result := replaySuccessBind (f := fun w base => do
+          let keyValue ← evalExpr (W := w) n env key
+          getProp (callFn n) base keyValue) objectRun keyStep
+        have result' : ReplaySuccess (fun w => evalExpr (W := w) (n + 1) env (.get object key)) s := by
+          simpa only [evalExpr] using result
+        pure result'
+      | .arr exprs => do
+        let elements ← checkReplayArgs n env exprs s
+        let allocated ← replaySuccessOfEquivalent (fun w => alloc (W := w) (arrayObject elements.value))
+          elements.next (fun _ => replay_alloc (arrayObject elements.value))
+        let allocation := replaySuccessBind (f := fun w addr => (pure (Val.obj addr) : M w Val))
+          allocated (replaySuccessOfPure (Val.obj allocated.value) allocated.next)
+        let result := replaySuccessBind (f := fun w values => do
+          let addr ← alloc (W := w) (arrayObject values)
+          pure (Val.obj addr)) elements allocation
+        have result' : ReplaySuccess (fun w => evalExpr (W := w) (n + 1) env (.arr exprs)) s := by
+          simpa only [evalExpr] using result
+        pure result'
+      | .obj props => do
+        let allocated ← replaySuccessOfEquivalent
+          (fun w => alloc (W := w) { proto := some objectProto, props := [] }) s
+          (fun _ => replay_alloc { proto := some objectProto, props := [] })
+        let fields ← checkReplayProps n env allocated.value props allocated.next
+        let fieldStep := replaySuccessBind (f := fun w _ => (pure (Val.obj allocated.value) : M w Val))
+          fields (replaySuccessOfPure (Val.obj allocated.value) fields.next)
+        let result := replaySuccessBind (f := fun w addr => do
+          evalProps (W := w) n env addr props
+          pure (Val.obj addr)) allocated fieldStep
+        have result' : ReplaySuccess (fun w => evalExpr (W := w) (n + 1) env (.obj props)) s := by
+          simpa only [evalExpr] using result
+        pure result'
+      | _ => none
+
+private def checkReplayArgs {source : World} : (fuel : Nat) → (env : Env) → (exprs : List Expr) →
+    (s : State source) → Option (ReplaySuccess (fun w => evalArgs (W := w) fuel env exprs) s)
+  | 0, _, _, _ => none
+  | _ + 1, _, [], s => some (replaySuccessOfPure [] s)
+  | n + 1, env, expr :: rest, s =>
+    match argument : expr.argument with
+    | (true, _) => none
+    | (false, operand) => do
+      let head ← checkReplayExpr n env operand s
+      let tail ← checkReplayArgs n env rest head.next
+      let tailStep := replaySuccessBind
+        (f := fun w values => (pure ([head.value] ++ values) : M w (List Val))) tail
+        (replaySuccessOfPure ([head.value] ++ tail.value) tail.next)
+      let result := replaySuccessBind (f := fun w value => do
+        let values ← (pure [value] : M w (List Val))
+        return values ++ (← evalArgs n env rest)) head tailStep
+      have result' : ReplaySuccess (fun w => evalArgs (W := w) (n + 1) env (expr :: rest)) s := by
+        simpa only [evalArgs, argument, Bool.false_eq_true, ↓reduceIte, M.pure_bind] using result
+      pure result'
+
+private def checkReplayProps {source : World} : (fuel : Nat) → (env : Env) → (addr : Addr) →
+    (props : List PropDef) → (s : State source) →
+    Option (ReplaySuccess (fun w => evalProps (W := w) fuel env addr props) s)
+  | 0, _, _, _, _ => none
+  | _ + 1, _, _, [], s => some (replaySuccessOfPure () s)
+  | 1, _, _, _ :: _, _ => none
+  | n + 2, env, addr, .init (.str name) value :: rest, s => do
+    let init ← checkReplayExpr (n + 1) env value s
+    let created ← replaySuccessOfEquivalent
+      (fun w => createData (W := w) addr (.str name) init.value) init.next
+      (fun _ => replay_createData addr (.str name) init.value)
+    let tail ← checkReplayProps (n + 1) env addr rest created.next
+    let createStep := replaySuccessBind (f := fun w _ => evalProps (W := w) (n + 1) env addr rest)
+      created tail
+    let result := replaySuccessBind (f := fun w initValue => do
+      createData (W := w) addr (.str name) initValue
+      evalProps (n + 1) env addr rest) init createStep
+    have result' : ReplaySuccess
+        (fun w => evalProps (W := w) (n + 2) env addr (.init (.str name) value :: rest)) s := by
+      have keyEq (w : World) : (toKey (.str name) : M w PropertyKey) = pure (.str name) := by
+        funext state
+        rfl
+      simpa only [evalProps, evalExpr, keyEq, M.pure_bind] using result
+    pure result'
+  | _ + 2, _, _, _ :: _, _ => none
+
+end
+
 private theorem replay_initClosures {source target : World} (code : Nat) (cells : List (Option Addr))
     (env : Env) :
     ∀ (decls : List (Name × DeclKind)) (fns : List (String × Nat × Bool)) (part : Nat),
@@ -964,6 +1122,75 @@ private theorem replay_execReplayable {source target : World} (fuel : Nat) (env 
       intro _
       exact replay_pure Flow.normal
 
+private def checkReplayStmtExtra {source : World} : (fuel : Nat) → (env : Env) → (stmt : Stmt) →
+    (s : State source) → Option (ReplaySuccess (fun w => execStmt (W := w) fuel env stmt) s)
+  | n + 1, env, .expr expr, s => do
+    let evaluated ← checkReplayExpr n env expr s
+    let result := replaySuccessBind (f := fun w _ => (pure Flow.normal : M w Flow))
+      evaluated (replaySuccessOfPure Flow.normal evaluated.next)
+    have result' : ReplaySuccess (fun w => execStmt (W := w) (n + 1) env (.expr expr)) s := by
+      simpa only [execStmt] using result
+    pure result'
+  | n + 1, env, .decl kind name expr, s => do
+    let evaluated ← checkReplayExpr n env expr s
+    let written ← replaySuccessOfEquivalent
+      (fun w => if kind == .var then writeVar (W := w) env name evaluated.value
+        else initVar (W := w) env name evaluated.value) evaluated.next
+      (fun _ => by
+        cases kind with
+        | var => exact replay_writeVar env name evaluated.value
+        | let_ | const => exact replay_initVar env name evaluated.value)
+    let writeStep := replaySuccessBind (f := fun w _ => (pure Flow.normal : M w Flow))
+      written (replaySuccessOfPure Flow.normal written.next)
+    let result := replaySuccessBind (f := fun w value =>
+      (if kind == .var then writeVar (W := w) env name value else initVar env name value) >>=
+        fun _ => pure Flow.normal) evaluated writeStep
+    have result' : ReplaySuccess (fun w => execStmt (W := w) (n + 1) env (.decl kind name expr)) s := by
+      cases kind <;> simpa [execStmt] using result
+    pure result'
+  | _, _, _, _ => none
+
+private def checkReplayStmt {source : World} (fuel : Nat) (env : Env) (stmt : Stmt) (s : State source) :
+    Option (ReplaySuccess (fun w => execStmt (W := w) fuel env stmt) s) :=
+  if let some supported := replayableStmtWitness env stmt then
+    replaySuccessOfEquivalent (fun w => execStmt (W := w) fuel env stmt) s
+      (fun _ => replay_execReplayable fuel env stmt supported.down)
+  else checkReplayStmtExtra fuel env stmt s
+
+private def checkReplayUnit {source : World} (fuel : Nat) (env : Env) (id : Nat) (stmt : Stmt)
+    (s : State source) : Option (ReplaySuccess (fun w => runUnit (W := w) fuel env id stmt) s) := do
+  let entered ← replaySuccessOfEquivalent
+    (fun w => modifyState (W := w) fun state => { state with region := id + 1 }) s
+    (fun _ => replay_modify (by intro state; rfl))
+  let executed ← checkReplayStmt fuel env stmt entered.next
+  let exited ← replaySuccessOfEquivalent
+    (fun w => modifyState (W := w) fun state => { state with region := 0 }) executed.next
+    (fun _ => replay_modify (by intro state; rfl))
+  let exitStep := replaySuccessBind (f := fun w _ => (pure executed.value : M w Flow))
+    exited (replaySuccessOfPure executed.value exited.next)
+  let execution := replaySuccessBind (f := fun w flow => do
+    modifyState (W := w) fun state => { state with region := 0 }
+    pure flow) executed exitStep
+  let result := replaySuccessBind (f := fun w _ => do
+    let flow ← execStmt (W := w) fuel env stmt
+    modifyState fun state => { state with region := 0 }
+    pure flow) entered execution
+  have result' : ReplaySuccess (fun w => runUnit (W := w) fuel env id stmt) s := by
+    simpa only [runUnit, inRegion] using result
+  pure result'
+
+private def checkReplayUnits {source : World} (fuel : Nat) :
+    (units : List LinkedUnit) → (s : State source) →
+      Option (ReplaySuccess (fun w => runUnits (W := w) fuel units) s)
+  | [], s => some (replaySuccessOfPure () s)
+  | (id, stmt, env) :: rest, s => do
+    let head ← checkReplayUnit fuel env id stmt s
+    let tail ← checkReplayUnits fuel rest head.next
+    let result := replaySuccessBind (f := fun w _ => runUnits (W := w) fuel rest) head tail
+    have result' : ReplaySuccess (fun w => runUnits (W := w) fuel ((id, stmt, env) :: rest)) s := by
+      simpa only [runUnits] using result
+    pure result'
+
 private theorem replay_evalLiteral {source target : World} (fuel : Nat) (env : Env)
     (expr : Expr) (literal : primitiveLiteral expr) :
     ReplayEquivalent (evalExpr fuel env expr : M source Val) (evalExpr fuel env expr : M target Val) := by
@@ -1034,6 +1261,32 @@ private theorem runUnits_replayable {source target : World} (fuel : Nat)
     | throw value next => rfl
     | unknown why next => rfl
     | fuel => rfl
+
+/-- Check the operations reached by the concrete probe. Own data reads are
+checked against the current heap; unsupported reads retain the fallback. -/
+def replayPremisedDynamicWitness {premises : HostPremises} {p : Program} (fuel : Nat)
+    (checked : CheckedLink p World.probe) :
+    Option (PLift (∀ probeState,
+      runProgram (premises.specialize World.probe) fuel p = .ok () probeState →
+      ∀ w, runProgram (premises.specialize w) fuel p =
+        .ok () (replaceWorld (premises.specialize w) probeState))) := do
+  let source := premises.specialize World.probe
+  let sourceChecked : CheckedLink p source :=
+    ⟨checked.linked, linkState source checked.ready, link_from_probe checked source⟩
+  let run ← checkReplayUnits fuel (unitsOf checked.linked) sourceChecked.ready
+  return ⟨by
+    intro probeState probeRun w
+    let target := premises.specialize w
+    let targetChecked : CheckedLink p target :=
+      ⟨checked.linked, linkState target checked.ready, link_from_probe checked target⟩
+    rw [run_after_link fuel sourceChecked] at probeRun
+    have finalState : run.next = probeState := by
+      have same := run.run.symm.trans probeRun
+      cases same
+      rfl
+    have ready : replaceWorld target sourceChecked.ready = targetChecked.ready := rfl
+    rw [run_after_link fuel targetChecked, ← ready, ← finalState]
+    simpa using run.replay target⟩
 
 /-- A successful probe link transports to each world without executing any
 host operation. -/
@@ -1143,3 +1396,4 @@ end CoreJS.LinkedBehavior
 #print axioms CoreJS.LinkedBehavior.replayPremised_hoisted
 #print axioms CoreJS.LinkedBehavior.replayPremised
 #print axioms CoreJS.LinkedBehavior.replayPremised_pair
+#print axioms CoreJS.LinkedBehavior.replayPremisedDynamicWitness
