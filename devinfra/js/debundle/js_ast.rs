@@ -7,8 +7,8 @@ use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
 use swc_common::{
-    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Span, Spanned,
-    SyntaxContext,
+    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceFile, SourceMap, Span,
+    Spanned, SyntaxContext,
 };
 use swc_ecma_ast::{
     ArrayLit, ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr,
@@ -114,26 +114,14 @@ impl ParsedJsModule {
 
 #[derive(Clone, Debug)]
 pub struct SourceLineIndex {
-    files: Vec<FileLineIndex>,
-}
-
-#[derive(Clone, Debug)]
-struct FileLineIndex {
-    start_pos: BytePos,
-    line_starts: Vec<BytePos>,
+    files: Vec<Lrc<SourceFile>>,
 }
 
 impl SourceLineIndex {
     pub fn for_source_map(cm: &SourceMap) -> Self {
-        let files = cm
-            .files()
-            .iter()
-            .map(|file| FileLineIndex {
-                start_pos: file.start_pos,
-                line_starts: file.analyze().lines.clone(),
-            })
-            .collect();
-        Self { files }
+        Self {
+            files: cm.files().to_vec(),
+        }
     }
 
     pub fn line_for_span(&self, span: swc_common::Span) -> Option<usize> {
@@ -159,9 +147,8 @@ impl SourceLineIndex {
         if pos == BytePos(0) {
             return None;
         }
-        let file = self.file_for_pos(pos)?;
-        let line = file.line_for_pos(pos);
-        let line_start = *file.line_starts.get(line.checked_sub(1)?)?;
+        let (line, start) = self.locate_line(pos)?;
+        let line_start = start?;
         Some((line, (pos.0 - line_start.0 + 1) as usize))
     }
 
@@ -169,27 +156,15 @@ impl SourceLineIndex {
         if pos.is_dummy() {
             return None;
         }
-        let file = self.file_for_pos(pos)?;
-        Some(file.line_for_pos(pos))
+        Some(self.locate_line(pos)?.0)
     }
 
-    fn file_for_pos(&self, pos: BytePos) -> Option<&FileLineIndex> {
+    fn locate_line(&self, pos: BytePos) -> Option<(usize, Option<BytePos>)> {
         let index = self.files.partition_point(|file| file.start_pos <= pos);
-        if index == 0 {
-            None
-        } else {
-            self.files.get(index - 1)
-        }
-    }
-}
-
-impl FileLineIndex {
-    fn line_for_pos(&self, pos: BytePos) -> usize {
-        match self.line_starts.binary_search(&pos) {
-            Ok(line_index) => line_index + 1,
-            Err(0) => 0,
-            Err(insert_index) => insert_index,
-        }
+        let file = self.files.get(index.checked_sub(1)?)?;
+        let starts = &file.analyze().lines;
+        let line = starts.partition_point(|&start| start <= pos);
+        Some((line, line.checked_sub(1).map(|i| starts[i])))
     }
 }
 
