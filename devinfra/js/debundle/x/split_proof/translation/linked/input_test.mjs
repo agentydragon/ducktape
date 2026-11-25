@@ -277,6 +277,19 @@ cases.push({
     [seed, pivot, allocation, first, run],
   ],
 });
+cases.push({
+  kind: "structuralSparseHole",
+  input: parse("const sparse = [1, , (() => 2)()];"),
+  expected: {
+    reason: "statement 0: unsupported array hole",
+    reason_code: "structural_unsupported_sparse_array_hole",
+  },
+});
+cases.push({
+  kind: "structuralSparseHole",
+  input: parse("const sparse = [1, , 2];"),
+  expected: { accepted: true },
+});
 for (const [controls, expected] of [
   [{ glueBinding: "seed" }, /unit 4: reference to scroll resolves to a different linked cell/],
   [{ emittedInit: "new Float32Array([seed()])" }, /emitted syntax differs from original unit 1/],
