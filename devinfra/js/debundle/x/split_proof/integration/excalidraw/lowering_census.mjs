@@ -64,6 +64,7 @@ function census(corpus, name, profile, ast) {
     );
     assert.equal(moves.hostProfile, profile, `${corpus}/${name}: move profile`);
     assert.equal(moves.units, result.units, `${corpus}/${name}: executable units`);
+    assert.deepEqual(moves.lowering_refusals, result.lowering_refusals, `${corpus}/${name}: concrete refusals`);
     assert(moves.refused <= result.lowering_refusals.length, `${corpus}/${name}: opaque fallback`);
     assert(moves.opaque >= result.lowering_refusals.length - moves.refused, `${corpus}/${name}: retained refusals`);
   }

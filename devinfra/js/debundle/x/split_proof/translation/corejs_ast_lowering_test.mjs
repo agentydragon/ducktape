@@ -67,7 +67,7 @@ async function nodeOutcome(url) {
 
 // The move census lowers the annotated source units through the linked rules.
 // The static field is allocation-only; the call is not. The exponentiation
-// function falls back to opaque, while top-level await is refused even as opaque.
+// initializer falls back to opaque, while top-level await is refused even as opaque.
 const censusSource = `
   import { value } from "external-package";
   function f() {}
@@ -75,6 +75,7 @@ const censusSource = `
   const a = 1, b = class { field = value; static field = 1; },
     c = class { static field = console.log("effect"); };
   const { x } = value;
+  const unmodeled = 2 ** 3;
   await 1;
   export { a };
 `;
@@ -92,10 +93,16 @@ const census = JSON.parse(
 assert.equal(census.hostProfile, "node-recording");
 assert.deepEqual(
   [census.units, census.inert, census.allocate, census.opaque, census.other, census.refused],
-  [7, 2, 2, 1, 2, 1]
+  [8, 2, 2, 1, 3, 1]
 );
-assert.deepEqual([census.may_move, census.may_move_denominator], [4, 7]);
+assert.deepEqual([census.may_move, census.may_move_denominator], [4, 8]);
 assert.match(census.problems[0], /await/i);
+const censusConcrete = JSON.parse(
+  execFileSync(process.env.COREJS, ["--lowering-census", censusFile], { encoding: "utf8" })
+);
+const emptyMoves = JSON.parse(execFileSync(process.env.COREJS, ["--moves-ast", censusFile], { encoding: "utf8" }));
+assert.deepEqual(emptyMoves.lowering_refusals, censusConcrete.lowering_refusals);
+assert.equal(emptyMoves.unit_details.length, censusConcrete.units);
 
 // An ambient host read must not become allocation-only under production
 // profiles merely because recorded Node replay treats it as a host value.

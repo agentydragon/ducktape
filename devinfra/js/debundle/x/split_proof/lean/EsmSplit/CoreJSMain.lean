@@ -13,20 +13,37 @@ private def moveCensus (source : Lean.Json) (profile : CoreJS.HostProfile) : Exc
   let mut other : Nat := 0
   let mut refused : Nat := 0
   let mut problems : Array Lean.Json := #[]
-  for (i, result) in units do
-    match result with
+  let mut details : Array Lean.Json := #[]
+  let mut concreteRefusals : Array Lean.Json := #[]
+  for unit in units do
+    let i := unit.ordinal
+    if let some why := unit.concreteRefusal then
+      concreteRefusals := concreteRefusals.push (Lean.Json.mkObj [("unit", Lean.toJson i), ("reason", .str why)])
+    let (kind, isOpaque, structuralRefusal) ← match unit.statement with
     | .error why =>
       refused := refused + 1
       if problems.size < 20 then problems := problems.push (Lean.Json.str s!"{i}: {why}")
+      pure ("refused", false, some why)
     | .ok stmt =>
-      if let .opaque .. := stmt then opaqueCount := opaqueCount + 1
-      if stmt.inert then inert := inert + 1
-      else if stmt.allocs.isSome then allocate := allocate + 1
-      else other := other + 1
+      let isOpaque := match stmt with | .opaque .. => true | _ => false
+      if isOpaque then opaqueCount := opaqueCount + 1
+      if stmt.inert then
+        inert := inert + 1
+        pure ("inert", isOpaque, none)
+      else if stmt.allocs.isSome then
+        allocate := allocate + 1
+        pure ("allocate", isOpaque, none)
+      else
+        other := other + 1
+        pure ("other", isOpaque, none)
+    details := details.push (Lean.Json.mkObj [("unit", Lean.toJson i), ("kind", .str kind),
+      ("opaque", Lean.toJson isOpaque), ("concrete_refusal", Lean.toJson unit.concreteRefusal),
+      ("structural_refusal", Lean.toJson structuralRefusal)])
   return Lean.Json.mkObj [("hostProfile", Lean.toJson profile.label), ("units", Lean.toJson units.size), ("inert", Lean.toJson inert),
     ("allocate", Lean.toJson allocate), ("opaque", Lean.toJson opaqueCount), ("other", Lean.toJson other),
     ("refused", Lean.toJson refused), ("may_move", Lean.toJson (inert + allocate)),
-    ("may_move_denominator", Lean.toJson units.size), ("problems", Lean.Json.arr problems)]
+    ("may_move_denominator", Lean.toJson units.size), ("problems", Lean.Json.arr problems),
+    ("unit_details", Lean.Json.arr details), ("lowering_refusals", Lean.Json.arr concreteRefusals)]
 
 private def loweringProfile (j : Lean.Json) : Except String CoreJS.HostProfile := do
   if j == Lean.Json.mkObj [("profile", .str "empty")] then return .empty

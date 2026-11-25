@@ -474,11 +474,16 @@ def program (source providers : Json) (scripts : Std.HashSet (Nat × Nat)) (entr
   let _ ← scopes p
   return p
 
-/-- Concrete linked lowering per executable unit, shared by the lowering and
-movement censuses. Providers are not linked. The original AST is retained for
-the movement census's diagnostic opaque fallback. -/
-private def concreteUnits (source : Json) (profile : HostProfile) :
-    Except String (Array (Nat × Json × Except String Stmt)) := do
+/-- Both reports use the same concrete lowering and opaque fallback. The
+first concrete refusal stays available even if retaining the unit succeeds. -/
+structure CensusUnit where
+  ordinal : Nat
+  statement : Except String Stmt
+  concreteRefusal : Option String
+
+/-- Diagnose concrete and retained lowering per executable unit. Providers are
+not linked; retaining a unit here does not certify a split. -/
+def censusUnits (source : Json) (profile : HostProfile := .empty) : Except String (Array CensusUnit) := do
   let nodes ← ESTreeUnits.nodes source
   let mut imports : List Name := []
   for j in nodes do
@@ -499,31 +504,25 @@ private def concreteUnits (source : Json) (profile : HostProfile) :
         return (← (BodyFormat.lowerDefault .linked profile imports i none ast).mapError StructuralRefusal.reason).1
       return (← (BodyFormat.lower .linked profile imports i none ast
         (kind == "ExportNamedDeclaration")).mapError StructuralRefusal.reason).1
-    units := units.push (i, ast, lowered)
-  return units
-
-/-- Diagnose concrete linked lowering in isolation. Providers are not linked,
-and each unit records only its first refusal. -/
-def concreteCensus (source : Json) (profile : HostProfile) : Except String Json := do
-  let units ← concreteUnits source profile
-  let mut refusals : Array Json := #[]
-  for (i, _, result) in units do
-    if let .error why := result then
-      refusals := refusals.push (Json.mkObj [("unit", Lean.toJson i), ("reason", .str why)])
-  return Json.mkObj [("hostProfile", Lean.toJson profile.label), ("units", Lean.toJson units.size),
-    ("lowering_refusals", .arr refusals)]
-
-/-- Lower each executable unit for a movement census. Concrete refusals may
-fall back to retained opaque code; a refusal of that fallback remains an error. -/
-def censusUnits (source : Json) (profile : HostProfile := .empty) : Except String (Array (Nat × Except String Stmt)) := do
-  let units ← concreteUnits source profile
-  return units.map fun (i, ast, lowered) =>
     let result := match lowered with
       | .ok stmt => .ok stmt
       | .error why => match OpaqueInput.unit i ast with
         | .ok stmt => .ok stmt
         | .error opaqueWhy => .error s!"{why}; opaque: {opaqueWhy}"
-    (i, result)
+    let refusal := match lowered with | .error why => some why | .ok _ => none
+    units := units.push ⟨i, result, refusal⟩
+  return units
+
+/-- Diagnose concrete linked lowering in isolation. Providers are not linked,
+and each unit records only its first refusal. -/
+def concreteCensus (source : Json) (profile : HostProfile) : Except String Json := do
+  let units ← censusUnits source profile
+  let mut refusals : Array Json := #[]
+  for unit in units do
+    if let some why := unit.concreteRefusal then
+      refusals := refusals.push (Json.mkObj [("unit", Lean.toJson unit.ordinal), ("reason", .str why)])
+  return Json.mkObj [("hostProfile", Lean.toJson profile.label), ("units", Lean.toJson units.size),
+    ("lowering_refusals", .arr refusals)]
 
 /-- Public paths are the original module records, including unchanged dependencies.
 The candidate can also contain private files and model-only helper modules. -/
