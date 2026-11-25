@@ -140,28 +140,43 @@ fn read_json_header<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
         .with_context(|| format!("parsing header of {}", path.display()))
 }
 
-pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
-    let graph: ChunkGraphHeader = read_json_header(path)?;
-    let program: ProgramGraphHeader =
-        read_json_header(&program_graph_path(path, &graph.program_graph))?;
+/// Read the companion program graph and check it describes the chunk's selected owners.
+pub fn read_program_provenance(
+    path: &Path,
+    program_graph: &Path,
+    chunk_id: &str,
+    ownership_subset: Option<&[SelectedOwnershipModule]>,
+) -> Result<Option<GraphProvenance>> {
+    let program: ProgramGraphHeader = read_json_header(&program_graph_path(path, program_graph))?;
     if let Some(provenance) = &program.provenance {
-        let expected = provenance.selected_ownership_by_chunk.get(&graph.chunk_id);
+        let expected = provenance.selected_ownership_by_chunk.get(chunk_id);
         anyhow::ensure!(
-            graph.ownership_subset.as_ref() == expected,
+            ownership_subset == expected.map(Vec::as_slice),
             "dependency graph selected ownership for chunk {} does not match its program provenance",
-            graph.chunk_id
+            chunk_id
         );
     } else {
         anyhow::ensure!(
-            graph.ownership_subset.is_none(),
+            ownership_subset.is_none(),
             "dependency graph selected ownership has no program provenance"
         );
     }
+    Ok(program.provenance)
+}
+
+pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
+    let graph: ChunkGraphHeader = read_json_header(path)?;
+    let provenance = read_program_provenance(
+        path,
+        &graph.program_graph,
+        &graph.chunk_id,
+        graph.ownership_subset.as_deref(),
+    )?;
     Ok(GraphHeader {
         selected_ownership: graph.ownership_subset,
         chunk_id: graph.chunk_id,
         program_graph: graph.program_graph,
-        provenance: program.provenance,
+        provenance,
     })
 }
 

@@ -36,6 +36,8 @@ pub struct SourceUnitApplyOutcome {
 
 pub struct SourceUnitApplyOptions<'a> {
     pub tree_config: Option<&'a Path>,
+    /// Plan destinations are relative to the chunk's roots in a full module tree.
+    pub chunk_logical_destinations: bool,
     pub assignments: Vec<SourceUnitAssignment>,
     pub import_order: Option<Vec<ModulePath>>,
     pub readable_names: BTreeMap<String, String>,
@@ -49,6 +51,42 @@ pub struct SourceUnitApplyOptions<'a> {
 pub enum SelectorOverride {
     SourceMatch(spec::SourceMatchClaim),
     Relational(Box<spec::RawMemberSelector>),
+}
+
+fn resolve_plan_destinations(
+    changes: &mut [SourceUnitAssignment],
+    docs: &ModuleDocs,
+    scope: &ModuleTreeScope,
+) -> Result<()> {
+    let mut authored_paths = BTreeMap::<_, Vec<_>>::new();
+    for physical in docs.keys() {
+        let logical = ModulePath::parse(scope.logical_destination(physical)?, "")?;
+        authored_paths.entry(logical).or_default().push(physical);
+    }
+    for change in changes {
+        let logical = ModulePath::parse(&change.module, "")?;
+        let existing = authored_paths
+            .get(&logical)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        anyhow::ensure!(
+            existing.len() <= 1,
+            "logical destination {logical} has multiple authored files"
+        );
+        change.module = if let Some(existing) = existing.first() {
+            (*existing).clone()
+        } else {
+            scope
+                .roots()
+                .first()
+                .context("tree config has no module root for plan destination")?
+                .join(logical.as_str())
+                .to_str()
+                .context("module destination is not UTF-8")?
+                .to_string()
+        };
+    }
+    Ok(())
 }
 
 pub(super) fn validate_assignment_module_id(module: &str) -> Result<()> {
@@ -111,7 +149,8 @@ pub fn run_source_unit_apply(
     }
     let SourceUnitApplyOptions {
         tree_config,
-        assignments,
+        mut assignments,
+        chunk_logical_destinations,
         import_order,
         mut readable_names,
         mut selector_overrides,
@@ -128,9 +167,6 @@ pub fn run_source_unit_apply(
     if assignments.is_empty() {
         bail!("source unit assignment batch is empty");
     }
-    for assignment in &assignments {
-        validate_assignment_module_id(&assignment.module)?;
-    }
 
     let graph_input = std::sync::Arc::new(graph_input);
     let dependency_graph = graph_input.report();
@@ -140,6 +176,12 @@ pub fn run_source_unit_apply(
     let mut original_docs = load_module_docs(modules_root)?;
     if let Some(scope) = &scope {
         original_docs.retain(|module, _| scope.contains(Path::new(module)));
+        if chunk_logical_destinations {
+            resolve_plan_destinations(&mut assignments, &original_docs, scope)?;
+        }
+    }
+    for assignment in &assignments {
+        validate_assignment_module_id(&assignment.module)?;
     }
     let mut docs = original_docs.clone();
     let initial_spec = post_edit_spec_from_docs(&original_docs, &BTreeSet::new())?;
