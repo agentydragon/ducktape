@@ -2,6 +2,25 @@ import assert from "node:assert/strict";
 import { assertCertifiedResult, assertRejected, lower, sequentialSplit, workerSplit } from "./harness.mjs";
 
 {
+  const test = workerSplit(
+    "array-rest-pattern",
+    `function pick(head, ...[first, , third]) {
+       var first;
+       first = first + 1;
+       return [head, first, third, arguments.length];
+     }
+     const arrow = (...[x, y]) => x + y;
+     export const result = [pick("head", 2, 3, 4), pick.length, arrow(4, 3), arrow.length];`,
+    ["#1", "#2"]
+  );
+  assertCertifiedResult(test, [["head", 3, 4, 4], 1, 7, 0]);
+  assert.equal(
+    lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]).verdict.status,
+    "certified"
+  );
+}
+
+{
   const test = sequentialSplit(
     "ordinary-rest",
     `function collect(first, ...items) {
@@ -85,5 +104,5 @@ assertRejected(
     "reached-rest-with-default",
     "const fn = (first = 1, ...rest) => rest.length; export const result = fn();"
   ),
-  /rest requires a terminal identifier and fixed identifier parameters/
+  /rest requires a terminal binding and fixed identifier parameters/
 );
