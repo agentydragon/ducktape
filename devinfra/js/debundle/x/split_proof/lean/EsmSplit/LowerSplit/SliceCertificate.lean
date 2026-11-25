@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.LinkedCertificate.Probe
 import EsmSplit.CoreJS.LinkedPivotCertificate
 import EsmSplit.CoreJS.BindingMoves
 import EsmSplit.CoreJS.HeritageCertificate
@@ -333,10 +334,12 @@ private theorem scheduleWithCertifiedMayMove (ss : List CoreJS.Stmt)
 
 def SliceStatementFor (profile : CoreJS.HostProfile) (source providers files : Json)
     (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) (kind : SliceKind) : Prop :=
-  ∃ original candidate,
-    CoreJS.LinkedInput.decodePair source providers files P profile = .ok (original, candidate) ∧
-    ∃ dense : DensePair original candidate,
-      densePair source P B original candidate = .ok dense ∧
+  ∃ deployment,
+    CoreJS.LinkedInput.decodeSingleton source providers files P profile = .ok deployment ∧
+    CoreJS.Places deployment.assignment deployment.before deployment.after ∧
+    CoreJS.LinkedBehavior.SameExports deployment.before deployment.after ∧
+    ∃ dense : DensePair deployment.before deployment.after,
+      densePair source P B deployment.before deployment.after = .ok dense ∧
       CoreJS.FootprintsOfSyntax (dense.sourceModule.body.map Prod.snd) B ∧
       EsmSplit.Valid B S P ∧
       CoreJS.LinkedBehavior.ScheduleEquivalent kind.level (fun _ => True) dense.original dense.candidate ∧
@@ -349,18 +352,53 @@ def SliceStatement (profile : CoreJS.HostProfile) (source providers files : Json
     (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) : Prop :=
   ∃ kind : SliceKind, SliceStatementFor profile source providers files P B S kind
 
+/-- The exact singleton deployment checked once before trying linked strategies. -/
+structure SliceEligibility (profile : CoreJS.HostProfile) (source providers files : Json)
+    (P : EsmSplit.Plan) where
+  deployment : CoreJS.LinkedInput.DecodedDeployment
+  decodedSingleton : CoreJS.LinkedInput.decodeSingleton source providers files P profile = .ok deployment
+  placed : CoreJS.Places deployment.assignment deployment.before deployment.after
+  probe : CoreJS.LinkedBehavior.ProbeWitness deployment.before deployment.after
+  probeSucceeded : CoreJS.LinkedBehavior.probeWitness profile deployment.before deployment.after = .ok probe
+
+def SliceEligibility.certifyReplay {profile source providers files P}
+    (input : SliceEligibility profile source providers files P) :
+    Option (PLift (CoreJS.LinkedBehavior.ASTEquivalent profile input.probe.premises source providers files P)) := do
+  let semantics ← CoreJS.LinkedBehavior.replayPremisedPrograms input.probe
+  have decoded : CoreJS.LinkedInput.decodePair source providers files P profile =
+      .ok (input.deployment.before, input.deployment.after) := by
+    simp only [CoreJS.LinkedInput.decodePair, input.decodedSingleton] <;> rfl
+  return ⟨⟨input.deployment.before, input.deployment.after, decoded, semantics.down⟩⟩
+
+private def checkSliceExports (original candidate : CoreJS.Program) :
+    Except CertificationRefusal (PLift (CoreJS.LinkedBehavior.SameExports original candidate)) := do
+  let before ← (CoreJS.LinkedBehavior.checkLink original).mapError fun reason =>
+    ({ reason := "original linker: " ++ reason, reasonCode := some "slice_link" } : CertificationRefusal)
+  let after ← (CoreJS.LinkedBehavior.checkLink candidate).mapError fun reason =>
+    ({ reason := "candidate linker: " ++ reason, reasonCode := some "slice_link" } : CertificationRefusal)
+  if exportsEqual : CoreJS.LinkedBehavior.exportsMatchFrom before after = true then
+    return ⟨CoreJS.LinkedBehavior.sameExports_of_match fun w => by
+      rw [CoreJS.LinkedBehavior.exportsMatch_from_checked (before.forWorld w) (after.forWorld w)]
+      exact exportsEqual⟩
+  else
+    let a ← (CoreJS.EntryExports.resolve original.entry before.linked).mapError fun why =>
+      ({ reason := "original entry: " ++ why, reasonCode := some "slice_exports" } : CertificationRefusal)
+    let b ← (CoreJS.EntryExports.resolve candidate.entry after.linked).mapError fun why =>
+      ({ reason := "candidate entry: " ++ why, reasonCode := some "slice_exports" } : CertificationRefusal)
+    throw { reason := CoreJS.EntryExports.mismatch a b, reasonCode := some "slice_exports" }
+
 /-- Decide one of the four compiled slice proofs against the exact output ASTs
-already decoded by `LinkedInput`. The returned theorem names both decodePair's
+already checked by the linked path. The returned theorem names both the decoded
 sparse programs and the checked dense post-processing used by this strategy. -/
 def certifySlice (profile : CoreJS.HostProfile) (source providers files : Json)
-    (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) :
+    (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
+    (eligibility : SliceEligibility profile source providers files P) :
     Except CertificationRefusal (SliceKind × PLift (SliceStatement profile source providers files P B S)) := do
-  match decoded : CoreJS.LinkedInput.decodePair source providers files P profile with
-  | .error reason => throw { reason, reasonCode := some "linked_input" }
-  | .ok (original, candidate) =>
-    match denseDecoded : densePair source P B original candidate with
-    | .error reason => throw { reason, reasonCode := some "slice_dense_input" }
-    | .ok dense => do
+  let original := eligibility.deployment.before
+  let candidate := eligibility.deployment.after
+  match denseDecoded : densePair source P B original candidate with
+  | .error reason => throw { reason, reasonCode := some "slice_dense_input" }
+  | .ok dense => do
       let denseOriginal := dense.original
       let denseCandidate := dense.candidate
       let sourceModule := dense.sourceModule
@@ -386,24 +424,8 @@ def certifySlice (profile : CoreJS.HostProfile) (source providers files : Json)
       let candidateEq := candidateSyntax.down
       if hfp : CoreJS.FootprintsOfSyntax ss B then
         if hvalid : EsmSplit.Valid B S P then
-          let before ← (CoreJS.LinkedBehavior.checkLink denseOriginal).mapError fun reason =>
-            ({ reason := "original linker: " ++ reason, reasonCode := some "slice_link" } : CertificationRefusal)
-          let after ← (CoreJS.LinkedBehavior.checkLink denseCandidate).mapError fun reason =>
-            ({ reason := "candidate linker: " ++ reason, reasonCode := some "slice_link" } : CertificationRefusal)
-          let exportsEqual : PLift (CoreJS.LinkedBehavior.exportsMatchFrom before after = true) ←
-            if h : CoreJS.LinkedBehavior.exportsMatchFrom before after = true then
-              pure ⟨h⟩
-            else
-              let a ← (CoreJS.EntryExports.resolve denseOriginal.entry before.linked).mapError fun why =>
-                ({ reason := "original entry: " ++ why, reasonCode := some "slice_exports" } : CertificationRefusal)
-              let b ← (CoreJS.EntryExports.resolve denseCandidate.entry after.linked).mapError fun why =>
-                ({ reason := "candidate entry: " ++ why, reasonCode := some "slice_exports" } : CertificationRefusal)
-              throw { reason := CoreJS.EntryExports.mismatch a b, reasonCode := some "slice_exports" }
-          let exportsEqual := exportsEqual.down
-          have sameExports : CoreJS.LinkedBehavior.SameExports denseOriginal denseCandidate :=
-            CoreJS.LinkedBehavior.sameExports_of_match fun w => by
-              rw [CoreJS.LinkedBehavior.exportsMatch_from_checked (before.forWorld w) (after.forWorld w)]
-              exact exportsEqual
+          let ⟨sameExports⟩ ← checkSliceExports denseOriginal denseCandidate
+          let ⟨exactExports⟩ ← checkSliceExports original candidate
           let sourceRun : ∀ w n,
               CoreJS.runProgram w n denseOriginal = CoreJS.runProgram w n canonicalSource := by
             intro w n
@@ -469,7 +491,8 @@ def certifySlice (profile : CoreJS.HostProfile) (source providers files : Json)
               (semantics : CoreJS.LinkedBehavior.ScheduleEquivalent kind.level (fun _ => True) canonicalSource split) :
               SliceKind × PLift (SliceStatement profile source providers files P B S) := by
             have denseSemantics := certifyMove kind semantics
-            refine (kind, ⟨kind, original, candidate, decoded, dense, denseDecoded, hfp, hvalid,
+            refine (kind, ⟨kind, eligibility.deployment, eligibility.decodedSingleton, eligibility.placed,
+              exactExports, dense, denseDecoded, hfp, hvalid,
               denseSemantics, sameExports⟩)
           let moveBundle := bindingMoveBundle B
           let moveSplit := CoreJS.splitProgram ss moveBundle P

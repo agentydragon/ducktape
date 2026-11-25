@@ -69,14 +69,24 @@ private def checkedProbeLink (program : Program) : Option (CheckedLink program W
   | .ok scopes ready => some ⟨scopes, ready, linked⟩
   | .throw .. | .unknown .. | .fuel => none
 
-/-- Syntax features that prevent the current replay fragment from applying to
-either linked schedule. This report does not participate in the check. -/
-def replayPremisedBlockerKinds (source candidate : Program) : List String :=
+/-- Typed syntax categories for the linked schedules used by replay. -/
+def replayPremisedBlockers (source candidate : Program) : List ReplayBlocker :=
   match checkedProbeLink source, checkedProbeLink candidate with
   | some sourceChecked, some candidateChecked =>
-    (replayScheduleBlockerKinds (unitsOf sourceChecked.linked) ++
-      replayScheduleBlockerKinds (unitsOf candidateChecked.linked)).eraseDups
-  | _, _ => ["probe-link-unavailable"]
+    (replayScheduleBlockers (unitsOf sourceChecked.linked) ++
+      replayScheduleBlockers (unitsOf candidateChecked.linked)).eraseDups
+  | _, _ => [.other "probe-link-unavailable"]
+
+/-- Successful concrete runs at the same fuel and with the same host premises.
+Compiled replay uses these runs when lifting the result to other worlds. -/
+structure ProbeWitness (source candidate : Program) where
+  premises : HostPremises
+  fuel : Nat
+  sourceState : State (premises.specialize World.probe)
+  candidateState : State (premises.specialize World.probe)
+  sourceRun : runProgram (premises.specialize World.probe) fuel source = .ok () sourceState
+  candidateRun : runProgram (premises.specialize World.probe) fuel candidate = .ok () candidateState
+  statesAgree : probeStatesEqual premises sourceState candidateState = true
 
 private def premisedStateAgreement (premises : HostPremises)
     (sourceState candidateState : State (premises.specialize World.probe)) :
@@ -150,29 +160,20 @@ private theorem replayPremisedSameExports {source candidate : Program}
 /-- A compiled replay check. It accepts only when both programs have a
 successful probe run, their complete probe states match, both reached schedules
 have replay witnesses, and their public exports match. -/
-def replayPremisedPrograms (premises : HostPremises) (fuel : Nat) (source candidate : Program) :
-    Option (PLift (EquivalentFor premises source candidate ∧ SameExports source candidate)) := do
-  let world := premises.specialize World.probe
-  match sourceRun : runProgram world fuel source with
-  | .ok () sourceState =>
-    match candidateRun : runProgram world fuel candidate with
-    | .ok () candidateState => do
-      let sourceChecked ← checkedProbeLink source
-      let candidateChecked ← checkedProbeLink candidate
-      let allowLogical := source.modules.length == 1 && source.modules.all (fun m => m.imports.isEmpty)
-      let some sourceSupported := replayPremisedDynamicWitness (premises := premises) fuel allowLogical sourceChecked | none
-      let some candidateSupported := replayPremisedDynamicWitness (premises := premises) fuel allowLogical candidateChecked | none
-      let some stateAgreement := premisedStateAgreement premises sourceState candidateState | none
-      if exportsMatched : exportsMatchFrom sourceChecked candidateChecked then
-        let semantics : EquivalentFor premises source candidate ∧ SameExports source candidate :=
-          ⟨replayPremisedEquivalentFor
-              (sourceSupported.down sourceState sourceRun) (candidateSupported.down candidateState candidateRun)
-              stateAgreement.down,
-            replayPremisedSameExports sourceChecked candidateChecked exportsMatched⟩
-        return PLift.up semantics
-      else none
-    | .throw .. | .unknown .. | .fuel => none
-  | .throw .. | .unknown .. | .fuel => none
+def replayPremisedPrograms {source candidate : Program} (probe : ProbeWitness source candidate) :
+    Option (PLift (EquivalentFor probe.premises source candidate ∧ SameExports source candidate)) := do
+  let sourceChecked ← checkedProbeLink source
+  let candidateChecked ← checkedProbeLink candidate
+  let allowLogical := source.modules.length == 1 && source.modules.all (fun m => m.imports.isEmpty)
+  let sourceSupported ← replayPremisedDynamicWitness (premises := probe.premises) probe.fuel allowLogical sourceChecked
+  let candidateSupported ← replayPremisedDynamicWitness (premises := probe.premises) probe.fuel allowLogical candidateChecked
+  let stateAgreement ← premisedStateAgreement probe.premises probe.sourceState probe.candidateState
+  if exportsMatched : exportsMatchFrom sourceChecked candidateChecked then
+    return ⟨⟨replayPremisedEquivalentFor
+        (sourceSupported.down probe.sourceState probe.sourceRun) (candidateSupported.down probe.candidateState probe.candidateRun)
+        stateAgreement.down,
+      replayPremisedSameExports sourceChecked candidateChecked exportsMatched⟩⟩
+  else none
 
 #audit_linked_programs probeObservationMismatchRefutesEquivalent
 #audit_linked_programs replayPremisedEquivalentFor
@@ -260,13 +261,14 @@ private def firstExportDifference (values : List ValuePair) : Option Lean.Json :
 /-- Only fuel exhaustion can be resolved by a larger witness. A normal probe
 selects a witness for the kernel proof. If both runs finish but their complete
 states differ, the theorem above proves that no all-world certificate can hold. -/
-private def probeWitnessAt (profile : HostPremises) (source candidate : Program) (fuel : Nat) : Except Refusal (Option Nat) := do
+private def probeWitnessAt (profile : HostPremises) (source candidate : Program) (fuel : Nat) :
+    Except Refusal (Option (ProbeWitness source candidate)) := do
   match sourceRun : runProgram (profile.specialize World.probe) fuel source with
   | .ok () sourceState =>
     match candidateRun : runProgram (profile.specialize World.probe) fuel candidate with
     | .ok () candidateState =>
       match statesAgree : probeStatesEqual profile sourceState candidateState with
-      | true => return some fuel
+      | true => return some ⟨profile, fuel, sourceState, candidateState, sourceRun, candidateRun, statesAgree⟩
       | false =>
         let _ : ¬ Equivalent source candidate :=
           probeObservationMismatchRefutesEquivalent profile sourceRun candidateRun statesAgree
@@ -289,7 +291,7 @@ private def recordFuelLimit (source : Program) : Nat := Id.run do
         width := max width props.length
   return min 2048 (64 + width)
 
-private def witnessFuel (profile : HostPremises) (source candidate : Program) : Except Refusal Nat := do
+private def findProbe (profile : HostPremises) (source candidate : Program) : Except Refusal (ProbeWitness source candidate) := do
   let test := probeWitnessAt profile source candidate
   for fuel in [16, 32, 64] do
     if let some witness ← test fuel then return witness
@@ -313,8 +315,7 @@ private def observePremises (profile : HostProfile) (source candidate : Program)
            refs := (left.refs ++ right.refs).eraseDups.reverse }
 
 /-- Find the concrete fuel witness before generating the all-world proof. -/
-def probeWitness (profile : HostProfile) (source candidate : Program) : Except Refusal (HostPremises × Nat) := do
-  let premises := observePremises profile source candidate
-  return (premises, ← witnessFuel premises source candidate)
+def probeWitness (profile : HostProfile) (source candidate : Program) : Except Refusal (ProbeWitness source candidate) :=
+  findProbe (observePremises profile source candidate) source candidate
 
 end CoreJS.LinkedBehavior

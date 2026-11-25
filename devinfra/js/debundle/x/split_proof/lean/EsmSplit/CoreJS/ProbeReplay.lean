@@ -180,157 +180,168 @@ def replayableScheduleWitness : (units : List LinkedUnit) → Option (PLift (Rep
         exact statement.down
       · exact tail.down unit member⟩
 
-/-! The following syntax walk is diagnostic only. It does not change the
-replayability witness or any acceptance decision; census runs use it to identify
-which operations in a rejected schedule need a general simulation lemma. -/
+/-! These syntax categories report gaps in replay. The selector also uses the
+typed accessor and read categories to retain the existing proof fallback.
+Certificates still require an executable replay or slice proof. -/
+
+inductive ReplayBlocker where
+  | propertyRead
+  | objectAccessor
+  | other (label : String)
+  deriving BEq
+
+def ReplayBlocker.label : ReplayBlocker → String
+  | .propertyRead => "property-read"
+  | .objectAccessor => "object-accessor"
+  | .other label => label
 
 mutual
 
-private def replayExprBlockers : Expr → List String
+private def replayExprBlockers : Expr → List ReplayBlocker
   | .undef | .null | .bool _ | .num _ | .str _ | .regexp _ | .var _ | .host _ | .this | .func _ => []
   | .obj props => replayPropBlockers props
   | .arr elems => replayExprListBlockers elems
-  | .spreadArg expr => "spread" :: replayExprBlockers expr
-  | .cls _ _ _ members => "class" :: replayClassMemberBlockers members
+  | .spreadArg expr => .other "spread" :: replayExprBlockers expr
+  | .cls _ _ _ members => .other "class" :: replayClassMemberBlockers members
   | .derived _ _ parent members ctor =>
-    "derived-class" :: replayExprBlockers parent ++ replayClassMemberBlockers members ++
+    .other "derived-class" :: replayExprBlockers parent ++ replayClassMemberBlockers members ++
       (match ctor with
       | none => []
       | some (prelude, _, f) => replayStmtListBlockers prelude ++ replayFuncBlockers f)
-  | .get object key => "property-read" :: replayExprBlockers object ++ replayExprBlockers key
-  | .getSuper key => "super-property-read" :: replayExprBlockers key
-  | .getOptional object key => "optional-property-read" :: replayExprBlockers object ++ replayExprBlockers key
-  | .hasProp key object => "property-test" :: replayExprBlockers key ++ replayExprBlockers object
-  | .delete object key => "property-delete" :: replayExprBlockers object ++ replayExprBlockers key
-  | .assign target rhs => "assignment" :: replayTargetBlockers target ++ replayExprBlockers rhs
-  | .assignOp target _ rhs => "compound-assignment" :: replayTargetBlockers target ++ replayExprBlockers rhs
-  | .assignLogical target _ rhs => "logical-assignment" :: replayTargetBlockers target ++ replayExprBlockers rhs
-  | .update target _ _ => "update" :: replayTargetBlockers target
-  | .call (.func f) args => "direct-call" :: replayFuncBlockers f ++ replayExprListBlockers args
-  | .call fn args => "call" :: replayExprBlockers fn ++ replayExprListBlockers args
-  | .callMethod object key args => "method-call" :: replayExprBlockers object ++ replayExprBlockers key ++ replayExprListBlockers args
-  | .callSuper key args _ => "super-call" :: replayExprBlockers key ++ replayExprListBlockers args
+  | .get object key => .propertyRead :: replayExprBlockers object ++ replayExprBlockers key
+  | .getSuper key => .other "super-property-read" :: replayExprBlockers key
+  | .getOptional object key => .other "optional-property-read" :: replayExprBlockers object ++ replayExprBlockers key
+  | .hasProp key object => .other "property-test" :: replayExprBlockers key ++ replayExprBlockers object
+  | .delete object key => .other "property-delete" :: replayExprBlockers object ++ replayExprBlockers key
+  | .assign target rhs => .other "assignment" :: replayTargetBlockers target ++ replayExprBlockers rhs
+  | .assignOp target _ rhs => .other "compound-assignment" :: replayTargetBlockers target ++ replayExprBlockers rhs
+  | .assignLogical target _ rhs => .other "logical-assignment" :: replayTargetBlockers target ++ replayExprBlockers rhs
+  | .update target _ _ => .other "update" :: replayTargetBlockers target
+  | .call (.func f) args => .other "direct-call" :: replayFuncBlockers f ++ replayExprListBlockers args
+  | .call fn args => .other "call" :: replayExprBlockers fn ++ replayExprListBlockers args
+  | .callMethod object key args => .other "method-call" :: replayExprBlockers object ++ replayExprBlockers key ++ replayExprListBlockers args
+  | .callSuper key args _ => .other "super-call" :: replayExprBlockers key ++ replayExprListBlockers args
   | .callOptionalReceiver object key args =>
-    "optional-method-call" :: replayExprBlockers object ++ replayExprBlockers key ++ replayExprListBlockers args
+    .other "optional-method-call" :: replayExprBlockers object ++ replayExprBlockers key ++ replayExprListBlockers args
   | .callOptionalCallee object key args property =>
-    "optional-call" :: replayExprBlockers object ++ replayExprBlockers key ++ replayExprListBlockers args ++
+    .other "optional-call" :: replayExprBlockers object ++ replayExprBlockers key ++ replayExprListBlockers args ++
       (match property with
       | none => []
       | some expr => replayExprBlockers expr)
-  | .new fn args => "construct" :: replayExprBlockers fn ++ replayExprListBlockers args
-  | .prim (.globalTypeof _) args => "global-typeof" :: replayExprListBlockers args
+  | .new fn args => .other "construct" :: replayExprBlockers fn ++ replayExprListBlockers args
+  | .prim (.globalTypeof _) args => .other "global-typeof" :: replayExprListBlockers args
   | .prim (.globalRef _) args | .prim (.opaqueAmbientRef _) args
   | .prim (.opaqueConstructorRef _) args | .prim (.opaqueAmbientMemberRef ..) args =>
-    "host-reference" :: replayExprListBlockers args
-  | .prim _ args => "primitive-operation" :: replayExprListBlockers args
-  | .unary _ expr => "unary-operation" :: replayExprBlockers expr
-  | .binary _ left right => "binary-operation" :: replayExprBlockers left ++ replayExprBlockers right
-  | .logical _ left right => "logical-expression" :: replayExprBlockers left ++ replayExprBlockers right
+    .other "host-reference" :: replayExprListBlockers args
+  | .prim _ args => .other "primitive-operation" :: replayExprListBlockers args
+  | .unary _ expr => .other "unary-operation" :: replayExprBlockers expr
+  | .binary _ left right => .other "binary-operation" :: replayExprBlockers left ++ replayExprBlockers right
+  | .logical _ left right => .other "logical-expression" :: replayExprBlockers left ++ replayExprBlockers right
   | .cond condition yes no =>
-    "conditional-expression" :: replayExprBlockers condition ++ replayExprBlockers yes ++ replayExprBlockers no
-  | .seq left right => "sequence-expression" :: replayExprBlockers left ++ replayExprBlockers right
+    .other "conditional-expression" :: replayExprBlockers condition ++ replayExprBlockers yes ++ replayExprBlockers no
+  | .seq left right => .other "sequence-expression" :: replayExprBlockers left ++ replayExprBlockers right
 
-private def replayExprListBlockers : List Expr → List String
+private def replayExprListBlockers : List Expr → List ReplayBlocker
   | [] => []
   | expr :: rest => replayExprBlockers expr ++ replayExprListBlockers rest
 
-private def replayTargetBlockers : Target → List String
-  | .var _ => ["binding-write"]
-  | .frozen _ => ["import-write"]
-  | .member object key => "property-write" :: replayExprBlockers object ++ replayExprBlockers key
+private def replayTargetBlockers : Target → List ReplayBlocker
+  | .var _ => [.other "binding-write"]
+  | .frozen _ => [.other "import-write"]
+  | .member object key => .other "property-write" :: replayExprBlockers object ++ replayExprBlockers key
 
-private def replayPropBlockers : List PropDef → List String
+private def replayPropBlockers : List PropDef → List ReplayBlocker
   | [] => []
   | .init key value :: rest =>
-    (if key matches .str _ then [] else ["computed-property-key"]) ++
+    (if key matches .str _ then [] else [.other "computed-property-key"]) ++
       replayExprBlockers key ++ replayExprBlockers value ++ replayPropBlockers rest
   | .method key _ :: rest =>
-    (if key matches .str _ then [] else ["computed-property-key"]) ++
+    (if key matches .str _ then [] else [.other "computed-property-key"]) ++
       replayExprBlockers key ++ replayPropBlockers rest
   | .getter key _ :: rest | .setter key _ :: rest =>
-    "object-accessor" :: (if key matches .str _ then [] else ["computed-property-key"]) ++
+    .objectAccessor :: (if key matches .str _ then [] else [.other "computed-property-key"]) ++
       replayExprBlockers key ++ replayPropBlockers rest
-  | .proto value :: rest => "prototype-property" :: replayExprBlockers value ++ replayPropBlockers rest
-  | .spread source _ :: rest => "object-spread" :: replayExprBlockers source ++ replayPropBlockers rest
+  | .proto value :: rest => .other "prototype-property" :: replayExprBlockers value ++ replayPropBlockers rest
+  | .spread source _ :: rest => .other "object-spread" :: replayExprBlockers source ++ replayPropBlockers rest
 
-private def replayClassMemberBlockers : List ClassMember → List String
+private def replayClassMemberBlockers : List ClassMember → List ReplayBlocker
   | [] => []
   | .method _ key _ :: rest =>
-    (if key matches .str _ then [] else ["computed-class-key"]) ++
+    (if key matches .str _ then [] else [.other "computed-class-key"]) ++
       replayExprBlockers key ++ replayClassMemberBlockers rest
   | .getter _ key _ :: rest | .setter _ key _ :: rest =>
-    "class-accessor" :: (if key matches .str _ then [] else ["computed-class-key"]) ++
+    .other "class-accessor" :: (if key matches .str _ then [] else [.other "computed-class-key"]) ++
       replayExprBlockers key ++ replayClassMemberBlockers rest
   | .field static key init :: rest =>
-    (if static then ["class-static-field"] else ["class-field"]) ++
-      (if key matches .str _ then [] else ["computed-class-key"]) ++
+    (if static then [.other "class-static-field"] else [.other "class-field"]) ++
+      (if key matches .str _ then [] else [.other "computed-class-key"]) ++
       replayExprBlockers key ++ replayExprBlockers init ++ replayClassMemberBlockers rest
   | .staticBlock body :: rest =>
-    "class-static-block" :: replayFuncBlockers body ++ replayClassMemberBlockers rest
+    .other "class-static-block" :: replayFuncBlockers body ++ replayClassMemberBlockers rest
 
-private def replayBindingPatternBlockers : BindingPattern → List String
+private def replayBindingPatternBlockers : BindingPattern → List ReplayBlocker
   | .name _ => []
-  | .object properties => "object-binding-pattern" :: replayBindingPropertiesBlockers properties
+  | .object properties => .other "object-binding-pattern" :: replayBindingPropertiesBlockers properties
   | .array elements rest =>
-    "array-binding-pattern" :: replayBindingElementsBlockers elements ++
+    .other "array-binding-pattern" :: replayBindingElementsBlockers elements ++
       (match rest with
       | none => []
       | some pattern => replayBindingPatternBlockers pattern)
   | .defaultValue pattern fallback =>
-    "default-binding" :: replayBindingPatternBlockers pattern ++ replayExprBlockers fallback
+    .other "default-binding" :: replayBindingPatternBlockers pattern ++ replayExprBlockers fallback
 
-private def replayBindingPropertiesBlockers : List (Expr × BindingPattern) → List String
+private def replayBindingPropertiesBlockers : List (Expr × BindingPattern) → List ReplayBlocker
   | [] => []
   | (key, pattern) :: rest =>
     replayExprBlockers key ++ replayBindingPatternBlockers pattern ++ replayBindingPropertiesBlockers rest
 
-private def replayBindingElementsBlockers : List (Option BindingPattern) → List String
+private def replayBindingElementsBlockers : List (Option BindingPattern) → List ReplayBlocker
   | [] => []
   | none :: rest => replayBindingElementsBlockers rest
   | some pattern :: rest => replayBindingPatternBlockers pattern ++ replayBindingElementsBlockers rest
 
-private def replayFuncBlockers : Func → List String
+private def replayFuncBlockers : Func → List ReplayBlocker
   | .mk _ _ _ _ body | .withDefaults _ _ _ _ _ body | .withRest _ _ _ _ _ body =>
     replayStmtListBlockers body
-  | .opaque .. => ["opaque-closure-call"]
+  | .opaque .. => [.other "opaque-closure-call"]
 
-private def replayStmtBlockers : Stmt → List String
+private def replayStmtBlockers : Stmt → List ReplayBlocker
   | .expr expr => replayExprBlockers expr
   | .decl _ _ init => replayExprBlockers init
   | .bind _ pattern init =>
-    "binding-pattern" :: replayBindingPatternBlockers pattern ++ replayExprBlockers init
+    .other "binding-pattern" :: replayBindingPatternBlockers pattern ++ replayExprBlockers init
   | .varDecl _ | .funDecl _ | .brk | .cont => []
-  | .ret value => "return" :: replayExprBlockers value
+  | .ret value => .other "return" :: replayExprBlockers value
   | .ite condition yes no =>
-    "branch-statement" :: replayExprBlockers condition ++ replayStmtBlockers yes ++ replayStmtBlockers no
-  | .block statements => "block" :: replayStmtListBlockers statements
+    .other "branch-statement" :: replayExprBlockers condition ++ replayStmtBlockers yes ++ replayStmtBlockers no
+  | .block statements => .other "block" :: replayStmtListBlockers statements
   | .loop init test update body =>
-    "loop" :: replayStmtListBlockers init ++ replayExprBlockers test ++
+    .other "loop" :: replayStmtListBlockers init ++ replayExprBlockers test ++
       replayExprBlockers update ++ replayStmtBlockers body
-  | .breakScope body => "break-scope" :: replayStmtBlockers body
+  | .breakScope body => .other "break-scope" :: replayStmtBlockers body
   | .forOf _ pattern source body =>
-    "for-of-loop" :: replayBindingPatternBlockers pattern ++
+    .other "for-of-loop" :: replayBindingPatternBlockers pattern ++
       replayExprBlockers source ++ replayStmtBlockers body
-  | .throw value => "throw" :: replayExprBlockers value
-  | .tryCatch body _ handler => "try-catch" :: replayStmtBlockers body ++ replayStmtBlockers handler
-  | .tryFinally body finalizer => "try-finally" :: replayStmtBlockers body ++ replayStmtBlockers finalizer
-  | .opaque _ _ _ _ .world => ["opaque-world-code"]
+  | .throw value => .other "throw" :: replayExprBlockers value
+  | .tryCatch body _ handler => .other "try-catch" :: replayStmtBlockers body ++ replayStmtBlockers handler
+  | .tryFinally body finalizer => .other "try-finally" :: replayStmtBlockers body ++ replayStmtBlockers finalizer
+  | .opaque _ _ _ _ .world => [.other "opaque-world-code"]
   | .opaque _ _ _ _ (.closures _) => []
 
-private def replayStmtListBlockers : List Stmt → List String
+private def replayStmtListBlockers : List Stmt → List ReplayBlocker
   | [] => []
   | stmt :: rest => replayStmtBlockers stmt ++ replayStmtListBlockers rest
 
 end
 
 /-- Syntax categories present in units rejected by `ReplayableSchedule`.
-This is for coverage measurement only; the categories are not a proof witness. -/
-def replayScheduleBlockerKinds (units : List LinkedUnit) : List String :=
+The categories are not a proof witness. -/
+def replayScheduleBlockers (units : List LinkedUnit) : List ReplayBlocker :=
   units.flatMap fun (_, stmt, env) =>
     if (replayableStmtWitness env stmt).isSome then []
     else
       let kinds := replayStmtBlockers stmt
-      if kinds.isEmpty then ["unclassified-or-unresolved"] else kinds
+      if kinds.isEmpty then [.other "unclassified-or-unresolved"] else kinds
 
 def HoistedSchedule (units : List LinkedUnit) : Prop :=
   ∀ unit, unit ∈ units → hoistedOnly unit.stmt

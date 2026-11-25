@@ -134,6 +134,7 @@ for (const [width, reversedKeys, readPosition] of [
   assert(verdict.replay_blockers.includes("object-accessor"), log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     const result = await import(pathToFileURL(file).href);
+    assert.deepEqual(Object.keys(result), ["chosen", "count"]);
     assert.equal(result.chosen, 1);
     assert.equal(result.count, 1);
   }

@@ -108,7 +108,9 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let candidateTerm := Lean.toExpr candidate
   let (premises, fuel) ← match witness? with
     | some witness => pure witness
-    | none => liftM (probeWitness profile source candidate)
+    | none => do
+      let probe ← liftM (probeWitness profile source candidate)
+      pure (probe.premises, probe.fuel)
 
   -- An initial reflexivity attempt can expand the parameter prelude before the
   -- reflection tactic uses the evaluator's equations.
@@ -202,8 +204,8 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
 /-- Prepare the ordinary proof using the successful concrete witness already
 checked by the caller on this exact linked pair. -/
 def certificateWithWitness (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan)
-    (source candidate : Program) (witness : HostPremises × Nat) :
+    {source candidate : Program} (probe : ProbeWitness source candidate) :
     Except Refusal (Certificate × EsmSplit.CertificateData.Entries) :=
-  (certificateText profile sourceAST providers files plan (some witness) source candidate).run #[]
+  (certificateText profile sourceAST providers files plan (some (probe.premises, probe.fuel)) source candidate).run #[]
 
 end CoreJS.LinkedBehavior
