@@ -5,12 +5,14 @@ inductive StructuralRefusalCode where
   | nonLocalAllocation
   | movedRegionAccess
   | opaqueUnitContext
+  | unsupportedSparseArrayHole
   deriving Repr, DecidableEq
 
 def StructuralRefusalCode.label : StructuralRefusalCode → String
   | .nonLocalAllocation => "structural_non_local_allocation"
   | .movedRegionAccess => "structural_moved_region_access"
   | .opaqueUnitContext => "structural_opaque_unit_context"
+  | .unsupportedSparseArrayHole => "structural_unsupported_sparse_array_hole"
 
 /-- The source text and optional stable category travel together through the
 structural decoder and checker. Unclassified failures still retain their text. -/

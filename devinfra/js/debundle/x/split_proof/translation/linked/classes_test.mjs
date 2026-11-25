@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   assertCertifiedResult,
   assertRejected,
+  caseShard,
   exportNamed,
   forcePreview,
   id,
@@ -17,6 +18,7 @@ import {
 } from "./harness.mjs";
 
 const entry = "entry.mjs";
+const runCase = caseShard();
 for (const [name, source, expected] of [
   [
     "default-derived",
@@ -58,6 +60,7 @@ for (const [name, source, expected] of [
     "after",
   ],
 ]) {
+  if (!runCase(name)) continue;
   const test = sequentialSplit(name, source, { "class.mjs": ["#0"], [entry]: ["#1", "#2"] }, ["class.mjs"]);
   assert.equal(test.verdict.status, "certified", name + ": " + test.log);
   if (name === "eager-heritage") {
@@ -111,6 +114,7 @@ for (const [name, source] of [
     export const result = checked;`,
   ],
 ]) {
+  if (!runCase(name)) continue;
   const test = sequentialSplit(name, source, { "first.mjs": ["#0"], [entry]: ["#1", "#2", "#3", "#4", "#5"] }, [
     "first.mjs",
   ]);
@@ -121,6 +125,7 @@ for (const [name, base, body] of [
   ["primitive-derived-return", "class Base {}", "super(); return 1;"],
   ["throwing-super", "class Base { constructor() { null.missing; } }", "super(); return {};"],
 ]) {
+  if (!runCase(name)) continue;
   const source = `${base}
     class Child extends Base { constructor() { ${body} } }
     export const result = new Child();`;
@@ -133,6 +138,7 @@ for (const [name, base, body] of [
 // for instance fields. Force the defining module ahead of its sibling in both variants.
 for (const isStatic of [false, true]) {
   for (const dependent of [false, true]) {
+    if (!runCase(`field-${isStatic}-${dependent}`)) continue;
     const field = {
       type: "PropertyDefinition",
       static: isStatic,
@@ -194,23 +200,27 @@ for (const [name, source, expectedReason] of [
     /super|derived constructor/i,
   ],
 ]) {
+  if (!runCase(name)) continue;
   const test = sequentialSplit(name, source, { "class.mjs": ["#0"], [entry]: ["#1"] }, ["class.mjs"]);
   assert.equal(test.verdict.status, "rejected", test.log);
   assert.match(test.verdict.reason, expectedReason);
   assert(!existsSync(test.out));
 }
 
-const literalMethod = sequentialSplit(
-  "computed-literal-method",
-  "const B = class { ['x']() { return this; } }; export const result = B.prototype.x.name === 'x' && B.prototype.x() === B.prototype;",
-  { "class.mjs": ["#0"], [entry]: ["#1"] },
-  ["class.mjs"]
-);
-assertCertifiedResult(literalMethod, true);
+if (runCase("computed-literal-method")) {
+  const literalMethod = sequentialSplit(
+    "computed-literal-method",
+    "const B = class { ['x']() { return this; } }; export const result = B.prototype.x.name === 'x' && B.prototype.x() === B.prototype;",
+    { "class.mjs": ["#0"], [entry]: ["#1"] },
+    ["class.mjs"]
+  );
+  assertCertifiedResult(literalMethod, true);
+}
 
-const namedInnerScope = sequentialSplit(
-  "named-class-expression-inner-scope",
-  `let Named = "outer";
+if (runCase("named-class-expression-inner-scope")) {
+  const namedInnerScope = sequentialSplit(
+    "named-class-expression-inner-scope",
+    `let Named = "outer";
   const C = class Named {
     static self = Named;
     static rejectsWrite() {
@@ -221,7 +231,8 @@ const namedInnerScope = sequentialSplit(
   };
   export const result = C.self === C && C.rejectsWrite() && new C().self() === C &&
     Named === "outer" && C.name === "Named";`,
-  { [entry]: ["#0", "#1", "#2"] },
-  []
-);
-assertCertifiedResult(namedInnerScope, true);
+    { [entry]: ["#0", "#1", "#2"] },
+    []
+  );
+  assertCertifiedResult(namedInnerScope, true);
+}

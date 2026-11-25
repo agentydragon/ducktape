@@ -84,6 +84,19 @@ private def structural (input : Json) : Except String Json := do
     | _ => throw "unexpected structural statement"
   return toJson [← inspect pair.1, ← inspect pair.2]
 
+private def structuralSparseHole (source : Json) : Except String Json := do
+  let plan : EsmSplit.Plan := {
+    entry := "entry.mjs"
+    mods := [⟨"entry.mjs", [0], [], []⟩]
+  }
+  let files := Json.mkObj [("entry.mjs", source)]
+  return match CoreJS.LinkedInput.decodeStructuralSingleton source (Json.mkObj []) files plan [] with
+  | .error refusal => Json.mkObj [
+      ("reason", toJson refusal.reason),
+      ("reason_code", toJson refusal.reasonCode)
+    ]
+  | .ok _ => Json.mkObj [("accepted", toJson true)]
+
 private def constructorContexts (source : Json) : Except String Json := do
   let #[cls] ← ESTreeUnits.nodes source | throw "expected one class"
   let #[method] ← (← cls.getObjVal? "body").getObjValAs? (Array Json) "body" | throw "expected one constructor"
@@ -118,6 +131,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "linked" => pure (check (← fixture.getObjVal? "input"))
       | "singletonPlacement" => pure (singletonPlacement (← fixture.getObjVal? "input"))
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
+      | "structuralSparseHole" => pure (structuralSparseHole (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"

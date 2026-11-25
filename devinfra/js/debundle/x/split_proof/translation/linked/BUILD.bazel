@@ -93,7 +93,6 @@ js_test(
         "arrays_test",
         "async_methods_test",
         "bitwise_test",
-        "classes_test",
         "derived_defaults_test",
         "derived_object_parameters_test",
         "derived_fields_test",
@@ -152,6 +151,7 @@ js_test(
     )
     for name, shards in [
         ("browser_globals_test", 4),
+        ("classes_test", 5),
         ("computed_class_keys_test", 4),
         ("conditional_super_test", 3),
         ("default_parameters_test", 3),

@@ -114,6 +114,8 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
     return (s, (if exported then (Lower.topDefs j).eraseDups else []), [])
   match format with
   | .structural pivots location _ =>
+    if FromESTree.containsUnsupportedSparseArrayHole j then
+      throw (.coded .unsupportedSparseArrayHole "unsupported array hole")
     unless pivots.contains origin do
       -- Generators need their own intrinsic and fresh prototype.
       if Lower.typ j == "FunctionDeclaration" && Lower.flag j "generator" then

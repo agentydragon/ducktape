@@ -666,6 +666,18 @@ private def sparseConstant (j : Json) : Bool := Id.run do
       ((field arg "lit").toOption.any fun key => key.startsWith "n:")
   return false
 
+/-- A structural opaque unit cannot replace the linked lowering's refusal for
+an effectful sparse array. Keep this predicate next to `sparseConstant` so
+both paths use the same definition of a safely lowerable sparse literal. -/
+partial def containsUnsupportedSparseArrayHole (j : Json) : Bool := Id.run do
+  if (field j "type").toOption == some "ArrayExpression" then
+    let elements := (j.getObjValAs? (Array Json) "elements").toOption.getD #[]
+    if elements.contains .null && !elements.all sparseConstant then return true
+  match j with
+  | .obj fields => return fields.valuesArray.any containsUnsupportedSparseArrayHole
+  | .arr elements => return elements.any containsUnsupportedSparseArrayHole
+  | _ => return false
+
 /-- Named defaults initialize lexical parameter cells in order from the raw argument slots.
 Ordinary functions then enter a body block; derived constructors run their prefix before super. -/
 private inductive LinkedFunctionParts where
