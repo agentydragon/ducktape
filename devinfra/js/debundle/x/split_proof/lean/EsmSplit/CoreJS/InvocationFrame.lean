@@ -278,7 +278,7 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
           reachFrame_pure r R cells A receiver hr
       | derivedBody before superArgs body closed fs =>
         let captured := capturesDerivedReceiver before superArgs
-        apply (enter (derivedScope before body captured) closed .undef args caps (fun _ h => by cases h) safeArgs).bind
+        apply (enter (derivedScope before body captured superArgs) closed .undef args caps (fun _ h => by cases h) safeArgs).bind
         intro env he
         apply (stmts env before he).bind
         intro initialFlow _

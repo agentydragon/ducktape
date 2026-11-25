@@ -548,6 +548,7 @@ def fromWorld (s : State W) : HostResult → Res W Val
 
 /-- A call of the host function `name`: the world's step, if the world answers for it. -/
 def hostCall (name : String) (this : Val) (args : List Val) : M W Val :=
+  if name == "%ThrowTypeError%" then throwErr .type "strict arguments callee" else
   match worldArgs name this args with
   | none => unknown s!"host function {name} is called"
   | some (this, args) => fun s =>

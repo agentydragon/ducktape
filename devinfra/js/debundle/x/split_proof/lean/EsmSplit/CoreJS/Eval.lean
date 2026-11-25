@@ -156,12 +156,30 @@ def parameterBindings (f : Func) (args : List Val) : M W (List (Name × Binding)
     return fixedParameterBindings fixed args ++ [(rest, { value := some (.obj packed), mutable := true })]
   | _ => pure (fixedParameterBindings f.params args)
 
+/-- CreateUnmappedArgumentsObject for strict ECMAScript code. Indexed data
+properties and length are independent of the formal parameter bindings. -/
+def strictArgumentsObject (vs : List Val) : Obj :=
+  let indices := vs.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v true true true)
+  let poison := Val.host "%ThrowTypeError%"
+  { proto := some objectProto, props := indices ++
+      [(PropertyKey.str "length", Property.data (.num (Float.ofNat vs.length)) true false true),
+       (PropertyKey.str "callee", Property.accessor poison poison false false),
+       (PropertyKey.wellKnownSymbol .iterator, Property.data (.host "Array.prototype.values") true false true)] }
+
+/-- Arrow functions resolve arguments through the environment captured at creation. -/
+def strictArgumentsBindings (f : Func) (vs : List Val) : M W (List (Name × Binding)) := do
+  if f.kind != .arrow && (freeStmts f.body).contains "arguments" then
+    let a ← alloc (strictArgumentsObject vs)
+    return [("arguments", { value := some (.obj a), mutable := true })]
+  return []
+
 /-- Enter a function body: the parameters, the `var` names, then the scope of the body. An arrow keeps the `this` it closed over. -/
 def enterFunction (f : Func) (closed : Env) (this : Val) (args : List Val) : M W Env := do
+  let implicitArgs ← strictArgumentsBindings f args
   let params ← parameterBindings f args
   let vars := ((varNamesOf f.body).eraseDups.filter (!f.params.contains ·)).map fun x =>
     (x, { value := some .undef, mutable := true : Binding })
-  let env ← declare { closed with this := if f.kind == .arrow then closed.this else this } (params ++ vars)
+  let env ← declare { closed with this := if f.kind == .arrow then closed.this else this } (params ++ vars ++ implicitArgs)
   enterBlock env f.body
 
 /-- The bindings of `names` as they are in `s`. -/
@@ -224,8 +242,11 @@ def initCapturedReceiver (env : Env) (receiver : Val) (captured : Bool) : M W Un
 /-- The two parts share parameters and declarations. Scope entry reserves the
 captured receiver cell in its dead zone, so a superclass cannot read it via an
 arrow before returning. The synthetic declaration is never executed. -/
-def derivedScope (before : List Stmt) (body : Func) (captured : Bool) : Func :=
+def derivedScope (before : List Stmt) (body : Func) (captured : Bool) (superArgs : Option (List Expr)) : Func :=
+  -- The scope descriptor also accounts for reads in the separately evaluated super arguments.
   let statements := before ++ body.body
+  let statements := if (freeSuperArgs superArgs).contains "arguments" then
+      .expr (.var "arguments") :: statements else statements
   let statements := if captured then .decl .let_ derivedReceiverName .undef :: statements else statements
   match body with
   | .withRest name _ _ fixed rest _ => .withRest name .classCtor false fixed rest statements
@@ -615,7 +636,7 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         pure receiver
       | some (.derivedBody before superArgs body closed fields) => do
         let captured := capturesDerivedReceiver before superArgs
-        let env ← enterFunction (derivedScope before body captured) closed .undef args
+        let env ← enterFunction (derivedScope before body captured superArgs) closed .undef args
         match ← execStmts n env before with
         | .normal => do
           let parent := (← getObj a).proto
