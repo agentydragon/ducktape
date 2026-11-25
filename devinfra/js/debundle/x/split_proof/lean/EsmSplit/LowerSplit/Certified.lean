@@ -155,20 +155,23 @@ private structure Part where
 /-- An entry that must publish glue cannot also expose exactly the original
 namespace. With the author's permission, keep the interface statements at the
 public route and place the other entry units together in a private module. -/
-private def entryFacade (asts : Array Json) (S : Spec) (P : Plan) : Option Spec := do
+private def entryFacade (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) : Option Spec := do
   guard S.privateEntryBody
   let entry ← P.find S.entry
   guard (!entry.exports.isEmpty)
   let bodyName := S.entry ++ ".body.mjs"
   guard ((P.find bodyName).isNone)
+  let defs := Std.HashSet.ofList (entry.exports.map Prod.snd)
+  let statements := B.toArray
+  let last ← (entry.stmts.filter fun i => (statements.getD i default).defs.any defs.contains).getLast?
   let (interface, body) := entry.stmts.partition fun i =>
-    ["ImportDeclaration", "ExportNamedDeclaration", "ExportDefaultDeclaration", "ExportAllDeclaration"].contains
+    i > last || ["ImportDeclaration", "ExportNamedDeclaration", "ExportDefaultDeclaration", "ExportAllDeclaration"].contains
       (Lower.typ (asts.getD i Json.null))
   guard (!body.isEmpty)
   let modules := S.modules.map fun (name, selectors) =>
     (name, if name == S.entry then interface.map Selector.stmt else selectors)
   return { S with modules := modules ++ [(bodyName, body.map Selector.stmt)],
-                  order := if S.order.isEmpty then [] else S.order ++ [bodyName] }
+                  order := if S.order.isEmpty then [] else bodyName :: S.order }
 
 private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : System.FilePath)
     (profile : CoreJS.HostProfile) (sourcePath : String) (timings : Bool)
@@ -189,7 +192,7 @@ private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : Syst
   for (ast, i) in asts.zipIdx do
     if let some reason := entryPlacementProblem B S ast i then throw (IO.userError reason)
   let P ← planSplit B S timings
-  let (S, P) ← match entryFacade asts S P with
+  let (S, P) ← match entryFacade asts B S P with
     | none => pure (S, P)
     | some physical => do
       unless ← checkLayout B P (some S) false do throw (IO.userError "invalid logical placement before entry facade")
