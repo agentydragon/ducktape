@@ -298,14 +298,10 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
 theorem perform_prim {r R cells A} (away : Away r R A) (call : Call W)
     (construct : Val → List Val → M W Val) (code) (hf : CallFramed r R cells A call)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (root : A (.obj objectProto))
-    (p : Prim) (args : List WVal) :
+    (arrayRoot : A (.obj arrayProto)) (p : Prim) (args : List WVal) :
     ReachFrame r R cells A (fun _ => True) (perform call construct code cells (.prim p args)) := by
   have regular (op : Prim) := (ReachFrame.mapM args fun a _ => reachFrame_fromW (W := W) r R cells A a).bind fun values safe =>
-    (reachFrame_prim away call hf objects root op values safe).bind fun result hr =>
-    (arrayRoot : A (.obj arrayProto)) (p : Prim) (args : List WVal) :
-    ReachFrame r R cells A (fun _ => True) (perform call construct code cells (.prim p args)) :=
-  (ReachFrame.mapM args fun a _ => reachFrame_fromW r R cells A a).bind fun values safe =>
-    (reachFrame_prim away call hf objects root arrayRoot p values safe).bind fun result hr =>
+    (reachFrame_prim away call hf objects root arrayRoot op values safe).bind fun result hr =>
       (reachFrame_toW r R cells A result hr).bind fun v _ =>
         reachFrame_pure r R cells A (P := fun _ => True) (Told.value v) trivial
   cases p <;> first | exact regular _ | exact reachFrame_unknown r R cells A _ _
