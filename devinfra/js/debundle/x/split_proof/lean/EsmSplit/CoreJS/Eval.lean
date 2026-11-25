@@ -108,6 +108,7 @@ def perform (call : Call W) (construct : Val → List Val → M W Val) (code : N
     pure (.value (← toW (.obj (← alloc { proto := parent, props := [] }))))
   | .newFunction part name length constructor => do
     pure (.value (← toW (← makeOpaque code part cells name length constructor)))
+  | .prim (.privateSlot _) _ => unknown "private element operations require lexical access"
   | .prim p args => do pure (.value (← toW (← prim call p (← args.mapM fromW))))
   | .done _ | .throw _ | .unknown _ => unknown "model: an ending is not a request"
 
@@ -595,7 +596,8 @@ def evalFields : Nat → Env → Addr → List (PropertyKey × Expr) → M W Uni
   | 0, _, _, _ => outOfFuel
   | _ + 1, _, _, [] => pure ()
   | n + 1, env, a, (k, init) :: rest => do
-    createData a k (← evalExpr n env init)
+    let value ← evalExpr n env init
+    unless init.installsPrivate do createData a k value
     evalFields n env a rest
 
 def callFn : Nat → Val → Val → List Val → M W Val

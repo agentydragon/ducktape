@@ -65,6 +65,11 @@ def WellKnownSymbol.ofMember? : String → Option WellKnownSymbol
   | "toStringTag" => some .toStringTag
   | _ => none
 
+/-- Operations on an instance element identified by a lexical private name. -/
+inductive PrivateOp where
+  | get | set | addField | addMethod
+  deriving DecidableEq, Repr
+
 /-- Primitive operations and opaque ambient references used by the interpreter. -/
 inductive Prim where
   | regExpGet (getter : RegExpGetter)
@@ -72,6 +77,8 @@ inductive Prim where
   | globalRef (binding : String)
   | wellKnownSymbol (sym : WellKnownSymbol)
   | freshSymbol
+  | privateSlot (op : PrivateOp)
+  | callWithReceiver
   | opaqueAmbientRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | opaqueAmbientMemberRef (receiver member : String)
@@ -344,6 +351,12 @@ def funDecls (ss : List Stmt) : List Func :=
   ss.filterMap fun
     | .funDecl f => some f
     | _ => none
+
+/-- Private element installation itself completes the field definition. The hidden
+name table is the destination, so there is no ordinary own property to create. -/
+def Expr.installsPrivate : Expr → Bool
+  | .prim (.privateSlot .addField) _ | .prim (.privateSlot .addMethod) _ => true
+  | _ => false
 
 /-- The initializers of the fields of a class body, in order. -/
 def fieldInits : List ClassMember → List Expr

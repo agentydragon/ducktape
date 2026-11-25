@@ -312,6 +312,40 @@ private def ambientSymbolMember? (j : Json) : Option Name := do
     let prop ← (j.getObjVal? "property").toOption
     (identifier prop).toOption
 
+/-- Source identifiers cannot name these cells. A new evaluation of the class
+allocates a separate table for every declared private name. -/
+private def privateTable (name : String) := ":private:" ++ name
+private def privateMethodValue (name : String) := ":private-method:" ++ name
+
+private def privateName? (node : Json) : Option String := do
+  guard (["PrivateIdentifier", "CoreJSInstancePrivateIdentifier"].contains (← (field node "type").toOption))
+  (field node "name").toOption
+
+private partial def markPrivateNames (names : List String) (j : Json) : Json := Id.run do
+  match j with
+  | .obj fields =>
+    if let some name := privateName? j then
+      if names.contains name then return .obj (fields.insert "type" "CoreJSInstancePrivateIdentifier")
+    return Json.mkObj (fields.toList.map fun (key, child) => (key, markPrivateNames names child))
+  | .arr items => return .arr (items.map (markPrivateNames names))
+  | _ => return j
+
+private partial def namesOfType (kind : String) (j : Json) : List String :=
+  match j with
+  | .obj fields =>
+    if (field j "type").toOption == some kind then [(field j "name").toOption.getD ""]
+    else fields.toList.flatMap fun (_, child) => namesOfType kind child
+  | .arr items => items.toList.flatMap (namesOfType kind)
+  | _ => []
+
+private def privateMember? (j : Json) : Option String := do
+  guard ((field j "type").toOption == some "MemberExpression" &&
+    (j.getObjValAs? Bool "computed").toOption == some false &&
+    (j.getObjValAs? Bool "optional").toOption == some false)
+  let prop ← (j.getObjVal? "property").toOption
+  guard ((field prop "type").toOption == some "CoreJSInstancePrivateIdentifier")
+  (field prop "name").toOption
+
 private def memberKey (lower : Json → Except String Expr) (j : Json) : Except String Expr := do
   let prop ← j.getObjVal? "property"
   if (← field prop "type") == "PrivateIdentifier" then throw "unsupported private member access"
@@ -522,7 +556,8 @@ private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : 
   let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw (refusal "missing capture list")
   let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw (refusal "missing source unit")
   let .ok part := j.getObjValAs? Nat ":opaque-part" | throw (refusal "missing callable site")
-  return .opaque name kind self arity code part captures (some reason)
+  let privateCells := (namesOfType "CoreJSInstancePrivateIdentifier" j).eraseDups.map privateTable
+  return .opaque name kind self arity code part (captures ++ privateCells) (some reason)
 
 -- Every admitted body leaves the enumerated keys and prototype chain intact.
 -- A plain local assignment may bind a new object. Property writes must name a
@@ -584,6 +619,8 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       if profile == .browserPage then return .prim (.wellKnownSymbol sym) []
       if inFunction then return .prim (.opaqueAmbientMemberRef "Symbol" sym.member) []
     let lower := linkedExpr profile imports inFunction ""
+    if let some name := privateMember? j then
+      return .prim (.privateSlot .get) [.var (privateTable name), ← lower (← j.getObjVal? "object")]
     if isSuperMember j then return .getSuper (← memberKey lower j)
     let (base, key) ← linkedMember lower j
     return .get base key
@@ -619,7 +656,12 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "AssignmentExpression" =>
     let op ← field j "operator"
     let lower := linkedExpr profile imports inFunction ""
-    let target ← j.getObjVal? "left" >>= linkedTarget imports inFunction (op == "=") lower
+    let left ← j.getObjVal? "left"
+    if let some name := privateMember? left then
+      unless op == "=" do throw "unsupported compound private field assignment"
+      return .prim (.privateSlot .set) [.var (privateTable name), ← lower (← left.getObjVal? "object"),
+        ← lower (← j.getObjVal? "right")]
+    let target ← linkedTarget imports inFunction (op == "=") lower left
     let rhs ← j.getObjVal? "right"
     let targetName := match target with
       | .var name | .frozen name => name
@@ -748,6 +790,13 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | _ => pure ()
     match ← field callee "type" with
     | "MemberExpression" =>
+      if let some name := privateMember? callee then
+        let receiver := Expr.var ":private-receiver"
+        let method := Expr.prim (.privateSlot .get) [.var (privateTable name), receiver]
+        let argv ← args.mapM (linkedArgument lower)
+        let invoke := Expr.prim .callWithReceiver (method :: receiver :: argv)
+        return .call (.func (.mk "" .arrow false [":private-receiver"] [.ret invoke]))
+          [← lower (← callee.getObjVal? "object")]
       if isSuperMember callee then
         return .callSuper (← memberKey lower callee) (← args.mapM (linkedArgument lower)) false
       if ambientSymbolMember? callee == some "for" then
@@ -958,7 +1007,15 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
   let mut ctor := Func.mk name .classCtor false [] []
   let mut derivedCtor := none
   let mut members := #[]
-  for member in ← body.getObjValAs? (Array Json) "body" do
+  let elements ← body.getObjValAs? (Array Json) "body"
+  let privateNames := elements.toList.filterMap fun m => (m.getObjVal? "key").toOption.bind privateName?
+  unless privateNames.Nodup do throw "unsupported private accessor pair"
+  if (namesOfType "CoreJSInstancePrivateIdentifier" parent).any privateNames.contains then
+    throw "shadowed private name in class heritage"
+  let mut declarations := privateNames.map fun n => Stmt.decl .const (privateTable n) (.obj [.proto .null])
+  let mut brands := #[]
+  for raw in elements do
+    let member := if privateNames.isEmpty then raw else markPrivateNames privateNames raw
     let tag ← field member "type"
     if tag == "StaticBlock" then
       let body ← linkedBlockBody profile imports .function member
@@ -968,6 +1025,24 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
     let keyNode ← member.getObjVal? "key"
     let static ← member.getObjValAs? Bool "static"
     let value ← member.getObjVal? "value"
+    if let some spelling := privateName? keyNode then
+      if static then throw "unsupported static private member"
+      let table := Expr.var (privateTable spelling)
+      let label := "#" ++ spelling
+      if tag == "PropertyDefinition" then
+        let init ← if value == .null then pure .undef else linkedExpr profile imports inFunction label value
+        members := members.push (.field false (.str "") (.prim (.privateSlot .addField) [table, .this, init]))
+      else
+        unless (← field member "kind") == "method" do throw "unsupported private accessor"
+        unless (namesOfType "Super" value).isEmpty do throw "unsupported super in private method"
+        let f ← linkedFunction profile imports .method label false value
+        let binding := privateMethodValue spelling
+        declarations := declarations ++ [.decl .let_ binding .undef]
+        -- Class members see the inner class-name binding. Create the one shared
+        -- function there; every instance receives the same immutable method value.
+        let make := Expr.seq (.assign (.var binding) (.func f)) (.str "")
+        brands := brands.push (.field false make (.prim (.privateSlot .addMethod) [table, .this, .var binding]))
+      continue
     let (key, keyExpr) ← if ← member.getObjValAs? Bool "computed" then do
       if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
         unless tag == "MethodDefinition" && profile == .browserPage do throw "unsupported computed class key"
@@ -993,8 +1068,11 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
       | "get" => members := members.push (.getter static keyExpr (← linkedFunction profile imports .method ("get " ++ key) false value))
       | "set" => members := members.push (.setter static keyExpr (← linkedFunction profile imports .method ("set " ++ key) false value))
       | other => throw s!"unsupported class method kind {other}"
-  if parent == .null then return .cls name (id != .null) ctor members.toList
-  return .derived name (id != .null) (← linkedExpr profile imports inFunction "" parent) members.toList derivedCtor
+  let ordered := brands.toList ++ members.toList
+  let cls ← if parent == .null then pure (Expr.cls name (id != .null) ctor ordered)
+    else pure (Expr.derived name (id != .null) (← linkedExpr profile imports inFunction "" parent) ordered derivedCtor)
+  if declarations.isEmpty then return cls
+  return .call (.func (.mk "" .arrow false [] (declarations ++ [.ret cls]))) []
 
 private partial def linkedBindingPattern (lower : Name → Json → Except String Expr)
     (binder : Json → Except String Name) (j : Json) : Except String BindingPattern := do
