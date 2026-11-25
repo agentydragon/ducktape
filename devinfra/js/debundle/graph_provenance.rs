@@ -1043,10 +1043,9 @@ impl GraphProvenance {
             let source = sources_by_chunk.get(chunk_id).copied().with_context(|| {
                 format!("graph provenance lacks source mapping for chunk {chunk_id}")
             })?;
-            let matching_files = self.files.iter().filter(|file| {
+            let mut matching_files = self.files.iter().filter(|file| {
                 file.root == source.input_file.root && file.path == source.input_file.path
             });
-            let mut matching_files = matching_files;
             let input_file = matching_files.next().with_context(|| {
                 format!(
                     "captured source input {} is missing from graph fingerprints",
@@ -1066,7 +1065,7 @@ impl GraphProvenance {
         } else {
             None
         };
-        let mut verified_source_bytes = None;
+        let mut verified_source = None;
         let mut verified_tree_config = None;
         let mut verified_ownership_subset = None;
         for membership in &self.yaml_memberships {
@@ -1107,17 +1106,17 @@ impl GraphProvenance {
                         Some((absolute(&path)?, Arc::from(contents.as_slice())));
                 }
             }
-            if source.is_some_and(|(source, _)| {
-                source.input_file.root == file.root && source.input_file.path == file.path
-            }) {
-                verified_source_bytes = contents;
-            }
             if actual != file.sha256 {
                 return Err(mismatch(GraphMismatchReason::File {
                     path,
                     expected: file.sha256.clone(),
                     actual,
                 }));
+            }
+            // The selected fingerprint was checked against the chunk's digest
+            // above. Retain the same bytes we just hashed and their physical path.
+            if source.is_some_and(|(_, selected)| std::ptr::eq(selected, file)) {
+                verified_source = contents.map(|bytes| (path, bytes));
             }
         }
         for absent in &self.absent_files {
@@ -1133,18 +1132,12 @@ impl GraphProvenance {
         let Some((source, _)) = source else {
             return Ok(None);
         };
-        let bytes = verified_source_bytes.with_context(|| {
+        let (input_file, bytes) = verified_source.with_context(|| {
             format!(
                 "verified graph input did not retain source bytes for chunk {}",
                 source.chunk_id
             )
         })?;
-        anyhow::ensure!(
-            sha256(&bytes) == source.sha256,
-            "verified source bytes do not match chunk {} digest",
-            source.chunk_id
-        );
-        let input_file = self.resolve(&source.input_file.root, &source.input_file.path, current)?;
         let modules_root = self
             .modules_directory
             .as_deref()
