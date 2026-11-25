@@ -73,6 +73,17 @@ def test_sandbox_harnesses_inherit_runtime_timezone(staging_manifests: list[dict
         assert "TZDIR" in inherited_environment
 
 
+def test_staging_pod_templates_offer_local_ssd_for_new_claims(staging_manifests: list[dict[str, Any]]) -> None:
+    hdd = find_resource(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)["spec"]
+    ssd = find_resource(staging_manifests, "SandboxTemplate", staging.SSD_POD_TEMPLATE)["spec"]
+    for volume in ("stateVolume", "workspaceVolume"):
+        assert hdd[volume]["claim"]["storageClassName"] == "piraeus-hdd-local"
+        assert ssd[volume] == {
+            **hdd[volume],
+            "claim": {**hdd[volume]["claim"], "storageClassName": "piraeus-ssd-local"},
+        }
+
+
 def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(
     staging_manifests: list[dict[str, Any]], staging_runner_pod: dict[str, Any]
 ) -> None:
