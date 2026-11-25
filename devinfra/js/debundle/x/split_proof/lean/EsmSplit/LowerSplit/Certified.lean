@@ -294,6 +294,11 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
       match decoded with
       | .error reason => pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
       | .ok (original, candidate) => do
+        let census ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
+        let replayBlockers :=
+          if census == some "1" then
+            CoreJS.LinkedBehavior.replayPremisedBlockerKinds original candidate
+          else []
         if request != .normalCompletion then
           pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
         else do
@@ -309,7 +314,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
                   | .error _ => none
                   | .ok _ => some premises
           if let some premises := replayed then
-            pure (.ok (premises, "compiled-replay-premised"))
+            pure (.ok (premises, "compiled-replay-premised", []))
           else
             let prepared : Except CertificationRefusal
                 (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
@@ -335,11 +340,12 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
             | .error refusal => pure (.error refusal)
             | .ok (cert, dataArts) => do
               let used ← verifyExecution timings work cert dataArts
-              pure (.ok (used, "generated-proof"))
+              pure (.ok (used, "generated-proof", replayBlockers))
     match checked with
-    | .ok (active, strategy) =>
+    | .ok (active, strategy, blockers) => do
+      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
-        (profileVerdict profile active ++ [("strategy", toJson strategy)])
+        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 

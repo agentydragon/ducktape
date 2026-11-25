@@ -69,6 +69,15 @@ private def checkedProbeLink (program : Program) : Option (CheckedLink program W
   | .ok scopes ready => some ⟨scopes, ready, linked⟩
   | .throw .. | .unknown .. | .fuel => none
 
+/-- Syntax features that prevent the current replay fragment from applying to
+either linked schedule. This report does not participate in the check. -/
+def replayPremisedBlockerKinds (source candidate : Program) : List String :=
+  match checkedProbeLink source, checkedProbeLink candidate with
+  | some sourceChecked, some candidateChecked =>
+    (replayScheduleBlockerKinds (unitsOf sourceChecked.linked) ++
+      replayScheduleBlockerKinds (unitsOf candidateChecked.linked)).eraseDups
+  | _, _ => ["probe-link-unavailable"]
+
 private def premisedStateAgreement (premises : HostPremises)
     (sourceState candidateState : State (premises.specialize World.probe)) :
     Option (PLift (sourceState = candidateState)) := by

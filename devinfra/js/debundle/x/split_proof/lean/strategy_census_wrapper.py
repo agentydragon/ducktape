@@ -140,6 +140,7 @@ def record_attempt(
             "guarantee": verdict.get("guarantee"),
             "reason_code": verdict.get("reason_code"),
             "reason": verdict.get("reason"),
+            "replay_blockers": verdict.get("replay_blockers"),
             "elapsed_ms": round(elapsed_ms, 2),
             "requested": verdict.get("requested"),
             "test": Path(os.environ.get("TEST_BINARY", "unknown")).name,

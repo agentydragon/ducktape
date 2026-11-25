@@ -124,6 +124,27 @@ def main() -> int:
                     )
                 )
 
+    linked_only = classes.get("generated-proof only", set())
+    blockers_by_input: dict[str, set[str]] = {}
+    for input_id in linked_only:
+        blockers = {str(kind) for row in by_input[input_id] for kind in row.get("replay_blockers", []) or []}
+        if blockers:
+            blockers_by_input[input_id] = blockers
+    if blockers_by_input:
+        inputs_by_blocker: dict[str, set[str]] = defaultdict(set)
+        for input_id, blockers in blockers_by_input.items():
+            for blocker in blockers:
+                inputs_by_blocker[blocker].add(input_id)
+        print("\n## Replay blockers on linked-only inputs\n")
+        print(f"- Classified {len(blockers_by_input)} of {len(linked_only)} generated-proof-only inputs.")
+        for blocker, inputs in sorted(inputs_by_blocker.items(), key=lambda item: (-len(item[1]), item[0])):
+            print(f"- {blocker}: {len(inputs)} input(s)")
+        print("\n| Input | Test(s) | Replay blockers |")
+        print("| --- | --- | --- |")
+        for input_id in sorted(blockers_by_input):
+            tests = sorted({str(row.get("test")) for row in by_input[input_id] if row.get("test")})
+            print(f"| {input_id} | {', '.join(tests)} | {', '.join(sorted(blockers_by_input[input_id]))} |")
+
     by_strategy: dict[str, list[dict]] = defaultdict(list)
     for row in records:
         strategy = strategy_for_attempt(row)
