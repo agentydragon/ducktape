@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { forcePreview, lower, observe, prepare, root } from "./harness.mjs";
+import { forcePreview, observe, root, structuralSplit } from "./harness.mjs";
 
 const contract = path.join(root, "portable.json");
 writeFileSync(contract, JSON.stringify({ profile: "ecmascript", stableIntrinsicValues: ["Object.defineProperty@1"] }));
@@ -11,19 +11,10 @@ const pivot = "linked-structural-pivot",
   refusal = "linked-structural";
 
 function fixture(name, before, init, after = "export {saved};") {
-  const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source: `${before}; var saved = ${init}; ${after}`,
-    provider: "",
-    spec: {
-      entry: "entry.mjs",
-      modules: { "entry.mjs": after.startsWith("export") ? ["#0", "#2"] : ["#0", "#2", "#3"], "owner.mjs": ["#1"] },
-    },
+  return structuralSplit(name, `${before}; var saved = ${init}; ${after}`, {
+    "entry.mjs": after.startsWith("export") ? ["#0", "#2"] : ["#0", "#2", "#3"],
+    "owner.mjs": ["#1"],
   });
-  const out = path.join(dir, "out");
-  const run = (scope, ...args) =>
-    lower(files.sourceFile, files.specFile, out, ["--structural", ...args], scope).verdict;
-  return { dir, files, out, run };
 }
 const read = fixture("read", "var marker = 0", "Object.defineProperty");
 assert.equal(read.run(refusal).status, "rejected");
@@ -36,7 +27,7 @@ assert.match(
 );
 assert.deepEqual(read.run(pivot, ...enabled, "--check-output"), certified);
 assert.equal(read.run(refusal, "--check-output").status, "rejected");
-for (const file of [read.files.sourceFile, path.join(read.out, "entry.mjs")]) {
+for (const file of [read.sourceFile, path.join(read.out, "entry.mjs")]) {
   assert.equal((await import(pathToFileURL(file))).saved, Object.defineProperty);
 }
 for (const [name, before, expr] of [
@@ -59,6 +50,6 @@ const replaced = fixture(
 );
 assert.equal(replaced.run(refusal).status, "rejected");
 const preview = path.join(replaced.dir, "preview");
-forcePreview(replaced.files, preview);
-assert.deepEqual(observe(replaced.files.sourceFile, "same"), { same: true });
+forcePreview(replaced, preview);
+assert.deepEqual(observe(replaced.sourceFile, "same"), { same: true });
 assert.deepEqual(observe(path.join(preview, "entry.mjs"), "same"), { same: false });

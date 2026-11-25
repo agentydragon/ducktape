@@ -291,7 +291,7 @@ export function structuralSplit(name, source, modules, provider = "") {
   const out = path.join(dir, "out");
   const run = (scope, ...args) =>
     lower(files.sourceFile, files.specFile, out, ["--structural", ...args], scope).verdict;
-  return { ...files, out, run };
+  return { ...files, dir, out, run };
 }
 
 export function structuralFixture(name, source, moved, kept, provider = "") {
@@ -302,7 +302,7 @@ export function structuralFixture(name, source, moved, kept, provider = "") {
 export function assertRejectedResultChange(test, before, after) {
   assert.equal(test.run("linked-structural").status, "rejected");
   assert(!existsSync(test.out));
-  const preview = path.join(path.dirname(test.out), "preview");
+  const preview = path.join(test.dir, "preview");
   forcePreview(test, preview);
   assert.deepEqual(observe(test.sourceFile, "result"), before);
   assert.deepEqual(observe(path.join(preview, entry), "result"), after);

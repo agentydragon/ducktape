@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { forcePreview, lower, observe, prepare, root } from "./harness.mjs";
+import { forcePreview, observe, root, structuralSplit } from "./harness.mjs";
 
 const plain = path.join(root, "page.json");
 const stable = path.join(root, "pi.json");
@@ -11,16 +11,10 @@ const pivot = "linked-structural-pivot";
 const refusal = "linked-structural";
 
 function fixture(name, before, operand) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source: `${before}; var result = ${operand} / 12; export { result };`,
-    provider: "",
-    spec: { entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2"], "angle.mjs": ["#1"] } },
+  return structuralSplit(name, `${before}; var result = ${operand} / 12; export { result };`, {
+    "entry.mjs": ["#0", "#2"],
+    "angle.mjs": ["#1"],
   });
-  const out = path.join(dir, "out");
-  const run = (scope, ...args) =>
-    lower(files.sourceFile, files.specFile, out, ["--structural", ...args], scope).verdict;
-  return { dir, files, out, run };
 }
 
 for (const [name, before, operand, expected, moved] of [
@@ -29,7 +23,8 @@ for (const [name, before, operand, expected, moved] of [
   ["getter", "globalThis.Math = { get PI() { return 36; } }", "Math.PI", 3, Math.PI / 12],
   ["coercion", "Object.prototype.valueOf = () => 48", "({})", 4, null],
 ]) {
-  const { dir, files, out, run } = fixture(name, before, operand);
+  const test = fixture(name, before, operand);
+  const { dir, out, run } = test;
   assert.equal(run(refusal).status, "rejected");
   assert.match(run(refusal, "--host-contract", plain).reason, /unit 1 is not a local allocating declaration/);
   assert(!existsSync(out));
@@ -46,8 +41,8 @@ for (const [name, before, operand, expected, moved] of [
   // The forced preview exposes what the unconditional move would do in a
   // deployment that violates the stated premise. Observe each in a fresh realm.
   const preview = path.join(dir, "preview");
-  forcePreview(files, preview);
-  assert.deepEqual(observe(files.sourceFile, "result"), { result: expected });
+  forcePreview(test, preview);
+  assert.deepEqual(observe(test.sourceFile, "result"), { result: expected });
   assert.deepEqual(observe(path.join(preview, "entry.mjs"), "result"), { result: moved });
 }
 
