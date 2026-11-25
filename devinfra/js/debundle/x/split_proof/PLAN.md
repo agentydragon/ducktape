@@ -4,7 +4,7 @@ The goal is to turn the production bundle in `gaffer-private` into runnable, rea
 
 ## Acceptance contract
 
-Given the original module graph, a proposed placement and a requested guarantee, Lean may certify the output module graph or refuse. Certification covers the entry’s exact public names and the live bindings they denote, including the effects of generated imports and exports. For every modeled world, `normal-completion` means that each successful final state of either program is also a successful final state of the other. `all-outcomes` extends that comparison to every modeled ending, including throws. The verdict must identify the guarantee achieved and reject a request for a stronger one. Applying that result to JavaScript assumes faithful parsing, scope annotations, printing and CoreJS semantics for the supported fragment.
+Given the original module graph and a proposed placement, Lean certifies the output module graph or refuses. A certification states the [target theorem](#target): each source unit sits where the placement puts it, the entry exports the same public names bound to the same live cells (including the effects of generated imports and exports), and in every world that satisfies the listed host premises, each successful final state of either program is a successful final state of the other. When the split keeps the original order, the verdict also reports that every modeled ending matches, including throws. Applying the result to JavaScript relies on the [trusted parts](#trusted-and-tested).
 
 The production acceptance run uses the private bundle, its dependencies and the reviewed placement. Record the certified guarantee for the complete split, which authored boundaries it realizes, and the result of running the emitted application through its browser smoke test. Until it certifies, record the first reproducible blocker on that input. Keep the bundle, selectors and run artifacts in the private repository.
 
@@ -138,7 +138,6 @@ Excalidraw remains the [public intermediate milestone](#excalidraw-public-interm
 ## Picking this up
 
 - **Build and test.** Use the [Bazel commands](README.md); CI runs `bbr test //devinfra/js/debundle/x/split_proof/...`. By hand, in `lean/`: `nix shell nixpkgs#lean4 nixpkgs#gcc --command lake build EsmSplit render Experiments lower lowersplit evalorder translate corejs` (about 2 minutes clean). The golden cases: `node ../effects/run.mjs` in `translation` (90 s). The model: `node differential.mjs --count 40 --seed 1` in `model` (20 s). Each JavaScript tool package’s `package.json.in` is copied to `package.json` before `npm ci`; never commit a `package.json`.
-- **TODO: Test Node–CoreJS correspondence independently.** Consider running the same authored and generated JavaScript directly in Node and through the production AST-to-CoreJS lowering and interpreter, without a placement spec or split. Compare normal and thrown outcomes, public bindings and observable effects under explicit host assumptions. Reuse the [differential cases](model/README.md). This would let a model mismatch reproduce on one program. Keep end-to-end cases for the separate claim that the original and emitted module graphs have equivalent CoreJS executions.
 - **Generated coverage for supported features.** When adding a language feature or a proved move rule, teach a program generator to compose it with varied operands or surrounding statements. Include a CI seed sample that executes it through the relevant checker or interpreter and asserts the observed behavior. For a move rule, require a reordered plan that uses the rule and a dependency-bearing refusal. Track remaining gaps in the [CoreJS differential inventory](model/README.md) and the [translation coverage audit](translation/COVERAGE.md).
 - **After any change to `Effects.lean`**: the golden cases, `node test.mjs`, `node fuzz.mjs --count 150 --seed <new>`, `footprint_oracle_sweep.mjs --samples 40 --seed <new>`, `debundle_cases` (its committed results must be regenerated if they change), and `fuzz_mutate.py` (about an hour; say so if it is skipped). Then measure the large bundle: the count of units that touch the world must be reported with the change.
 - **The private evidence** is in the private repository `gaffer-private`, under the large bundle's `debug/translation-validation/`: `peel-probe/` (what peels, the bundle-order split, the browser load, the counts after the rule fixes), `startup-coverage/` (what runs at start-up) and the host inventory under `devinfra/debundle/host_inventory/`. Its scripts rebuild the inputs: the statement dump comes from [`translation/dump_ast.mjs`](translation/dump_ast.mjs) on the chunk, the footprints from `lower <dump> --premises <file>` (3 minutes, 1.5 GB), the partition from `scripts/peel_all.mjs`. The scratch copies of these inputs did not outlive the session that made them.
@@ -146,61 +145,167 @@ Excalidraw remains the [public intermediate milestone](#excalidraw-public-interm
 - **Independent attempts pay.** Half an hour of a fresh agent told to break the analysis found dozens of wrong accepts each time. Repeat it after every change to the rules, and give the agent the generators and the oracle.
 - **Review with programs the author did not write.** Every layer of the model was checked that way before it merged, on a seed its author had not used.
 
-## Direction
+## Target
 
-**The theorem to reach.** It does not mention footprints. `split` is the whole tool as one total function: it takes a program and a spec and returns the split program, or refuses.
+`lowersplit` has one guarantee and writes no unchecked output. `split` is total Lean code over CoreJS, and its type carries the theorem:
 
 ```lean
--- More fuel never changes a run that finished.
-theorem fuel_mono : run n P = r → r ≠ .fuel → n ≤ m → run m P = r
--- "P ends with r": some amount of fuel is enough. By `fuel_mono` there is at most one such r.
-def Ends (P) (r) := ∃ n, run n P = r ∧ r ≠ .fuel
--- A split that runs the statements in the bundle's order: every ending.
-theorem order_kept_preserves : … →
-    (∀ r, Ends P r → ∃ r', Ends P' r' ∧ r ≈ r') ∧ (∀ r', Ends P' r' → ∃ r, Ends P r ∧ r ≈ r')
--- A split that moves code: the runs that end normally.
-theorem split_preserves : InFragment P → split P spec = some P' →
-    (∀ s, Ends P (.ok () s) → ∃ s', Ends P' (.ok () s') ∧ s ≈ s') ∧
-    (∀ s', Ends P' (.ok () s') → ∃ s, Ends P (.ok () s) ∧ s ≈ s')
+split X S = .ok Y →
+  Places S X Y ∧                          -- each source unit appears once, in the module S names
+  SameExports X Y ∧                       -- same entry names, bound to the same live cells
+  NormalEquivalent (Worlds premises) X Y  -- same successful final states, in both directions
 ```
 
-- **A split that keeps the order** runs the same statements in the same order, so it is compared for every ending: a value, a throw, unknown code. The two directions together say that one program runs forever exactly when the other does.
-- **A split that moves code is compared only for runs that end normally.** That is premise P4 of the analysis ("evaluation completes", [`effects/README.md`](effects/README.md)) as a hypothesis of the theorem. Without it the statement is false, and the tool shows it: with `const o = { a: undefined }; console.log("printed"); const w = o.a.b;` the read that raises a `TypeError` may be split off so that it runs first, and then nothing is printed ([`experiments/README.md`](experiments/README.md) § 14). The analysis orders a `throw` statement it reaches; an exception that the language raises itself in pure code is ordered against nothing.
-- **The converse needs the same hypothesis, on the split.** If the split ends with a throw, the bundle may end with another throw after other output, or not end at all: the statement that throws may sit after a loop that never ends, and the split may run it first. What is expected to hold, and is not proved: one ends normally exactly when the other does. The argument is that how a statement ends depends only on what it reads, and the checks keep every pair in order where one writes what the other reads; so the same statements throw in both, and a run ends normally exactly when none does. `Meaning` in [`Semantics.lean`](lean/EsmSplit/Semantics.lean) has no notion of a statement that does not finish, so this argument has no home in the proved part yet.
-- A program that prints and then runs forever is not compared: the model keeps no output of an unfinished run.
-- `≈` is "the same to an observer": the same interaction with the world and final states that later code cannot tell apart. For a reorder inside one program that is equality. For modules it is a relation, and it is part of what a reader has to trust.
+`X` is the lowering of the original module graph. `Y` is the lowering of the printed output. [`NormalEquivalent`](lean/EsmSplit/CoreJS/LinkedPivot.lean) and [`SameExports`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) exist; `Places` does not yet. `Worlds premises` are the worlds that satisfy the host premises the verdict lists. When `Y` runs the units in the original order, `split` also proves that every ending matches, including throws.
 
-`run` is the model, `CoreJS`. `InFragment` is a check on the program's text; it may be "the tool derives a footprint other than unknown code for these units". What the tool calls footprints, `Valid` and the conflict rule are then inside the proof, and a reader has to trust only the model, `≈` and this statement.
+The planner proposes a candidate and may use unproved heuristics. The checker inside `split` decides. A planner bug can cause a refusal, never a wrong accept.
 
-Inside the proof, two lemmas carry it, for programs in the fragment:
+Moves are compared only on runs that end normally. Without that restriction the statement is false: in `const o = { a: undefined }; console.log("printed"); const w = o.a.b;` the throwing read can move ahead of the log ([`experiments/README.md`](experiments/README.md) § 14). The comparison holds in both directions, so one program ends normally exactly when the other does. A program that prints and then runs forever is not compared, because the model keeps no output from an unfinished run.
 
-- _A derived footprint is true:_ a unit reads and changes only what its footprint lists. This needs no new definition. [`Meaning`](lean/EsmSplit/Semantics.lean) already has the shape (a statement without effects is a function of the values it reads), and [the structural check](README.md#what-is-not-proved) assumes JavaScript respects those premises. The work is to show that `CoreJS` fits it for the fragment.
-- _True footprints justify the move:_ this is `Valid → Correct`, proved.
+### Trusted and tested
 
-A proof for a narrow fragment is worth having, and two fragments are better than one: each is its own `InFragment`, and a verdict of the tool says which one covered the split, or that none did.
+The theorem starts and ends at CoreJS. These parts connect it to JavaScript. They are tested, not proved:
 
-What the statement forces:
+- Acorn's parse and eslint-scope's annotations.
+- One lowering from annotated ESTree to CoreJS, written in Lean. It lowers the original graph and the reparsed output.
+- CoreJS semantics and the world model for the supported fragment, including the host function table (`worldFunction` in [`Value.lean`](lean/EsmSplit/CoreJS/Value.lean)).
+- Lean's kernel, plus its compiler when a proven checker runs as compiled code.
 
-- **`split` has to be total Lean code.** `Effects.lean` is `partial` over JSON and Lean can prove nothing about it. So the fragment's footprints come from a new derivation over `CoreJS`'s syntax that answers "unknown code" except where a rule is proved, beginning with the allocation rule. `Effects.lean` stays in use outside the fragment, unproved, until the derivation covers what it covers. A unit where the derivation says "effect" and `Effects.lean` says "none" is a finding.
-- **`run P'` needs modules in the model.** They are in it: a program is a set of modules, linked before any runs, with imported names as the exporter's bindings and the specification's order of evaluation ([`experiments/README.md`](experiments/README.md) § 14). The model's order is `Plan.visit` (`split_visit` in [`Split.lean`](lean/EsmSplit/CoreJS/Split.lean)), and a split that `Valid` accepts and that keeps the order ends as its bundle does (`valid_order_kept_preserves`).
-- **A run that reaches unknown code says nothing after that point.** The first version covers programs that stay inside the model. Real bundles do not: 1,751 of the large bundle's 9,707 units touch the world, without P3. The vendor code is in the bundle's chunks, so it can be part of the program; then only the host is unknown. Either way the model has to take the world as a parameter, a function that may read and change what it is given and nothing else, and the theorem holds for every world. Both stages exist ([`experiments/README.md`](experiments/README.md) § 14): host functions on primitives, and opaque code that is handed objects, which the order-kept slice uses. Reordering arbitrary opaque code still needs the relevant reachability invariant at the crossing; see [the proof track](#proof-track).
-- **The standard library cannot be defined function by function.** Start-up runs little code and most of the language ([`docs/lessons_learned.md`](docs/lessons_learned.md) § The first slice of a model): about 110 standard functions by name, regular expressions among them. They enter the model as part of the world, each with a stated class of behaviour ("a function of its primitive arguments", "reads its receiver", "may call its argument"). That table stays an assumption about the engine, tested and not proved. 88 functions of the first two classes are in it (`worldFunction`), and the test replays Node's answers for them.
+The Node comparison suites ([`model/README.md`](model/README.md)) exercise the same lowering and interpreter as certification. The emitter and printer are not trusted: publication reparses the printed files and checks that they lower to `Y`.
 
-**Decided so far.**
+### Decided
 
-- **No new precision rule goes into the unproved interpreter** unless a measurement shows it is blocking. Fixing a wrong rule is always in scope, and its cost on the large bundle is measured before it is adopted.
-- **The model is built up beside the tested analysis**, as a spike with a kill rule: stop if opaque statements do not keep the order-kept theorem, or if the proved part covers under about half of the units that get precise footprints today. Step N2 passed it on 2026-11-21: the theorem holds with opaque statements, and on the large bundle the order-kept slice covers the 99.6% of units the front end accepts. Counted strictly, the units in the model's syntax (4,071) are 51% of the 7,956 that get precise footprints.
-- **A proof for a narrow fragment is worth landing.** Each is its own slice of the theorem, and the tool's verdict says which slice covered a split (`sliceLines` in [`LowerSplit.lean`](lean/EsmSplit/LowerSplit.lean)); a new slice adds its check there.
+- **One lowering, in Lean.** The same Lean code lowers annotated ESTree for certification, for the `corejs` interpreter and for the Node comparison suites.
+- **One guarantee.** Callers do not choose a proof technique or level. The verdict reports the evidence and premises it used.
+- **No unchecked output.** Every written module graph is certified. Diagnostics report and write no modules.
+- **The planner stays unproved.** Heuristics such as `Effects.lean` propose candidates. Their output counts as evidence only after a proved check accepts it ([footprint soundness](docs/footprint_soundness.md)).
+- **A proved rule for a narrow fragment is worth landing.** It widens what the one checker accepts.
+- **No new precision rule goes into the unproved footprint analysis** unless a measurement shows it is blocking. Fixing a wrong rule is always in scope, and its cost on the large bundle is measured before it is adopted.
+- **The world is a parameter.** Real bundles reach unknown code: without P3, 1,751 of the large bundle's 9,707 units touch the world. The theorem holds for every world that satisfies the listed premises. A world reads and changes only what it is given.
+- **The standard library is part of the world.** Each standard function gets a stated class of behaviour, such as "a function of its primitive arguments", "reads its receiver" or "may call its argument". That table is a tested assumption about the engine ([`docs/lessons_learned.md`](docs/lessons_learned.md) § The first slice of a model).
 - **What is refused** ([`SUPPORT.md`](SUPPORT.md)): a top-level `await`, a top-level `using`, a direct `eval` anywhere, a name declared twice in one list. A `Proxy` is never covered by premise P3.
 - **Premise P3 is not assumed for real inputs** (finding F7, 2026-11-21). Code of the program that the world runs can add a getter or a `toString` to an object the world holds, and the Claude bundles do it. Without P3 the analysis is sound for that, and the cost is small: 3 to 6% more units touch the world on three production bundles, and peeling barely moves ([`generator_findings`](translation/debug/generator_findings/README.md)). The cases and fuzzers still set P3, to test the analysis under it.
-- **An exception that ends evaluation**: a `throw` statement keeps its place; an exception the language raises itself is covered by the hypothesis that the bundle's evaluation completes.
 
-**Open decisions for the owner.**
+### Open decisions for the owner
 
 - How the four input files with a direct `eval("require")` are admitted: a check of the string, or an audited premise.
 - Whether a reviewed vendor table is worth its review cost. Alone it does not change which modules peel.
-- How readable names reach certified output. Near term: debundle emits its tree even unproved, and `translate` with the slice verdict referees it. The end state should not keep two referees (debundle's gate and Lean); which one remains is open.
+- Whether debundle's Rust gate stays as an extraction diagnostic once Lean certifies the production split. Readable names move into the checked split ([renames](#renames-inside-the-checked-split)); until then debundle emits its tree unproved and `translate` referees it.
 - Whether the vendor chunk becomes part of the program in the model. It removes most unknown code, and the model then has to run what the vendor code runs at start-up, regular expressions included.
+
+## Convergence
+
+The code reaches the [target](#target) through the steps below. Until they land, new work does not add a lowering, a proof mode or an uncertified output.
+
+[Check the printed files](#check-the-printed-files), [no unchecked output](#no-unchecked-output) and [documentation](#documentation-states-what-each-verdict-proves) are small and independent. [One lowering](#one-lowering-in-lean) comes before [one proven checker](#one-proven-checker), because the theorem is stated over that lowering's output. [One guarantee](#one-guarantee) can remove the mode flags before the proven checker exists by picking a strategy automatically.
+
+### One lowering, in Lean
+
+**Now.** Four code paths turn JavaScript into CoreJS:
+
+| Path                                                                                                                              | Used by                                                                                                                                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`model/to_core.mjs`](model/to_core.mjs), read by [`Decode.lean`](lean/EsmSplit/CoreJS/Decode.lean)                               | Node comparison suites (`corejs programs.jsonl`), `corejs --footprints` and `--moves`, `lowersplit --diagnostic --corejs`, [`translation/split_dump.mjs`](translation/split_dump.mjs) |
+| Basic [`FromESTree`](lean/EsmSplit/CoreJS/FromESTree.lean) rules (`expr`, `declaration`, `unit`, `program`)                       | `corejs --ast`, closed-declaration certificates, `--diagnostic`                                                                                                                       |
+| Linked `FromESTree` rules (`linkedUnit`, `linkedDeclaration`) through [`LinkedInput.lean`](lean/EsmSplit/CoreJS/LinkedInput.lean) | Linked certificates, structural pivot units                                                                                                                                           |
+| [`OpaqueInput.lean`](lean/EsmSplit/CoreJS/OpaqueInput.lean)                                                                       | Structural units kept opaque                                                                                                                                                          |
+
+The broad Node comparison runs through `to_core.mjs`. [`corejs_ast_lowering_test.mjs`](translation/corejs_ast_lowering_test.mjs) compares the basic Lean rules with `to_core.mjs` and Node. No test runs the linked rules and the interpreter against Node on a single program; the linked tests run accepted splits in Node. `to_core.mjs` also decides which assignment targets are imports and which names are host globals ([debts](#debts)).
+
+**Target.** `LinkedInput` with the linked `FromESTree` rules is the only lowering. Keeping a unit opaque is one of its results, chosen per unit, with captures checked the same way in both graphs.
+
+**How.**
+
+1. Make `corejs --ast` lower module graphs through `LinkedInput`.
+2. Run every Node comparison suite through it: hand-written, module and opaque cases, generated programs, the binding and inheritance suites and the sweep. A model mismatch then reproduces on one program. An unsupported program is a reported refusal, never a fallback to `to_core.mjs`.
+3. List the programs only `to_core.mjs` accepts. Port each feature to the linked rules, or record it as refused.
+4. Before moving opaque fallback, check which cells a deferred body captures, its part number, and the handling of direct `eval`, module identity and top-level `await`. Replay Excalidraw on the AST alone.
+5. Merge `OpaqueInput` into the same entry point.
+6. Delete `to_core.mjs`, the program decoder in `Decode.lean` (the world-recording decoders stay), `--corejs` and the basic `FromESTree` rules.
+
+**Done when.** One Lean function lowers an annotated ESTree module graph to CoreJS, CI runs the Node comparison suites through it, and nothing imports `to_core.mjs`.
+
+### One guarantee
+
+**Now.** Certified verdicts have three scopes, and each proves a different statement:
+
+| Scope                 | Selected by                                                                       | Proves                                                                           |
+| --------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `closed-declarations` | Automatically, for a closed module of simple declarations, without `--structural` | Order kept: every ending matches. Moves: same successful states, both directions |
+| `linked-programs`     | Default                                                                           | In every allowed world, both programs finish normally in the same state          |
+| `linked-structural-*` | `--structural`                                                                    | Same successful final states, both directions (`NormalEquivalent`)               |
+
+`--require all-outcomes|normal-completion` asks for a level.
+
+**Target.** Every certified verdict states the target theorem. The checker picks the strategy. The verdict reports the evidence used, its premises and, when the order is kept, that every ending matches.
+
+**How.**
+
+1. Prove that linked `EquivalentFor` implies `NormalEquivalent` over the same worlds. It should follow from determinism of `Ends`.
+2. Report every scope under the one guarantee.
+3. Pick the strategy automatically. Remove `--structural` and `--require`.
+4. Run the closed-declaration tests through the remaining checker. Retire that path when they certify, or record what is missing. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
+
+**Done when.** No CLI flag chooses a proof technique or level, and the closed-declaration path is gone.
+
+### One proven checker
+
+**Now.** [`checkStructuralSchedule`](lean/EsmSplit/CoreJS/LinkedPivotCertificate.lean) carries a general theorem in its type and runs as compiled code. Linked mode has no general checker: [`LinkedCertificate.lean`](lean/EsmSplit/CoreJS/LinkedCertificate.lean) writes a new Lean proof for each run, and a separate Lean process checks it. No Lean function has the target theorem in its type. `checkLayout` and the lowering enforce placement outside the proved statement.
+
+**Target.** The total `split` from the [target](#target). The planner runs inside it and stays unproved.
+
+**How.**
+
+1. Wrap planning and `checkStructuralSchedule` in `split`. The CLI emits ESTree for `Y`'s placement, and [checking the printed files](#check-the-printed-files) ties the files to `Y`.
+2. Define `Places` and prove that the placement check establishes it.
+3. Add whole-program evaluation to the checker as a proven justification: a symbolic evaluator with a soundness theorem, so a move can rest on evaluating the units it crosses, as linked mode does today.
+4. Retire per-run proof generation once the proven evaluator certifies the linked test corpus.
+5. Optionally let the kernel replay the checker's decision on small inputs. That run then does not trust the compiler.
+
+**Done when.** The certified CLI calls only `split`, `split`'s type states the target theorem, and no run writes a proof module.
+
+### Check the printed files
+
+**Now.** [`SplitFiles.lean`](lean/EsmSplit/SplitFiles.lean) certifies the planned ESTree, prints it and renames the staged directory into place without reparsing. `--check-output` reparses only on request and compares ASTs with scope annotations removed.
+
+**Target.** Before publishing, reparse the staged files and lower them with the one lowering. The result must equal `Y`. The emitter and printer leave the trusted parts. `--check-output` runs the same check on an existing directory.
+
+**How.**
+
+1. Normalize the output path. With a trailing `/`, Lean's `FilePath.parent` returns the output directory itself, so staging lands inside it, and renaming the staging directory onto its own parent cannot succeed after the proof has passed.
+2. After printing into the staging directory, reparse and lower every module and compare the result with `Y`.
+3. Make `--check-output` call the same comparison.
+
+**Done when.** A printer change that drops required parentheses is refused at emission.
+
+### No unchecked output
+
+**Now.** `lowersplit --diagnostic` writes uncertified previews. The Node comparison suites send split plans through diagnostic mode ([`model/README.md`](model/README.md)).
+
+**Target.** Diagnostic mode reports plans, refusals and footprints and writes no module files.
+
+**How.**
+
+1. Move the split checks of the Node comparison suites to the certified path. A plan it refuses is counted as a refusal; its program still runs unsplit through the model.
+2. Remove module output from `--diagnostic`. Plan reports, `--lean` and `--move-report` stay.
+
+**Done when.** `--diagnostic` takes no output directory.
+
+### Renames inside the checked split
+
+**Now.** [`translate`](translation/README.md) validates a separately authored tree under the premise that renaming preserves meaning.
+
+**Target.** The spec carries renames, and `split` checks them, including code that observes function names or source text.
+
+**Done when.** A certified split emits readable names without a renaming premise.
+
+### Documentation states what each verdict proves
+
+**Now.** The README's "What is proved" section is about `split_correct`, a theorem over abstract statement meanings; the verdicts state CoreJS theorems. The README says the theorem ends at the ASTs, but the AST-to-CoreJS step is executable Lean with `partial` helpers that the kernel cannot unfold, and closed-declaration and structural verdicts come from proven checkers run as compiled code. [`docs/footprint_soundness.md`](docs/footprint_soundness.md) cites `LowerSplit.sliceLines`, which no longer exists.
+
+**Target.** The README states the target guarantee, the [trusted parts](#trusted-and-tested) and which evidence each verdict used. Until [one guarantee](#one-guarantee) lands, it states each scope's theorem.
+
+**Done when.** The README describes exactly the verdicts the CLI emits.
 
 ## Next steps
 
@@ -231,10 +336,6 @@ Grow the spec one upstream dependency group at a time. Resolve its selectors aga
 The next editor decision is whether to adopt the [scroll dependency proposal](integration/excalidraw/proposals/scroll/README.md) and its explicit import priority in the maintained spec. It certifies with the recorded order; the authored priority was refused for the same owners. For the remaining `calculateScrollCenter` dependencies, the proposal records both the private exports that a partial move introduces and the first refused moves in the larger closure. For the main entry, the [renderer trial](integration/excalidraw/main.md) isolates a retained module metadata reader. Keep the [ordinary scroll checker trials](integration/excalidraw/README.md#strict-certification-of-the-scroll-module) as regressions for that proof mode.
 
 ### Proof track
-
-**Derive CoreJS from the annotated AST.** The checker and interpreter share the first Lean lowering rules for declarations, primitive literals, binding reads, logical negation, negated number literals and local named exports. Extend expression and statement coverage against the existing JavaScript lowerer and Node. Before migrating opaque fallback, check exactly which cells a deferred body captures, its part number and the handling of direct eval, module identity and top-level await. Replay Excalidraw on the AST alone before retiring the external checker input.
-
-**Declaration extraction and the output boundary.** For closed modules of identifier declarations (including inline named exports) initialized by literals, binding reads, logical negation or negated number literals, Lean relates evaluation of the original lists to the checked CoreJS plan. It instantiates the whole module before the first initializer and preserves abrupt completion on an order-kept plan. The checker compares the complete extracted statements before reporting coverage. Extend this to mixed modules as their source semantics becomes available. The next boundary is showing that parsing the emitted modules gives the checked plan, including its renames and links. Parser correctness and binding resolution remain premises. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
 
 **N4. Widen the slice that moves code.** `moves_preserve` is proved; what `MayMove` covers is 69% of the large bundle's units.
 
@@ -286,7 +387,7 @@ What is owed beyond the steps above. Each is a known gap, not a plan.
 - Not in the model: `**` (the specification leaves it to the implementation, and the C library's result differed from V8's in the last bit), `instanceof`, conversion of an object to a primitive (`valueOf`, `toString`), writes to arrays, namespace imports, and source-bearing re-exports.
 - A run that ends out of fuel keeps no output, so a program that prints and then runs forever is not compared.
 - The generated programs barely reach the model: 17% of their units run. The hand-written cases carry the object model.
-- That a split ends normally exactly when its bundle does is expected and not proved ("The theorem to reach").
+- `Meaning` in [`Semantics.lean`](lean/EsmSplit/Semantics.lean) has no notion of a statement that does not finish, so the abstract theorem cannot say that a split ends normally exactly when its bundle does. The CoreJS verdicts state it.
 - `ScopesAgree` has no instance proved in Lean, so `order_kept_preserves` has no worked example inside Lean. The evidence that its hypotheses hold for real splits is the test's comparison of final states, which is by a hash of a text of the state: the name, the parameters and the kept bindings of each function, with the bodies compared apart as tokens.
 - `AssignsHome` has to hold for `splitProgram` to be what the front end reads from the files the tool writes, and it is not a hypothesis in Lean. The test checks per statement that the tokens are the bundle's.
 - Only 19 to 28 of the accepted splits of a run of the four-way test run statements in another order than the bundle, so that test says little about reordering.
