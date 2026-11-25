@@ -43,22 +43,14 @@ use crate::{
     SelfRewriteOutputs, seed_bundled_partial_swap_self_rewrites,
 };
 
-/// What the emission rewrites changed beyond the file bodies themselves.
-#[derive(Debug, Default)]
-pub struct EmissionRewriteOutput {
-    /// Rewritten references per (swapped chunk, chunk export).
-    pub references_by_symbol: BTreeMap<(ChunkId, String), usize>,
-    /// Prepared-parse global-use sites each vendor residual strip removed.
-    pub global_use_elisions: BTreeMap<ChunkId, GlobalUseElisions>,
-}
-
 /// Body-only emit pass: ASTs are taken out for parallel rewrites and put back
 /// at the same file paths. The caller may retain its output-path indexes.
 pub fn apply_emission_rewrites_in_place(
     artifact: &mut ChunkBundle,
     plan: &VendorResolutionPlan,
     references: &ArtifactIndexes,
-) -> Result<EmissionRewriteOutput> {
+    references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
+) -> Result<BTreeMap<ChunkId, GlobalUseElisions>> {
     let chunk_table = artifact.chunk_table.clone();
     let materialized_index = MaterializedOutputChunkIndex::build(&chunk_table);
     let context = PassthroughContext {
@@ -131,7 +123,6 @@ pub fn apply_emission_rewrites_in_place(
             .collect()
     });
 
-    let mut references_by_symbol = BTreeMap::new();
     for result in results {
         for ((chunk_id, chunk_export), count) in result.references_by_symbol {
             if !plan.partial_swaps.contains_key(&chunk_id)
@@ -200,10 +191,7 @@ pub fn apply_emission_rewrites_in_place(
         }
     }
 
-    Ok(EmissionRewriteOutput {
-        references_by_symbol,
-        global_use_elisions,
-    })
+    Ok(global_use_elisions)
 }
 
 struct PassthroughFileJob {
