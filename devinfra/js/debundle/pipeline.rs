@@ -32,9 +32,7 @@ use prepare_chunks::prepare_js_chunks;
 use reconstruction::{EmittablePlan, RejectedPlan, VendorManifestOutput, validate_reconstruction};
 use spec::{ChunkExportPurity, LogicalModule, NodeBuiltinModuleExt, TransformSpec};
 use spec_modules::read_flat_transform_spec;
-use spec_tree::{
-    CompileSpecTreeOptions, compile_spec_tree, compile_spec_tree_with_roots, graph_module_roots,
-};
+use spec_tree::{CompileSpecTreeOptions, compile_spec_tree_with_roots, graph_module_roots};
 use vendor::{VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan};
 use write_tree::{RejectedArtifacts, WriteTreeInput, write_gate_rejected_marker, write_js_tree};
 
@@ -255,8 +253,8 @@ enum ApplyPath {
 }
 
 pub fn project_apply(cli: &TransformRequest, root: &Path, out: &Path) -> Result<()> {
-    let spec = load_transform_spec_source(&cli.spec_source)?;
-    project_apply_from_spec(cli, root, out, spec, None)
+    let (spec, roots) = load_transform_spec_with_roots(&cli.spec_source)?;
+    project_apply_from_spec(cli, root, out, spec, roots)
 }
 
 fn project_apply_from_spec(
@@ -264,7 +262,7 @@ fn project_apply_from_spec(
     root: &Path,
     out: &Path,
     mut spec: TransformSpec,
-    compiled_roots: Option<&BTreeMap<String, Vec<PathBuf>>>,
+    module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
 ) -> Result<()> {
     validate_transform_spec(&spec)?;
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
@@ -275,11 +273,6 @@ fn project_apply_from_spec(
             module.note = None;
         }
     }
-    let module_roots_by_chunk = match (&cli.spec_source, compiled_roots) {
-        (TransformSpecSource::Tree(_), Some(roots)) => roots.clone(),
-        (TransformSpecSource::Tree(tree), None) => graph_module_roots(&tree.config_path)?,
-        (TransformSpecSource::Flat { .. }, _) => BTreeMap::new(),
-    };
     let root = std::path::absolute(root)?;
     let source = projection_source(&cli.spec_source, &root)?;
     let mut rooted_paths = BTreeSet::new();
@@ -634,13 +627,7 @@ pub fn project_analysis_and_apply(
     let options = audit_options();
     let (spec, prepared) = prepare_transform(cli, &options, None, None, None)?;
     if let Some((root, out)) = apply_out {
-        project_apply_from_spec(
-            cli,
-            root,
-            out,
-            spec.clone(),
-            Some(&prepared.module_roots_by_chunk),
-        )?;
+        project_apply_from_spec(cli, root, out, spec.clone(), prepared.module_roots_by_chunk)?;
     }
     let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
     let artifact = prepared.source.into_artifact();
@@ -1081,16 +1068,12 @@ fn prepare_transform(
             graph_provenance::read_bytes(path)?;
         }
     }
-    let (spec, module_roots_by_chunk) = match (projection, &cli.spec_source) {
-        (Some(projection), _) => (
+    let (spec, module_roots_by_chunk) = match projection {
+        Some(projection) => (
             projection.spec.clone(),
             projection.module_roots_by_chunk.clone(),
         ),
-        (None, TransformSpecSource::Tree(tree)) => compile_spec_tree_with_roots(tree)?,
-        (None, TransformSpecSource::Flat { .. }) => (
-            load_transform_spec_source(&cli.spec_source)?,
-            BTreeMap::new(),
-        ),
+        None => load_transform_spec_with_roots(&cli.spec_source)?,
     };
     if let Some(expected) = expected_spec {
         anyhow::ensure!(
@@ -1567,9 +1550,17 @@ fn canonical_generation_command(
 }
 
 pub fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
+    Ok(load_transform_spec_with_roots(source)?.0)
+}
+
+fn load_transform_spec_with_roots(
+    source: &TransformSpecSource,
+) -> Result<(TransformSpec, BTreeMap<String, Vec<PathBuf>>)> {
     match source {
-        TransformSpecSource::Flat { path } => read_flat_transform_spec(path),
-        TransformSpecSource::Tree(options) => compile_spec_tree(options),
+        TransformSpecSource::Flat { path } => {
+            Ok((read_flat_transform_spec(path)?, BTreeMap::new()))
+        }
+        TransformSpecSource::Tree(options) => compile_spec_tree_with_roots(options),
     }
 }
 
