@@ -2,8 +2,7 @@ import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { writeDeployment } from "./testing/deployment_manifest.mjs";
-import { dump } from "./parser.mjs";
+import { split } from "./testing/split.mjs";
 
 const temp = process.env.TEST_TMPDIR;
 assert(temp, "TEST_TMPDIR is required");
@@ -14,9 +13,10 @@ const code =
   "function add(x) { return x + base; }\n" +
   "const value = add(1);\n" +
   "export { value };\n";
-const astPath = path.join(work, "bundle.json");
+const bundlePath = path.join(work, "bundle.mjs");
+writeFileSync(bundlePath, code);
+writeFileSync(path.join(work, "dep.mjs"), "export const base = 42;\n");
 const specPath = path.join(work, "spec.json");
-writeFileSync(astPath, JSON.stringify(dump(code)));
 writeFileSync(
   specPath,
   JSON.stringify({
@@ -30,10 +30,8 @@ writeFileSync(
 
 const out = path.join(work, "generated");
 assert(!existsSync(out), "the output root starts absent");
-const emitted = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(astPath, specPath, out), out], {
-  encoding: "utf8",
-});
-assert.equal(emitted.status, 0, emitted.stdout + "\n" + emitted.stderr);
+const emitted = split({ source: bundlePath, spec: specPath, out });
+assert.equal(emitted.status, "certified", emitted.log);
 assert(existsSync(path.join(out, "public", "entry.mjs")), "the nested entry is written");
 assert(existsSync(path.join(out, "lib", "math.mjs")), "a sibling module directory is written");
 
@@ -62,20 +60,14 @@ writeFileSync(
   unsafeSpec,
   JSON.stringify({ entry: "../escape.mjs", modules: { "../escape.mjs": ["#0", "#1", "#2", "#3"] } })
 );
-const rejected = spawnSync(
-  process.env.LOWERSPLIT,
-  ["--diagnostic", writeDeployment(astPath, unsafeSpec, unsafeOut), unsafeOut],
-  {
-    encoding: "utf8",
-  }
-);
-assert.notEqual(rejected.status, 0, "project traversal in a module path is rejected");
-assert.match(rejected.stdout + "\n" + rejected.stderr, /unsafe output module path/);
+const rejected = split({ source: bundlePath, spec: unsafeSpec, out: unsafeOut });
+assert.equal(rejected.status, "refused", rejected.log);
+assert.match(rejected.reason, /unsafe output module path/);
 assert(!existsSync(unsafeOut), "an invalid spec does not create its output root");
 assert(!existsSync(path.join(work, "escape.mjs")), "an invalid spec cannot write outside its output root");
 
 const closedSource = "const a = 1; const b = 2; export const result = a;\n";
-writeFileSync(astPath, JSON.stringify(dump(closedSource)));
+writeFileSync(bundlePath, closedSource);
 writeFileSync(
   specPath,
   JSON.stringify({
@@ -90,17 +82,9 @@ writeFileSync(
   })
 );
 const certifiedOut = path.join(work, "certified-nested");
-const certified = spawnSync(
-  process.env.LOWERSPLIT,
-  [writeDeployment(astPath, specPath, certifiedOut), certifiedOut, "--require", "all-outcomes"],
-  {
-    encoding: "utf8",
-  }
-);
-const certifiedVerdict = JSON.parse(certified.stdout.trim().split("\n").at(-1));
-assert.equal(certified.status, 0, certified.stdout + certified.stderr);
-assert.equal(certifiedVerdict.status, "certified", JSON.stringify(certifiedVerdict));
-assert.equal(certifiedVerdict.guarantee, "all-outcomes");
+const certified = split({ source: bundlePath, spec: specPath, out: certifiedOut, require: "all-outcomes" });
+assert.equal(certified.status, "certified", certified.log);
+assert.equal(certified.guarantee, "all-outcomes");
 assert.equal(
   spawnSync(
     process.execPath,
@@ -120,26 +104,20 @@ assert.match(certifiedText, /^import "\.\.\/other\/right\.mjs";$/m);
 const expectedTarget = 'from "../parts/left.mjs"';
 assert(certifiedText.includes(expectedTarget), certifiedText);
 writeFileSync(certifiedEntry, certifiedText.replace(expectedTarget, 'from "../other/right.mjs"'));
-const wrongTarget = spawnSync(
-  process.env.LOWERSPLIT,
-  [writeDeployment(astPath, specPath, certifiedOut), certifiedOut, "--require", "all-outcomes", "--check-output"],
-  { encoding: "utf8" }
-);
-const wrongTargetVerdict = JSON.parse(wrongTarget.stdout.trim().split("\n").at(-1));
-assert.equal(wrongTarget.status, 1, wrongTarget.stdout + wrongTarget.stderr);
-assert.equal(wrongTargetVerdict.status, "rejected", JSON.stringify(wrongTargetVerdict));
-assert.match(wrongTargetVerdict.reason, /output module public\/entry\.mjs differs from its generated ESTree/);
+const wrongTarget = split({
+  source: bundlePath,
+  spec: specPath,
+  out: certifiedOut,
+  require: "all-outcomes",
+  checkOutput: true,
+});
+assert.equal(wrongTarget.status, "refused", wrongTarget.log);
+assert.match(wrongTarget.reason, /output module public\/entry\.mjs differs from its generated ESTree/);
 
 // A trailing separator names the same output directory. Publication stages beside it.
 const slashOut = path.join(work, "certified-trailing-slash");
-const slashed = spawnSync(
-  process.env.LOWERSPLIT,
-  [writeDeployment(astPath, specPath, slashOut), slashOut + path.sep, "--require", "all-outcomes"],
-  { encoding: "utf8" }
-);
-const slashedVerdict = JSON.parse(slashed.stdout.trim().split("\n").at(-1));
-assert.equal(slashed.status, 0, slashed.stdout + slashed.stderr);
-assert.equal(slashedVerdict.status, "certified", JSON.stringify(slashedVerdict));
+const slashed = split({ source: bundlePath, spec: specPath, out: slashOut + path.sep, require: "all-outcomes" });
+assert.equal(slashed.status, "certified", slashed.log);
 assert.deepEqual(readdirSync(slashOut).sort(), ["other", "parts", "public"]);
 assert.deepEqual(
   readdirSync(work).filter((name) => name.startsWith(".split-proof-")),
@@ -149,10 +127,6 @@ assert.deepEqual(
 
 // A path ending in .. names no new directory and is refused before certification.
 const parentOut = path.join(work, "certified-parent") + path.sep + "..";
-const parent = spawnSync(process.env.LOWERSPLIT, [writeDeployment(astPath, specPath, parentOut), parentOut], {
-  encoding: "utf8",
-});
-const parentVerdict = JSON.parse(parent.stdout.trim().split("\n").at(-1));
-assert.equal(parent.status, 1, parent.stdout + parent.stderr);
-assert.equal(parentVerdict.status, "rejected", JSON.stringify(parentVerdict));
-assert.match(parentVerdict.reason, /output path .* must end in a directory name/);
+const parent = split({ source: bundlePath, spec: specPath, out: parentOut, allowExistingOut: true });
+assert.equal(parent.status, "refused", parent.log);
+assert.match(parent.reason, /output path .* must end in a directory name/);

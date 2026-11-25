@@ -221,6 +221,7 @@ sh_binary(
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
     ],
 )
 
@@ -375,6 +376,7 @@ lean_library(
         "EsmSplit/LowerSplit/Certified.lean",
         "EsmSplit/LowerSplit/Diagnostic.lean",
         "EsmSplit/LowerSplit/Input.lean",
+        "EsmSplit/LowerSplit/InstanceGenerator.lean",
     ],
     deps = [
         ":corejs_certificates",

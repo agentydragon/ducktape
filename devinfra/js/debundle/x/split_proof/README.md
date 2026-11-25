@@ -486,7 +486,7 @@ The abstract theorem assumes footprint soundness for the supplied program.
 [`Lower.lean`](lean/EsmSplit/Lower.lean) scans declarations, eager and deferred
 names, and assignment sites. [The Effects analysis](effects/README.md) supplies
 writes, indirect reads and world effects under its printed premises.
-`lowersplit --diagnostic … --lean` uses both for the checked-in example.
+`lowersplit --generate-instance` uses both to write the checked-in example's Lean source without rendering JavaScript modules.
 
 `Meaning` models one flat environment. Using that theorem for JavaScript assumes
 that `Hygienic` justifies flattening and that `Plan.visit` agrees with module

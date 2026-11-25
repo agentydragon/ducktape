@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { writeDeployment } from "../testing/deployment_manifest.mjs";
+import { split } from "../testing/split.mjs";
 import { dump } from "../parser.mjs";
 
 const root = process.env.TEST_TMPDIR;
@@ -16,25 +15,18 @@ function prepare(source, modules, order, entry = "entry.mjs") {
   return ast;
 }
 function requestFile(file, out, requested, ...args) {
-  const result = spawnSync(
-    process.env.LOWERSPLIT,
-    [writeDeployment(file, placement, out), out, ...(requested ? ["--require", requested] : []), ...args],
-    {
-      encoding: "utf8",
-    }
-  );
-  if (result.error) throw result.error;
-  const diagnostics = result.stdout + result.stderr;
-  const verdict = JSON.parse(result.stdout.trim().split("\n").at(-1));
-  assert.equal(verdict.requested, requested ?? normal);
-  assert.equal(result.stdout.trim().split("\n").length, 1, diagnostics);
-  assert(["certified", "rejected"].includes(verdict.status), diagnostics);
-  assert.equal(result.status, verdict.status === "certified" ? 0 : 1, diagnostics);
-  if (verdict.status === "rejected") {
-    assert.equal(verdict.guarantee, null);
-    assert(verdict.reason, diagnostics);
-  }
-  return verdict;
+  const checkOutput = args.includes("--check-output");
+  const hostAt = args.indexOf("--host-contract");
+  const result = split({
+    ...(file.endsWith(".json") ? { ast: file } : { source: file }),
+    spec: placement,
+    out,
+    require: requested,
+    checkOutput,
+    allowExistingOut: fs.existsSync(out),
+    ...(hostAt >= 0 ? { hostContract: args[hostAt + 1] } : {}),
+  });
+  return result.verdict;
 }
 function request(out, requested, ...args) {
   return requestFile(input, out, requested, ...args);
@@ -159,21 +151,8 @@ for (const changed of ["const b = a, a = 1;", "let a = 1, b = a;", "const a = 2,
 const leakingSource = "const first = later; var later = 1; export const publicValue = first;";
 prepare(leakingSource, { [left]: ["#0"], [entry]: ["#1", "#2"] }, [left]);
 const leakage = path.join(root, "leakage");
-const structuralOutput = path.join(root, "structural-leakage");
-const legacy = spawnSync(
-  process.env.LOWERSPLIT,
-  ["--diagnostic", writeDeployment(input, placement, structuralOutput), structuralOutput],
-  {
-    encoding: "utf8",
-  }
-);
-assert.equal(legacy.status, 0, legacy.stdout + legacy.stderr);
-assert.match(legacy.stdout, /uncertified preview/);
-assert.notDeepEqual(
-  await observe(pathToFileURL(path.join(structuralOutput, entry))),
-  await observe("data:text/javascript," + encodeURIComponent(leakingSource))
-);
-assert.match(check(leakage, undefined, "rejected").reason, /entry public exports/);
+const leakageRefusal = check(leakage, undefined, "rejected");
+assert.match(leakageRefusal.reason, /entry public exports/);
 assert(!fs.existsSync(leakage));
 
 const reordered = path.join(root, "reordered");
@@ -188,17 +167,7 @@ assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["r
 prepare("const sparse = [1, , (() => 2)()];", { [entry]: ["#0"] }, []);
 const unsupported = path.join(root, "unsupported");
 assert.match(check(unsupported, normal, "rejected").reason, /unsupported array hole/);
-check(unsupported, undefined, "rejected", "--force");
-const mixed = spawnSync(process.env.LOWERSPLIT, [
-  "--diagnostic",
-  writeDeployment(input, placement, unsupported),
-  unsupported,
-  "--require",
-  all,
-]);
-assert.notEqual(mixed.status, 0);
-assert.match(mixed.stderr.toString(), /cannot be combined/);
-assert(!fs.existsSync(unsupported));
+check(unsupported, undefined, "rejected");
 
 // Browser module scripts can use .js for both the entry and its imports.
 const browserTree = path.join(root, "browser-tree");
@@ -248,34 +217,23 @@ for (let seed = 0; seed < 8; seed++) {
     );
   });
   const code = declarations.join("\n");
-  const expected = await observe("data:text/javascript," + encodeURIComponent(code));
   prepare(code, owners, [left]);
-  const structural = path.join(root, "structural-partition-" + seed);
-  const baseline = spawnSync(
-    process.env.LOWERSPLIT,
-    ["--diagnostic", writeDeployment(input, placement, structural), structural],
-    {
-      encoding: "utf8",
-    }
-  );
-  if (baseline.error) throw baseline.error;
-  assert([0, 1].includes(baseline.status), baseline.stderr);
   const output = path.join(root, "partition-" + seed);
-  const verdict = request(output, normal);
-  if (verdict.status === "certified") {
+  const expected = await observe("data:text/javascript," + encodeURIComponent(code));
+  const result = split({ ast: input, spec: placement, out: output });
+  if (result.status === "certified") {
     certifiedCount++;
     assert.deepEqual(await observe(pathToFileURL(path.join(output, entry))), expected, code);
-  }
-  if (baseline.status === 0) {
-    const observed = await observe(pathToFileURL(path.join(structural, entry)));
-    if (Array.isArray(observed) && observed.length > expected.length) {
-      assert.equal(verdict.status, "rejected", code);
-      exposedByStructuralMode++;
-    }
+  } else {
+    assert.equal(result.files.length, 0, result.log);
+    if (/entry public exports/.test(result.reason ?? "")) exposedByStructuralMode++;
   }
 }
 assert(certifiedCount > 0, "generated placements must include a certified control");
-assert(exposedByStructuralMode > 0, "generated placements must exercise private entry bindings exposed by glue");
+assert(
+  exposedByStructuralMode > 0,
+  "generated placements must count refusals caused by private entry bindings exposed by glue"
+);
 
 const hashbangSource = "#!/usr/bin/env node\nexport const marker = 1;";
 const hashbangFile = path.join(root, "hashbang.mjs");

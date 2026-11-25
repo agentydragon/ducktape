@@ -9,6 +9,7 @@ import { coreFromParsed } from "../model/to_core.mjs";
 import { bundleFromParsed } from "./frontend.mjs";
 import { parseModule } from "./scope_metadata.mjs";
 import { writeDeployment } from "./testing/deployment_manifest.mjs";
+import { split as certifySplit } from "./testing/split.mjs";
 import { coreOf } from "./split_dump.mjs";
 
 const dir = process.env.TEST_TMPDIR;
@@ -505,11 +506,14 @@ assert.deepEqual(
 
 function certifyFixture(directory, args = []) {
   const out = path.join(directory, "out");
-  const manifest = writeDeployment(path.join(directory, "bundle.mjs"), path.join(directory, "spec.json"), out);
-  const result = spawnSync(process.env.LOWERSPLIT, [manifest, out, ...args], { encoding: "utf8" });
-  assert.equal(result.status, 0, result.error?.message ?? result.stdout + result.stderr);
-  const verdict = JSON.parse(result.stdout.trim().split("\n").at(-1));
-  assert.equal(verdict.status, "certified", result.stdout + result.stderr);
+  const hostAt = args.indexOf("--host-contract");
+  const result = certifySplit({
+    source: path.join(directory, "bundle.mjs"),
+    spec: path.join(directory, "spec.json"),
+    out,
+    ...(hostAt >= 0 ? { hostContract: args[hostAt + 1] } : {}),
+  });
+  assert.equal(result.status, "certified", result.log);
   return import(pathToFileURL(path.join(out, "entry.mjs")).href);
 }
 

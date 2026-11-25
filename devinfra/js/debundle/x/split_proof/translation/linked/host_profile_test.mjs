@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { split } from "../testing/split.mjs";
 import {
   assertCertified,
   arrow,
@@ -27,8 +28,24 @@ import {
 
 const profile = path.join(root, "page.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
+const nodeProfile = path.join(root, "node-recording.json");
+writeFileSync(nodeProfile, JSON.stringify({ profile: "node-recording" }));
 const entry = "entry.mjs";
 const includesCase = caseShard();
+
+const nodeProfileFixture = fixture(
+  "unsupported-node-recording-profile",
+  "const moved = 1; const kept = 2; export const result = moved + kept;"
+);
+const unsupportedProfile = split({
+  source: nodeProfileFixture.sourceFile,
+  spec: nodeProfileFixture.specFile,
+  out: nodeProfileFixture.out,
+  hostContract: nodeProfile,
+});
+assert.equal(unsupportedProfile.status, "refused", unsupportedProfile.log);
+assert.match(unsupportedProfile.reason, /unsupported host contract/);
+assert(!existsSync(nodeProfileFixture.out));
 
 for (const [binding, defaulted] of [
   ["ambient", false],
