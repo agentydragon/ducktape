@@ -215,8 +215,7 @@ private def installTemplates (p : Program) (sites : List TemplateSite) : Except 
       cooked := cooked.push (if text == .null then Expr.undef else .str (← text.getStr?))
     let array := Expr.prim (.templateArray true) (.prim (.templateArray false) raw.toList :: cooked.toList)
     body := body.push (p.regions + body.size, Stmt.decl .const site.binding array)
-  let registry : Module := { name := provider, imports := [], body := body.toList,
-    exports := names.map fun name => (name, name) }
+  let registry : Module := ⟨provider, [], body.toList, names.map fun name => (name, name)⟩
   let modules := p.modules.map fun m =>
     let needs := (m.body.flatMap fun (_, stmt) => stmt.free.filter table.contains).eraseDups
     if needs.isEmpty then m else
