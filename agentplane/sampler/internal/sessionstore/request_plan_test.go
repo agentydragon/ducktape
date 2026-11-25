@@ -261,7 +261,10 @@ func TestChatCompactionPreservesExecutionSnapshotObjectsAcrossRoots(t *testing.T
 		t.Fatal(err)
 	}
 	original := before.Context().(*chatcompletions.Context)
-	plan, err := original.PrepareCompaction(chatcompletions.CompactionConfig{KeepRecentTokens: new(16)})
+	plan, err := original.PrepareCompaction(chatcompletions.CompactionConfig{
+		KeepRecentTokens: new(16),
+		Replacement:      chatcompletions.CompactionReplacement{Role: "assistant", Template: "{{.Summary}}"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

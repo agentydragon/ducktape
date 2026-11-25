@@ -25,6 +25,12 @@ func (s *observationSink) Record(_ context.Context, _ protocol.ProviderEvidence,
 	return nil
 }
 
+const compactionTestPrompt = "Write a handoff."
+
+var compactionTestReplacement = CompactionReplacement{
+	Role: "assistant", Template: "Summary of earlier conversation:\n{{.Summary}}",
+}
+
 func TestStreamingReasoningObservations(t *testing.T) {
 	frames := []string{
 		`{"id":"chat","choices":[{"delta":{"role":"assistant"}}]}`,
@@ -245,7 +251,7 @@ func TestCompactionKeepsOnlyRecentUsers(t *testing.T) {
 		t.Fatal("assistant and tool messages are compactable even when all users fit")
 	}
 	budget := userMessageTokens(recent)
-	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget})
+	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget, Replacement: compactionTestReplacement})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +312,7 @@ func TestSecondCompactionReplacesPriorHandoff(t *testing.T) {
 	}
 	config := CompactionConfig{
 		MaxTokens: 100, KeepRecentTokens: new(16),
-		Replacement: &CompactionReplacement{Role: "user", Template: "Handoff: {{.Summary}}"},
+		Replacement: CompactionReplacement{Role: "user", Template: "Handoff: {{.Summary}}"},
 	}
 	plan, err := state.PrepareCompaction(config)
 	if err != nil {
@@ -394,7 +400,7 @@ func TestCompactionPreservesAuthorshipAcrossRestore(t *testing.T) {
 	if err := restored.AppendRecords([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"` + strings.Repeat("old answer ", 100) + `"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := restored.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget})
+	plan, err := restored.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget, Replacement: compactionTestReplacement})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +434,10 @@ func TestCompactionTruncatesOversizeUserWithinBudget(t *testing.T) {
 		if err := context.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: user}}, protocol.RecordOrigin{}); err != nil {
 			t.Fatal(err)
 		}
-		config := CompactionConfig{MaxTokens: 64, KeepRecentTokens: &budget}
+		config := CompactionConfig{
+			MaxTokens: 64, KeepRecentTokens: &budget,
+			SummaryPromptTemplate: compactionTestPrompt, Replacement: compactionTestReplacement,
+		}
 		if err := config.Validate(); err != nil {
 			t.Fatal(err)
 		}
@@ -470,7 +479,10 @@ func TestCompactionBudgetSettings(t *testing.T) {
 		{name: "negative legacy setting", turns: new(-1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			config := CompactionConfig{MaxTokens: 100, KeepRecentTokens: tc.tokens, KeepRecentTurns: tc.turns}
+			config := CompactionConfig{
+				MaxTokens: 100, KeepRecentTokens: tc.tokens, KeepRecentTurns: tc.turns,
+				SummaryPromptTemplate: compactionTestPrompt, Replacement: compactionTestReplacement,
+			}
 			err := config.Validate()
 			if tc.want == 0 && err == nil || tc.want > 0 && (err != nil || config.RecentTokenBudget() != tc.want) {
 				t.Fatalf("configured budget = %d, err = %v; want valid budget of %d", config.RecentTokenBudget(), err, tc.want)
@@ -483,20 +495,24 @@ func TestCompactionRejectsInvalidTemplates(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		prompt      string
-		replacement *CompactionReplacement
+		replacement CompactionReplacement
+		wantError   string
 	}{
-		{name: "bad prompt field", prompt: "{{.Unknown}}"},
-		{name: "bad replacement syntax", replacement: &CompactionReplacement{Role: "user", Template: "{{"}},
-		{name: "summary omitted", replacement: &CompactionReplacement{Role: "user", Template: "No handoff"}},
-		{name: "system message", replacement: &CompactionReplacement{Role: "system", Template: "{{.Summary}}"}},
+		{"missing prompt", "", compactionTestReplacement, "summary_prompt_template"},
+		{"bad prompt field", "{{.Unknown}}", compactionTestReplacement, "summary_prompt_template"},
+		{"missing replacement", compactionTestPrompt, CompactionReplacement{}, "replacement role"},
+		{"missing replacement template", compactionTestPrompt, CompactionReplacement{Role: "user"}, "replacement.template"},
+		{"bad replacement syntax", compactionTestPrompt, CompactionReplacement{Role: "user", Template: "{{"}, "replacement.template"},
+		{"summary omitted", compactionTestPrompt, CompactionReplacement{Role: "user", Template: "No handoff"}, "include the summary"},
+		{"system message", compactionTestPrompt, CompactionReplacement{Role: "system", Template: "{{.Summary}}"}, "replacement role"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config := CompactionConfig{
 				MaxTokens: 100, KeepRecentTokens: new(32),
 				SummaryPromptTemplate: tc.prompt, Replacement: tc.replacement,
 			}
-			if err := config.Validate(); err == nil {
-				t.Fatal("invalid compaction config accepted")
+			if err := config.Validate(); err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("config validation = %v; want %q", err, tc.wantError)
 			}
 		})
 	}
@@ -516,7 +532,7 @@ func TestCompactionCarriesOriginsWithRetainedMessages(t *testing.T) {
 		{Role: "user", Content: newest, Origin: recentSource},
 	}}
 	budget := userMessageTokens(newest) + userMessageTokens(legacy) + 16
-	plan, err := state.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget})
+	plan, err := state.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget, Replacement: compactionTestReplacement})
 	if err != nil {
 		t.Fatal(err)
 	}

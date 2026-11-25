@@ -184,7 +184,13 @@ func TestChatCompactionUpgradesLegacySamplingProfileForNewRequests(t *testing.T)
 
 func TestChatEffortUpdatesNewRequestsWithoutChangingRetainedRequests(t *testing.T) {
 	memory := memoryContent{}
-	config := samplersettings.ModelConfig{API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, ChatCompaction: &chatcompletions.CompactionConfig{MaxTokens: 100, KeepRecentTokens: new(32)}}
+	config := samplersettings.ModelConfig{
+		API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON,
+		ChatCompaction: &chatcompletions.CompactionConfig{
+			MaxTokens: 100, KeepRecentTokens: new(32), SummaryPromptTemplate: "Write a handoff.",
+			Replacement: chatcompletions.CompactionReplacement{Role: "assistant", Template: "{{.Summary}}"},
+		},
+	}
 	snapshot := Snapshot{API: config.API}
 	preparation := Preparation{ModelConfig: config, SessionEffort: "medium"}
 	first, err := Prepare(memory, snapshot, preparation)

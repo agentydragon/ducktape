@@ -22,12 +22,12 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestCompactionRecoveryPolicy(t *testing.T) {
-	for _, field := range []string{"keep_recent_turns", "per_message_effort", "keep_recent_tokens", "replacement_template", "legacy_chat_policy", "explicit_default_replacement"} {
+func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
+	for _, field := range []string{"keep_recent_turns", "per_message_effort", "keep_recent_tokens", "replacement_template", "legacy_chat_policy"} {
 		t.Run(field, func(t *testing.T) {
 			store := runtimetesting.NewStore(t, integrationDatabase)
 			api, effort := protocol.APIStyleAnthropicMessages, "high"
-			if field == "keep_recent_tokens" || field == "replacement_template" || field == "legacy_chat_policy" || field == "explicit_default_replacement" {
+			if field == "keep_recent_tokens" || field == "replacement_template" || field == "legacy_chat_policy" {
 				api, effort = protocol.APIStyleChatCompletions, ""
 			}
 			session, err := runtimetesting.OpenStoreSession(t, store, &sessionconfig.Configuration{
@@ -61,14 +61,11 @@ func TestCompactionRecoveryPolicy(t *testing.T) {
 				config = samplersettings.ModelConfig{
 					API: api, ProviderModel: "fixture-model", Connection: "chat", ExecEncoding: protocol.ExecEncodingJSON,
 					ChatCompaction: &chatcompletions.CompactionConfig{
-						MaxTokens: 1000, KeepRecentTokens: new(32),
-						Replacement: &chatcompletions.CompactionReplacement{Role: "user", Template: "Handoff: {{.Summary}}"},
+						MaxTokens: 1000, KeepRecentTokens: new(32), SummaryPromptTemplate: "Write a handoff.",
+						Replacement: chatcompletions.CompactionReplacement{Role: "user", Template: "Handoff: {{.Summary}}"},
 					},
 				}
 				connection.Auth.Type = samplersettings.AuthTypeBearer
-				if field == "explicit_default_replacement" {
-					config.ChatCompaction.Replacement = nil
-				}
 			}
 			conversation, err := store.Read(t.Context(), owner)
 			if err != nil {
@@ -107,23 +104,12 @@ func TestCompactionRecoveryPolicy(t *testing.T) {
 				config.ChatCompaction.KeepRecentTokens = new(64)
 			case "replacement_template":
 				config.ChatCompaction.Replacement.Template = "<checkpoint>{{.Summary}}</checkpoint>"
-			case "explicit_default_replacement":
-				config.ChatCompaction.Replacement = &chatcompletions.CompactionReplacement{
-					Role: "assistant", Template: "Summary of earlier conversation:\n{{.Summary}}",
-				}
 			}
 			runtime := &Driver{store: store, settings: samplersettings.Settings{
 				Models:      map[string]samplersettings.ModelConfig{session.Model: config},
 				Connections: map[string]samplersettings.ConnectionConfig{config.Connection: connection},
 			}}
-			frontier, err := runtime.providerFrontier(t.Context(), owner, session)
-			if field == "explicit_default_replacement" {
-				if err != nil || frontier == nil || frontier.IntentID != intentID {
-					t.Fatalf("explicit default lost the frozen request: frontier=%+v err=%v", frontier, err)
-				}
-				return
-			}
-			if !errors.Is(err, errProviderCommandFailed) {
+			if _, err := runtime.providerFrontier(t.Context(), owner, session); !errors.Is(err, errProviderCommandFailed) {
 				t.Fatalf("changed compaction policy was allowed to consume a frozen request: %v", err)
 			}
 			command, err := store.GetCommand(t.Context(), session.ID, "compaction-control")

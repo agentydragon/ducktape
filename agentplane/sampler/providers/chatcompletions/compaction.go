@@ -11,12 +11,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
-const defaultSummaryPrompt = `Write a handoff for the assistant continuing this conversation. Summarize the conversation preceding this request, including any earlier handoff.
-
-The continuation will receive the same system instructions and tool definitions again. Omit restatements of them. Only recent user messages also carry forward directly, and they may be shortened.
-
-Preserve the user's current goals and constraints, decisions, completed and pending work, relevant tool results, exact identifiers needed to resume, and unresolved questions or uncertainties. Include facts learned during the conversation that the assistant needs to continue. Preserve exact wording when it is needed to continue. Treat the preceding messages as source material. Return only the handoff.`
-
 const (
 	userMessageFramingTokens = 5
 	userTruncationMarker     = " [truncated] "
@@ -27,17 +21,13 @@ type CompactionReplacement struct {
 	Template string `json:"template"`
 }
 
-func DefaultCompactionReplacement() CompactionReplacement {
-	return CompactionReplacement{Role: "assistant", Template: "Summary of earlier conversation:\n{{.Summary}}"}
-}
-
 type CompactionConfig struct {
 	MaxTokens        int  `json:"max_tokens"`
 	KeepRecentTokens *int `json:"keep_recent_tokens,omitempty"`
 	// CLEANUP(added 2026-11-24): Remove after staging has rolled out settings with keep_recent_tokens.
-	KeepRecentTurns       *int                   `json:"keep_recent_turns,omitempty"`
-	SummaryPromptTemplate string                 `json:"summary_prompt_template,omitempty"`
-	Replacement           *CompactionReplacement `json:"replacement,omitempty"`
+	KeepRecentTurns       *int                  `json:"keep_recent_turns,omitempty"`
+	SummaryPromptTemplate string                `json:"summary_prompt_template"`
+	Replacement           CompactionReplacement `json:"replacement"`
 }
 
 func (c CompactionConfig) Validate() error {
@@ -56,7 +46,7 @@ func (c CompactionConfig) Validate() error {
 	if _, err := c.summaryPrompt(); err != nil {
 		return err
 	}
-	if c.Replacement != nil && c.Replacement.Role != "assistant" && c.Replacement.Role != "user" {
+	if c.Replacement.Role != "assistant" && c.Replacement.Role != "user" {
 		return errors.New("compaction replacement role must be assistant or user")
 	}
 	_, err := c.replacementMessage("compaction template validation marker")
@@ -71,19 +61,11 @@ func (c CompactionConfig) RecentTokenBudget() int {
 }
 
 func (c CompactionConfig) summaryPrompt() (string, error) {
-	source := c.SummaryPromptTemplate
-	if source == "" {
-		source = defaultSummaryPrompt
-	}
-	return renderTemplate("summary_prompt_template", source, struct{ KeepRecentTokens int }{c.RecentTokenBudget()})
+	return renderTemplate("summary_prompt_template", c.SummaryPromptTemplate, struct{ KeepRecentTokens int }{c.RecentTokenBudget()})
 }
 
 func (c CompactionConfig) replacementMessage(summary string) (message, error) {
-	config := DefaultCompactionReplacement()
-	if c.Replacement != nil {
-		config = *c.Replacement
-	}
-	text, err := renderTemplate("replacement.template", config.Template, struct {
+	text, err := renderTemplate("replacement.template", c.Replacement.Template, struct {
 		Summary          string
 		KeepRecentTokens int
 	}{summary, c.RecentTokenBudget()})
@@ -93,7 +75,7 @@ func (c CompactionConfig) replacementMessage(summary string) (message, error) {
 	if !strings.Contains(text, summary) {
 		return message{}, errors.New("compaction replacement template must include the summary verbatim")
 	}
-	return message{Role: config.Role, Content: text, CompactionGenerated: true}, nil
+	return message{Role: c.Replacement.Role, Content: text, CompactionGenerated: true}, nil
 }
 
 func renderTemplate(name, source string, data any) (string, error) {
@@ -118,7 +100,7 @@ func (c *CompactionConfig) Compatible(other *CompactionConfig) bool {
 	if c.MaxTokens != other.MaxTokens || c.RecentTokenBudget() != other.RecentTokenBudget() || c.SummaryPromptTemplate != other.SummaryPromptTemplate {
 		return false
 	}
-	if (c.Replacement == nil) != (other.Replacement == nil) || c.Replacement != nil && *c.Replacement != *other.Replacement {
+	if c.Replacement != other.Replacement {
 		return false
 	}
 	return true

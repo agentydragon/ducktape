@@ -130,7 +130,8 @@ func (r *Driver) providerFrontier(ctx context.Context, owner sessionstore.Owner,
 	if !sessionstore.ProviderRequestProjectionMatches(config, stored) {
 		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "provider parser profile changed during recovery")
 	}
-	if frontier.Kind == sessionstore.PendingIntentCompaction && !expected.CompactionControl.Matches(stored.CompactionControl) {
+	if frontier.Kind == sessionstore.PendingIntentCompaction && ((expected.CompactionControl == nil) != (stored.CompactionControl == nil) ||
+		expected.CompactionControl != nil && *expected.CompactionControl != *stored.CompactionControl) {
 		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "compaction policy changed during recovery")
 	}
 	return frontier, nil
