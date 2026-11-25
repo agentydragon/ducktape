@@ -6,7 +6,7 @@ Scope: this is the current operational guidance for Ducktape agent sessions.
 <../devinfra/docs/bazel_worktree_cache_sharing.md> includes local
 developer-machine notes about cache layout and a Claude CLI proxy-shim path;
 those notes do not override the root `AGENTS.md` rule that Bazel-family commands
-in agent sessions run outside the sandbox.
+in Claude Code sessions run outside its sandbox.
 
 Claude Code's sandbox (bubblewrap + proxy) has an interaction between
 `WebFetch(domain:...)` permissions and Bazel that prevents them from
