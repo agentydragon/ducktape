@@ -153,10 +153,17 @@ private theorem reachFrame_privateSlot {r R cells A} (away : Away r R A)
   intro receiver _
   apply (reachFrame_lookupProp away ha (.symbol receiver)).bind
   intro present hp
+  have dataSafe : ∀ v, v ∈ some value → SafeVal A v := by
+    intro v h
+    cases h
+    exact hv
+  have noneSafe : ∀ v, v ∈ (none : Option Val) → SafeVal A v := by
+    intro v h
+    cases h
   have save (w : Option Bool) : ReachFrame r R cells A (SafeVal A)
       (do defineOwn table (.symbol receiver) { value := some value, writable := w }; pure value : M W Val) :=
-    (reachFrame_defineOwn away ha _ _
-      ⟨fun v h => by cases h; exact hv, fun _ h => by cases h, fun _ h => by cases h⟩).bind fun _ _ =>
+    (reachFrame_defineOwn away ha (.symbol receiver) { value := some value, writable := w }
+      ⟨dataSafe, noneSafe, noneSafe⟩).bind fun _ _ =>
         reachFrame_pure r R cells A value hv
   cases op <;> cases present <;> try exact reachFrame_throwErr r R cells A _ _ _
   all_goals first
@@ -196,8 +203,8 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
   | opaqueAmbientRef name | opaqueConstructorRef name => exact reachFrame_unknown r R cells A _ _
   | opaqueAmbientMemberRef receiver member => exact reachFrame_unknown r R cells A _ _
   | privateSlot op => exact reachFrame_privateSlot away op _ _ _ (safe_arg safe 0) (safe_arg safe 1) (safe_arg safe 2)
-  | callWithReceiver => exact hf _ _ _ (safe_arg safe 0) (safe_arg safe 1)
-      (fun v h => safe v (List.mem_of_mem_drop h))
+  | callWithReceiver =>
+    exact hf _ _ _ (safe_arg safe 0) (safe_arg safe 1) (fun v h => safe v (List.mem_of_mem_drop h))
   | forInKeys => exact reachFrame_forInKeys away objects _ (safe_arg safe 0)
   | checkForInWrite =>
     exact reachFrame_checkForInWrite away _ _ _ (safe_arg safe 0) (safe_arg safe 1)
@@ -215,7 +222,7 @@ theorem perform_prim {r R cells A} (away : Away r R A) (call : Call W)
   have regular (op : Prim) := (ReachFrame.mapM args fun a _ => reachFrame_fromW (W := W) r R cells A a).bind fun values safe =>
     (reachFrame_prim away call hf objects root op values safe).bind fun result hr =>
       (reachFrame_toW r R cells A result hr).bind fun v _ =>
-        reachFrame_pure r R cells A (Told.value v) trivial
+        reachFrame_pure r R cells A (P := fun _ => True) (Told.value v) trivial
   cases p <;> first | exact regular _ | exact reachFrame_unknown r R cells A _ _
 
 /-- All requests frame separation when the invoked functions and constructors

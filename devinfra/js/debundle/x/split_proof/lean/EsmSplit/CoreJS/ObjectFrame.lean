@@ -87,9 +87,9 @@ theorem evalFields_reachFrame_step {r R cells A n} (away : Away r R A) (env : En
     obtain ⟨key, initial⟩ := f
     apply (eval initial).bind
     intro v hv
-    cases e : initial.installsPrivate <;> simp only [e, Bool.false_eq_true, ↓reduceIte, Bool.not_true]
+    cases initial.installsPrivate <;> simp only [Bool.false_eq_true, ↓reduceIte]
     · exact (reachFrame_createData away ha key v hv).bind fun _ _ => rest fs
-    · exact (reachFrame_pure r R cells A () trivial).bind fun _ _ => rest fs
+    · exact (reachFrame_pure r R cells A (P := fun _ => True) () trivial).bind fun _ _ => rest fs
 
 theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env) {a : Addr}
     (ha : A (.obj a))
