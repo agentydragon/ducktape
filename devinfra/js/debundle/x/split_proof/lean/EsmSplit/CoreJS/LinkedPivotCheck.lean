@@ -178,20 +178,31 @@ structure CheckedPivot {w : World} (ready : State w)
   access : Access [] (Unprotected (pivot.id + 1) (fun _ => False)) ready
   scope : ∀ u ∈ pre ++ crossed, IsolatedUnit (pivot.id + 1) u
 
+/-- Check the initial heap and every environment that runs before the pivot has crossed the block. -/
+def pivotFrameOk {w : World} (ready : State w)
+    (pre crossed : List PreparedUnit) (pivot : LinkedUnit) : Bool :=
+  accessOk ready [] (outsideRegion (pivot.id + 1)) &&
+    (pre ++ crossed).all (unitEnvOk (pivot.id + 1))
+
+theorem pivotFrameOk_sound {w : World} {ready : State w} {pre crossed : List PreparedUnit} {pivot : LinkedUnit}
+    (ok : pivotFrameOk ready pre crossed pivot = true) :
+    CheckedPivot ready (pre.map (·.unit)) (crossed.map (·.unit)) pivot := by
+  simp only [pivotFrameOk, Bool.and_eq_true] at ok
+  exact ⟨accessOk_outsideRegion ok.1, by
+    simpa only [List.map_append] using isolatedUnits_of_check ok.2⟩
+
+#print axioms pivotFrameOk_sound
+
 def checkPivot {w : World} (ready : State w)
     (pre crossed : List PreparedUnit) (pivot : LinkedUnit) :
     Except String (PLift (CheckedPivot ready (pre.map (·.unit)) (crossed.map (·.unit)) pivot)) := do
   let ordinal := pivot.id
   let r := ordinal + 1
-  if accessible : accessOk ready [] (outsideRegion r) = true then
-    if unchanged : (pre ++ crossed).all (unitEnvOk r) = true then
-      return ⟨{
-        access := accessOk_outsideRegion accessible
-        scope := by simpa only [List.map_append] using isolatedUnits_of_check unchanged
-      }⟩
-    else
-      let offender := (pre ++ crossed).find? (fun u => !(unitEnvOk r u))
-      throw s!"unit {(offender.map (·.unit.id)).getD ordinal} has access to the moved region of unit {ordinal}"
+  if ok : pivotFrameOk ready pre crossed pivot = true then
+    return ⟨pivotFrameOk_sound ok⟩
+  else if accessOk ready [] (outsideRegion r) then
+    let offender := (pre ++ crossed).find? (fun u => !(unitEnvOk r u))
+    throw s!"unit {(offender.map (·.unit.id)).getD ordinal} has access to the moved region of unit {ordinal}"
   else throw s!"the linked state already exposes the region of unit {ordinal}"
 
 /-- One candidate per object row with a direct edge into the pivot. The

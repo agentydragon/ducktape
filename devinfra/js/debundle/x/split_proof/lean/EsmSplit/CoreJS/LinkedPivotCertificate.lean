@@ -6,7 +6,7 @@ import EsmSplit.CoreJS.StateMatch
 
 namespace CoreJS.LinkedBehavior
 
-private theorem runUnits_move {W : World} {ready : State W} {pre crossed suffix} {pivot : LinkedUnit}
+theorem checkedPivot_move {W : World} {ready : State W} {pre crossed suffix} {pivot : LinkedUnit}
     (n : Nat) (final : State W) (localStep : PivotLocal W n pivot) (checks : CheckedPivot ready pre crossed pivot) :
     runUnits n (pre ++ crossed ++ [pivot] ++ suffix) ready = .ok () final ↔
       runUnits n (pre ++ [pivot] ++ crossed ++ suffix) ready = .ok () final := by
@@ -25,6 +25,17 @@ private theorem runUnits_move {W : World} {ready : State W} {pre crossed suffix}
   cases h : execStmt n (u.env.capture u.stmt.free) u.stmt s <;> rw [h] at result
   case ok v t => exact ⟨trivial, result.2⟩
   all_goals exact result
+
+/-- A successful frame check and a local pivot preserve successful final states across the move. -/
+theorem pivotFrameOk_move {W : World} {ready : State W} {pre crossed : List PreparedUnit}
+    {suffix : List LinkedUnit} {pivot : LinkedUnit} (n : Nat) (final : State W)
+    (localStep : PivotLocal W n pivot) (ok : pivotFrameOk ready pre crossed pivot = true) :
+    runUnits n (pre.map (·.unit) ++ crossed.map (·.unit) ++ [pivot] ++ suffix) ready = .ok () final ↔
+      runUnits n (pre.map (·.unit) ++ [pivot] ++ crossed.map (·.unit) ++ suffix) ready = .ok () final :=
+  checkedPivot_move n final localStep (pivotFrameOk_sound ok)
+
+#print axioms checkedPivot_move
+#print axioms pivotFrameOk_move
 
 def CheckedLink.forWorld {p : Program} (checked : CheckedLink p World.probe) (w : World) :
     CheckedLink p w :=
@@ -71,7 +82,7 @@ private def checkMaskedMove? (intrinsics : List StableIntrinsic) (ready : State 
     List Nat → Option (PLift (MoveEquivalent intrinsics ready pre crossed pivot))
   | [] => do
     let ⟨checks⟩ ← (checkPivot ready pre crossed pivot.unit).toOption
-    return ⟨fun _ w hw n final => runUnits_move n final (localStep w hw n) (checks.forWorld w)⟩
+    return ⟨fun _ w hw n final => checkedPivot_move n final (localStep w hw n) (checks.forWorld w)⟩
   | q :: rest => do
     let masked := ready.put q #[] #[]
     let ⟨hq, access, scope⟩ ← checkIsolated? masked q (pre ++ crossed ++ [pivot])
@@ -118,7 +129,7 @@ private def checkMove (intrinsics : List StableIntrinsic) (ready : State World.p
   | .ok ⟨checks⟩ => return ⟨by
       intro w hw n final
       simpa only [List.map_append, List.map_cons, List.map_nil] using
-        runUnits_move (suffix := original suffix) n final (localStep w hw n) (checks.forWorld w)⟩
+        checkedPivot_move (suffix := original suffix) n final (localStep w hw n) (checks.forWorld w)⟩
   | .error why =>
     let qs := observerRegions ready (pivot.unit.id + 1)
     if qs.isEmpty then throw why
