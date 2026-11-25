@@ -989,6 +989,16 @@ private partial def linkedBeforeSuper (profile : HostProfile) (imports : List Na
     | "ExpressionStatement" =>
       let expr ← prepareBeforeSuper (← stmt.getObjVal? "expression") true
       before := before.push (.expr (← linkedExpr profile imports true "" expr))
+    | "IfStatement" =>
+      let consequent ← stmt.getObjVal? "consequent"
+      let branch ← if (← field consequent "type") == "BlockStatement" then
+        consequent.getObjValAs? (List Json) "body"
+      else pure [consequent]
+      unless (← stmt.getObjVal? "alternate") == .null &&
+          branch.length == 1 && branch.head?.any (fun arm => (field arm "type").toOption == some "ThrowStatement") do
+        throw "unsupported IfStatement before super"
+      -- The guard either falls through or throws before selecting the superclass.
+      before := before.push (← linkedStatement profile imports .function (← prepareBeforeSuper stmt true))
     | other => throw s!"unsupported {other} before super"
   return before.toList
 
