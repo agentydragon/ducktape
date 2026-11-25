@@ -29,10 +29,7 @@ pub struct VendorImportRewrites {
 
 impl VendorImportRewrites {
     /// Apply the replacements collected from this file's import directives.
-    pub(crate) fn finish(
-        mut self,
-        body: &mut Vec<ModuleItem>,
-    ) -> BTreeMap<(ChunkId, String), usize> {
+    pub fn finish(mut self, body: &mut Vec<ModuleItem>) -> BTreeMap<(ChunkId, String), usize> {
         if !self.body_rewrites.is_empty() {
             body.visit_mut_with(&mut PartialSwapIdentRewriter {
                 bindings: &self.body_rewrites,
