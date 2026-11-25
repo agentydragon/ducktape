@@ -122,6 +122,13 @@ operator tree and uses CoreJS Number operations; the emitted code still reads
 the binding. Unknown writes, object coercions and uninitialized cells do not
 provide Number facts.
 
+The same prefix check can certify creation of a fresh record such as
+`{[fontName]: 100, defaultTab: libraryTab}` when the two cells hold
+the same respective strings in both layouts. Lean checks key and value
+evaluation and every data property definition on the new object. It keeps
+the original allocation and field order; an object key requiring coercion
+does not satisfy the string-read proof.
+
 For a move such as `const chosen = table.value`, the structural checker can
 prove the read from a freshly allocated record with distinct own numeric
 data properties. It checks the receiver's actual linked cell and descriptor
