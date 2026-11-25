@@ -114,6 +114,7 @@ function annotate(node, meaning, unitRanges, binders, legacy, scopes) {
   }
   if (node.type === "TemplateElement" && typeof node.value.cooked === "string" && !node.value.cooked.isWellFormed())
     out.cookedWellFormed = false;
+  if (node.type === "TemplateElement" && !node.value.raw.isWellFormed()) out.rawWellFormed = false;
   if (node.type === "Identifier") {
     const m = meaning.get(node);
     if (m) {

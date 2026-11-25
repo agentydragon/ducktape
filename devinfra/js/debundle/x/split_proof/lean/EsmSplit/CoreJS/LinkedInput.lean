@@ -209,7 +209,7 @@ private def installTemplates (p : Program) (sites : List TemplateSite) : Except 
     let mut raw := #[]
     let mut cooked := #[]
     for q in segments do
-      if (q.getObjValAs? Bool "cookedWellFormed").toOption == some false then
+      if ["rawWellFormed", "cookedWellFormed"].any (fun key => (q.getObjValAs? Bool key).toOption == some false) then
         throw "tagged template contains an isolated UTF-16 surrogate"
       let value ← q.getObjVal? "value"
       raw := raw.push (.str (← field value "raw"))

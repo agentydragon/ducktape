@@ -285,7 +285,11 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
     · intro v hv
       cases cooked
       · cases hv
-      · exact safe v (List.mem_of_mem_head? hv)
+      · cases args with
+        | nil => cases hv
+        | cons a rest =>
+          have eq : v = a := by simpa using hv
+          exact safe v (by simp [eq])
   | forInKeys => exact reachFrame_forInKeys away objects _ (safe_arg safe 0)
   | checkForInWrite =>
     exact reachFrame_checkForInWrite away _ _ _ (safe_arg safe 0) (safe_arg safe 1)
