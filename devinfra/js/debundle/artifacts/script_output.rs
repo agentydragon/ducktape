@@ -72,7 +72,7 @@ pub(super) fn materialize_artifact_scripts(
         .collect();
     write_tree_reports(report_tree_root, decomposition_by_chunk, &file_metrics)?;
     Ok(MaterializedScripts {
-        output_metrics: OutputMetrics::from_file_metrics(file_metrics.clone()),
+        output_metrics: OutputMetrics::from_file_metrics(&file_metrics, ""),
         file_metrics,
     })
 }
@@ -104,11 +104,7 @@ fn materialize_chunk_scripts(
             )
         })
         .collect::<Result<Vec<_>>>()?;
-    let metrics_output = OutputMetrics::from_file_metrics(
-        metrics
-            .iter()
-            .map(|metric| chunk_relative_metric(chunk_name, metric)),
-    );
+    let metrics_output = OutputMetrics::from_file_metrics(&metrics, &format!("{chunk_name}/"));
     let empty_validation = ChunkValidationSummary {
         linker_order: Vec::new(),
     };
@@ -149,18 +145,6 @@ fn materialize_chunk_file(
     );
     fs::write(&target_path, rendered)?;
     Ok(metric)
-}
-
-fn chunk_relative_metric(chunk_id: &str, metric: &OutputFileMetric) -> OutputFileMetric {
-    let prefix = format!("{chunk_id}/");
-    OutputFileMetric {
-        file: metric
-            .file
-            .strip_prefix(&prefix)
-            .unwrap_or(&metric.file)
-            .to_string(),
-        ..metric.clone()
-    }
 }
 
 fn output_file_metric(

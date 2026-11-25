@@ -68,13 +68,12 @@ pub struct OutputFileMetric {
 
 impl OutputMetrics {
     /// Build aggregate metrics from the files rendered by the output writer.
-    pub fn from_file_metrics(metrics: impl IntoIterator<Item = OutputFileMetric>) -> Self {
-        let metrics = metrics.into_iter().collect::<Vec<_>>();
+    pub fn from_file_metrics(metrics: &[OutputFileMetric], path_prefix: &str) -> Self {
         let total = OutputSize::sum(metrics.iter());
-        let top_level_entry = size_for_role(&metrics, OutputRole::TopLevelEntry);
-        let named_modules = size_for_role(&metrics, OutputRole::NamedModule);
-        let residual_modules = size_for_role(&metrics, OutputRole::ResidualModule);
-        let other_files = size_for_role(&metrics, OutputRole::Other);
+        let top_level_entry = size_for_role(metrics, OutputRole::TopLevelEntry);
+        let named_modules = size_for_role(metrics, OutputRole::NamedModule);
+        let residual_modules = size_for_role(metrics, OutputRole::ResidualModule);
+        let other_files = size_for_role(metrics, OutputRole::Other);
         OutputMetrics {
             named_module_fraction: output_fraction(&named_modules, &total),
             residual_module_fraction: output_fraction(&residual_modules, &total),
@@ -84,7 +83,7 @@ impl OutputMetrics {
             named_modules,
             residual_modules,
             other_files,
-            largest_files_by_bytes: largest_files_by_bytes(metrics),
+            largest_files_by_bytes: largest_files_by_bytes(metrics, path_prefix),
         }
     }
 }
@@ -689,15 +688,25 @@ fn size_for_role(files: &[OutputFileMetric], role: OutputRole) -> OutputSize {
     OutputSize::sum(files.iter().filter(|file| file.role == role))
 }
 
-fn largest_files_by_bytes(files: Vec<OutputFileMetric>) -> Vec<OutputFileMetric> {
-    let mut sorted = files;
-    sorted.sort_by(|left, right| {
-        right
-            .bytes
-            .cmp(&left.bytes)
-            .then_with(|| left.file.cmp(&right.file))
-    });
-    sorted.into_iter().take(20).collect()
+fn largest_files_by_bytes(files: &[OutputFileMetric], path_prefix: &str) -> Vec<OutputFileMetric> {
+    let mut ranked: Vec<_> = files
+        .iter()
+        .map(|file| {
+            (
+                file.file.strip_prefix(path_prefix).unwrap_or(&file.file),
+                file,
+            )
+        })
+        .collect();
+    ranked.sort_by_key(|(path, file)| (std::cmp::Reverse(file.bytes), *path));
+    ranked
+        .into_iter()
+        .take(20)
+        .map(|(path, file)| OutputFileMetric {
+            file: path.to_owned(),
+            ..file.clone()
+        })
+        .collect()
 }
 
 fn fraction(part: usize, total: usize) -> f64 {
