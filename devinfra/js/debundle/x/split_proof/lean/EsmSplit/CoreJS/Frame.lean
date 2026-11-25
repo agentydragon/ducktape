@@ -5,7 +5,7 @@ import EsmSplit.CoreJS.Fragment
 # CoreJS: an expression that only allocates changes nothing that existed
 
 The first footprint rule proved against the model. `Expr.allocOnly` ([`Fragment.lean`](Fragment.lean)) is the shape:
-literals, names, functions, object literals with named data properties, array literals, and plain classes. `allocOnly_extends`: however such an expression ends, every
+literals, names, functions, object literals with named data properties, array literals, and fixed-key classes with allocation-only static fields. `allocOnly_extends`: however such an expression ends, every
 object and every binding that existed before is unchanged, and nothing is printed. What it made is new.
 -/
 
@@ -383,6 +383,75 @@ theorem staticInitializers_plain {members : List ClassMember} (h : plainClassMem
       cases k <;> simp only [plainClassMembers, Bool.false_eq_true] at h
       exact ih h
 
+theorem evalMembers_literal_keeps (n : Nat) (env : Env) (proto c : Addr) (ms : List ClassMember)
+    (h : literalClassMembers ms = true) {base s : State W} (hb : Extends base s)
+    (hp : base.objAt proto = none) (hc : base.objAt c = none) :
+    (evalMembers n env proto c ms s).Keeps base := by
+  induction n generalizing ms s with
+  | zero => unfold evalMembers; trivial
+  | succ n ih =>
+    cases ms with
+    | nil => exact (inert_pure _).keeps hb
+    | cons m ms =>
+      cases m with
+      | field static k init =>
+        cases k <;> simp only [literalClassMembers, Bool.false_eq_true] at h
+        unfold evalMembers
+        refine keeps_bind ((evalExpr_str_inert n env _).keeps hb) fun _ s1 _ hb1 => ?_
+        refine keeps_bind ((inert_lift _).keeps hb1) fun _ s2 _ hb2 => ?_
+        refine keeps_bind ((inert_pure _).keeps hb2) fun _ s3 _ hb3 => ?_
+        exact keeps_bind (ih ms h hb3) fun _ s4 _ hb4 => (inert_pure _).keeps hb4
+      | method static k f | getter static k f | setter static k f =>
+        cases k <;> simp only [literalClassMembers, Bool.false_eq_true] at h
+        unfold evalMembers
+        refine keeps_bind ((evalExpr_str_inert n env _).keeps hb) fun _ s1 _ hb1 => ?_
+        refine keeps_bind ((inert_lift _).keeps hb1) fun name s2 _ hb2 => ?_
+        refine keeps_bind (makeClassMethod_keeps env _ name _ f hb2) fun _ s3 _ hb3 => ?_
+        refine keeps_bind (defineOwn_keeps _ name _ hb3 ?_) fun _ s4 _ hb4 => ?_
+        · cases static <;> assumption
+        · refine keeps_bind ((inert_pure _).keeps hb4) fun _ s5 _ hb5 => ?_
+          exact keeps_bind (ih ms h hb5) fun _ s6 _ hb6 => (inert_pure _).keeps hb6
+      | staticBlock _ => simp [literalClassMembers] at h
+
+theorem staticInitializers_allocOnly {members : List ClassMember} (h : allocOnlyClassMembers members = true)
+    (keys : List (Bool × PropertyKey)) {step : Option PropertyKey × Expr}
+    (hs : step ∈ staticInitializers members keys) :
+    step.2.allocOnly = true ∧ ∀ x, x ∈ step.2.readsNow → x ∈ readsNowClassMembers members := by
+  induction members generalizing keys with
+  | nil => simp [staticInitializers] at hs
+  | cons m ms ih =>
+    cases m with
+    | field static k init =>
+      cases static <;> cases k <;> simp only [allocOnlyClassMembers, Bool.false_eq_true, Bool.and_eq_true] at h
+      all_goals cases keys <;> simp_all [staticInitializers, readsNowClassMembers]
+      all_goals first
+        | exact ih _ hs
+        | exact ⟨(ih _ hs).1, fun x hx => Or.inr ((ih _ hs).2 x hx)⟩
+        | rcases hs with rfl | hs
+          · exact ⟨h.1, fun _ hx => Or.inl hx⟩
+          · exact ⟨(ih _ hs).1, fun x hx => Or.inr ((ih _ hs).2 x hx)⟩
+    | method static k f | getter static k f | setter static k f =>
+      cases k <;> simp only [allocOnlyClassMembers, Bool.false_eq_true] at h
+      simpa [staticInitializers, readsNowClassMembers] using ih h keys hs
+    | staticBlock _ => simp [allocOnlyClassMembers] at h
+
+theorem evalStaticInitializers_keeps (n : Nat) (env : Env) (target : Addr)
+    (ih : ∀ env e (base s : State W), e.allocOnly = true → Extends base s → (evalExpr n env e s).Keeps base)
+    (plan : List (Option PropertyKey × Expr))
+    (h : ∀ step ∈ plan, step.2.allocOnly = true) {base s : State W}
+    (hb : Extends base s) (ha : base.objAt target = none) :
+    (evalStaticInitializers (evalExpr n env) target plan s).Keeps base := by
+  induction plan generalizing s with
+  | nil => exact (inert_pure _).keeps hb
+  | cons step rest ihPlan =>
+    obtain ⟨key, init⟩ := step
+    unfold evalStaticInitializers
+    refine keeps_bind (ih env init base s (h (key, init) (by simp)) hb) fun value s1 _ hb1 => ?_
+    refine keeps_bind ?_ fun _ s2 _ hb2 => ihPlan (fun step hs => h step (by simp [hs])) hb2
+    cases key with
+    | none => exact (inert_pure _).keeps hb1
+    | some key => exact defineOwn_keeps target key _ hb1 ha
+
 /-- With fixed prototype parents, an anonymous class with plain members preserves the existing state. -/
 theorem finishDerived_plain_keeps (n : Nat) (env : Env) (name : Name) (members : List ClassMember)
     (parents : Addr × Option Addr) (h : plainClassMembers members = true) {base s : State W} (hb : Extends base s) :
@@ -472,11 +541,11 @@ theorem allocOnly_keeps (n : Nat) :
         refine keeps_bind (alloc_keeps _ hb2) fun c s3 h3 hb3 => ?_
         have hc : base.objAt c = none := hb2.fresh (alloc_ok h3).1
         refine keeps_bind (modifyObj_keeps proto _ hb3 hp) fun _ s4 _ hb4 => ?_
-        refine keeps_bind (evalMembers_plain_keeps n env1 proto c members he hb4 hp hc) fun keys s5 _ hb5 => ?_
+        refine keeps_bind (evalMembers_literal_keeps n env1 proto c members (allocOnlyClassMembers_literal he) hb4 hp hc) fun keys s5 _ hb5 => ?_
         refine keeps_bind (modifyObj_keeps c _ hb5 hc) fun _ s6 _ hb6 => ?_
         refine keeps_bind (initSelf_keeps _ h1 hb hb6) fun _ s7 _ hb7 => ?_
-        rw [staticInitializers_plain he]
-        exact keeps_bind ((inert_pure _).keeps hb7) fun _ s8 _ hb8 => (inert_pure _).keeps hb8
+        refine keeps_bind (evalStaticInitializers_keeps n _ c ihE _ (fun _ hs => (staticInitializers_allocOnly he keys hs).1) hb7 hc) fun _ s8 _ hb8 => ?_
+        exact (inert_pure _).keeps hb8
       case arr elems =>
         refine keeps_bind (ihA env elems base s he hb) fun vs s1 _ hb1 => ?_
         refine keeps_bind (alloc_keeps _ hb1) fun a s2 _ hb2 => ?_
@@ -624,5 +693,8 @@ theorem decl_allocOnly {e : Expr} (h : e.allocOnly = true) (fuel : Nat) (env : E
 
 #print axioms allocOnly_extends
 #print axioms decl_allocOnly
+#print axioms evalMembers_literal_keeps
+#print axioms staticInitializers_allocOnly
+#print axioms evalStaticInitializers_keeps
 
 end CoreJS

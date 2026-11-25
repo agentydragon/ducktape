@@ -413,6 +413,33 @@ theorem local_evalMembers_plain (n : Nat) (env : Env) (proto c : Addr) (ms : Lis
         · cases static <;> assumption
         · exact (local_pure _).bind' fun field => (ih ms h).bind' fun _ => local_pure _
 
+theorem local_evalMembers_literal (n : Nat) (env : Env) (proto c : Addr) (ms : List ClassMember)
+    (h : literalClassMembers ms = true) (hp : proto.region = r) (hc : c.region = r) :
+    Local r R (evalMembers n env proto c ms : M W (List (Bool × PropertyKey))) := by
+  induction n generalizing ms with
+  | zero => exact local_outOfFuel
+  | succ n ih =>
+    cases ms with
+    | nil => exact local_pure _
+    | cons m ms =>
+      cases m with
+      | field static k init =>
+        cases k <;> simp only [literalClassMembers, Bool.false_eq_true] at h
+        unfold evalMembers
+        refine (local_evalExpr_str n env _).bind' fun _ => ?_
+        refine (local_lift _).bind' fun _ => ?_
+        exact (local_pure _).bind' fun _ => (ih ms h).bind' fun _ => local_pure _
+      | method static k f | getter static k f | setter static k f =>
+        cases k <;> simp only [literalClassMembers, Bool.false_eq_true] at h
+        unfold evalMembers
+        refine (local_evalExpr_str n env _).bind' fun _ => ?_
+        refine (local_lift _).bind' fun name => ?_
+        refine (local_makeClassMethod env _ name _ f).bind' fun _ => ?_
+        refine (local_defineOwn ?_ name _).bind' fun _ => ?_
+        · cases static <;> assumption
+        · exact (local_pure _).bind' fun _ => (ih ms h).bind' fun _ => local_pure _
+      | staticBlock _ => simp [literalClassMembers] at h
+
 /-- Once its prototype parents are known, an anonymous class with plain members is local. -/
 theorem local_finishDerived_plain (n : Nat) (env : Env) (name : Name) (members : List ClassMember)
     (parents : Addr × Option Addr) (h : plainClassMembers members = true) :
@@ -434,6 +461,50 @@ end local_
 /-- Every binding that the names `N` find in `env` is in region `r` or among `R`. -/
 def Within (r : Nat) (R : Addr → Prop) (env : Env) (N : List Name) : Prop :=
   ∀ z ∈ N, ∀ c, env.vars.lookup z = some c → R c ∨ c.region = r
+
+theorem selfScope_within {r : Nat} {R : Addr → Prop} {env env' : Env} {self : Bool} {name : Name}
+    {s s' : State W} (hr : s.region = r) (h : selfScope env self name s = .ok env' s')
+    {names : List Name} (hw : Within r R env names) : Within r R env' names := by
+  cases self with
+  | false =>
+    simp [selfScope] at h
+    cases h
+    exact hw
+  | true =>
+    unfold selfScope at h
+    simp only [ite_true] at h
+    unfold declare at h
+    obtain ⟨frame, t, hf, h⟩ := bind_ok h
+    unfold newCells at hf
+    obtain ⟨a, t1, ha, hf⟩ := bind_ok hf
+    unfold newCells at hf
+    cases hf
+    cases h
+    intro x hx c hc
+    by_cases hname : x = name
+    · subst x
+      simp at hc
+      subst c
+      exact Or.inr ((newCell_region ha).trans hr)
+    · apply hw x hx c
+      have hne : (x == name) = false := by simpa using hname
+      simpa [List.lookup_cons, hne] using hc
+
+theorem local_evalStaticInitializers {r : Nat} {R : Addr → Prop} (n : Nat) (env : Env) (target : Addr)
+    (ih : ∀ env e, e.allocOnly = true → Within r R env e.readsNow → Local r R (evalExpr n env e : M W Val))
+    (plan : List (Option PropertyKey × Expr))
+    (h : ∀ step ∈ plan, step.2.allocOnly = true ∧ Within r R env step.2.readsNow)
+    (ha : target.region = r) : Local r R (evalStaticInitializers (evalExpr n env) target plan : M W Unit) := by
+  induction plan with
+  | nil => exact local_pure _
+  | cons step rest ihPlan =>
+    obtain ⟨key, init⟩ := step
+    unfold evalStaticInitializers
+    refine (ih env init (h (key, init) (by simp)).1 (h (key, init) (by simp)).2).bind' fun value => ?_
+    refine Local.bind' ?_ fun _ => ihPlan (fun step hs => h step (by simp [hs]))
+    cases key with
+    | none => exact local_pure _
+    | some key => exact local_defineOwn ha key _
 
 theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
     (∀ env e, e.allocOnly = true → Within r R env e.readsNow → Local r R (evalExpr n env e : M W Val)) ∧
@@ -478,7 +549,7 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
         refine (local_alloc _).bind fun c ⟨s3, s3', hr3, h3⟩ => ?_
         have hc : c.region = r := (alloc_region h3).trans hr3
         refine (local_modifyObj hp _).bind' fun _ => ?_
-        refine (local_evalMembers_plain n env1 proto c members he hp hc).bind' fun keys => ?_
+        refine (local_evalMembers_literal n env1 proto c members (allocOnlyClassMembers_literal he) hp hc).bind' fun keys => ?_
         refine (local_modifyObj hc _).bind' fun _ => ?_
         refine Local.bind' ?_ fun _ => ?_
         · unfold initSelf
@@ -488,8 +559,12 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
             obtain ⟨cell, hl, hr⟩ := selfScope_lookup h1
             exact local_initVar (fun cell' hl' => by rw [hl] at hl'; cases hl'; exact hr.trans hr1) _
           · exact local_pure _
-        · rw [staticInitializers_plain he]
-          exact (local_pure _).bind' fun _ => local_pure _
+        · have hw1 : Within r R env1 (readsNowClassMembers members) :=
+            selfScope_within hr1 h1 (by simpa [Expr.readsNow] using hw)
+          refine (local_evalStaticInitializers n _ c ihE _ ?_ hc).bind' fun _ => local_pure _
+          intro step hs
+          obtain ⟨ha, reads⟩ := staticInitializers_allocOnly he keys hs
+          exact ⟨ha, fun x hx => hw1 x (reads x hx)⟩
       case arr elems =>
         exact (ihA env elems he (by simpa [Expr.readsNow] using hw)).bind' fun _ =>
           (local_alloc _).bind' fun _ => local_pure _
@@ -1187,6 +1262,10 @@ theorem moves_preserve {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : E
     fun ⟨n, h, hr⟩ => ⟨n, (moves_preserve_run hvalid hfp hmove n s).2 h, hr⟩⟩
 
 #print axioms moves_preserve
+#print axioms local_evalMembers_literal
+#print axioms selfScope_within
+#print axioms local_evalStaticInitializers
+#print axioms allocOnly_local
 
 /-- `moves_preserve` with its last hypothesis decided by `movesOk`, as `lowersplit` decides it. -/
 theorem moves_preserve_of_movesOk {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}

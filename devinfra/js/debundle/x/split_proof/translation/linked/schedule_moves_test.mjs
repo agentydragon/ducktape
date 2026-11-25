@@ -9,6 +9,55 @@ const pivotScope = "linked-structural-pivot";
 const movesScope = "linked-structural-moves";
 const refusalScope = "linked-structural";
 
+// Creating the class stores the initializer; only construction reads `later`.
+const instanceField = structuralFixture(
+  "move-class-with-instance-field",
+  `const before = 3;
+   const C = class { value = later(); };
+   function later() { return 7; }
+   export { before, C, later };`,
+  ["#1"],
+  ["#0", "#2", "#3"]
+);
+const instanceFieldVerdict = instanceField.run(pivotScope);
+assert.equal(instanceFieldVerdict.status, "certified", JSON.stringify(instanceFieldVerdict));
+assert.deepEqual(instanceField.run(pivotScope, "--check-output"), instanceFieldVerdict);
+for (const file of [instanceField.sourceFile, path.join(instanceField.out, "entry.mjs")]) {
+  const { before, C } = await import(pathToFileURL(file));
+  assert.equal(before, 3);
+  assert.equal(new C().value, 7);
+}
+
+const staticField = structuralFixture(
+  "move-class-with-static-field",
+  `const before = 3;
+   const C = class { static value = { answer: 7 }; static owner = this; };
+   export { before, C };`,
+  ["#1"],
+  ["#0", "#2"]
+);
+const staticFieldVerdict = staticField.run(pivotScope);
+assert.equal(staticFieldVerdict.status, "certified", JSON.stringify(staticFieldVerdict));
+assert.deepEqual(staticField.run(pivotScope, "--check-output"), staticFieldVerdict);
+for (const file of [staticField.sourceFile, path.join(staticField.out, "entry.mjs")]) {
+  const { before, C } = await import(pathToFileURL(file));
+  assert.equal(before, 3);
+  assert.equal(C.value.answer, 7);
+  assert.equal(C.owner, C);
+}
+
+const eagerField = structuralFixture(
+  "class-static-field-must-not-cross-binding",
+  `const before = 3;
+   const C = class { static value = before; };
+   export { before, C };`,
+  ["#1"],
+  ["#0", "#2"]
+);
+const eagerFieldVerdict = eagerField.run(refusalScope);
+assert.equal(eagerFieldVerdict.status, "rejected");
+assert.match(eagerFieldVerdict.reason, /unit 1 is not a local allocating declaration/);
+
 const typedArraySource = `import { seed } from "./provider.mjs";
    const bytes = new Uint8Array([seed, 17]);
    const read = (position) => bytes[position];

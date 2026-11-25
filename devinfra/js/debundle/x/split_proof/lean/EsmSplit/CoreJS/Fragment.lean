@@ -27,6 +27,13 @@ theorem plainClassMembers_fieldInits {ms : List ClassMember} (h : plainClassMemb
       cases k <;> simp only [plainClassMembers, Bool.false_eq_true] at h
       simpa only [fieldInits] using ih h
 
+/-- Class members whose keys do not run user code. Static blocks are excluded. -/
+def literalClassMembers : List ClassMember → Bool
+  | [] => true
+  | .method _ (.str _) _ :: ms | .getter _ (.str _) _ :: ms | .setter _ (.str _) _ :: ms
+  | .field _ (.str _) _ :: ms => literalClassMembers ms
+  | _ :: _ => false
+
 
 /-- Logical negation does not coerce objects to primitives. Numeric negation is safe here
 only on a syntactic number literal, whose conversion cannot call user code. -/
@@ -50,7 +57,8 @@ def Expr.literalArithmetic : Expr → Bool
   | _ => false
 
 mutual
-/-- An expression that only allocates: a literal, a name, a function, an object literal of named data properties, an array literal of such expressions, a plain class, or a supported unary operation. -/
+/-- An expression that only allocates: literals, names, functions, named object properties,
+arrays, fixed-key classes with allocation-only static initializers, and supported operators. -/
 def Expr.allocOnly : Expr → Bool
   | .undef | .null | .bool _ | .num _ | .str _ | .var _ | .host _ | .this | .func _ => true
   -- The literal allocates with the realm's intrinsic prototype. It reads no
@@ -60,7 +68,7 @@ def Expr.allocOnly : Expr → Bool
   | .unary op operand => localUnaryOperand op operand && operand.allocOnly
   | .obj props => allocOnlyProps props
   | .arr elems => allocOnlyAll elems
-  | .cls _ _ _ members => plainClassMembers members
+  | .cls _ _ _ members => allocOnlyClassMembers members
   | _ => false
 
 def allocOnlyAll : List Expr → Bool
@@ -72,7 +80,30 @@ def allocOnlyProps : List PropDef → Bool
   | .init (.str _) v :: ps => v.allocOnly && allocOnlyProps ps
   | .method (.str _) _ :: ps => allocOnlyProps ps
   | _ :: _ => false
+
+/-- Instance initializers are deferred; static initializers run at class creation. -/
+def allocOnlyClassMembers : List ClassMember → Bool
+  | [] => true
+  | .method _ (.str _) _ :: ms | .getter _ (.str _) _ :: ms | .setter _ (.str _) _ :: ms =>
+    allocOnlyClassMembers ms
+  | .field false (.str _) _ :: ms => allocOnlyClassMembers ms
+  | .field true (.str _) init :: ms => init.allocOnly && allocOnlyClassMembers ms
+  | _ :: _ => false
 end
+
+theorem allocOnlyClassMembers_literal {ms : List ClassMember} (h : allocOnlyClassMembers ms = true) :
+    literalClassMembers ms = true := by
+  induction ms with
+  | nil => rfl
+  | cons m ms ih =>
+    cases m with
+    | field static key init =>
+      cases static <;> cases key <;> simp_all [allocOnlyClassMembers, literalClassMembers]
+    | method static key f | getter static key f | setter static key f =>
+      cases key <;> simp_all [allocOnlyClassMembers, literalClassMembers]
+    | staticBlock body => simp [allocOnlyClassMembers] at h
+
+#print axioms allocOnlyClassMembers_literal
 
 theorem Expr.argument_of_allocOnly {e : Expr} (h : e.allocOnly = true) : e.argument = (false, e) := by
   cases e <;> first | rfl | simp [Expr.allocOnly] at h
@@ -83,13 +114,29 @@ theorem allocOnly_plainClass_opaqueMethod :
     (Expr.cls "Plain" true (.opaque "Plain" .classCtor false 0 0 0 [] none)
       [.method false (.str "method") (.opaque "method" .method false 0 0 1 ["later"] none)]).allocOnly = true := rfl
 
-theorem allocOnly_class_staticField_rejected :
+theorem allocOnly_class_staticField_accepted :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
-      [.field true (.str "field") .undef]).allocOnly = false := rfl
+      [.field true (.str "field") .undef]).allocOnly = true := rfl
 
-theorem allocOnly_class_instanceField_rejected :
+theorem allocOnly_class_staticField_effect_rejected :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
-      [.field false (.str "field") .undef]).allocOnly = false := rfl
+      [.field true (.str "field") (.call (.var "effect") [])]).allocOnly = false := rfl
+
+theorem allocOnly_class_staticComputedField_rejected :
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
+      [.field true (.var "key") .undef]).allocOnly = false := rfl
+
+theorem allocOnly_class_staticBlock_rejected :
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
+      [.staticBlock (.opaque "block" .arrow false 0 0 0 [] none)]).allocOnly = false := rfl
+
+theorem allocOnly_class_instanceField_accepted :
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
+      [.field false (.str "field") (.call (.var "sideEffect") [])]).allocOnly = true := rfl
+
+theorem allocOnly_class_instanceComputedField_rejected :
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
+      [.field false (.var "key") .undef]).allocOnly = false := rfl
 
 theorem allocOnly_class_nonliteralKey_rejected :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
@@ -98,13 +145,22 @@ theorem allocOnly_class_nonliteralKey_rejected :
 theorem allocOnly_derivedClass_rejected :
     (Expr.derived "Derived" false (.var "Base") [] none).allocOnly = false := rfl
 
+#print axioms allocOnly_class_staticField_accepted
+#print axioms allocOnly_class_staticField_effect_rejected
+#print axioms allocOnly_class_staticComputedField_rejected
+#print axioms allocOnly_class_staticBlock_rejected
+#print axioms allocOnly_class_instanceField_accepted
+#print axioms allocOnly_class_instanceComputedField_rejected
+
 mutual
-/-- The names an expression that only allocates reads when it runs. Functions and admitted plain classes read none: they keep bindings, not values. -/
+/-- The names an allocation-only expression reads when it runs. Functions and instance
+field initializers keep bindings without reading them; static initializers run now. -/
 def Expr.readsNow : Expr → List Name
   | .var x => [x]
   | .unary _ operand => operand.readsNow
   | .obj props => readsNowProps props
   | .arr elems => readsNowAll elems
+  | .cls _ _ _ members => readsNowClassMembers members
   | _ => []
 
 def readsNowAll : List Expr → List Name
@@ -115,7 +171,16 @@ def readsNowProps : List PropDef → List Name
   | [] => []
   | .init _ v :: ps => v.readsNow ++ readsNowProps ps
   | _ :: ps => readsNowProps ps
+
+def readsNowClassMembers : List ClassMember → List Name
+  | [] => []
+  | .field true _ init :: ms => init.readsNow ++ readsNowClassMembers ms
+  | _ :: ms => readsNowClassMembers ms
 end
+
+example : (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [] none)
+    [.field false (.str "later") (.var "deferred"), .field true (.str "now") (.var "eager")]).readsNow =
+    ["eager"] := rfl
 
 /-- A statement that does nothing when it runs: its work is done when the program is linked. An opaque statement that
 declares only functions is one. -/
