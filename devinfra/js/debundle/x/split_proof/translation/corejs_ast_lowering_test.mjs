@@ -124,6 +124,7 @@ const hostSources = [
   'console.log("a", 1 + 2, true);',
   "const proto = { x: 1 }; const made = Object.create(proto); console.log(made.x, Object.getPrototypeOf(made) === proto);",
   'const tag = Symbol("tag"); console.log(typeof tag, tag === Symbol("tag")); missing;',
+  'try { missing = 1; } catch (e) { console.log("assignment"); } missing;',
 ];
 // Node's ambient Symbol stays the intrinsic constructor throughout these runs.
 const host = run(

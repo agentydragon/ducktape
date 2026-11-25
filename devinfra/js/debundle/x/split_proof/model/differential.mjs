@@ -147,10 +147,8 @@ const unitCount = (source) =>
  * listed program that lowers.
  */
 const linkedRefusals = new Map([
-  ["case an undeclared name: a read and an assignment throw", /unsupported global missing/],
   ["case object literals: __proto__, accessors, shorthand, computed and numeric keys", /duplicate object property/],
   ["case classes: methods, accessors, fields and statics, and the names they give", /unexpected function-local name/],
-  ["case a call of a host function the world does not answer for is unknown code", /unsupported global JSON/],
   ["case the iterator symbol is a distinct inherited method key", /named by a computed key/],
   [
     "modules: var destructuring exports each binding and retains the original receiver",

@@ -105,6 +105,8 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     | "NaN" => return .num Num.nan
     | _ =>
       if profile.undeclaredGlobal x then return .var x
+      -- The recorded host holds the other catalog globals as opaque values.
+      if profile == .nodeRecording then return .host x
       throw s!"unsupported global {x}"
   | k => throw s!"unsupported binding class {k}"
 
@@ -383,11 +385,11 @@ private partial def linkedMember (lower : Json → Except String Expr) (j : Json
     | none => reason
   return (base, ← memberKey lower j)
 
-private def linkedTarget (imports : List Name) (inFunction : Bool)
+private def linkedTarget (profile : HostProfile) (imports : List Name) (inFunction : Bool)
     (lower : Json → Except String Expr) (j : Json) : Except String Target := do
   match ← field j "type" with
   | "Identifier" =>
-    let .var name ← reference imports inFunction j
+    let .var name ← reference imports inFunction j profile
       | throw "expected a binding in linked assignment"
     -- Glue imports keep the original module reference annotation. Local references shadow imports.
     let scope ← field j "k"
@@ -694,7 +696,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       unless op == "=" do throw "unsupported compound private field assignment"
       return .prim (.privateSlot .set) [.var (privateTable name), ← lower (← left.getObjVal? "object"),
         ← lower (← j.getObjVal? "right")]
-    let target ← linkedTarget imports inFunction lower left
+    let target ← linkedTarget profile imports inFunction lower left
     let rhs ← j.getObjVal? "right"
     let targetName := match target with
       | .var name | .frozen name => name
@@ -722,7 +724,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | "++" => pure true
       | "--" => pure false
       | op => throw s!"unsupported linked update operator {op}"
-    let target ← j.getObjVal? "argument" >>= linkedTarget imports inFunction (linkedExpr profile imports inFunction "")
+    let target ← j.getObjVal? "argument" >>= linkedTarget profile imports inFunction (linkedExpr profile imports inFunction "")
     return .update target inc (← j.getObjValAs? Bool "prefix")
   | "ObjectExpression" =>
     linkedObject (linkedExpr profile imports inFunction) (fun name => linkedFunction profile imports .method name false) j
@@ -1391,7 +1393,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       let source ← lower "" (← j.getObjVal? "right")
       let body ← linkedStatement profile imports blockScope (← j.getObjVal? "body")
       if (← field left "type") != "VariableDeclaration" then
-        let target ← linkedTarget imports true (lower "") left
+        let target ← linkedTarget profile imports true (lower "") left
         let slot := ":for-of"
         return .forOf .const (.name slot) source (.block [.expr (.assign target (.var slot)), body])
       let #[d] ← left.getObjValAs? (Array Json) "declarations" | throw "expected one for-of binding declarator"
