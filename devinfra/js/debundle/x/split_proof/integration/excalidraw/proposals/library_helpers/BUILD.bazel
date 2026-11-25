@@ -5,6 +5,7 @@ exports_files(
         "numeric_thresholds.yaml",
         "rtl_strings.yaml",
         "shift_locking_angle.yaml",
+        "style_records.yaml",
         "utils_prefix.yaml",
     ],
     visibility = ["//devinfra/js/debundle/excalidraw:__pkg__"],

@@ -192,6 +192,7 @@ debundle_resolve_placement(
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:rtl_strings.yaml": "packages/excalidraw/utils",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:utils_prefix.yaml": "packages/excalidraw/utils",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:default_font_family.yaml": "packages/excalidraw/constants",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:style_records.yaml": "packages/excalidraw/constants",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:numeric_thresholds.yaml": "packages/excalidraw/constants",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:shift_locking_angle.yaml": "packages/excalidraw/constants",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/colors.yaml": "packages/excalidraw/colors",
