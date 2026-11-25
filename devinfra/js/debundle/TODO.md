@@ -158,6 +158,25 @@ The goal is one proven-correct splitter, with Lean as the sole certification
 authority. Retire the Rust gate when its last consumer has migrated; the
 shared Rust resolver remains useful.
 
+For the first multi-chunk placement format, each emitted module draws its
+source units from one input chunk. A chunk may split into many modules. Keep
+each original entry and lazy loading boundary, and check the resolved edges
+and initialization order of the whole emitted graph, including generated
+glue. An eager entry must not start evaluating a plugin just because the two
+chunks use the same helper.
+
+Explore reusable Lean proofs at static ESM boundaries. A component summary
+should describe a transition from related incoming states, with corresponding
+imported live cells, to corresponding effects, outcomes and exported live
+cells under the declared host contract. Importers can call exported code
+later. Equal namespace values just after initialization are insufficient.
+Compose summaries in dependency order for acyclic imports, preserving shared
+module identity and evaluate-once behavior. Treat a cycle as one proof unit
+so reads of uninitialized bindings and callbacks across the cycle remain
+visible. Keep the whole-graph check as the reference while comparing proof
+cost and reuse; dynamic loading and async evaluation need their own loader
+and scheduling contract.
+
 These IDs identify remaining work; dispatch order stays above. Existing plans
 retain the detailed semantic designs. Preserve the ordinary realizability gate,
 shared import order, explicit saved DTOs, and validated writer boundary.
