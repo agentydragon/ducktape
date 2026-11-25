@@ -339,6 +339,10 @@ export function assertRejectedOrOrderKeptSlice({ verdict, log, out }, reason) {
   return false;
 }
 
+export function assertRefusedOrOrderKeptSlice(verdict, out, reason, log = JSON.stringify(verdict)) {
+  return assertRejectedOrOrderKeptSlice({ verdict, out, reason, log }, reason);
+}
+
 export function assertWorkerResult(name, source, expected, entryUnits) {
   assertCertifiedResult(workerSplit(name, source, entryUnits), expected);
 }
