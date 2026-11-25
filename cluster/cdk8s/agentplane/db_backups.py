@@ -16,7 +16,6 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/agentplane-staging/db-backups"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "db-backups", disable_resource_name_hashes=True)
-    # Staging writes ~17 GB/day of WAL, more than every other backed-up Cluster together; a week of
-    # recovery points is enough history for a staging environment.
-    backup.CnpgBackup(chart, "backup", ref=database.postgres(ENV), retention="7d")
+    # Keep daily bases for short restores; limit archived WAL to what three days of recovery needs.
+    backup.CnpgBackup(chart, "backup", ref=database.postgres(ENV), retention="3d")
     return chart
