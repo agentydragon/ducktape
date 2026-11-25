@@ -238,6 +238,7 @@ inductive HostRef where
   | property (receiver key : String)
   /-- The constructor selected through the page's Error reference has the supported native behavior. -/
   | nativeErrorConstructor
+  | unresolvableBinding (name : String)
   deriving DecidableEq, Repr
 
 /-- A direct host read can return an opaque identity or the exact bits of a Number.
@@ -885,6 +886,7 @@ def readHostRef (ref : HostRef) : M W Val := fun s =>
       | .binding n => n
       | .property receiver key => s!"{receiver}.{key}"
       | .nativeErrorConstructor => "native Error constructor"
+      | .unresolvableBinding n => s!"unresolvable binding {n}"
     .unknown s!"unsupported host reference {name}" s
 
 /-- Receivers whose property lookup can be answered by a host observation.
@@ -1130,6 +1132,11 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   | .regExpGet getter => readRegExp call getter (arg 0)
   | .globalTypeof name => observeGlobalTypeof name
   | .globalRef name => readHostRef (.binding name)
+  | .resolveMissingBinding name => do
+    match ← readHostRef (.unresolvableBinding name) with
+    | .host "unresolvable" => pure .undef
+    | _ => unknown s!"binding {name} is not known to be unresolvable"
+  | .putMissingBinding name => throwErr .reference s!"{name} is not defined"
   | .wellKnownSymbol sym =>
     let value ← readHostRef (.property "Symbol" sym.member)
     if value == .host sym.description then pure (.wellKnownSymbol sym)

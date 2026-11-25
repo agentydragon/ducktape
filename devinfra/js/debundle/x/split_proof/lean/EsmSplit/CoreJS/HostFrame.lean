@@ -88,6 +88,7 @@ theorem reachFrame_readHostRef (r R cells A) (ref : HostRef) :
     | .binding name => name
     | .property receiver key => s!"{receiver}.{key}"
     | .nativeErrorConstructor => "native Error constructor"
+    | .unresolvableBinding n => s!"unresolvable binding {n}"
   apply reachFrame_hostObservation r R cells A (W.hostRef ref) (fun value => pure value.val)
     (fun value => reachFrame_pure r R cells A value.val (by cases value <;> simp [SafeVal, HostValue.val, Val.nodes]))
     s!"unsupported host reference {name}"
