@@ -263,6 +263,21 @@ assert.deepEqual(computed.out, [
   "aAbcdefghijk value object 1 object true object null saved object symbol [Symbol.iterator] updated 2 updated updated [Symbol.iterator]",
 ]);
 
+// Object-to-primitive conversion remains an explicit runtime unknown. It is
+// not a lowering refusal, and Node can execute the same computed property.
+const coercionSource = `
+  const key = { toString() { return "dynamic"; } };
+  const record = { [key]: "value" };
+  console.log(record.dynamic);
+`;
+const [coercion] = run([dumpSource(coercionSource)], true);
+assert.deepEqual([coercion.end, coercion.detail], ["unknown", "an object is converted to a primitive"]);
+const coercionNode = spawnSync(process.execPath, ["--input-type=module", "-e", coercionSource], {
+  encoding: "utf8",
+});
+assert.equal(coercionNode.status, 0, coercionNode.stderr);
+assert.equal(coercionNode.stdout, "value\n");
+
 // The default production profile lowers the same syntax with local keys and no host premise.
 const productionSource = `export const result = (() => {
   let getterOrder = "";
