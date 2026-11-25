@@ -448,31 +448,36 @@ private def enclosedSuperCall (parents : List (String × Json)) : Bool := Id.run
     ["ClassExpression", "ClassDeclaration"].contains ((field cls "type").toOption.getD "") &&
     (cls.getObjVal? "superClass").toOption.any (· != .null)
 
-private partial def opaqueContext (checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers : Bool) (parents : List (String × Json)) (j : Json) : Bool :=
+private partial def opaqueContext? (checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers : Bool)
+    (parents : List (String × Json)) (j : Json) : Option String := Id.run do
   match j with
   | .obj fields =>
     let kind := (field j "type").toOption.getD ""
     let retainedMember := retainedSuperMembers && (match parents with
       | ("object", parent) :: _ => isSuperMember parent
       | _ => false)
-    kind == "CoreJSDerivedReceiver" ||
-    (kind == "Super" && !retainedMember && !(wholeUnit && enclosedSuperCall parents)) ||
-      (kind == "ImportExpression" && !moduleLocationChecked) ||
-      (kind == "MetaProperty" && !(moduleLocationChecked &&
-        (j.getObjVal? "meta" >>= identifier).toOption == some "import" &&
-        (j.getObjVal? "property" >>= identifier).toOption == some "meta")) || (checkPrivateNames && kind == "PrivateIdentifier") ||
-      (kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval") ||
-      fields.toList.any (fun (key, child) => opaqueContext checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers
-        (if wholeUnit || retainedSuperMembers then (key, j) :: parents else []) child)
-  | .arr items => items.any (opaqueContext checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers parents)
-  | _ => false
+    if kind == "CoreJSDerivedReceiver" ||
+        (kind == "Super" && !retainedMember && !(wholeUnit && enclosedSuperCall parents)) ||
+        (kind == "ImportExpression" && !moduleLocationChecked) ||
+        (kind == "MetaProperty" && !(moduleLocationChecked &&
+          (j.getObjVal? "meta" >>= identifier).toOption == some "import" &&
+          (j.getObjVal? "property" >>= identifier).toOption == some "meta")) ||
+        (checkPrivateNames && kind == "PrivateIdentifier") then
+      return some kind
+    if kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval" then
+      return some "direct eval"
+    return fields.toList.findSome? fun (key, child) =>
+      opaqueContext? checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers
+        (if wholeUnit || retainedSuperMembers then (key, j) :: parents else []) child
+  | .arr items => return items.findSome? (opaqueContext? checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers parents)
+  | _ => return none
 
 /-- Detached bodies require their source module and method context. When the entire statement is
 retained, a direct super call within the body of its own derived constructor retains its class.
 Direct eval can refer to cells absent from the static capture list in either case. -/
 def needsOpaqueContext (j : Json) (checkPrivateNames wholeUnit moduleLocationChecked : Bool := false) : Bool :=
-  opaqueContext checkPrivateNames false false false [] j &&
-    (!wholeUnit || opaqueContext checkPrivateNames true moduleLocationChecked false [] j)
+  (opaqueContext? checkPrivateNames false false false [] j).isSome &&
+    (!wholeUnit || (opaqueContext? checkPrivateNames true moduleLocationChecked false [] j).isSome)
 
 /-- LinkedInput numbers each callable by its original unit and lexical site and checks emitted syntax.
 The scope resolver supplies references to cells outside the retained callable. -/
@@ -480,12 +485,23 @@ private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : 
     (arity : Nat) (reason : String) (checkPrivateNames := true) : Except String Func := do
   -- Linked lowering retains the entire parsed method and its lexical arrows. The
   -- closure keeps its home object, and invocation with a refusal always stops replay.
-  if opaqueContext checkPrivateNames false false true [] j then throw reason
-  let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw reason
-  let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw reason
-  let .ok part := j.getObjValAs? Nat ":opaque-part" | throw reason
+  let refusal (why : String) :=
+    if kind == .asyncFn || kind == .asyncGenerator then
+      -- The outer function can retain this refusal. Its syntax must still match
+      -- across relocated modules, so use the linker's stable callable identity.
+      let location := match j.getObjValAs? Nat ":opaque-unit", j.getObjValAs? Nat ":opaque-part" with
+        | .ok unit, .ok part => s!" at unit {unit}, callable {part}"
+        | _, _ => ""
+      let label := if kind == .asyncGenerator then "async generator" else "async function"
+      s!"cannot retain {label} definition{location}: {why}"
+    else reason
+  if let some context := opaqueContext? checkPrivateNames false false true [] j then
+    throw (refusal s!"syntax requires lexical or module context ({context})")
+  let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw (refusal "missing capture list")
+  let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw (refusal "missing source unit")
+  let .ok part := j.getObjValAs? Nat ":opaque-part" | throw (refusal "missing callable site")
   -- CoreJS does not allocate the enclosing function's implicit arguments cell.
-  if captures.contains "arguments" then throw reason
+  if captures.contains "arguments" then throw (refusal "captures the enclosing arguments cell")
   return .opaque name kind self arity code part captures (some reason)
 
 -- Every admitted body leaves the enumerated keys and prototype chain intact.

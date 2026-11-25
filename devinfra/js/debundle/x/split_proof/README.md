@@ -71,6 +71,11 @@ home object and receiver of its enclosing scope. Async bodies can retain these
 references, but replay stops if it reaches an async invocation. Super-property
 writes and deletion remain outside the executable model.
 
+An async definition can fail during lowering if its body needs context the
+checker cannot retain. The `linked_input` verdict identifies the original unit,
+callable number within the unit, and failed check. A `probe_unknown` verdict
+that reports an async invocation means the linked initializer reached the call.
+
 Class static blocks run in their own scope with the constructor as the
 receiver. The checker evaluates class member keys before it initializes
 fixed-name static fields and runs blocks in their source order.
