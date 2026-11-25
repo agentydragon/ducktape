@@ -214,7 +214,8 @@ private def installTemplates (p : Program) (sites : List TemplateSite) : Except 
       let value ← q.getObjVal? "value"
       raw := raw.push (.str (← field value "raw"))
       let text ← value.getObjVal? "cooked"
-      cooked := cooked.push (if text == .null then Expr.undef else .str (← text.getStr?))
+      let segment ← if text == .null then pure Expr.undef else Expr.str <$> text.getStr?
+      cooked := cooked.push segment
     let array := Expr.prim (.templateArray true) (.prim (.templateArray false) raw.toList :: cooked.toList)
     body := body.push (p.regions + body.size, Stmt.decl .const site.binding array)
   let registry : Module := ⟨provider, [], body.toList, names.map fun name => (name, name)⟩
