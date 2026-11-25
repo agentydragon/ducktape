@@ -61,13 +61,15 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 				return &protocol.UnknownEffectError{Reason: "unresolved intent blocks queued input; automatic replay is unsafe"}
 			}
 			// Codex records environment updates before the turn's user input.
-			if err := s.recordEnvironmentContext(conversation, session, false); err != nil {
+			objects := newContentDB(ctx, tx)
+			if err := s.recordEnvironmentContext(objects, conversation, session, false); err != nil {
+				return err
+			}
+			if err := objects.Save(); err != nil {
 				return err
 			}
 			text := payload.GetSubmitInput().GetText()
-			if err := conversation.apply(func(state protocol.Context) error {
-				return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: text}})
-			}); err != nil {
+			if err := conversation.appendUserCommand(next.ID, text); err != nil {
 				return err
 			}
 			conversation.Stopped = false
@@ -128,7 +130,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 		default:
 			return protocol.ErrInvalid
 		}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)
@@ -227,9 +229,7 @@ func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID s
 		}
 		for index, command := range commands {
 			text := inputs[index].GetText()
-			if err := conversation.apply(func(state protocol.Context) error {
-				return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: text}})
-			}); err != nil {
+			if err := conversation.appendUserCommand(command.ID, text); err != nil {
 				return err
 			}
 			if err := setCommandOutcome(ctx, tx, sessionID, command.ID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED, nil); err != nil {
@@ -245,7 +245,7 @@ func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID s
 			}
 		}
 		drained = true
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)
@@ -395,7 +395,7 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 				return err
 			}
 		}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)
@@ -675,7 +675,7 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Con
 			return err
 		}
 	}
-	if err := updateConversation(ctx, tx, conversation); err != nil {
+	if err := s.updateConversation(ctx, tx, conversation); err != nil {
 		return err
 	}
 	return persistSession(ctx, tx, session)

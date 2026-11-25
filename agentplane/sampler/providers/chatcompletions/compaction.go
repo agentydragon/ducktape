@@ -128,8 +128,15 @@ type CompactionPlan struct {
 	config       CompactionConfig
 }
 
+func (m message) isCompactionHandoff() bool {
+	return m.Origin.Kind == protocol.RecordOriginCompaction || m.CompactionGenerated
+}
+
 func (m message) isAuthoredUser() bool {
-	return m.Role == "user" && !m.CompactionGenerated
+	if m.Role != "user" || m.isCompactionHandoff() {
+		return false
+	}
+	return m.Origin.Kind == protocol.RecordOriginUserInput || m.Origin.Kind == protocol.RecordOriginUnknown
 }
 
 func userMessageTokens(text string) int {
@@ -138,7 +145,7 @@ func userMessageTokens(text string) int {
 
 func (c *Context) CanCompact(keepRecentTokens int) bool {
 	for _, m := range c.messages {
-		if m.CompactionGenerated || m.Role == "system" {
+		if m.isCompactionHandoff() || m.Role == "system" {
 			continue
 		}
 		if !m.isAuthoredUser() {
@@ -153,7 +160,7 @@ func (c *Context) CanCompact(keepRecentTokens int) bool {
 }
 
 func (c *Context) recentUsers(tokens int) []message {
-	var users []message
+	var retained []message
 	for _, m := range slices.Backward(c.messages) {
 		if !m.isAuthoredUser() {
 			continue
@@ -163,15 +170,18 @@ func (c *Context) recentUsers(tokens int) []message {
 			text := tooloutput.TruncateTextWithinTokenBudget(m.Content, tokens-userMessageFramingTokens, userTruncationMarker)
 			if text != "" {
 				m.Content = text
-				users = append(users, m)
+				if m.Origin.Kind != protocol.RecordOriginUnknown {
+					m.Origin.Projection = protocol.RecordProjectionTruncated
+				}
+				retained = append(retained, m)
 			}
 			break
 		}
-		users = append(users, m)
+		retained = append(retained, m)
 		tokens -= cost
 	}
-	slices.Reverse(users)
-	return users
+	slices.Reverse(retained)
+	return retained
 }
 
 func (c *Context) serializedSize() (int, error) {
@@ -201,7 +211,7 @@ func (c *Context) PrepareCompaction(config CompactionConfig) (*CompactionPlan, e
 	return &CompactionPlan{originalSize: size, users: c.recentUsers(tokens), config: config}, nil
 }
 
-func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context, error) {
+func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit, intentID string) (*Context, error) {
 	var summary message
 	if audit.FinishReason != "stop" || len(records) != 1 || json.Unmarshal(records[0], &summary) != nil ||
 		summary.Role != "assistant" || len(summary.ToolCalls) != 0 || strings.TrimSpace(summary.Content) == "" {
@@ -211,6 +221,7 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context
 	if err != nil {
 		return nil, rejectCompaction(err.Error())
 	}
+	handoff.Origin = protocol.RecordOrigin{Kind: protocol.RecordOriginCompaction, SourceID: intentID}
 	result := &Context{messages: append(slices.Clone(p.users), handoff)}
 	if err := p.CheckReduction(result); err != nil {
 		return nil, err

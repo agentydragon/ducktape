@@ -1110,6 +1110,7 @@ async def test_chat_completions_compaction(
             SseEvent("done", b"data: [DONE]\n\n"),
         )
 
+    config.context_source_writes = True
     automatic = case in {"automatic", "overlong_input"}
     overlong = case in {"overlong_input", "context_limit"}
     config.models["test-model"] = ModelConfig(

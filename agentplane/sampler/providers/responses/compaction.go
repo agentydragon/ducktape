@@ -8,7 +8,7 @@ import (
 
 // ValidateCompaction validates provider records before the caller commits them as the active
 // context. The append-only transcript remains owned by the caller.
-func ValidateCompaction(original *Context, records []json.RawMessage, audit *Audit, events []Event) (*Context, error) {
+func ValidateCompaction(original *Context, records []json.RawMessage, audit *Audit, events []Event, intentID string) (*Context, error) {
 	if original == nil {
 		return nil, protocol.ErrInvalid
 	}
@@ -32,6 +32,7 @@ func ValidateCompaction(original *Context, records []json.RawMessage, audit *Aud
 	if item.EncryptedContent == "" {
 		return nil, knownFailure("compaction must include opaque encrypted_content")
 	}
+	item.origin = protocol.RecordOrigin{Kind: protocol.RecordOriginCompaction, SourceID: intentID}
 	compacted := []Item{item}
 	if contextBytes(compacted) >= contextBytes(original.items) {
 		return nil, knownFailure("compaction did not reduce serialized model context")

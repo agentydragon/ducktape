@@ -298,6 +298,11 @@ class Settings(BaseModel):
     direct_executor_target: str | None = None
     direct_executor_insecure_localtest: bool = False
     max_live_sessions: int = Field(gt=0)
+    context_source_writes: bool = Field(
+        default=False,
+        exclude_if=lambda value: not value,
+        description="Persist source references on sampler context records after all replicas can read them.",
+    )
     event_block_writes: bool = Field(
         default=False, exclude_if=lambda value: not value, description="Seal sampler evidence into journal blocks."
     )

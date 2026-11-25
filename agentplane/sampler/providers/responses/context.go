@@ -85,9 +85,21 @@ func (state *Context) RecordsFrom(start int) ([]json.RawMessage, error) {
 	return records, nil
 }
 
+func (state *Context) OriginAt(i int) protocol.RecordOrigin {
+	if i < 0 || i >= len(state.items) {
+		return protocol.RecordOrigin{}
+	}
+	return state.items[i].origin
+}
+
 func (state *Context) AppendRecords(records []json.RawMessage) error {
+	return state.AppendContextRecords(protocol.ContextRecords(records, protocol.RecordOrigin{}))
+}
+
+func (state *Context) AppendContextRecords(records []protocol.ContextRecord) error {
 	appended := make([]Item, 0, len(records))
-	for index, record := range records {
+	for index, sourced := range records {
+		record := sourced.Native
 		if len(bytes.TrimSpace(record)) == 0 || !bytes.HasPrefix(bytes.TrimSpace(record), []byte("{")) {
 			return fmt.Errorf("Responses record %d must be an object: %w", index+1, protocol.ErrInvalid)
 		}
@@ -98,6 +110,7 @@ func (state *Context) AppendRecords(records []json.RawMessage) error {
 		if err := validateItem(item); err != nil {
 			return fmt.Errorf("Responses record %d: %w", index+1, err)
 		}
+		item.origin = sourced.Origin
 		appended = append(appended, item)
 	}
 	candidate := make([]Item, 0, len(state.items)+len(appended))
@@ -110,29 +123,29 @@ func (state *Context) AppendRecords(records []json.RawMessage) error {
 	return nil
 }
 
-func (state *Context) AppendUser(parts []protocol.ContentPart) error {
-	return state.appendMessage("user", parts)
+func (state *Context) AppendUser(parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
+	return state.appendMessage("user", parts, origin)
 }
 
-func (state *Context) AppendNotice(parts []protocol.ContentPart) error {
-	return state.appendMessage("developer", parts)
+func (state *Context) AppendNotice(parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
+	return state.appendMessage("developer", parts, origin)
 }
 
-func (state *Context) AddEnvironment(parts []protocol.ContentPart, afterCompaction bool) error {
+func (state *Context) AddEnvironment(parts []protocol.ContentPart, afterCompaction bool, origin protocol.RecordOrigin) error {
 	if !afterCompaction {
-		return state.AppendUser(parts)
+		return state.AppendUser(parts, origin)
 	}
 	// Codex rust-v0.162.1 core/src/compact.rs places canonical context before
 	// the opaque item when the replacement contains no retained user message.
 	prefix := &Context{}
-	if err := prefix.AppendUser(parts); err != nil {
+	if err := prefix.AppendUser(parts, origin); err != nil {
 		return err
 	}
 	state.items = append(prefix.items, state.items...)
 	return nil
 }
 
-func (state *Context) appendMessage(role string, parts []protocol.ContentPart) error {
+func (state *Context) appendMessage(role string, parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
 	if len(parts) == 1 && parts[0].Type == "input_text" && len(parts[0].Raw) == 0 {
 		item, err := Message(role, parts[0].Text)
 		if err != nil {
@@ -142,7 +155,7 @@ func (state *Context) appendMessage(role string, parts []protocol.ContentPart) e
 		if err != nil {
 			return err
 		}
-		return state.AppendRecords([]json.RawMessage{encoded})
+		return state.AppendContextRecords([]protocol.ContextRecord{{Native: encoded, Origin: origin}})
 	}
 	content, err := json.Marshal(append([]protocol.ContentPart{}, parts...))
 	if err != nil {
@@ -153,12 +166,12 @@ func (state *Context) appendMessage(role string, parts []protocol.ContentPart) e
 	if err != nil {
 		return err
 	}
-	return state.AppendRecords([]json.RawMessage{encoded})
+	return state.AppendContextRecords([]protocol.ContextRecord{{Native: encoded, Origin: origin}})
 }
 
 func (*Context) ChangeEffort(string) error { return nil }
 
-func (state *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart) error {
+func (state *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart, origin protocol.RecordOrigin) error {
 	if !call.HasValidShape() {
 		return fmt.Errorf("invalid tool invocation: %w", protocol.ErrInvalid)
 	}
@@ -179,7 +192,7 @@ func (state *Context) AppendToolResult(call protocol.ToolInvocation, parts []pro
 	if err != nil {
 		return err
 	}
-	return state.AppendRecords([]json.RawMessage{encoded})
+	return state.AppendContextRecords([]protocol.ContextRecord{{Native: encoded, Origin: origin}})
 }
 
 // FindCall returns a call by ID even after its first output. Responses allows asynchronous

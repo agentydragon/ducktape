@@ -239,7 +239,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 				text = lostCellCallMessage(nested)
 			}
 			output := []protocol.ContentPart{{Type: "input_text", Text: text}}
-			if err := conversation.appendToolResult(call, output); err != nil {
+			if err := conversation.appendToolResult(call, output, protocol.RecordOrigin{}); err != nil {
 				return err
 			}
 			encoded, err := json.Marshal(output)
@@ -269,7 +269,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 				notice += " Calls abandoned with unknown outcome: " + strings.Join(names, ", ") + "."
 			}
 			if err := conversation.apply(func(state protocol.Context) error {
-				return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
+				return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}, protocol.RecordOrigin{})
 			}); err != nil {
 				return err
 			}
@@ -299,7 +299,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 				"abandoned_cells", len(abandonedCells), "abandoned_processes", len(abandonedProcesses), "previous_instance", previous.String, "instance", instanceID)
 		}
 		if changed {
-			return updateConversation(ctx, tx, conversation)
+			return s.updateConversation(ctx, tx, conversation)
 		}
 		return nil
 	})
@@ -501,7 +501,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 				message = "Tool call rejected before dispatch: " + rejectionReason + ". No runtime or executor operation was dispatched for this call."
 			}
 			output := []protocol.ContentPart{{Type: "input_text", Text: message}}
-			if err := conversation.appendToolResult(call, output); err != nil {
+			if err := conversation.appendToolResult(call, output, protocol.RecordOrigin{}); err != nil {
 				return err
 			}
 			encoded, err := json.Marshal(output)
@@ -522,7 +522,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 			notice = "An operator abandoned an interrupted provider response after reviewing its retained request and stream evidence. The provider may have completed or charged for the request; its completion and external effects are unknown. The observed stream prefix was not committed as model output, and no sampler tool call from this response was dispatched. The response will not be replayed. Continue from the last committed conversation after new user input. This recovery starts a fresh JavaScript session; prior store()/load() values are unavailable."
 		}
 		if err := conversation.apply(func(state protocol.Context) error {
-			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
+			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}, protocol.RecordOrigin{})
 		}); err != nil {
 			return err
 		}
@@ -556,7 +556,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 		}
 		conversation.Pending = nil
 		conversation.Stopped = false
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_conversation SET generation=generation+1,code_session_epoch=code_session_epoch+1,
@@ -674,7 +674,7 @@ func (s *Store) rebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 		if replacementSessionID != "" {
 			conversation.ExecutorSession = &replacementSessionID
 			conversation.ExecutorShell = shell
-			return updateConversation(ctx, tx, conversation)
+			return s.updateConversation(ctx, tx, conversation)
 		}
 		return nil
 	})
@@ -752,12 +752,12 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, conversat
 				return err
 			}
 		} else if err := conversation.apply(func(state protocol.Context) error {
-			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
+			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}, protocol.RecordOrigin{})
 		}); err != nil {
 			return err
 		}
 	}
-	return updateConversation(ctx, tx, conversation)
+	return s.updateConversation(ctx, tx, conversation)
 }
 
 func (s *Store) checkRecovery(ctx context.Context, tx *sql.Tx, owner Owner) error {

@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
 
@@ -152,7 +153,7 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 				}
 				return content
 			}
-			store := newTestStore(t)
+			store, dsn := newTestStoreWithDSN(t)
 			today := time.Date(2026, 1, 2, 12, 0, 0, 0, time.Local)
 			store.now = func() time.Time { return today }
 			session, err := openStoreSession(t, store, &sessionconfig.Configuration{
@@ -174,6 +175,10 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 				t.Fatalf("initial environment records: %s err=%v", initial, err)
 			}
 			checkEnvironment(initial[0], "/fixture", "2026-01-02", "bash")
+			initialOrigin := original.Context().OriginAt(0)
+			if initialOrigin.Kind != protocol.RecordOriginEnvironment || initialOrigin.ObjectID == "" || initialOrigin.Projection != "" {
+				t.Fatal("initial environment has no full environment object")
+			}
 			intent, _, err := store.BeginCompaction(ctx, owner, IntentPayload{Kind: PendingIntentCompaction}, original.Context(), nil, providerAttemptTestPolicy())
 			if err != nil {
 				t.Fatal(err)
@@ -220,6 +225,9 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 			if err := store.FinishCompaction(ctx, owner, intent, audit, original.Context(), replacement, nil); err != nil {
 				t.Fatal(err)
 			}
+			store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
+			store.contextSourceWrites = true
+			store.now = func() time.Time { return today }
 			// Read the persisted roots and check that an unchanged next step adds no
 			// second environment message.
 			prepared, err := store.PrepareSamplingContext(ctx, owner, nil)
@@ -235,6 +243,26 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 			}
 			if content := checkEnvironment(got[tc.envIndex], "/fixture", "2026-01-03", "zsh"); strings.Contains(content, "bash") {
 				t.Fatalf("replacement environment contains the old shell: %s", content)
+			}
+			activeOrigin := prepared.Context().OriginAt(tc.envIndex)
+			transcriptIndex := original.Transcript.RecordCount()
+			transcriptOrigin := prepared.Transcript.OriginAt(transcriptIndex)
+			if activeOrigin.Kind != protocol.RecordOriginEnvironment || activeOrigin.ObjectID == "" ||
+				activeOrigin.ObjectID == initialOrigin.ObjectID || activeOrigin.Projection != "" ||
+				transcriptOrigin.ObjectID != activeOrigin.ObjectID ||
+				transcriptOrigin.Kind != activeOrigin.Kind || transcriptOrigin.Projection != protocol.RecordProjectionEnvironmentDiff {
+				t.Fatal("full and diff projections did not share the same durable environment update")
+			}
+			object, err := store.ReadRecordObject(ctx, owner, false, tc.envIndex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			environment := object.(EnvironmentUpdateObject)
+			if environment.SessionID != session.ID || environment.Before == nil || environment.Before.CurrentDate != "2026-01-02" ||
+				environment.Before.Shell == nil || *environment.Before.Shell != "bash" ||
+				environment.After.Cwd != "/fixture" || environment.After.CurrentDate != "2026-01-03" ||
+				environment.After.Shell == nil || *environment.After.Shell != "zsh" {
+				t.Fatalf("compaction environment update lost its actual before/after state: %+v", environment)
 			}
 			for i, original := range tc.records {
 				index := i
@@ -260,6 +288,15 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 				t.Fatalf("next environment update records=%s err=%v", updated, err)
 			}
 			checkEnvironment(updated[len(got)], "2026-01-04")
+			dateOrigin := update.Context().OriginAt(len(got))
+			if dateOrigin.Kind != protocol.RecordOriginEnvironment || dateOrigin.ObjectID == "" ||
+				dateOrigin.ObjectID == activeOrigin.ObjectID || dateOrigin.Projection != protocol.RecordProjectionEnvironmentDiff {
+				t.Fatal("the next environment update lost its origin")
+			}
+			object, err = store.ReadRecordObject(ctx, owner, true, transcriptIndex)
+			if err != nil || object.(EnvironmentUpdateObject).After.CurrentDate != "2026-01-03" {
+				t.Fatalf("later updates changed the historical environment object: object=%+v err=%v", object, err)
+			}
 			for i, record := range got {
 				if !sameJSONValue(updated[i], record) {
 					t.Fatalf("ordinary replay changed an existing record at index %d", i)

@@ -72,7 +72,7 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, live *li
 	if err != nil {
 		return err
 	}
-	replacement, err := plan.Apply(result)
+	replacement, err := plan.Apply(result, intentID)
 	if err != nil {
 		return r.providerFailure(ctx, owner, session, intentID, err)
 	}

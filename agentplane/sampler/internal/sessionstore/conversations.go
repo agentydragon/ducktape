@@ -29,7 +29,7 @@ func (s *Store) Create(ctx context.Context, api protocol.APIStyle, prompt string
 	if err != nil {
 		return "", err
 	}
-	if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}); err != nil {
+	if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}, protocol.RecordOrigin{}); err != nil {
 		return "", err
 	}
 	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
@@ -37,7 +37,7 @@ func (s *Store) Create(ctx context.Context, api protocol.APIStyle, prompt string
    executor_session,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,$2,NULL,$3)`, id, nullableString(instructions), api); err != nil {
 			return err
 		}
-		return updateConversation(ctx, tx, &Conversation{ID: id, API: api, Transcript: transcript})
+		return s.updateConversation(ctx, tx, &Conversation{ID: id, API: api, Transcript: transcript})
 	})
 	return id, err
 }
@@ -85,8 +85,8 @@ func (s *Store) pgError(err error) error {
 	return err
 }
 
-func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
-	if err := checkpointConversationContexts(ctx, tx, conversation); err != nil {
+func (s *Store) updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
+	if err := s.checkpointConversationContexts(ctx, tx, conversation); err != nil {
 		return err
 	}
 	var activeControl any
@@ -113,9 +113,9 @@ func updateConversation(ctx context.Context, tx *sql.Tx, conversation *Conversat
 	return err
 }
 
-func checkpointConversationContexts(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
+func (s *Store) checkpointConversationContexts(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
 	store := newContentDB(ctx, tx)
-	transcriptID, err := conversation.storeContext(store, conversation.Transcript)
+	transcriptID, err := conversation.storeContext(store, conversation.Transcript, s.contextSourceWrites)
 	if err != nil {
 		return err
 	}
@@ -126,7 +126,7 @@ func checkpointConversationContexts(ctx context.Context, tx *sql.Tx, conversatio
 	var activeControl []byte
 	var activeID string
 	if conversation.ActiveContext != nil {
-		activeID, err = conversation.storeContext(store, conversation.ActiveContext)
+		activeID, err = conversation.storeContext(store, conversation.ActiveContext, s.contextSourceWrites)
 		if err != nil {
 			return err
 		}

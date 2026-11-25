@@ -78,7 +78,7 @@ func TestCompactionFailureDiagnosticsKeepTransientEvents(t *testing.T) {
 	}
 	events := []json.RawMessage{json.RawMessage(`{"type":"message_start","provider_event_marker":"fixture"}`)}
 	plan := &CompactionPlan{original: &Context{}}
-	_, err := plan.Apply(nil, audit, events)
+	_, err := plan.Apply(nil, audit, events, "fixture-compaction")
 	var known *protocol.KnownFailureError
 	if !errors.As(err, &known) {
 		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
@@ -93,22 +93,29 @@ func TestCompactionFailureDiagnosticsKeepTransientEvents(t *testing.T) {
 
 func TestSuccessfulCompactionAuditKeepsReplacementWithoutEvents(t *testing.T) {
 	original := &Context{}
-	if err := original.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("original context ", 40)}}); err != nil {
+	if err := original.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("original context ", 40)}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	plan := &CompactionPlan{original: original}
+	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, ObjectID: "session-fixture"}
+	if err := original.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "kept environment"}}, false, origin); err != nil {
+		t.Fatal(err)
+	}
+	plan := &CompactionPlan{original: original, cut: 1}
 	audit := &Audit{
 		Response:   json.RawMessage(`{"id":"msg_fixture","usage":{"input_tokens":11,"output_tokens":6,"provider_usage":{"cache":3}},"provider_metadata":{"opaque_sequence":9007199254740993}}`),
 		HTTPStatus: 200, ProviderRequestID: "req_fixture",
 	}
 	events := []json.RawMessage{json.RawMessage(`{"type":"message_start","provider_event_marker":"fixture"}`)}
 	records := []json.RawMessage{json.RawMessage(`{"id":"msg_compacted","type":"message","role":"assistant","content":[{"type":"compaction","content":"summary","signature":"sig_fixture"}],"stop_reason":"compaction"}`)}
-	replacement, err := plan.Apply(records, audit, events)
+	replacement, err := plan.Apply(records, audit, events, "fixture-compaction")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if audit.Replacement != replacement {
 		t.Fatal("successful compaction did not retain its replacement context in the audit")
+	}
+	if replacement.OriginAt(1) != origin || replacement.OriginAt(0) != (protocol.RecordOrigin{Kind: protocol.RecordOriginCompaction, SourceID: "fixture-compaction"}) {
+		t.Fatal("retained environment lost its origin at the replacement ordinal")
 	}
 	got := string(wirefixture.MustMarshalJSON(t, audit))
 	if strings.Contains(got, `"events"`) {
@@ -128,12 +135,12 @@ func TestBuildAnthropicRequestConvertsImagesAndConfiguresCacheAndEffort(t *testi
 		t.Fatal(err)
 	}
 	image := json.RawMessage(`{"type":"input_image","image_url":"data:image/png;base64,aGVsbG8="}`)
-	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}); err != nil {
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	restoredEffort := "high"
 	conversation.PendingEffort = &restoredEffort
-	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "next turn"}}); err != nil {
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "next turn"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	body, err := testBuildRequest(RequestParams{Context: conversation, Effort: "high"}, config, "msg_previous")
@@ -238,7 +245,7 @@ func TestAnthropicHistoryObservationsUseNativeBlockIdentity(t *testing.T) {
 
 func TestBuildAnthropicRequestAcceptsStoredTextMessage(t *testing.T) {
 	conversation := &Context{}
-	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "stored conversation text"}}); err != nil {
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "stored conversation text"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	body, err := testBuildRequest(RequestParams{Context: conversation}, testConfig(), "")
@@ -314,13 +321,13 @@ func TestAnthropicContextUsesNativeRecordsForToolCallsAndResults(t *testing.T) {
 	if err != nil || len(records) != 1 {
 		t.Fatalf("tool call created a duplicate canonical record: records=%d err=%v", len(records), err)
 	}
-	if err := context.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "done"}}); err != nil {
+	if err := context.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "done"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := context.CheckSettled(); err != nil {
 		t.Fatalf("tool result did not settle the call: %v", err)
 	}
-	if err := context.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "later"}}); err != nil {
+	if err := context.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "later"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	records, err = context.Records()
@@ -355,7 +362,7 @@ func TestAnthropicPendingEffortRestoresAfterNewUserAndPreservesSignedPrefix(t *t
 	thinking := json.RawMessage(`{"type":"thinking","thinking":"keep this signed prefix","signature":"sig_fixture","unknown_block_field":{"keep":true}}`)
 	message := json.RawMessage(`{"id":"msg_signed","type":"message","role":"assistant","content":[` + string(thinking) + `],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":5,"unknown_usage":17},"provider_unknown":{"keep":"yes"}}`)
 	effort := "high"
-	context := &Context{messages: []json.RawMessage{message}, PendingEffort: &effort}
+	context := &Context{messages: []protocol.ContextRecord{{Native: message}}, PendingEffort: &effort}
 	wire, err := json.Marshal(context)
 	if err != nil {
 		t.Fatal(err)
@@ -367,21 +374,21 @@ func TestAnthropicPendingEffortRestoresAfterNewUserAndPreservesSignedPrefix(t *t
 	if restored.PendingEffort == nil || *restored.PendingEffort != "high" {
 		t.Fatalf("pending effort was not persisted: %s", wire)
 	}
-	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "new turn"}}); err != nil {
+	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "new turn"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if restored.PendingEffort != nil || len(restored.messages) != 3 {
 		t.Fatalf("restoration did not activate after the user message: %+v", restored)
 	}
 	var prefix map[string]json.RawMessage
-	if err := json.Unmarshal(restored.messages[0], &prefix); err != nil {
+	if err := json.Unmarshal(restored.messages[0].Native, &prefix); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(prefix["content"], []byte(`"signature":"sig_fixture"`)) ||
 		!bytes.Contains(prefix["content"], []byte(`"unknown_block_field":{"keep":true}`)) ||
-		!bytes.Contains(restored.messages[0], []byte(`"unknown_usage":17`)) ||
-		!bytes.Contains(restored.messages[0], []byte(`"provider_unknown":{"keep":"yes"}`)) {
-		t.Fatalf("signed prefix or provider metadata changed: %s", restored.messages[0])
+		!bytes.Contains(restored.messages[0].Native, []byte(`"unknown_usage":17`)) ||
+		!bytes.Contains(restored.messages[0].Native, []byte(`"provider_unknown":{"keep":"yes"}`)) {
+		t.Fatalf("signed prefix or provider metadata changed: %s", restored.messages[0].Native)
 	}
 	var control struct {
 		Role         string `json:"role"`
@@ -390,7 +397,7 @@ func TestAnthropicPendingEffortRestoresAfterNewUserAndPreservesSignedPrefix(t *t
 			Effort string `json:"effort"`
 		} `json:"output_config"`
 	}
-	if err := json.Unmarshal(restored.messages[2], &control); err != nil {
+	if err := json.Unmarshal(restored.messages[2].Native, &control); err != nil {
 		t.Fatal(err)
 	}
 	if control.Role != "system" || len(control.Content) != 0 || control.OutputConfig.Effort != "high" {
@@ -621,7 +628,7 @@ func TestAnthropicRequestWireBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	image := json.RawMessage(`{"type":"input_image","image_url":"data:image/png;base64,aGVsbG8="}`)
-	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}); err != nil {
+	if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "inspect this"}, {Type: "input_image", Raw: image}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := conversation.AppendRecords([]json.RawMessage{json.RawMessage(`{"id":"msg_tool","type":"message","role":"assistant","content":[{"type":"tool_use","id":"call_wire","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`)}); err != nil {
@@ -631,12 +638,12 @@ func TestAnthropicRequestWireBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := conversation.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "1"}}); err != nil {
+	if err := conversation.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "1"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	for index, text := range []string{"first answer", "second answer"} {
 		if index > 0 {
-			if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "again"}}); err != nil {
+			if err := conversation.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "again"}}, protocol.RecordOrigin{}); err != nil {
 				t.Fatal(err)
 			}
 		}

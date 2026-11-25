@@ -110,13 +110,13 @@ func TestStreamingToolCallsAndReplay(t *testing.T) {
 	if err != nil || len(calls) != 2 || calls[0].CallID != "a" || calls[0].Input != `{"code":"return 3"}` || calls[1].CallID != "b" {
 		t.Fatalf("unexpected pending calls: %+v, %v", calls, err)
 	}
-	if err := c.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "3"}}); err != nil {
+	if err := c.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "3"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.AppendToolResult(calls[1], []protocol.ContentPart{{Type: "input_image"}}); err != nil {
+	if err := c.AppendToolResult(calls[1], []protocol.ContentPart{{Type: "input_image"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "updated output"}}); err != nil {
+	if err := c.AppendToolResult(calls[0], []protocol.ContentPart{{Type: "input_text", Text: "updated output"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	records, err := c.Records()
@@ -265,11 +265,11 @@ func TestCompactionKeepsOnlyRecentUsers(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if replacement, err := plan.Apply([]json.RawMessage{raw}, Audit{FinishReason: bad.finish}); err == nil || replacement != nil {
+		if replacement, err := plan.Apply([]json.RawMessage{raw}, Audit{FinishReason: bad.finish}, "fixture-compaction"); err == nil || replacement != nil {
 			t.Fatalf("invalid summary was accepted with finish reason %q", bad.finish)
 		}
 	}
-	result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","reasoning_content":"summary reasoning","content":"useful summary"}`)}, Audit{FinishReason: "stop"})
+	result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","reasoning_content":"summary reasoning","content":"useful summary"}`)}, Audit{FinishReason: "stop"}, "fixture-compaction")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestSecondCompactionReplacesPriorHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"useful summary"}`)}, Audit{FinishReason: "stop"})
+	result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"useful summary"}`)}, Audit{FinishReason: "stop"}, "fixture-compaction")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,23 +321,25 @@ func TestSecondCompactionReplacesPriorHandoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	restored := &Context{}
-	if err := restored.AppendRecords(records); err != nil {
+	items := protocol.ContextRecords(records, protocol.RecordOrigin{})
+	items[len(items)-1].Origin = result.OriginAt(len(items) - 1)
+	if err := restored.AppendContextRecords(items); err != nil {
 		t.Fatal(err)
 	}
 	if restored.CanCompact(config.RecentTokenBudget()) {
 		t.Fatal("reloaded user summary triggered compaction by itself")
 	}
-	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("new work ", 100)}}); err != nil {
+	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("new work ", 100)}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "newest request"}}); err != nil {
+	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "newest request"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	next, err := restored.PrepareCompaction(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement, err := next.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"updated summary"}`)}, Audit{FinishReason: "stop"})
+	replacement, err := next.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"updated summary"}`)}, Audit{FinishReason: "stop"}, "fixture-compaction")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,13 +357,13 @@ func TestCompactionPreservesAuthorshipAcrossRestore(t *testing.T) {
 	state := &Context{}
 	const identical = "<environment_context>\n  <cwd>/fixture</cwd>\n</environment_context>"
 	parts := []protocol.ContentPart{{Type: "input_text", Text: identical}}
-	if err := state.AppendUser(parts); err != nil {
+	if err := state.AppendUser(parts, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AddEnvironment(parts, false); err != nil {
+	if err := state.AddEnvironment(parts, false, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AddEnvironment(parts, true); err != nil {
+	if err := state.AddEnvironment(parts, true, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	records, err := state.Records()
@@ -396,11 +398,11 @@ func TestCompactionPreservesAuthorshipAcrossRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"updated summary"}`)}, Audit{FinishReason: "stop"})
+	result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"updated summary"}`)}, Audit{FinishReason: "stop"}, "fixture-compaction")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "refreshed environment"}}, true); err != nil {
+	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "refreshed environment"}}, true, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := plan.CheckReduction(result); err != nil {
@@ -411,7 +413,7 @@ func TestCompactionPreservesAuthorshipAcrossRestore(t *testing.T) {
 		result.messages[0].Content != identical || !result.messages[0].isAuthoredUser() {
 		t.Fatal("compaction must retain the authored message and refresh the generated environment")
 	}
-	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("expanded environment ", 100)}}, true); err != nil {
+	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("expanded environment ", 100)}}, true, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := plan.CheckReduction(result); err == nil {
@@ -423,7 +425,7 @@ func TestCompactionTruncatesOversizeUserWithinBudget(t *testing.T) {
 	user := "HEAD " + strings.Repeat("🧪", 100) + " TAIL"
 	for _, budget := range []int{9, 13, 32} {
 		context := &Context{}
-		if err := context.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: user}}); err != nil {
+		if err := context.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: user}}, protocol.RecordOrigin{}); err != nil {
 			t.Fatal(err)
 		}
 		config := CompactionConfig{MaxTokens: 64, KeepRecentTokens: &budget}
@@ -434,7 +436,7 @@ func TestCompactionTruncatesOversizeUserWithinBudget(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"user provided input data"}`)}, Audit{FinishReason: "stop"})
+		result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"user provided input data"}`)}, Audit{FinishReason: "stop"}, "fixture-compaction")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -497,5 +499,46 @@ func TestCompactionRejectsInvalidTemplates(t *testing.T) {
 				t.Fatal("invalid compaction config accepted")
 			}
 		})
+	}
+}
+
+func TestCompactionCarriesOriginsWithRetainedMessages(t *testing.T) {
+	const legacy = "<environment_context>original user text</environment_context>"
+	const newest = "Most recent request."
+	userSource := protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: "earlier-command"}
+	recentSource := protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: "recent-command"}
+	state := &Context{messages: []message{
+		{Role: "user", Content: strings.Repeat("🧪", 200), Origin: userSource},
+		{Role: "assistant", Content: "old answer"},
+		{Role: "user", Content: legacy},
+		{Role: "user", Content: legacy, Origin: protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, ObjectID: "environment-session"}},
+		{Role: "user", Content: "A future kind", Origin: protocol.RecordOrigin{Kind: "future_origin", SourceID: "future-source"}},
+		{Role: "user", Content: newest, Origin: recentSource},
+	}}
+	budget := userMessageTokens(newest) + userMessageTokens(legacy) + 16
+	plan, err := state.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"summary"}`)}, Audit{FinishReason: "stop"}, "fixture-compaction")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.RecordCount() != 4 || !strings.Contains(candidate.messages[0].Content, userTruncationMarker) ||
+		candidate.messages[1].Content != legacy || candidate.messages[2].Content != newest {
+		t.Fatalf("unexpected retained records: %+v", candidate.messages)
+	}
+	truncatedSource := userSource
+	truncatedSource.Projection = protocol.RecordProjectionTruncated
+	want := []protocol.RecordOrigin{
+		truncatedSource, {}, recentSource, {Kind: protocol.RecordOriginCompaction, SourceID: "fixture-compaction"},
+	}
+	for index, origin := range want {
+		if got := candidate.OriginAt(index); got != origin {
+			t.Fatalf("record %d origin = %+v, want %+v", index, got, origin)
+		}
+	}
+	if state.OriginAt(0) != userSource || state.messages[0].Content != strings.Repeat("🧪", 200) {
+		t.Fatal("compaction changed the original data")
 	}
 }

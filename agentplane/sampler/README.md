@@ -85,6 +85,12 @@ enabling it. To roll back block writes, remove the setting and roll the block-ca
 again. Check sampler event follow, provider recovery, and History export checkpoints after the
 roll. Keep migration 21 and the block-capable reader as the rollback floor while blocks exist.
 
+`context_source_writes` enables sourced context entries. Deploy the reader to every sampler
+replica before enabling writes. With the setting omitted, the sampler reads both formats and
+writes bare native records. After enabling writes, keep a reader that understands sourced context
+entries as the rollback floor. Disabling writes and rolling that reader preserves existing
+entries and stops adding sources to new records.
+
 Migration 16 adds required durable provider-attempt metadata to every sampling and compaction intent.
 It preserves existing Sessions, conversations, raw evidence, and History export checkpoints, but the
 new constraint prevents an older sampler image from inserting provider intents. Staging uses its
