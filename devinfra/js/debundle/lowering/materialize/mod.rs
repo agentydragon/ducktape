@@ -1262,17 +1262,14 @@ fn project_planned_modules(
     for plan in module_plans {
         let mut anonymous_source_unit_ordinals = Vec::new();
         for statement in &plan.anonymous_statements {
-            let locations = source_unit_layout.for_statement(*statement);
-            if locations.is_empty() {
-                bail!(
-                    "source statement at body index {statement} has no checked source-unit layout"
-                );
-            }
+            let first = source_unit_layout.for_statement(*statement).next().with_context(|| {
+                format!("source statement at body index {statement} has no checked source-unit layout")
+            })?;
             // Preserve the existing assignment-assembly contract: one
             // anonymous request points at the raw statement's first ordinal.
             // The shared projection checks every source unit for that body
             // item before emission and reports any split as a blocker.
-            anonymous_source_unit_ordinals.push(locations[0].ordinal);
+            anonymous_source_unit_ordinals.push(first.ordinal);
         }
         planned_modules.push(PlannedModule {
             id: plan.id.clone(),

@@ -36,13 +36,14 @@
 
 use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write;
 
 use anyhow::{Result, bail};
 use binding_targets::{declaration_name_strings, module_export_name, public_export_name};
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use artifact::{ChunkBundle, EmissionFiles};
+use artifact::EmissionFiles;
 use js_ast::{ParsedJsModule, SourceLineIndex};
 
 /// `excluded_chunk_ids`: chunks excluded from the emission set (fully
@@ -52,13 +53,7 @@ pub fn validate_emitted_exports(
     files: &EmissionFiles,
     excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<()> {
-    validate_bundle_exports(files.files(), excluded_chunk_ids)
-}
-
-fn validate_bundle_exports(
-    artifact: &ChunkBundle,
-    excluded_chunk_ids: &BTreeSet<ChunkId>,
-) -> Result<()> {
+    let artifact = files.files();
     validate_modules(
         artifact
             .chunks
@@ -79,58 +74,34 @@ fn validate_bundle_exports(
 fn validate_modules<'a>(
     files: impl IntoIterator<Item = (&'a str, &'a str, Option<&'a ParsedJsModule>)>,
 ) -> Result<()> {
-    let mut findings: Vec<FileFinding> = Vec::new();
+    let mut details = String::new();
     for (chunk, file, ast) in files {
         let Some(ast) = ast else { continue };
         let duplicates = duplicates_in_module(&ast.module, &ast.line_index());
-        if !duplicates.is_empty() {
-            findings.push(FileFinding {
-                chunk: chunk.to_string(),
-                file: file.to_string(),
-                duplicates,
-            });
+        if duplicates.is_empty() {
+            continue;
+        }
+        writeln!(details, "\n  chunk {chunk} file {file}:")?;
+        for (name, sites) in duplicates {
+            writeln!(
+                details,
+                "    `{name}` exported {}× at {}",
+                sites.len(),
+                render_sites(&sites)
+            )?;
         }
     }
-    if findings.is_empty() {
-        return Ok(());
-    }
-
-    let mut msg = String::from(
-        "validate_emitted_exports: emitted JS contains duplicate `export` names — \
+    if !details.is_empty() {
+        bail!(
+            "validate_emitted_exports: emitted JS contains duplicate `export` names — \
          ES module link error. Browsers and Node refuse modules with two \
          exports sharing one public name (`SyntaxError: Duplicate export of '<name>'`). \
          In Chromium this surfaces as a silent empty `pageerror` with no further \
          child-chunk loads — the page renders blank with no useful console output, \
-         which is hard to debug downstream.\n",
-    );
-    for finding in &findings {
-        msg.push_str(&format!(
-            "\n  chunk {} file {}:\n",
-            finding.chunk, finding.file,
-        ));
-        for dup in &finding.duplicates {
-            msg.push_str(&format!(
-                "    `{}` exported {}× at {}\n",
-                dup.name,
-                dup.sites.len(),
-                render_sites(&dup.sites),
-            ));
-        }
+         which is hard to debug downstream.\n{details}"
+        );
     }
-    bail!(msg);
-}
-
-#[derive(Debug, Clone)]
-struct FileFinding {
-    chunk: String,
-    file: String,
-    duplicates: Vec<DuplicateExport>,
-}
-
-#[derive(Debug, Clone)]
-struct DuplicateExport {
-    name: String,
-    sites: Vec<ExportSite>,
+    Ok(())
 }
 
 /// Which AST shape contributed an export. Helps the reader distinguish
@@ -161,7 +132,10 @@ fn render_sites(sites: &[ExportSite]) -> String {
         .join(", ")
 }
 
-fn duplicates_in_module(module: &Module, lines: &SourceLineIndex) -> Vec<DuplicateExport> {
+fn duplicates_in_module(
+    module: &Module,
+    lines: &SourceLineIndex,
+) -> BTreeMap<String, Vec<ExportSite>> {
     let mut sites: BTreeMap<String, Vec<ExportSite>> = BTreeMap::new();
     for item in &module.body {
         let ModuleItem::ModuleDecl(decl) = item else {
@@ -169,11 +143,8 @@ fn duplicates_in_module(module: &Module, lines: &SourceLineIndex) -> Vec<Duplica
         };
         record_decl(decl, lines, &mut sites);
     }
+    sites.retain(|_, occurrences| occurrences.len() > 1);
     sites
-        .into_iter()
-        .filter(|(_, s)| s.len() > 1)
-        .map(|(name, sites)| DuplicateExport { name, sites })
-        .collect()
 }
 
 fn record_decl(
@@ -269,12 +240,7 @@ mod tests {
         let ast = parse_js_module("f.js", source).unwrap();
         duplicates_in_module(&ast.module, &ast.line_index())
             .into_iter()
-            .map(|dup| {
-                (
-                    dup.name,
-                    dup.sites.into_iter().map(|site| site.shape).collect(),
-                )
-            })
+            .map(|(name, sites)| (name, sites.into_iter().map(|site| site.shape).collect()))
             .collect()
     }
 

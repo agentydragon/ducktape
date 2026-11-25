@@ -283,12 +283,15 @@ impl SourceUnitLayout {
                 declarator_offset: location.declarator_offset,
             };
             layout.by_ordinal.insert(row.ordinal, row.source_unit);
+            layout.by_id.insert(row.source_unit, row);
+        }
+        // Index each statement's units in source order, independent of graph row order.
+        for id in layout.by_ordinal.values() {
             layout
                 .by_statement
-                .entry(row.statement)
+                .entry(layout.by_id[id].statement)
                 .or_default()
-                .push(row.source_unit);
-            layout.by_id.insert(row.source_unit, row);
+                .push(*id);
         }
         layout
     }
@@ -307,16 +310,16 @@ impl SourceUnitLayout {
         self.by_id.get(&source_unit)
     }
 
-    pub fn for_statement(&self, statement: StatementId) -> Vec<&SourceUnitLocation> {
-        let mut locations: Vec<_> = self
-            .by_statement
+    pub fn for_statement(
+        &self,
+        statement: StatementId,
+    ) -> impl ExactSizeIterator<Item = &SourceUnitLocation> {
+        self.by_statement
             .get(&statement)
-            .into_iter()
-            .flatten()
-            .filter_map(|source_unit| self.by_id.get(source_unit))
-            .collect();
-        locations.sort_by_key(|location| location.ordinal);
-        locations
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .map(|id| &self.by_id[id])
     }
 
     pub fn issues(&self) -> &[SourceUnitLayoutIssue] {
@@ -538,11 +541,6 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
         ]);
     }
 
-    let graph_units_by_id: BTreeMap<_, _> = input
-        .graph
-        .iter_nodes()
-        .map(|unit| (unit.id, unit))
-        .collect();
     for unit in input.graph.iter_nodes() {
         let Some(location) = input.layout.by_source_unit(unit.id) else {
             continue;
@@ -639,7 +637,7 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
             );
             continue;
         }
-        let Some(unit) = graph_units_by_id.get(&location.source_unit).copied() else {
+        let Some(unit) = input.graph.node(location.source_unit) else {
             violations.push(
                 PlacementProjectionViolation::DeclaratorGroupLocationMismatch {
                     group: group.clone(),
