@@ -7,7 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
-func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *ExecutionState) (*Conversation, error) {
+func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner) (*Conversation, error) {
 	var conversation *Conversation
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
@@ -22,7 +22,7 @@ func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *
 		if err != nil {
 			return err
 		}
-		if err := s.applySamplingContext(ctx, tx, conversation, session, state); err != nil {
+		if err := s.applySamplingContext(ctx, tx, conversation, session); err != nil {
 			return err
 		}
 		return s.updateConversation(ctx, tx, conversation)
@@ -30,12 +30,9 @@ func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *
 	return conversation, err
 }
 
-func (s *Store) applySamplingContext(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session, state *ExecutionState) error {
+func (s *Store) applySamplingContext(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session) error {
 	objects := newContentDB(ctx, tx)
 	if err := s.recordEnvironmentContext(objects, conversation, session, false); err != nil {
-		return err
-	}
-	if err := s.appendExecutionState(objects, conversation, state.protocolState()); err != nil {
 		return err
 	}
 	return objects.Save()

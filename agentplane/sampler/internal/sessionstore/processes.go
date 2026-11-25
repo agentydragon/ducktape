@@ -275,45 +275,53 @@ func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, stat
 }
 
 func (s *Store) ExecutionState(ctx context.Context, owner Owner) (*ExecutionState, error) {
-	state := &ExecutionState{}
+	var state *ExecutionState
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
 			return err
 		}
-		processRows, err := tx.QueryContext(ctx, `SELECT `+processColumns+`
-			FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','abandoned')`, owner.ConversationID)
-		if err != nil {
-			return err
-		}
-		for processRows.Next() {
-			process, err := scanProcess(processRows)
-			if err != nil {
-				processRows.Close()
-				return err
-			}
-			state.Processes = append(state.Processes, *process)
-		}
-		if err := processRows.Err(); err != nil {
-			processRows.Close()
-			return err
-		}
-		processRows.Close()
-		cellRows, err := tx.QueryContext(ctx, `SELECT id,conversation_id::text,generation,status FROM sampler_cell
-			WHERE conversation_id=$1 AND status='live'`, owner.ConversationID)
-		if err != nil {
-			return err
-		}
-		defer cellRows.Close()
-		for cellRows.Next() {
-			var cell LiveCell
-			if err := cellRows.Scan(&cell.ID, &cell.ConversationID, &cell.Generation, (*cellStatus)(&cell.Status)); err != nil {
-				return err
-			}
-			state.Cells = append(state.Cells, cell)
-		}
-		return cellRows.Err()
+		var err error
+		state, err = readExecutionState(ctx, tx, owner.ConversationID)
+		return err
 	})
 	return state, err
+}
+
+// The caller holds the conversation owner lock.
+func readExecutionState(ctx context.Context, tx *sql.Tx, conversationID string) (*ExecutionState, error) {
+	state := &ExecutionState{}
+	processRows, err := tx.QueryContext(ctx, `SELECT `+processColumns+`
+		FROM sampler_process WHERE conversation_id=$1 AND status NOT IN ('exited','abandoned')`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	for processRows.Next() {
+		process, err := scanProcess(processRows)
+		if err != nil {
+			processRows.Close()
+			return nil, err
+		}
+		state.Processes = append(state.Processes, *process)
+	}
+	if err := processRows.Err(); err != nil {
+		processRows.Close()
+		return nil, err
+	}
+	processRows.Close()
+	cellRows, err := tx.QueryContext(ctx, `SELECT id,conversation_id::text,generation,status FROM sampler_cell
+		WHERE conversation_id=$1 AND status='live'`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer cellRows.Close()
+	for cellRows.Next() {
+		var cell LiveCell
+		if err := cellRows.Scan(&cell.ID, &cell.ConversationID, &cell.Generation, (*cellStatus)(&cell.Status)); err != nil {
+			return nil, err
+		}
+		state.Cells = append(state.Cells, cell)
+	}
+	return state, cellRows.Err()
 }
 
 // LiveWork counts the handles and intents that a successor on another host would block on.

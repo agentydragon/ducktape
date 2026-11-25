@@ -3,11 +3,13 @@ package residentruntime
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -156,6 +158,9 @@ func TestRuntimeCompactsWithLiveCellAndInFlightNestedTool(t *testing.T) {
 	if !bytes.Contains(compact, []byte(`"type":"compaction_trigger"`)) {
 		t.Fatalf("usage above threshold did not trigger compaction: %s", compact)
 	}
+	if bytes.Contains(compact, []byte("Active execution handles: ")) {
+		t.Fatalf("pre-compaction context contained an ordinary inventory: %s", compact)
+	}
 	close(nestedGate)
 	receiveDelegateResponse(t, peer, 9001)
 	// The yielded cell can begin and settle a second effect during compaction.
@@ -173,7 +178,7 @@ func TestRuntimeCompactsWithLiveCellAndInFlightNestedTool(t *testing.T) {
 	cellID := execute.SessionID + ":cell-1"
 	continuation := receiveProviderRequest(t, requests)
 	if !bytes.Contains(continuation, []byte("opaque-compact-summary")) ||
-		!bytes.Contains(continuation, []byte("Active execution handles: ")) ||
+		bytes.Count(continuation, []byte("Active execution handles: ")) != 1 ||
 		!bytes.Contains(continuation, []byte(cellID)) ||
 		bytes.Count(continuation, []byte("nested work completed during compaction")) != 1 {
 		t.Fatalf("first continuation lost the summary, live handle, or notification: %s", continuation)
@@ -183,11 +188,30 @@ func TestRuntimeCompactsWithLiveCellAndInFlightNestedTool(t *testing.T) {
 	completeCell(t, peer, execute.SessionID, wait.ID)
 
 	result := receiveProviderRequest(t, requests)
-	if !bytes.Contains(result, []byte(`"call_id":"wait-call"`)) ||
-		!bytes.Contains(result, []byte("done")) ||
-		!bytes.Contains(result, []byte(`{\"cells\":[]`)) ||
-		bytes.Count(result, []byte("nested work completed during compaction")) != 1 {
-		t.Fatalf("sampling after wait lost the tool result, cleared handles, or notification: %s", result)
+	input := func(wire []byte) []json.RawMessage {
+		var request struct{ Input []json.RawMessage }
+		if err := json.Unmarshal(wire, &request); err != nil {
+			t.Fatal(err)
+		}
+		return request.Input
+	}
+	before, after := input(continuation), input(result)
+	if len(after) != len(before)+2 || !slices.EqualFunc(before, after[:len(before)], func(a, b json.RawMessage) bool {
+		return bytes.Equal(a, b)
+	}) {
+		t.Fatalf("wait changed the sampled replacement prefix or added records beyond its call and result: %s", result)
+	}
+	var output struct {
+		Type   string
+		CallID string `json:"call_id"`
+		Output json.RawMessage
+	}
+	if err := json.Unmarshal(after[len(after)-1], &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Type != "function_call_output" || output.CallID != "wait-call" ||
+		!bytes.Contains(output.Output, []byte("Script completed")) || !bytes.Contains(output.Output, []byte("done")) {
+		t.Fatalf("sampling after wait omitted the linked completion: %s", result)
 	}
 	waitProviderCommandOutcome(t, store, session.ID, commandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
 	if starts := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_intent

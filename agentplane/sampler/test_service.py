@@ -229,6 +229,15 @@ async def test_session_store_survives_idle_turns_and_is_separate_between_session
 async def test_api_wait_stdin_queue_compaction_and_restart(
     endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path
 ) -> None:
+    sampled_inputs: list[list[dict[str, Any]]] = []
+
+    def record_input(body: dict[str, Any]) -> None:
+        items = body["input"]
+        if sampled_inputs:
+            previous = sampled_inputs[-1]
+            assert items[: len(previous)] == previous
+        sampled_inputs.append(items)
+
     async with service(config) as stub:
         opened = await stub.CreateSession(create_request(tmp_path), timeout=10)
         assert opened.attached.session_id == SESSION_ID
@@ -238,30 +247,38 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
         first = await stub.SubmitInput(request, timeout=10)
         assert await stub.SubmitInput(request, timeout=10) == first
         async with await endpoint.next() as exchange:
+            record_input(exchange.request.body)
             await exchange.send(
                 *response_stream(
                     [
+                        Reasoning("Start the terminal.", encrypted_content="wait-stdin-opaque-reasoning"),
                         CustomToolCall(
                             "start",
                             "exec",
                             # Only a TTY process keeps stdin open.
                             'text(await tools.exec_command({cmd: "read line; printf received:%s \\"$line\\"", '
                             "tty: true, yield_time_ms: 1}));",
-                        )
+                        ),
                     ],
                     model="test-model",
                 ).events
             )
         async with await endpoint.next() as exchange:
-            outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-            process = json.loads(outputs[-1]["output"][1]["text"])["session_id"]
+            record_input(exchange.request.body)
+            reasoning = [item for item in sampled_inputs[-1] if item["type"] == "reasoning"]
+            assert [item["encrypted_content"] for item in reasoning] == ["wait-stdin-opaque-reasoning"]
+            ((start_call, start_parts),) = tool_outputs(exchange.request.body)
+            assert start_call == "start"
+            assert start_parts[0].startswith("Script completed")
+            process = json.loads(start_parts[1])["session_id"]
+            assert isinstance(process, int)
             await exchange.send(
                 *response_stream(
                     [
                         CustomToolCall(
                             "stdin",
                             "exec",
-                            '// @exec: {"yield_time_ms": 1}\ntext(await tools.write_stdin('
+                            "yield_control(); text(await tools.write_stdin("
                             + json.dumps({"session_id": process, "chars": "hello\n", "yield_time_ms": 1000})
                             + "));",
                         )
@@ -270,18 +287,24 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
                 ).events
             )
         async with await endpoint.next() as exchange:
-            outputs = [item for item in exchange.request.body["input"] if item["type"] == "custom_tool_call_output"]
-            match = re.search(r"cell ID ([A-Za-z0-9_:-]+)", str(outputs[-1]))
-            if match is not None:
-                await exchange.send(
-                    *response_stream(
-                        [FunctionCall("wait", "wait", {"cell_id": match[1], "yield_time_ms": 1000})], model="test-model"
-                    ).events
-                )
-            else:
-                pytest.fail("script did not yield a JS cell")
+            record_input(exchange.request.body)
+            stdin_call, stdin_parts = tool_outputs(exchange.request.body)[-1]
+            assert stdin_call == "stdin"
+            match = re.match(r"Script running with cell ID (\S+)\n", stdin_parts[0])
+            assert match is not None, stdin_parts
+            await exchange.send(
+                *response_stream(
+                    [FunctionCall("wait", "wait", {"cell_id": match[1], "yield_time_ms": 10000})], model="test-model"
+                ).events
+            )
         async with await endpoint.next() as exchange:
-            assert "received:hello" in json.dumps(exchange.request.body)
+            record_input(exchange.request.body)
+            wait_call, wait_parts = tool_outputs(exchange.request.body)[-1]
+            assert wait_call == "wait"
+            assert wait_parts[0].startswith("Script completed")
+            completed = json.loads(wait_parts[1])
+            assert "received:hello" in completed["output"]
+            assert completed["exit_code"] == 0
             # Input admitted while the provider is held steers the running turn.
             queued = await submit_input(
                 stub, session_id=SESSION_ID, command_id="queued", text="Also mention the steering input.", timeout_s=10
@@ -289,6 +312,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
             assert queued.admission.cursor > first.admission.cursor
             await exchange.send(*response_stream([Message("first answer")], model="test-model").events)
         async with await endpoint.next() as exchange:
+            record_input(exchange.request.body)
             # Pending input keeps a turn whose model already answered; it follows that answer once.
             body_input = exchange.request.body["input"]
             steering = [
@@ -305,6 +329,9 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
             assert answer < steering[0]
             await exchange.send(*response_stream([Message("first complete")], model="test-model").events)
         assert (await turn_completed(stub, SESSION_ID, "first")).status == event_pb2.TURN_STATUS_COMPLETED
+        # Cumulative counts in the actual requests, including the first and post-wait samples.
+        snapshot_counts = [json.dumps(items).count("Active execution handles: ") for items in sampled_inputs]
+        assert snapshot_counts == [0, 0, 0, 0, 0]
         steered = await stub.admin.GetCommand(
             sampler_admin_pb2.GetCommandRequest(session_id=SESSION_ID, command_id="queued"), timeout=10
         )
@@ -338,7 +365,12 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
         assert await stub.SubmitInput(request, timeout=10) == first
         await submit_input(stub, session_id=SESSION_ID, command_id="after", text="After compaction", timeout_s=10)
         async with await endpoint.next() as exchange:
-            assert any(item.get("encrypted_content") == "test-opaque" for item in exchange.request.body["input"])
+            items = exchange.request.body["input"]
+            assert any(item.get("encrypted_content") == "test-opaque" for item in items)
+            inventories = [item for item in items if "Active execution handles: " in str(item.get("content"))]
+            assert len(inventories) == 1
+            assert inventories[0]["role"] == "developer"
+            assert 'Active execution handles: {"cells":[],"processes":[]}' in str(inventories[0]["content"])
             await exchange.send(*response_stream([Message("resumed")], model="test-model").events)
         await turn_completed(stub, SESSION_ID, "after")
     events = await store.events(SESSION_ID, 0, limit=10000)
@@ -1474,6 +1506,7 @@ async def test_notify_outputs_follow_the_step_that_emitted_them(
             assert wait_parts[0].startswith("Script completed")
             assert wait_parts[1:] == ["done"]
             assert notification == ("yielded", ["late"])
+            assert "Active execution handles: " not in json.dumps(exchange.request.body["input"])
             await exchange.send(*response_stream([Message("notified")], model="test-model").events)
         assert (await turn_completed(stub, request.session_id, "notify")).status == event_pb2.TURN_STATUS_COMPLETED
 
@@ -1608,6 +1641,10 @@ async def test_input_yields_a_running_cell_and_joins_the_turn(
                 ).events
             )
         async with await endpoint.next() as exchange:
+            stop_call, stop_parts = tool_outputs(exchange.request.body)[-1]
+            assert stop_call == "stop"
+            assert stop_parts[0].startswith("Script terminated")
+            assert "Active execution handles: " not in json.dumps(exchange.request.body["input"])
             await exchange.send(*response_stream([Message("steered")], model="test-model").events)
         assert (await turn_completed(stub, request.session_id, "steered")).status == event_pb2.TURN_STATUS_COMPLETED
         steer = await stub.admin.GetCommand(

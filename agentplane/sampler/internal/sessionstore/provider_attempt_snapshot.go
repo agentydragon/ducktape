@@ -21,7 +21,7 @@ type ProviderAttemptSnapshot struct {
 
 // BeginPreparedSampling commits the sampling context and the provider intent together.
 // source is the Conversation previously read by the caller and remains unchanged.
-func (s *Store) BeginPreparedSampling(ctx context.Context, owner Owner, source *Conversation, state *ExecutionState,
+func (s *Store) BeginPreparedSampling(ctx context.Context, owner Owner, source *Conversation,
 	request IntentPayload, preparation *providerrequest.Preparation, policy ProviderAttemptPolicy,
 ) (string, []byte, *ProviderAttemptSnapshot, error) {
 	if source == nil || request.Kind != PendingIntentSampling || request.ProviderRequest == nil || preparation == nil || policy.validate() != nil {
@@ -47,7 +47,7 @@ func (s *Store) BeginPreparedSampling(ctx context.Context, owner Owner, source *
 		if err != nil {
 			return err
 		}
-		if err := s.applySamplingContext(ctx, tx, conversation, session, state); err != nil {
+		if err := s.applySamplingContext(ctx, tx, conversation, session); err != nil {
 			return err
 		}
 		// Request projection needs durable context references for the just-appended records.

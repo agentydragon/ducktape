@@ -129,10 +129,6 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	if err := r.store.CheckLiveCells(ctx, owner, live != nil); err != nil {
 		return "", err
 	}
-	state, err := r.store.ExecutionState(ctx, owner)
-	if err != nil {
-		return "", err
-	}
 	if live != nil {
 		if err := live.code.Err(); err != nil {
 			return "", err
@@ -240,7 +236,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 		return sessionstore.TurnCompact, nil
 	}
 	if frontier != nil && frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
-		conversation, err = r.store.PrepareSamplingContext(ctx, owner, state)
+		conversation, err = r.store.PrepareSamplingContext(ctx, owner)
 		if err != nil {
 			return "", &deferredProviderError{cause: err}
 		}
@@ -261,7 +257,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	var wire []byte
 	var snapshot *sessionstore.ProviderAttemptSnapshot
 	if frontier == nil {
-		intentID, wire, snapshot, err = r.store.BeginPreparedSampling(ctx, owner, conversation, state, request, preparation, policy)
+		intentID, wire, snapshot, err = r.store.BeginPreparedSampling(ctx, owner, conversation, request, preparation, policy)
 	} else if frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
 		intentID, wire, err = r.store.BeginSamplingAfterHostLoss(ctx, owner, session.ID, frontier.IntentID, request, preparation, policy)
 	} else {

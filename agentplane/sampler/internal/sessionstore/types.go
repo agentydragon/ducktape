@@ -438,20 +438,6 @@ func (InterruptPendingError) Error() string {
 	return "an interrupt is pending; the next dispatch is blocked"
 }
 
-func (state *ExecutionState) protocolState() *protocol.ExecutionState {
-	if state == nil {
-		return nil
-	}
-	result := &protocol.ExecutionState{}
-	for _, cell := range state.Cells {
-		result.Cells = append(result.Cells, protocol.ActiveCell{ID: cell.ID, Status: cell.Status})
-	}
-	for _, process := range state.Processes {
-		result.Processes = append(result.Processes, protocol.ActiveProcess{ModelSessionID: process.ModelSessionID, Status: process.Status, TTY: process.TTY, ExitCode: process.ExitCode})
-	}
-	return result
-}
-
 var (
 	ErrConflict  = errors.New("resource conflicts with an existing request")
 	ErrForbidden = errors.New("resource belongs to another account")

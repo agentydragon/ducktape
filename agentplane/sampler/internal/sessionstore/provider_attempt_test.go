@@ -61,7 +61,7 @@ func admitProviderCommand(t *testing.T, store *Store, owner Owner, sessionID, co
 	if err != nil || command == nil || command.ID != commandID {
 		t.Fatalf("next provider command=%v err=%v", command, err)
 	}
-	if _, err := store.PrepareSamplingContext(t.Context(), owner, &ExecutionState{}); err != nil {
+	if _, err := store.PrepareSamplingContext(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
 }
