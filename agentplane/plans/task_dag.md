@@ -1439,27 +1439,25 @@ placement of a mid-conversation system message. Repeat through LiteLLM’s Respo
 Messages bridges with their native reasoning items; the old stock route accepted both but
 showed no prompt-token increase. Budget for the larger prompts; any omission at compaction is a separate policy.
 
-### `CENTRAL_SAMPLER_OBSOLETE_HANDLE_NOTICES` — bound execution-state overhead in model input
+### `CENTRAL_SAMPLER_REDUNDANT_HANDLE_NOTICES` — avoid inserting redundant execution-state notices
 
-**Open.** A tool-heavy Responses session showed repeated developer notices for handles going
-live and clearing. The [snapshot writer](../sampler/internal/sessionstore/execution_context.go)
-already suppresses an unchanged state. The problem is that each _change_ appends a full
-inventory: start a cell, finish it, start another, and the next request still carries the
-superseded inventories in its active prefix. Sharing that prefix in PostgreSQL saves storage,
-not model context. The JS host's per-execute `enabled_tools` catalog is separate; the
-[model tool description](../sampler/internal/toolcontract/sampler_tools.go) uses the built-ins.
+**Open.** In the pinned [Codex CLI yield/wait request trace](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/tests/suite/snapshots/all__suite__scenarios__code_mode_catalog_messages.snap),
+the tool results tell the model which cell yielded and when it completed. In the same cycle,
+the sampler's [snapshot writer](../sampler/internal/sessionstore/execution_context.go) can also
+append a developer message listing the live cell and another showing an empty inventory.
+Decide whether a notice conveys additional information **before** the model samples.
 
-In the pinned [Codex CLI yield/wait request trace](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/tests/suite/snapshots/all__suite__scenarios__code_mode_catalog_messages.snap),
-the tool results already tell the model which cell yielded and when it completed. That ordinary
-cycle adds no separate live or empty inventory. Compare that path before adding reminders;
-explicit cell notifications and restoring state after compaction serve different purposes.
+Once an OpenAI model has sampled against a prefix, preserve it exactly when continuing with
+its encrypted reasoning. A notice that was true when sampled remains part of that prefix:
+do not delete, replace, coalesce or reorder it when handle state changes. If a model needs
+new information, append it. A provider-supported compaction establishes a new context and
+may require a fresh authoritative baseline.
 
-**Exit:** exercise repeated yield, wait and completion cycles and inspect actual serialized
-provider requests before and after the fix. Report snapshot count and input bytes or tokens,
-including the trade-off with provider prefix caching. Bound the cost of obsolete state while
-keeping current handles usable and preserving exact historical request replay. Test a clear
-and a fresh baseline after compaction or recovery; never identify sampler notices by matching
-user-authored text.
+**Exit:** inspect serialized requests across yield, wait and completion. Count notices avoided
+at insertion and the resulting input bytes or tokens. Demonstrate that ordinary tool results
+suffice, while a change learned outside a tool result and recovery into a new context still
+communicate the state needed to continue. Include an encrypted reasoning item and verify
+that subsequent requests preserve the previously sampled items and their order exactly.
 
 ### `CENTRAL_SAMPLER_COMPACTION_TIMELINE` — show when the sampler compacts context
 
