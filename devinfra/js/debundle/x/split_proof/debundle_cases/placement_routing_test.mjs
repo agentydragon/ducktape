@@ -51,9 +51,9 @@ assert.deepEqual(
   placement.units.map(({ ordinal, owner }) => [ordinal, owner]),
   [
     [0, "scene/shape"],
-    [1, "rest"],
+    [1, null],
     [2, "tail"],
-    [3, "rest"],
+    [3, null],
     [4, null],
     [5, null],
   ]
