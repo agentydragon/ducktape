@@ -3,7 +3,6 @@
 import asyncio
 import time
 from collections.abc import AsyncIterator
-from typing import Any
 from uuid import UUID, uuid4
 
 import grpc
@@ -19,7 +18,6 @@ from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispa
 from agentplane.system_tests.driver.session_spec import environment_session_spec
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.driver.turn import TURN_SECONDS, Turn, TurnCollector
-from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 
 
 class Session:
@@ -97,13 +95,6 @@ class Session:
         command_id = f"input-{uuid4().hex[:8]}"
         await self.submit_input(command_id, prompt)
         return await self.next_turn(awaiting_command_id=command_id)
-
-    async def run_shell(self, model: ScriptedModel[Any], command: str) -> Turn:
-        async with asyncio.TaskGroup() as turns:
-            turn = turns.create_task(self.run(f"Run: {command}"))
-            await model.reply(await model.request(), ShellCall(call_id=f"call-{uuid4().hex[:8]}", command=command))
-            await model.reply(await model.request(), Text("Done."))
-        return turn.result()
 
     async def next_turn(self, *, awaiting_command_id: str | None = None) -> Turn:
         collector = TurnCollector(

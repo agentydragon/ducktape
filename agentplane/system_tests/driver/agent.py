@@ -32,7 +32,7 @@ from agentplane.system_tests.driver.scripted_turn import drive_scripted_turn
 from agentplane.system_tests.driver.session_spec import environment_session_spec
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.driver.turn import TURN_SECONDS, Turn, TurnCollector
-from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
+from agentplane.testing.scripted_model import ModelRequest, ScriptedModel
 
 # The runner's writable volume; the image's workspace is not writable by the runner's user.
 WORKING_DIRECTORY = "/state/work"
@@ -141,14 +141,6 @@ class Agent:
             self._target = await self._dispatcher.session_target(str(self._thread_id))
         sandbox, sandbox_uid = self._target
         return await self._dispatcher.submit_input(str(self._thread_id), command_id, sandbox, sandbox_uid, text)
-
-    async def run_shell(self, model: ScriptedModel[Any], command: str) -> Turn:
-        """A turn in which the scripted `model` runs `command` in the Sandbox's shell, then answers."""
-        async with asyncio.TaskGroup() as turns:
-            turn = turns.create_task(self.run(f"Run: {command}"))
-            await model.reply(await model.request(), ShellCall(call_id=f"call-{uuid4().hex[:8]}", command=command))
-            await model.reply(await model.request(), Text("Done."))
-        return turn.result()
 
     async def next_turn(self, *, awaiting_command_id: str | None = None) -> Turn:
         """Collect the next turn after the last one collected, whatever started it: an inbox notice

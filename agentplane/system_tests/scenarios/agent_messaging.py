@@ -79,7 +79,7 @@ def _shell(command: str) -> ShellCall:
 
 async def _follow(agent: Agent, model: ScriptedModel[Any], message_id: str) -> notifications_pb2.Message:
     """The sender's own view of its message."""
-    turn = await agent.run_shell(model, f"agentplane --json notifications message {message_id}")
+    turn = await model.run_shell(agent.run, f"agentplane --json notifications message {message_id}")
     return _parsed(turn.tool_outputs[-1], notifications_pb2.Message())
 
 
@@ -129,7 +129,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
     with tracer.start_as_current_span(
         "system_test.agent_messaging.send", record_exception=False, set_status_on_exception=False
     ):
-        sending = await sender_agent.run_shell(sender_model, send)
+        sending = await sender_model.run_shell(sender_agent.run, send)
         sent = _parsed(sending.tool_outputs[-1], notifications_pb2.Message())
     assert sent.session_id == str(recipient_agent.thread_id), sending.transcript
     assert "destination_ref" not in sending.tool_outputs[-1], sending.transcript

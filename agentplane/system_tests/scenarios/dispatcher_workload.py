@@ -69,7 +69,8 @@ async def sandbox_cli_denies_create_but_lists_its_identity_session(
         )
     )
 
-    turn = await agent.run_shell(scripted.model(view.kubernetes_diagnostics.pod.name, harness), command)
+    model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
+    turn = await model.run_shell(agent.run, command)
     outputs = [line for line in "\n".join(turn.tool_outputs).splitlines() if line.strip()]
     assert len(outputs) == 2, f"expected create refusal and list JSON outputs, got {turn.tool_outputs!r}"
     refused_create = json.loads(outputs[0])
