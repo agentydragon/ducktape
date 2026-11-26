@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -60,7 +61,6 @@ type repackStorage struct {
 	first, last uint64
 	block       bool
 	payload     []byte
-	storedBytes int
 }
 
 type repackEntry struct {
@@ -71,19 +71,11 @@ type repackEntry struct {
 	packable       bool
 }
 
-type repackOutput struct {
-	first, last uint64
-	block       bool
-	payload     []byte
-	frames      [][]byte
-}
-
 type repackPlan struct {
 	sources []repackStorage
-	outputs []repackOutput
+	outputs []repackStorage
 	state   journalRepackState
 	result  JournalCompactionResult
-	hasMore bool
 }
 
 // ListJournalSessions lists all retained Sessions in keyset order, including inactive Sessions.
@@ -141,20 +133,10 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 		if err := waitForJournalPause(ctx, options.PauseFile); err != nil {
 			return result, err
 		}
-		completedBatch := false
-		for attempt := 0; attempt <= options.ContentionRetries; attempt++ {
+		for attempt := 0; ; attempt++ {
 			plan, err := s.prepareJournalRepack(ctx, sessionID, state)
 			if err != nil {
 				return result, err
-			}
-			if plan.state.through <= state.through && plan.hasMore {
-				if attempt < options.ContentionRetries {
-					if err := waitJournalRetry(ctx, options.RetryDelay); err != nil {
-						return result, err
-					}
-					continue
-				}
-				return result, fmt.Errorf("journal repack made no progress after cursor %d", state.through)
 			}
 			if apply {
 				hold, err := s.applyJournalRepack(ctx, sessionID, state, plan)
@@ -178,11 +160,7 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 			result.StoredBytes += plan.result.StoredBytes
 			result.PackedBytes += plan.result.PackedBytes
 			result.Batches++
-			completedBatch = true
 			break
-		}
-		if !completedBatch {
-			return result, ErrJournalBusy
 		}
 		if state.through >= state.opening {
 			result.Completed = true
@@ -280,7 +258,8 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 		var previous uint64
 		for rows.Next() {
 			var source repackStorage
-			if err := rows.Scan(&source.first, &source.last, &source.payload, &source.block, &source.storedBytes); err != nil {
+			var storedBytes int
+			if err := rows.Scan(&source.first, &source.last, &source.payload, &source.block, &storedBytes); err != nil {
 				return err
 			}
 			if len(sources) >= journalRepackBatchEntries {
@@ -295,9 +274,9 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 			if count > eventblock.MaxEntries {
 				return fmt.Errorf("journal storage span %d–%d exceeds codec limit", source.first, source.last)
 			}
-			if source.storedBytes > journalRepackStoredBytes || source.payload == nil {
+			if storedBytes > journalRepackStoredBytes || source.payload == nil {
 				if len(sources) == 0 {
-					return fmt.Errorf("unsupported journal payload of %d stored bytes at cursor %d", source.storedBytes, source.first)
+					return fmt.Errorf("unsupported journal payload of %d stored bytes at cursor %d", storedBytes, source.first)
 				}
 				hasMore = true
 				break
@@ -361,37 +340,26 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 	if len(sources) == 0 {
 		return repackPlan{state: journalRepackState{opening: state.opening, through: state.opening}}, nil
 	}
-	outputs, resolvedThrough, err := repackJournalEntries(entries, hasMore, state.opening, s.eventBlockProfile)
+	outputs, err := repackJournalEntries(entries, hasMore, state.opening, s.eventBlockProfile)
 	if err != nil {
 		return repackPlan{}, err
-	}
-	if hasMore && resolvedThrough <= state.through {
-		// The physical batch can end before the profile target (for example, when
-		// stored bytes bound a page). Flush that bounded tail so the in-memory cursor
-		// can make progress without rescanning the same prefix during this pass.
-		outputs, resolvedThrough, err = repackJournalEntries(entries, false, state.opening, s.eventBlockProfile)
-		if err != nil {
-			return repackPlan{}, err
-		}
-	}
-	if !hasMore {
-		resolvedThrough = state.opening
-	} else if resolvedThrough > state.opening {
-		resolvedThrough = state.opening
 	}
 	if err := validateJournalRepackCoverage(entries, outputs); err != nil {
 		return repackPlan{}, err
 	}
-	if resolvedThrough < state.through || (resolvedThrough == state.through && hasMore) {
-		return repackPlan{}, fmt.Errorf("journal repack made no progress after cursor %d", state.through)
+	// Every selected source is covered, including an unsealed tail returned as
+	// standalone rows. The final page may end in a gap before the opening cursor.
+	through := state.opening
+	if hasMore {
+		through = min(sources[len(sources)-1].last, state.opening)
 	}
 	plan := repackPlan{
 		sources: sources, outputs: outputs,
-		state: journalRepackState{opening: state.opening, through: resolvedThrough}, hasMore: hasMore,
+		state: journalRepackState{opening: state.opening, through: through},
 	}
 	plan.result.Events = int64(len(entries))
 	for _, source := range sources {
-		plan.result.StoredBytes += int64(source.storedBytes)
+		plan.result.StoredBytes += int64(len(source.payload))
 	}
 	for _, output := range outputs {
 		if output.block {
@@ -442,21 +410,19 @@ func decodeRepackSource(source repackStorage) ([]repackEntry, error) {
 	return entries, nil
 }
 
-func repackJournalEntries(entries []repackEntry, hasMore bool, opening uint64, profile eventblock.Profile) ([]repackOutput, uint64, error) {
+func repackJournalEntries(entries []repackEntry, hasMore bool, opening uint64, profile eventblock.Profile) ([]repackStorage, error) {
 	packer, err := eventblock.NewPacker(profile)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	var outputs []repackOutput
-	var resolved uint64
+	var outputs []repackStorage
 	for start := 0; start < len(entries); {
 		if !entries[start].packable {
 			entry := entries[start]
-			outputs = append(outputs, repackOutput{
+			outputs = append(outputs, repackStorage{
 				first: entry.sequence, last: entry.sequence,
 				payload: bytes.Clone(entry.standaloneWire),
 			})
-			resolved = entry.sequence
 			start++
 			continue
 		}
@@ -466,76 +432,52 @@ func repackJournalEntries(entries []repackEntry, hasMore bool, opening uint64, p
 		}
 		flushTail := end < len(entries) || !hasMore
 		stream := entries[start:end]
+		frames := make([][]byte, len(stream))
+		for i := range stream {
+			frames[i] = stream[i].frame
+		}
 		for offset := 0; offset < len(stream); {
-			frames := make([][]byte, len(stream)-offset)
-			for i := range frames {
-				frames[i] = stream[offset+i].frame
-			}
-			cut := packer.Next(frames, flushTail)
+			cut := packer.Next(frames[offset:], flushTail)
+			count := cut.N
 			switch cut.Decision {
 			case eventblock.NeedMore:
-				for _, entry := range stream[offset:] {
-					payload, err := standaloneJournalPayload(entry)
-					if err != nil {
-						return nil, 0, err
-					}
-					outputs = append(outputs, repackOutput{first: entry.sequence, last: entry.sequence, payload: payload})
-				}
-				resolved = stream[len(stream)-1].sequence
-				offset = len(stream)
+				// Keep the bounded, unsealed tail as standalone rows.
+				count = len(stream) - offset
 			case eventblock.Standalone:
-				entry := stream[offset]
-				payload, err := standaloneJournalPayload(entry)
-				if err != nil {
-					return nil, 0, err
-				}
-				outputs = append(outputs, repackOutput{first: entry.sequence, last: entry.sequence, payload: payload})
-				resolved = entry.sequence
-				offset += cut.N
+				// The frame exceeds the block size limit.
 			case eventblock.Seal:
-				selected := stream[offset : offset+cut.N]
-				selectedFrames := frames[:cut.N]
-				payload, err := packer.Encode(selectedFrames)
+				selected := stream[offset : offset+count]
+				payload, err := packer.Encode(frames[offset : offset+count])
 				if err != nil {
-					return nil, 0, err
-				}
-				decoded, err := eventblock.Decode(payload)
-				if err != nil {
-					return nil, 0, fmt.Errorf("verify prepared event block: %w", err)
-				}
-				if len(decoded) != len(selectedFrames) {
-					return nil, 0, fmt.Errorf("prepared event block contains %d frames, wanted %d", len(decoded), len(selectedFrames))
-				}
-				for i := range decoded {
-					if !bytes.Equal(decoded[i], selectedFrames[i]) {
-						return nil, 0, fmt.Errorf("prepared event block changed frame at cursor %d", selected[i].sequence)
-					}
+					return nil, err
 				}
 				baseline := 0
 				for _, entry := range selected {
 					baseline += entry.storedCost
 				}
-				first, last := selected[0].sequence, selected[len(selected)-1].sequence
 				if len(payload) <= baseline {
-					outputs = append(outputs, repackOutput{first: first, last: last, block: true, payload: payload, frames: selectedFrames})
-				} else {
-					for _, entry := range selected {
-						standalone, err := standaloneJournalPayload(entry)
-						if err != nil {
-							return nil, 0, err
-						}
-						outputs = append(outputs, repackOutput{first: entry.sequence, last: entry.sequence, payload: standalone})
-					}
+					outputs = append(outputs, repackStorage{
+						first: selected[0].sequence, last: selected[count-1].sequence,
+						block: true, payload: payload,
+					})
+					offset += count
+					continue
 				}
-				resolved = last
-				offset += cut.N
 			default:
-				return nil, 0, fmt.Errorf("unknown event block decision %d", cut.Decision)
+				return nil, fmt.Errorf("unknown event block decision %d", cut.Decision)
 			}
+			for _, entry := range stream[offset : offset+count] {
+				payload, err := standaloneJournalPayload(entry)
+				if err != nil {
+					return nil, err
+				}
+				outputs = append(outputs, repackStorage{first: entry.sequence, last: entry.sequence, payload: payload})
+			}
+			offset += count
 		}
 		start = end
 	}
-	return outputs, resolved, nil
+	return outputs, nil
 }
 
 func standaloneJournalPayload(entry repackEntry) ([]byte, error) {
@@ -545,7 +487,7 @@ func standaloneJournalPayload(entry repackEntry) ([]byte, error) {
 	return eventcodec.Encode(entry.frame)
 }
 
-func validateJournalRepackCoverage(entries []repackEntry, outputs []repackOutput) error {
+func validateJournalRepackCoverage(entries []repackEntry, outputs []repackStorage) error {
 	entryIndex := 0
 	for _, output := range outputs {
 		if output.first > output.last {
@@ -553,9 +495,6 @@ func validateJournalRepackCoverage(entries []repackEntry, outputs []repackOutput
 		}
 		count := int(output.last - output.first + 1)
 		if output.block {
-			if len(output.frames) != count {
-				return fmt.Errorf("prepared block %d–%d has %d frames", output.first, output.last, len(output.frames))
-			}
 			decoded, err := eventblock.Decode(output.payload)
 			if err != nil {
 				return fmt.Errorf("verify output block %d–%d: %w", output.first, output.last, err)
@@ -593,25 +532,18 @@ func validateJournalRepackCoverage(entries []repackEntry, outputs []repackOutput
 }
 
 func (s *Store) applyJournalRepack(ctx context.Context, sessionID string, previous journalRepackState, plan repackPlan) (time.Duration, error) {
-	hold, err := s.withJournalSessionLock(ctx, sessionID, func(tx *sql.Tx, cursor uint64) error {
+	return s.withJournalSessionLock(ctx, sessionID, func(tx *sql.Tx, cursor uint64) error {
 		if cursor < previous.opening {
 			return errors.New("sampler Session cursor regressed below repack opening watermark")
 		}
 		if err := compareJournalSources(ctx, tx, sessionID, previous, plan.sources); err != nil {
 			return err
 		}
-		identical, err := sameJournalStorage(plan.sources, plan.outputs)
-		if err != nil {
-			return err
+		if slices.EqualFunc(plan.sources, plan.outputs, repackStorage.equal) {
+			return nil
 		}
-		if !identical {
-			if err := replaceJournalStorage(ctx, tx, sessionID, plan.sources, plan.outputs); err != nil {
-				return err
-			}
-		}
-		return nil
+		return replaceJournalStorage(ctx, tx, sessionID, plan.sources, plan.outputs)
 	})
-	return hold, err
 }
 
 // Batch verification and replacement use the same inclusive cursor range.
@@ -645,8 +577,7 @@ func compareJournalSources(ctx context.Context, tx *sql.Tx, sessionID string, st
 		if index >= len(expected) {
 			return ErrJournalBatchChanged
 		}
-		want := expected[index]
-		if actual.first != want.first || actual.last != want.last || actual.block != want.block || !bytes.Equal(actual.payload, want.payload) {
+		if !actual.equal(expected[index]) {
 			return ErrJournalBatchChanged
 		}
 		index++
@@ -660,20 +591,11 @@ func compareJournalSources(ctx context.Context, tx *sql.Tx, sessionID string, st
 	return nil
 }
 
-func sameJournalStorage(sources []repackStorage, outputs []repackOutput) (bool, error) {
-	if len(sources) != len(outputs) {
-		return false, nil
-	}
-	for i, source := range sources {
-		output := outputs[i]
-		if source.first != output.first || source.last != output.last || source.block != output.block || !bytes.Equal(source.payload, output.payload) {
-			return false, nil
-		}
-	}
-	return true, nil
+func (row repackStorage) equal(other repackStorage) bool {
+	return row.first == other.first && row.last == other.last && row.block == other.block && bytes.Equal(row.payload, other.payload)
 }
 
-func replaceJournalStorage(ctx context.Context, tx *sql.Tx, sessionID string, sources []repackStorage, outputs []repackOutput) error {
+func replaceJournalStorage(ctx context.Context, tx *sql.Tx, sessionID string, sources []repackStorage, outputs []repackStorage) error {
 	if len(sources) > 0 {
 		first, last := sources[0].first, sources[len(sources)-1].last
 		var rawCount, blockCount int64
@@ -713,8 +635,8 @@ func replaceJournalStorage(ctx context.Context, tx *sql.Tx, sessionID string, so
 	return insertRepackOutputs(ctx, tx, sessionID, outputs, false)
 }
 
-func insertRepackOutputs(ctx context.Context, tx *sql.Tx, sessionID string, outputs []repackOutput, blocks bool) error {
-	var selected []repackOutput
+func insertRepackOutputs(ctx context.Context, tx *sql.Tx, sessionID string, outputs []repackStorage, blocks bool) error {
+	var selected []repackStorage
 	for _, output := range outputs {
 		if output.block == blocks {
 			selected = append(selected, output)
