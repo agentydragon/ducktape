@@ -108,6 +108,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	c.ServiceReaders = []string{peertls.NotificationsURI}
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
 	c.PolicyNamespace = policyNamespace
+	c.PolicyService = servePolicyService(t, ca, serving)
 	cluster := deps{Kube: kubeConfig}
 	configure(&c, &cluster)
 	db := postgres.Open(t, c.DatabaseURL)
