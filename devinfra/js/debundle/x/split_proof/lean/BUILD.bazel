@@ -435,6 +435,47 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "corejs_resolved_placement",
+    srcs = ["EsmSplit/CoreJS/ResolvedPlacement.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_linked_input",
+        ":planner",
+    ],
+)
+
+lean_binary(
+    name = "resolved_placement_test_runner",
+    testonly = True,
+    srcs = ["ResolvedPlacementTest.lean"],
+    entry = "ResolvedPlacementTest.lean",
+    deps = [
+        ":corejs_checked_split",
+        ":corejs_resolved_placement",
+    ],
+)
+
+sh_test(
+    name = "resolved_placement_test",
+    srcs = ["checked_split_test.sh"],
+    args = ["$(rlocationpath :resolved_placement_test_runner)"],
+    data = [":resolved_placement_test_runner"],
+    use_bash_launcher = True,
+)
+
+lean_axiom_test(
+    name = "resolved_placement_axioms_test",
+    imports = ["EsmSplit.CoreJS.ResolvedPlacement"],
+    theorems = [
+        "CoreJS.ResolvedPlacement.dense_compatible",
+        "CoreJS.ResolvedPlacement.dense_sound",
+        "CoreJS.ResolvedPlacement.resolve",
+        "CoreJS.ResolvedPlacement.resolve_sound",
+    ],
+    deps = [":corejs_resolved_placement"],
+)
+
 lean_binary(
     name = "checked_split_test_runner",
     testonly = True,
