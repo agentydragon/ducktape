@@ -14,11 +14,11 @@ use super::statement_facts::{
 };
 use super::*;
 use crate::facts::binding_effect_coverage::SavedBindingEffectCoverage;
-use crate::purity::saved::{PurityNodeId, PuritySnapshot, RestoredPurities};
 use analysis_vocabulary::report_schema::saved::{
     SavedExecutionPrecisionLoss, SavedLocalRecordFactoryRejection, SavedLocalRecordFactoryUse,
     SavedNativeOperationInputUse, SavedReentryFreeOperationUse,
 };
+use purity::saved::{PurityNodeId, PuritySnapshot, RestoredPurities};
 
 fn snapshot_bindings(
     bindings: &BTreeSet<Id>,

@@ -36,19 +36,11 @@ use property_keys::{
 
 use super::namespace_wrapper::NamespaceWrapperCandidate;
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
-use analysis::facts::callable_inference::CallableInferenceInputs;
+use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
 use analysis::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
-use analysis::facts::semantic_inference::{
-    DescriptorCopyCallCandidate as SemanticDescriptorCopyCallCandidate, NativeBindingContext,
-    NativeCallee, NativePremises, SemanticFacts, SemanticRules, native_premise,
-};
 use analysis::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness,
-};
-use analysis::facts::{
-    LocalClassConstructionProof, LocalClassConstructionShapes,
-    OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
 };
 use analysis_domain::builtins::{self, IntrinsicOp, Invocation, Row};
 use analysis_domain::integrity::{IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites};
@@ -78,6 +70,15 @@ use local_constructors::LocalConstructor;
 use patterns::{
     collect_pattern_assignments, iterated_defaults, pattern_iterates, pattern_iterates_part,
     pattern_loses_values, pattern_source,
+};
+use purity::callable_inference::CallableInferenceInputs;
+use purity::semantic_inference::{
+    DescriptorCopyCallCandidate as SemanticDescriptorCopyCallCandidate, NativeBindingContext,
+    NativeCallee, NativePremises, SemanticFacts, SemanticRules, native_premise,
+};
+use purity::{
+    LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableShapes,
+    StableArraySpreadShapes,
 };
 use source_identity::SourceUnitOrdinal;
 use spec::ReentryFreeOperation;

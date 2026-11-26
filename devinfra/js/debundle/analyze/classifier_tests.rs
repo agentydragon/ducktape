@@ -1,11 +1,11 @@
-use analysis::purity::classifier::classify_class_static_purity;
-use analysis::purity::classifier::classify_expr_purity;
-use analysis::purity::classifier::classify_var_decl_purity;
 use analysis_domain::item_views::TopLevelItemView;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::effect::CoerceSite;
 use analysis_vocabulary::effect::Effect;
 use analysis_vocabulary::effect::InvokeSite;
+use purity::classifier::classify_class_static_purity;
+use purity::classifier::classify_expr_purity;
+use purity::classifier::classify_var_decl_purity;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Decl;
 use swc_ecma_ast::Expr;
@@ -13,17 +13,15 @@ use swc_ecma_ast::Module;
 use swc_ecma_ast::ModuleItem;
 use swc_ecma_ast::Stmt;
 
-use analysis::facts::{
-    LocalClassConstructionProof, SetIterableProof, StructuralChunkAnalysis,
-    analyze_chunk_structural,
-};
-use analysis::purity::heap::{ChunkHeap, plain_array_bindings};
-use analysis::purity::*;
+use analysis::facts::{StructuralChunkAnalysis, analyze_chunk_structural};
 use analysis_domain::allocation_roots::tracked_allocation_roots;
 use analysis_domain::dynamic_scope::DynamicScopeFact;
 use analysis_domain::item_views::{compute_shadowed_globals, top_level_item_views};
 use analysis_vocabulary::inputs::{ProofDependencies, ValueInputRef};
 use analysis_vocabulary::purity::{Effects, Purity};
+use purity::heap::{ChunkHeap, plain_array_bindings};
+use purity::*;
+use purity::{LocalClassConstructionProof, SetIterableProof};
 use swc_common::{FileName, sync::Lrc};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 use value_flow::ChunkValueFlow;
@@ -115,19 +113,10 @@ fn graph_with_conditioned_set_proof(
         .bindings;
     let plain_arrays = plain_array_bindings(&views, &shadowed);
     let dynamic_scope = DynamicScopeFact::analyze(&views);
-    let set_shapes = analysis::facts::SetIterableShapes::analyze(
-        &views,
-        &shadowed,
-        &flow,
-        &plain_data,
-        dynamic_scope,
-    );
-    let class_shapes = analysis::facts::LocalClassConstructionShapes::analyze(
-        &views,
-        &shadowed,
-        &flow,
-        dynamic_scope,
-    );
+    let set_shapes =
+        purity::SetIterableShapes::analyze(&views, &shadowed, &flow, &plain_data, dynamic_scope);
+    let class_shapes =
+        purity::LocalClassConstructionShapes::analyze(&views, &shadowed, &flow, dynamic_scope);
     let prepared = sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index(
         &views,
         &flow,
@@ -1620,7 +1609,7 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
         .bindings;
     let plain_arrays = plain_array_bindings(&views, &shadowed);
     let dependencies = value_input_dependencies("static/provider.js", 2);
-    let class_shapes = analysis::facts::LocalClassConstructionShapes::analyze(
+    let class_shapes = purity::LocalClassConstructionShapes::analyze(
         &views,
         &shadowed,
         &flow,
@@ -1638,7 +1627,7 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
         },
         &plain_arrays,
         &class_shapes,
-        analysis::facts::SetIterableShapes::default(),
+        purity::SetIterableShapes::default(),
         &shadowed,
     );
     let class_proof = prepared.local_class_construction_proof();

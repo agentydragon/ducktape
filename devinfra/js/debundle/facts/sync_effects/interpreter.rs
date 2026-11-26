@@ -44,18 +44,12 @@ use analysis::facts::binding_effect_coverage::{
 };
 use analysis::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
 use analysis::facts::local_effect_targets::MetadataDecorateCall;
-use analysis::facts::semantic_inference::{
-    NativePremise, SemanticKey, names_intrinsic, native_premise,
-};
 use analysis::facts::source_unit_read_closure::SourceUnitReadClosure;
 use analysis::facts::statement_facts::{
     CallbackFactoryUseFact, HeapContentCells, ReturnedRecordUseFact, StatementFacts,
     SynchronousCalls,
 };
-use analysis::facts::{
-    DataflowOpacityCause, EffectCell, NativeIterableOperandOrigin, SetIterableProof,
-};
-use analysis::purity::ChunkCodeGraph;
+use analysis::facts::{DataflowOpacityCause, EffectCell};
 use analysis_domain::builtins::Mutation;
 use analysis_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
@@ -91,6 +85,9 @@ use kernel::context::{ControlContext, IndexReads};
 use kernel::continuation::LocalContinuation;
 use kernel::driver;
 use kernel::frame::{LocalExecutionAttempt, LocalFrame, RemainderDisposition, SelectedValue};
+use purity::ChunkCodeGraph;
+use purity::semantic_inference::{NativePremise, SemanticKey, names_intrinsic, native_premise};
+use purity::{NativeIterableOperandOrigin, SetIterableProof};
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};

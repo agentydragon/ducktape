@@ -21,14 +21,14 @@ use analysis::facts::statement_facts::DataflowOpacityCause;
 use analysis::facts::statement_facts::StatementFacts;
 use analysis::facts::statement_facts::StructuralChunkAnalysis;
 use analysis::facts::statement_facts::StructuralStatementFacts;
-use analysis::purity::code_graph::ChunkCodeGraph;
-use analysis::purity::redundant_hints::detect_redundant_pure_member_hints;
-use analysis::purity::redundant_hints::detect_redundant_purity_hints;
 use analysis_vocabulary::execution_evidence::SourceLocator;
 use analysis_vocabulary::inputs::AnalysisInputs;
 use analysis_vocabulary::inputs::LocalEffectPolicy;
 use analysis_vocabulary::inputs::ValidatedNativeOperationFacts;
 use analysis_vocabulary::purity::Purity;
+use purity::code_graph::ChunkCodeGraph;
+use purity::redundant_hints::detect_redundant_pure_member_hints;
+use purity::redundant_hints::detect_redundant_purity_hints;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use swc_ecma_ast::{Id, Module, ModuleItem};
@@ -104,7 +104,7 @@ fn analyze_chunk_with_policy_and_sync(
         per_statement,
         top_level_await,
     } = structural;
-    let plain_array_bindings = analysis::purity::heap::plain_array_bindings(&body, &shadowed);
+    let plain_array_bindings = purity::heap::plain_array_bindings(&body, &shadowed);
     let mut prepared_sync_index =
         sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index_with_source_facts(
             &body,
@@ -179,7 +179,7 @@ fn analyze_chunk_with_policy_and_sync(
         })
         .cloned()
         .collect();
-    let fresh_record_destructuring = analysis::purity::FreshRecordDestructuringContext {
+    let fresh_record_destructuring = purity::FreshRecordDestructuringContext {
         flow: &value_flow,
         dynamic_scope,
         rebindings: &rebindings,

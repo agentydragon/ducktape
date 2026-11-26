@@ -1,6 +1,6 @@
 //! Constructors whose direct allocation runs no unproven code.
 
-use analysis::facts::LocalClassConstructionShapes;
+use purity::LocalClassConstructionShapes;
 use std::collections::BTreeSet;
 use swc_ecma_ast::*;
 use value_model::static_property_name;

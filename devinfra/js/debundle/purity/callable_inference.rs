@@ -1,6 +1,6 @@
 //! Callable conclusions composed from canonical identity and body candidates.
 
-use crate::facts::semantic_inference::{NativeCallee, NativePremises, SemanticFact, SemanticKey};
+use crate::semantic_inference::{NativeCallee, NativePremises, SemanticFact, SemanticKey};
 use analysis_domain::builtins::Row;
 use analysis_domain::integrity::IntrinsicSlot;
 use analysis_vocabulary::inputs::NativeIntrinsic;
@@ -30,7 +30,7 @@ pub struct CallableInferenceInputs {
 }
 
 impl CallableInferenceInputs {
-    pub(crate) fn keys(&self) -> Vec<SemanticKey> {
+    pub fn keys(&self) -> Vec<SemanticKey> {
         let mut keys = Vec::new();
         for (binding, facts) in &self.functions {
             for value in facts.values.iter() {
@@ -58,7 +58,7 @@ impl CallableInferenceInputs {
 
     /// Source candidates identify possible bodies. Only a required identity
     /// judgment and the candidate's native premises can certify one.
-    pub(crate) fn evaluate(
+    pub fn evaluate(
         &self,
         key: &SemanticKey,
         context: &mut impl CertificateContext<SemanticKey, SemanticFact>,

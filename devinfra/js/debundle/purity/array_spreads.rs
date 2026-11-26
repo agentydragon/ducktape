@@ -9,19 +9,19 @@ use source_identity::SourceUnitOrdinal;
 
 #[derive(Debug, Clone)]
 pub struct StableArraySpreadShape {
-    pub(crate) consumer: SourceUnitOrdinal,
-    pub(crate) producers: BTreeSet<SourceUnitOrdinal>,
+    pub consumer: SourceUnitOrdinal,
+    pub producers: BTreeSet<SourceUnitOrdinal>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct StableArraySpreadShapes {
     pub by_initializer: BTreeMap<u32, StableArraySpreadShape>,
-    pub(crate) by_site: BTreeMap<u32, u32>,
-    pub(crate) source_origins: BTreeMap<u32, u32>,
+    pub by_site: BTreeMap<u32, u32>,
+    pub source_origins: BTreeMap<u32, u32>,
 }
 
 impl StableArraySpreadShapes {
-    pub(crate) fn collect(original: &[ModuleItem], body: &[TopLevelItemView<'_>]) -> Self {
+    pub fn collect(original: &[ModuleItem], body: &[TopLevelItemView<'_>]) -> Self {
         let ordinals: BTreeMap<_, _> = body
             .iter()
             .enumerate()

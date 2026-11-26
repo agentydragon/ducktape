@@ -1,6 +1,6 @@
 //! Program-level cross-module function-purity oracle.
 //!
-//! The per-chunk purity classifier ([`analysis::purity::ChunkCodeGraph`])
+//! The per-chunk purity classifier ([`purity::ChunkCodeGraph`])
 //! treats a call to an imported binding as `unknown_call` — it cannot see
 //! into the other module's body. On a real app bundle that is the dominant
 //! impurity (every `memo(fn)` / `forwardRef(fn)` factory wrap), and via the
@@ -21,7 +21,7 @@
 //!
 //! `Pure` here also means order-free for the importer: a body that reads its
 //! module's state, or an import a provider can rebind, gets an
-//! `OrderDependentRead` effect (`analysis::purity::OrderDependentCells`),
+//! `OrderDependentRead` effect (`purity::OrderDependentCells`),
 //! because no importer's dependency graph orders that read against the
 //! state's writers.
 //!
@@ -54,11 +54,11 @@ use analysis_vocabulary::inputs::{
     SelectedNativeOperationInput,
 };
 
-use analysis::purity::{ChunkCodeGraph, PurityEffectRules, PurityMode};
 use analysis_domain::item_views::{TopLevelItemView, top_level_item_views};
 use analysis_vocabulary::purity::Purity;
 use analysis_vocabulary::value::Value;
 use inference::{FactContext, IterativeInference, IterativeRules};
+use purity::{ChunkCodeGraph, PurityEffectRules, PurityMode};
 use sync_effects::execution_index::callable_capabilities::{
     InferredCallableCapabilities, PreparedCallableCapabilities,
 };
@@ -208,8 +208,8 @@ pub struct ModulePurityFacts<'a> {
 struct PreparedModulePurityFacts<'a> {
     views: Vec<TopLevelItemView<'a>>,
     shadowed: BTreeSet<&'static str>,
-    set_iterable_proof: analysis::facts::SetIterableProof,
-    local_class_construction_proof: analysis::facts::LocalClassConstructionProof,
+    set_iterable_proof: purity::SetIterableProof,
+    local_class_construction_proof: purity::LocalClassConstructionProof,
     plain_data_bindings: Vec<String>,
     plain_data_dependencies: BTreeMap<String, analysis_vocabulary::inputs::ProofDependencies>,
     plain_data_inference_uses:
@@ -624,7 +624,7 @@ impl<'a> ModulePurityFacts<'a> {
             } else {
                 (BTreeMap::new(), BTreeSet::new(), BTreeMap::new())
             };
-        let plain_array_bindings = analysis::purity::heap::plain_array_bindings(&views, &shadowed);
+        let plain_array_bindings = purity::heap::plain_array_bindings(&views, &shadowed);
         let set_iterable_proof = structural.set_iterable_shapes;
         let local_class_construction_proof = structural.local_class_shapes;
         let prepared_sync_index =
@@ -914,7 +914,7 @@ pub fn resolve_imported_purities(
             .filter(|(_, target)| pinned.contains(&(target.module.clone(), target.export.clone())))
             .map(|(local, _)| (local.clone(), Arc::new(Purity::pure())))
             .collect();
-        let shape_inputs = analysis::purity::PurityShapeInputs {
+        let shape_inputs = purity::PurityShapeInputs {
             shadowed: &prepared_facts.shadowed,
             declared_pure_new: &no_declared_pure,
             declared_pure_members: &no_declared_pure_members,
@@ -929,7 +929,7 @@ pub fn resolve_imported_purities(
             stable_var_number_candidates: &BTreeSet::new(),
             stable_imports: stable_imports.get(module).unwrap_or(&no_declared_pure),
         };
-        let call_context = analysis::purity::PurityCallContext {
+        let call_context = purity::PurityCallContext {
             module,
             mode: PurityMode::Export,
             declared_pure: &no_declared_pure,
@@ -975,7 +975,7 @@ pub fn resolve_stable_imports(
         .map(|(module, facts)| {
             (
                 module,
-                analysis::purity::immutable_declarations(facts.body, |_| true)
+                purity::immutable_declarations(facts.body, |_| true)
                     .into_iter()
                     .map(|(name, _)| name.to_string())
                     .collect(),

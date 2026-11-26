@@ -17,10 +17,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::facts::{
-    ArgumentNoEscapeFacts, CandidateObjectIndex, ChunkValueFlow, primitive_literal_property_keys,
-};
-use crate::purity::{only_inspects_operand, static_member};
+use crate::{ArgumentNoEscapeFacts, primitive_literal_property_keys};
+use crate::{only_inspects_operand, static_member};
 use analysis_domain::allocation_roots::{
     init_groups, is_plain_data_init, literal_roots, site, tracked_bindings,
 };
@@ -35,6 +33,7 @@ use analysis_domain::ts_enum_iife::{
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::provenance::InferenceUse;
 use analysis_vocabulary::value::{Kind, Value};
+use value_flow::{CandidateObjectIndex, ChunkValueFlow};
 
 /// Whether code the scan does not follow can hold a reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -104,8 +103,8 @@ pub struct ChunkHeap {
 /// depends on.
 pub struct PlainDataBindings {
     pub bindings: Vec<String>,
-    pub(crate) dependencies: BTreeMap<String, ProofDependencies>,
-    pub(crate) inference_uses: BTreeMap<String, BTreeSet<InferenceUse>>,
+    pub dependencies: BTreeMap<String, ProofDependencies>,
+    pub inference_uses: BTreeMap<String, BTreeSet<InferenceUse>>,
 }
 
 impl ChunkHeap {
@@ -387,7 +386,7 @@ pub fn plain_array_bindings(
 /// of one. `Clean` keeps the elements primitive for the whole chunk, so
 /// iterating the array through an intact `%Array.prototype%` method passes
 /// only primitives.
-pub(crate) fn primitive_element_arrays(
+pub fn primitive_element_arrays(
     body: &[TopLevelItemView<'_>],
     plain_arrays: &BTreeSet<String>,
     prims: &BindingPrims,
@@ -442,7 +441,7 @@ fn filtered_from(expr: &Expr, arrays: &BTreeSet<String>) -> bool {
 /// An inline element callback with at most two parameters, neither a rest
 /// parameter, that never reads `arguments`: it cannot see the array, which
 /// the method passes third.
-pub(crate) fn sees_only_element(callback: &Expr) -> bool {
+pub fn sees_only_element(callback: &Expr) -> bool {
     let fits =
         |pats: Vec<&Pat>| pats.len() <= 2 && !pats.iter().any(|pat| matches!(pat, Pat::Rest(_)));
     match callback.unwrap_parens() {

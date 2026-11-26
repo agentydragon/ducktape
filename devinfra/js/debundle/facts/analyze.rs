@@ -274,24 +274,19 @@ pub fn complete_chunk_structural_with_flow<'a>(
             })
             .cloned()
             .collect();
-        super::semantic_inference::ArgumentNoEscapeFacts::from_source(
+        purity::semantic_inference::ArgumentNoEscapeFacts::from_source(
             &value_flow,
             &rebound,
             argument_inputs,
             dynamic_scope.present,
         )
     });
-    let crate::purity::heap::PlainDataBindings {
+    let purity::heap::PlainDataBindings {
         bindings: plain_data_bindings,
         dependencies: plain_data_dependencies,
         inference_uses: plain_data_inference_uses,
-    } = crate::purity::heap::ChunkHeap::analyze(
-        &body,
-        &shadowed,
-        &value_flow,
-        argument_facts.as_ref(),
-    )
-    .plain_data_bindings();
+    } = purity::heap::ChunkHeap::analyze(&body, &shadowed, &value_flow, argument_facts.as_ref())
+        .plain_data_bindings();
     let source_semantic_facts =
         argument_facts.map(|facts| std::sync::Arc::new(facts.into_semantic_facts()));
     let set_iterable_proof = SetIterableShapes::analyze(

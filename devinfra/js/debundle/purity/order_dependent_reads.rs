@@ -13,7 +13,7 @@ use binding_targets::binding_names;
 
 /// The cells of one chunk whose reads are order-dependent for a consumer.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct OrderDependentCells {
+pub struct OrderDependentCells {
     /// A reference to one of these reads a cell whose value can change.
     cells: BTreeSet<Id>,
     /// A member read through one of these observes heap contents no consumer
@@ -22,9 +22,9 @@ pub(crate) struct OrderDependentCells {
 }
 
 /// One order-dependent read: the binding and where it is read.
-pub(crate) struct OrderDependentRead {
-    pub(crate) name: String,
-    pub(crate) span: Span,
+pub struct OrderDependentRead {
+    pub name: String,
+    pub span: Span,
 }
 
 impl OrderDependentCells {
@@ -32,10 +32,7 @@ impl OrderDependentCells {
     /// named or default import `is_stable` does not vouch for. A namespace
     /// import is an immutable binding of an object whose member reads are
     /// classified where they occur.
-    pub(crate) fn imported(
-        body: &[TopLevelItemView<'_>],
-        is_stable: impl Fn(&str) -> bool,
-    ) -> Self {
+    pub fn imported(body: &[TopLevelItemView<'_>], is_stable: impl Fn(&str) -> bool) -> Self {
         Self {
             cells: imported_bindings(body)
                 .filter(|id| !is_stable(id.0.as_ref()))
@@ -50,7 +47,7 @@ impl OrderDependentCells {
     /// a class or a primitive (`primitive_bindings`). A function or class
     /// object still has properties, so a member read through any declared
     /// binding is order-dependent too.
-    pub(crate) fn exported(
+    pub fn exported(
         body: &[TopLevelItemView<'_>],
         is_stable_import: impl Fn(&str) -> bool,
         primitive_bindings: &BTreeMap<String, analysis_model::PrimKinds>,
@@ -72,10 +69,7 @@ impl OrderDependentCells {
     /// are skipped, as in the classifier: creating a closure reads nothing,
     /// and a call that runs it is classified at the call. An immediately
     /// invoked function expression runs at once, so its body is walked.
-    pub(crate) fn first_read(
-        &self,
-        visit: impl FnOnce(&mut dyn Visit),
-    ) -> Option<OrderDependentRead> {
+    pub fn first_read(&self, visit: impl FnOnce(&mut dyn Visit)) -> Option<OrderDependentRead> {
         if self.cells.is_empty() && self.member_roots.is_empty() {
             return None;
         }

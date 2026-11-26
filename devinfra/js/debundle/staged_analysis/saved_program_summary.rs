@@ -22,7 +22,7 @@ use source_identity::SourceUnitOrdinal;
 use swc_common::Span;
 
 use super::program_summary::ProgramSummary;
-use analysis::purity::saved::{PurityNodeId, PuritySnapshot, RestoredPurities};
+use purity::saved::{PurityNodeId, PuritySnapshot, RestoredPurities};
 
 type RetainedCallbackSignatures = BTreeMap<String, Vec<spec::RetainedCallbackSignature>>;
 

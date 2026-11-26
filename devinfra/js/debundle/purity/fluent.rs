@@ -17,7 +17,7 @@ use analysis_domain::item_views::{close_const_aliases, top_level_initializers};
 /// Positive closure rather than a single source pass so a chain rooted
 /// in a later-declared const still closes; bounded by one fact per
 /// chunk-top const.
-pub(crate) fn collect_fluent_const_bindings(
+pub fn collect_fluent_const_bindings(
     body: &[TopLevelItemView<'_>],
     seed: &BTreeSet<String>,
 ) -> BTreeSet<String> {
@@ -45,7 +45,7 @@ pub(crate) fn collect_fluent_const_bindings(
 /// ToPropertyKey-safe, and `new` is excluded because construction off
 /// a fluent API is not part of the asserted contract (builder APIs
 /// chain calls, not constructors).
-pub(crate) fn fluent_chain_root(expr: &Expr) -> Option<&str> {
+pub fn fluent_chain_root(expr: &Expr) -> Option<&str> {
     match expr.unwrap_parens() {
         Expr::Ident(ident) => Some(ident.sym.as_ref()),
         Expr::Member(member) => match &member.prop {

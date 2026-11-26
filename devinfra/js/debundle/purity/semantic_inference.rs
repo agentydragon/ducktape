@@ -168,7 +168,7 @@ pub struct NativePremises {
 
 impl NativePremises {
     /// Every slot intact (or asserted at `site`).
-    pub(crate) fn require_slots(
+    pub fn require_slots(
         &self,
         slots: &[IntrinsicSlot],
         site: Option<u32>,
@@ -184,7 +184,7 @@ impl NativePremises {
     }
 
     /// `callee` names the original `family` global and `slots` are intact.
-    pub(crate) fn require_binding(
+    pub fn require_binding(
         &self,
         callee: &NativeCallee,
         family: NativeIntrinsic,
@@ -215,7 +215,7 @@ impl NativePremises {
 
     /// A zero-argument `new binding()` of a keyed collection: a fresh, empty
     /// allocation that runs no user code.
-    pub(crate) fn require_empty_collection(
+    pub fn require_empty_collection(
         &self,
         row: &Row,
         binding: &Id,
@@ -468,7 +468,7 @@ impl Default for SemanticFacts {
 }
 
 impl SemanticFacts {
-    pub(crate) fn solve(rules: SemanticRules) -> Self {
+    pub fn solve(rules: SemanticRules) -> Self {
         Self::solve_with_source(rules, None)
     }
 
@@ -562,7 +562,7 @@ impl SemanticFacts {
             .or_else(|| self.source.as_ref()?.judgment(key))
     }
 
-    pub(crate) fn dependencies(&self, key: &SemanticKey) -> Option<&ProofDependencies> {
+    pub fn dependencies(&self, key: &SemanticKey) -> Option<&ProofDependencies> {
         self.judgment(key).map(Judgment::dependencies)
     }
 
@@ -611,16 +611,16 @@ pub struct ArgumentNoEscapeFacts {
     inputs: BTreeMap<Id, Vec<(u32, usize, usize)>>,
 }
 
-pub(crate) struct ArgumentBorrowProof {
-    pub(crate) dependencies: ProofDependencies,
-    pub(crate) inference_use: InferenceUse,
+pub struct ArgumentBorrowProof {
+    pub dependencies: ProofDependencies,
+    pub inference_use: InferenceUse,
 }
 
 impl ArgumentNoEscapeFacts {
-    pub(crate) fn into_semantic_facts(self) -> SemanticFacts {
+    pub fn into_semantic_facts(self) -> SemanticFacts {
         self.facts
     }
-    pub(crate) fn from_source(
+    pub fn from_source(
         flow: &ChunkValueFlow,
         rebound: &BTreeSet<Id>,
         inputs: &[ResolvedArgumentInput],
@@ -666,7 +666,7 @@ impl ArgumentNoEscapeFacts {
         }
     }
 
-    pub(crate) fn proof(
+    pub fn proof(
         &self,
         binding: &Id,
         argument_index: usize,
