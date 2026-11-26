@@ -650,6 +650,7 @@ lean_library(
     name = "sparse_checked_artifact",
     srcs = ["EsmSplit/LowerSplit/SparseArtifact.lean"],
     deps = [
+        ":corejs_linked_input",
         ":corejs_sparse_checked_split",
         ":lowersplit_input",
         ":lowersplit_support",
