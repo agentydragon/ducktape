@@ -90,7 +90,7 @@ fn retain_provider_values(
 /// The canonical source collector retained whole-body syntax coverage before
 /// value lowering. Direct returns and ordered bodies share their transfers
 /// with application execution; refusal never retries the legacy AST evaluator.
-pub fn derive(
+pub(crate) fn derive(
     index: &ExecutionIndex,
     callable: u32,
     shadowed: &BTreeSet<&'static str>,
@@ -194,7 +194,7 @@ pub fn derive(
 /// Derive the constructor result with the same ordered allocation operations
 /// used by ordinary local execution. Class syntax admission is collected once
 /// in `ExecutionIndex`; a refused query never retries the private AST evaluator.
-pub fn derive_class(
+pub(crate) fn derive_class(
     index: &ExecutionIndex,
     class: u32,
     shadowed: &BTreeSet<&'static str>,

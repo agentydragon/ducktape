@@ -150,7 +150,7 @@ pub struct InferredCallableCapabilities {
 pub struct InferredForeignCall {
     pub derived: crate::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
-    pub declaration: value_flow::CallableDeclaration,
+    pub(crate) declaration: value_flow::CallableDeclaration,
     pub dependencies: ProofDependencies,
     pub record: Option<InferredReturnedRecord>,
     /// The returned closure defers its first argument (`deferred_callback_closure`).
@@ -169,7 +169,7 @@ impl InferredForeignCall {
 /// Prepared once for callable inference and the whole-program native census.
 /// Value flow remains demand-driven even when every module contributes writes.
 pub struct PreparedCallableCapabilities {
-    pub index: ExecutionIndex,
+    pub(crate) index: ExecutionIndex,
     pub(super) exported_locals: BTreeSet<String>,
     pub(super) flow: Option<ChunkValueFlow>,
 }

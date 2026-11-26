@@ -37,42 +37,42 @@ use world::allocation_transfer::{
 use world::effect_coverage::EffectCoverageFragment;
 use world::join::Joined;
 
-pub struct ProviderContext<'a> {
-    pub index: &'a ExecutionIndex,
-    pub bindings: Context,
+pub(crate) struct ProviderContext<'a> {
+    pub(crate) index: &'a ExecutionIndex,
+    pub(crate) bindings: Context,
     /// Every closure retains all arguments: the walk does not prove which
     /// argument a closure body can reach.
-    pub argument_values: Values,
+    pub(crate) argument_values: Values,
     /// Outer locals some closure reads; they get cells.
-    pub captured_locals: FxHashSet<Id>,
-    pub capture_contexts: CaptureInterner<LexicalCaptures>,
+    pub(crate) captured_locals: FxHashSet<Id>,
+    pub(crate) capture_contexts: CaptureInterner<LexicalCaptures>,
     /// Closures whose capture this query cannot represent; retaining one
     /// refuses the summary.
-    pub unsupported_closures: BTreeSet<u32>,
-    pub class_mode: bool,
-    pub local_bindings: BTreeSet<Id>,
-    pub shadowed: BTreeSet<&'static str>,
-    pub native_constructions: BTreeSet<NativeIntrinsic>,
+    pub(crate) unsupported_closures: BTreeSet<u32>,
+    pub(crate) class_mode: bool,
+    pub(crate) local_bindings: BTreeSet<Id>,
+    pub(crate) shadowed: BTreeSet<&'static str>,
+    pub(crate) native_constructions: BTreeSet<NativeIntrinsic>,
     /// The query's fresh heap: an isolated scope, so its cells never reach a
     /// caller's effects and no literal writability is proven.
-    pub world: World,
+    pub(crate) world: World,
     /// The retained-closure proof projects one closure and refuses a fork;
     /// an allocation-only body explores it.
-    pub fork_policy: ForkPolicy,
+    pub(crate) fork_policy: ForkPolicy,
 }
 
 /// A provider body the adapter ran to normal completion as allocation-only.
-pub struct SealedProviderBody<'a> {
+pub(crate) struct SealedProviderBody<'a> {
     /// The adapter after the run: its world holds the body's final heap.
-    pub context: ProviderContext<'a>,
+    pub(crate) context: ProviderContext<'a>,
     /// The scope of this run's symbolic arguments and captures.
-    pub scope: ProviderScopeId,
+    pub(crate) scope: ProviderScopeId,
     /// The private provider var cells the body reads, in
     /// `ProviderInput::Capture` order.
-    pub captures: Vec<Id>,
+    pub(crate) captures: Vec<Id>,
     /// A callable's returned values; a constructor's explicit returns.
-    pub values: Values,
-    pub dependencies: ProofDependencies,
+    pub(crate) values: Values,
+    pub(crate) dependencies: ProofDependencies,
 }
 
 struct ClosureCaptureProjection {
@@ -175,7 +175,7 @@ impl<'a> ProviderContext<'a> {
     /// Run a callable body for its summary. Direct returns and ordered bodies
     /// share their transfers with application execution; a refusal never
     /// retries another evaluator.
-    pub fn seal_callable(
+    pub(crate) fn seal_callable(
         index: &'a ExecutionIndex,
         callable: u32,
         shadowed: &BTreeSet<&'static str>,
@@ -282,7 +282,7 @@ impl<'a> ProviderContext<'a> {
     /// Run a base constructor's lowered body (instance fields, then
     /// constructor statements) on a fresh instance. Class syntax admission is
     /// collected once in `ExecutionIndex`.
-    pub fn seal_class(
+    pub(crate) fn seal_class(
         index: &'a ExecutionIndex,
         class: u32,
         shadowed: &BTreeSet<&'static str>,
@@ -575,7 +575,7 @@ impl NativeContext for ProviderContext<'_> {
 /// The path state of a provider query: its private heap and what the path
 /// found about its own allocations.
 #[derive(Clone)]
-pub struct ProviderPath {
+pub(crate) struct ProviderPath {
     world: World,
     unsupported_closures: BTreeSet<u32>,
     native_constructions: BTreeSet<NativeIntrinsic>,
@@ -591,7 +591,7 @@ impl ProviderContext<'_> {
     /// Install the join of a family's leaves. Refusals and consumed native
     /// identities are may-facts; a world the join refuses refuses the query.
     #[must_use]
-    pub fn join(&mut self, leaves: Vec<ProviderPath>) -> bool {
+    pub(crate) fn join(&mut self, leaves: Vec<ProviderPath>) -> bool {
         let Joined {
             world,
             widened: _,

@@ -496,7 +496,7 @@ pub struct Callable {
     pub rebinds: BTreeSet<Id>,
     pub calls: Vec<Arc<Call>>,
     pub local_assignments: Vec<(Id, ValueExpr)>,
-    pub declared_locals: BTreeSet<Id>,
+    pub(crate) declared_locals: BTreeSet<Id>,
     /// Locals a read can observe before any assignment, as `undefined`: a
     /// declarator without an initializer outside a `for`-`in`/`of` head, and
     /// every `var` (hoisted). `local_assignments` never contributes that value.
@@ -516,14 +516,14 @@ pub struct Callable {
     pub iterated_sources: Vec<ValueExpr>,
     /// Bindings an update expression (`x++`) of this callable writes; neither
     /// `rebinds` nor `local_assignments` records them.
-    pub update_targets: BTreeSet<Id>,
+    pub(crate) update_targets: BTreeSet<Id>,
     hoisted_vars: BTreeSet<Id>,
     lexical_declarations: BTreeMap<Id, LocalBinding>,
-    pub self_binding: Option<Id>,
+    pub(crate) self_binding: Option<Id>,
     /// Catch parameters and destructured declarations are locals for closure
     /// projection. Keep them separate from `declared_locals`, whose consumers
     /// also include direct callback-factory and class-closure admission.
-    pub pattern_locals: BTreeSet<Id>,
+    pub(crate) pattern_locals: BTreeSet<Id>,
     pub body_facts: CallableBodyFacts,
     pub local_functions: BTreeMap<Id, u32>,
     pub literal_captures: BTreeSet<Id>,
@@ -545,7 +545,7 @@ pub struct Callable {
 
 impl Callable {
     /// The bindings this callable's own scope declares, parameters included.
-    pub fn own_bindings(&self) -> BTreeSet<&Id> {
+    pub(crate) fn own_bindings(&self) -> BTreeSet<&Id> {
         self.declared_locals
             .iter()
             .chain(&self.pattern_locals)
@@ -663,7 +663,7 @@ fn sole_return_expression(body: &FunctionBody) -> Option<&Expr> {
 
 /// Global-object names the native census resolves.
 #[derive(Debug, Clone, Default)]
-pub struct GlobalNames {
+pub(crate) struct GlobalNames {
     /// Unshadowed bindings that evaluate to the global object.
     aliases: BTreeSet<&'static str>,
     /// Node's and Bun's `global` is one of `aliases` under a
@@ -698,7 +698,7 @@ impl GlobalNames {
 /// Global data properties that hold only fresh ordinary objects created by
 /// analyzed code (SPEC.md § Bundle-owned globals).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct BundleGlobals {
+pub(crate) struct BundleGlobals {
     names: BTreeSet<String>,
     /// Every property keyed by a `Symbol.for` symbol.
     registered_symbols: bool,
@@ -1014,14 +1014,14 @@ pub struct ExecutionIndex {
     descriptor_copy_factories:
         BTreeMap<Id, analysis_vocabulary::inputs::DescriptorCopyFactorySummary>,
     pub descriptor_copy_calls: BTreeMap<CallSite, DescriptorCopyCallCandidate>,
-    pub null_proto_data_objects: BTreeSet<u32>,
+    pub(crate) null_proto_data_objects: BTreeSet<u32>,
     pub exact_object_spread_copies: BTreeSet<u32>,
     pub map_entry_arrays: BTreeSet<u32>,
     pub dense_array_literals: BTreeMap<u32, usize>,
     pub array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
     literal_property_kinds: BTreeMap<u32, Vec<LiteralPropertyKind>>,
     callable_creations: BTreeMap<u32, DeferredCallableCreation>,
-    pub method_record_members: BTreeMap<u32, Vec<crate::foreign_call::RecordMember>>,
+    pub(crate) method_record_members: BTreeMap<u32, Vec<crate::foreign_call::RecordMember>>,
     pub array_iterations: BTreeMap<CallSite, ArrayIteration>,
     pub async_callables: BTreeSet<u32>,
     pub callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
@@ -1051,10 +1051,10 @@ pub struct ExecutionIndex {
     /// Per callable, the bindings it or a callable nested in it writes
     /// (assignment and destructuring targets, loop heads, updates). A closure
     /// must capture a cell for each so a nested writer reaches the owner.
-    pub nested_callable_writes: BTreeMap<u32, BTreeSet<Id>>,
+    pub(crate) nested_callable_writes: BTreeMap<u32, BTreeSet<Id>>,
     prototype_capture_stack: Vec<u32>,
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
-    pub property_key_declarations: BTreeSet<Id>,
+    pub(crate) property_key_declarations: BTreeSet<Id>,
     native_write_census: NativeWriteCensus,
     pub binding_declaration_writes: BTreeMap<Id, Vec<BindingDeclarationWrite>>,
     namespace_wrapper_candidates: BTreeMap<u32, NamespaceWrapperCandidate>,
@@ -1131,7 +1131,7 @@ pub struct ExecutionIndex {
     pub noninvoking_initializers: BTreeMap<SourceUnitOrdinal, OriginalInitializer>,
     pub initialization_coverage_refusals: Vec<Option<OwnerInitializationCoverageRefusalReason>>,
     pub top_definite_initializers: Vec<BTreeSet<Id>>,
-    pub const_call_owners: BTreeSet<SourceUnitOrdinal>,
+    pub(crate) const_call_owners: BTreeSet<SourceUnitOrdinal>,
     pub top_member_value_writes: Vec<Vec<MemberValueWrite>>,
     pub top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
     pub top_exported_values: Vec<Vec<ValueExpr>>,
@@ -1269,7 +1269,7 @@ impl ExecutionIndex {
     /// activation, so they are not retained provider captures. Enclosing
     /// lexical cells still require the local transfer or checked private-var
     /// capture projection to represent them.
-    pub fn deferred_module_reference(&self, binding: &Id) -> bool {
+    pub(crate) fn deferred_module_reference(&self, binding: &Id) -> bool {
         self.imported_bindings.contains(binding)
             || self.hoisted_bindings.contains_key(binding)
             || self.class_ids.contains(binding)
@@ -1282,7 +1282,7 @@ impl ExecutionIndex {
             || !self.property_key_declarations.contains(binding)
     }
 
-    pub fn private_var_binding(&self, binding: &Id) -> bool {
+    pub(crate) fn private_var_binding(&self, binding: &Id) -> bool {
         if !self.dynamic_scope_owners.is_empty() || self.imported_bindings.contains(binding) {
             return false;
         }

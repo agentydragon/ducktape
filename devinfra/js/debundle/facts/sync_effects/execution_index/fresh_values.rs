@@ -236,7 +236,7 @@ pub(super) fn literal_record_primitive(expression: &Expr) -> Option<LiteralRecor
 /// reads, member reads and template substitutions are only candidates here:
 /// the interpreter proves their values at the call before consulting the
 /// author premise.
-pub type RecordFactoryArgument =
+pub(crate) type RecordFactoryArgument =
     Result<RecordFactoryRecord, (RecordFactoryRejectionReason, Option<String>)>;
 
 #[derive(Debug, Clone, Default)]
