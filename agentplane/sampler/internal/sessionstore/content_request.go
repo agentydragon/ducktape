@@ -42,7 +42,7 @@ func (s *Store) renderStartedProviderRequest(ctx context.Context, owner Owner, i
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 	defer cancel()
 	var body []byte
-	err := postgres.ReadTransaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	err := postgres.ReadTransaction(ctx, s.db, sql.TxOptions{ReadOnly: true}, func(tx *sql.Tx) error {
 		var err error
 		body, err = renderProviderRequest(newContentDB(ctx, tx), *request)
 		if err != nil {
