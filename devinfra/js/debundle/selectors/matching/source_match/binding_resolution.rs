@@ -85,11 +85,11 @@ mod tests {
             identifiers: SourceMatchIdentifierMode::AlphaAll,
             match_source: "const left = 1, right = 2;".to_string(),
             bindings: vec![
-                spec::SourceMatchBinding::Detailed(spec::SourceMatchBindingDetail {
+                spec::annotations::SourceMatchBinding::Detailed(spec::SourceMatchBindingDetail {
                     local: "left".to_string(),
                     name: Some("Duplicate".to_string()),
                 }),
-                spec::SourceMatchBinding::Detailed(spec::SourceMatchBindingDetail {
+                spec::annotations::SourceMatchBinding::Detailed(spec::SourceMatchBindingDetail {
                     local: "right".to_string(),
                     name: Some("Duplicate".to_string()),
                 }),

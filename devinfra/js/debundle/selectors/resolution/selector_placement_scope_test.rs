@@ -7,10 +7,9 @@ use selector_resolve::{
 };
 use source_identity::SourceUnitOrdinal;
 use source_match::{ParsedSourceMatchSelector, SelectorField};
-use spec::{
-    AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefSelector,
-    MemberSelectorSpec, SourceMatchIdentifierMode,
-};
+use spec::annotations::AnonymousStatementSelector;
+use spec::member_selectors::{BindingSelector, CrossRefSelector, MemberSelectorSpec};
+use spec::{BindingSourceKind, SourceMatchIdentifierMode};
 
 const SOURCE: &str = r#"const anchor = {x: 1};
 const other = {x: 2};

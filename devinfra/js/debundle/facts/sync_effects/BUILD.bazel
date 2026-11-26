@@ -20,14 +20,11 @@ rust_library(
         "//devinfra/js/debundle/facts/sync_effects/value_model",
         "//devinfra/js/debundle/facts/sync_effects/world",
         "//devinfra/js/debundle/inference",
+        "//devinfra/js/debundle/purity",
         "//devinfra/js/debundle/spec",
         "//devinfra/js/debundle/value_flow",
-        "@crates//:anyhow",
         "@crates//:imbl",
         "@crates//:rustc-hash",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:strum",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
@@ -41,6 +38,5 @@ rust_test(
     edition = "2024",
     deps = [
         "//devinfra/js/debundle:raw_js_test_support",
-        "@crates//:swc_ecma_parser",
     ],
 )

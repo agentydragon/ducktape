@@ -8,7 +8,8 @@
 //   `roots::body`'s flattened owner calls, `Executor::invoke_with_cells` and
 //   the application adapter's `ControlContext::unproved` remainder.
 
-use super::super::execution_index::{Call, CallKind, object_own_data_read_property};
+use super::super::execution_index::intrinsic_roots::object_own_data_read_property;
+use super::super::execution_index::{Call, CallKind};
 use super::super::interpreter::{EvaluatedCallOperands, Executor, Outcome, unknown};
 use super::super::runtime_inference::CallTransfer;
 use analysis_vocabulary::execution_evidence::ExecutionOperation;

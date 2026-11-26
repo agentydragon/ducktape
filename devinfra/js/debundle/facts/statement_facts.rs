@@ -980,7 +980,7 @@ pub struct StructuralChunkAnalysis<'a> {
     pub plain_data_dependencies: BTreeMap<String, analysis_vocabulary::inputs::ProofDependencies>,
     pub plain_data_inference_uses:
         BTreeMap<String, BTreeSet<analysis_vocabulary::provenance::InferenceUse>>,
-    pub source_semantic_facts: Option<std::sync::Arc<super::semantic_inference::SemanticFacts>>,
+    pub source_semantic_facts: Option<std::sync::Arc<purity::semantic_inference::SemanticFacts>>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,

@@ -234,7 +234,7 @@ fn omitted_import_order_defaults_empty_without_relaxing_spec_schema() {
 #[test]
 fn internal_selector_fields_survive_projection_without_serde() {
     let mut original = projection();
-    let source_match = spec::SourceMatch {
+    let source_match = spec::annotations::SourceMatch {
         identifiers: spec::SourceMatchIdentifierMode::Exact,
         target_binding: Some(String::new()),
         match_source: "const value = 1;".into(),
@@ -272,7 +272,7 @@ fn linux_path_bytes_survive_every_apply_path_field() {
     original.spec.inputs.input_root = path(6);
     original.spec.inputs.js_list_path = path(7);
     original.spec.inputs.embedded_loaders_path = Some(path(8));
-    if let spec::VendorLevel::BundledPartialSwap(mark) =
+    if let spec::vendor_marks::VendorLevel::BundledPartialSwap(mark) =
         &mut original.spec.vendor.get_mut("bundled").unwrap().level
     {
         mark.bundle.path = path(9);
@@ -305,12 +305,12 @@ fn linux_path_bytes_survive_every_apply_path_field() {
         original.spec.inputs.embedded_loaders_path,
         decoded.spec.inputs.embedded_loaders_path
     );
-    let spec::VendorLevel::BundledPartialSwap(original_vendor) =
+    let spec::vendor_marks::VendorLevel::BundledPartialSwap(original_vendor) =
         &original.spec.vendor["bundled"].level
     else {
         unreachable!("fixture contains a bundled partial swap");
     };
-    let spec::VendorLevel::BundledPartialSwap(decoded_vendor) =
+    let spec::vendor_marks::VendorLevel::BundledPartialSwap(decoded_vendor) =
         &decoded.spec.vendor["bundled"].level
     else {
         unreachable!("decoded fixture contains a bundled partial swap");

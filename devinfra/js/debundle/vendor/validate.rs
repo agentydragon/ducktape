@@ -14,7 +14,8 @@ use anyhow::{Context, Result, bail};
 use artifact::{ArtifactIndexes, ChunkBundle};
 use binding_targets::{imported_export_name, module_export_name};
 use js_ast::{ParsedJsModule, is_binding_identifier};
-use spec::{BundledPartialSwapPackage, PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};
+use spec::PartialSwapKind;
+use spec::vendor_marks::{BundledPartialSwapPackage, PartialSwapPackage, PartialSwapSymbol};
 use swc_ecma_ast::{
     ExportSpecifier, Id, ImportSpecifier, ModuleDecl, ModuleExportName, ModuleItem,
 };

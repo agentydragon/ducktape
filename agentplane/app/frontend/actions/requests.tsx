@@ -14,7 +14,7 @@ import {
   type ActionGroup,
   type ActionRequest,
 } from "../../../action_service/api/contracts/action_service_pb";
-import { timestampText } from "./presentation";
+import { timestampText } from "../transport/response_fields";
 import { decideActionById, followActionRequests, getAction, listActionGroups } from "./client";
 
 export function actionRequestQuery(requestId: string): ReturnType<typeof queryOptions<ActionRequest>> {

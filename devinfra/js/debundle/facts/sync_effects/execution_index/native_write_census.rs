@@ -3,8 +3,9 @@
 //! Array-spread integrity uses a premise-relative closure that stays separate
 //! from ordinary native-integrity inference.
 
+use super::ValueExpr;
+use super::intrinsic_roots::{IntrinsicRoots, NativeReceiverRoot, NativeReceiverRoots};
 use super::property_keys::{PropertyKeyDomain, PropertyKeyExpr};
-use super::{IntrinsicRoots, NativeReceiverRoot, NativeReceiverRoots, ValueExpr};
 use analysis_vocabulary::inputs::{HostBehaviorKey, NativeIntegrity, NativeIntrinsic};
 use analysis_vocabulary::report_schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,

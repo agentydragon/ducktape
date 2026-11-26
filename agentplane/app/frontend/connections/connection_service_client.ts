@@ -2,6 +2,7 @@
 import { create, fromJson, fromJsonString, toJson, type JsonValue } from "@bufbuild/protobuf";
 
 import { fetchText } from "../transport/client";
+import { required } from "../transport/response_fields";
 import {
   DecideConnectionEnrollmentRequestSchema,
   DecideConnectionEnrollmentResponseSchema,
@@ -51,11 +52,6 @@ export type ConsentDecision =
     };
 
 type FacadeMethod = "GET" | "POST" | "PATCH";
-
-function required<T>(value: T | undefined, field: string): T {
-  if (value === undefined) throw new Error(`ConnectionService response omitted ${field}`);
-  return value;
-}
 
 async function callFacade(method: FacadeMethod, path: string, body?: JsonValue): Promise<string> {
   const headers = new Headers({ Accept: "application/json" });

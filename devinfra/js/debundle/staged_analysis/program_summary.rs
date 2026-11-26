@@ -22,11 +22,15 @@ use analysis_vocabulary::value::Value;
 use anyhow::{Context, Result, ensure};
 use artifact::reports::{ImportSpecifierKind, StaticModuleRequest, StaticModuleRequestMode};
 use artifact::{ArtifactIndexes, ChunkBundle};
-use cross_module_purity::{
-    CallableSummaryInputs, ExportPrimitiveValue, ExportValueSource, ModulePurityFacts,
-    ResolvedCallableSummaries, resolve_export_primitives, resolve_imported_callable_summaries,
-    resolve_imported_purities, resolve_stable_imports,
+use cross_module_purity::callable_summaries::{
+    CallableSummaryInputs, ResolvedCallableSummaries, resolve_imported_callable_summaries,
 };
+use cross_module_purity::export_primitives::{
+    ExportPrimitiveValue, ExportValueSource, resolve_export_primitives,
+};
+use cross_module_purity::imported_purities::resolve_imported_purities;
+use cross_module_purity::module_facts::ModulePurityFacts;
+use cross_module_purity::stable_imports::resolve_stable_imports;
 use graph_provenance::GraphProvenance;
 use swc_ecma_ast::{Decl, ModuleDecl, ModuleItem, Pat};
 use value_flow::program_bindings::{ProgramBindings, ResolvedImport};

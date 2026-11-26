@@ -175,7 +175,7 @@ impl CompletedPurity {
 
 pub struct ItemPurityProofs<'a> {
     pub native_operations: &'a ValidatedNativeOperationFacts,
-    pub fresh_record_destructuring: &'a crate::purity::FreshRecordDestructuringContext<'a>,
+    pub fresh_record_destructuring: &'a purity::FreshRecordDestructuringContext<'a>,
 }
 
 pub(crate) fn item_purity(

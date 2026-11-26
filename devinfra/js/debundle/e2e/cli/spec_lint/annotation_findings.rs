@@ -4,12 +4,12 @@
 //! annotations leaves the emitted tree unchanged.
 
 use super::run_spec_lint;
-use analysis::purity::RedundantPurityProofBasis;
 use analysis::reports::spec_lint::{
     InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintRule, LintedAnnotation,
     PurityHintOwner,
 };
 use debundle_e2e_support::*;
+use purity::RedundantPurityProofBasis;
 use spec::AdmissionCheck;
 
 const SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconst gamma = (globalThis.record(\"gamma\"), \"C\");\nfunction seven() { return 7; }\nconsole.log(alpha, beta, gamma, seven(), trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma, seven };\n";

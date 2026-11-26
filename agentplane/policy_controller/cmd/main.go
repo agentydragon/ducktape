@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"time"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
@@ -22,8 +23,10 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/issuer"
+	"github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -34,7 +37,8 @@ import (
 )
 
 func main() {
-	ctrl.SetLogger(logr.FromSlogHandler(slog.NewJSONHandler(os.Stderr, nil)))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	ctrl.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
 	log := ctrl.Log.WithName("policy-controller")
 	c, err := loadConfig()
 	if err == nil {
@@ -134,16 +138,16 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
-	server := grpc.NewServer(append(slices.Clone(serverOptions), grpc.Creds(credentials))...)
+	server := grpc.NewServer(append(slices.Clone(serverOptions), grpc.Creds(credentials), observability.GRPCServerOption())...)
 	register(server)
-	listener, err := net.Listen("tcp", c.GRPCTLS.Listen)
+	rpcListener, err := listener.Open(c.GRPCTLS.Listen)
 	if err != nil {
 		server.Stop()
 		return err
 	}
-	if err := mgr.Add(policyListener{server: server, listener: listener}); err != nil {
+	if err := mgr.Add(policyListener{server: server, listener: rpcListener}); err != nil {
 		server.Stop()
-		_ = listener.Close()
+		_ = rpcListener.Close()
 		return err
 	}
 	reconciler := &policycontroller.Reconciler{
@@ -171,6 +175,9 @@ func run(c config) error {
 	return mgr.Start(ctrl.SetupSignalHandler())
 }
 
+// shutdownGrace bounds how long open calls may finish once the process is told to stop.
+const shutdownGrace = 5 * time.Second
+
 // Read watches run on every replica; only the reconciler participates in leader election.
 type policyListener struct {
 	server   *grpc.Server
@@ -186,7 +193,10 @@ func (p policyListener) Start(ctx context.Context) error {
 		}
 	}()
 	defer func() {
-		p.server.Stop()
+		// Calls in flight (including CreateIdentity mutations) get shutdownGrace to finish on a roll.
+		stopping, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
+		defer cancel()
+		graceful.Stop(stopping, p.server)
 		_ = p.listener.Close()
 	}()
 	select {

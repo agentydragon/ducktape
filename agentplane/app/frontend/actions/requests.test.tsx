@@ -11,7 +11,8 @@ import {
 } from "../../../action_service/api/contracts/action_service_pb";
 import { IdentitySchema } from "../../../proto/identity_pb";
 import { STALE_AFTER_MS, streamRegistry } from "../transport/stream_status";
-import { actionCaller, timestampText } from "./presentation";
+import { timestampText } from "../transport/response_fields";
+import { actionCaller } from "./presentation";
 import { listActionRequests } from "./client";
 import { ActionRequests, stateLabel } from "./requests";
 import {

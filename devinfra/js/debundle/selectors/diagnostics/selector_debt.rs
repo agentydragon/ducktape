@@ -26,7 +26,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::Serialize;
-use spec::{AnonymousStatementSelector, MemberSelectorSpec};
+use spec::annotations::AnonymousStatementSelector;
+use spec::member_selectors::MemberSelectorSpec;
 use spec_modules::{ModuleFile, collect_module_files, module_path_from_file, read_module_file};
 use swc_ecma_ast::{Expr, Lit, Module as SwcModule, Pat, VarDecl, VarDeclKind, VarDeclarator};
 

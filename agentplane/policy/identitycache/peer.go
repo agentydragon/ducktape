@@ -38,13 +38,18 @@ func (p Peer) Validate(clientURI string) error {
 	return nil
 }
 
+// Dial is a connection to PolicyService over mutual TLS with the service's SVID.
+func (p Peer) Dial() (*grpc.ClientConn, error) {
+	credentials, err := p.TLS.Credentials()
+	if err != nil {
+		return nil, err
+	}
+	return grpc.NewClient(p.Target, observability.GRPCClientOption(), grpc.WithTransportCredentials(credentials))
+}
+
 // Start dials PolicyService and runs a Cache until ctx ends. stop ends it, waits for it and closes the connection.
 func Start(ctx context.Context, peer Peer, grace time.Duration) (*Cache, func(), error) {
-	credentials, err := peer.TLS.Credentials()
-	if err != nil {
-		return nil, nil, err
-	}
-	connection, err := grpc.NewClient(peer.Target, observability.GRPCClientOption(), grpc.WithTransportCredentials(credentials))
+	connection, err := peer.Dial()
 	if err != nil {
 		return nil, nil, err
 	}

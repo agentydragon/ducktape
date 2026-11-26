@@ -17,9 +17,9 @@ use std::collections::BTreeMap;
 
 use analysis::facts::ChunkFactAnalysis;
 use analysis::facts::saved::SavedChunkFactAnalysis;
-use analysis::purity::saved::{PuritySnapshot, RestoredPurities};
 use analysis_codec::ContextOrdinals;
 use anyhow::{Context, Result, ensure};
+use purity::saved::{PuritySnapshot, RestoredPurities};
 use serde::{Deserialize, Serialize};
 
 use super::ExportReentryReport;

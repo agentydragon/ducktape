@@ -1,24 +1,17 @@
 //! Prepares source-backed synchronous-call evidence and annotates call effects.
 
-use super::super::execution_index::{
-    Call, CallKind, ExecutionIndex, native_call_identity_key, native_own_data_read_slots,
-};
+use super::super::execution_index::intrinsic_roots::native_own_data_read_slots;
+use super::super::execution_index::{Call, CallKind, ExecutionIndex, native_call_identity_key};
 use super::{
     CallbackFallbackSummary, ExecutionInputs, ExecutionState, ExportCallbackMemos, Outcome,
 };
-use analysis::facts::callable_inference::CallableInferenceInputs;
-use analysis::facts::semantic_inference::SemanticFacts;
 use analysis::facts::source_unit_read_closure::SourceUnitReadClosure;
 use analysis::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, HeapContentCells, StatementFacts,
 };
 use analysis::facts::{
-    DataflowOpacityCause, ExportReentryPolicy, LocalClassConstructionProof,
-    LocalClassConstructionShapes, NativeIterableOperandOrigin, NativeOwnDataReadDiagnostic,
-    SetIterableProof, SetIterableShapes, StableArraySpreadShapes, StatementPurityContext,
-    TopLevelNativeIterableOperandSite,
+    DataflowOpacityCause, ExportReentryPolicy, NativeOwnDataReadDiagnostic, StatementPurityContext,
 };
-use analysis::purity::ChunkCodeGraph;
 use analysis_domain::integrity::IntrinsicSlot;
 use analysis_domain::item_views::TopLevelItemView;
 use analysis_vocabulary::inputs::{
@@ -28,6 +21,14 @@ use analysis_vocabulary::purity::Effects;
 use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
 use inference::{FactContext, IterativeInference, IterativeRules};
+use purity::ChunkCodeGraph;
+use purity::callable_inference::CallableInferenceInputs;
+use purity::semantic_inference::SemanticFacts;
+use purity::{
+    LocalClassConstructionProof, LocalClassConstructionShapes, NativeIterableOperandOrigin,
+    SetIterableProof, SetIterableShapes, StableArraySpreadShapes,
+    TopLevelNativeIterableOperandSite,
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
@@ -434,7 +435,7 @@ impl PreparedSynchronousCallIndex {
         &self.index.local_class_construction_proof
     }
 
-    pub fn local_class_heap_proof(&self) -> analysis::facts::LocalClassHeapProof {
+    pub fn local_class_heap_proof(&self) -> purity::LocalClassHeapProof {
         self.index.local_class_construction_proof.heap_proof()
     }
 
@@ -488,7 +489,7 @@ impl PreparedSynchronousCallIndex {
 /// analysis: prepares the synchronous call index under default inputs.
 pub struct SynchronousShapeRefinement;
 
-impl analysis::purity::ShapeProofRefinement for SynchronousShapeRefinement {
+impl purity::ShapeProofRefinement for SynchronousShapeRefinement {
     fn refine(
         &self,
         body: &[TopLevelItemView<'_>],
