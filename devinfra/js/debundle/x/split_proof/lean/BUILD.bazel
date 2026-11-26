@@ -1622,3 +1622,24 @@ lean_proof_test(
     ],
     deps = [":stack_read_composition_axioms_test_modules"],
 )
+
+lean_library(
+    name = "two_const_boundary",
+    srcs = ["EsmSplit/CoreJS/TwoConstBoundary.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "two_const_boundary_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TwoConstBoundary"],
+    required_theorems = [
+        "CoreJS.TwoConstBoundary.allOutcomes",
+        "CoreJS.TwoConstBoundary.linkedOrder",
+        "CoreJS.TwoConstBoundary.initializedRead",
+        "CoreJS.TwoConstBoundary.sameExports",
+        "CoreJS.TwoConstBoundary.forwardReference_changes_throw",
+        "CoreJS.TwoConstBoundary.effectThenThrow",
+    ],
+    deps = [":two_const_boundary"],
+)
