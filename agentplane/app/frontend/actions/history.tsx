@@ -40,8 +40,8 @@ import {
   actionIdentity,
   executionError as projectExecutionError,
   executionResult,
-  timestampText,
 } from "./presentation";
+import { timestampText } from "../transport/response_fields";
 import { actionHistory, followActionRequests, getAction } from "./client";
 import { useActionRendering } from "./rendering/dispatch";
 import { actionGroupsQuery, stateLabel } from "./requests";

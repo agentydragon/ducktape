@@ -13,6 +13,7 @@ import { type JSX, useEffect, useState, useSyncExternalStore } from "react";
 
 import { isoTime, timeAgo } from "../ui/format_time";
 import type { StreamConnection } from "./stream_reader";
+import { Listeners } from "./listeners";
 
 export const DEGRADED_AFTER_MS = 5_000;
 export const STALE_AFTER_MS = 60_000;
@@ -36,19 +37,13 @@ function standingAt(connection: StreamConnection, stalled: string | null, now: n
   return off >= STALE_AFTER_MS ? "stale" : off >= DEGRADED_AFTER_MS ? "degraded" : "current";
 }
 
-export class StreamRegistry {
+export class StreamRegistry extends Listeners {
   /** The clock the thresholds are measured on. The visual harness sets it ahead of the frozen `Date`
    * its captures run under, since a scene cannot wait out real seconds. */
   now: () => number = () => Date.now();
   readonly #streams = new Map<symbol, { name: string; connection: StreamConnection; stalled: string | null }>();
-  readonly #listeners = new Set<() => void>();
   #statuses: ReadonlyMap<symbol, StreamStatus> = new Map();
   #crossing: number | undefined;
-
-  subscribe = (listener: () => void): (() => void) => {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  };
 
   getStatuses = (): ReadonlyMap<symbol, StreamStatus> => this.#statuses;
 
@@ -88,7 +83,7 @@ export class StreamRegistry {
     }
     this.#statuses = statuses;
     if (next !== Infinity) this.#crossing = window.setTimeout(() => this.#derive(), next);
-    for (const listener of this.#listeners) listener();
+    this.notify();
   }
 }
 
