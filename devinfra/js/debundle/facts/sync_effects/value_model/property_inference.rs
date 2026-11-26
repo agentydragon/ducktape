@@ -279,10 +279,8 @@ mod tests {
         AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
         ordered_own_property_names,
     };
-    use analysis::facts::abstract_domain::integrity::{
-        IntegrityFlags, IntrinsicSlot, PrototypeWrites,
-    };
     use analysis::facts::semantic_inference::{SemanticFacts, native_premise};
+    use analysis_domain::integrity::{IntegrityFlags, IntrinsicSlot, PrototypeWrites};
     use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
     use analysis_vocabulary::provenance::InferenceRule;
     use analysis_vocabulary::value::{Kind, Value};

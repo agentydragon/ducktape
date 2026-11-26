@@ -2652,7 +2652,7 @@ effects.
 Guarded native call summaries share one checked projection for call timing
 and successful return values. The summarized operations, the argument counts
 and operand shapes they admit, their allocations, writes and return shapes are
-the rows of `facts/abstract_domain/builtins.rs`, each with its ECMA-262
+the rows of `analysis_domain/builtins.rs`, each with its ECMA-262
 citation. A call is admitted only when every coercion its row lists lands on a
 proven primitive or exact ordinary operand. A row returning a primitive
 gives its result's types; a row returning an argument keeps that
@@ -4933,7 +4933,7 @@ they do not assert that every reported dependency executes synchronously.
 ## Native collection callback effects
 
 Direct native calls and constructions the interpreter can summarize without
-running user code are the rows of `facts/abstract_domain/builtins.rs`
+running user code are the rows of `analysis_domain/builtins.rs`
 (§ Synchronous analysis limits). Array iteration methods are that file's
 `ITERATION_ROWS`; `push` has no row yet.
 

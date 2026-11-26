@@ -8,9 +8,9 @@
 //! callables it invokes (`SynchronousCalls::heap_contents`), and an execution
 //! it cannot complete is a heap-frontier barrier in the graph emitter.
 
-use super::allocation_roots::{ArrayOriginCollector, array_candidate_roots_from_origins};
 use super::value_flow::Values;
 use super::*;
+use analysis_domain::allocation_roots::{ArrayOriginCollector, array_candidate_roots_from_origins};
 use analysis_vocabulary::value::{Kind, Value};
 use rustc_hash::{FxHashMap, FxHashSet};
 

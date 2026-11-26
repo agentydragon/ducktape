@@ -1,6 +1,7 @@
 use super::*;
-use crate::facts::allocation_roots::is_plain_data_prop;
-use crate::facts::{ChunkValueFlow, DynamicScopeFact, own_data_keys};
+use crate::facts::{ChunkValueFlow, own_data_keys};
+use analysis_domain::allocation_roots::is_plain_data_prop;
+use analysis_domain::dynamic_scope::DynamicScopeFact;
 
 /// Prepared value shape and whole-chunk identity guards for the ordinary
 /// declaration classifier. The initializer still follows its normal purity

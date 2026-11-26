@@ -264,7 +264,7 @@ pub(super) fn derive_class(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::facts::item_views::top_level_item_views;
+    use analysis_domain::item_views::top_level_item_views;
     use swc_ecma_ast::{Decl, Expr, FnDecl, ModuleItem, Stmt};
     use swc_ecma_visit::{Visit, VisitWith};
 

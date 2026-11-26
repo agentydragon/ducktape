@@ -1,5 +1,6 @@
 use super::*;
-use crate::facts::abstract_domain::builtins;
+use crate::builtins;
+use binding_targets::{declaration_ids, hoisted_var_ids};
 use inference::{FactContext, IterativeInference, IterativeRules};
 
 #[derive(Clone)]
@@ -139,7 +140,7 @@ pub fn var_decl_of_item(item: &ModuleItem) -> Option<&VarDecl> {
 /// `(name, init, kind)` for every chunk-top `const`/`let`/`var` declarator
 /// binding one identifier to a non-function initializer. Comma-list
 /// declarations are pre-split by `top_level_item_views`.
-pub(crate) fn top_level_initializers(item: &ModuleItem) -> Vec<(String, &Expr, VarDeclKind)> {
+pub fn top_level_initializers(item: &ModuleItem) -> Vec<(String, &Expr, VarDeclKind)> {
     let Some(var) = var_decl_of_item(item) else {
         return Vec::new();
     };
@@ -160,7 +161,7 @@ pub(crate) fn top_level_initializers(item: &ModuleItem) -> Vec<(String, &Expr, V
 /// `(target, None)` holds the class outright, `(target, Some(source))` when
 /// `source` does. A closure rather than one source pass, so an alias of a
 /// later declaration still closes.
-pub(crate) fn close_const_aliases(
+pub fn close_const_aliases(
     seed: &BTreeSet<String>,
     aliases: impl IntoIterator<Item = (String, Option<String>)>,
 ) -> BTreeSet<String> {
@@ -193,7 +194,7 @@ impl IterativeRules for ConstAliasRules {
     }
 }
 
-pub(crate) fn class_of_item(item: &ModuleItem) -> Option<&Class> {
+pub fn class_of_item(item: &ModuleItem) -> Option<&Class> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Class(cls))) => Some(&cls.class),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
@@ -208,7 +209,7 @@ pub(crate) fn class_of_item(item: &ModuleItem) -> Option<&Class> {
     }
 }
 
-pub(crate) fn classify_item(item: &ModuleItem) -> StatementKind {
+pub fn classify_item(item: &ModuleItem) -> StatementKind {
     let decl = match item {
         ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => return StatementKind::Import,
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => &decl.decl,
@@ -259,7 +260,7 @@ fn declaration_names(decl: &Decl) -> BTreeSet<Id> {
 
 /// `true` when the statement's declared binding is directly a
 /// function value. See [`StatementFacts::declares_direct_function`].
-pub(crate) fn declares_direct_function(item: &ModuleItem) -> bool {
+pub fn declares_direct_function(item: &ModuleItem) -> bool {
     match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => true,
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl))
@@ -284,9 +285,7 @@ pub(crate) fn declares_direct_function(item: &ModuleItem) -> bool {
     }
 }
 
-pub(crate) fn collect_async_direct_function_bindings(
-    body: &[TopLevelItemView<'_>],
-) -> BTreeSet<Id> {
+pub fn collect_async_direct_function_bindings(body: &[TopLevelItemView<'_>]) -> BTreeSet<Id> {
     body.iter()
         .filter_map(|item| async_direct_function_binding(item.as_module_item()))
         .collect()

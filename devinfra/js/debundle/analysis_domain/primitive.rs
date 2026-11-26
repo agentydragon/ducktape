@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::builtins::{self, ArgSel, Invocation, Return, Row};
-use crate::facts::{TopLevelItemView, top_level_initializers, var_decl_of_item};
+use crate::item_views::{TopLevelItemView, top_level_initializers, var_decl_of_item};
 use analysis_model::PrimKinds;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -233,7 +233,7 @@ pub struct BindingPrims {
 
 impl BindingPrims {
     /// The bindings visible where `local_shadowed` names are rebound.
-    pub(crate) fn scope<'a>(&'a self, local_shadowed: &'a BTreeSet<String>) -> ScopedPrims<'a> {
+    pub fn scope<'a>(&'a self, local_shadowed: &'a BTreeSet<String>) -> ScopedPrims<'a> {
         ScopedPrims {
             prims: self,
             local_shadowed,
@@ -242,12 +242,12 @@ impl BindingPrims {
 
     /// Bindings whose primitive excludes Symbol: `ToString` and `ToNumber`
     /// on them run no user code.
-    pub(crate) fn non_symbol_bindings(&self) -> BTreeSet<String> {
+    pub fn non_symbol_bindings(&self) -> BTreeSet<String> {
         self.bindings_within(PrimKinds::ANY.without(PrimKinds::SYMBOL))
     }
 
     /// Symbol bindings: safe for `ToPropertyKey`, while `ToString` throws.
-    pub(crate) fn symbol_bindings(&self) -> BTreeSet<String> {
+    pub fn symbol_bindings(&self) -> BTreeSet<String> {
         self.bindings_within(PrimKinds::SYMBOL)
     }
 
@@ -260,7 +260,7 @@ impl BindingPrims {
     }
 }
 
-pub(crate) struct ScopedPrims<'a> {
+pub struct ScopedPrims<'a> {
     prims: &'a BindingPrims,
     local_shadowed: &'a BTreeSet<String>,
 }
@@ -301,7 +301,7 @@ impl PrimScope for ScopedPrims<'_> {
 /// a Number initializer. Before that initializer runs it is `undefined`, so
 /// its module-wide type always includes Undefined. Initializer effects remain
 /// classified at the declaration site.
-pub(crate) fn collect_binding_prims(
+pub fn collect_binding_prims(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
     stable_vars: &BTreeSet<Id>,

@@ -30,16 +30,10 @@ use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{
     CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
 };
-use analysis::facts::abstract_domain::builtins::Mutation;
-use analysis::facts::abstract_domain::builtins::{
-    ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
-};
-use analysis::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
 use analysis::facts::binding_effect_coverage::{
     BindingEffectCoverage, LocalBodyIdentity, LocalCallReceipt, RootInitializerIdentity,
 };
 use analysis::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
-use analysis::facts::item_views::StatementKind;
 use analysis::facts::local_effect_targets::MetadataDecorateCall;
 use analysis::facts::semantic_inference::{
     NativePremise, SemanticKey, names_intrinsic, native_premise,
@@ -54,6 +48,12 @@ use analysis::facts::{
     DataflowOpacityCause, EffectCell, NativeIterableOperandOrigin, SetIterableProof,
 };
 use analysis::purity::ChunkCodeGraph;
+use analysis_domain::builtins::Mutation;
+use analysis_domain::builtins::{
+    ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
+};
+use analysis_domain::integrity::{Integrity, IntrinsicSlot};
+use analysis_domain::item_views::StatementKind;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::effect::{CoerceOp, CoerceOperand};
 use analysis_vocabulary::execution_evidence::{

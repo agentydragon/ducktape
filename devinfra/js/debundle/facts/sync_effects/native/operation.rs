@@ -6,8 +6,8 @@
 //! happened while constructing the plan, and a plan is never evidence that
 //! the operation completed normally.
 
-use analysis::facts::abstract_domain::builtins::Mutation;
-use analysis::facts::abstract_domain::builtins::{ArgSel, Row};
+use analysis_domain::builtins::Mutation;
+use analysis_domain::builtins::{ArgSel, Row};
 use analysis_model::PrimKinds;
 use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeSet;

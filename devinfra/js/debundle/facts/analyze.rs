@@ -1,4 +1,5 @@
 use super::*;
+use analysis_domain::dynamic_scope::DynamicScopeFact;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 

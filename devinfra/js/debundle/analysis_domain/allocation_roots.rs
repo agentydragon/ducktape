@@ -3,13 +3,13 @@
 //! scan's tracked allocations) and every array literal (heap contents).
 
 use super::*;
-use crate::purity::is_ts_enum_iife_init_for_binding;
+use crate::ts_enum_iife::is_ts_enum_iife_init_for_binding;
 use analysis_vocabulary::value::{Kind, Value};
 
 /// Chunk-top initializers per binding name. `var` may repeat.
-pub(crate) type InitGroups<'a> = BTreeMap<String, Vec<(&'a Expr, VarDeclKind)>>;
+pub type InitGroups<'a> = BTreeMap<String, Vec<(&'a Expr, VarDeclKind)>>;
 
-pub(crate) fn init_groups<'a>(body: &'a [TopLevelItemView<'_>]) -> InitGroups<'a> {
+pub fn init_groups<'a>(body: &'a [TopLevelItemView<'_>]) -> InitGroups<'a> {
     let mut inits_by_name = BTreeMap::new();
     for item in body {
         for (name, init, kind) in top_level_initializers(item.as_module_item()) {
@@ -24,14 +24,12 @@ pub(crate) fn init_groups<'a>(body: &'a [TopLevelItemView<'_>]) -> InitGroups<'a
 
 /// The allocation an initializer creates, keyed by its start offset as value
 /// flow keys object and array literals.
-pub(crate) fn site(init: &Expr) -> Value {
+pub fn site(init: &Expr) -> Value {
     Value::Alloc(Kind::Object, init.unwrap_parens().span().lo.0)
 }
 
 /// Bindings whose every initializer is plain data, with those allocations.
-pub(crate) fn tracked_bindings(
-    inits_by_name: &InitGroups<'_>,
-) -> BTreeMap<String, BTreeSet<Value>> {
+pub fn tracked_bindings(inits_by_name: &InitGroups<'_>) -> BTreeMap<String, BTreeSet<Value>> {
     inits_by_name
         .iter()
         .filter(|(name, inits)| {
@@ -50,7 +48,7 @@ pub(crate) fn tracked_bindings(
 
 /// Literal allocations value flow follows. A binding with a TS enum IIFE
 /// initializer contributes none: only its own name reaches it.
-pub(crate) fn literal_roots(
+pub fn literal_roots(
     inits_by_name: &InitGroups<'_>,
     bindings: &BTreeMap<String, BTreeSet<Value>>,
 ) -> BTreeSet<Value> {
@@ -88,7 +86,7 @@ pub fn tracked_allocation_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value
 /// Value sub-expressions are not validated: the declaration's own purity is
 /// classified separately, and post-init member reads depend only on the
 /// receiver's shape and its heap state.
-pub(crate) fn is_plain_data_init(expr: &Expr, binding: &str, kind: VarDeclKind) -> bool {
+pub fn is_plain_data_init(expr: &Expr, binding: &str, kind: VarDeclKind) -> bool {
     match expr {
         Expr::Paren(p) => is_plain_data_init(&p.expr, binding, kind),
         Expr::Object(obj) => obj.props.iter().all(is_plain_data_prop),
@@ -100,7 +98,7 @@ pub(crate) fn is_plain_data_init(expr: &Expr, binding: &str, kind: VarDeclKind) 
     }
 }
 
-pub(crate) fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
+pub fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
     let PropOrSpread::Prop(prop) = prop else {
         // `{...src}`: see `is_plain_data_init`.
         return true;
@@ -123,7 +121,7 @@ pub(crate) fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
     }
 }
 
-pub(crate) fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value> {
+pub fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value> {
     let mut origins = ArrayOriginCollector::default();
     for item in body {
         item.as_module_item().visit_with(&mut origins);
@@ -131,7 +129,7 @@ pub(crate) fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<V
     array_candidate_roots_from_origins(&origins.0)
 }
 
-pub(crate) fn array_candidate_roots_from_origins(origins: &BTreeSet<u32>) -> BTreeSet<Value> {
+pub fn array_candidate_roots_from_origins(origins: &BTreeSet<u32>) -> BTreeSet<Value> {
     origins
         .iter()
         .copied()
@@ -140,7 +138,7 @@ pub(crate) fn array_candidate_roots_from_origins(origins: &BTreeSet<u32>) -> BTr
 }
 
 #[derive(Default)]
-pub(crate) struct ArrayOriginCollector(pub(crate) BTreeSet<u32>);
+pub struct ArrayOriginCollector(pub BTreeSet<u32>);
 
 impl Visit for ArrayOriginCollector {
     fn visit_array_lit(&mut self, node: &ArrayLit) {

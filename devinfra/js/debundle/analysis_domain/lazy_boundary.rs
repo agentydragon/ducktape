@@ -4,19 +4,19 @@ use super::*;
 macro_rules! impl_lazy_callable_visits {
     () => {
         fn visit_function(&mut self, node: &Function) {
-            $crate::facts::lazy_boundary::lazy_visit_function(self, node);
+            $crate::lazy_boundary::lazy_visit_function(self, node);
         }
         fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-            $crate::facts::lazy_boundary::lazy_visit_arrow_expr(self, node);
+            $crate::lazy_boundary::lazy_visit_arrow_expr(self, node);
         }
         fn visit_method_prop(&mut self, node: &MethodProp) {
-            $crate::facts::lazy_boundary::lazy_visit_method_prop(self, node);
+            $crate::lazy_boundary::lazy_visit_method_prop(self, node);
         }
         fn visit_getter_prop(&mut self, node: &GetterProp) {
-            $crate::facts::lazy_boundary::lazy_visit_getter_prop(self, node);
+            $crate::lazy_boundary::lazy_visit_getter_prop(self, node);
         }
         fn visit_setter_prop(&mut self, node: &SetterProp) {
-            $crate::facts::lazy_boundary::lazy_visit_setter_prop(self, node);
+            $crate::lazy_boundary::lazy_visit_setter_prop(self, node);
         }
     };
 }
@@ -25,10 +25,10 @@ macro_rules! impl_lazy_callable_visits {
 macro_rules! impl_lazy_class_visits {
     () => {
         fn visit_class(&mut self, node: &Class) {
-            $crate::facts::lazy_boundary::lazy_visit_class(self, node);
+            $crate::lazy_boundary::lazy_visit_class(self, node);
         }
         fn visit_class_member(&mut self, member: &ClassMember) {
-            $crate::facts::lazy_boundary::lazy_visit_class_member(self, member);
+            $crate::lazy_boundary::lazy_visit_class_member(self, member);
         }
     };
 }
@@ -37,31 +37,31 @@ macro_rules! impl_lazy_class_visits {
 macro_rules! impl_lazy_optional_path_visits {
     () => {
         fn visit_if_stmt(&mut self, node: &IfStmt) {
-            $crate::facts::lazy_boundary::lazy_visit_if_stmt(self, node);
+            $crate::lazy_boundary::lazy_visit_if_stmt(self, node);
         }
         fn visit_cond_expr(&mut self, node: &CondExpr) {
-            $crate::facts::lazy_boundary::lazy_visit_cond_expr(self, node);
+            $crate::lazy_boundary::lazy_visit_cond_expr(self, node);
         }
         fn visit_bin_expr(&mut self, node: &BinExpr) {
-            $crate::facts::lazy_boundary::lazy_visit_bin_expr(self, node);
+            $crate::lazy_boundary::lazy_visit_bin_expr(self, node);
         }
         fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
-            $crate::facts::lazy_boundary::lazy_visit_may_skip(self, node);
+            $crate::lazy_boundary::lazy_visit_may_skip(self, node);
         }
         fn visit_while_stmt(&mut self, node: &WhileStmt) {
-            $crate::facts::lazy_boundary::lazy_visit_may_skip(self, node);
+            $crate::lazy_boundary::lazy_visit_may_skip(self, node);
         }
         fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
-            $crate::facts::lazy_boundary::lazy_visit_may_skip(self, node);
+            $crate::lazy_boundary::lazy_visit_may_skip(self, node);
         }
         fn visit_for_stmt(&mut self, node: &ForStmt) {
-            $crate::facts::lazy_boundary::lazy_visit_may_skip(self, node);
+            $crate::lazy_boundary::lazy_visit_may_skip(self, node);
         }
         fn visit_try_stmt(&mut self, node: &TryStmt) {
-            $crate::facts::lazy_boundary::lazy_visit_may_skip(self, node);
+            $crate::lazy_boundary::lazy_visit_may_skip(self, node);
         }
         fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
-            $crate::facts::lazy_boundary::lazy_visit_may_skip(self, node);
+            $crate::lazy_boundary::lazy_visit_may_skip(self, node);
         }
     };
 }
@@ -70,19 +70,19 @@ macro_rules! impl_lazy_optional_path_visits {
 /// body (depth one) up to its first unavoidable suspension. Nested bodies
 /// and code after that suspension still contribute to the general lazy sets.
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct LazyPosition {
-    pub(super) depth: u32,
-    pub(super) past_await: bool,
-    pub(super) may_skip_await_depth: u32,
+pub struct LazyPosition {
+    pub depth: u32,
+    pub past_await: bool,
+    pub may_skip_await_depth: u32,
 }
 
 impl LazyPosition {
-    pub(super) fn can_run_at_init(self) -> bool {
+    pub fn can_run_at_init(self) -> bool {
         self.depth == 0 || (self.depth == 1 && !self.past_await)
     }
 }
 
-pub(crate) trait LazyBoundary: Visit {
+pub trait LazyBoundary: Visit {
     fn position(&mut self) -> &mut LazyPosition;
 
     fn descend_lazy<F: FnOnce(&mut Self)>(&mut self, f: F) {
@@ -99,7 +99,7 @@ pub(crate) trait LazyBoundary: Visit {
 /// An `await` reached only through an optional path does not prove that
 /// subsequent code runs after suspension. Preserve the pre-branch state while
 /// still classifying reads inside the branch after its own await as deferred.
-pub(crate) fn lazy_visit_if_stmt<V: LazyBoundary>(v: &mut V, node: &IfStmt) {
+pub fn lazy_visit_if_stmt<V: LazyBoundary>(v: &mut V, node: &IfStmt) {
     node.test.visit_with(v);
     let before_branch = v.position().past_await;
     node.cons.visit_with(v);
@@ -110,7 +110,7 @@ pub(crate) fn lazy_visit_if_stmt<V: LazyBoundary>(v: &mut V, node: &IfStmt) {
     }
 }
 
-pub(crate) fn lazy_visit_cond_expr<V: LazyBoundary>(v: &mut V, node: &CondExpr) {
+pub fn lazy_visit_cond_expr<V: LazyBoundary>(v: &mut V, node: &CondExpr) {
     node.test.visit_with(v);
     let before_branch = v.position().past_await;
     node.cons.visit_with(v);
@@ -119,7 +119,7 @@ pub(crate) fn lazy_visit_cond_expr<V: LazyBoundary>(v: &mut V, node: &CondExpr) 
     v.position().past_await = before_branch;
 }
 
-pub(crate) fn lazy_visit_bin_expr<V: LazyBoundary>(v: &mut V, node: &BinExpr) {
+pub fn lazy_visit_bin_expr<V: LazyBoundary>(v: &mut V, node: &BinExpr) {
     node.left.visit_with(v);
     let before_right = v.position().past_await;
     node.right.visit_with(v);
@@ -128,7 +128,7 @@ pub(crate) fn lazy_visit_bin_expr<V: LazyBoundary>(v: &mut V, node: &BinExpr) {
     }
 }
 
-pub(crate) fn lazy_visit_may_skip<V: LazyBoundary, N: VisitWith<V>>(v: &mut V, node: &N) {
+pub fn lazy_visit_may_skip<V: LazyBoundary, N: VisitWith<V>>(v: &mut V, node: &N) {
     let before = v.position().past_await;
     v.position().may_skip_await_depth += 1;
     node.visit_children_with(v);
@@ -136,15 +136,15 @@ pub(crate) fn lazy_visit_may_skip<V: LazyBoundary, N: VisitWith<V>>(v: &mut V, n
     v.position().past_await = before;
 }
 
-pub(crate) fn lazy_visit_function<V: LazyBoundary>(v: &mut V, node: &Function) {
+pub fn lazy_visit_function<V: LazyBoundary>(v: &mut V, node: &Function) {
     v.descend_lazy(|s| node.visit_children_with(s));
 }
 
-pub(crate) fn lazy_visit_arrow_expr<V: LazyBoundary>(v: &mut V, node: &ArrowExpr) {
+pub fn lazy_visit_arrow_expr<V: LazyBoundary>(v: &mut V, node: &ArrowExpr) {
     v.descend_lazy(|s| node.visit_children_with(s));
 }
 
-pub(crate) fn lazy_visit_method_prop<V: LazyBoundary>(v: &mut V, node: &MethodProp) {
+pub fn lazy_visit_method_prop<V: LazyBoundary>(v: &mut V, node: &MethodProp) {
     node.key.visit_with(v);
     // `node.function.visit_with` dispatches to `visit_function`, which
     // already calls `descend_lazy` via `lazy_visit_function`. No outer
@@ -153,7 +153,7 @@ pub(crate) fn lazy_visit_method_prop<V: LazyBoundary>(v: &mut V, node: &MethodPr
     node.function.visit_with(v);
 }
 
-pub(crate) fn lazy_visit_getter_prop<V: LazyBoundary>(v: &mut V, node: &GetterProp) {
+pub fn lazy_visit_getter_prop<V: LazyBoundary>(v: &mut V, node: &GetterProp) {
     node.key.visit_with(v);
     v.descend_lazy(|s| {
         if let Some(body) = &node.function.body {
@@ -162,7 +162,7 @@ pub(crate) fn lazy_visit_getter_prop<V: LazyBoundary>(v: &mut V, node: &GetterPr
     });
 }
 
-pub(crate) fn lazy_visit_setter_prop<V: LazyBoundary>(v: &mut V, node: &SetterProp) {
+pub fn lazy_visit_setter_prop<V: LazyBoundary>(v: &mut V, node: &SetterProp) {
     node.key.visit_with(v);
     for param in &node.function.params {
         param.pat.visit_with(v);
@@ -174,11 +174,11 @@ pub(crate) fn lazy_visit_setter_prop<V: LazyBoundary>(v: &mut V, node: &SetterPr
     });
 }
 
-pub(crate) fn lazy_visit_class<V: LazyBoundary>(v: &mut V, node: &Class) {
+pub fn lazy_visit_class<V: LazyBoundary>(v: &mut V, node: &Class) {
     visit_class_decl(v, node, |v, m| v.visit_class_member(m));
 }
 
-pub(crate) fn lazy_visit_class_member<V: LazyBoundary>(v: &mut V, member: &ClassMember) {
+pub fn lazy_visit_class_member<V: LazyBoundary>(v: &mut V, member: &ClassMember) {
     visit_eager_member_parts(v, member);
     match member {
         // `method.function.visit_with` dispatches to `visit_function`,
@@ -306,7 +306,7 @@ impl PositionBucketed<BTreeSet<Id>> {
     /// at depth 0; `lazy` at depth ≥ 1, additionally `first_order_lazy`
     /// at depth 1 before the body's first `await`. Maintains the
     /// `first_order_lazy ⊆ lazy` invariant structurally.
-    pub(crate) fn record(&mut self, id: &Id, position: LazyPosition) {
+    pub fn record(&mut self, id: &Id, position: LazyPosition) {
         if position.depth == 0 {
             self.eager.insert(id.clone());
             return;
@@ -317,7 +317,7 @@ impl PositionBucketed<BTreeSet<Id>> {
         }
     }
 
-    pub(crate) fn extend(&mut self, other: Self) {
+    pub fn extend(&mut self, other: Self) {
         self.eager.extend(other.eager);
         self.lazy.extend(other.lazy);
         self.first_order_lazy.extend(other.first_order_lazy);

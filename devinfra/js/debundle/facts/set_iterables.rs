@@ -6,6 +6,7 @@
 
 use super::*;
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
+use analysis_domain::dynamic_scope::DynamicScopeFact;
 use analysis_vocabulary::inputs::{
     AnalysisInputs, ImportedPrimitiveArrayOperandEvidence, InferredSetConstruction,
     InferredSetOperation, NativeOperationInputEvidence, ProofDependencies,
@@ -666,7 +667,7 @@ impl Visit for ArrayUseScanner<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::facts::{compute_shadowed_globals, top_level_item_views};
+    use analysis_domain::item_views::{compute_shadowed_globals, top_level_item_views};
     use raw_js_test_support::parse;
 
     fn proves_only_new(src: &str) -> bool {
@@ -675,7 +676,7 @@ mod tests {
         let shadowed = compute_shadowed_globals(&body);
         let flow = ChunkValueFlow::analyze_with_candidates(
             &body,
-            &crate::facts::allocation_roots::tracked_allocation_roots(&body),
+            &analysis_domain::allocation_roots::tracked_allocation_roots(&body),
         );
         let plain_data =
             crate::facts::abstract_domain::heap::ChunkHeap::analyze(&body, &shadowed, &flow, None)

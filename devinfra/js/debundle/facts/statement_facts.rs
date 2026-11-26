@@ -967,7 +967,7 @@ pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub imported_bindings: BTreeSet<Id>,
     pub value_flow: std::sync::Arc<super::ChunkValueFlow>,
-    pub dynamic_scope: super::DynamicScopeFact,
+    pub dynamic_scope: analysis_domain::dynamic_scope::DynamicScopeFact,
     pub set_iterable_shapes: super::SetIterableShapes,
     pub stable_array_spread_shapes: super::StableArraySpreadShapes,
     pub local_class_shapes: super::LocalClassConstructionShapes,

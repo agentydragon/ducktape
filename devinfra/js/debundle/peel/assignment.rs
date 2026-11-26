@@ -2,7 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use analysis::{EntryDestination, ModuleId, StatementKind};
+use analysis::{EntryDestination, ModuleId};
+
+use analysis_domain::item_views::StatementKind;
 use anyhow::{Context, Result, ensure};
 use esm_schedule::EsmImportSchedule;
 use gate::AssignmentValidation;

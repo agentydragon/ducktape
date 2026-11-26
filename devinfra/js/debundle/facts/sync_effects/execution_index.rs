@@ -26,12 +26,6 @@ use property_keys::{
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::strict_provider;
-use analysis::facts::abstract_domain::builtins::{
-    self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
-};
-use analysis::facts::abstract_domain::integrity::{
-    IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
-};
 use analysis::facts::at_init_fallback::{
     is_no_sync_callback_member_call, member_row_invokes_no_argument,
 };
@@ -40,8 +34,6 @@ use analysis::facts::callable_inference::{
 };
 use analysis::facts::collector::UnresolvedCallSourceCollector;
 use analysis::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
-use analysis::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
-use analysis::facts::lazy_boundary::visit_eager_member_parts;
 use analysis::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
 use analysis::facts::semantic_inference::{
     DescriptorCopyCallCandidate as SemanticDescriptorCopyCallCandidate, NativeBindingContext,
@@ -56,6 +48,10 @@ use analysis::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes,
     OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
 };
+use analysis_domain::builtins::{self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row};
+use analysis_domain::integrity::{IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites};
+use analysis_domain::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
+use analysis_domain::lazy_boundary::visit_eager_member_parts;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::execution_evidence::SourceLocator;
 use analysis_vocabulary::inputs::{
@@ -10265,7 +10261,7 @@ pub fn infer_callable_capabilities<'f>(
         let flow = prepared_flow
             .take()
             .unwrap_or_else(|| ChunkValueFlow::analyze(body));
-        let shadowed = analysis::facts::compute_shadowed_globals(body);
+        let shadowed = analysis_domain::item_views::compute_shadowed_globals(body);
         let callables = callable_inference_inputs(&index, &flow, &exported_locals);
         index.semantic_facts = Some(index.prepare_semantic_facts(
             &flow,
@@ -10309,7 +10305,7 @@ pub fn infer_callable_capabilities<'f>(
                     index
                         .integrity
                         .require(&[IntrinsicSlot::Global(family)], None),
-                    analysis::facts::abstract_domain::integrity::Integrity::Intact(_)
+                    analysis_domain::integrity::Integrity::Intact(_)
                 )
             },
             |call| call.permits_foreign_summary() || call.callback_factory,
@@ -10327,7 +10323,7 @@ pub fn infer_callable_capabilities<'f>(
             index
                 .integrity
                 .require(&[IntrinsicSlot::Global(*family)], None),
-            analysis::facts::abstract_domain::integrity::Integrity::Intact(_)
+            analysis_domain::integrity::Integrity::Intact(_)
         )
     })
     .collect();
@@ -10355,7 +10351,7 @@ fn infer_foreign_calls<'f>(
         Some(flow) => flow,
         None => structural_flow(),
     };
-    let shadowed = analysis::facts::compute_shadowed_globals(body);
+    let shadowed = analysis_domain::item_views::compute_shadowed_globals(body);
     let candidates: Vec<_> = flow
         .callable_declarations()
         .filter(|(binding, _)| exported_locals.contains(binding.0.as_ref()))
@@ -10636,7 +10632,7 @@ mod preflow_set_protocol_tests {
         families: &BTreeSet<NativeIntrinsic>,
     ) -> BTreeMap<u32, InferredSetConstruction> {
         let module = parse(source);
-        let views = analysis::facts::top_level_item_views(&module.body);
+        let views = analysis_domain::item_views::top_level_item_views(&module.body);
         let prepared = prepare_callable_capabilities(
             &views,
             BTreeSet::new(),

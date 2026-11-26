@@ -11,6 +11,7 @@ rust_library(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/analysis_domain",
         "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/facts/sync_effects/value_model",
         "@crates//:imbl",

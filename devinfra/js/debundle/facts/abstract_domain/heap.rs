@@ -1,7 +1,7 @@
 //! Heap state of chunk-top allocations.
 //!
 //! A tracked allocation is a chunk-top binding's initializer: an object or
-//! array literal, a TS enum IIFE (`purity/ts_enum_iife.rs`) or, for arrays, a
+//! array literal, a TS enum IIFE (`analysis_domain/ts_enum_iife.rs`) or, for arrays, a
 //! non-mutating array method result. A binding denotes its initializers and
 //! every literal value flow says it may hold. `PlainData` is the projection
 //! "never rebound, and every denoted allocation is `Private` and `Clean`":
@@ -17,19 +17,20 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use super::builtins::{self, Invocation};
-use super::primitive::{BindingPrims, evaluate};
-use crate::facts::allocation_roots::{
+use crate::facts::{
+    ArgumentNoEscapeFacts, CandidateObjectIndex, ChunkValueFlow, primitive_literal_property_keys,
+};
+use crate::purity::{only_inspects_operand, static_member};
+use analysis_domain::allocation_roots::{
     init_groups, is_plain_data_init, literal_roots, site, tracked_bindings,
 };
-use crate::facts::{
-    ArgumentNoEscapeFacts, CandidateObjectIndex, ChunkValueFlow, TopLevelItemView,
-    close_const_aliases, collect_declared_names, primitive_literal_property_keys,
-    top_level_initializers,
+use analysis_domain::builtins::{self, Invocation};
+use analysis_domain::item_views::{
+    TopLevelItemView, close_const_aliases, collect_declared_names, top_level_initializers,
 };
-use crate::purity::{
-    is_ts_enum_iife_call_for_binding, only_inspects_operand, static_member,
-    ts_enum_iife_argument_binding,
+use analysis_domain::primitive::{BindingPrims, evaluate};
+use analysis_domain::ts_enum_iife::{
+    is_ts_enum_iife_call_for_binding, ts_enum_iife_argument_binding,
 };
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::provenance::InferenceUse;
@@ -1531,14 +1532,14 @@ impl Visit for ArrayMethodScan<'_, '_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::facts::{compute_shadowed_globals, top_level_item_views};
+    use analysis_domain::item_views::{compute_shadowed_globals, top_level_item_views};
 
     fn plain_data(source: &str) -> Vec<String> {
         let module = raw_js_test_support::parse(source);
         let body = top_level_item_views(&module.body);
         let flow = ChunkValueFlow::analyze_with_candidates(
             &body,
-            &crate::facts::allocation_roots::tracked_allocation_roots(&body),
+            &analysis_domain::allocation_roots::tracked_allocation_roots(&body),
         );
         ChunkHeap::analyze(&body, &compute_shadowed_globals(&body), &flow, None)
             .plain_data_bindings()
@@ -1605,7 +1606,7 @@ mod tests {
         let module = raw_js_test_support::parse(source);
         let body = top_level_item_views(&module.body);
         let plain = plain_array_bindings(&body, &compute_shadowed_globals(&body));
-        let prims = crate::facts::abstract_domain::primitive::collect_binding_prims(
+        let prims = analysis_domain::primitive::collect_binding_prims(
             &body,
             &BTreeSet::new(),
             &BTreeSet::new(),
