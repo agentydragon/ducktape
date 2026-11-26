@@ -9,7 +9,7 @@ use analysis_vocabulary::value::{Kind, Value};
 use inference::CertificateContext;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
-use value_flow::Values;
+use value_flow::values::Values;
 
 #[derive(Debug)]
 pub struct FunctionBindingFacts {
