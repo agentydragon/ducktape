@@ -10,6 +10,23 @@ export function timeAgo(value: string | number | Date, now: number = Date.now())
   return intlFormatDistance(value, now, { locale: "en" });
 }
 
+/** Compact elapsed time for the fixed-width activity column. */
+export function compactTimeAgo(value: string | number | Date, now: number = Date.now()): string {
+  const seconds = Math.trunc((now - new Date(value).getTime()) / 1000);
+  for (const [period, unit] of [
+    [86400, "d"],
+    [3600, "h"],
+    [60, "min"],
+    [1, "s"],
+  ] as const) {
+    if (Math.abs(seconds) >= period) {
+      const label = `${Math.floor(Math.abs(seconds) / period)} ${unit}`;
+      return seconds < 0 ? `in ${label}` : `${label} ago`;
+    }
+  }
+  return "now";
+}
+
 /** The full timestamp a relative time stands for, for the reader who hovers it. */
 export function isoTime(value: string | number | Date): string {
   return new Date(value).toISOString();

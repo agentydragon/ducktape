@@ -145,3 +145,23 @@
   margin-top: 4px;
   border-top: 1px solid var(--mantine-color-default-border);
 }
+
+.agentplane-thread-metadata {
+  display: grid;
+  grid-template-columns: 5em minmax(0, 1fr) 10ch;
+  gap: 0.6em;
+  width: min(100%, 23rem);
+}
+.agentplane-thread-metadata > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agentplane-thread-metadata > :last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 48em) {
+  .agentplane-thread-metadata {
+    flex-basis: 100%;
+  }
+}
