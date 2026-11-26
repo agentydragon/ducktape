@@ -79,8 +79,7 @@ With `placement: "systemd"`, each native command runs in a transient unit under
 Native leader exit still fences the entire leaf.
 
 Runtime starts `agentplane-execution-service serve` or `codex exec-server` as a systemd transient
-service with `Restart=no`, bound to the Runtime service unit, with a 90-second process fence deadline.
-The guest supplies systemd,
+service with `Restart=no`, bound to the Runtime service unit. The guest supplies systemd,
 agent UID/GID and block devices. Templates supply resource limits.
 See [native supervision](../../supervision/docs/supervision.md) for the backend and ownership boundary.
 
@@ -89,15 +88,16 @@ See [native supervision](../../supervision/docs/supervision.md) for the backend 
 1. Runtime acquires environment ownership and fences previous native work. In Pods it waits for a
    fresh idle companion generation before admitting an incarnation. In VMs it fences old owned
    systemd services in the expected slices.
-2. When adopting an incarnation with Codex execution configured, Runtime starts the embedded
-   Execution Service and waits for the backend to be ready. The native backend uses a typed gRPC
-   health check without opening an execution session. The Codex backend initializes a WebSocket
-   session and reads `environment/status`.
-   Runtime starts the app-server when requested, with the configured executor URL.
+2. When adopting an incarnation with an executor configured, Runtime starts the embedded Execution
+   Service and waits for the selected backend. The native readiness probe uses gRPC health without
+   opening an execution session. The upstream Codex readiness probe initializes a WebSocket session
+   and requires `environment/status` to report ready. Runtime starts the app-server when requested,
+   with the configured executor URL.
 3. Execution Service repeats the applicable checks every five seconds with a three-second deadline.
-   Three consecutive failures end its lifetime and fence the backend. Runtime proves the old service
-   invocation fenced, then attempts one replacement while the same incarnation remains RUNNING. A
-   failed fence or replacement fails Runtime. Runtime never replays commands.
+   Three consecutive failures end its lifetime. The service gives backend stop and fencing up to
+   90 seconds. Runtime requires the old service to prove its fence before attempting one replacement
+   while the same incarnation remains RUNNING. A failed fence or replacement fails Runtime. Runtime
+   never replays commands.
 4. Quiesce drains Host Sessions and native work, fences Execution, and only then seals journals.
    Ordinary Runtime shutdown uses the same order before releasing environment ownership. Failure to
    prove executor cleanup prevents sealing and starting a successor.
