@@ -135,7 +135,75 @@ theorem planned_link {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} 
   apply TerminalPlanLink.candidate_link_of_modules name exports ss B P ordered
     (fun frames hF => module_agreement valid footprints frames hF) w before
 
+/-- If linking succeeds after a known declaration allocation, its linked
+modules are precisely the scopes constructed from those very frames. -/
+theorem scopes_from_link {p : Program} {w : World} (after : LinkedBehavior.CheckedLink p w)
+    (frames : List (Nat × List (Name × Addr))) (allocatedState : State w)
+    (identities : (checkIdentities p.tops : M w Unit) = pure ())
+    (allocated : declareTops p.tops (initialState w p.regions) = .ok frames allocatedState) :
+    p.scopes frames p.loaded = .ok after.linked := by
+  have linked := after.equation
+  unfold link linkUsingScopes at linked
+  rw [identities, M.pure_bind, M.bind_apply, allocated] at linked
+  change (lift (p.scopes frames p.loaded) >>= fun linked => do
+    initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1))
+    pure linked) allocatedState = .ok after.linked after.ready at linked
+  cases result : p.scopes frames p.loaded with
+  | error why => cases why <;> simp [result, lift, M.bind_apply, throwErr, throwVal, unknown] at linked
+  | ok scopes =>
+    rw [result] at linked
+    change (initFunctions ((unitsOf scopes).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => pure scopes)
+      allocatedState = .ok after.linked after.ready at linked
+    obtain ⟨_, _, _, returned⟩ := bind_ok linked
+    change Res.ok scopes _ = .ok after.linked after.ready at returned
+    have eq : scopes = after.linked := by injection returned
+    cases eq
+    rfl
+
+/-- For an import-free singleton of const declarations, the source and the
+actual authored plan both link in every world. The common allocation equation
+and source scope remain available to the separate live-export proof. -/
+theorem const_planned_links {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    (consts : ∀ s ∈ ss, ∃ x value, s = .decl .const x value)
+    (valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S)) (footprints : MetadataCells.Footprints ss B)
+    (ordered : ProjectedOrder.Kept ss (EsmSplit.mkPlan B S)) (name : Name) (exports : List (Name × Name))
+    (w : World) :
+    let m : Module := ⟨name, [], (List.range ss.length).zip ss, exports⟩
+    let original := TerminalPlanLink.source name exports ss
+    ∃ (frames : List (Nat × List (Name × Addr)))
+      (before : LinkedBehavior.CheckedLink original w)
+      (after : LinkedBehavior.CheckedLink (splitProgram ss B (EsmSplit.mkPlan B S)) w),
+      declareTops m.body (initialState w original.regions) = .ok frames before.ready ∧
+      FramesOf m.body frames ∧ before.linked = [(m, bundleEnv ss frames)] ∧
+      (splitProgram ss B (EsmSplit.mkPlan B S)).scopes frames
+        (splitProgram ss B (EsmSplit.mkPlan B S)).loaded = .ok after.linked ∧
+      before.ready = after.ready ∧ SameUnits (unitsOf before.linked) (unitsOf after.linked) ∧
+      LinkedBehavior.captureUnits (unitsOf before.linked) = LinkedBehavior.captureUnits (unitsOf after.linked) ∧
+      ∀ fuel, runProgram w fuel original = runProgram w fuel (splitProgram ss B (EsmSplit.mkPlan B S)) := by
+  obtain ⟨frames, before, allocated, names, linked⟩ := link_singleModuleConst name exports ss consts w
+  obtain ⟨after, ready, same, schedule, outcomes⟩ := planned_link valid footprints ordered name exports w before
+  have coverage : (ProjectedOrder.executable ss (EsmSplit.mkPlan B S)).Perm (List.range ss.length) := by
+    rw [ordered]
+  have tops := ProjectedOrder.split_tops ss B (EsmSplit.mkPlan B S) coverage
+  have regions := ProjectedOrder.split_regions ss B (EsmSplit.mkPlan B S) coverage
+  have originalRegions : (TerminalPlanLink.source name exports ss).regions = ss.length :=
+    (TerminalPlanLink.source_statements name exports ss).1.trans (single_regions ss)
+  simp only [TerminalPlanLink.source] at originalRegions
+  have identities : (checkIdentities (splitProgram ss B (EsmSplit.mkPlan B S)).tops : M w Unit) = pure () := by
+    rw [tops, checkIdentities, List.map_fst_zip (by simp)]
+    simp [List.nodup_range]
+  have allocated' : declareTops (splitProgram ss B (EsmSplit.mkPlan B S)).tops
+      (initialState w (splitProgram ss B (EsmSplit.mkPlan B S)).regions) = .ok frames before.ready := by
+    have allocated0 : declareTops ((List.range ss.length).zip ss)
+        (initialState w ss.length) = .ok frames before.ready := by
+      simpa only [originalRegions] using allocated
+    simpa only [tops, regions] using allocated0
+  have scopes := scopes_from_link after frames before.ready identities allocated'
+  exact ⟨frames, before, after, allocated, names, linked, scopes, ready, same, schedule, outcomes⟩
+
 #print axioms module_agreement
 #print axioms planned_link
+#print axioms scopes_from_link
+#print axioms const_planned_links
 
 end CoreJS.TerminalPlanScope

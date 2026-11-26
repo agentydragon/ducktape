@@ -1821,8 +1821,36 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.TerminalPlanScope"],
     required_theorems = [
+        "CoreJS.TerminalPlanScope.const_planned_links",
         "CoreJS.TerminalPlanScope.module_agreement",
         "CoreJS.TerminalPlanScope.planned_link",
+        "CoreJS.TerminalPlanScope.scopes_from_link",
     ],
     deps = [":corejs_terminal_plan_scope"],
+)
+
+lean_library(
+    name = "corejs_terminal_footprints",
+    srcs = ["EsmSplit/CoreJS/TerminalFootprints.lean"],
+    deps = [
+        ":corejs_metadata_cells",
+        ":local_export_unit",
+    ],
+)
+
+executable_test(
+    name = "corejs_terminal_footprints_test",
+    src = "TerminalFootprintsTest.lean",
+    deps = [":corejs_terminal_footprints"],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_footprints_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalFootprints"],
+    required_theorems = [
+        "CoreJS.MetadataCells.footprints_iff",
+        "CoreJS.MetadataCells.row_footprint_iff",
+    ],
+    deps = [":corejs_terminal_footprints"],
 )
