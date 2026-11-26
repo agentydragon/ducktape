@@ -28,6 +28,7 @@ from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
 from agentplane.system_tests.driver.scripted_turn import drive_scripted_turn
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.session import Session
+from agentplane.system_tests.driver.session_spec import environment_session_spec
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -173,15 +174,11 @@ async def preserves_live_guest(
         platform.dispatcher,
         platform.history,
         session_id=uuid4(),
-        spec=session_pb2.SessionSpec(
-            placement=session_pb2.SessionPlacement(
-                environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                    environment=session_pb2.ExactEnvironment(name=view.target.name, uid=view.target.uid),
-                    harness=harness,
-                )
-            ),
+        spec=environment_session_spec(
+            view.target.name,
+            view.target.uid,
+            harness=harness,
             model=LOCAL_MODEL_MODELS[harness].id,
-            reasoning_effort="low",
             cwd=VM_WORKING_DIRECTORY,
         ),
     )

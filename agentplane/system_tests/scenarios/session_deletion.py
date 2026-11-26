@@ -40,6 +40,7 @@ from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
 from agentplane.system_tests.driver.sandbox_diagnostics import container_mount_sources
 from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.session_spec import environment_session_spec
 from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -258,15 +259,8 @@ async def deployed_session_command_cannot_cross_deletion(
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(scripted.case_scope())
         uid = await stack.enter_async_context(_sandbox(cluster, name, list(LAUNCH_DEFAULT_POLICY_SETS)))
-        spec = session_pb2.SessionSpec(
-            placement=session_pb2.SessionPlacement(
-                environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                    environment=session_pb2.ExactEnvironment(name=name, uid=uid), harness=session_pb2.HARNESS_CODEX
-                )
-            ),
-            model="chatgpt-sub/oai-responses/gpt-6-luna",
-            cwd="/state",
-            reasoning_effort="low",
+        spec = environment_session_spec(
+            name, uid, harness=session_pb2.HARNESS_CODEX, model="chatgpt-sub/oai-responses/gpt-6-luna", cwd="/state"
         )
         target = await stack.enter_async_context(forward(cluster))
         channel = await stack.enter_async_context(
@@ -567,16 +561,12 @@ async def _create_retained_turn(
     marker: str,
 ) -> str:
     session = str(uuid4())
-    spec = session_pb2.SessionSpec(
-        placement=session_pb2.SessionPlacement(
-            environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                environment=session_pb2.ExactEnvironment(name=sandbox, uid=sandbox_uid),
-                harness=session_pb2.HARNESS_CODEX,
-            )
-        ),
+    spec = environment_session_spec(
+        sandbox,
+        sandbox_uid,
+        harness=session_pb2.HARNESS_CODEX,
         model="chatgpt-sub/oai-responses/gpt-6-luna",
         cwd="/state",
-        reasoning_effort="low",
     )
     await dispatcher.CreateSession(
         session_dispatcher_pb2.CreateSessionRequest(session_id=session, spec=spec), timeout=15

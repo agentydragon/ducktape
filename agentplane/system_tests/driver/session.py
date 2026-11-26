@@ -16,6 +16,7 @@ from agentplane.history_service.testing.session_events import SessionEventPages
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session
+from agentplane.system_tests.driver.session_spec import environment_session_spec
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.driver.turn import TURN_SECONDS, Turn, TurnCollector
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
@@ -213,15 +214,6 @@ async def run_session_setup_script(
         history,
         session_id=session_id,
         setup_script=setup_script,
-        spec=session_pb2.SessionSpec(
-            placement=session_pb2.SessionPlacement(
-                environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                    environment=session_pb2.ExactEnvironment(name=sandbox_name, uid=sandbox_uid), harness=harness
-                )
-            ),
-            cwd=cwd,
-            model=model,
-            reasoning_effort="low",
-        ),
+        spec=environment_session_spec(sandbox_name, sandbox_uid, harness=harness, model=model, cwd=cwd),
     )
     return await session.setup_output()

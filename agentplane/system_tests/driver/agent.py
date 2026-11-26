@@ -29,6 +29,7 @@ from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.scripted_turn import drive_scripted_turn
+from agentplane.system_tests.driver.session_spec import environment_session_spec
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.driver.turn import TURN_SECONDS, Turn, TurnCollector
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
@@ -106,16 +107,8 @@ class Agent:
             "system_test.session.create",
             attributes={"sandbox.name": sandbox, "harness": session_pb2.Harness.Name(harness)},
         ):
-            spec = session_pb2.SessionSpec(
-                placement=session_pb2.SessionPlacement(
-                    environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                        environment=session_pb2.ExactEnvironment(name=sandbox, uid=sandbox_uid), harness=harness
-                    )
-                ),
-                cwd=cwd,
-                model=model,
-                reasoning_effort="low",
-                instructions=instructions,
+            spec = environment_session_spec(
+                sandbox, sandbox_uid, harness=harness, model=model, cwd=cwd, instructions=instructions
             )
             # Retry the same desired Session even if an earlier create reached the runner.
             session_id = uuid4()
@@ -203,7 +196,7 @@ async def scripted_turn_with_admission_and_history(
         shell_call_id=shell_call_id,
         response=response,
     )
-    entries = await _history(client, agent.thread_id, completed_turns=history_turns)
+    entries = await history_through_turn(client, agent.thread_id, completed_turns=history_turns)
     assert any(
         entry.event.HasField("command_admitted") and entry.event.command_admitted.command.command_id == command_id
         for entry in entries
@@ -224,20 +217,17 @@ async def scripted_turn_with_admission_and_history(
     return turn, entries, request
 
 
-async def _history(client: Client, thread_id: UUID, *, completed_turns: int) -> list[event_log_pb2.EventEntry]:
-    reader = SessionEventReader(client, thread_id, after_cursor=0)
+async def history_through_turn(
+    client: Client, thread_id: UUID, *, completed_turns: int
+) -> list[event_log_pb2.EventEntry]:
+    """Read the corrected history prefix ending at the requested turn's terminal event."""
+    reader = SessionEventReader(client, thread_id)
     observed_turns = 0
-    terminal_cursor: int | None = None
     async with asyncio.timeout(TURN_SECONDS):
-        while terminal_cursor is None:
-            entries = await reader.read_page()
-            for entry in entries:
+        while True:
+            for entry in await reader.read_page():
                 if entry.event.HasField("turn_completed"):
                     observed_turns += 1
                     if observed_turns == completed_turns:
-                        terminal_cursor = entry.cursor
-                        break
-            if terminal_cursor is None:
-                await reader.wait_for_next_page()
-    assert observed_turns == completed_turns, f"History ended after {observed_turns} completed turns"
-    return [entry for entry in reader.entries if entry.cursor <= terminal_cursor]
+                        return [row for row in reader.entries if row.cursor <= entry.cursor]
+            await reader.wait_for_next_page()
