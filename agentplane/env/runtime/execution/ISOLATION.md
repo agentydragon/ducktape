@@ -17,34 +17,31 @@ Resource containment and signal permissions are separate protections. Cgroups co
 usage; they do not prevent an agent from signaling a server running under the same UID. Signal
 protection needs appropriate UID/permission or PID namespace boundaries.
 
-## Current Codex sharing
+## Shared executor
 
-The current Codex execution backend is shared at the environment level. This topology is accepted
-for now, with the resource and failure coupling described below.
+The shared Codex app-server connects to the environment's executor through `CODEX_EXEC_SERVER_URL`.
+Central sampler execution connections use the same backend. Native session IDs, process handles
+and working directories do not create separate kernel resource domains.
 
-Execution Service owns one native execution backend for the environment. The shared app-server receives
-`CODEX_EXEC_SERVER_URL` for that existing server; opening another Codex thread does not start another
-server. Central-sampler execution connections to the same environment also use that backend.
+Pod commands share the companion's resource limits and PID namespace. In VMs, direct command
+placement shares the executor service cgroup. The separate systemd placement puts native
+commands in their own transient units under an aggregate budget.
+[Pod and VM placement](docs/codex_executor.md) documents the topology.
 
-In VMs, the native backend and its commands share one transient service cgroup under
-`agentplane-executors.slice`. In Pods, they share the companion container's resource limits and PID
-namespace. CPU, memory and task limits apply collectively across Sessions. Native session IDs,
-process handles and working directories do not create separate kernel resource domains.
-
-Individual process signal/terminate operations remain available. Fencing or restarting the backend
-affects every Session using it and loses their native execution state. Authored workspace files
-survive; prior commands are not automatically replayed.
+Fencing or restarting affects every Session using that backend and loses its execution state.
+Individual process terminate and signal operations remain available. Authored workspace files
+survive. Runtime never replays commands.
 
 ## Current harness and server protection
 
-| Resident process         | Resource boundary from agent commands                                                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Shared Codex app-server  | Codex commands have a separate transient service cgroup in VMs and a separate container budget in Pods with the isolated executor enabled. |
-| Native execution backend | Shares its transient service cgroup or companion container budget with its commands.                                                       |
-| Claude harness           | Direct Bash children share the harness's transient service cgroup in VMs and its container budget in Pods.                                 |
+| Resident process         | Resource boundary from agent commands                                                                                                   |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared Codex app-server  | A configured executor gives Codex commands a separate budget in both Pods and VMs.                                                      |
+| Native execution backend | Shares its resource budget with directly placed commands. Only VM systemd command placement gives commands a separate aggregate budget. |
+| Claude harness           | Direct Bash children share the harness's transient service cgroup in VMs and its container budget in Pods.                              |
 
-The current Codex placement separates the app-server's memory budget from Codex command memory, while
-protection of the native execution backend itself remains a gap. Claude's direct execution does not yet
+Where an isolated executor is configured, its budget protects the app-server from command memory pressure.
+The backend remains exposed to direct-placement commands. Claude's direct execution does not yet
 provide the intended harness-versus-command resource boundary in either environment type.
 
 In VMs, the shared Codex app-server runs under `agentplane-workloads.slice`. Each Claude harness
@@ -58,7 +55,7 @@ a uniform per-Session resource boundary across harnesses or prescribe the future
 
 ## Codex sandbox controls
 
-The Codex compatibility endpoint rejects requests containing a sandbox policy; it does not
+The native backend's Codex compatibility endpoint rejects requests containing a sandbox policy; it does not
 implement Codex's Linux bubblewrap sandbox. Agentplane's app-server uses `danger-full-access`
 and its typed Execution API does not request that policy. Processes therefore rely on the
 execution container or VM scope and their existing resource limits. In particular, a command can

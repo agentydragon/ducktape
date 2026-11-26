@@ -1,48 +1,19 @@
 # Environment execution service
 
-Environment Runtime embeds the typed [`Executor` API](executor.proto), independently of a native
-harness, app-server, model provider or integration app. It forwards to the shared native execution
-backend, which also exposes the Codex WebSocket API. Generated Go and Python clients live with this protocol.
-[SPEC.md](SPEC.md) defines lifetime, admission and recovery guarantees.
+Environment Runtime embeds the typed [`Executor` API](executor.proto) and owns backend readiness,
+health and fencing. Native execution is independent of a harness, model provider or integration
+app. The native backend serves typed gRPC and the Codex WebSocket protocol. Generated Go and Python
+clients live with the typed protocol. [SPEC.md](SPEC.md) defines admission, lifetime and recovery.
 
-[Isolation and resources](ISOLATION.md) describes protection goals, the current shared Codex
-backend, process placement, collective resource limits and failure scope.
+## Backend configuration
 
-Environment Runtime runs the admission proxy in-process and forwards typed RPCs to the backend. Host asks Runtime
-for in-process readiness before starting its shared Codex app-server; Runtime owns startup, health,
-shutdown and fencing. Native readiness checks the typed service; Codex-backed readiness checks its WebSocket protocol endpoint. In Pods,
-the `companion` subcommand runs as PID 1 in the isolated executor container and owns its process namespace. Gateway and the central sampler continue to use the unchanged `Executor` wire
-protocol. `//agentplane/env/e2e:test_executor_container` exercises process output, session resume,
-filesystem access, incarnation fencing and shutdown through Runtime with the real native executor.
+`environment.executor.implementation` defaults to `native`, which launches
+`agentplane-execution-service serve`. Selecting `codex` explicitly launches upstream `codex exec-server`
+and adapts the typed API to its WebSocket protocol. Both owners support that compatibility option
+with direct command placement. Omitting `environment.executor` selects local tools at configuration
+time. An executor failure cannot switch a running environment to local tools.
 
-TODO: Reconsider embedding the native execution server in Environment Runtime once the ownership,
-resource isolation, and failure behavior of that arrangement have been evaluated.
-
-## Pod companion invocation
-
-`//agentplane/env/runtime/execution/cmd:agentplane-execution-service` supplies the Pod companion
-entrypoint. The environment owner starts it as PID 1 in the execution container:
-
-```sh
-agentplane-execution-service companion --socket /run/agentplane/executor/control.sock \
-  --listen ws://127.0.0.1:4501 --binary /run/agentplane/environment/bin/agentplane-execution-service --health-listen 0.0.0.0:4502
-```
-
-The service fences a prior owned companion before claiming an idle generation. Canceling its gRPC
-ownership stream stops the executor, kills every remaining process in the private companion PID namespace and
-waits for the namespace to contain only PID 1 before publishing a fresh idle generation. The
-companion stays available for the next claim. An unexpected executor exit triggers the same
-process-domain fence and closes the ownership lease so Runtime can recover the backend. If the
-in-container proof fails, the companion exits so the outer runtime can fence the whole namespace.
-Runtime starts the API, waits for native protocol readiness, and joins its shutdown
-and 90-second backend fence before replacement. A failed cleanup is never an execution success receipt.
-
-The executor implementation is selected by `environment.executor.implementation` in the Runtime
-configuration: `native` (the default) launches `agentplane-execution-service serve`, while `codex`
-uses Codex's exec server through the compatibility adapter. Both Pod and VM environments support
-this choice.
-
-Native execution limits are optional overrides in the same Runtime configuration, for example:
+Native execution limits are optional overrides in the Runtime configuration, for example:
 
 ```json
 "executor": {
@@ -57,23 +28,20 @@ Native execution limits are optional overrides in the same Runtime configuration
 }
 ```
 
-Pod executors use a companion `owner` with an absolute `socket`; VM executors use
-`{"kind": "systemd"}` ([owner and placement rules](../docs/config.md)).
+Unspecified limits use `native.DefaultLimits` and `codexshim.DefaultLimits`. Values are counts or
+bytes, except native retention settings, which are seconds. Unknown fields and invalid values are
+rejected. The `codex` limit block configures the native backend's WebSocket shim. Neither limit
+block applies to the upstream backend. Changes take effect on backend restart.
 
-Unspecified fields use `native.DefaultLimits` and
-`codexshim.DefaultLimits`; unknown fields and invalid values are rejected. Values are counts or
-bytes, except the native retention settings, which are seconds. These limits apply to the native
-implementation and cannot be set with the Codex-backed implementation. A new configuration takes
-effect when the backend is restarted; restarting abandons its live process handles and never
-replays uncertain work.
+See the [owner and placement rules](../docs/config.md#file-fields) and the
+[operator guide](docs/codex_executor.md) for the Pod companion command, VM placement and recovery.
+[Isolation and resources](ISOLATION.md) explains the shared resource and trust boundaries.
 
-Runtime publishes the proxy after a bounded backend-specific readiness probe. The service
-checks native gRPC health or the Codex WebSocket protocol every five seconds with a three-second deadline; three consecutive failures
-end the service lifetime and fence the backend. Shutdown closes held sessions, joins direct calls and stops
-the backend. Backend exit ends this service lifetime; Environment Runtime proves the old service
-fenced before attempting one replacement while the incarnation remains RUNNING. A failed fence or
-service start fails Runtime rather than starting an unfenced successor. Neither startup nor shutdown
-replays execution requests.
+`//agentplane/env/e2e:test_executor_container` exercises native and upstream Codex backend selection,
+process output, Session resume, filesystem access, incarnation fencing and shutdown through Runtime.
+
+TODO: Reconsider embedding the native execution server in Environment Runtime once the ownership,
+resource isolation, and failure behavior of that arrangement have been evaluated.
 
 ## Source ownership
 
@@ -97,22 +65,3 @@ Native sessions and processes are in-memory state. Before restarting an executor
 sampler execution bindings and reconcile unfinished operations. Preserve authored files, Session journals and
 volumes, and read [staging data preservation](../../../docs/staging_data_preservation.md) before a deployment
 rollback.
-
-## Pod companion container
-
-Environment Pods can run Codex command execution through a companion container in the same Pod. The runner
-retains the Codex app-server and journals; `agentplane-execution-service companion` runs as PID 1 and supervises
-the native execution service in its private container PID namespace. The Execution Service claims the companion over gRPC on a Unix socket before the backend
-starts and fences it before replacing a lost process. A companion exit or failed health probe lets
-Kubernetes restart that container with a fresh PID namespace; the environment services never replay an in-flight
-command. `Environment.isolated_codex_executor` controls this Pod-template policy and can be disabled
-for environments that need execution inside the Runtime container.
-
-Both containers run as the image's uid and gid 1000 and share the Sandbox state and workspace at the
-same absolute paths, plus `/home/runner`, `/tmp`, and the read-only runner disk image. They use the
-same proxy and CA settings. Processes in either container have the same filesystem identity and can
-change the shared files, so the companion is a process and resource boundary, not a trust boundary.
-Its Kubernetes requests and limits are independently configurable with `executor_resources` on
-`EnvironmentSandboxTemplate`; Environment Runtime resource overrides continue to apply only to that container. The
-companion receives any optional BuildBuddy diagnostics key. It gets no model credentials or
-sidecar-projected tokens.
