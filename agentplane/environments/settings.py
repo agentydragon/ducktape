@@ -9,7 +9,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.identity.auth.delegation import ServiceDelegation
 from agentplane.identity.auth.listener import Listener
-from agentplane.net.peertls.config import SANDBOX_CONTROLLER_URI, ClientTLS, Security, ServiceSPIFFEID
+from agentplane.net.peertls.config import (
+    SANDBOX_CONTROLLER_URI,
+    ClientTLS,
+    PolicyServicePeer,
+    Security,
+    ServiceSPIFFEID,
+)
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 
 
@@ -70,6 +76,14 @@ class Settings(BaseModel):
     runner_gateway_tls: ClientTLS | None = None
     runner_security: Security
     environment_service: EnvironmentService | None = Field(default=None, exclude_if=lambda value: value is None)
+    # CLEANUP(added 2026-11-26): require it and drop EnvironmentService's Kubernetes Identity reads once the staging
+    #   manifests set it (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+    policy_service: PolicyServicePeer | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Where EnvironmentService follows Identities instead of reading Identity resources; "
+        "the reconciler still reads Identity resources.",
+    )
 
     namespace: str = Field(
         min_length=1, description="Namespace where the Sandboxes, their templates, Pods and state PVCs live."
@@ -93,4 +107,8 @@ class Settings(BaseModel):
             self.runner_gateway_tls.validate_caller(self.runner_gateway_token_file, SANDBOX_CONTROLLER_URI)
         elif self.runner_gateway_token_file is None:
             raise ValueError("a bearer token file or service SVID is required")
+        if self.policy_service is not None:
+            if self.environment_service is None:
+                raise ValueError("policy_service requires environment_service, its only reader")
+            self.policy_service.tls.validate_caller(None, SANDBOX_CONTROLLER_URI)
         return self

@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -75,7 +76,7 @@ func run() error {
 		},
 		ServiceReaders: callers, ServiceManagers: callers, ServiceOperators: callers,
 		RuntimeProxy: runtimeProxy,
-	}, namespace, config, scheme)
+	}, namespace, config, scheme, reader.KubernetesIdentities{})
 	if err != nil {
 		return err
 	}

@@ -46,6 +46,7 @@ py_test(
     deps = [
         ":settings",
         "//:conftest",
+        "//agentplane/net/peertls:config",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

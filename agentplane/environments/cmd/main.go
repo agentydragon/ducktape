@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -27,6 +28,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 )
 
@@ -50,6 +53,7 @@ func main() {
 }
 
 func run(c config) error {
+	ctx := ctrl.SetupSignalHandler()
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return err
@@ -122,7 +126,16 @@ func run(c config) error {
 	}
 	ready := healthz.Ping
 	if c.EnvironmentService != nil {
-		server, err := serving.New(*c.EnvironmentService, c.Namespace, restConfig, scheme)
+		var identities reader.IdentitySource = reader.KubernetesIdentities{}
+		if c.PolicyService != nil {
+			cache, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
+			if err != nil {
+				return fmt.Errorf("PolicyService Identity view: %w", err)
+			}
+			defer stop()
+			identities = reader.CachedIdentities{View: cache}
+		}
+		server, err := serving.New(*c.EnvironmentService, c.Namespace, restConfig, scheme, identities)
 		if err != nil {
 			return err
 		}
@@ -134,7 +147,7 @@ func run(c config) error {
 	if err := mgr.AddReadyzCheck("serving", ready); err != nil {
 		return err
 	}
-	return mgr.Start(ctrl.SetupSignalHandler())
+	return mgr.Start(ctx)
 }
 
 // servesKubeVirt is whether the cluster serves the VirtualMachine API this controller watches.

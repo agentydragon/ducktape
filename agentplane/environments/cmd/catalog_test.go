@@ -7,6 +7,7 @@ import (
 	environmentservice "github.com/agentydragon/ducktape/agentplane/environments/internal/service"
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -66,14 +67,18 @@ func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) 
 		}},
 	}}
 	objects := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(sandbox, executionAccount).Build()
+	identities, err := auth.KubernetesIdentityUIDs(objects, "agentplane")
+	if err != nil {
+		t.Fatal(err)
+	}
 	lifecycleManager, err := resume.NewManager(lifecycle.Options{
-		Namespace: "agentplane", Objects: objects,
+		Namespace: "agentplane", Objects: objects, Identities: identities,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	service, err := environmentservice.New(
-		"agentplane", objects, config.RuntimeCatalog, lifecycleManager,
+		"agentplane", objects, identities, config.RuntimeCatalog, lifecycleManager,
 		environmentservice.Options{ServiceReaders: sets.New(config.ServiceReaders...)},
 	)
 	if err != nil {

@@ -5,6 +5,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.environments.settings import EnvironmentService, RuntimeProxy, Settings
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, POLICY_CONTROLLER_URI, SANDBOX_CONTROLLER_URI
 
 
 def receiver_settings() -> dict[str, object]:
@@ -23,17 +24,62 @@ def receiver_settings() -> dict[str, object]:
     }
 
 
-def test_receiver_omission_does_not_add_a_deployment_key() -> None:
-    settings = Settings.model_validate(
-        {
-            "namespace": "test-environments",
-            "runner_security": {"mode": "insecure"},
-            "runner_gateway_target": "runner-gateway.test.svc:8080",
-            "runner_gateway_token_file": "/run/test/token",
+def controller_settings() -> dict[str, object]:
+    return {
+        "namespace": "test-environments",
+        "runner_security": {"mode": "insecure"},
+        "runner_gateway_target": "runner-gateway.test.svc:8080",
+        "runner_gateway_token_file": "/run/test/token",
+    }
+
+
+def policy_service(*, target: str = "policy-controller:8443", **tls: object) -> dict[str, object]:
+    return {
+        "target": target,
+        "tls": {
+            "ca_file": "/run/test/ca.crt",
+            "server_uri": POLICY_CONTROLLER_URI,
+            "cert_file": "/run/test/tls.crt",
+            "key_file": "/run/test/tls.key",
+            "client_uri": SANDBOX_CONTROLLER_URI,
         }
-    )
+        | tls,
+    }
+
+
+def test_receiver_omission_does_not_add_a_deployment_key() -> None:
+    settings = Settings.model_validate(controller_settings())
     assert settings.environment_service is None
-    assert "environment_service" not in settings.model_dump(mode="json")
+    assert settings.policy_service is None
+    dumped = settings.model_dump(mode="json")
+    assert "environment_service" not in dumped
+    assert "policy_service" not in dumped
+
+
+def test_policy_service_is_rendered_for_the_environment_service() -> None:
+    settings = Settings.model_validate(
+        controller_settings() | {"environment_service": receiver_settings(), "policy_service": policy_service()}
+    )
+    assert settings.model_dump(mode="json")["policy_service"]["tls"]["client_uri"] == SANDBOX_CONTROLLER_URI
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"policy_service": policy_service()},
+        {"environment_service": receiver_settings(), "policy_service": policy_service(target="")},
+        {"environment_service": receiver_settings(), "policy_service": policy_service(client_uri=APP_URI)},
+        {"environment_service": receiver_settings(), "policy_service": policy_service(server_uri=ACTIONS_URI)},
+        {
+            "environment_service": receiver_settings(),
+            "policy_service": policy_service(cert_file=None, key_file=None, client_uri=None),
+        },
+    ],
+    ids=["no-environment-service", "no-target", "another-caller", "another-server", "no-svid"],
+)
+def test_policy_service_rejects_incomplete_or_foreign_peers(settings: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        Settings.model_validate(controller_settings() | settings)
 
 
 def test_runtime_proxy_omission_does_not_add_a_deployment_key() -> None:

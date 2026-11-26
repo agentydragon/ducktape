@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -182,7 +183,7 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 	leaseDuration, renewDeadline, retryPeriod := 6*time.Second, 4*time.Second, time.Second
 	startReplica := func() *replica {
 		t.Helper()
-		server, err := New(c, servingTestNamespace, kube.Config, scheme)
+		server, err := New(c, servingTestNamespace, kube.Config, scheme, reader.KubernetesIdentities{})
 		if err != nil {
 			t.Fatal(err)
 		}

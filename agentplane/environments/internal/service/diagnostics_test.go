@@ -44,7 +44,7 @@ func TestRuntimeDiagnosticsPeerAndIncarnation(t *testing.T) {
 	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 	snapshot := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "boot-id", Processes: []*sessionpb.HarnessProcessStatus{{ProcessId: "process-1", AssignedSessionIds: []string{"session-a"}}}}
 	runtime := &diagnosticRuntime{t: t, target: target, read: func() (*sessionpb.EnvironmentRuntimeStatus, error) { return snapshot, nil }}
-	rpc, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{RuntimeDiagnostics: runtime})
+	rpc, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{RuntimeDiagnostics: runtime})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestRuntimeDiagnosticsUnavailableDoesNotResume(t *testing.T) {
 	sandbox.Spec.Running = false
 	sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
 	objects := readerWithObjects(t, sandbox)
-	rpc, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{})
+	rpc, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,11 +59,12 @@ type Server struct {
 }
 
 // New builds a Server reading Sandboxes, Pods and KubeVirt objects through objects, which in production is
-// an informer cache whose health is objectsHealth.
+// an informer cache whose health is objectsHealth, and Sandbox execution Identities through identities.
 func New(
 	config Config,
 	objects client.Reader,
 	objectsHealth *watchhealth.Health,
+	identities auth.IdentityUIDReader,
 ) (*Server, error) {
 	if err := config.RunnerSecurity.Validate(); err != nil {
 		return nil, fmt.Errorf("Runtime transport security: %w", err)
@@ -75,7 +76,7 @@ func New(
 	if err := validateControlTiming(config.ControlTiming); err != nil {
 		return nil, err
 	}
-	sandboxes, err := newSandboxResolver(config.Namespace, objects, objectsHealth)
+	sandboxes, err := newSandboxResolver(config.Namespace, objects, objectsHealth, identities)
 	if err != nil {
 		return nil, err
 	}

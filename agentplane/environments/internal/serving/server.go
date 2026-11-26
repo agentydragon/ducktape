@@ -45,7 +45,8 @@ type Server struct {
 
 // New validates local credentials before the manager starts. All API reads used by RPCs bypass
 // the manager's leader-scoped caches, including watch streams and authorization conflict retries.
-func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Scheme) (*Server, error) {
+// Every Identity reader resolves Identities from identities; a CachedIdentities view is run by the caller.
+func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Scheme, identities reader.IdentitySource) (*Server, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -57,22 +58,26 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	if err != nil {
 		return nil, err
 	}
-	identities, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
+	policyIdentities, err := identityUIDs(identities, objects, c.PolicyNamespace)
 	if err != nil {
 		return nil, err
 	}
-	svids, err := auth.NewKubernetesSVIDResolver(apiConfig, []string{namespace}, identities)
+	sandboxIdentities, err := identityUIDs(identities, objects, namespace)
+	if err != nil {
+		return nil, err
+	}
+	svids, err := auth.NewKubernetesSVIDResolver(apiConfig, []string{namespace}, policyIdentities)
 	if err != nil {
 		return nil, err
 	}
 	policyHealth := watchhealth.New()
 	watches := reader.NewWatches(apiConfig, policyHealth)
 	rules := access.NewIndex()
-	if err := reader.WatchRules(watches, rules, c.PolicyNamespace, access.Ready, reader.KubernetesIdentities{}); err != nil {
+	if err := reader.WatchRules(watches, rules, c.PolicyNamespace, access.Ready, identities); err != nil {
 		return nil, err
 	}
 	manager, err := resume.NewManager(lifecycle.Options{
-		Namespace: namespace, Objects: objects, EnvironmentRules: rules,
+		Namespace: namespace, Objects: objects, Identities: sandboxIdentities, EnvironmentRules: rules,
 		PolicyReady: func() error {
 			if !policyHealth.Available() {
 				return errors.New("environment policy state is unavailable")
@@ -87,7 +92,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	}
 	var proxy *runtimeProxy
 	if c.RuntimeProxy != nil {
-		proxy, err = newRuntimeProxy(*c.RuntimeProxy, namespace, apiConfig, scheme)
+		proxy, err = newRuntimeProxy(*c.RuntimeProxy, namespace, apiConfig, scheme, identities)
 		if err != nil {
 			return nil, fmt.Errorf("Runtime proxy: %w", err)
 		}
@@ -99,7 +104,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	if proxy != nil {
 		serviceOptions.RuntimeDiagnostics = proxy.server
 	}
-	service, err := environmentservice.New(namespace, objects, c.RuntimeCatalog, manager, serviceOptions)
+	service, err := environmentservice.New(namespace, objects, sandboxIdentities, c.RuntimeCatalog, manager, serviceOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +113,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 		return nil, err
 	}
 	if d := c.ServiceDelegation; d != nil {
-		methods, err = methods.WithServiceDelegation(d.Methods, d.Actors, identities)
+		methods, err = methods.WithServiceDelegation(d.Methods, d.Actors, policyIdentities)
 		if err != nil {
 			return nil, err
 		}
@@ -134,6 +139,22 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	rpcHealth.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
 	healthpb.RegisterHealthServer(server, rpcHealth)
 	return &Server{config: c, server: server, watches: watches, policyHealth: policyHealth, rpcHealth: rpcHealth, proxy: proxy}, nil
+}
+
+// identityUIDs resolves live Identities from the PolicyService view, or from the Identity resources in namespace
+// read through objects.
+func identityUIDs(source reader.IdentitySource, objects client.Reader, namespace string) (auth.IdentityUIDReader, error) {
+	switch source := source.(type) {
+	case reader.KubernetesIdentities:
+		return auth.KubernetesIdentityUIDs(objects, namespace)
+	case reader.CachedIdentities:
+		if source.View == nil {
+			return nil, errors.New("CachedIdentities needs a View")
+		}
+		return source.View, nil
+	default:
+		return nil, fmt.Errorf("unknown Identity source %T", source)
+	}
 }
 
 // NeedLeaderElection keeps RPCs and their independent policy watches running on standbys.

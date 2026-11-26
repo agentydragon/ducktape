@@ -169,11 +169,21 @@ func (f *sandboxFixture) newServerReading(t *testing.T, objects client.Reader, h
 		RuntimeReaders: []string{peertls.AppURI}, SessionServices: []string{peertls.SessionsURI},
 		ExecutorServices: executorCallers, ControllerServices: []string{peertls.SandboxControllerURI},
 		ControlTiming: ControlTiming{LivenessTimeout: 10 * time.Second},
-	}, objects, health)
+	}, objects, health, f.identities(t, objects))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return server
+}
+
+// identities reads the fixture's Identities through objects, as the Kubernetes-backed production wiring does.
+func (f *sandboxFixture) identities(t *testing.T, objects client.Reader) auth.IdentityUIDReader {
+	t.Helper()
+	identities, err := auth.KubernetesIdentityUIDs(objects, f.namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identities
 }
 
 func (f *sandboxFixture) callerContext(service string) context.Context {
