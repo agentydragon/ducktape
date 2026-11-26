@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 
 use ::gate::{
     AtInitReadPosition, BlockingRejection, BlockingSccEntry, CutEdgeExplanation, CycleEdge,
-    render_explanations,
+    render_binding_pairs,
 };
 use analysis::{
     CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DependencyEdgeId,
@@ -1020,30 +1020,8 @@ fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
     }
 
     if !report.evidence.is_empty() {
-        // Group evidence by binding-pair blame key, same shape as
-        // `render_cycle_summary`'s stderr block. Anonymous endpoints
-        // fall back to `<anon stmt #ord>` / `<side-effect>` so every
-        // row has a stable label.
-        let mut groups: BTreeMap<BlamePairKey, Vec<&CycleEdge>> = BTreeMap::new();
-        for edge in &report.evidence {
-            groups.entry(BlamePairKey::of(edge)).or_default().push(edge);
-        }
-        let mut ranked: Vec<(BlamePairKey, Vec<&CycleEdge>)> = groups.into_iter().collect();
-        ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
-
         out.push_str("  evidence (grouped by binding pair, then why each edge constrains):\n");
-        for (key, edges) in &ranked {
-            out.push_str(&format!(
-                "    {n:>4}x  {fb} ({fm})  --{k}-->  {tb} ({tm})\n",
-                n = edges.len(),
-                fb = key.from_label,
-                fm = key.from,
-                k = edges[0].kind.diagnostic_label(),
-                tb = key.to_label,
-                tm = key.to,
-            ));
-            render_explanations(edges, out);
-        }
+        render_binding_pairs(&report.evidence, None, out);
     }
 }
 
@@ -1092,21 +1070,7 @@ fn render_inert_edges(edges: &[CycleEdge], out: &mut String) {
 }
 
 fn render_edge(edge: &CycleEdge, out: &mut String) {
-    let from_b = match &edge.from_binding {
-        Some(a) => a.as_ref().to_string(),
-        None => format!("<anon stmt #{}>", edge.statement_ordinal.0),
-    };
-    let to_b = match &edge.binding {
-        Some(a) => a.as_ref().to_string(),
-        None => "<side-effect>".to_string(),
-    };
-    out.push_str(&format!(
-        "    {from_b} ({fm})  --{k}-->  {to_b} ({tm})  [stmt #{ord}]\n",
-        fm = edge.from,
-        k = edge.kind.diagnostic_label(),
-        tm = edge.to,
-        ord = edge.statement_ordinal.0,
-    ));
+    edge.render_header(out);
     if let Some(explanation) = &edge.explanation {
         out.push_str(&format!("      why: {explanation}\n"));
     }
@@ -1354,31 +1318,4 @@ fn impure_source_unit_cause(node: &SourceUnitReport) -> Option<SequencedSourceUn
             .map(|execution| execution.complete),
         heap_frontier,
     })
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-struct BlamePairKey {
-    from_label: String,
-    from: ModulePath,
-    to: ModulePath,
-    to_label: String,
-}
-
-impl BlamePairKey {
-    fn of(edge: &CycleEdge) -> Self {
-        let from_label = match &edge.from_binding {
-            Some(a) => a.as_ref().to_string(),
-            None => format!("<anon stmt #{}>", edge.statement_ordinal.0),
-        };
-        let to_label = match &edge.binding {
-            Some(a) => a.as_ref().to_string(),
-            None => "<side-effect>".to_string(),
-        };
-        Self {
-            from_label,
-            from: edge.from.clone(),
-            to: edge.to.clone(),
-            to_label,
-        }
-    }
 }
