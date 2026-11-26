@@ -59,6 +59,12 @@ js_library(
 )
 
 js_library(
+    name = "public_refusal",
+    srcs = ["public_refusal.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
+)
+
+js_library(
     name = "split",
     srcs = ["split.mjs"],
     visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
