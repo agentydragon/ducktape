@@ -4,6 +4,21 @@
 
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+
+/// Run one case of a table, naming it when an assertion inside fails.
+fn in_case(case: &str, check: impl FnOnce()) {
+    if let Err(panic) = catch_unwind(AssertUnwindSafe(check)) {
+        eprintln!("case {case:?} failed");
+        resume_unwind(panic);
+    }
+}
+
+fn members(names: &[&'static str]) -> Vec<Member> {
+    names.iter().copied().map(Member::new).collect()
+}
+
+// ─── constructors receiving callbacks ───────────────────────────────────
 
 fn command_later_split_modules() -> Vec<LogicalModuleEntry> {
     vec![
@@ -12,10 +27,35 @@ fn command_later_split_modules() -> Vec<LogicalModuleEntry> {
     ]
 }
 
+/// `command` before `later`: accepted only if building `command` cannot run
+/// a callback that reads `later`.
+fn command_later_split(source: &str) -> FixtureOpts<'_> {
+    FixtureOpts::new(source, command_later_split_modules())
+        .with_import_order(&["command", "value", "residual"])
+}
+
+/// `Command`, `factory` and `command` in one module, `later` in another.
+fn command_factory_split(source: &str) -> FixtureOpts<'_> {
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "command",
+                &binding_members(["Command", "factory", "command"]),
+            ),
+            logical_module("value", &[Member::new("later")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+}
+
+/// A local constructor that stores the config callback or reads plain data
+/// from a fresh config never runs `execute` before `later` initializes.
 #[test]
-fn local_constructor_stores_callback_until_called() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+fn local_constructor_defers_callbacks_stored_from_config() {
+    for (name, source, expected) in [
+        (
+            "stores the config until called",
             r#"class Command {
   constructor(config) { this.config = config; }
   execute() { return this.config.execute(); }
@@ -26,23 +66,10 @@ const later = 7;
 console.log(command.execute());
 export { Command, factory, command, later };
 "#,
-            vec![
-                logical_module(
-                    "command",
-                    &binding_members(["Command", "factory", "command"]),
-                ),
-                logical_module("value", &[Member::new("later")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "7\n");
-}
-
-#[test]
-fn local_constructor_reads_plain_config_data_without_invoking_callback() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            "7\n",
+        ),
+        (
+            "reads plain config data",
             r#"class Command {
   constructor(config) { this.execute = config.execute; }
 }
@@ -52,23 +79,10 @@ const later = 7;
 console.log(command.execute());
 export { Command, factory, command, later };
 "#,
-            vec![
-                logical_module(
-                    "command",
-                    &binding_members(["Command", "factory", "command"]),
-                ),
-                logical_module("value", &[Member::new("later")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "7\n");
-}
-
-#[test]
-fn local_constructor_reads_absent_plain_config_data_without_invoking_callback() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            "7\n",
+        ),
+        (
+            "reads absent plain config data",
             r#"class Command {
   constructor(config) {
     this.execute = config.execute;
@@ -81,17 +95,32 @@ const later = 7;
 console.log(command.execute(), command.weight);
 export { Command, factory, command, later };
 "#,
-            vec![
-                logical_module(
-                    "command",
-                    &binding_members(["Command", "factory", "command"]),
-                ),
-                logical_module("value", &[Member::new("later")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "7 0\n");
+            "7 0\n",
+        ),
+        (
+            "fresh config with an ordinary method",
+            r#"class Command {
+  constructor(config) {
+    this.execute = config.execute;
+    this.isAllowed = config.isAllowed;
+    this.weight = config.weight ?? 0;
+    this.focus = config.focus === !0;
+  }
+}
+function factory(config) { return new Command(config); }
+const command = factory({ isAllowed() { return true; }, execute: () => later });
+const later = 7;
+console.log(command.isAllowed(), command.weight, command.focus, command.execute());
+export { Command, factory, command, later };
+"#,
+            "true 0 false 7\n",
+        ),
+    ] {
+        in_case(name, || {
+            let fixture = run_fixture(command_factory_split(source));
+            assert_preserved_entry_output(&fixture, expected);
+        });
+    }
 }
 
 #[test]
@@ -146,37 +175,6 @@ console.log(globalThis.observed, later);
 }
 
 #[test]
-fn local_constructor_reads_fresh_config_with_an_ordinary_method() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"class Command {
-  constructor(config) {
-    this.execute = config.execute;
-    this.isAllowed = config.isAllowed;
-    this.weight = config.weight ?? 0;
-    this.focus = config.focus === !0;
-  }
-}
-function factory(config) { return new Command(config); }
-const command = factory({ isAllowed() { return true; }, execute: () => later });
-const later = 7;
-console.log(command.isAllowed(), command.weight, command.focus, command.execute());
-export { Command, factory, command, later };
-"#,
-            vec![
-                logical_module(
-                    "command",
-                    &binding_members(["Command", "factory", "command"]),
-                ),
-                logical_module("value", &[Member::new("later")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "true 0 false 7\n");
-}
-
-#[test]
 fn local_constructor_keeps_non_data_config_shapes_conservative() {
     let template = r#"class Command {
   constructor(config) {
@@ -196,13 +194,14 @@ export { Command, factory, command, later };
         r#"{ set unused(value) {}, isAllowed() { return true; }, execute: () => later }"#,
         r#"new Proxy({ isAllowed() { return true; }, execute: () => later }, {})"#,
     ] {
-        let source = template.replace("CONFIG", config);
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(&source, command_later_split_modules())
-                .with_import_order(&["command", "value", "residual"]),
-            &["command", "value"],
-            &[],
-        );
+        in_case(config, || {
+            let source = template.replace("CONFIG", config);
+            expect_atomic_conflict_rejection(
+                command_later_split(&source),
+                &["command", "value"],
+                &[],
+            );
+        });
     }
 }
 
@@ -228,36 +227,38 @@ export { Command, factory, command, later };
             "{ isAllowed() { return true; }, get weight() { globalThis.observed = later; return 0; }, execute: () => later }",
         ),
     ] {
-        let source = template
-            .replace("CONSTRUCTOR_BODY", constructor_body)
-            .replace("CONFIG", config);
-        let colocated = run_fixture(
-            FixtureOpts::new(
-                &source,
-                vec![logical_module_with_anon(
-                    "all",
-                    &binding_members(["Command", "factory", "command", "later"]),
-                    &["later = 7;"],
-                )],
-            )
-            .with_unassigned_mode(unassigned_mode_inline()),
-        );
-        assert_preserved_entry_output(&colocated, "0 7\n");
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module(
-                        "command",
-                        &binding_members(["Command", "factory", "command"]),
-                    ),
-                    logical_module_with_anon("value", &[Member::new("later")], &["later = 7;"]),
-                ],
-            )
-            .with_unassigned_mode(unassigned_mode_inline()),
-            &["command", "value"],
-            &[],
-        );
+        in_case(config, || {
+            let source = template
+                .replace("CONSTRUCTOR_BODY", constructor_body)
+                .replace("CONFIG", config);
+            let colocated = run_fixture(
+                FixtureOpts::new(
+                    &source,
+                    vec![logical_module_with_anon(
+                        "all",
+                        &binding_members(["Command", "factory", "command", "later"]),
+                        &["later = 7;"],
+                    )],
+                )
+                .with_unassigned_mode(unassigned_mode_inline()),
+            );
+            assert_preserved_entry_output(&colocated, "0 7\n");
+            expect_atomic_conflict_rejection(
+                FixtureOpts::new(
+                    &source,
+                    vec![
+                        logical_module(
+                            "command",
+                            &binding_members(["Command", "factory", "command"]),
+                        ),
+                        logical_module_with_anon("value", &[Member::new("later")], &["later = 7;"]),
+                    ],
+                )
+                .with_unassigned_mode(unassigned_mode_inline()),
+                &["command", "value"],
+                &[],
+            );
+        });
     }
 }
 
@@ -374,9 +375,9 @@ fn escaped_class_work_at_construction_keeps_callback_reentry_possible() {
         "class Checker { constructor() { globalThis.saved(); } }",
         "class Checker { result = globalThis.saved(); }",
     ] {
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &format!(
+        in_case(checker, || {
+            expect_atomic_conflict_rejection(
+                command_later_split(&format!(
                     r#"const saved = () => later;
 globalThis.saved = saved;
 {checker}
@@ -389,20 +390,45 @@ const command = create({{ execute: () => later }});
 const later = 7;
 export {{ saved, Checker, Command, create, command, later }};
 "#
-                ),
-                command_later_split_modules(),
-            )
-            .with_import_order(&["command", "value", "residual"]),
-            &["command", "value"],
-            &[],
-        );
+                )),
+                &["command", "value"],
+                &[],
+            );
+        });
     }
 }
 
 #[test]
-fn reassigned_escaped_class_keeps_unknown_constructor_alternative() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+fn negated_constructor_values_keep_getter_and_call_effects() {
+    for value in ["!config.focus", "!config.execute()"] {
+        in_case(value, || {
+            expect_atomic_conflict_rejection(
+                command_later_split(&format!(
+                    r#"class Command {{
+  constructor(config) {{ this.focus = {value}; }}
+}}
+const command = new Command({{
+  get focus() {{ return later; }},
+  execute: () => later,
+}});
+const later = 7;
+export {{ Command, command, later }};
+"#
+                )),
+                &["command", "value"],
+                &[],
+            );
+        });
+    }
+}
+
+/// Constructor shapes whose `new` may run the config callback (or code the
+/// analysis cannot see) before `later` initializes.
+#[test]
+fn command_split_rejects_constructors_that_may_run_callbacks() {
+    for (name, source) in [
+        (
+            "reassigned escaped class keeps the unknown constructor alternative",
             r#"const saved = () => later;
 globalThis.saved = saved;
 class Checker { isAllowed() { return true; } }
@@ -416,18 +442,9 @@ const command = create({ execute: () => later });
 const later = 7;
 export { saved, Checker, Command, create, command, later };
 "#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
-        &["command", "value"],
-        &[],
-    );
-}
-
-#[test]
-fn opaque_checker_receiving_config_keeps_callback_reentry_possible() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+        ),
+        (
+            "opaque checker receiving the config",
             r#"class Checker { constructor(config) { config.execute(); } }
 globalThis.savedChecker = Checker;
 class Command {
@@ -438,18 +455,9 @@ const command = create({ execute: () => later });
 const later = 7;
 export { Checker, Command, create, command, later };
 "#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
-        &["command", "value"],
-        &[],
-    );
-}
-
-#[test]
-fn constructor_prototype_getter_collision_remains_opaque() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+        ),
+        (
+            "prototype getter collides with the stored field",
             r#"class Command {
   get config() { return 0; }
   constructor(config) { this.config = config; }
@@ -458,44 +466,9 @@ const command = new Command({ execute: () => later });
 const later = 7;
 export { Command, command, later };
 "#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
-        &["command", "value"],
-        &[],
-    );
-}
-
-#[test]
-fn negated_constructor_values_keep_getter_and_call_effects() {
-    for value in ["!config.focus", "!config.execute()"] {
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &format!(
-                    r#"class Command {{
-  constructor(config) {{ this.focus = {value}; }}
-}}
-const command = new Command({{
-  get focus() {{ return later; }},
-  execute: () => later,
-}});
-const later = 7;
-export {{ Command, command, later }};
-"#
-                ),
-                command_later_split_modules(),
-            )
-            .with_import_order(&["command", "value", "residual"]),
-            &["command", "value"],
-            &[],
-        );
-    }
-}
-
-#[test]
-fn constructor_that_invokes_callback_still_constrains_order() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+        ),
+        (
+            "constructor invokes the callback",
             r#"class Command {
   constructor(config) { config.execute(); }
 }
@@ -504,18 +477,9 @@ const command = factory({ execute: () => later });
 const later = 7;
 export { Command, factory, command, later };
 "#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
-        &["command", "value"],
-        &[],
-    );
-}
-
-#[test]
-fn constructor_setter_remains_opaque() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+        ),
+        (
+            "prototype setter receives the config",
             r#"class Command {
   set config(value) { value.execute(); }
   constructor(config) { this.config = config; }
@@ -525,18 +489,9 @@ const command = factory({ execute: () => later });
 const later = 7;
 export { Command, factory, command, later };
 "#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
-        &["command", "value"],
-        &[],
-    );
-}
-
-#[test]
-fn constructor_config_getter_still_constrains_order() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+        ),
+        (
+            "config getter read by the constructor",
             r#"class Command {
   constructor(config) { this.weight = config.weight ?? 0; }
 }
@@ -544,18 +499,9 @@ const command = new Command({ get weight() { return later; } });
 const later = 7;
 export { Command, command, later };
 "#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
-        &["command", "value"],
-        &[],
-    );
-}
-
-#[test]
-fn derived_constructor_remains_opaque() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+        ),
+        (
+            "derived constructor",
             r#"class Base {}
 class Command extends Base {
   constructor(config) { super(); this.config = config; }
@@ -565,48 +511,52 @@ const command = factory({ execute: () => later });
 const later = 7;
 export { Base, Command, factory, command, later };
 "#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
-        &["command", "value"],
-        &[],
-    );
-}
-
-#[test]
-fn instance_field_initializer_runs_when_constructed() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"const later = 7;
-function execute() { return later; }
-class Command { result = execute(); }
-const command = new Command();
-console.log(command.result);
-export { Command, execute, command, later };
-"#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
-    );
-    assert_preserved_entry_output(&fixture, "7\n");
-}
-
-#[test]
-fn instance_field_call_before_later_binding_constrains_order() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+        ),
+        (
+            "instance field calls before the later binding",
             r#"class Command { result = execute(); }
 function execute() { return later; }
 const command = new Command();
 const later = 7;
 export { Command, execute, command, later };
 "#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
-        &["command", "value"],
-        &[],
-    );
+        ),
+        (
+            "constructor returns another object",
+            r#"class Command {
+  constructor(config) { return { execute: config.execute }; }
+}
+function factory(config) { return new Command(config); }
+const command = factory({ execute: () => later });
+const later = 7;
+export { Command, factory, command, later };
+"#,
+        ),
+    ] {
+        in_case(name, || {
+            expect_atomic_conflict_rejection(
+                command_later_split(source),
+                &["command", "value"],
+                &[],
+            );
+        });
+    }
+}
+
+/// Anchor for the rejected instance-field call: with `later` declared first
+/// the same field call is safe.
+#[test]
+fn instance_field_initializer_runs_when_constructed() {
+    let fixture = run_fixture(command_later_split(
+        r#"const later = 7;
+function execute() { return later; }
+class Command { result = execute(); }
+const command = new Command();
+console.log(command.result);
+export { Command, execute, command, later };
+"#,
+    ));
+    assert_preserved_entry_output(&fixture, "7\n");
 }
 
 #[test]
@@ -630,29 +580,9 @@ export { Command, command, later };
 }
 
 #[test]
-fn constructor_that_returns_another_object_remains_opaque() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"class Command {
-  constructor(config) { return { execute: config.execute }; }
-}
-function factory(config) { return new Command(config); }
-const command = factory({ execute: () => later });
-const later = 7;
-export { Command, factory, command, later };
-"#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
-        &["command", "value"],
-        &[],
-    );
-}
-
-#[test]
 fn published_instance_can_expose_stored_callback() {
     expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+        command_later_split(
             r#"class Command { constructor(config) { this.config = config; } }
 function factory(config) { return new Command(config); }
 const command = factory({ execute: () => later });
@@ -661,18 +591,30 @@ console.log("ready");
 const later = 7;
 export { Command, factory, command, later };
 "#,
-            command_later_split_modules(),
-        )
-        .with_import_order(&["command", "value", "residual"]),
+        ),
         &["anon_residual_sentinel", "value"],
         &[],
     );
 }
 
+// ─── factories returning closures ───────────────────────────────────────
+
+/// Module `mount` holds `names` and the `anon` statements; the rest stays inline.
+fn mount_split<'a>(source: &'a str, names: &[&'static str], anon: &[&str]) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon("mount", &members(names), anon)],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+}
+
+/// A factory that returns (rather than calls) a closure leaves its body
+/// for later; each closure keeps its own call site's callback.
 #[test]
-fn returned_closure_is_not_invoked_by_factory() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+fn mount_split_keeps_returned_closures_deferred() {
+    for (name, source, names, expected) in [
+        (
+            "returned closure is not invoked by the factory",
             r#"const value = 1;
 function factory(callback) {
   callback(0);
@@ -682,37 +624,11 @@ const mounted = factory(x => x);
 console.log(mounted());
 export { value, factory, mounted };
 "#,
-            vec![logical_module("mount", &[Member::new("mounted")])],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "1\n");
-}
-
-#[test]
-fn returned_closure_invoked_during_initialization_constrains_order() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
-            r#"const value = 1;
-function factory(callback) {
-  callback(0);
-  return () => value;
-}
-const mounted = factory(x => x)();
-console.log(mounted);
-export { value, factory, mounted };
-"#,
-            vec![logical_module("mount", &[Member::new("mounted")])],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn omitted_callback_uses_default_without_invoking_returned_closure() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            &["mounted"][..],
+            "1\n",
+        ),
+        (
+            "omitted callback uses its default",
             r#"const value = 1;
 function factory(callback = x => x) {
   callback(0);
@@ -722,17 +638,11 @@ const mounted = factory();
 console.log(mounted());
 export { value, factory, mounted };
 "#,
-            vec![logical_module("mount", &[Member::new("mounted")])],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "1\n");
-}
-
-#[test]
-fn callbacks_from_separate_calls_do_not_cross_contaminate() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            &["mounted"],
+            "1\n",
+        ),
+        (
+            "callbacks from separate calls do not cross-contaminate",
             r#"const value = 1;
 function factory(callback) {
   callback();
@@ -743,17 +653,11 @@ const other = factory(() => value);
 console.log(safe(), other());
 export { value, factory, safe, other };
 "#,
-            vec![logical_module("mount", &[Member::new("safe")])],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "1 1\n");
-}
-
-#[test]
-fn returned_closure_keeps_its_call_site_callback() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            &["safe"],
+            "1 1\n",
+        ),
+        (
+            "returned closure keeps its call-site callback",
             r#"const value = 1;
 function factory(callback) { return () => callback(); }
 const safe = factory(() => 0);
@@ -762,20 +666,11 @@ const mounted = safe();
 console.log(mounted, other());
 export { value, factory, safe, other, mounted };
 "#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "safe", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "0 1\n");
-}
-
-#[test]
-fn returned_closure_reaches_a_top_level_alias() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            &["factory", "safe", "mounted"],
+            "0 1\n",
+        ),
+        (
+            "returned closure reaches a top-level alias",
             r#"const value = 1;
 function factory(callback) { return () => callback(); }
 const created = factory(() => 0);
@@ -785,113 +680,11 @@ const other = factory(() => value);
 console.log(mounted);
 export { value, factory, created, alias, mounted, other };
 "#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "created", "alias", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "0\n");
-}
-
-#[test]
-fn read_after_conditional_await_may_still_run_at_init() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
-            r#"const value = 1;
-async function factory(flag) {
-  if (flag) await Promise.resolve();
-  return value;
-}
-const mounted = factory(false);
-mounted.then(console.log);
-export { value, factory, mounted };
-"#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn catch_after_possible_await_may_run_at_init() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
-            r#"const value = 1;
-async function factory(flag) {
-  try { if (flag) throw 0; await 0; }
-  catch { return value; }
-}
-const mounted = factory(true);
-mounted.then(console.log);
-export { value, factory, mounted };
-"#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn later_switch_case_may_run_before_earlier_case_await() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
-            r#"const value = 1;
-async function factory(choice) {
-  switch (choice) {
-    case 0: await 0; break;
-    default: return value;
-  }
-}
-const mounted = factory(1);
-mounted.then(console.log);
-export { value, factory, mounted };
-"#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn loop_body_may_run_before_await_in_update() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
-            r#"const value = 1;
-async function factory() {
-  for (let i = 0; i < 1; await 0) return value;
-}
-const mounted = factory();
-mounted.then(console.log);
-export { value, factory, mounted };
-"#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn factory_with_plain_intrinsics_defers_its_wrapper_body() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            &["factory", "created", "alias", "mounted"],
+            "0\n",
+        ),
+        (
+            "factory with plain intrinsics defers its wrapper body",
             r#"const value = 1;
 function factory(callback, decorate = x => x) {
   const cache = new WeakMap();
@@ -902,11 +695,15 @@ const mounted = factory(() => value);
 console.log(mounted());
 export { value, factory, mounted };
 "#,
-            vec![logical_module("mount", &[Member::new("mounted")])],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "1\n");
+            &["mounted"],
+            "1\n",
+        ),
+    ] {
+        in_case(name, || {
+            let fixture = run_fixture(mount_split(source, names, &[]));
+            assert_preserved_entry_output(&fixture, expected);
+        });
+    }
 }
 
 #[test]
@@ -936,10 +733,129 @@ export { value, factory, mounted };
     assert_preserved_entry_output(&fixture, "1\n");
 }
 
-#[test]
-fn object_assign_getter_still_constrains_order() {
+#[track_caller]
+fn expect_mount_cycle(source: &str, names: &[&'static str], anon: &[&str]) {
     expect_cycle_rejection(
-        FixtureOpts::new(
+        mount_split(source, names, anon),
+        &["mount", "anon_residual_sentinel"],
+    );
+}
+
+/// Calls that run a body (returned closure, iterator, parameter default)
+/// during initialization still order `mount` after `value`.
+#[test]
+fn mount_split_rejects_calls_that_run_bodies_at_init() {
+    for (name, source, names) in [
+        (
+            "returned closure invoked during initialization",
+            r#"const value = 1;
+function factory(callback) {
+  callback(0);
+  return () => value;
+}
+const mounted = factory(x => x)();
+console.log(mounted);
+export { value, factory, mounted };
+"#,
+            &["mounted"][..],
+        ),
+        (
+            "spread argument runs an iterator body",
+            r#"const value = 1;
+function* args() { yield value; }
+function factory(item) { return item; }
+const mounted = factory(...args());
+console.log(mounted);
+export { value, args, factory, mounted };
+"#,
+            &["args", "factory", "mounted"],
+        ),
+        (
+            "generator parameter default runs at call time",
+            r#"const value = 1;
+function read() { return value; }
+function* items(item = read()) { yield item; }
+const mounted = items();
+console.log(mounted);
+export { value, read, items, mounted };
+"#,
+            &["items", "mounted"],
+        ),
+    ] {
+        in_case(name, || expect_mount_cycle(source, names, &[]));
+    }
+}
+
+/// An async body runs synchronously up to its first `await`; reads on any
+/// path that may precede it run at init.
+#[test]
+fn mount_split_rejects_async_reads_that_may_precede_suspension() {
+    for (name, source) in [
+        (
+            "read after a conditional await",
+            r#"const value = 1;
+async function factory(flag) {
+  if (flag) await Promise.resolve();
+  return value;
+}
+const mounted = factory(false);
+mounted.then(console.log);
+export { value, factory, mounted };
+"#,
+        ),
+        (
+            "catch after a possible await",
+            r#"const value = 1;
+async function factory(flag) {
+  try { if (flag) throw 0; await 0; }
+  catch { return value; }
+}
+const mounted = factory(true);
+mounted.then(console.log);
+export { value, factory, mounted };
+"#,
+        ),
+        (
+            "later switch case before an earlier case's await",
+            r#"const value = 1;
+async function factory(choice) {
+  switch (choice) {
+    case 0: await 0; break;
+    default: return value;
+  }
+}
+const mounted = factory(1);
+mounted.then(console.log);
+export { value, factory, mounted };
+"#,
+        ),
+        (
+            "loop body before the await in its update",
+            r#"const value = 1;
+async function factory() {
+  for (let i = 0; i < 1; await 0) return value;
+}
+const mounted = factory();
+mounted.then(console.log);
+export { value, factory, mounted };
+"#,
+        ),
+    ] {
+        in_case(name, || {
+            expect_mount_cycle(source, &["factory", "mounted"], &[]);
+        });
+    }
+}
+
+/// `Object.assign` and property writes can run a getter or setter that
+/// reads `value`, including one installed earlier on the target.
+#[test]
+fn mount_split_rejects_accessors_property_writes_may_run() {
+    const PROTO_SETTER: &str =
+        "wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };";
+    for (name, source, names, anon) in [
+        (
+            "Object.assign source getter",
             r#"const value = 1;
 function factory() {
   function wrapper() { return 0; }
@@ -949,20 +865,11 @@ const mounted = factory();
 console.log(mounted());
 export { value, factory, mounted };
 "#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn reassigned_object_assign_target_does_not_count_as_fresh() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
+            &["factory", "mounted"][..],
+            &[][..],
+        ),
+        (
+            "reassigned Object.assign target is not fresh",
             r#"const value = 1;
 function factory() {
   function wrapper() {}
@@ -973,20 +880,11 @@ const mounted = factory();
 console.log(mounted);
 export { value, factory, mounted };
 "#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn property_write_can_install_a_setter_before_object_assign() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
+            &["factory", "mounted"],
+            &[],
+        ),
+        (
+            "property write installs a setter before Object.assign",
             r#"const value = 1;
 function factory() {
   function wrapper() {}
@@ -997,20 +895,11 @@ const mounted = factory();
 console.log(globalThis.seen);
 export { value, factory, mounted };
 "#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn called_helper_can_install_a_setter_before_object_assign() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
+            &["factory", "mounted"],
+            &[],
+        ),
+        (
+            "called helper installs a setter before Object.assign",
             r#"const value = 1;
 function install(wrapper) {
   wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };
@@ -1024,20 +913,11 @@ const mounted = factory();
 console.log(globalThis.seen);
 export { value, install, factory, mounted };
 "#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["install", "factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn object_assign_source_can_replace_target_prototype() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
+            &["install", "factory", "mounted"],
+            &[],
+        ),
+        (
+            "Object.assign source replaces the target prototype",
             r#"const value = 1;
 function factory() {
   function wrapper() {}
@@ -1048,20 +928,11 @@ const mounted = factory();
 console.log(globalThis.seen);
 export { value, factory, mounted };
 "#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn top_level_object_assign_can_call_a_setter_from_an_earlier_statement() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
+            &["factory", "mounted"],
+            &[],
+        ),
+        (
+            "top-level Object.assign calls a setter from an earlier statement",
             r#"const value = 1;
 function wrapper() {}
 wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };
@@ -1069,21 +940,11 @@ const mounted = Object.assign(wrapper, { item: 0 });
 console.log(globalThis.seen);
 export { value, wrapper, mounted };
 "#,
-            vec![logical_module_with_anon(
-                "mount",
-                &binding_members(["wrapper", "mounted"]),
-                &["wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };"],
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn direct_property_write_can_call_a_local_setter() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
+            &["wrapper", "mounted"],
+            &[PROTO_SETTER],
+        ),
+        (
+            "direct property write calls a local setter",
             r#"const value = 1;
 function factory() {
   function wrapper() {}
@@ -1095,20 +956,11 @@ const mounted = factory();
 console.log(globalThis.seen);
 export { value, factory, mounted };
 "#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn top_level_property_write_can_call_a_setter_from_an_earlier_statement() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
+            &["factory", "mounted"],
+            &[],
+        ),
+        (
+            "top-level property write calls a setter from an earlier statement",
             r#"const value = 1;
 function wrapper() {}
 wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };
@@ -1116,218 +968,65 @@ wrapper.item = 0;
 console.log(globalThis.seen);
 export { value, wrapper };
 "#,
-            vec![logical_module_with_anon(
-                "mount",
-                &[Member::new("wrapper")],
-                &[
-                    "wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };",
-                    "wrapper.item = 0;",
-                ],
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
+            &["wrapper"],
+            &[PROTO_SETTER, "wrapper.item = 0;"],
+        ),
+    ] {
+        in_case(name, || expect_mount_cycle(source, names, anon));
+    }
 }
 
-#[test]
-fn spread_argument_can_run_an_iterator_body() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
-            r#"const value = 1;
-function* args() { yield value; }
-function factory(item) { return item; }
-const mounted = factory(...args());
-console.log(mounted);
-export { value, args, factory, mounted };
-"#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["args", "factory", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
+// ─── function values reaching initialized bindings ──────────────────────
+
+/// `mod_a` and `mod_b` with the given members, default unassigned mode.
+fn ab_split<'a>(
+    source: &'a str,
+    mod_a: &[&'static str],
+    mod_b: &[&'static str],
+) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module("mod_a", &members(mod_a)),
+            logical_module("mod_b", &members(mod_b)),
+        ],
+    )
 }
 
-#[test]
-fn generator_parameter_default_runs_at_call_time() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
-            r#"const value = 1;
-function read() { return value; }
-function* items(item = read()) { yield item; }
-const mounted = items();
-console.log(mounted);
-export { value, read, items, mounted };
-"#,
-            vec![logical_module(
-                "mount",
-                &binding_members(["items", "mounted"]),
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["mount", "anon_residual_sentinel"],
-    );
-}
-
-#[test]
-fn function_passed_through_parameter_reads_initialized_value() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
-            r#"const a = 1;
+const CALLBACK_PARAMETER_SOURCE: &str = r#"const a = 1;
 const b = a + 1;
 function foo() { return b; }
 function bar(callback) { return callback(); }
 const result = bar(foo);
 console.log(result);
 export { a, b, foo, bar, result };
-"#,
-            vec![
-                logical_module("mod_a", &binding_members(["a", "foo", "bar", "result"])),
-                logical_module("mod_b", &[Member::new("b")]),
-            ],
-        ),
-        &["mod_a", "mod_b"],
-    );
-}
+"#;
 
-#[test]
-fn uninstantiated_constructor_does_not_create_an_eager_cycle() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"class Foo { constructor() { bar(); } }
-function bar() { return b; }
-const b = Foo.name;
-console.log(b);
-export { Foo, bar, b };
-"#,
-            vec![
-                logical_module("mod_a", &binding_members(["Foo", "bar"])),
-                logical_module("mod_b", &[Member::new("b")]),
-            ],
-        )
-        .with_import_order(&["mod_b", "mod_a"]),
-    );
-    assert_preserved_entry_output(&fixture, "Foo\n");
-}
-
-#[test]
-fn uninstantiated_instance_field_does_not_create_an_eager_cycle() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"class Foo { value = bar(); }
-function bar() { return b; }
-const b = Foo.name;
-console.log(b);
-export { Foo, bar, b };
-"#,
-            vec![
-                logical_module("mod_a", &binding_members(["Foo", "bar"])),
-                logical_module("mod_b", &[Member::new("b")]),
-            ],
-        )
-        .with_import_order(&["mod_b", "mod_a"]),
-    );
-    assert_preserved_entry_output(&fixture, "Foo\n");
-}
-
-#[test]
-fn static_field_call_still_runs_during_class_definition() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const b = 3;
-function bar() { return b; }
-class Foo { static value = bar(); }
-console.log(Foo.value);
-export { b, bar, Foo };
-"#,
-        vec![
-            logical_module("mod_a", &binding_members(["bar", "Foo"])),
-            logical_module("mod_b", &[Member::new("b")]),
-        ],
-    ));
-    assert_preserved_entry_output(&fixture, "3\n");
-}
-
-#[test]
-fn computed_method_key_still_runs_during_class_definition() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const b = "value";
-function bar() { return b; }
-class Foo { [bar()]() {} }
-console.log(typeof Foo.prototype.value);
-export { b, bar, Foo };
-"#,
-        vec![
-            logical_module("mod_a", &binding_members(["bar", "Foo"])),
-            logical_module("mod_b", &[Member::new("b")]),
-        ],
-    ));
-    assert_preserved_entry_output(&fixture, "function\n");
-}
-
-#[test]
-fn constructor_body_reads_initialized_value() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
-            r#"const a = 1;
+const CONSTRUCTOR_BODY_SOURCE: &str = r#"const a = 1;
 const b = a + 1;
 class Foo { constructor() { this.value = b; } }
 const result = new Foo().value;
 console.log(result);
 export { a, b, Foo, result };
-"#,
-            vec![
-                logical_module("mod_a", &binding_members(["a", "Foo", "result"])),
-                logical_module("mod_b", &[Member::new("b")]),
-            ],
+"#;
+
+/// `result` calls into a read of `b`, which needs `a` from `mod_a`: a cycle
+/// whichever way a function value reaches the call.
+#[test]
+fn function_values_reading_initialized_value_reject_split() {
+    for (name, source, mod_a) in [
+        (
+            "function passed through a parameter",
+            CALLBACK_PARAMETER_SOURCE,
+            &["a", "foo", "bar", "result"][..],
         ),
-        &["mod_a", "mod_b"],
-    );
-}
-
-#[test]
-fn callback_assignment_with_initialized_value_in_dependency_runs() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = 1;
-const b = a + 1;
-function foo() { return b; }
-function bar(callback) { return callback(); }
-const result = bar(foo);
-console.log(result);
-export { a, b, foo, bar, result };
-"#,
-        vec![
-            logical_module("mod_a", &binding_members(["foo", "bar", "result"])),
-            logical_module("mod_b", &binding_members(["a", "b"])),
-        ],
-    ));
-    assert_preserved_entry_output(&fixture, "2\n");
-}
-
-#[test]
-fn constructor_assignment_with_initialized_value_in_dependency_runs() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = 1;
-const b = a + 1;
-class Foo { constructor() { this.value = b; } }
-const result = new Foo().value;
-console.log(result);
-export { a, b, Foo, result };
-"#,
-        vec![
-            logical_module("mod_a", &binding_members(["Foo", "result"])),
-            logical_module("mod_b", &binding_members(["a", "b"])),
-        ],
-    ));
-    assert_preserved_entry_output(&fixture, "2\n");
-}
-
-#[test]
-fn callback_returned_through_parameter_reads_initialized_value() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
+        (
+            "constructor body",
+            CONSTRUCTOR_BODY_SOURCE,
+            &["a", "Foo", "result"],
+        ),
+        (
+            "callback returned through a parameter",
             r#"const a = 1;
 const b = a + 1;
 function foo() { return b; }
@@ -1336,22 +1035,10 @@ const result = identity(foo)();
 console.log(result);
 export { a, b, foo, identity, result };
 "#,
-            vec![
-                logical_module(
-                    "mod_a",
-                    &binding_members(["a", "foo", "identity", "result"]),
-                ),
-                logical_module("mod_b", &[Member::new("b")]),
-            ],
+            &["a", "foo", "identity", "result"],
         ),
-        &["mod_a", "mod_b"],
-    );
-}
-
-#[test]
-fn callback_held_in_static_object_property_reads_initialized_value() {
-    expect_cycle_rejection(
-        FixtureOpts::new(
+        (
+            "callback held in a static object property",
             r#"const a = 1;
 const b = a + 1;
 function foo() { return b; }
@@ -1360,13 +1047,97 @@ const result = box.invoke();
 console.log(result);
 export { a, b, foo, box, result };
 "#,
-            vec![
-                logical_module("mod_a", &binding_members(["a", "foo", "box", "result"])),
-                logical_module("mod_b", &[Member::new("b")]),
-            ],
+            &["a", "foo", "box", "result"],
         ),
-        &["mod_a", "mod_b"],
-    );
+    ] {
+        in_case(name, || {
+            expect_cycle_rejection(ab_split(source, mod_a, &["b"]), &["mod_a", "mod_b"]);
+        });
+    }
+}
+
+/// Anchors for the rejections above: moving `a` with `b` breaks the cycle.
+#[test]
+fn function_values_reading_initialized_value_run_when_dependency_moves_with_it() {
+    for (name, source, mod_a) in [
+        (
+            "callback assignment",
+            CALLBACK_PARAMETER_SOURCE,
+            &["foo", "bar", "result"][..],
+        ),
+        (
+            "constructor assignment",
+            CONSTRUCTOR_BODY_SOURCE,
+            &["Foo", "result"],
+        ),
+    ] {
+        in_case(name, || {
+            let fixture = run_fixture(ab_split(source, mod_a, &["a", "b"]));
+            assert_preserved_entry_output(&fixture, "2\n");
+        });
+    }
+}
+
+#[test]
+fn uninstantiated_class_bodies_do_not_create_an_eager_cycle() {
+    for (name, source) in [
+        (
+            "constructor",
+            r#"class Foo { constructor() { bar(); } }
+function bar() { return b; }
+const b = Foo.name;
+console.log(b);
+export { Foo, bar, b };
+"#,
+        ),
+        (
+            "instance field",
+            r#"class Foo { value = bar(); }
+function bar() { return b; }
+const b = Foo.name;
+console.log(b);
+export { Foo, bar, b };
+"#,
+        ),
+    ] {
+        in_case(name, || {
+            let fixture = run_fixture(
+                ab_split(source, &["Foo", "bar"], &["b"]).with_import_order(&["mod_b", "mod_a"]),
+            );
+            assert_preserved_entry_output(&fixture, "Foo\n");
+        });
+    }
+}
+
+#[test]
+fn class_definition_time_calls_still_run() {
+    for (name, source, expected) in [
+        (
+            "static field",
+            r#"const b = 3;
+function bar() { return b; }
+class Foo { static value = bar(); }
+console.log(Foo.value);
+export { b, bar, Foo };
+"#,
+            "3\n",
+        ),
+        (
+            "computed method key",
+            r#"const b = "value";
+function bar() { return b; }
+class Foo { [bar()]() {} }
+console.log(typeof Foo.prototype.value);
+export { b, bar, Foo };
+"#,
+            "function\n",
+        ),
+    ] {
+        in_case(name, || {
+            let fixture = run_fixture(ab_split(source, &["bar", "Foo"], &["b"]));
+            assert_preserved_entry_output(&fixture, expected);
+        });
+    }
 }
 
 #[test]
@@ -1403,6 +1174,8 @@ fn return_call_chain_through_parameters_recursion_and_property_fanout_preserves_
     assert_preserved_entry_output(&fixture, "7\n");
 }
 
+// ─── property writes and setters ────────────────────────────────────────
+
 #[test]
 fn future_uncreated_command_is_not_an_available_setter_for_fresh_property_write() {
     let source = r#"function dormant() { return command; }
@@ -1437,35 +1210,105 @@ export { box, later };
     assert_preserved_entry_output(&fixture, "1 7\n");
 }
 
-fn expect_property_write_reentry_conflict(source: &str, setup: &[&str]) {
-    let mut anonymous = setup.to_vec();
-    anonymous.push("box.value = 1;");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module_with_anon("value/box", &[Member::new("box")], &anonymous),
-                logical_module("value/later", &[Member::new("later")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["value/box", "value/later"],
-        &[],
-    );
-}
-
+/// `box.value = 1` may run a setter reading `later`, so `value/box` (with the
+/// `setup` statements) cannot precede `value/later`.
 #[test]
-fn future_hoisted_setter_remains_available_before_its_declaration() {
-    expect_property_write_reentry_conflict(
-        r#"const box = {};
+fn property_write_rejects_reachable_setters() {
+    for (name, source, setup) in [
+        (
+            "hoisted setter before its declaration",
+            r#"const box = {};
 Object.defineProperty(box, "value", { set: setter, configurable: true });
 box.value = 1;
 function setter() { return later; }
 const later = 7;
 export { box, later };
 "#,
-        &["Object.defineProperty(box, \"value\", { set: setter, configurable: true });"],
+            &["Object.defineProperty(box, \"value\", { set: setter, configurable: true });"][..],
+        ),
+        (
+            "Proxy set trap",
+            r#"const box = new Proxy({}, { set() { return later; } });
+box.value = 1;
+const later = 7;
+export { box, later };
+"#,
+            &[],
+        ),
+        (
+            "assignment before a future var declaration",
+            r#"const box = {};
+setter = () => later;
+Object.defineProperty(box, "value", { set: setter, configurable: true });
+box.value = 1;
+var setter;
+const later = 7;
+export { box, later };
+"#,
+            &[
+                "setter = () => later;",
+                "Object.defineProperty(box, \"value\", { set: setter, configurable: true });",
+            ],
+        ),
+        (
+            "async setter reading before its first await",
+            r#"const box = {};
+Object.defineProperty(box, "value", { set: async function setter() { const observed = later; await 0; return observed; } });
+box.value = 1;
+const later = 7;
+export { box, later };
+"#,
+            &[
+                "Object.defineProperty(box, \"value\", { set: async function setter() { const observed = later; await 0; return observed; } });",
+            ],
+        ),
+    ] {
+        in_case(name, || {
+            let mut anonymous = setup.to_vec();
+            anonymous.push("box.value = 1;");
+            expect_atomic_conflict_rejection(
+                FixtureOpts::new(
+                    source,
+                    vec![
+                        logical_module_with_anon("value/box", &[Member::new("box")], &anonymous),
+                        logical_module("value/later", &[Member::new("later")]),
+                    ],
+                )
+                .with_unassigned_mode(unassigned_mode_inline()),
+                &["value/box", "value/later"],
+                &[],
+            );
+        });
+    }
+}
+
+/// Anchor for the pre-await async setter: a read after the first await is deferred.
+#[test]
+fn async_setter_read_after_first_await_can_split() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const box = {};
+Object.defineProperty(box, "value", { set: async function setter() { await 0; return later; } });
+box.value = 1;
+const later = 7;
+console.log(later);
+export { box, later };
+"#,
+            vec![
+                logical_module_with_anon(
+                    "value/box",
+                    &[Member::new("box")],
+                    &[
+                        "Object.defineProperty(box, \"value\", { set: async function setter() { await 0; return later; } });",
+                        "box.value = 1;",
+                    ],
+                ),
+                logical_module("value/later", &[Member::new("later")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
     );
+    assert_preserved_entry_output(&fixture, "7\n");
 }
 
 #[test]
@@ -1501,36 +1344,6 @@ export { box, command, later };
 }
 
 #[test]
-fn proxy_set_trap_still_reads_future_value() {
-    expect_property_write_reentry_conflict(
-        r#"const box = new Proxy({}, { set() { return later; } });
-box.value = 1;
-const later = 7;
-export { box, later };
-"#,
-        &[],
-    );
-}
-
-#[test]
-fn assignment_before_future_var_declaration_can_install_setter() {
-    expect_property_write_reentry_conflict(
-        r#"const box = {};
-setter = () => later;
-Object.defineProperty(box, "value", { set: setter, configurable: true });
-box.value = 1;
-var setter;
-const later = 7;
-export { box, later };
-"#,
-        &[
-            "setter = () => later;",
-            "Object.defineProperty(box, \"value\", { set: setter, configurable: true });",
-        ],
-    );
-}
-
-#[test]
 fn executed_callback_reading_future_const_still_blocks_split() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
@@ -1560,53 +1373,13 @@ export { box, command };
     );
 }
 
+/// `install()` defines the setter synchronously before its first `await`,
+/// whether the setter is created there or hoisted from after it.
 #[test]
-fn async_setter_read_before_first_await_still_blocks_split() {
-    expect_property_write_reentry_conflict(
-        r#"const box = {};
-Object.defineProperty(box, "value", { set: async function setter() { const observed = later; await 0; return observed; } });
-box.value = 1;
-const later = 7;
-export { box, later };
-"#,
-        &[
-            "Object.defineProperty(box, \"value\", { set: async function setter() { const observed = later; await 0; return observed; } });",
-        ],
-    );
-}
-
-#[test]
-fn async_setter_read_after_first_await_can_split() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"const box = {};
-Object.defineProperty(box, "value", { set: async function setter() { await 0; return later; } });
-box.value = 1;
-const later = 7;
-console.log(later);
-export { box, later };
-"#,
-            vec![
-                logical_module_with_anon(
-                    "value/box",
-                    &[Member::new("box")],
-                    &[
-                        "Object.defineProperty(box, \"value\", { set: async function setter() { await 0; return later; } });",
-                        "box.value = 1;",
-                    ],
-                ),
-                logical_module("value/later", &[Member::new("later")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "7\n");
-}
-
-#[test]
-fn nested_setter_created_before_await_still_blocks_split() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+fn nested_setter_installed_before_await_still_blocks_split() {
+    for (name, source) in [
+        (
+            "setter created before the await",
             r#"const box = {};
 async function install() {
   const setter = () => later;
@@ -1618,25 +1391,9 @@ box.value = 1;
 const later = 7;
 export { box, later };
 "#,
-            vec![
-                logical_module_with_anon(
-                    "value/box",
-                    &binding_members(["box", "install"]),
-                    &["install();", "box.value = 1;"],
-                ),
-                logical_module("value/later", &[Member::new("later")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["value/box", "value/later"],
-        &[],
-    );
-}
-
-#[test]
-fn hoisted_nested_setter_declared_after_await_still_blocks_split() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+        ),
+        (
+            "hoisted setter declared after the await",
             r#"const box = {};
 async function install() {
   Object.defineProperty(box, "value", { set: setter });
@@ -1648,19 +1405,27 @@ box.value = 1;
 const later = 7;
 export { box, later };
 "#,
-            vec![
-                logical_module_with_anon(
-                    "value/box",
-                    &binding_members(["box", "install"]),
-                    &["install();", "box.value = 1;"],
-                ),
-                logical_module("value/later", &[Member::new("later")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["value/box", "value/later"],
-        &[],
-    );
+        ),
+    ] {
+        in_case(name, || {
+            expect_atomic_conflict_rejection(
+                FixtureOpts::new(
+                    source,
+                    vec![
+                        logical_module_with_anon(
+                            "value/box",
+                            &binding_members(["box", "install"]),
+                            &["install();", "box.value = 1;"],
+                        ),
+                        logical_module("value/later", &[Member::new("later")]),
+                    ],
+                )
+                .with_unassigned_mode(unassigned_mode_inline()),
+                &["value/box", "value/later"],
+                &[],
+            );
+        });
+    }
 }
 
 #[test]
@@ -1699,6 +1464,8 @@ export { box, later };
     );
     assert_preserved_entry_output(&fixture, "7\n");
 }
+
+// ─── class members handed to an opaque peer ─────────────────────────────
 
 const CLASS_MEMBER_PEER_CHUNKS: &[(&str, &str)] = &[(
     "static/peer",
@@ -1752,13 +1519,49 @@ export { Reader, result, later };
     assert_preserved_entry_output(&fixture, "ok 7\n");
 }
 
+/// The peer may construct `Reader` and call `read`: reads that run before
+/// its first `await` (in the method, a field or a getter) stay ordered.
 #[test]
-fn opaque_class_member_keeps_pre_await_read() {
-    expect_atomic_conflict_rejection(
-        opaque_class_member_opts(CLASS_MEMBER_PRE_AWAIT_SOURCE, true),
-        &["value/reader", "value/later"],
-        &[],
-    );
+fn opaque_class_member_keeps_reads_before_await() {
+    for (name, source) in [
+        ("method body", CLASS_MEMBER_PRE_AWAIT_SOURCE),
+        (
+            "instance field",
+            r#"import { inspect } from "./peer.js";
+let later = 0;
+class Reader {
+  value = (globalThis.observed = later);
+  async read() { await 0; return this.value; }
+}
+const result = inspect(Reader);
+later = 7;
+console.log(result, later, globalThis.observed);
+export { Reader, result, later };
+"#,
+        ),
+        (
+            "getter read before the await",
+            r#"import { inspect } from "./peer.js";
+let later = 0;
+class Reader {
+  get value() { return (globalThis.observed = later); }
+  async read() { const value = this.value; await 0; return value; }
+}
+const result = inspect(Reader);
+later = 7;
+console.log(result, later, globalThis.observed);
+export { Reader, result, later };
+"#,
+        ),
+    ] {
+        in_case(name, || {
+            expect_atomic_conflict_rejection(
+                opaque_class_member_opts(source, true),
+                &["value/reader", "value/later"],
+                &[],
+            );
+        });
+    }
 }
 
 #[test]
@@ -1779,49 +1582,7 @@ fn opaque_class_member_pre_await_read_runs_when_colocated() {
     assert_preserved_entry_output(&fixture, "ok 7 0\n");
 }
 
-#[test]
-fn opaque_class_member_keeps_instance_field_read() {
-    expect_atomic_conflict_rejection(
-        opaque_class_member_opts(
-            r#"import { inspect } from "./peer.js";
-let later = 0;
-class Reader {
-  value = (globalThis.observed = later);
-  async read() { await 0; return this.value; }
-}
-const result = inspect(Reader);
-later = 7;
-console.log(result, later, globalThis.observed);
-export { Reader, result, later };
-"#,
-            true,
-        ),
-        &["value/reader", "value/later"],
-        &[],
-    );
-}
-
-#[test]
-fn opaque_class_member_keeps_getter_before_await() {
-    expect_atomic_conflict_rejection(
-        opaque_class_member_opts(
-            r#"import { inspect } from "./peer.js";
-let later = 0;
-class Reader {
-  get value() { return (globalThis.observed = later); }
-  async read() { const value = this.value; await 0; return value; }
-}
-const result = inspect(Reader);
-later = 7;
-console.log(result, later, globalThis.observed);
-export { Reader, result, later };
-"#,
-            true,
-        ),
-        &["value/reader", "value/later"],
-        &[],
-    );
-}
+// ─── bounded callback fallback ──────────────────────────────────────────
 
 #[test]
 fn bounded_local_callback_fallback_ignores_post_await_read() {
@@ -1901,10 +1662,14 @@ export { anchor, bounce, deferred, later };
     assert_preserved_entry_output(&fixture, "7\n");
 }
 
+/// Anchors for the post-await case above: the host may run a registered
+/// callback, and its pre-await read (or a callback it creates before the
+/// await) can observe `later`.
 #[test]
-fn bounded_unknown_callback_fallback_keeps_pre_await_read() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+fn bounded_unknown_callback_fallback_keeps_pre_await_effects() {
+    for (name, source, names, anon) in [
+        (
+            "read before the await",
             r#"function bounce(n) { if (n) return bounce(n - 1); }
 async function immediate() { const value = later; await 0; return value; }
 globalThis.registeredBounce = bounce;
@@ -1914,30 +1679,16 @@ globalThis.flush();
 const later = 7;
 export { bounce, immediate, later };
 "#,
-            vec![
-                logical_module_with_anon(
-                    "value/callbacks",
-                    &binding_members(["bounce", "immediate"]),
-                    &[
-                        "globalThis.registeredBounce = bounce;",
-                        "globalThis.registeredImmediate = immediate;",
-                        "globalThis.flush = () => {};",
-                        "globalThis.flush();",
-                    ],
-                ),
-                logical_module("value/later", &[Member::new("later")]),
-            ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["value/callbacks", "value/later"],
-        &[],
-    );
-}
-
-#[test]
-fn bounded_unknown_callback_fallback_keeps_nested_callback_created_before_await() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
+            &["bounce", "immediate"][..],
+            &[
+                "globalThis.registeredBounce = bounce;",
+                "globalThis.registeredImmediate = immediate;",
+                "globalThis.flush = () => {};",
+                "globalThis.flush();",
+            ][..],
+        ),
+        (
+            "nested callback created before the await",
             r#"function bounce(n) { if (n) return bounce(n - 1); }
 async function publish() {
   globalThis.registeredNested = () => later;
@@ -1950,24 +1701,30 @@ globalThis.flush();
 const later = 7;
 export { bounce, publish, later };
 "#,
-            vec![
-                logical_module_with_anon(
-                    "value/callbacks",
-                    &binding_members(["bounce", "publish"]),
-                    &[
-                        "globalThis.registeredBounce = bounce;",
-                        "publish();",
-                        "globalThis.flush = () => {};",
-                        "globalThis.flush();",
-                    ],
-                ),
-                logical_module("value/later", &[Member::new("later")]),
+            &["bounce", "publish"],
+            &[
+                "globalThis.registeredBounce = bounce;",
+                "publish();",
+                "globalThis.flush = () => {};",
+                "globalThis.flush();",
             ],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["value/callbacks", "value/later"],
-        &[],
-    );
+        ),
+    ] {
+        in_case(name, || {
+            expect_atomic_conflict_rejection(
+                FixtureOpts::new(
+                    source,
+                    vec![
+                        logical_module_with_anon("value/callbacks", &members(names), anon),
+                        logical_module("value/later", &[Member::new("later")]),
+                    ],
+                )
+                .with_unassigned_mode(unassigned_mode_inline()),
+                &["value/callbacks", "value/later"],
+                &[],
+            );
+        });
+    }
 }
 
 #[test]
@@ -2038,12 +1795,14 @@ fn bounded_callback_fallback_retains_synchronous_and_uncovered_writes() {
         "[(state)] = [1]; await 0;",
         "await 0; [(state)] = [1];",
     ] {
-        let source = bounded_callback_write_source(body);
-        expect_atomic_conflict_rejection(
-            bounded_callback_write_split(&source),
-            &["value/state", "callbacks/result"],
-            &[],
-        );
+        in_case(body, || {
+            let source = bounded_callback_write_source(body);
+            expect_atomic_conflict_rejection(
+                bounded_callback_write_split(&source),
+                &["value/state", "callbacks/result"],
+                &[],
+            );
+        });
     }
 }
 
@@ -2057,12 +1816,14 @@ fn bounded_callback_fallback_keeps_deferred_writes_runnable() {
         "let value = await Promise.resolve(1); if (!value) return; state = value;",
         "await 0; const write = () => { state = 1; }; write();",
     ] {
-        let source = format!(
-            "{}deferred().then(() => console.log(state));\n",
-            bounded_callback_write_source(body)
-        );
-        let fixture = run_fixture(bounded_callback_write_split(&source));
-        assert_preserved_entry_output(&fixture, "326 0\n1\n");
+        in_case(body, || {
+            let source = format!(
+                "{}deferred().then(() => console.log(state));\n",
+                bounded_callback_write_source(body)
+            );
+            let fixture = run_fixture(bounded_callback_write_split(&source));
+            assert_preserved_entry_output(&fixture, "326 0\n1\n");
+        });
     }
 }
 
