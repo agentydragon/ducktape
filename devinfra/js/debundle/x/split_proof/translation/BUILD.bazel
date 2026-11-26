@@ -1,7 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
 load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/lint:linters.bzl", "eslint_test")
-load("//devinfra/python:defs.bzl", "py_test")
 load(":fuzz_test_rules.bzl", "seed_pair_tests")
 
 # These Python diagnostics remain hand-run tools, as they were under experiments/.
@@ -688,18 +687,6 @@ js_test(
         ":scope_metadata",
     ],
     entry_point = "parser_dump_test.mjs",
-)
-
-py_test(
-    name = "test_stack_location",
-    srcs = ["test_stack_location.py"],
-    data = ["//devinfra/js/debundle/x/split_proof/translation/testing:split_cli"],
-    env = {"SPLIT_HELPER": "$(rlocationpath //devinfra/js/debundle/x/split_proof/translation/testing:split_cli)"},
-    deps = [
-        "//:conftest",
-        "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
-    ],
 )
 
 js_library(
