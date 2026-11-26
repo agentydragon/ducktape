@@ -131,9 +131,6 @@ type Runtime struct {
 	executorProxy          executorpb.ExecutorServer
 	executionOwner         *executionLifetime
 	activeAdmissions       uint64
-	activeExecutionCalls   uint64
-	execStreamID           uint64
-	execStreams            map[uint64]context.CancelFunc
 	execCalls              map[uint64]context.CancelFunc
 	execCallID             uint64
 	executionFence         *executionFence
@@ -260,7 +257,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		lifecycleState: lifecycleState, lifecycleStore: lifecycleStore, lifecycleCancel: cancelRuntime, lifecycleDone: make(chan struct{}), lifecycleContext: runtimeCtx,
 		bootID: uuid.NewString(), changes: make(chan struct{}), fatal: make(chan error, 1), bootstrapWait: deps.waitBootstrap,
 		desired: lifecycle.EnvironmentDesired{Mode: lifecycle.Inactive, Generation: 1}, closeDone: make(chan struct{}),
-		execStreams: make(map[uint64]context.CancelFunc), execCalls: make(map[uint64]context.CancelFunc),
+		execCalls: make(map[uint64]context.CancelFunc),
 	}
 	if r.deps.startExecution == nil {
 		r.deps.startExecution = r.startExecutionService
@@ -593,7 +590,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	r.mu.Lock()
 	desired, closing := r.desired, r.closing
 	activeAdmissions := r.activeAdmissions
-	activeExecution := r.activeExecutionCalls
+	activeExecution := len(r.execCalls)
 	executionRecovering := r.executionOwner.recovering()
 	ready := r.startupComplete && !r.failed
 	r.mu.Unlock()

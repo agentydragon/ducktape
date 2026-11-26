@@ -165,11 +165,8 @@ func (r *Runtime) launchSessionProcess(ctx context.Context, owner string, superv
 
 func (r *Runtime) cancelExecutionCalls() {
 	r.mu.Lock()
-	cancels := make([]context.CancelFunc, 0, len(r.execCalls)+len(r.execStreams))
+	cancels := make([]context.CancelFunc, 0, len(r.execCalls))
 	for _, cancel := range r.execCalls {
-		cancels = append(cancels, cancel)
-	}
-	for _, cancel := range r.execStreams {
 		cancels = append(cancels, cancel)
 	}
 	r.mu.Unlock()
@@ -185,7 +182,7 @@ func (r *Runtime) waitForExecutionCalls(ctx context.Context) error {
 		if failure := r.failureLocked(); failure != nil && !r.closing {
 			return false, failure
 		}
-		return r.activeExecutionCalls == 0, nil
+		return len(r.execCalls) == 0, nil
 	})
 }
 
