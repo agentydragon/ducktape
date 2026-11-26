@@ -1,8 +1,14 @@
-use super::*;
 use crate::analysis_inputs::ProofDependencies;
-use crate::facts::abstract_domain::effect::{CoerceOperand, CoerceOperands};
+use crate::execution_evidence::SourceLocation;
+use crate::facts::abstract_domain::effect::{
+    CoerceOperand, CoerceOperands, CoerceSite, Effect, HavocCause, InvokeSite,
+};
 use analysis_model::PrimKinds;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::sync::Arc;
+use swc_common::Span;
+use swc_ecma_ast::Id;
 
 pub use saved_purity_proto::debundle::saved_purity::PurityRule;
 

@@ -5,7 +5,6 @@ use std::fmt;
 use swc_atoms::Atom;
 
 use crate::execution_evidence::{ConstructionRejection, ExecutionPrecisionLoss, SourceLocation};
-use crate::facts::EffectCell;
 use crate::purity::Purity;
 
 /// One census witness `program_premises.intrinsics_never_written` overrides.
@@ -824,7 +823,7 @@ pub struct ReentryFreeOperationUse {
     pub span: swc_common::Span,
 }
 
-/// Serializable projection of [`EffectCell`]: binding cells carry the
+/// Serializable projection of `facts::EffectCell`: binding cells carry the
 /// name only (the hygiene context is dropped, as everywhere on the
 /// wire; see docs/wire_format.md).
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display)]
@@ -842,22 +841,4 @@ pub enum EffectCellReport {
     ObjectShape { origin: u32 },
     #[strum(to_string = "own property `{property}` of allocation #{origin}")]
     OwnProperty { origin: u32, property: String },
-}
-
-impl From<&EffectCell> for EffectCellReport {
-    fn from(cell: &EffectCell) -> Self {
-        match cell {
-            EffectCell::Binding(id) => Self::Binding {
-                binding: id.0.clone(),
-            },
-            EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
-            EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
-            EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
-            EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
-            EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
-                origin: *origin,
-                property: property.clone(),
-            },
-        }
-    }
 }

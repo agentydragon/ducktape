@@ -1,5 +1,6 @@
 use super::*;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss};
+use crate::reports::schema::EffectCellReport;
 use source_identity::SourceUnitOrdinal;
 
 /// One value per syntactic position bucket. Collapses the repeated
@@ -508,6 +509,24 @@ pub enum EffectCell {
         origin: u32,
         property: String,
     },
+}
+
+impl From<&EffectCell> for EffectCellReport {
+    fn from(cell: &EffectCell) -> Self {
+        match cell {
+            EffectCell::Binding(id) => Self::Binding {
+                binding: id.0.clone(),
+            },
+            EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
+            EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
+            EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
+            EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
+            EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
+                origin: *origin,
+                property: property.clone(),
+            },
+        }
+    }
 }
 
 /// The (writes, reads) cell view of one statement, derived by

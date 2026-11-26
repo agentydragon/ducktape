@@ -37,13 +37,13 @@ pub(crate) use swc_common::{Span, Spanned};
 pub(crate) use swc_ecma_ast::*;
 pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 
-pub(crate) use crate::execution_evidence::{SourceLocation, SourceLocator};
+pub(crate) use crate::execution_evidence::SourceLocator;
 pub(crate) use crate::facts::TopLevelItemView;
 pub(crate) use crate::facts::abstract_domain::builtins::{self, Invocation};
 pub(crate) use crate::facts::abstract_domain::effect::{
-    CoerceSite, Effect, HavocCause, InvokeSite,
+    CoerceSite, Effect, HavocCause, InvokeSite, binary_throws,
 };
-pub(crate) use crate::facts::abstract_domain::primitive::{binary_throws, evaluate};
+pub(crate) use crate::facts::abstract_domain::primitive::evaluate;
 
 pub mod classifier;
 pub mod code_graph;
