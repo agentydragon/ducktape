@@ -29,8 +29,7 @@ private def emitRefusal (requested : String) (refusal : CertificationRefusal)
   emitVerdict requested (.error (IO.userError refusal.reason).toString) scope (reasonCodeFields ++ observationFields)
 
 private def noConstructedRule (requested : String) : IO UInt32 :=
-  emitRefusal requested { reason := "no compiled constructor supports this split; no JavaScript was written",
-                         reasonCode := some "no_constructed_rule" }
+  emitRefusal requested ({ reason := "no compiled constructor supports this split; no JavaScript was written", reasonCode := some "no_constructed_rule" } : CertificationRefusal)
 
 /-- Apply the named-declaration constructor to its actual decoded source and
 print only the modules it returns. A decline never writes to the destination. -/
