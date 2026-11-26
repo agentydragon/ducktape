@@ -232,11 +232,13 @@ pub struct DomainValueDictionary {
 }
 
 impl DomainValueDictionary {
-    fn domain_len(&self, domain: VariableDomain) -> usize {
-        match domain {
+    /// Whether `value` names an interned value of `domain`.
+    fn contains_id(&self, domain: VariableDomain, value: BackendValueId) -> bool {
+        let len = match domain {
             VariableDomain::SourceUnit => self.source_units.len(),
             VariableDomain::String => self.strings.len(),
-        }
+        };
+        usize::try_from(value.0).is_ok_and(|index| index < len)
     }
 
     pub fn encode(&self, value: &SelectorProjectedValue) -> Option<BackendValueId> {
@@ -273,6 +275,19 @@ impl DomainValueDictionary {
     }
 }
 
+/// The values `values` admits, resolving full and shared handles.
+fn domain_values<'a>(
+    full_domains: &'a FullDomainValues,
+    shared_variable_domains: &'a [CompiledSharedVariableDomain],
+    values: &'a CompiledVariableDomain,
+) -> &'a [BackendValueId] {
+    match values {
+        CompiledVariableDomain::Full(domain) => full_domains.get(*domain),
+        CompiledVariableDomain::Sparse(values) => values,
+        CompiledVariableDomain::SharedSparse(id) => &shared_variable_domains[id.0].values,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledSelectorProblem {
     pub value_dictionary: DomainValueDictionary,
@@ -288,24 +303,15 @@ pub struct CompiledSelectorProblem {
 }
 
 impl CompiledSelectorProblem {
-    pub fn variable_domain_values(&self, variable: &CompiledVariable) -> Vec<BackendValueId> {
-        match &variable.values {
-            CompiledVariableDomain::Full(domain) => self.full_domains.get(*domain).to_vec(),
-            CompiledVariableDomain::Sparse(values) => values.clone(),
-            CompiledVariableDomain::SharedSparse(id) => {
-                self.shared_variable_domains[id.0].values.clone()
-            }
-        }
-    }
-
-    pub fn variable_domain_value_count(&self, variable: &CompiledVariable) -> usize {
-        match &variable.values {
-            CompiledVariableDomain::Full(domain) => self.full_domains.get(*domain).len(),
-            CompiledVariableDomain::Sparse(values) => values.len(),
-            CompiledVariableDomain::SharedSparse(id) => {
-                self.shared_variable_domains[id.0].values.len()
-            }
-        }
+    pub fn variable_domain_values<'a>(
+        &'a self,
+        variable: &'a CompiledVariable,
+    ) -> &'a [BackendValueId] {
+        domain_values(
+            &self.full_domains,
+            &self.shared_variable_domains,
+            &variable.values,
+        )
     }
 
     pub fn decode_assignment(
@@ -682,14 +688,8 @@ impl CompiledSelectorProblemBuilder {
             self.validate_encoded_variable_domain_value(variable, domain, *value)?;
         }
 
-        let values = match self.require_variable(variable)?.values.clone() {
-            CompiledVariableDomain::Full(domain) => self.full_domains.get(domain).to_vec(),
-            CompiledVariableDomain::Sparse(values) => values,
-            CompiledVariableDomain::SharedSparse(id) => {
-                self.shared_variable_domains[id.0].values.clone()
-            }
-        };
-        let remaining = values
+        let remaining = self
+            .variable_domain_values(variable)?
             .into_iter()
             .filter(|value| excluded.binary_search(value).is_err())
             .collect::<Vec<_>>();
@@ -730,13 +730,12 @@ impl CompiledSelectorProblemBuilder {
         &self,
         variable: ConstraintVariableId,
     ) -> Result<Vec<BackendValueId>, CompiledSelectorProblemError> {
-        match &self.require_variable(variable)?.values {
-            CompiledVariableDomain::Full(domain) => Ok(self.full_domains.get(*domain).to_vec()),
-            CompiledVariableDomain::Sparse(values) => Ok(values.clone()),
-            CompiledVariableDomain::SharedSparse(id) => {
-                Ok(self.shared_variable_domains[id.0].values.clone())
-            }
-        }
+        Ok(domain_values(
+            &self.full_domains,
+            &self.shared_variable_domains,
+            &self.require_variable(variable)?.values,
+        )
+        .to_vec())
     }
 
     pub fn simplify_allowed_tuples_against_current_domains(
@@ -1047,18 +1046,9 @@ impl CompiledSelectorProblemBuilder {
         values: &[BackendValueId],
     ) -> Result<bool, CompiledSelectorProblemError> {
         let domain = self.require_variable(variable)?.domain;
-        for value in values {
-            if value.0 < 0 {
-                return Ok(false);
-            }
-            let Ok(index) = usize::try_from(value.0) else {
-                return Ok(false);
-            };
-            if index >= self.value_dictionary.domain_len(domain) {
-                return Ok(false);
-            }
-        }
-        Ok(true)
+        Ok(values
+            .iter()
+            .all(|value| self.value_dictionary.contains_id(domain, *value)))
     }
 
     fn restrict_variable_to_encoded_values_changed(
@@ -1072,13 +1062,7 @@ impl CompiledSelectorProblemBuilder {
     }
 
     fn compiled_variable_domain_is_empty(&self, values: &CompiledVariableDomain) -> bool {
-        match values {
-            CompiledVariableDomain::Full(domain) => self.full_domains.get(*domain).is_empty(),
-            CompiledVariableDomain::Sparse(values) => values.is_empty(),
-            CompiledVariableDomain::SharedSparse(id) => {
-                self.shared_variable_domains[id.0].values.is_empty()
-            }
-        }
+        domain_values(&self.full_domains, &self.shared_variable_domains, values).is_empty()
     }
 
     fn simplify_all_different_variables(
@@ -1171,25 +1155,7 @@ impl CompiledSelectorProblemBuilder {
         domain: VariableDomain,
         value: BackendValueId,
     ) -> Result<(), CompiledSelectorProblemError> {
-        if value.0 < 0 {
-            return Err(CompiledSelectorProblemError::EncodedTupleValueOutOfDomain {
-                id,
-                tuple_index,
-                variable,
-                domain,
-                value,
-            });
-        }
-        let Ok(index) = usize::try_from(value.0) else {
-            return Err(CompiledSelectorProblemError::EncodedTupleValueOutOfDomain {
-                id,
-                tuple_index,
-                variable,
-                domain,
-                value,
-            });
-        };
-        if index >= self.value_dictionary.domain_len(domain) {
+        if !self.value_dictionary.contains_id(domain, value) {
             return Err(CompiledSelectorProblemError::EncodedTupleValueOutOfDomain {
                 id,
                 tuple_index,
@@ -1206,17 +1172,7 @@ impl CompiledSelectorProblemBuilder {
         domain: VariableDomain,
         value: BackendValueId,
     ) -> Result<(), CompiledSelectorProblemError> {
-        if value.0 < 0 {
-            return Err(
-                CompiledSelectorProblemError::EncodedSharedDomainValueOutOfDomain { domain, value },
-            );
-        }
-        let Ok(index) = usize::try_from(value.0) else {
-            return Err(
-                CompiledSelectorProblemError::EncodedSharedDomainValueOutOfDomain { domain, value },
-            );
-        };
-        if index >= self.value_dictionary.domain_len(domain) {
+        if !self.value_dictionary.contains_id(domain, value) {
             return Err(
                 CompiledSelectorProblemError::EncodedSharedDomainValueOutOfDomain { domain, value },
             );
@@ -1245,25 +1201,7 @@ impl CompiledSelectorProblemBuilder {
         domain: VariableDomain,
         value: BackendValueId,
     ) -> Result<(), CompiledSelectorProblemError> {
-        if value.0 < 0 {
-            return Err(
-                CompiledSelectorProblemError::EncodedVariableDomainValueOutOfDomain {
-                    variable,
-                    domain,
-                    value,
-                },
-            );
-        }
-        let Ok(index) = usize::try_from(value.0) else {
-            return Err(
-                CompiledSelectorProblemError::EncodedVariableDomainValueOutOfDomain {
-                    variable,
-                    domain,
-                    value,
-                },
-            );
-        };
-        if index >= self.value_dictionary.domain_len(domain) {
+        if !self.value_dictionary.contains_id(domain, value) {
             return Err(
                 CompiledSelectorProblemError::EncodedVariableDomainValueOutOfDomain {
                     variable,
