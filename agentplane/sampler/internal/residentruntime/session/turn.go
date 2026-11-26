@@ -140,11 +140,11 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	}
 	if len(calls) > 0 {
 		call := &calls[0]
-		if !call.IsModelTool(r.settings.Models[session.Model].ExecEncoding) {
+		if !call.IsModelTool(config.ExecEncoding) {
 			if !call.HasValidShape() {
 				return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool call shape", "call": call}}
 			}
-			if call.IsConfiguredToolName(r.settings.Models[session.Model].ExecEncoding) {
+			if call.IsConfiguredToolName(config.ExecEncoding) {
 				return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "unsupported model tool encoding", "call": call}}
 			}
 			content := []protocol.ContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
@@ -225,9 +225,6 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	if err != nil {
 		return "", err
 	}
-	if conversation.API != config.API {
-		return "", protocol.ErrPrecondition
-	}
 	if frontier == nil && config.AutoCompactTokens != nil && conversation.ContextTokens != nil &&
 		*conversation.ContextTokens >= *config.AutoCompactTokens && adapter.CanAutoCompact(conversation.Context()) {
 		if err := r.compact(ctx, owner, live, session.Model); err != nil {
@@ -250,9 +247,9 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	if err != nil {
 		return "", err
 	}
-	preparation := adapter.Prepare(session, metadata)
+	preparation := requestPreparation(config, session, metadata, false)
 	request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config)
-	policy := runtimeProviderAttemptPolicy(r.settings, r.settings.Models[session.Model], frontier)
+	policy := runtimeProviderAttemptPolicy(r.settings, config, frontier)
 	var intentID string
 	var wire []byte
 	var snapshot *sessionstore.ProviderAttemptSnapshot
