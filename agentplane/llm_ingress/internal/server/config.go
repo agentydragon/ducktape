@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 	"go.opentelemetry.io/otel/baggage"
 )
@@ -158,14 +159,8 @@ func validateConfig(c *config) error {
 			return errors.New("models require a non-empty model and positive total_context_budget_tokens")
 		}
 	}
-	for _, level := range c.LogLevels {
-		switch level {
-		case "DEBUG", "INFO", "WARNING", "ERROR":
-		default:
-			return errors.New("log_levels values must be DEBUG, INFO, WARNING, or ERROR")
-		}
-	}
-	return nil
+	_, err = observability.RootLogLevel(c.LogLevels)
+	return err
 }
 
 var httpTokenPattern = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")

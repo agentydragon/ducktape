@@ -5,6 +5,7 @@ package(default_visibility = ["//agentplane:__subpackages__"])
 go_library(
     name = "observability",
     srcs = [
+        "log_level.go",
         "metrics.go",
         "tracing.go",
     ],
@@ -44,4 +45,10 @@ go_test(
         "@io_opentelemetry_go_proto_otlp//metrics/v1:metrics",
         "@org_golang_google_grpc//:grpc",
     ],
+)
+
+go_test(
+    name = "log_level_test",
+    srcs = ["log_level_test.go"],
+    embed = [":observability"],
 )

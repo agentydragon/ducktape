@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/history"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 )
 
@@ -131,13 +132,6 @@ func (c *config) validate() error {
 	if err := c.PolicyService.Validate(peertls.EgressProxyURI); err != nil {
 		return err
 	}
-	for logger, level := range c.LogLevels {
-		if logger != "root" {
-			return errors.New(`log_levels may only name "root"`)
-		}
-		if _, err := logLevel(level); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := observability.RootLogLevel(c.LogLevels)
+	return err
 }
