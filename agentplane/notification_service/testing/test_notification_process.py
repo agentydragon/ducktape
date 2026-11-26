@@ -10,7 +10,7 @@ import pytest_bazel
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.notification_service.api.notifications import notifications_pb2, notifications_pb2_grpc
-from agentplane.notification_service.testing.process_fixture.process import notification_process
+from agentplane.notification_service.testing.notification_process import notification_process
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
 from agentplane.testing.tls import issue_workload_leaf, make_ca, workload_uri

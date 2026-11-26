@@ -16,7 +16,10 @@ import grpc
 import yaml
 from python.runfiles import Runfiles
 
-from agentplane.environments.testing.process import EnvironmentServiceProcess, run_environment_service
+from agentplane.environments.testing.environment_service_process import (
+    EnvironmentServiceProcess,
+    run_environment_service,
+)
 from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls import config as runtime_transport
 from agentplane.session_dispatcher.client import SandboxControlClient
