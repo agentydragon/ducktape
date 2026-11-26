@@ -84,15 +84,17 @@ assert.equal(reordered.verdict.reason_code, "constructor_refusal", reordered.log
 assert.match(reordered.verdict.reason, /changes the source unit order/);
 assert.deepEqual(snapshot(), beforeUnsupported, "unsupported move modified the existing output");
 
-// The export-list row has no executable CoreJS unit. The public CLI must keep
-// the requested move refused until a source-to-original-AST proof covers it.
+// The paired terminal_export_artifact_test covers this exact CoreJS artifact
+// request. The public CLI stays refused until its production path uses that
+// proof through the common strict output gate.
+const terminalExportProvider = "provider.mjs";
 const terminalExport = prepare(path.join(root, "terminal-export-row"), {
   source: "const a = 1;\nexport { a };\n",
   provider: "",
   spec: {
     entry,
-    modules: { [entry]: ["#1"], [worker]: ["#0"] },
-    order: [worker],
+    modules: { [terminalExportProvider]: ["#0"], [entry]: ["#1"] },
+    order: [terminalExportProvider],
     sequential: true,
   },
 });
