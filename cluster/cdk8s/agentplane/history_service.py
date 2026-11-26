@@ -20,7 +20,8 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
-from agentplane.history_service.settings import IngressSettings, ServiceDelegationSettings, ServiceDelegator, Settings
+from agentplane.history_service.settings import IngressSettings, Settings
+from agentplane.identity.auth.delegation import ServiceDelegation, ServiceDelegator
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -122,7 +123,7 @@ class HistoryService(Construct):
             event_block_writes=env.history_event_block_writes,
         )
         service_delegation = (
-            ServiceDelegationSettings(actors=(ServiceDelegator(spiffe_id=ACTIONS_URI),), methods=_HISTORY_READ_METHODS)
+            ServiceDelegation(actors=(ServiceDelegator(spiffe_id=ACTIONS_URI),), methods=_HISTORY_READ_METHODS)
             if delegation_actor is not None
             else None
         )

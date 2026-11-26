@@ -165,7 +165,7 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 		PolicyNamespace:  servingTestNamespace,
 		ServiceReaders:   []string{peertls.CentralSamplerURI},
 		ServiceOperators: []string{peertls.ActionsURI},
-		ServiceDelegation: &ServiceDelegationConfig{
+		ServiceDelegation: &auth.ServiceDelegationConfig{
 			Actors:  []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}},
 			Methods: []string{environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName},
 		},

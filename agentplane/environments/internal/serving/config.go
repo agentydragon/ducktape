@@ -14,21 +14,16 @@ import (
 
 // Config is opt-in until the accepting Controller image is pinned before deployment settings.
 type Config struct {
-	RPC                listener.Config          `mapstructure:"rpc"`
-	PolicyNamespace    string                   `mapstructure:"policy_namespace"`
-	ServiceReaders     []string                 `mapstructure:"service_readers"`
-	ServiceManagers    []string                 `mapstructure:"service_managers"`
-	ServiceLaunchers   []string                 `mapstructure:"service_launchers"`
-	ServiceOperators   []string                 `mapstructure:"service_operators"`
-	WakeServiceCallers []string                 `mapstructure:"wake_service_callers"`
-	ServiceDelegation  *ServiceDelegationConfig `mapstructure:"service_delegation"`
-	RuntimeProxy       *RuntimeProxyConfig      `mapstructure:"runtime_proxy"`
-	RuntimeCatalog     runtimeconfig.Catalog    `mapstructure:"runtime_catalog"`
-}
-
-type ServiceDelegationConfig struct {
-	Actors  []auth.ServiceDelegator `mapstructure:"actors"`
-	Methods []string                `mapstructure:"methods"`
+	RPC                listener.Config               `mapstructure:"rpc"`
+	PolicyNamespace    string                        `mapstructure:"policy_namespace"`
+	ServiceReaders     []string                      `mapstructure:"service_readers"`
+	ServiceManagers    []string                      `mapstructure:"service_managers"`
+	ServiceLaunchers   []string                      `mapstructure:"service_launchers"`
+	ServiceOperators   []string                      `mapstructure:"service_operators"`
+	WakeServiceCallers []string                      `mapstructure:"wake_service_callers"`
+	ServiceDelegation  *auth.ServiceDelegationConfig `mapstructure:"service_delegation"`
+	RuntimeProxy       *RuntimeProxyConfig           `mapstructure:"runtime_proxy"`
+	RuntimeCatalog     runtimeconfig.Catalog         `mapstructure:"runtime_catalog"`
 }
 
 func (c Config) Validate() error {
@@ -52,8 +47,8 @@ func (c Config) Validate() error {
 		}
 	}
 	if d := c.ServiceDelegation; d != nil {
-		if len(d.Actors) == 0 || len(d.Methods) == 0 {
-			return errors.New("service_delegation requires actors and methods")
+		if err := d.Validate(); err != nil {
+			return fmt.Errorf("service_delegation: %w", err)
 		}
 		allowed := []string{
 			environmentpb.EnvironmentService_ListEnvironments_FullMethodName,
@@ -70,9 +65,6 @@ func (c Config) Validate() error {
 		for _, actor := range d.Actors {
 			if actor.ConnectionProvenance {
 				return errors.New("EnvironmentService delegation requires Action provenance")
-			}
-			if err := auth.ValidateServiceCallers([]string{actor.SPIFFEID}); err != nil {
-				return err
 			}
 		}
 	}

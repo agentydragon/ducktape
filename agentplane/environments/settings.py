@@ -3,25 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar, Literal, Self
+from typing import ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from agentplane.identity.auth.delegation import ServiceDelegation
 from agentplane.identity.auth.listener import Listener
 from agentplane.net.peertls.config import SANDBOX_CONTROLLER_URI, ClientTLS, Security, ServiceSPIFFEID
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
-
-
-class ServiceDelegator(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    spiffe_id: ServiceSPIFFEID
-    connection_provenance: Literal[False] = False
-
-
-class ServiceDelegation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    actors: tuple[ServiceDelegator, ...] = Field(min_length=1)
-    methods: tuple[str, ...] = Field(min_length=1)
 
 
 class RuntimeProxy(BaseModel):

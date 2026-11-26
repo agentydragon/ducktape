@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from collections.abc import Set
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
+from agentplane.identity.auth.delegation import ServiceDelegation
 from agentplane.identity.auth.listener import Listener
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
@@ -42,18 +43,6 @@ class CentralSamplerTarget(BaseModel):
         elif self.token_file is None:
             raise ValueError("a bearer token file or service SVID is required")
         return self
-
-
-class ServiceDelegator(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    spiffe_id: ServiceSPIFFEID
-    connection_provenance: Literal[False] = False
-
-
-class ServiceDelegation(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    actors: tuple[ServiceDelegator, ...] = Field(min_length=1)
-    methods: tuple[str, ...] = Field(min_length=1)
 
 
 class Settings(BaseModel):

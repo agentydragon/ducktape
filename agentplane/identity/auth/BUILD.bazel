@@ -89,3 +89,16 @@ go_test(
         "@org_golang_google_protobuf//proto",
     ],
 )
+
+py_library(
+    name = "delegation",
+    srcs = ["delegation.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
+        "//agentplane/net/peertls:config",
+        "@pypi//pydantic",
+    ],
+)
