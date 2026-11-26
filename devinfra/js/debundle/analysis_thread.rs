@@ -1,6 +1,8 @@
 //! The analysis recurses as deep as the analyzed call graph, so its stack is
 //! sized here rather than left to the host's main-thread default.
 
+use std::process::ExitCode;
+
 use swc_common::{GLOBALS, Globals};
 
 /// The depth-64 e2e cases (`soundness_at_init_value_flow_test`,
@@ -22,4 +24,16 @@ pub fn run_analysis<R: Send>(body: impl FnOnce() -> R + Send) -> R {
             .join()
             .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
     })
+}
+
+/// Runs a Bazel entry point's `body` under [`run_analysis`], printing its
+/// error chain to stderr on failure.
+pub fn run_analysis_command(body: impl FnOnce() -> anyhow::Result<()> + Send) -> ExitCode {
+    match run_analysis(body) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("{error:#}");
+            ExitCode::FAILURE
+        }
+    }
 }
