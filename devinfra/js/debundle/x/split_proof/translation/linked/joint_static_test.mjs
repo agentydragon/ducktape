@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { acorn, dump } from "../parser.mjs";
 import { root } from "./harness.mjs";
 import { writeDeployment } from "../testing/deployment_manifest.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
 
 const app = `import { value as external, bump as change } from "./provider.mjs";
 var value = 10;
@@ -45,20 +46,6 @@ function diagnosticPreview(manifest, out) {
   assert.match(result.stdout, /model diagnostic: /, result.stdout + result.stderr);
   assert(existsSync(out), `preview was not written to ${out}`);
   return result.stdout;
-}
-
-function snapshotFiles(directory, prefix = "") {
-  return Object.fromEntries(
-    readdirSync(directory, { withFileTypes: true })
-      .sort((left, right) => left.name.localeCompare(right.name))
-      .flatMap((entry) => {
-        const relative = path.join(prefix, entry.name);
-        const full = path.join(directory, entry.name);
-        if (entry.isDirectory()) return Object.entries(snapshotFiles(full, relative));
-        assert(entry.isFile(), `unexpected output entry ${full}`);
-        return [[relative, readFileSync(full)]];
-      })
-  );
 }
 
 function previewSpec(source, spec, out) {
@@ -288,7 +275,7 @@ assert.equal(tagged.stdout.trim(), "certified");
   const manifest = path.join(original, "deployment.json");
   writeFileSync(manifest, JSON.stringify({ entry, chunks }));
   const options = ["--structural", "--deployment-origin", "https://deployment.test"];
-  assertRefused(manifest, path.join(root, "three-providers-public"), [], "no_constructed_rule");
+  assertPublicEmissionRefused(manifest, path.join(root, "three-providers-public"));
   assertRefused(manifest, path.join(root, "three-providers-former-mode"), options);
 
   // Preserve the former case's Node evidence with a separate Lean diagnostic
@@ -309,12 +296,7 @@ assert.equal(tagged.stdout.trim(), "certified");
   assert.equal((await import(pathToFileURL(path.join(original, entry)))).total, 6);
   assert.equal((await import(pathToFileURL(path.join(preview, entry)))).total, 6);
 
-  const before = snapshotFiles(preview);
-  const checked = invokePublic(manifest, preview, [...options, "--check-output"]);
-  assert.equal(checked.result.status, 1, checked.result.stdout + checked.result.stderr);
-  assert.equal(checked.verdict.status, "rejected", checked.result.stdout + checked.result.stderr);
-  assert.equal(checked.verdict.guarantee, null, checked.result.stdout + checked.result.stderr);
-  assert.deepEqual(snapshotFiles(preview), before, "multi-chunk check-output changed existing bytes");
+  assertPublicRecheckRefused(manifest, preview);
 }
 
 // If two moved initializers throw different values, changing which owner runs
@@ -355,7 +337,7 @@ assert.equal(tagged.stdout.trim(), "certified");
   const reorderedSpec = makePlacement(["second", "first"]);
   const reorderedPreview = path.join(root, "throwing-deployment-reordered-preview");
   const reorderedManifest = writeDeployment(sourceFile, reorderedSpec, reorderedPreview);
-  assertRefused(reorderedManifest, path.join(root, "throwing-deployment-reordered-default"), [], "no_constructed_rule");
+  assertPublicEmissionRefused(reorderedManifest, path.join(root, "throwing-deployment-reordered-default"));
   assertRefused(reorderedManifest, path.join(root, "throwing-deployment-reordered-normal"), [
     "--structural",
     "--require",

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { prepare, root } from "./harness.mjs";
 import { writeDeployment } from "../testing/deployment_manifest.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
 
 const provider = "nested/provider.mjs";
 const lazy = "nested/lazy.mjs";
@@ -41,20 +42,6 @@ function writePreview(files, out) {
   return result.stdout;
 }
 
-function snapshotFiles(directory, prefix = "") {
-  return Object.fromEntries(
-    readdirSync(directory, { withFileTypes: true })
-      .sort((left, right) => left.name.localeCompare(right.name))
-      .flatMap((entry) => {
-        const relative = path.join(prefix, entry.name);
-        const full = path.join(directory, entry.name);
-        if (entry.isDirectory()) return Object.entries(snapshotFiles(full, relative));
-        assert(entry.isFile(), `unexpected output entry ${full}`);
-        return [[relative, readFileSync(full)]];
-      })
-  );
-}
-
 mkdirSync(path.join(dir, "nested"), { recursive: true });
 const files = prepare(dir, {
   sourceName: entry,
@@ -85,17 +72,14 @@ const opts = [
   "native-browser-record@1",
 ];
 const out = path.join(dir, "out");
-assertRefused(files, path.join(dir, "public-refusal"), [], "no_constructed_rule");
+const deployment = writeDeployment(files.sourceFile, files.specFile, path.join(dir, "public-refusal"));
+assertPublicEmissionRefused(deployment, path.join(dir, "public-refusal"));
 assertRefused(files, path.join(dir, "former-mode-refusal"), opts);
 const model = writePreview(files, out);
 assert.match(model, /OrderKept/);
 
-const previewBytes = snapshotFiles(out);
-const checked = invokePublic(files, out, [...opts, "--check-output"]);
-assert.equal(checked.result.status, 1, checked.result.stdout + checked.result.stderr);
-assert.equal(checked.verdict.status, "rejected", checked.result.stdout + checked.result.stderr);
-assert.equal(checked.verdict.guarantee, null, checked.result.stdout + checked.result.stderr);
-assert.deepEqual(snapshotFiles(out), previewBytes, "check-output changed the existing preview bytes");
+const previewManifest = writeDeployment(files.sourceFile, files.specFile, out);
+assertPublicRecheckRefused(previewManifest, out);
 
 // An overlay serves lazy assets and providers at their original URLs. Recreate
 // it in a second tree to exercise both module graphs without sharing Node's cache.
@@ -138,8 +122,9 @@ const capture = prepare(captureDir, {
   extras: { "lazy.mjs": 'import {pivot} from "./entry.mjs"; export const sample = () => pivot;' },
   spec: { entry, modules: { [entry]: ["#0", "#1", "#3"], [worker]: ["#2"] }, order: [worker], sequential: true },
 });
-const hidden = assertRefused(capture, path.join(captureDir, "unsafe"), [], "no_constructed_rule");
-assert.equal(hidden.guarantee, null);
+const hiddenOut = path.join(captureDir, "unsafe");
+const hiddenManifest = writeDeployment(capture.sourceFile, capture.specFile, hiddenOut);
+assertPublicEmissionRefused(hiddenManifest, hiddenOut);
 
 // Both providers export the same names. Retargeting a relocated namespace
 // import must still fail disk verification, even with byte-identical providers.
@@ -160,6 +145,5 @@ const relocated = path.join(nsOut, worker);
 const emitted = readFileSync(relocated, "utf8");
 assert.match(emitted, /provider\.mjs/);
 writeFileSync(relocated, emitted.replace("provider.mjs", "other.mjs"));
-const tampered = invokePublic(nsFiles, nsOut, [...opts, "--check-output"]);
-assert.equal(tampered.result.status, 1, tampered.result.stdout + tampered.result.stderr);
-assert.equal(tampered.verdict.status, "rejected", tampered.result.stdout + tampered.result.stderr);
+const tamperedManifest = writeDeployment(nsFiles.sourceFile, nsFiles.specFile, nsOut);
+assertPublicRecheckRefused(tamperedManifest, nsOut);

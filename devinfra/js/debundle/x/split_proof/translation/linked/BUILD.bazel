@@ -42,6 +42,8 @@ _TEST_ENV = {
     "SPLIT_PREVIEW": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:split_preview)",
 }
 
+_PUBLIC_REFUSAL_TEST_DATA = ["//devinfra/js/debundle/x/split_proof/translation/testing:public_refusal"]
+
 # These valid Lean-backed shards exceed the medium budget or have timed out in CI.
 _LONG_TIMEOUT_TESTS = [
     "browser_globals_test",
@@ -119,7 +121,7 @@ js_test(
 js_test(
     name = "joint_static_test",
     size = "medium",
-    data = _TEST_DATA + [
+    data = _TEST_DATA + _PUBLIC_REFUSAL_TEST_DATA + [
         "//devinfra/js/debundle/x/split_proof/lean:joint_static_test_runner",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
@@ -250,7 +252,9 @@ _SHARD_COUNTS = {
         name = name,
         size = "medium",
         timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
-        data = _TEST_DATA + (_RECORD_DATA if name in _RECORD_TESTS else []),
+        data = _TEST_DATA + (
+            _RECORD_DATA if name in _RECORD_TESTS else _PUBLIC_REFUSAL_TEST_DATA if name == "provider_location_test" else []
+        ),
         entry_point = name + ".mjs",
         env = _TEST_ENV | (_RECORD_ENV if name in _RECORD_TESTS else {}),
         shard_count = _SHARD_COUNTS.get(name),
