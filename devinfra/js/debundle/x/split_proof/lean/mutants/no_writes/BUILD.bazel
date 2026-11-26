@@ -1,4 +1,4 @@
-load("@rules_lean//lean:lean.bzl", "lean_binary")
+load("//devinfra/js/debundle/x/split_proof/lean:build_rules.bzl", "lean_binary", "lean_source_copy")
 
 _SOURCE = "//devinfra/js/debundle/x/split_proof/lean:EsmSplit/Translate.lean"
 
@@ -14,11 +14,20 @@ genrule(
           "sed 's/writes := f.writes,/writes := [],/' $(location " + _SOURCE + ") > $@",
 )
 
+# Both inputs must belong to this Bazel package so their relative names match
+# the Lean modules the entry imports, including the intentionally replaced one.
+lean_source_copy(
+    name = "translate_entry",
+    src = _BASE,
+    module_path = "EsmSplit/TranslateMain.lean",
+)
+
 lean_binary(
     name = "translate",
     srcs = [
-        _BASE,
+        # Keep import order for the native Lean rule.
         ":mutated_translate",
+        ":translate_entry",
     ],
     entry = "EsmSplit/TranslateMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],

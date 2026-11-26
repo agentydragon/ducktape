@@ -18,14 +18,13 @@ sh_test(
     srcs = ["sorry_test.sh"],
     args = [
         "$(rlocationpath :guard_runner)",
-        "$(rlocationpath @lean_dist//:lean_bin)",
+        "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lean_compiler)",
         "$(rlocationpath :Sorry.lean)",
     ],
     data = [
         ":Sorry.lean",
         ":guard_runner",
-        "@lean_dist//:lean_bin",
-        "@lean_dist//:runtime",
+        "//devinfra/js/debundle/x/split_proof/lean:lean_compiler",
     ],
     use_bash_launcher = True,
 )

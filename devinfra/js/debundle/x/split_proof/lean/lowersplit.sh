@@ -8,6 +8,6 @@ if [[ ${1:-} == --diagnostic ]]; then
   exec "$(rlocation '{DIAGNOSTIC}')" "$@"
 fi
 if [[ ${SPLIT_PROOF_STRATEGY_CENSUS:-} == 1 ]]; then
-  exec "$(rlocation '{STRATEGY_CENSUS}')" "$(rlocation '{INTERPRETER}')" "$@"
+  exec "$(rlocation '{STRATEGY_CENSUS}')" "$(rlocation '{CORE}')" "$@"
 fi
-exec "$(rlocation '{INTERPRETER}')" "$@"
+exec "$(rlocation '{CORE}')" "$@"

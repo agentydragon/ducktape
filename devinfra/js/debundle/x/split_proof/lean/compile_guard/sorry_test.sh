@@ -4,7 +4,10 @@ wrapper="$(rlocation "$1")"
 lean="$(rlocation "$2")"
 source="$(rlocation "$3")"
 cp "$source" "$TEST_TMPDIR/Sorry.lean"
-"$lean" --root="$TEST_TMPDIR" -o "$TEST_TMPDIR/reference.olean" "$TEST_TMPDIR/Sorry.lean" >"$TEST_TMPDIR/reference.log" 2>&1
+if ! "$lean" --root="$TEST_TMPDIR" -o "$TEST_TMPDIR/reference.olean" "$TEST_TMPDIR/Sorry.lean" >"$TEST_TMPDIR/reference.log" 2>&1; then
+  cat "$TEST_TMPDIR/reference.log" >&2
+  exit 1
+fi
 grep -F 'declaration uses ' "$TEST_TMPDIR/reference.log" >/dev/null
 if "$wrapper" "$lean" --root="$TEST_TMPDIR" -o "$TEST_TMPDIR/test.olean" "$TEST_TMPDIR/Sorry.lean" >"$TEST_TMPDIR/test.log" 2>&1; then
   echo 'Lean compile guard accepted an admitted proof' >&2
