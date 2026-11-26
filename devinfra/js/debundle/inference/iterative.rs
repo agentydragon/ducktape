@@ -24,8 +24,8 @@ use context::*;
 /// Independent semantic and typed-evidence changes from one contribution.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FactChange {
-    pub(crate) value: bool,
-    pub(crate) proof: bool,
+    pub value: bool,
+    pub proof: bool,
 }
 
 /// Typed access to facts during one producer evaluation. A family adapter can
@@ -68,14 +68,14 @@ pub struct GuardedContext<'a, Context> {
 }
 
 impl<'a, Context> GuardedContext<'a, Context> {
-    pub(crate) fn new(inner: &'a mut Context) -> Self {
+    pub fn new(inner: &'a mut Context) -> Self {
         Self {
             inner,
             missing: false,
         }
     }
 
-    pub(crate) fn finish<Fact>(self, contribution: Option<Fact>) -> Option<Fact> {
+    pub fn finish<Fact>(self, contribution: Option<Fact>) -> Option<Fact> {
         contribution.filter(|_| !self.missing)
     }
 }
@@ -236,7 +236,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
 
     /// Borrow completed positive evidence without making it writable. Missing
     /// keys remain growing reads in this solve; sealing certifies no absence.
-    pub(crate) fn with_sealed(rules: R, sealed: &'input SealedFacts<R::Key, R::Fact>) -> Self {
+    pub fn with_sealed(rules: R, sealed: &'input SealedFacts<R::Key, R::Fact>) -> Self {
         assert!(
             !R::SOURCE_ONLY
                 || sealed
@@ -254,7 +254,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
         }
     }
 
-    pub(crate) fn observed(mut self, metrics: &WorkMetrics) -> Self {
+    pub fn observed(mut self, metrics: &WorkMetrics) -> Self {
         self.metrics = metrics.batch();
         self
     }
@@ -482,7 +482,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
 pub struct SealedFacts<Key, Fact>(IterativeFacts<Key, Fact>);
 
 impl<Key: Ord + Hash, Fact> SealedFacts<Key, Fact> {
-    pub(crate) fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
+    pub fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
         self.0.get(key)
     }
 }
@@ -525,7 +525,7 @@ pub struct IterativeFacts<Key, Fact> {
 }
 
 impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
-    pub(crate) fn seal(self) -> SealedFacts<Key, Fact> {
+    pub fn seal(self) -> SealedFacts<Key, Fact> {
         SealedFacts(self)
     }
 

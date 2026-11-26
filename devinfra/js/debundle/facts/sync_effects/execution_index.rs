@@ -64,7 +64,6 @@ use analysis::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes,
     OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
 };
-use analysis::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis_model::PrimKinds;
 use analysis_vocabulary::execution_evidence::SourceLocator;
 use analysis_vocabulary::inputs::{
@@ -79,6 +78,7 @@ use analysis_vocabulary::report_schema::{
     NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
 };
 use analysis_vocabulary::value::{Kind, Value};
+use inference::{FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
 use std::cell::RefCell;

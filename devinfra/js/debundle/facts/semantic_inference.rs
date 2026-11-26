@@ -13,16 +13,16 @@ use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use super::statement_facts::StructuralStatementFacts;
 use super::value_flow::ChunkValueFlow;
-use crate::inference::{
-    CertificateContext, FactContext, GuardedContext, IterativeInference, IterativeRules, Judgment,
-    SealedFacts,
-};
 use analysis_vocabulary::inputs::{
     ArgumentInputRef, DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeIntrinsic,
     ProofDependencies, ResolvedArgumentInput,
 };
 use analysis_vocabulary::provenance::{InferenceRule, InferenceUse};
 use analysis_vocabulary::value::{Kind, Value};
+use inference::{
+    CertificateContext, FactContext, GuardedContext, IterativeInference, IterativeRules, Judgment,
+    SealedFacts,
+};
 use spec::DescriptorCopyFactorySignature;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};

@@ -26,7 +26,6 @@ use analysis::facts::{
     SetIterableProof, SetIterableShapes, StableArraySpreadShapes, StatementPurityContext,
     TopLevelNativeIterableOperandSite,
 };
-use analysis::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis::purity::ChunkCodeGraph;
 use analysis_vocabulary::inputs::{
     AnalysisInputs, NativeInputKind, NativeIntrinsic, ProofDependencies,
@@ -34,6 +33,7 @@ use analysis_vocabulary::inputs::{
 use analysis_vocabulary::purity::Effects;
 use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
+use inference::{FactContext, IterativeInference, IterativeRules};
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
