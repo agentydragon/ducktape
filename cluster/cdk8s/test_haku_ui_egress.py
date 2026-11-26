@@ -132,23 +132,20 @@ def test_the_issuer_serves_every_standing_records_namespace(resources: list[dict
 
 
 def test_the_proxy_resolves_every_standing_records_svid(resources: list[dict[str, Any]]) -> None:
-    """The proxy reads the record, and its Identity in the policy namespace, live on each request; a
-    missing grant fails closed."""
+    """The proxy reads the record live on each request, and resolves its Identity in the policy
+    namespace through PolicyService; a missing grant or Identity fails closed."""
     settings = config_map_yaml(resources, "egress-go-settings", "settings.yaml")
     allowed = set(settings["allowed_service_account_namespaces"])
     policy_namespace = settings["rules_namespace"]
     identities = {(d["metadata"]["namespace"], d["metadata"]["name"]) for d in resources if d["kind"] == "Identity"}
     assert NAMESPACE in allowed
+    assert settings["policy_service"]["target"]
     permissions = Rbac(resources).identity("ServiceAccount", "egress", staging.ENV.namespace)
     for record in _standing_records(resources):
         identity = record["spec"]["subject"]["identity"]["name"]
         assert (policy_namespace, identity) in identities
         assert not uncovered(
-            [
-                Permission(NAMESPACE, GROUP, "workloadcredentials", "get", record["metadata"]["name"]),
-                Permission(policy_namespace, GROUP, "identities", "get", identity),
-            ],
-            permissions,
+            [Permission(NAMESPACE, GROUP, "workloadcredentials", "get", record["metadata"]["name"])], permissions
         )
 
 

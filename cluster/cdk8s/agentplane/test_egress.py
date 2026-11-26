@@ -209,7 +209,6 @@ def test_llm_runner_traffic_uses_its_svid_listener(staging_manifests: list[dict[
         {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list"]},
         {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["get"]},
         {"apiGroups": [GROUP], "resources": ["workloadcredentials"], "verbs": ["get"]},
-        {"apiGroups": [GROUP], "resources": ["identities"], "verbs": ["get"]},
     ]
 
     basic_policy = find_resource(staging_manifests, "PolicySet", BASIC_POLICY)

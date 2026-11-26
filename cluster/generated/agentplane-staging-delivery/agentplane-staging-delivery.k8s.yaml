@@ -37,14 +37,6 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - identities
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
       - policysets
     verbs:
       - get

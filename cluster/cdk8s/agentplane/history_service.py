@@ -101,8 +101,6 @@ class HistoryService(Construct):
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
                 # A writer's SVID names its WorkloadCredential, read live on every request.
                 RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
-                # An Identity writer's SVID names its Identity, read live in the policy namespace.
-                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get"]),
             ],
         )
         RoleBinding(
@@ -158,7 +156,6 @@ class HistoryService(Construct):
         settings = Settings(
             reader_service_callers=frozenset((ACTIONS_URI, APP_URI, NOTIFICATIONS_URI)),
             service_delegation=service_delegation,
-            policy_namespace=env.namespace,
             policy_service=PolicyServicePeer(
                 target=policy_controller.tls_service(env.namespace).authority,
                 tls=serving_tls.client_tls(POLICY_CONTROLLER_URI, client_uri=HISTORY_SERVICE_URI),

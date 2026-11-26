@@ -139,10 +139,8 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert app_config["policy_service_tls"]["server_uri"] == POLICY_CONTROLLER_URI
 
     history = config_map_yaml(staging_manifests, f"{history_service.NAME}-config", "config.yaml")
-    assert history["policy_namespace"] == namespace
     assert serving_certificate["spec"]["uris"] == [history["ingress"]["sampler_service_actor"]]
     llm = config_map_yaml(staging_manifests, "llm-ingress-settings", "settings.yaml")
-    assert llm["policy_namespace"] == namespace
     assert llm["central_sampler_services"] == [serving_certificate["spec"]["uris"][0]]
     assert llm["central_sampler_identity_callers"] is True
 

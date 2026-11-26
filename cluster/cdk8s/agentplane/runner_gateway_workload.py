@@ -329,13 +329,8 @@ def add_rbac(scope: Construct, service_account: ServiceAccount, namespace: str, 
             RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]),
             # A dispatcher caller's SVID names its WorkloadCredential, read live on every request.
             RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
-            # One Role covers both reads because the Sandbox namespace is the policy namespace: a
-            # dispatcher caller's SVID names its Identity (policy namespace), and a Sandbox's
-            # `spec.identity` names one beside it (Sandbox namespace).
             RolePolicyRule(
-                resources=[
-                    custom_resource(GROUP, resource) for resource in ("identities", "policysets", "policybindings")
-                ],
+                resources=[custom_resource(GROUP, resource) for resource in ("policysets", "policybindings")],
                 verbs=["get", "list", "watch"],
             ),
             RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),

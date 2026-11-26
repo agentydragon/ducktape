@@ -119,14 +119,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(
     assert (sandbox_controller.NAME, "8080") not in ingress
     role = find_resource(docs, "Role", runner_gateway.NAME)
     resources = {resource for rule in role["rules"] for resource in rule["resources"]}
-    assert resources >= {
-        "serviceaccounts",
-        "sandboxes",
-        "workloadcredentials",
-        "identities",
-        "policysets",
-        "policybindings",
-    }
+    assert resources >= {"serviceaccounts", "sandboxes", "workloadcredentials", "policysets", "policybindings"}
     assert "leases" not in resources
     assert not {"pods", "virtualmachines", "virtualmachineinstances"} & resources
     assert not any(
@@ -137,10 +130,8 @@ def test_gateway_preserves_services_and_fences_listener_ingress(
 
 
 def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manifests: list[dict[str, Any]]) -> None:
-    namespace = staging.ENV.namespace
     gateway = config_map_yaml(staging_manifests, f"{runner_gateway.NAME}-settings", "settings.yaml")
     history = config_map_yaml(staging_manifests, f"{history_service.NAME}-config", "config.yaml")
-    assert history["policy_namespace"] == namespace
     gateway_delegation = gateway["dispatcher_service_delegation"]
     assert gateway_delegation["actors"] == [{"spiffe_id": ACTIONS_URI, "connection_provenance": False}]
     assert gateway_delegation["methods"] == [

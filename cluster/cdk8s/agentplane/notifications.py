@@ -172,9 +172,7 @@ class Notifications(Construct):
                 # Authorizing a peer send watches the caller's session_inbox_access rules and reports
                 # a set it cannot parse on each binding that names it, as egress and Actions do.
                 RolePolicyRule(
-                    resources=[
-                        custom_resource(GROUP, resource) for resource in ("policysets", "policybindings", "identities")
-                    ],
+                    resources=[custom_resource(GROUP, resource) for resource in ("policysets", "policybindings")],
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),

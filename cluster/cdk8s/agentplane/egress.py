@@ -633,7 +633,7 @@ class Egress(Construct):
             RolePolicyRule(
                 resources=[
                     custom_resource(GROUP, resource)
-                    for resource in ["egresscredentials", "policysets", "policybindings", "identities"]
+                    for resource in ["egresscredentials", "policysets", "policybindings"]
                 ],
                 verbs=["get", "list", "watch"],
             ),
