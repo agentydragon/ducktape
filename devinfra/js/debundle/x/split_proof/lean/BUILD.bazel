@@ -479,6 +479,29 @@ lean_binary(
 )
 
 lean_axiom_test(
+    name = "sparse_metadata_axioms_test",
+    srcs = ["SparseMetadataTest.lean"],
+    imports = ["SparseMetadataTest"],
+    theorems = [
+        "SparseMetadataExamples.abrupt_region_counterexamples",
+        "SparseMetadataExamples.hoisted_region_counterexample",
+        "SparseMetadataExamples.sparse_all_outcomes",
+        "SparseMetadataExamples.sparse_exports",
+        "SparseMetadataExamples.sparse_order_kept",
+        "SparseMetadataExamples.sparse_placement",
+        "SparseMetadataExamples.terminal_exports",
+        "SparseMetadataExamples.terminal_fuel_counterexample",
+        "SparseMetadataExamples.terminal_normal_transfer_fails",
+        "SparseMetadataExamples.terminal_region_counterexample",
+        "SparseMetadataExamples.wrong_order_observed",
+    ],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_structural",
+    ],
+)
+
+lean_axiom_test(
     name = "provider_input_boundary_axioms_test",
     srcs = [
         "ProviderInputBoundaryAudit.lean",
