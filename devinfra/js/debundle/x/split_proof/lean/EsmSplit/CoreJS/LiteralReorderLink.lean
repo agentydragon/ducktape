@@ -201,6 +201,19 @@ def construct (original : Program) (request : EsmSplit.Spec) : Except String (Co
     | _ => throw "expected two literal constants and the original exported reader"
   else throw "authored placement is not the supported sequential request"
 
+/-- The owners in the placement theorem are the unchanged request's own
+selectors, not a replacement assignment supplied by the caller. -/
+theorem authored_owners {original request} (c : Construction original request) :
+    request.claimants (bundle c.x c.y c.z) 0 = ["left.mjs"] ∧
+    request.claimants (bundle c.x c.y c.z) 1 = ["right.mjs"] ∧
+    request.claimants (bundle c.x c.y c.z) 2 = ["entry.mjs"] := by
+  have owners : spec.claimants (bundle c.x c.y c.z) 0 = ["left.mjs"] ∧
+      spec.claimants (bundle c.x c.y c.z) 1 = ["right.mjs"] ∧
+      spec.claimants (bundle c.x c.y c.z) 2 = ["entry.mjs"] := ⟨rfl, rfl, rfl⟩
+  simpa only [← c.requestEq] using owners
+
+#print axioms authored_owners
+
 /-- Accepted constructions carry actual authored placement, all public live
 cells, and complete outcomes in every world and at every fuel. -/
 theorem sound {original request} (c : Construction original request) :

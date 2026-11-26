@@ -1893,6 +1893,7 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.LiteralReorderLink"],
     required_theorems = [
+        "CoreJS.LiteralReorderLink.authored_owners",
         "CoreJS.LiteralReorderLink.construct",
         "CoreJS.LiteralReorderLink.fixture_plan",
         "CoreJS.LiteralReorderLink.outcomes",
