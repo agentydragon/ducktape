@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.SparseProjectedOrder
+import EsmSplit.CoreJS.IndexedCheckedSplit
 import EsmSplit.Split
 
 open CoreJS CoreJS.SparseProjectedOrder
@@ -28,7 +29,7 @@ private def plan := EsmSplit.mkPlan bundle request
 private def constructed := splitProgramIndexed sourceRows bundle plan
 private def sourceProgram : Program := {
   entry := "entry.mjs"
-  modules := [{ name := "entry.mjs", imports := [], body := sourceRows, exports := [] }]
+  modules := [{ name := "entry.mjs", imports := [], body := sourceRows, exports := [("exposed", "seed")] }]
 }
 
 private theorem samplePlanValid : EsmSplit.Valid bundle request plan := by decide
@@ -86,6 +87,12 @@ example :
   exact authored_owner samplePlanValid.2.2.1 member
 
 def main : IO Unit := do
+  let row : EsmSplit.LocalExportUnit := ⟨1, [("exposed", "seed")]⟩
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle request row .allOutcomes with
+  | .error reason => throw (IO.userError s!"indexed constructor refused the original sparse case: {reason}")
+  | .ok built =>
+    unless built.assignment == [(0, "worker.mjs"), (2, "entry.mjs")] do
+      throw (IO.userError "indexed constructor changed the authored owners")
   unless decide (EsmSplit.Valid bundle request plan) do
     throw (IO.userError "sparse interior plan is invalid")
   unless decide (OrderKept sourceRows plan) do

@@ -505,6 +505,7 @@ executable_test(
     name = "corejs_sparse_projected_order_test",
     src = "SparseProjectedOrderTest.lean",
     deps = [
+        ":corejs_indexed_checked_split",
         ":corejs_sparse_projected_order",
         ":planner",
     ],
@@ -2284,4 +2285,24 @@ lean_proof_test(
         "CoreJS.IndexedInputChecks.checked_footprints",
     ],
     deps = [":corejs_indexed_input_checks"],
+)
+
+lean_library(
+    name = "corejs_indexed_checked_split",
+    srcs = ["EsmSplit/CoreJS/IndexedCheckedSplit.lean"],
+    deps = [
+        ":corejs_indexed_const_link",
+        ":corejs_indexed_input_checks",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_checked_split_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedCheckedSplit"],
+    required_theorems = [
+        "CoreJS.IndexedCheckedSplit.construct",
+        "CoreJS.IndexedCheckedSplit.construct_sound",
+    ],
+    deps = [":corejs_indexed_checked_split"],
 )
