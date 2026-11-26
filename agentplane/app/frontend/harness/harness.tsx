@@ -628,8 +628,11 @@ const identityCredentials = [
   { credential: "agentplane-visual/standing-agent", identity: "credential-referenced-identity" },
 ];
 
-/** The Policy Service's DeleteIdentity: its Flux, unowned-binding and credential refusals, then garbage collection. */
-function deleteIdentity(name: string, uid: string | null): unknown {
+/**
+ * The Policy Service's DeleteIdentity: its Flux, unowned-binding and credential refusals, then garbage collection.
+ * `validateOnly` runs the same refusals and deletes nothing.
+ */
+function deleteIdentity(name: string, uid: string | null, validateOnly: boolean): unknown {
   const identity = identities.find((item) => item.identity?.name === name);
   if (!identity) return undefined;
   if (identity.identity?.uid !== uid)
@@ -666,6 +669,7 @@ function deleteIdentity(name: string, uid: string | null): unknown {
       },
       { status: 400 }
     );
+  if (validateOnly) return {};
   identities = identities.filter((item) => item !== identity);
   identityBindings = identityBindings.filter((binding) => !owned(binding));
   return {};
@@ -4121,7 +4125,8 @@ routes.unshift(
   [
     "DELETE",
     /^\/upstream\/policy\/v1\/identities\/agentplane-visual\/([^/]+)$/,
-    (match, query) => deleteIdentity(decodeURIComponent(match[1]!), query.get("uid")),
+    (match, query) =>
+      deleteIdentity(decodeURIComponent(match[1]!), query.get("uid"), query.get("validateOnly") === "true"),
   ],
   ["GET", /^\/upstream\/dispatcher\/v1\/sessions$/, () => Response.json({ sessions: [] })],
   [
