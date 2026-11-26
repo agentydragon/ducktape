@@ -2,6 +2,7 @@ import { Anchor, Badge, Code, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
+import { Line } from "../../ui/line";
 import { moveNodeArguments } from "../schemas/integration_previews";
 import { Markdown } from "../../../../../util/frontend/markdown";
 import { ClampedBlock } from "../../../../../util/frontend/clamped_block";
@@ -190,14 +191,6 @@ const openPlace: Record<z.infer<typeof openArguments>["openType"], string> = {
   panel: "in a new side panel",
   tab: "in a new tab",
 };
-
-function Line({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <Text size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
-      {children}
-    </Text>
-  );
-}
 
 function requestView<S extends z.ZodType>(
   name: string,

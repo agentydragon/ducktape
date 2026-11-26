@@ -42,7 +42,7 @@ type config struct {
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on
 	// those bindings.
 	PolicyNamespace string `mapstructure:"policy_namespace"`
-	// PolicyService is the one source of every Identity this service reads outside orchestration_v1.
+	// PolicyService is the one source of every Identity this service reads, and orchestration_v1 writes.
 	PolicyService identitycache.Peer `mapstructure:"policy_service"`
 	// WebPush is on when any of its settings is set; off, no push is sent and no subscription is accepted.
 	WebPush push.Settings `mapstructure:"web_push"`

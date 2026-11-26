@@ -206,7 +206,7 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   reconsideration.
 
 - **AR3 — Compose callable capabilities and initialization availability.**
-  `CallableSummary` in <analysis_vocabulary/inputs.rs> and <cross_module_purity.rs> still
+  `CallableSummary` in <analysis_vocabulary/inputs.rs> and <cross_module_purity/> still
   distribute return, callback, capture and availability proofs across
   specialized paths. Source initialization sites and summary eligibility share
   the flow census (<docs/inference.md>); reached-prefix readiness remains
@@ -223,7 +223,7 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   preconditions rather than declaration-form shortcuts.
 
 - **AR4 — Give execution data, runtime state and orchestration separate owners.**
-  The interpreter no longer nests under <facts/sync_effects/execution_index.rs>
+  The interpreter no longer nests under <facts/sync_effects/execution_index/mod.rs>
   (#15073), and the kernel, `world/` and both `adapters/` are peers, but
   interpreter-read `ExecutionIndex` fields are `pub(super)` rather than an
   interface. <lowering/mod.rs> also prepares whole-program summaries and loads

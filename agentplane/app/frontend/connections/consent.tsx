@@ -14,22 +14,14 @@ import {
 import { type JSX, useEffect, useState } from "react";
 
 import { displayableError } from "../transport/client";
+import { required, timestampText } from "../transport/response_fields";
 import { Verdict } from "../../../action_service/api/contracts/action_service_pb";
 import { GrantStatus } from "../../../mcp_edge/api/connection/connection_service_pb";
-import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
-import { toJson } from "@bufbuild/protobuf";
 import { TimeAgo } from "../ui/time_ago";
 import { decideConsent, previewConsent, type ConsentDecision, type ConsentPreview } from "./connection_service_client";
 
 function continueAuthorization(url: string): void {
   window.location.assign(url);
-}
-
-function timestampText(value: Timestamp | undefined): string {
-  if (value === undefined) throw new Error("ConnectionService response omitted enrollment expiry");
-  const jsonValue = toJson(TimestampSchema, value);
-  if (typeof jsonValue !== "string") throw new Error("ConnectionService returned an invalid enrollment expiry");
-  return jsonValue;
 }
 
 /** Only the authenticated BFF can supply the continuation; client metadata is display-only. */
@@ -123,7 +115,7 @@ export function ConnectionConsent({
               <Text size="sm">Validated OAuth redirect</Text>
               <Code style={{ overflowWrap: "anywhere" }}>{preview.enrollment.redirectUri}</Code>
               <Text size="xs" c="dimmed">
-                Expires <TimeAgo value={timestampText(preview.enrollment.expiresAt)} />
+                Expires <TimeAgo value={required(timestampText(preview.enrollment.expiresAt), "enrollment expiry")} />
               </Text>
             </Stack>
             <NativeSelect

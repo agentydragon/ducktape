@@ -8,12 +8,12 @@
 //   fallbacks and the preparatory proofs of `roots::operands`) and
 //   `Executor::evaluate_initializer_transfer`.
 
-use super::super::execution_index::CallKind;
 use super::super::interpreter::{Executor, from_flow, unknown};
 use analysis::facts::evaluation_effects::GlobalAccessKind;
 use analysis_domain::builtins::IntrinsicOp;
 use analysis_vocabulary::report_schema::CallbackFactoryUseKind;
 use analysis_vocabulary::value::{Kind, Value};
+use execution_index::CallKind;
 use kernel::context::IndexReads;
 use swc_common::Span;
 use swc_ecma_ast::*;

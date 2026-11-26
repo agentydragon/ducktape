@@ -14,13 +14,13 @@ use super::native_write_census::{
 };
 use super::property_keys::{PropertyKeyDomain, property_key_evidence};
 use super::receiver_flow::{CallableReturnInputs, close_receiver_flow};
-use analysis::facts::semantic_inference::{NativePremise, native_premise};
 use analysis_domain::item_views::TopLevelItemView;
 use analysis_vocabulary::inputs::{AnalysisInputs, HostBehaviorKey, NativeIntrinsic};
 use analysis_vocabulary::report_schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutationKind,
     NativeReceiverPath, NativeWriteSlot,
 };
+use purity::semantic_inference::{NativePremise, native_premise};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -567,10 +567,7 @@ impl ExecutionIndex {
     }
 
     /// Native slot proof for one indexed own-data read.
-    pub(in super::super) fn native_own_data_read_premise(
-        &self,
-        span: Span,
-    ) -> Option<NativePremise> {
+    pub fn native_own_data_read_premise(&self, span: Span) -> Option<NativePremise> {
         if !self.dynamic_scope_owners.is_empty() {
             return None;
         }

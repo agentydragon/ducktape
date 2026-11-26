@@ -94,7 +94,7 @@ pub(super) fn collect_assign_target_assignments(
 
 /// The binding a pattern parameter's projections read its incoming value
 /// from. No source identifier can spell it.
-pub(in super::super) fn pattern_source() -> Id {
+pub fn pattern_source() -> Id {
     ("\u{0}pattern_source".into(), Default::default())
 }
 

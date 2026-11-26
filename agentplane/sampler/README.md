@@ -222,6 +222,13 @@ Set the repack flags `--event-block-target-bytes`, `--event-block-target-entries
 `--event-block-level` to match the live writer’s `target_bytes`, `target_entries` and `level`. The
 `codec` setting accepts zstd.
 
+A maintenance page seals its final partial block. Preview and apply compare the complete output
+(including ordinary rows) with the original stored payloads. If the page would grow, the repacker
+keeps its original rows and reports any retained gzip blocks in `retained_legacy_blocks`.
+Compare `output_bytes` with `stored_bytes`; `packed_bytes` counts block payloads only.
+The size comparison covers a completed page: an interrupted multi-transaction page can still have
+temporary standalone suffix rows until replay resumes.
+
 Preview a canary, then apply the same scope:
 
 ```text

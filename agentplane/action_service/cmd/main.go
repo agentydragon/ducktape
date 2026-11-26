@@ -54,6 +54,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
@@ -225,9 +226,11 @@ func offer(key string, group *catalog.Group, actions map[string]catalog.ActionDe
 }
 
 // orchestrationExecutors builds the Executor of each orchestration_v1 group, and gives the group the Actions it
-// offers. They reach the API server through kube, and call the Session Dispatcher and the History Service.
+// offers. They reach the API server through kube, Identities through policy, and call the Session Dispatcher and the
+// History Service.
 func orchestrationExecutors(
-	groups *catalog.Catalog, kube *rest.Config, environment environmentpb.EnvironmentServiceClient, dispatcher dispatcherpb.SessionDispatcherClient,
+	groups *catalog.Catalog, kube *rest.Config, policy policypb.PolicyServiceClient,
+	environment environmentpb.EnvironmentServiceClient, dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient, directWait time.Duration,
 ) (map[string]worker.Executor, error) {
 	scheme := runtime.NewScheme()
@@ -246,7 +249,7 @@ func orchestrationExecutors(
 		if !isOrchestration {
 			continue
 		}
-		executor, err := orchestrationv1.NewExecutor(key, binding, kubeClient, environment, dispatcher, history, directWait)
+		executor, err := orchestrationv1.NewExecutor(key, binding, kubeClient, policy, environment, dispatcher, history, directWait)
 		if err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
@@ -488,7 +491,12 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			}
 			defer environmentConnection.Close()
 		}
-		orchestrators, err := orchestrationExecutors(c.ActionGroups, d.Kube,
+		policyConnection, err := c.PolicyService.Dial()
+		if err != nil {
+			return fmt.Errorf("dial PolicyService: %w", err)
+		}
+		defer policyConnection.Close()
+		orchestrators, err := orchestrationExecutors(c.ActionGroups, d.Kube, policypb.NewPolicyServiceClient(policyConnection),
 			environmentpb.NewEnvironmentServiceClient(environmentConnection), dispatcherpb.NewSessionDispatcherClient(dispatcher), historypb.NewHistoryServiceClient(history), time.Duration(c.DirectWaitSeconds*float64(time.Second)))
 		if err != nil {
 			return err

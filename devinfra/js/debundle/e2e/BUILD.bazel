@@ -149,7 +149,6 @@ debundle_graph_e2e_test(
 debundle_graph_e2e_test(
     name = "native_operation_input_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle/analysis_domain",
         "@crates//:serde_json",
@@ -379,6 +378,7 @@ debundle_e2e_test(
     source = "cli/spec_lint/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/purity",
         "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
     ],
@@ -501,7 +501,7 @@ debundle_e2e_test(name = "chunk_admission_test")
 debundle_e2e_test(
     name = "purity_hint_diagnostics_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/purity",
         "@crates//:serde",
     ],
 )
@@ -1238,7 +1238,6 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "synthesis_diagnostics_test",
     deps = [
-        "@crates//:serde_json",
     ],
 )
 

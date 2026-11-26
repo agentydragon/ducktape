@@ -236,14 +236,14 @@ pub(super) fn literal_record_primitive(expression: &Expr) -> Option<LiteralRecor
 /// reads, member reads and template substitutions are only candidates here:
 /// the interpreter proves their values at the call before consulting the
 /// author premise.
-pub(in super::super) type RecordFactoryArgument =
+pub(crate) type RecordFactoryArgument =
     Result<RecordFactoryRecord, (RecordFactoryRejectionReason, Option<String>)>;
 
 #[derive(Debug, Clone, Default)]
-pub(in super::super) struct RecordFactoryRecord {
+pub struct RecordFactoryRecord {
     /// Template substitutions, by outermost record property, whose `ToString`
     /// must see a proven primitive.
-    pub(in super::super) template_substitutions: Vec<(String, ValueExpr)>,
+    pub template_substitutions: Vec<(String, ValueExpr)>,
 }
 
 pub(super) fn record_factory_argument(arguments: &[ExprOrSpread]) -> RecordFactoryArgument {

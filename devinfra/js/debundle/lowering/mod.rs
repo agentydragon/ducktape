@@ -8,9 +8,9 @@ use rayon::prelude::*;
 use serde::Serialize;
 use swc_common::GLOBALS;
 
-use analysis::RedundantPurityHint;
 use analysis::reports::author_inputs::AuthorInputLocations;
 use analysis_projection::AnalysisSpec;
+use purity::RedundantPurityHint;
 
 use artifact::paths::normalize_module_path;
 use artifact::reports::{ChunkDecompositionOutput, SelectedModuleLowering};

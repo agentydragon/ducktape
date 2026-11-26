@@ -28,6 +28,9 @@ func TestFreshSamplerBaseline(t *testing.T) {
 	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`); count != 1 {
 		t.Fatal("provider attempt migration not recorded")
 	}
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=24 AND is_applied`); count != 1 {
+		t.Fatal("command admission metadata migration not recorded")
+	}
 	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_conversation WHERE id=$1 AND api='responses'`, session.ConversationID); count != 1 {
 		t.Fatal("current session was not created")
 	}
@@ -190,6 +193,11 @@ func removeServiceOwnerMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
 	// Fixtures replay from before version 18. Undo any later schema changes as
 	// well so Goose sees a contiguous predecessor history.
+	migrationExec(t, db, `ALTER TABLE sampler_command
+		DROP CONSTRAINT sampler_command_admission_metadata_check,
+		DROP COLUMN admission_origin_source_id,
+		DROP COLUMN admission_event_at_seconds,
+		DROP COLUMN admission_event_at_nanos`)
 	migrationExec(t, db, `ALTER TABLE sampler_session DROP COLUMN journal_compacted_through`)
 	migrationExec(t, db, `DROP TABLE sampler_event_block`)
 	migrationExec(t, db, `DROP FUNCTION notify_sampler_turn() CASCADE`)

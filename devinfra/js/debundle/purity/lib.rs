@@ -24,6 +24,12 @@
 //! - `native_rows` — the purity projection of builtin summary rows.
 //! - `order_dependent_reads` — reads of cells whose writers the reading
 //!   chunk's dependency graph cannot order.
+//! - `heap` — chunk-top allocation heap state and its `PlainData`
+//!   projection.
+//! - `semantic_inference`, `callable_inference` — positive certificates
+//!   over closed source/native facts.
+//! - `set_iterables`, `local_class_construction`, `array_spreads` — the
+//!   shape proofs `ChunkCodeGraph::build` queries.
 
 pub(crate) use analysis_vocabulary::inputs::ProofDependencies;
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
@@ -42,27 +48,45 @@ pub(crate) use analysis_vocabulary::effect::{
 pub(crate) use analysis_vocabulary::execution_evidence::SourceLocator;
 pub(crate) use analysis_vocabulary::purity::{Effects, Purity};
 
+mod array_spreads;
+pub mod callable_inference;
 pub mod classifier;
 pub mod code_graph;
 mod effect_inference;
 mod fluent;
 mod fresh_record;
+pub mod heap;
+mod local_class_construction;
 mod native_rows;
 mod order_dependent_reads;
 pub mod redundant_hints;
 pub mod saved;
+pub mod semantic_inference;
+mod set_iterables;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
-pub(crate) use classifier::*;
+pub use array_spreads::StableArraySpreadShapes;
+pub use classifier::*;
 pub use code_graph::ShapeProofRefinement;
 pub(crate) use code_graph::*;
 pub(crate) use effect_inference::*;
 pub(crate) use fluent::*;
 pub use fresh_record::FreshRecordDestructuringContext;
 pub(crate) use fresh_record::*;
+pub use local_class_construction::{
+    LocalClassConstructionProof, LocalClassConstructionShapes, LocalClassHeapProof,
+};
 pub(crate) use native_rows::*;
 pub(crate) use order_dependent_reads::*;
+pub(crate) use semantic_inference::ArgumentNoEscapeFacts;
+pub use set_iterables::{
+    NativeIterableOperandOrigin, SetIterableProof, SetIterableShapes,
+    TopLevelNativeIterableOperandSite,
+};
+pub(crate) use set_iterables::{
+    TopLevelNativeIterableOperandProjection, primitive_literal_property_keys,
+};
 
 // Public API: importable at `purity::<item>`.
 pub use code_graph::{ChunkCodeGraph, PurityCallContext, PurityShapeInputs};

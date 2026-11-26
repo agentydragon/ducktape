@@ -310,25 +310,30 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
       | .ok value => value
       | .error reason => Json.mkObj [("error", toJson reason)]).compress ++ "\n")
   for line in modelDiagnostics program asts B S P (ok && !bad) model do IO.println line
+  -- Plan data is a report sidecar; rejected layouts can be inspected without publishing modules.
+  if let some planPath := options.planPath then
+    let (count, sample, every) := if ok then (0, #[], #[]) else conflictInversions B P options.allConflicts
+    let pairs := if options.allConflicts then
+        [("pairs", toJson (every.map fun (later, earlier, _) => #[earlier, later]))]
+      else []
+    let examples := sample.map fun (later, earlier) =>
+      Json.mkObj [("earlier", toJson earlier), ("later", toJson later)]
+    IO.FS.writeFile planPath (Json.mkObj [
+      ("order", Json.arr (P.evalOrder.toArray.map Json.str)),
+      ("orderConflicts", Json.mkObj ([("count", toJson count), ("examples", Json.arr examples)] ++ pairs)),
+      ("modules", Json.mkObj (P.mods.map fun m => (m.name, toJson m.stmts)))]).compress
   if options.force || (ok && !bad) then
     match ESTreeEmit.programs asts B P source with
     | .error message => IO.eprintln s!"cannot write output: {message}"; return 3
     | .ok programs => javascript #["--print"] #[← writeProgramManifest programs work, out, input]
-    if let some planPath := options.planPath then
-      let (count, sample, every) := if ok then (0, #[], #[]) else conflictInversions B P options.allConflicts
-      let pairs := if options.allConflicts then
-          [("pairs", toJson (every.map fun (later, earlier, _) => #[earlier, later]))]
-        else []
-      let examples := sample.map fun (later, earlier) =>
-        Json.mkObj [("earlier", toJson earlier), ("later", toJson later)]
-      IO.FS.writeFile planPath (Json.mkObj [
-        ("order", Json.arr (P.evalOrder.toArray.map Json.str)),
-        ("orderConflicts", Json.mkObj ([("count", toJson count), ("examples", Json.arr examples)] ++ pairs)),
-        ("modules", Json.mkObj (P.mods.map fun m => (m.name, toJson m.stmts)))]).compress
     let _ ← reportElapsed "render + write" t5
     IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"
   if ok && !bad then return 0
-  IO.eprintln (if options.force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
+  let message := if options.force then "rejected; modules written anyway (--force)"
+    else if options.planPath.isSome || options.moveReportPath.isSome then "rejected; report sidecar written; no modules written"
+    else "rejected; nothing written"
+  IO.eprintln message
+  return 1
 
 def diagnostic (args : List String) : IO UInt32 := do
   if args.contains "--require" || args.contains "--check-output" || args.contains "--structural" || args.contains "--deployment-origin" then

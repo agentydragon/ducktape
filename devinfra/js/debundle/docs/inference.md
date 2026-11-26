@@ -3,7 +3,7 @@
 The `inference` crate defines `Judgment` (`inference/lib.rs`);
 `inference/iterative.rs` provides the
 dependency worklist (`IterativeInference`) for finite growing facts and
-positive certificates. `facts/semantic_inference.rs` composes native,
+positive certificates. `purity/semantic_inference.rs` composes native,
 construction, and callable rules in that store. Structural analysis supplies
 candidates; candidates alone cannot certify an operation. Rules use typed
 `FactContext` access so an enclosing rule family can project their keys without
@@ -651,7 +651,7 @@ iteration requires the Set and Array iterator slots and a checked source shape.
 The original restrictions on class identity, construction sites, arguments,
 primitive elements, mutation and escape remain in their structural analyses.
 Returned records and inferred callback factories are projections of a
-derived foreign call summary (`facts/sync_effects/foreign_call.rs`), not
+derived foreign call summary (`facts/sync_effects/execution_index/foreign_call.rs`), not
 certificates. Each certificate
 records which native premises it consulted, so its report names
 `native_call_identity`, `native_integrity` and `empty_collection_construction`
@@ -1197,12 +1197,12 @@ walking, opaque-pool replay or all callback work.
 Completion barriers are valid only at actual one-way dependencies; the old pass
 order alone is insufficient.
 
-- `facts/semantic_inference.rs` requires a completed conditional native write
+- `purity/semantic_inference.rs` requires a completed conditional native write
   census from every analyzed chunk. Native branch refinement consumes
   `callback_object_arguments` from the source-only canonical AST collectors.
   Later generic callback-factory certificates do not produce that field or feed
   the census.
-- `facts/sync_effects/execution_index.rs` completes source-only aliases and
+- `facts/sync_effects/execution_index/mod.rs` completes source-only aliases and
   assignments before captured author-input validation.
   Author assertions cannot establish the source-only absence premises used to
   validate those assertions.

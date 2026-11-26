@@ -505,7 +505,7 @@ func TestSignedOIDCLoginUsesPKCEAndRotatesCookie(t *testing.T) {
 	if err := f.dbs[0].QueryRowContext(t.Context(), `SELECT payload::text FROM operator_browser_session WHERE id=$1`, pendingID).Scan(&payloadText); err != nil {
 		t.Fatal(err)
 	}
-	var pending map[string]loginAttempt
+	var pending map[string]session.Attempt
 	if err := json.Unmarshal([]byte(payloadText), &pending); err != nil {
 		t.Fatal(err)
 	}

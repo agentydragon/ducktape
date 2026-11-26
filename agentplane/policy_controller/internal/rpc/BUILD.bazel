@@ -9,7 +9,10 @@ go_library(
         "watches.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller/internal/rpc",
-    visibility = ["//agentplane/policy_controller/cmd:__pkg__"],
+    visibility = [
+        "//agentplane/policy_controller/cmd:__pkg__",
+        "//agentplane/policy_controller/testing/policyfixture:__pkg__",
+    ],
     deps = [
         "//agentplane/grpc/streaming",
         "//agentplane/identity/auth",

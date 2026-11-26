@@ -4,6 +4,7 @@ non-destructive native-frame observation. No PTY, facade, or lifecycle model."""
 from __future__ import annotations
 
 import asyncio
+import codecs
 import json
 import os
 import signal
@@ -242,5 +243,11 @@ class AsyncNativeProcess:
     async def _stderr(self) -> None:
         assert self.process is not None
         assert self.process.stderr is not None
-        while chunk := await self.process.stderr.read(65536):
-            write_jsonl(self.logs / "stderr.jsonl", _text_record(chunk))
+        # Fixed-size reads can split a multibyte character; the decoder carries it to the next chunk.
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        while True:
+            chunk = await self.process.stderr.read(65536)
+            if text := decoder.decode(chunk, final=not chunk):
+                write_jsonl(self.logs / "stderr.jsonl", TextRecord(time_ns=time.monotonic_ns(), text=text))
+            if not chunk:
+                return

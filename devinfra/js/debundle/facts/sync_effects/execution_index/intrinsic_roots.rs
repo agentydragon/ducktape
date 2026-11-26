@@ -160,7 +160,7 @@ pub(super) fn project_receiver_roots(
 
 /// The own-data property of the unshadowed global `Object` an exact member
 /// read names, as the `%Object.<property>%` slot spells it.
-pub(in super::super) fn object_own_data_read_property(
+pub fn object_own_data_read_property(
     value: &ValueExpr,
     is_declared: impl Fn(&Id) -> bool,
 ) -> Option<&'static str> {
@@ -178,7 +178,7 @@ pub(in super::super) fn object_own_data_read_property(
 
 /// Slot obligations for an exact native own-data lookup. Receiver and key
 /// evaluation remain with the indexed operation's caller.
-pub(in super::super) fn native_own_data_read_slots(
+pub fn native_own_data_read_slots(
     value: &ValueExpr,
     is_declared: impl Fn(&Id) -> bool,
 ) -> Option<[IntrinsicSlot; 2]> {

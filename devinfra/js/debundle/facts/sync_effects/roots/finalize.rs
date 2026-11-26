@@ -4,9 +4,6 @@
 //! writes only the execution state and the run-level observations it drains.
 
 use super::super::interpreter::{ExecutionInputs, ExecutionState, Observations, Outcome};
-use super::super::noninvoking_initialization::{
-    completed_root_initialization, completed_root_statement,
-};
 use super::super::runtime_inference::RuntimeQueries;
 use super::assignment::RootAssignment;
 use super::body::expected_root_calls;
@@ -16,6 +13,9 @@ use analysis::facts::binding_effect_coverage::BindingEffectCoverage;
 use analysis::facts::evaluation_effects::EvaluationEffects;
 use analysis::facts::statement_facts::SynchronousCalls;
 use analysis_vocabulary::value::{Kind, Value};
+use execution_index::noninvoking_initialization::{
+    completed_root_initialization, completed_root_statement,
+};
 use value_model::AbstractValue;
 
 pub(super) fn finalize(

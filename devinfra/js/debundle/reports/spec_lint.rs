@@ -11,9 +11,9 @@ use std::fmt;
 
 use spec::{AdmissionCheck, ReentryFreeOperation, ResolvedMemberSelector};
 
-use crate::purity::{RedundantPurityHint, RedundantPurityProofBasis, RedundantPurityReason};
 use analysis_vocabulary::execution_evidence::SourceLocation;
 use analysis_vocabulary::inputs::{HostBehaviorKey, ProgramPremiseKey};
+use purity::{RedundantPurityHint, RedundantPurityProofBasis, RedundantPurityReason};
 
 /// A lint rule. Every finding is a warning; no rule fails a spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -391,7 +391,7 @@ pub struct CommutingStatementsUnused {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnusedCommutingEndpoint {
     /// The endpoint selector exactly as authored.
-    pub selector: spec::SourceUnitSelector,
+    pub selector: spec::input_contracts::SourceUnitSelector,
     /// Authored module/member assignments that resolve to this endpoint.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logical_members: Vec<spec::ResolvedMemberSelector>,
@@ -409,10 +409,10 @@ impl fmt::Display for UnusedCommutingEndpoint {
             .collect::<Vec<_>>();
         match (members.as_slice(), &self.selector) {
             ([member], _) => f.write_str(member)?,
-            ([], spec::SourceUnitSelector::ResolvedMember(member)) => {
+            ([], spec::input_contracts::SourceUnitSelector::ResolvedMember(member)) => {
                 write!(f, "module `{}` member `{}`", member.module, member.name)?;
             }
-            ([], spec::SourceUnitSelector::SourceMatch(claim)) => {
+            ([], spec::input_contracts::SourceUnitSelector::SourceMatch(claim)) => {
                 let source = claim.match_source.split_whitespace().collect::<Vec<_>>();
                 let mut preview = source.join(" ");
                 if preview.chars().count() > 60 {

@@ -5,7 +5,7 @@
 //! their own surrounding purity/effect checks.
 
 use super::*;
-use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
+use crate::semantic_inference::{SemanticFacts, SemanticKey};
 use analysis_domain::dynamic_scope::DynamicScopeFact;
 use analysis_vocabulary::inputs::{
     AnalysisInputs, ImportedPrimitiveArrayOperandEvidence, InferredSetConstruction,
@@ -16,6 +16,7 @@ use analysis_vocabulary::value::{Kind, Value};
 use inference::{FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use std::sync::Arc;
+use value_flow::ChunkValueFlow;
 
 /// Source identity and top-level initialization scope for one checked
 /// collection constructor operand. Construction is private to the source
@@ -341,7 +342,7 @@ impl SetIterableProof {
     /// The projection constrains literals that use the shared certificate.
     /// Previously certified nonliteral and unrelated fresh-Set sites keep
     /// their existing flow-root admission and do not acquire a new owner gate.
-    pub(crate) fn heap_constructor_in_owner(&self, span: Span, owner: SourceUnitOrdinal) -> bool {
+    pub fn heap_constructor_in_owner(&self, span: Span, owner: SourceUnitOrdinal) -> bool {
         self.native_iterable_operand(span)
             .is_none_or(|(projection, _)| projection.owner() == owner)
     }
@@ -349,7 +350,7 @@ impl SetIterableProof {
     /// Return canonical proof dependencies for early heap admission. The
     /// immediate-literal projection is the shared path; selected alias and
     /// static-member constructions retain their existing proof-backed path.
-    pub(crate) fn heap_constructor_dependencies(
+    pub fn heap_constructor_dependencies(
         &self,
         span: Span,
         owner: SourceUnitOrdinal,
@@ -678,10 +679,9 @@ mod tests {
             &body,
             &analysis_domain::allocation_roots::tracked_allocation_roots(&body),
         );
-        let plain_data =
-            crate::facts::abstract_domain::heap::ChunkHeap::analyze(&body, &shadowed, &flow, None)
-                .plain_data_bindings()
-                .bindings;
+        let plain_data = crate::heap::ChunkHeap::analyze(&body, &shadowed, &flow, None)
+            .plain_data_bindings()
+            .bindings;
         let proof = SetIterableShapes::analyze(
             &body,
             &shadowed,

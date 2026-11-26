@@ -4,7 +4,7 @@ use analysis_vocabulary::inputs::AnalysisInputs;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Module;
 
-use analysis::purity::*;
+use purity::*;
 
 use raw_js_test_support::parse;
 

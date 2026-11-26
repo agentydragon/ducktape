@@ -187,6 +187,17 @@ js_library(
 )
 
 ts_library(
+    name = "line",
+    srcs = ["line.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "time_ago",
     srcs = ["time_ago.tsx"],
     tsconfig = "//agentplane/app/frontend:tsconfig",

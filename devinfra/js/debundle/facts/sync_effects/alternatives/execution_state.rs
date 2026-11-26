@@ -10,14 +10,13 @@
 //! operation on the same path reads back as a fact is forked here and joined.
 
 use super::super::interpreter::{CallbackFallbackSummary, Outcome};
-use super::outcome::join_allocation_judgments;
 use kernel::alternatives::{PathState, join_worlds};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_ecma_ast::Id;
 use world::World;
-use world::allocation_transfer::AllocationJudgment;
+use world::allocation_transfer::{AllocationJudgment, join_allocation_judgments};
 use world::join::{JoinRefusal, Joined};
 
 /// The path-owned part of `ExecutionState`, with the running outcome of the

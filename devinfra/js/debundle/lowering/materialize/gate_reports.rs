@@ -163,7 +163,7 @@ fn spec_lint_findings(
     chunk_id: &str,
     unused_commuting_statements: &[analysis::reports::spec_lint::CommutingStatementsUnused],
     redundant_admission_overrides: &[spec::AdmissionCheck],
-    redundant_purity_hints: &[analysis::RedundantPurityHint],
+    redundant_purity_hints: &[purity::RedundantPurityHint],
     unconsulted_purity_hints: &BTreeSet<String>,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 ) -> Vec<LintFinding> {
