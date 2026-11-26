@@ -198,11 +198,38 @@ def moduleOf (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) (m : Esm
   body := m.stmts.filterMap fun i => (ss[i]?).map (i, ·)
   exports := m.namedExports B
 
+/-- Look up an executable statement by its original source identity. A missing
+row is metadata (or an unsupported source unit) and contributes no CoreJS
+statement. Unlike `moduleOf`, this does not treat a compact row index as an
+original source identity. -/
+def indexedNumbered (source : List (Nat × Stmt)) (id : Nat) : Option (Nat × Stmt) :=
+  (source.find? fun row => row.1 == id).map fun row => (id, row.2)
+
+/-- Construct a plan module from statements carrying their original IDs. The
+plan still retains selectors for non-executable metadata, so its exports and
+authored ownership are derived from the full bundle. -/
+def moduleOfIndexed (source : List (Nat × Stmt)) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
+    (m : EsmSplit.Module) : Module where
+  name := m.name
+  imports := m.imports.map fun (sourceName, names) =>
+    let exports := P.namedExports B sourceName
+    { source := sourceName, names := names.map fun u => (EsmSplit.exportNameFor exports u, u) }
+  body := m.stmts.filterMap (indexedNumbered source)
+  exports := m.namedExports B
+
 /-- The split of the bundle `ss` by the plan `P`. `B` has the footprints; of them only what the `export` statements
 publish is used. -/
 def splitProgram (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) : Program where
   entry := P.entry
   modules := P.mods.map (moduleOf ss B P)
+
+/-- The source-ID-aware version of `splitProgram`, for frontends whose
+executable units keep source ordinals with holes for non-executable metadata.
+The original dense constructor remains the compatibility path for lists whose
+IDs start at zero and are consecutive. -/
+def splitProgramIndexed (source : List (Nat × Stmt)) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) : Program where
+  entry := P.entry
+  modules := P.mods.map (moduleOfIndexed source B P)
 
 /-- The plan runs the statements in the bundle's order. -/
 def OrderKept (ss : List Stmt) (P : EsmSplit.Plan) : Prop := P.execOrder = List.range ss.length

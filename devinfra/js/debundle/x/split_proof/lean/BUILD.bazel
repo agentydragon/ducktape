@@ -475,6 +475,38 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_sparse_projected_order",
+    srcs = ["EsmSplit/CoreJS/SparseProjectedOrder.lean"],
+    deps = [
+        ":corejs_plan_placement",
+        ":planner",
+    ],
+)
+
+executable_test(
+    name = "corejs_sparse_projected_order_test",
+    src = "SparseProjectedOrderTest.lean",
+    deps = [
+        ":corejs_sparse_projected_order",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_sparse_projected_order_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.SparseProjectedOrder"],
+    required_theorems = [
+        "CoreJS.SparseProjectedOrder.authored_owner",
+        "CoreJS.SparseProjectedOrder.loaded_ids_of_order_kept",
+        "CoreJS.SparseProjectedOrder.loaded_row_lookup",
+        "CoreJS.SparseProjectedOrder.split_indexed_loaded_flat",
+        "CoreJS.SparseProjectedOrder.split_indexed_loaded_ids",
+    ],
+    deps = [":corejs_sparse_projected_order"],
+)
+
+lean_library(
     name = "corejs_single_module",
     srcs = ["EsmSplit/CoreJS/SingleModule.lean"],
     deps = [":corejs_certificate_support"],
