@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/lib/pq"
 )
 
@@ -35,7 +36,7 @@ func Listen(ctx context.Context, dsn string, channels ...string) (*Hub, error) {
 	for _, channel := range channels {
 		hub.subscribers[channel] = map[chan struct{}]struct{}{}
 	}
-	hub.listener = pq.NewListener(dsn, time.Second, 30*time.Second, func(event pq.ListenerEventType, err error) {
+	hub.listener = pq.NewListener(postgres.DriverURL(dsn), time.Second, 30*time.Second, func(event pq.ListenerEventType, err error) {
 		hub.observeConnectionEvent(event)
 		if err != nil {
 			// The error text can carry the connection string; the type and SQLSTATE name the failure.

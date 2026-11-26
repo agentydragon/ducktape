@@ -2,14 +2,12 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
@@ -47,11 +45,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -68,23 +66,17 @@ func Run(ctx context.Context, config settings.Config) error {
 	}
 	defer shutdownTracing()
 
-	databaseURL := postgresDriverURL(config.DatabaseURL)
-	if err := dbmigrate.Run(ctx, databaseURL, migrations.Up); err != nil {
+	if err := dbmigrate.Run(ctx, config.DatabaseURL, migrations.Up); err != nil {
 		return fmt.Errorf("migrate app database: %w", err)
 	}
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := postgres.Open(ctx, config.DatabaseURL, 16, 8)
 	if err != nil {
 		return fmt.Errorf("open app PostgreSQL database: %w", err)
 	}
 	defer db.Close()
-	db.SetMaxOpenConns(16)
-	db.SetMaxIdleConns(8)
 	db.SetConnMaxLifetime(30 * time.Minute)
-	if err := db.PingContext(ctx); err != nil {
-		return fmt.Errorf("app PostgreSQL unavailable: %w", err)
-	}
 
-	wakeupHub, err := wakeups.Listen(ctx, databaseURL, threads.UpdatesChannel, session.SessionUpdatesChannel)
+	wakeupHub, err := wakeups.Listen(ctx, config.DatabaseURL, threads.UpdatesChannel, session.SessionUpdatesChannel)
 	if err != nil {
 		return fmt.Errorf("start PostgreSQL update listener: %w", err)
 	}
@@ -329,10 +321,6 @@ func (s threadEpochStore) CurrentEpoch(ctx context.Context, rawID string) (strin
 		return "", false, nil
 	}
 	return s.history.CurrentEpoch(ctx, id)
-}
-
-func postgresDriverURL(value string) string {
-	return strings.Replace(value, "postgresql+asyncpg://", "postgres://", 1)
 }
 
 func newSystemStatus(config settings.Config, httpClient *http.Client) (*status.Checker, []*grpc.ClientConn, error) {

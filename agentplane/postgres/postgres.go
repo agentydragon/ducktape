@@ -7,14 +7,23 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
 )
 
+// DriverURL translates SQLAlchemy's asyncpg scheme for lib/pq.
+func DriverURL(dsn string) string {
+	if rest, ok := strings.CutPrefix(dsn, "postgresql+asyncpg://"); ok {
+		return "postgresql://" + rest
+	}
+	return dsn
+}
+
 // Open opens the PostgreSQL URL, applies the required pool limits, and verifies the connection.
 func Open(ctx context.Context, databaseURL string, maxOpen, maxIdle int) (*sql.DB, error) {
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := sql.Open("postgres", DriverURL(databaseURL))
 	if err != nil {
 		return nil, err
 	}

@@ -6,7 +6,10 @@ go_library(
     name = "wakeups",
     srcs = ["hub.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/postgres/wakeups",
-    deps = ["@com_github_lib_pq//:pq"],
+    deps = [
+        "//agentplane/postgres",
+        "@com_github_lib_pq//:pq",
+    ],
 )
 
 go_test(

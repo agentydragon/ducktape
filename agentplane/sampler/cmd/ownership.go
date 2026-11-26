@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -11,8 +10,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/ownershiprewrite"
-	_ "github.com/lib/pq"
 )
 
 // runOwnershipCommand handles the central sampler image's one-off ownership subcommands. The
@@ -53,15 +52,11 @@ func runOwnershipCommand(ctx context.Context, args []string, stdout io.Writer) (
 	if databaseURL == "" {
 		return true, fmt.Errorf("%s is required", samplerDatabaseURLEnv)
 	}
-	databaseURL = strings.Replace(databaseURL, "postgresql+asyncpg://", "postgresql://", 1)
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := postgres.Open(ctx, databaseURL, 1, 1)
 	if err != nil {
 		return true, fmt.Errorf("open PostgreSQL connection: %w", err)
 	}
 	defer db.Close()
-	if err := db.PingContext(ctx); err != nil {
-		return true, fmt.Errorf("connect to PostgreSQL: %w", err)
-	}
 
 	if mode == "inventory" {
 		ids, err := ownershiprewrite.Inventory(ctx, db, *accountUID)
