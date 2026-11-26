@@ -130,8 +130,21 @@ js_test(
     ),
 )
 
+js_test(
+    name = "arithmetic_observer_test",
+    size = "medium",
+    data = _TEST_DATA + [
+        "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_model_probe",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:public_refusal",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
+    ],
+    entry_point = "arithmetic_observer_test.mjs",
+    env = _TEST_ENV | {"LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)"},
+)
+
 _UNSHARDED_TESTS = [
-    "arithmetic_observer_test",
     "arithmetic_test",
     "arrays_test",
     "async_methods_test",
@@ -304,6 +317,7 @@ js_test(
         "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
         "//devinfra/js/debundle/x/split_proof/lean:split_preview",
         "//devinfra/js/debundle/x/split_proof/translation/testing:linked_model_probe",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:public_refusal",
         "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
     ],
     entry_point = "wide_record_probe_test.mjs",
