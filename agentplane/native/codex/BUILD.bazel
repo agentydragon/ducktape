@@ -143,6 +143,7 @@ py_test(
         "//agentplane/native/codex/testing:responses",
         "//agentplane/native/codex/testing:responses_sse",
         "//agentplane/native/testing:model_endpoint",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
