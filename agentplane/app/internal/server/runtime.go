@@ -15,10 +15,7 @@ import (
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 
-	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/electricproxy"
@@ -34,21 +31,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
-	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
-	"github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -87,11 +77,6 @@ func Run(ctx context.Context, config settings.Config) error {
 		return fmt.Errorf("load Kubernetes config: %w", err)
 	}
 	baseClient := &http.Client{Timeout: 10 * time.Second, Transport: observability.HTTPTransport(http.DefaultTransport)}
-	connectionTarget, err := grpcTargetFromHTTPURL(config.ConnectionServiceURL)
-	if err != nil {
-		return fmt.Errorf("configure Connection Service gRPC client: %w", err)
-	}
-
 	historyReaderClient, err := historyclient.New(historyclient.Config{
 		TLS: config.HistoryServiceTLS, Target: config.HistoryServiceTarget, TokenFile: config.HistoryServiceTokenFile,
 		Timeout: time.Duration(config.HistoryServiceRequestTimeoutSeconds * float64(time.Second)),
@@ -180,88 +165,6 @@ func Run(ctx context.Context, config settings.Config) error {
 	linkageClient := linkage_servicepb.NewLinkageServiceClient(actionConnection)
 	facadeContext, stopFacades := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacades()
-	actionFacade, err := facade.NewHandlerWithOptions(
-		facadeContext, actionTarget, 10*time.Second,
-		facade.HandlerOptions{TLS: config.ActionsTLS},
-		actionpb.RegisterActionServiceHandlerFromEndpoint,
-		operator_action_servicepb.RegisterOperatorActionServiceHandlerFromEndpoint,
-		web_push_servicepb.RegisterWebPushServiceHandlerFromEndpoint,
-	)
-	if err != nil {
-		return fmt.Errorf("configure generated Action Service HTTP facade: %w", err)
-	}
-	actionGateway := upstreamproxy.NewHandlerUpstream(actionFacade, "")
-	connectionFacade, err := facade.NewHandlerWithOptions(
-		facadeContext, connectionTarget, 10*time.Second,
-		facade.HandlerOptions{TLS: config.ConnectionServiceTLS},
-		connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint,
-	)
-	if err != nil {
-		return fmt.Errorf("configure generated Connection Service HTTP facade: %w", err)
-	}
-	connectionGateway := upstreamproxy.NewHandlerUpstream(connectionFacade, "")
-	dispatcherFacade, err := facade.NewHandlerWithOptions(
-		facadeContext, config.SessionDispatcherTarget,
-		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)),
-		facade.HandlerOptions{TLS: config.SessionDispatcherTLS},
-		session_dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint,
-	)
-	if err != nil {
-		return fmt.Errorf("configure generated Session Dispatcher HTTP facade: %w", err)
-	}
-	dispatcherGateway := upstreamproxy.NewHandlerUpstream(dispatcherFacade, config.SessionDispatcherTokenFile)
-	environmentFacade, err := facade.NewHandlerWithOptions(
-		facadeContext, environmentPeer.Target, environmentTimeout,
-		facade.HandlerOptions{TLS: environmentPeer.TLS},
-		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint,
-	)
-	if err != nil {
-		return fmt.Errorf("configure generated Environment Service HTTP facade: %w", err)
-	}
-	environmentGateway := upstreamproxy.NewHandlerUpstream(environmentFacade, environmentPeer.TokenFile)
-	policyFacade, err := facade.NewHandlerWithOptions(
-		facadeContext, config.PolicyServiceTarget, 10*time.Second,
-		facade.HandlerOptions{TLS: config.PolicyServiceTLS},
-		policypb.RegisterPolicyServiceHandlerFromEndpoint,
-	)
-	if err != nil {
-		return fmt.Errorf("configure generated Policy Service HTTP facade: %w", err)
-	}
-	policyGateway := upstreamproxy.NewHandlerUpstream(policyFacade, config.PolicyServiceTokenFile)
-	historyFacade, err := facade.NewHandlerWithOptions(
-		facadeContext, config.HistoryServiceTarget,
-		time.Duration(config.HistoryServiceRequestTimeoutSeconds*float64(time.Second)),
-		facade.HandlerOptions{TLS: config.HistoryServiceTLS},
-		historypb.RegisterHistoryServiceHandlerFromEndpoint,
-	)
-	if err != nil {
-		return fmt.Errorf("configure generated History Service HTTP facade: %w", err)
-	}
-	historyGateway := upstreamproxy.NewHandlerUpstream(historyFacade, config.HistoryServiceTokenFile)
-	notificationTarget, err := grpcTargetFromHTTPURL(config.NotificationsURL)
-	if err != nil {
-		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
-	}
-	notificationFacade, err := facade.NewHandlerWithOptions(
-		facadeContext, notificationTarget,
-		time.Duration(config.NotificationsRequestTimeoutSeconds*float64(time.Second)),
-		facade.HandlerOptions{RejectUnknownJSONFields: true, TLS: config.NotificationsTLS},
-		notificationspb.RegisterNotificationsHandlerFromEndpoint,
-	)
-	if err != nil {
-		return fmt.Errorf("configure generated Notification Service HTTP facade: %w", err)
-	}
-	notificationGateway := upstreamproxy.NewHandlerUpstream(notificationFacade, config.NotificationsTokenFile)
-	egressTarget, err := grpcTargetFromHTTPURL(config.EgressAdminURL)
-	if err != nil {
-		return fmt.Errorf("configure Egress Service gRPC client: %w", err)
-	}
-	egressFacade, err := facade.NewHandlerWithOptions(facadeContext, egressTarget,
-		time.Duration(config.EgressAdminTimeoutSeconds*float64(time.Second)), facade.HandlerOptions{TLS: config.EgressAdminTLS}, egress_adminpb.RegisterEgressAdminHandlerFromEndpoint)
-	if err != nil {
-		return fmt.Errorf("configure generated Egress HTTP facade: %w", err)
-	}
-	egressGateway := upstreamproxy.NewHandlerUpstream(egressFacade, config.EgressAdminTokenFile)
 	consoleConnector, err := sandboxes.NewConsoleConnector(kubeConfig)
 	if err != nil {
 		return fmt.Errorf("configure Sandbox console client: %w", err)
@@ -292,19 +195,17 @@ func Run(ctx context.Context, config settings.Config) error {
 		}
 		electricHandler = electric.Handler()
 	}
+	streams := streamhttp.Dependencies{
+		Auth: appAuth, SandboxNamespace: config.SandboxNamespace, Sandboxes: environments,
+		Federator: federator, Console: consoleConnector, Logger: logger,
+	}
+	if err := configureFacades(facadeContext, config, &streams); err != nil {
+		return err
+	}
 	if err := registerRoutes(server, routeOwners{
 		appConfig: appConfigHandler, sessions: sessionHandlers, threads: threadMetadata,
 		operatorLinkage: linkageClient, systemStatus: statusHandler,
-		traceRelay: traceRelayHandler(), electric: electricHandler,
-		streams: streamhttp.Dependencies{
-			Auth:             appAuth,
-			SandboxNamespace: config.SandboxNamespace, Sandboxes: environments,
-			Federator:      federator,
-			DispatcherHTTP: dispatcherGateway, EnvironmentHTTP: environmentGateway, PolicyHTTP: policyGateway, EgressHTTP: egressGateway,
-			ActionHTTP: actionGateway, ConnectionHTTP: connectionGateway,
-			HistoryHTTP: historyGateway, NotificationHTTP: notificationGateway,
-			Console: consoleConnector, Logger: logger,
-		},
+		traceRelay: traceRelayHandler(), electric: electricHandler, streams: streams,
 	}); err != nil {
 		return err
 	}

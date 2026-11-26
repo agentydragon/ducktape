@@ -18,6 +18,8 @@ import (
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	operatoractionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	webpushpb "github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
+	streamhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/streams"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -103,15 +105,11 @@ func TestGeneratedEnvironmentFacadeRoutesManagementWithAppServiceToken(t *testin
 	server := grpc.NewServer()
 	environmentpb.RegisterEnvironmentServiceServer(server, service)
 	address := grpcserver.Serve(t, server)
-	handler, err := facade.NewHandler(t.Context(), address, 10*time.Second, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
-	if err != nil {
-		t.Fatal(err)
-	}
 	tokenFile := filepath.Join(t.TempDir(), "environment-token")
 	if err := os.WriteFile(tokenFile, []byte("app-pod-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	upstream := upstreamproxy.NewHandlerUpstream(handler, tokenFile)
+	upstream := appFacadesForTest(t, address, settings.Config{SessionDispatcherTokenFile: tokenFile, SessionDispatcherRequestTimeoutSecs: 10}).EnvironmentHTTP
 	for _, operation := range []struct{ method, url, body, path string }{
 		{http.MethodPost, "/upstream/environments/v1/environments", `{"name":"created","template":"pod"}`, "v1/environments"},
 		{http.MethodDelete, "/upstream/environments/v1/environments/agentplane/created?target.uid=sandbox-uid", "", "v1/environments/agentplane/created"},
@@ -149,9 +147,10 @@ func TestGeneratedEnvironmentFacadeReturnsRuntimeDiagnosticsEnvelopeAndErrors(t 
 			Processes:                []*sessionpb.HarnessProcessStatus{{ProcessId: "process-1", AssignedSessionIds: []string{"session-1"}}},
 		},
 	}}
-	upstream := appMTLSFacade(t, peertls.SandboxControllerURI, func(server *grpc.Server) {
+	address, tls := appMTLSPeer(t, peertls.SandboxControllerURI, func(server *grpc.Server) {
 		environmentpb.RegisterEnvironmentServiceServer(server, service)
-	}, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
+	})
+	upstream := appFacadesForTest(t, address, settings.Config{EnvironmentService: &settings.EnvironmentServicePeer{Target: address, RequestTimeoutSeconds: 10, TLS: tls}}).EnvironmentHTTP
 	request := httptest.NewRequest(
 		http.MethodGet,
 		"/upstream/environments/v1/environments/team-a/sandbox-1:runtime-diagnostics?target.uid=sandbox-uid",
@@ -273,20 +272,14 @@ func TestGeneratedNotificationWatchBindsSessionIDAndServiceToken(t *testing.T) {
 	server := grpc.NewServer()
 	notificationpb.RegisterNotificationsServer(server, service)
 	address := grpcserver.Serve(t, server)
-	handler, err := facade.NewHandlerWithOptions(
-		t.Context(), address, 10*time.Second,
-		facade.HandlerOptions{RejectUnknownJSONFields: true}, notificationpb.RegisterNotificationsHandlerFromEndpoint,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	tokenFile := filepath.Join(t.TempDir(), "notification-token")
 	if err := os.WriteFile(tokenFile, []byte("service-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	upstream := appFacadesForTest(t, address, settings.Config{NotificationsTokenFile: tokenFile, NotificationsRequestTimeoutSeconds: 10}).NotificationHTTP
 	request := httptest.NewRequest(http.MethodGet, "/upstream/notifications/v1/sessions/a/inbox:watch", nil)
 	response := httptest.NewRecorder()
-	if err := upstreamproxy.NewHandlerUpstream(handler, tokenFile).ForwardHTTP(response, request, request.Context(), "v1/sessions/a/inbox:watch", ""); err != nil {
+	if err := upstream.ForwardHTTP(response, request, request.Context(), "v1/sessions/a/inbox:watch", ""); err != nil {
 		t.Fatal(err)
 	}
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"inbox"`) {
@@ -303,7 +296,7 @@ func TestGeneratedNotificationWatchBindsSessionIDAndServiceToken(t *testing.T) {
 	))
 	oldRequest.Header.Set("Content-Type", "application/json")
 	oldResponse := httptest.NewRecorder()
-	if err := upstreamproxy.NewHandlerUpstream(handler, tokenFile).ForwardHTTP(oldResponse, oldRequest, oldRequest.Context(), "v1/messages", ""); err != nil {
+	if err := upstream.ForwardHTTP(oldResponse, oldRequest, oldRequest.Context(), "v1/messages", ""); err != nil {
 		t.Fatal(err)
 	}
 	if oldResponse.Code != http.StatusBadRequest || service.sendCalled {
@@ -368,19 +361,15 @@ func (s *generatedActionService) ListActionGroups(
 	return &actionpb.ListActionGroupsResponse{ActionGroups: []*actionpb.ActionGroup{{Key: "test", Title: "Test group"}}}, nil
 }
 
-func newGeneratedActionFacade(t *testing.T, service *generatedActionService) *upstreamproxy.HandlerUpstream {
+func newGeneratedActionFacade(t *testing.T, service *generatedActionService) streamhttp.Upstream {
 	t.Helper()
 	serve := func(server *grpc.Server) {
 		actionpb.RegisterActionServiceServer(server, service)
 		operatoractionpb.RegisterOperatorActionServiceServer(server, &operatoractionpb.UnimplementedOperatorActionServiceServer{})
 		webpushpb.RegisterWebPushServiceServer(server, &webpushpb.UnimplementedWebPushServiceServer{})
 	}
-	return appMTLSFacade(
-		t, peertls.ActionsURI, serve,
-		actionpb.RegisterActionServiceHandlerFromEndpoint,
-		operatoractionpb.RegisterOperatorActionServiceHandlerFromEndpoint,
-		webpushpb.RegisterWebPushServiceHandlerFromEndpoint,
-	)
+	address, tls := appMTLSPeer(t, peertls.ActionsURI, serve)
+	return appFacadesForTest(t, address, settings.Config{ActionsTLS: tls}).ActionHTTP
 }
 
 func TestGeneratedActionFacadeUsesNativeRPCAndRequestBoundBearer(t *testing.T) {
@@ -454,9 +443,10 @@ func TestGeneratedActionFacadeCancelsRPCWithOperatorRequest(t *testing.T) {
 
 func TestGeneratedConnectionFacadeUsesFederatedBearer(t *testing.T) {
 	service := &generatedConnectionService{}
-	upstream := appMTLSFacade(t, peertls.MCPEdgeURI, func(server *grpc.Server) {
+	address, tls := appMTLSPeer(t, peertls.MCPEdgeURI, func(server *grpc.Server) {
 		connectionpb.RegisterConnectionServiceServer(server, service)
-	}, connectionpb.RegisterConnectionServiceHandlerFromEndpoint)
+	})
+	upstream := appFacadesForTest(t, address, settings.Config{ConnectionServiceTLS: tls}).ConnectionHTTP
 	request := httptest.NewRequest(http.MethodGet, "/upstream/connections/v1/operator/connections", nil)
 	response := httptest.NewRecorder()
 	if err := upstream.ForwardHTTP(response, request, request.Context(), "v1/operator/connections", "connection-token"); err != nil {
@@ -473,15 +463,11 @@ func TestGeneratedDispatcherFacadeReadsRotatingServiceToken(t *testing.T) {
 	server := grpc.NewServer()
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	address := grpcserver.Serve(t, server)
-	handler, err := facade.NewHandler(t.Context(), address, 10*time.Second, dispatcherpb.RegisterSessionDispatcherHandlerFromEndpoint)
-	if err != nil {
-		t.Fatal(err)
-	}
 	tokenFile := filepath.Join(t.TempDir(), "dispatcher-token")
 	if err := os.WriteFile(tokenFile, []byte("first-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	upstream := upstreamproxy.NewHandlerUpstream(handler, tokenFile)
+	upstream := appFacadesForTest(t, address, settings.Config{SessionDispatcherTokenFile: tokenFile, SessionDispatcherRequestTimeoutSecs: 10}).DispatcherHTTP
 	for _, token := range []string{"first-token", "rotated-token"} {
 		if err := os.WriteFile(tokenFile, []byte(token+"\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -508,7 +494,9 @@ func TestGeneratedDispatcherFacadeBoundsUnaryButNotWatchStream(t *testing.T) {
 		watchStarted:  make(chan struct{}),
 		watchCanceled: make(chan struct{}),
 	}
-	upstream := newGeneratedDispatcherFacade(t, service, unaryTimeout)
+	server := grpc.NewServer()
+	dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	upstream := appFacadesForTest(t, grpcserver.Serve(t, server), settings.Config{SessionDispatcherRequestTimeoutSecs: unaryTimeout.Seconds()}).DispatcherHTTP
 
 	unaryRequest := httptest.NewRequest(http.MethodGet, "/upstream/dispatcher/v1/dispatches/command-a", nil)
 	unaryResponse := httptest.NewRecorder()
@@ -608,11 +596,6 @@ func (w *flushCountingResponseWriter) Flush() {
 	w.ResponseRecorder.Flush()
 }
 
-func newGeneratedDispatcherFacade(t *testing.T, service *generatedDispatcherService, unaryTimeout time.Duration) *upstreamproxy.HandlerUpstream {
-	t.Helper()
-	return upstreamproxy.NewHandlerUpstream(newGeneratedDispatcherHandler(t, service, unaryTimeout), "")
-}
-
 func newGeneratedDispatcherHandler(t *testing.T, service dispatcherpb.SessionDispatcherServer, unaryTimeout time.Duration) http.Handler {
 	t.Helper()
 	server := grpc.NewServer()
@@ -625,9 +608,7 @@ func newGeneratedDispatcherHandler(t *testing.T, service dispatcherpb.SessionDis
 	return handler
 }
 
-// appMTLSFacade serves the gRPC services registered by serve under serverURI's SVID, admitting only the
-// App, and returns the generated HTTP facade the App uses to reach them with its own SVID.
-func appMTLSFacade(t *testing.T, serverURI string, serve func(*grpc.Server), registrations ...facade.Registration) *upstreamproxy.HandlerUpstream {
+func appMTLSPeer(t *testing.T, serverURI string, serve func(*grpc.Server)) (string, *peertls.ClientTLS) {
 	t.Helper()
 	ca := peertlstesting.NewCA(t)
 	serverCredentials, err := ca.Issue(t, serverURI).ServerCredentials(peertls.AppURI)
@@ -638,16 +619,8 @@ func appMTLSFacade(t *testing.T, serverURI string, serve func(*grpc.Server), reg
 	serve(server)
 	address := grpcserver.Serve(t, server)
 	appSVID := ca.Issue(t, peertls.AppURI)
-	handler, err := facade.NewHandlerWithOptions(
-		t.Context(), address, 10*time.Second,
-		facade.HandlerOptions{TLS: &peertls.ClientTLS{
-			CAFile: ca.RootFile, ServerURI: serverURI,
-			CertFile: appSVID.CertFile, KeyFile: appSVID.KeyFile, ClientURI: peertls.AppURI,
-		}},
-		registrations...,
-	)
-	if err != nil {
-		t.Fatal(err)
+	return address, &peertls.ClientTLS{
+		CAFile: ca.RootFile, ServerURI: serverURI,
+		CertFile: appSVID.CertFile, KeyFile: appSVID.KeyFile, ClientURI: peertls.AppURI,
 	}
-	return upstreamproxy.NewHandlerUpstream(handler, "")
 }
