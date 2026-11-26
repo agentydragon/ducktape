@@ -188,6 +188,8 @@ container limits stop meeting the production resource contract.
 
 ## Historical journal packing
 
+For the APB writer rollout, see [Verify new journal blocks](../eventblock/rollout.md).
+
 The sampler image provides `compact-journal` for an online backfill of retained standalone rows.
 It takes `--session ID` or `--all`, and requires an explicit `--dry-run` or `--apply`. Run it
 after migration 21 and the rollout of block-capable readers to every sampler replica. The Job
