@@ -74,9 +74,21 @@ func environmentVars(endpoint string) map[string]string {
 }
 
 func TestEnvironmentResumeRequiresOpaqueToken(t *testing.T) {
-	code, stdout, stderr := invoke(nil, "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1")
-	if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, "required flag(s) \"resume-token\"") {
-		t.Fatalf("resume without token: exit %d stdout %q stderr %q", code, stdout, stderr)
+	for _, tc := range []struct {
+		name       string
+		flags      []string
+		diagnostic string
+	}{
+		{name: "missing", diagnostic: `required flag(s) "resume-token"`},
+		{name: "empty", flags: []string{"--resume-token="}, diagnostic: "--resume-token must not be empty"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := append([]string{"environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1"}, tc.flags...)
+			code, stdout, stderr := invoke(nil, args...)
+			if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, tc.diagnostic) {
+				t.Fatalf("resume with %s token: exit %d stdout %q stderr %q", tc.name, code, stdout, stderr)
+			}
+		})
 	}
 }
 

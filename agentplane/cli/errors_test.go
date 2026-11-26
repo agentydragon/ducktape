@@ -263,6 +263,8 @@ func TestEachGroupNeedsItsOwnConfiguration(t *testing.T) {
 		missing string
 	}{
 		{[]string{"actions", "groups"}, "AGENTPLANE_ACTIONS_URL"},
+		{[]string{"session-dispatcher", "list"}, "AGENTPLANE_SESSIONS_URL"},
+		{[]string{"history", "get-session-summary", "session-id"}, "AGENTPLANE_HISTORY_URL"},
 		{[]string{"notifications", "subscriptions"}, "AGENTPLANE_NOTIFICATIONS_GRPC_URL"},
 		{[]string{"egress", "rules"}, "AGENTPLANE_EGRESS_GRPC_URL"},
 	}
