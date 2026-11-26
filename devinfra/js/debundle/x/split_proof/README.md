@@ -1,8 +1,10 @@
 # Splitting a bundle into ES modules, with a Lean proof
 
 A flat JavaScript bundle goes in. A spec says which top-level statement goes to which module.
-The experimental splitter emits ES modules after Lean certifies the requested
-CoreJS guarantee. The [target theorem](PLAN.md#target) covers every input and spec accepted by the constructor, with its proof checked when building the splitter. Some current routes instead validate the particular output. [Certification commands and guarantees](#request-a-corejs-guarantee)
+The experimental splitter publishes ES modules only with the strict all-outcomes
+CoreJS guarantee. The [target theorem](PLAN.md#target) covers every input and spec
+accepted by the constructor, with its proof checked when building the splitter.
+[Certification commands and current acceptance](#request-a-corejs-guarantee)
 
 [`SUPPORT.md`](SUPPORT.md) inventories the syntax, standard library and host
 features the intended inputs require. [CoreJS coverage](model/README.md) tracks
@@ -42,15 +44,37 @@ bbr test "//$dir/lean:instance_freshness_test"
 
 Acorn supplies an unsplit module AST and eslint-scope annotates its binding occurrences. Lean enumerates source ordinals from the module body. It gives each declarator of a top-level `var`, `let` or `const` its own ordinal, including under a named export, and keeps each destructuring pattern together. Lean assembles an ESTree `Program` for each output file, including the imports and exports that connect the modules. Astring prints these trees as JavaScript. Functions, classes and methods retain their original source spelling because JavaScript exposes it through `Function.prototype.toString`. Unversioned input dumps are upgraded by reparsing the included source and checking its annotations.
 
-For a closed module containing only identifier declarations, the checker also handles `Declaration extraction`. Supported initializers include primitive literals, binding reads, unary minus on a number literal, and logical negation of any supported initializer (for example, `const offset = -42, visible = !!offset;`). It evaluates the original declaration groups by allocating the entire module’s bindings before running the initializers in order. Lean proves that evaluating these groups gives the same CoreJS result as evaluating their extracted units, including if an initializer throws. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
+For a closed module containing only identifier declarations, Lean also proves a `Declaration extraction` model result. Supported initializers include primitive literals, binding reads, unary minus on a number literal, and logical negation of a supported initializer (for example, `const offset = -42, visible = !!offset;`). The model allocates the entire module’s bindings before running initializers in order, and the proof includes throws. This model result alone does not authorize publication. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
 
 ## Request a CoreJS guarantee
 
-Pass the deployment manifest and a fresh output directory to the splitter. Its default request is `normal-completion`; an order-preserving split may prove the stronger `all-outcomes` guarantee too.
+Pass the deployment manifest and a fresh output directory to the publishing splitter:
 
 ```sh
 bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- deployment.json output
 ```
+
+Publication requires one strict guarantee: the requested placement and entry's public live cells are preserved, and all supported observable CoreJS endings agree, including throws and their effects. This is a claim about the modeled CoreJS programs under the supported JavaScript boundary, not a proof of general JavaScript semantics. The [target and trusted parts](PLAN.md#target) describe that boundary.
+
+**Current acceptance:** no public constructor rule yet proves both the source/output bridge and the strict JavaScript observations. The splitter reports `reason_code: "no_constructed_rule"` when the required constructor evidence is unavailable; it does not publish a fresh output tree. `--check-output` likewise refuses without changing the existing tree. A model diagnostic or a proof of normal completion alone is not a publication certificate. Earlier replay and structural acceptances are not a current coverage promise.
+
+The publishing command no longer accepts research switches to select replay or structural proof, request normal completion, or supply host/deployment premise overrides. There is no unchecked publishing mode.
+
+### Developer diagnostics
+
+Separate developer tools expose model experiments and example generation. The preview is test-only, is not certified output, and must not be used as a published split:
+
+```sh
+p=//devinfra/js/debundle/x/split_proof/lean
+bb run "$p:split_preview" -- deployment.json scratch-output --force
+bb run "$p:split_instance_generator" -- deployment.json Generated.lean
+```
+
+`split_preview` replaces the former `lowersplit --diagnostic` entry point; `split_instance_generator` replaces `lowersplit --generate-instance`. They serve example generation, tests and research, not the publishing contract. The [CoreJS differential inventory](model/README.md) describes model comparisons, and the [plan](PLAN.md#target) records the work needed to accept public splits.
+
+## Historical replay and structural examples
+
+The remainder of this section records the former replay and structural publishing paths, their commands, premises and example results. Those paths and flags have been retired from the publishing splitter. The examples describe historical model behavior and are not instructions for the current CLI or evidence that these inputs now certify.
 
 An ordinary call to ambient `Symbol.for` can be retained in deferred code without a host assumption. If initialization reaches the callee, the model reports an unknown result before evaluating the arguments.
 
@@ -347,6 +371,8 @@ Use `--plan <file>` to inspect module order, statement placement and conflicting
 
 ## The example
 
+This is an abstract plan-checking and renderer example, not a current publishing certificate.
+
 Input, [`example/input/bundle.mjs`](example/input/bundle.mjs). It has 12 top-level statements, numbered 0–11:
 
 ```js
@@ -504,13 +530,13 @@ The standalone `split_instance_generator` uses both to write the checked-in exam
 `Meaning` models one flat environment. Using that theorem for JavaScript assumes
 that `Hygienic` justifies flattening and that `Plan.visit` agrees with module
 evaluation. The [module-order experiment](experiments/README.md#10-does-the-models-module-order-match-node)
-compares that order with Node. In a structural preview, external imports count as
+compares that order with Node. In the test-only model preview, external imports count as
 preexisting bindings. The diagnostic admission check keeps source imports and
 exports in the entry. The emitter writes source imports before generated imports. Preserving external initialization order assumes synchronous dependencies
 and unchanged resolution of relative specifiers. Diagnostic glue exports may widen
 the entry's public surface.
 
-For the normal splitter, the [CoreJS artifact guarantee](#request-a-corejs-guarantee)
+For the publishing splitter, the [CoreJS artifact guarantee](#request-a-corejs-guarantee)
 states the parser, binding annotation, lowering, printer, model and compiler premises. The
 [footprint proof inventory](docs/footprint_soundness.md#current-proof-inventory)
 lists the Effects summaries already covered by separate CoreJS certificates.
@@ -562,4 +588,4 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 - [Structural checker experiments and Node comparisons](experiments/README.md)
 - [Historical scale measurements](experiments/TIMINGS.md)
 - [Lessons from the experiment](docs/lessons_learned.md)
-- [Excalidraw: certified placement, upstream ownership, and browser replay](integration/excalidraw/README.md#certified-placement)
+- [Historical Excalidraw placement and browser replay](integration/excalidraw/README.md#certified-placement)
