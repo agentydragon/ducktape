@@ -10,8 +10,9 @@ use analysis::analysis_inputs::saved::{SavedCallableSummary, SavedNativeIntegrit
 use analysis::analysis_inputs::{
     ArgumentInputEvidence, ImportedPrimitiveRead, InferredSetConstruction, InferredSetOperation,
     InitializerCallEffectInputRef, NativeOperationInputEvidence, ResolvedArgumentInput,
-    ResolvedBindingValueInput, ResolvedInitializerCallEffectInput, ResolvedNativeOperationInput,
-    StableSetIterableUse, ValueInputEvidence,
+    ResolvedBindingValueInput, ResolvedImportedPrimitiveArraySpreadInput,
+    ResolvedInitializerCallEffectInput, ResolvedNativeOperationInput, StableSetIterableUse,
+    ValueInputEvidence,
 };
 use analysis::facts::abstract_domain::value::Value;
 use analysis_codec::{ContextOrdinals, SavedBinding};
@@ -41,7 +42,7 @@ pub(super) struct SavedProgramSummary<'a> {
     native_operation_inputs: BTreeMap<String, Vec<SavedNativeOperationInput>>,
     initializer_call_effect_inputs: BTreeMap<String, Vec<SavedInitializerCallEffectInput>>,
     imported_primitive_array_spread_inputs:
-        BTreeMap<String, Vec<SavedImportedPrimitiveArraySpreadInput>>,
+        Cow<'a, BTreeMap<String, Vec<ResolvedImportedPrimitiveArraySpreadInput>>>,
     inferred_set_constructions: BTreeMap<String, BTreeMap<u32, SavedInferredSetConstruction>>,
     argument_inputs: BTreeMap<String, Vec<SavedArgumentInput>>,
     stable_imports: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
@@ -131,19 +132,6 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
-        let imported_primitive_array_spread_inputs = summary
-            .imported_primitive_array_spread_inputs
-            .iter()
-            .map(|(chunk, inputs)| {
-                (
-                    chunk.clone(),
-                    inputs
-                        .iter()
-                        .map(SavedImportedPrimitiveArraySpreadInput::snapshot)
-                        .collect(),
-                )
-            })
-            .collect();
         let inferred_set_constructions = summary
             .inferred_set_constructions
             .iter()
@@ -190,7 +178,9 @@ impl<'a> SavedProgramSummary<'a> {
             bundle_globals: Cow::Borrowed(&summary.bundle_globals),
             native_operation_inputs,
             initializer_call_effect_inputs,
-            imported_primitive_array_spread_inputs,
+            imported_primitive_array_spread_inputs: Cow::Borrowed(
+                &summary.imported_primitive_array_spread_inputs,
+            ),
             inferred_set_constructions,
             argument_inputs,
             stable_imports: Cow::Borrowed(&summary.stable_imports),
@@ -279,19 +269,6 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
-        let imported_primitive_array_spread_inputs = self
-            .imported_primitive_array_spread_inputs
-            .into_iter()
-            .map(|(chunk, inputs)| {
-                (
-                    chunk,
-                    inputs
-                        .into_iter()
-                        .map(SavedImportedPrimitiveArraySpreadInput::restore)
-                        .collect(),
-                )
-            })
-            .collect();
         let inferred_set_constructions = self
             .inferred_set_constructions
             .into_iter()
@@ -334,7 +311,9 @@ impl<'a> SavedProgramSummary<'a> {
             bundle_globals: self.bundle_globals.into_owned(),
             native_operation_inputs,
             initializer_call_effect_inputs,
-            imported_primitive_array_spread_inputs,
+            imported_primitive_array_spread_inputs: self
+                .imported_primitive_array_spread_inputs
+                .into_owned(),
             inferred_set_constructions,
             argument_inputs,
             stable_imports: self.stable_imports.into_owned(),
@@ -472,33 +451,6 @@ struct SavedNativeOperationInput {
     initializer_span: Span,
     call_span: Span,
     initializer_ordinal: SourceUnitOrdinal,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SavedImportedPrimitiveArraySpreadInput {
-    evidence: analysis::analysis_inputs::ImportedPrimitiveArraySpreadInputEvidence,
-    consumer_initializer_span: Span,
-    spread_token_spans: Vec<Span>,
-}
-
-impl SavedImportedPrimitiveArraySpreadInput {
-    fn snapshot(
-        input: &analysis::analysis_inputs::ResolvedImportedPrimitiveArraySpreadInput,
-    ) -> Self {
-        Self {
-            evidence: input.evidence.clone(),
-            consumer_initializer_span: input.consumer_initializer_span,
-            spread_token_spans: input.spread_token_spans.clone(),
-        }
-    }
-
-    fn restore(self) -> analysis::analysis_inputs::ResolvedImportedPrimitiveArraySpreadInput {
-        analysis::analysis_inputs::ResolvedImportedPrimitiveArraySpreadInput {
-            evidence: self.evidence,
-            consumer_initializer_span: self.consumer_initializer_span,
-            spread_token_spans: self.spread_token_spans,
-        }
-    }
 }
 
 impl SavedNativeOperationInput {
