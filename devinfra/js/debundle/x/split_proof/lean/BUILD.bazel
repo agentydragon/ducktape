@@ -2235,10 +2235,12 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.IndexedUnitsAgree"],
     required_theorems = [
         "CoreJS.IndexedUnitsAgree.indexed_run_same",
+        "CoreJS.IndexedUnitsAgree.indexed_run_same_of_order_kept",
         "CoreJS.IndexedUnitsAgree.indexed_scopes_agree",
         "CoreJS.IndexedUnitsAgree.indexed_units_agree",
         "CoreJS.IndexedUnitsAgree.imported_exact",
         "CoreJS.IndexedUnitsAgree.module_statement_agree",
+        "CoreJS.IndexedUnitsAgree.row_link_outcomes_of_order_kept",
     ],
     deps = [":corejs_indexed_units_agree"],
 )

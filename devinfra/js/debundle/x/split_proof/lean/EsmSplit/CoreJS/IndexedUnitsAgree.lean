@@ -195,6 +195,50 @@ theorem indexed_run_same {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : 
   intro w fuel
   exact run_same (W := w) candidateRegions.symm (sourceTops.trans candidateTops.symm) scopes fuel
 
+/-- The sparse schedule and singleton source determine the constructor's
+rows, allocation order, and region count. They are not execution checks. -/
+theorem indexed_run_same_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (freeFootprints : FreeFootprints body B)
+    (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
+    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (singleton : sourceProgram.modules = [source])
+    (ordered : body.Pairwise (fun a b => a.1 ≤ b.1)) (kept : SparseProjectedOrder.OrderKept body P) :
+    ∀ (w : World) (fuel : Nat), runProgram w fuel sourceProgram = runProgram w fuel (splitProgramIndexed body B P) := by
+  apply indexed_run_same valid footprints freeFootprints complete sourceBody sourceImports sourceFind ordered
+    (SparseProjectedOrder.split_indexed_loaded_eq_source kept)
+    (SparseProjectedOrder.split_indexed_tops_eq_source kept ordered)
+  rw [SparseProjectedOrder.split_indexed_regions_eq_source kept,
+    IndexedEntryLink.singleton_source_regions singleton, sourceBody]
+
+/-- For the same sparse schedule, the actual link outcomes retain the ordered
+public name-to-address table, including an authored local export row. -/
+theorem row_link_outcomes_of_order_kept {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
+    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (singleton : sourceProgram.modules = [source])
+    (ordered : body.Pairwise (fun a b => a.1 ≤ b.1)) (kept : SparseProjectedOrder.OrderKept body P)
+    (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init)
+    {row : EsmSplit.LocalExportUnit} (sourceRow : InteriorExportNames.SourceRow source row)
+    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
+    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods) (rowWithin : row.ordinal < B.length)
+    (planEntry : P.find P.entry = some owner)
+    (authored : S.claimants B row.ordinal = [owner.name]) (unitsUnique : owner.stmts.Nodup)
+    (glue : owner.exports = [])
+    (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
+    (sourceDefs : ∀ pair ∈ row.names, ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    ∀ w : World, IndexedEntryLink.EntryLinkOutcomesAgree sourceProgram (splitProgramIndexed body B P) w := by
+  apply IndexedEntryLink.row_link_outcomes_from_plan valid footprints complete sourceBody sourceImports sourceFind
+    ordered sourceConsts (SparseProjectedOrder.split_indexed_tops_eq_source kept ordered) ?_
+    sourceRow rowFootprint ownerIn rowWithin planEntry authored unitsUnique glue onlyRow sourceDefs
+  rw [SparseProjectedOrder.split_indexed_regions_eq_source kept,
+    IndexedEntryLink.singleton_source_regions singleton, sourceBody]
+
+#print axioms indexed_run_same_of_order_kept
+#print axioms row_link_outcomes_of_order_kept
 #print axioms indexed_run_same
 #print axioms indexed_scopes_agree
 #print axioms indexed_units_agree
