@@ -469,9 +469,17 @@ lean_binary(
 
 lean_axiom_test(
     name = "provider_input_boundary_axioms_test",
-    srcs = ["ProviderInputBoundaryTest.lean"],
-    imports = ["ProviderInputBoundaryTest"],
-    theorems = ["ProviderBoundaryFixture.certify"],
+    srcs = [
+        "ProviderInputBoundaryAudit.lean",
+        "ProviderInputBoundaryTest.lean",
+    ],
+    imports = ["ProviderInputBoundaryAudit"],
+    theorems = [
+        "ProviderBoundaryFixture.certify",
+        "ProviderBoundaryFixture.commonProviderBehavior",
+        "ProviderBoundaryFixture.sourceFreeLinkedBoundary",
+        "ProviderBoundaryFixture.sourceFreeContext",
+    ],
     deps = [
         ":corejs_linked_input",
         ":corejs_structural",
