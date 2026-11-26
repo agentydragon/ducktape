@@ -508,11 +508,7 @@ pub fn command_with(binary: &Path, args: &[&str]) -> CommandResult {
     }
     let output =
         case_commands::debundle_fixture_output(&mut command, &hint).expect("spawn debundle tool");
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    }
+    CommandResult::from(output)
 }
 
 pub fn assert_ok(result: &CommandResult, what: &str) {

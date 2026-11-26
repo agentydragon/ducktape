@@ -1,8 +1,6 @@
 //! Owned tree inputs shared by ordinary, graph and staged CLI workflows.
 
-use super::{
-    CaseWorkspace, CommandResult, case_commands, command_result, debundler_path, write_text_file,
-};
+use super::{CaseWorkspace, CommandResult, case_commands, debundler_path, write_text_file};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
@@ -90,7 +88,7 @@ impl TreeWorkspace {
         TreeRun {
             report_root: out_root.join("reports").join("tree"),
             out_root,
-            result: command_result(output),
+            result: CommandResult::from(output),
             _root: self.root,
         }
     }

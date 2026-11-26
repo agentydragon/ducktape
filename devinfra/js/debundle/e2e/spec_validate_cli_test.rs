@@ -256,11 +256,7 @@ fn validate_reports_all_outcomes_before_failing_by_default() {
             .args(["--format", "json"]),
     )
     .unwrap_or_else(|err| panic!("{err}"));
-    let out = CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    };
+    let out = CommandResult::from(output);
     assert!(!out.status.success(), "stdout:\n{}", out.stdout);
     assert!(
         out.stderr.contains("validation found selector errors"),
@@ -368,11 +364,7 @@ export { renderCard };
             .env("DEBUNDLE_SOURCE_ROOT", "/definitely/not/source/root"),
     )
     .unwrap_or_else(|err| panic!("{err}"));
-    let out = CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    };
+    let out = CommandResult::from(output);
 
     assert!(
         out.status.success(),
