@@ -629,8 +629,8 @@ fn empty_and_unchanged_batches_match_the_baseline() {
 
 #[test]
 fn large_module_import_schedule_retains_every_target_in_shared_order() {
-    use crate::esm_import_order::EsmImportOrder;
-    use crate::esm_schedule::EsmImportSchedule;
+    use esm_schedule::EsmImportOrder;
+    use esm_schedule::EsmImportSchedule;
 
     let entry_module_id = ModuleId(0);
     let importer = ModuleId(1);

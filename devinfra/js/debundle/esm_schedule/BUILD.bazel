@@ -1,0 +1,48 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+_SRCS = [
+    "construct.rs",
+    "esm_import_order.rs",
+    "mod.rs",
+]
+
+_DEPS = [
+    "//devinfra/js/debundle:analysis",
+    "//devinfra/js/debundle:source_identity",
+    "//devinfra/js/debundle/spec",
+    "//devinfra/js/debundle/graph",
+    "@crates//:petgraph",
+    "@crates//:thiserror",
+]
+
+rust_library(
+    name = "esm_schedule",
+    srcs = _SRCS,
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = _DEPS,
+)
+
+# The same crate with the general schedule-construction oracle
+# (`EsmImportSchedule::construct`) compiled in. Only `gate_test` links it, so
+# production code cannot call the oracle.
+rust_library(
+    name = "esm_schedule_test_oracle",
+    testonly = True,
+    srcs = _SRCS,
+    crate_features = ["test_oracle"],
+    crate_name = "esm_schedule",
+    crate_root = "mod.rs",
+    edition = "2024",
+    visibility = ["//devinfra/js/debundle:__pkg__"],
+    deps = _DEPS,
+)
+
+rust_test(
+    name = "esm_schedule_test",
+    crate = ":esm_schedule",
+    edition = "2024",
+    deps = ["@crates//:proptest"],
+)
