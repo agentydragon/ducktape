@@ -590,6 +590,26 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "hoisted_function_link",
+    srcs = ["EsmSplit/CoreJS/HoistedFunctionLink.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "hoisted_function_link_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.HoistedFunctionLink"],
+    required_theorems = [
+        "CoreJS.HoistedFunctionLink.planned_function",
+        "CoreJS.HoistedFunctionLink.planned_primitive_closure_crossing",
+    ],
+    deps = [":hoisted_function_link"],
+)
+
+lean_library(
     name = "corejs_plan_placement",
     srcs = ["EsmSplit/CoreJS/PlanPlacement.lean"],
     deps = [
