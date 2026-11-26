@@ -4,7 +4,10 @@ package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
 
 rust_library(
     name = "staged_analysis",
-    srcs = glob(["*.rs"]),
+    srcs = glob([
+        "*.rs",
+        "program_summary/*.rs",
+    ]),
     crate_root = "mod.rs",
     edition = "2024",
     deps = [
