@@ -125,7 +125,17 @@ for (const tree of [dir, overlay]) {
 // the real linked provider doesn't have. A root-relative decoy still exists.
 writeFileSync(path.join(dir, lazy), 'import {missing} from "./provider.mjs"; export {missing};');
 const refused = assertRefused(files, path.join(dir, "unlinked"));
-assert.match(refused.reason, /does not export missing/);
+assert.equal(refused.reason_code, "no_constructed_rule");
+
+// Keep the missing-export diagnostic on a test-only native module-linking path.
+// The public construction-only CLI refuses this input before linking it.
+const linked = spawnSync(
+  process.execPath,
+  ["--input-type=module", "--eval", `await import(${JSON.stringify(pathToFileURL(path.join(dir, lazy)).href)});`],
+  { encoding: "utf8" }
+);
+assert.equal(linked.status, 1, linked.error?.message ?? linked.stdout + linked.stderr);
+assert.match(linked.stderr, /does not provide an export named ['\"]missing['\"]/);
 const original = readFileSync(path.join(dir, provider), "utf8");
 writeFileSync(path.join(dir, provider), original.replace('import("./lazy.mjs")', 'import("./provider.mjs")'));
 const direct = assertRefused(files, path.join(dir, "direct"));
