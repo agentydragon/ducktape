@@ -287,6 +287,28 @@ pub(super) fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarat
     cloned
 }
 
+fn declared_target_index(
+    declared: &[ResolvedMemberBinding],
+    request_id: &str,
+    selector: &AnonymousStatementSelector,
+    target: &str,
+) -> Result<usize> {
+    let indices: Vec<_> = declared
+        .iter()
+        .enumerate()
+        .filter_map(|(index, binding)| (binding.binding_name == target).then_some(index))
+        .collect();
+    let problem = match indices.as_slice() {
+        [index] => return Ok(*index),
+        [] => BindingProblem::NotDeclared,
+        _ => BindingProblem::Ambiguous {
+            index_kind: ProjectionIndexKind::StatementBinding,
+            indices: indices.into_iter().map(|index| (0, index)).collect(),
+        },
+    };
+    Err(SourceMatchError::binding(request_id, selector, target, problem).into())
+}
+
 /// Collect every single-declarator var-decl member match: the needle's
 /// declarator against every declarator of every var-decl source_unit (the per-declarator
 /// path). Returns one `MemberBindingMatch` per matched declarator, body-index
@@ -304,41 +326,9 @@ fn member_matches_var_declarator(
     // Probe the needle once: an unsupported construct errors uniformly.
     selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
         .map_err(unsupported_error)?;
-    // Which of the needle declarator's declared bindings is the target.
     let target_binding_idx = match &selector.target_binding {
-        Some(target_binding) => {
-            let declared = declared_bindings(needle);
-            let indices: Vec<usize> = declared
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, binding)| {
-                    (binding.binding_name == *target_binding).then_some(idx)
-                })
-                .collect();
-            match indices.as_slice() {
-                [single] => *single,
-                [] => {
-                    return Err(SourceMatchError::binding(
-                        request_id,
-                        selector,
-                        target_binding,
-                        BindingProblem::NotDeclared,
-                    )
-                    .into());
-                }
-                _ => {
-                    return Err(SourceMatchError::binding(
-                        request_id,
-                        selector,
-                        target_binding,
-                        BindingProblem::Ambiguous {
-                            index_kind: ProjectionIndexKind::StatementBinding,
-                            indices: indices.iter().map(|index| (0, *index)).collect(),
-                        },
-                    )
-                    .into());
-                }
-            }
+        Some(target) => {
+            declared_target_index(&declared_bindings(needle), request_id, selector, target)?
         }
         None => 0,
     };
@@ -737,36 +727,13 @@ fn group_matches_single_declarator(
     exports_by_target: &BTreeMap<String, String>,
 ) -> Result<Vec<MemberBindingGroupMatch>> {
     let declared = declared_bindings(needle);
-    let target_binding_indices: BTreeMap<String, usize> = exports_by_target
+    let target_binding_indices = exports_by_target
         .keys()
         .map(|target| {
-            let indices: Vec<usize> = declared
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, binding)| (binding.binding_name == *target).then_some(idx))
-                .collect();
-            match indices.as_slice() {
-                [single] => Ok((target.clone(), *single)),
-                [] => Err(SourceMatchError::binding(
-                    request_id,
-                    selector,
-                    target,
-                    BindingProblem::NotDeclared,
-                )
-                .into()),
-                _ => Err(SourceMatchError::binding(
-                    request_id,
-                    selector,
-                    target,
-                    BindingProblem::Ambiguous {
-                        index_kind: ProjectionIndexKind::StatementBinding,
-                        indices: indices.iter().map(|index| (0, *index)).collect(),
-                    },
-                )
-                .into()),
-            }
+            declared_target_index(&declared, request_id, selector, target)
+                .map(|index| (target, index))
         })
-        .collect::<Result<_>>()?;
+        .collect::<Result<Vec<_>>>()?;
     let needle_facts = needle_item_facts(needle)?;
     let needle_index = selector_match::Index::build(&needle_facts);
     let free = free_identifiers([&needle_index]);
@@ -801,7 +768,7 @@ fn group_matches_single_declarator(
                 return Err(MatcherError::invariant(MatcherInvariant::MissingBinding));
             };
             resolved.insert(
-                target.clone(),
+                (*target).clone(),
                 MatchedBinding {
                     body_idx: subject.body_idx,
                     binding: binding.clone(),
