@@ -14,6 +14,7 @@ import (
 
 	executorcontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
 	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/sethvargo/go-retry"
 	"go.uber.org/zap"
@@ -295,16 +296,10 @@ func StartOwned(config StartConfig) Start {
 		launched = true
 		go func() { _, _ = io.Copy(io.Discard, process.Stdout()) }()
 		go func() {
-			buffer := make([]byte, 4096)
-			for {
-				n, err := process.Stderr().Read(buffer)
-				if n > 0 {
-					zap.L().Info("execution backend stderr", zap.String("text", string(buffer[:n])))
-				}
-				if err != nil {
-					return
-				}
-			}
+			_ = harness.ReadText(process.Stderr(), func(text string) error {
+				zap.L().Info("execution backend stderr", zap.String("text", text))
+				return nil
+			})
 		}()
 		go func() {
 			code, err := process.Wait(context.Background())

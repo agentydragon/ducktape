@@ -1,12 +1,10 @@
 package codexappserver
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -448,9 +446,6 @@ func (p *Process) readError() error {
 // each read's frames are committed in one batch per Session.
 func (c *Host) readStdout(p *Process) {
 	defer p.readers.Done()
-	buffer := make([]byte, supervision.ReadBatchBytes)
-	var framer harness.StdoutFramer
-	var readErr error
 	initializing := true
 	route := func(lines [][]byte) error {
 		var order []*Attachment
@@ -477,35 +472,7 @@ func (c *Host) readStdout(p *Process) {
 		}
 		return nil
 	}
-	for {
-		n, err := p.process.Stdout().Read(buffer)
-		if n > 0 {
-			batch := framer.Feed(buffer[:n])
-			if batch.Err != nil && !batch.PendingTooLong {
-				readErr = batch.Err
-			} else {
-				readErr = route(batch.Lines)
-				if readErr == nil {
-					readErr = batch.Err
-				}
-			}
-			if readErr != nil {
-				break
-			}
-		}
-		if err != nil {
-			if err == io.EOF {
-				lines := framer.Finish()
-				if len(lines) > 0 {
-					readErr = route(lines)
-				}
-			}
-			if err != io.EOF && readErr == nil {
-				readErr = err
-			}
-			break
-		}
-	}
+	readErr := harness.ReadFramedStdout(p.process.Stdout(), route)
 	if readErr != nil {
 		p.recordReadError(readErr)
 		c.deps.OnError(readErr)
@@ -530,30 +497,21 @@ func (c *Host) readStdout(p *Process) {
 // readStderr records the app-server's diagnostics in every hosted Session: none of it names a thread.
 func (c *Host) readStderr(p *Process) {
 	defer p.readers.Done()
-	buffer := make([]byte, 4096)
-	for {
-		n, err := p.process.Stderr().Read(buffer)
-		if n > 0 {
-			text := string(bytes.ToValidUTF8(buffer[:n], []byte("�")))
-			hosts := p.router.Hosts()
-			if len(hosts) == 0 {
-				zap.L().Info("Codex app-server stderr", zap.String("process", p.process.ID()), zap.String("text", text))
-			}
-			for _, s := range hosts {
-				if e := s.Stderr(c.deps.Context, text); e != nil {
-					p.recordReadError(e)
-					c.deps.OnError(e)
-					return
-				}
+	err := harness.ReadText(p.process.Stderr(), func(text string) error {
+		hosts := p.router.Hosts()
+		if len(hosts) == 0 {
+			zap.L().Info("Codex app-server stderr", zap.String("process", p.process.ID()), zap.String("text", text))
+		}
+		for _, s := range hosts {
+			if err := s.Stderr(c.deps.Context, text); err != nil {
+				return err
 			}
 		}
-		if err != nil {
-			if err != io.EOF {
-				p.recordReadError(err)
-				c.deps.OnError(err)
-			}
-			return
-		}
+		return nil
+	})
+	if err != nil {
+		p.recordReadError(err)
+		c.deps.OnError(err)
 	}
 }
 
