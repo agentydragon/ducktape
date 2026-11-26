@@ -72,6 +72,7 @@ rust_library(
         "//devinfra/js/debundle:yaml_edit",
         "//devinfra/js/debundle/artifacts:artifact",
         "//devinfra/js/debundle/artifacts:output_layout",
+        "//devinfra/js/debundle/graph",
         "//devinfra/js/debundle/lowering",
         "//devinfra/js/debundle/peel",
         "@crates//:anyhow",

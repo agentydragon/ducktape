@@ -1,9 +1,9 @@
 //! Report evidence comes from the same bounded execution used by the gate.
-use analysis::DependencyGraphReport;
 use debundle_e2e_graph_support::{
     FixtureGraphExt, GraphFixture, node_declaring, source_unit_for_binding,
 };
 use debundle_e2e_support::*;
+use graph::DependencyGraphReport;
 use serde_json::Value;
 
 fn execution(fixture: &Fixture, binding: &str) -> Value {

@@ -25,6 +25,7 @@ rust_library(
         "//devinfra/js/debundle:spec",
         "//devinfra/js/debundle:spec_modules",
         "//devinfra/js/debundle:spec_tree",
+        "//devinfra/js/debundle/graph",
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:petgraph",

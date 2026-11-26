@@ -15,12 +15,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use analysis::AnalysisAssumptions;
+use analysis::LocalEffectPolicy;
 pub use analysis::analysis_inputs::{
     AnalysisImportedPrimitiveArrayOperand, AnalysisImportedPrimitiveArraySpreadInput,
 };
 use analysis::analysis_inputs::{NativeOperationSelectorProvenance, SourceDeclaration};
-use analysis::{GraphOptions, LocalEffectPolicy};
 use anyhow::{Context, Result, ensure};
+use graph::GraphOptions;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 

@@ -1,11 +1,11 @@
 //! `debundle scc` / `debundle cluster`: module-quotient SCC listing
 //! and per-binding neighbor queries over a generated dependency graph.
 
-use analysis::DependencyGraphInput;
 use analysis_model::DepKind;
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
 use command_output::{infallible, write_ndjson_list, write_report};
+use graph::DependencyGraphInput;
 use peel::plan::LimitReport;
 use peel::{
     CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainDirection, OutputFormat,
@@ -130,9 +130,9 @@ pub struct ClusterReport {
 /// These queries need one home module, unlike multi-source unit selection commands.
 /// Never prefer a minified spelling over another source unit's readable spelling.
 fn resolve_one_binding_source_unit<'a>(
-    graph: &'a analysis::DependencyGraphReport,
+    graph: &'a graph::DependencyGraphReport,
     sym: &str,
-) -> Result<&'a analysis::SourceUnitReport> {
+) -> Result<&'a graph::SourceUnitReport> {
     let source_units = resolve_binding_source_units(graph, sym);
     match source_units.as_slice() {
         [source_unit] => Ok(source_unit),
@@ -155,7 +155,7 @@ pub fn run_scc(args: SccArgs, output: &mut dyn std::io::Write) -> Result<()> {
     // first; we restrict SCCs to ones containing that destination.
     // Uses the shared `resolve_binding_source_units` helper so minified and
     // readable name forms both resolve.
-    let restrict_to_module: Option<analysis::ModuleKey> = if let Some(sym) = &args.binding {
+    let restrict_to_module: Option<graph::ModuleKey> = if let Some(sym) = &args.binding {
         let source_unit = resolve_one_binding_source_unit(graph, sym)?;
         Some(source_unit.destination.clone())
     } else {
@@ -291,10 +291,7 @@ pub fn run_cluster(args: ClusterArgs, output: &mut dyn std::io::Write) -> Result
 
 /// Pair an interned module key with its human path label, falling back
 /// to the raw key string when the module table has no entry for it.
-fn resolve_module_ref(
-    graph: &analysis::DependencyGraphReport,
-    key: &analysis::ModuleKey,
-) -> ModuleRef {
+fn resolve_module_ref(graph: &graph::DependencyGraphReport, key: &graph::ModuleKey) -> ModuleRef {
     ModuleRef {
         id: key.as_str().to_string(),
         label: graph

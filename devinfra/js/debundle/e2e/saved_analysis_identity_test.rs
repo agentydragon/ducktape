@@ -5,10 +5,10 @@
 use analysis_model::DepKind;
 use std::fs;
 
-use analysis::DependencyGraphReport;
 use analysis_projection::AnalysisSpec;
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
+use graph::DependencyGraphReport;
 
 #[test]
 fn projection_rejects_unresolved_and_duplicate_selectors_before_writing() {

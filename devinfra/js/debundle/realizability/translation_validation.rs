@@ -24,10 +24,10 @@ use rustc_hash::FxHashMap;
 use serde::Serialize;
 use source_identity::SourceUnitOrdinal;
 
-use analysis::DependencyGraph;
-use analysis::graph::DependencyEdgeId;
 use analysis::ids::ModuleId;
-use analysis::module_assignment::ModuleAssignment;
+use graph::DependencyEdgeId;
+use graph::DependencyGraph;
+use graph::module_assignment::ModuleAssignment;
 use source_identity::SourceUnitId;
 use spec::ModulePath;
 

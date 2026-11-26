@@ -46,12 +46,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ::gate::{BlockingSccEntry, render_atomic_group_conflict_summary, render_cycle_summary};
-use analysis::{AtomicGroupConflictReport, DependencyGraphInput, DependencyGraphReport, ModuleId};
+use analysis::ModuleId;
 use anonymous_resolution::{
     DirectBindingSourceCheck, DirectBindingSourceResolution, ResolvedSourceClaims, SourceClaimSet,
     resolve_source_claims,
 };
 use anyhow::{Context, Result, bail};
+use graph::{AtomicGroupConflictReport, DependencyGraphInput, DependencyGraphReport};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use serde::Serialize;
 use source_identity::SourceUnitId;
@@ -359,7 +360,7 @@ fn emitted_module_paths(
                 .quotient
                 .nodes
                 .iter()
-                .filter(|module| module.kind == analysis::ModuleDestinationKind::Unassigned)
+                .filter(|module| module.kind == graph::ModuleDestinationKind::Unassigned)
                 .map(|module| module.path.clone()),
         );
     }
@@ -1079,7 +1080,7 @@ fn gate_post_edit_assignment_with_expected(
                         .source_unit_id(&node.id)
                         .expect("report unit ID is indexed"),
                 ) || (baseline.kind
-                    == analysis::ModuleDestinationKind::Specified
+                    == graph::ModuleDestinationKind::Specified
                     && !surviving_modules.contains(&baseline.path));
                 if newly_unclaimed {
                     anyhow::ensure!(
@@ -1092,7 +1093,7 @@ fn gate_post_edit_assignment_with_expected(
                     );
                     None
                 } else {
-                    (baseline.kind != analysis::ModuleDestinationKind::Entry)
+                    (baseline.kind != graph::ModuleDestinationKind::Entry)
                         .then(|| baseline.path.clone())
                 }
             }

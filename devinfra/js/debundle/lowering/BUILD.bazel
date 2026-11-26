@@ -62,6 +62,7 @@ rust_library(
         "//devinfra/js/debundle/artifacts:artifact",
         "//devinfra/js/debundle/artifacts:output_layout",
         "//devinfra/js/debundle/chunk_analysis",
+        "//devinfra/js/debundle/graph",
         "//devinfra/js/debundle/staged_analysis",
         "//devinfra/js/debundle/vendor",
         "@crates//:anyhow",

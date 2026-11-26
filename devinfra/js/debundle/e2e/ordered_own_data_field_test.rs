@@ -1,9 +1,8 @@
-use analysis::{
-    DependencyGraphReport, EffectCellReport, reports::schema::BindingEffectAuthorityReport,
-};
+use analysis::{reports::schema::BindingEffectAuthorityReport, reports::schema::EffectCellReport};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
+use graph::DependencyGraphReport;
 
 fn assert_property_frontier(
     graph: &DependencyGraphReport,

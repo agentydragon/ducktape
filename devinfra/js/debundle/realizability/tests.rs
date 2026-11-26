@@ -6,11 +6,12 @@ use super::incremental_quotient::{
 };
 use super::*;
 use crate::counted_digraph::CountedDiGraph;
+use analysis::AnalysisInputs;
 use analysis::facts::analyze_chunk;
-use analysis::graph::{EdgeRole, build_dependency_graph_with};
 use analysis::ids::ModuleId;
-use analysis::module_assignment::ModuleAssignment;
-use analysis::{AnalysisInputs, DependencyGraph};
+use graph::DependencyGraph;
+use graph::module_assignment::ModuleAssignment;
+use graph::{EdgeRole, build_dependency_graph_with};
 use report_fixtures::{
     active_source_unit, dependency_edge, promoted_dependency_edge, residual_source_unit,
     singleton_graph,
@@ -27,7 +28,7 @@ fn parse_and_build(source: &str) -> DependencyGraph {
 
 #[test]
 fn typed_assignment_projection_separates_imports_constraints_and_rebinds() {
-    let graph = analysis::DependencyGraphInput::from_report(singleton_graph(
+    let graph = graph::DependencyGraphInput::from_report(singleton_graph(
         vec![
             residual_source_unit("lazy_caller", 0, &["lazy_caller"], 1),
             residual_source_unit("target", 1, &["target"], 1),
@@ -225,7 +226,7 @@ fn source_hub_reduction_matches_directed_hamiltonian_path() {
             ));
         }
         let graph = parse_and_build(&source);
-        let atoms = analysis::compute_atomic_groups(&graph);
+        let atoms = graph::compute_atomic_groups(&graph);
         assert_eq!(atoms.len(), 4, "H mask {mask}: {source}");
         assert!(
             atoms.iter().all(|atom| atom.members.len() == 1),
@@ -339,7 +340,7 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
             DepKind::Sequenced,
             true,
         ));
-        let graph = analysis::DependencyGraphInput::from_report(singleton_graph(nodes, edges))
+        let graph = graph::DependencyGraphInput::from_report(singleton_graph(nodes, edges))
             .unwrap()
             .shared_graph();
         let assignments = (0..names.len())
@@ -771,7 +772,7 @@ fn pass_two_is_skipped_while_pass_one_has_a_cycle() {
     let mut cyclic = shared.clone();
     cyclic.push(edge("e:21", "unit:2", "unit:1", DepKind::EagerUse, true));
     let verdict_of = |edges: Vec<_>| {
-        let graph = analysis::DependencyGraphInput::from_report(singleton_graph(nodes(4), edges))
+        let graph = graph::DependencyGraphInput::from_report(singleton_graph(nodes(4), edges))
             .unwrap()
             .shared_graph();
         let assignment = ModuleAssignment::from_assignments(
@@ -1164,12 +1165,12 @@ fn overlay_scc_matches_effective_graph_with_counted_additions_and_removals() {
 #[test]
 fn overlay_bucket_emptiness_matches_materialized_added_and_removed_edges() {
     let mut base = ConstrainingBucket::default();
-    base.insert_edge(analysis::graph::DependencyEdgeId(1), false);
-    base.insert_edge(analysis::graph::DependencyEdgeId(2), true);
+    base.insert_edge(graph::DependencyEdgeId(1), false);
+    base.insert_edge(graph::DependencyEdgeId(2), true);
     let mut removed = ConstrainingBucket::default();
-    removed.insert_edge(analysis::graph::DependencyEdgeId(1), false);
+    removed.insert_edge(graph::DependencyEdgeId(1), false);
     let mut added = ConstrainingBucket::default();
-    added.insert_edge(analysis::graph::DependencyEdgeId(3), true);
+    added.insert_edge(graph::DependencyEdgeId(3), true);
 
     let mut effective = base.clone();
     effective.remove_from(&removed);
@@ -1179,7 +1180,7 @@ fn overlay_bucket_emptiness_matches_materialized_added_and_removed_edges() {
         effective.is_empty(),
     );
 
-    removed.insert_edge(analysis::graph::DependencyEdgeId(2), true);
+    removed.insert_edge(graph::DependencyEdgeId(2), true);
     let mut no_edges = base.clone();
     no_edges.remove_from(&removed);
     assert_eq!(
@@ -1749,7 +1750,7 @@ fn validation_reports_pass_two_after_collapsing_pass_one_as_conditional() {
         dependency_edge("e:56", "unit:5", "unit:6", DepKind::EagerUse, true),
         dependency_edge("e:65", "unit:6", "unit:5", DepKind::EagerUse, true),
     ];
-    let graph = analysis::DependencyGraphInput::from_report(singleton_graph(nodes, edges))
+    let graph = graph::DependencyGraphInput::from_report(singleton_graph(nodes, edges))
         .unwrap()
         .shared_graph();
     let assignment = ModuleAssignment::from_assignments(

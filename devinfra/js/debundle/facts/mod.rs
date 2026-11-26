@@ -148,7 +148,7 @@ mod value_set_tests;
 pub(crate) use array_spreads::StableArraySpreadShapes;
 pub(crate) use at_init_fallback::*;
 pub use cell_overlap::{CellOverlap, CellOverlapIndex, CellOverlapLaw};
-pub(crate) use cell_overlap::{first_overlapping, may_conflict, may_overlap};
+pub use cell_overlap::{first_overlapping, may_conflict, may_overlap};
 pub(crate) use collector::*;
 pub(crate) use dynamic_scope::DynamicScopeFact;
 pub(crate) use global_object::*;
@@ -164,14 +164,15 @@ pub(crate) use set_iterables::{
     NativeIterableOperandOrigin, SetIterableShapes, TopLevelNativeIterableOperandProjection,
     TopLevelNativeIterableOperandSite, primitive_literal_property_keys,
 };
-pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
+pub use source_unit_read_closure::SourceUnitReadClosure;
+pub use statement_facts::HeapContentCells;
 pub use statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection,
     CallbackFactoryCallArgumentWitness, CallbackFactoryUseFact, CallbackFactoryWriteWitness,
     ReturnedRecordUseFact,
 };
 pub(crate) use statement_facts::{
-    ConstructorFacts, ExportLinkage, HeapContentCells, LocalRecordFactoryPurityCertificate,
+    ConstructorFacts, ExportLinkage, LocalRecordFactoryPurityCertificate,
 };
 pub(crate) use value_flow::{CandidateObjectIndex, own_data_keys};
 pub use value_flow::{ChunkValueFlow, ProgramFlowModule, ProgramValueFlows, program_value_flows};

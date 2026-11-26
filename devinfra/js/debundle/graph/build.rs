@@ -1,20 +1,23 @@
 use analysis_model::DepKind;
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt;
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
-use crate::analysis_inputs::{CommutingEndpoint, ResolvedCommutingStatements};
-use crate::execution_evidence::SourceLocation;
-use crate::facts::{
+use analysis::analysis_inputs::{CommutingEndpoint, ResolvedCommutingStatements};
+use analysis::execution_evidence::SourceLocation;
+use analysis::facts::{
     CellOverlap, CellOverlapIndex, EffectCell, HeapContentCells, SourceUnitReadClosure,
     first_overlapping, may_conflict, may_overlap,
 };
-use crate::{StatementEffectSummary, StatementFacts, StatementKind};
+use analysis::reports::schema::EffectCellReport;
+use analysis::reports::spec_lint::{
+    CommutingStatementsUnused, UnusedCommutingEndpoint, UnusedPremiseReason,
+};
+use analysis::{StatementEffectSummary, StatementFacts, StatementKind};
 
 mod at_init;
 mod cell_order;
@@ -36,11 +39,10 @@ pub struct GraphOptions {
 use super::dependency_graph::{AppliedCommutingPremise, DependencyGraph, SourceUnit};
 use super::edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport, DependencyEdge,
-    DependencyEdgeId, EdgeReason, EdgeRole, EffectCellReport, EffectProvenance, HeapBarrierCause,
-    SequencedCause,
+    DependencyEdgeId, EdgeReason, EdgeRole, EffectProvenance, HeapBarrierCause, SequencedCause,
 };
-use crate::execution_evidence::AssumedEffectReason;
-use crate::facts::DataflowOpacityCause;
+use analysis::execution_evidence::AssumedEffectReason;
+use analysis::facts::DataflowOpacityCause;
 
 const HEAP_CELL_SAMPLE_LIMIT: usize = 8;
 
@@ -49,8 +51,8 @@ fn report_heap_frontier(
     composed_synchronous_calls: &HeapContentCells,
     non_assumed_reads: &BTreeSet<EffectCell>,
     non_assumed_writes: &BTreeSet<EffectCell>,
-) -> Option<crate::reports::schema::HeapFrontierEvidence> {
-    use crate::reports::schema::{
+) -> Option<analysis::reports::schema::HeapFrontierEvidence> {
+    use analysis::reports::schema::{
         HeapCellSetReport, HeapContentSummaryReport, HeapFrontierEvidence,
         NonAssumedHeapAccessReport,
     };
@@ -227,7 +229,7 @@ fn source_unit_node(stmt: &StatementFacts) -> SourceUnit {
         callback_factory_barriers: stmt.callback_factory_barriers.clone(),
         heap_native_integrity_uses: stmt.heap_native_integrity_uses.clone(),
         synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
-            crate::reports::schema::SynchronousExecutionReport {
+            analysis::reports::schema::SynchronousExecutionReport {
                 initializer_binding_effects: calls.initializer_binding_effects.clone(),
                 initializer_external_effects: calls.initializer_external_effects.clone(),
                 purity_disagreement: calls.purity_disagreement.clone(),
@@ -246,7 +248,7 @@ fn source_unit_node(stmt: &StatementFacts) -> SourceUnit {
                 inference_uses: calls
                     .inference_uses
                     .iter()
-                    .map(crate::reports::schema::InferenceUseReport::from)
+                    .map(analysis::reports::schema::InferenceUseReport::from)
                     .collect(),
                 precision_losses: calls.precision_losses.clone(),
                 callback_factory_uses: Vec::new(),

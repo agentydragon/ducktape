@@ -18,15 +18,15 @@ use std::path::{Path, PathBuf};
 use synthesis_failure::SynthesisSkipReason;
 
 use ::gate::{BlockingSccEntry, CycleEdge};
-use analysis::graph::{CommutationOrder, EndpointView, assignment_endpoints};
-use analysis::{
-    DependencyEdgeId, DependencyEdgeReport, DependencyGraph, DependencyGraphInput,
-    DependencyGraphReport, EntryDestination, KnownConflict, ModuleAssignment,
-    ModuleDestinationKind, ModuleId, ModuleKey, PremiseVerdict, SequencedCause, SourceLocation,
-    SourceUnitReport,
-};
+use analysis::{EntryDestination, ModuleId, SourceLocation};
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
+use graph::{CommutationOrder, EndpointView, assignment_endpoints};
+use graph::{
+    DependencyEdgeId, DependencyEdgeReport, DependencyGraph, DependencyGraphInput,
+    DependencyGraphReport, KnownConflict, ModuleAssignment, ModuleDestinationKind, ModuleKey,
+    PremiseVerdict, SequencedCause, SourceUnitReport,
+};
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
 use petgraph::algo::{is_cyclic_directed, tarjan_scc};

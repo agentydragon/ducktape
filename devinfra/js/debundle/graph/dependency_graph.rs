@@ -3,11 +3,11 @@ use std::collections::{BTreeSet, HashMap};
 
 use swc_ecma_ast::Id;
 
-use crate::StatementKind;
-use crate::analysis_inputs::CommutingStatementsRef;
-use crate::execution_evidence::SourceLocation;
-use crate::facts::CallbackFactoryBarrierFact;
-use crate::purity::Purity;
+use analysis::StatementKind;
+use analysis::analysis_inputs::CommutingStatementsRef;
+use analysis::execution_evidence::SourceLocation;
+use analysis::facts::CallbackFactoryBarrierFact;
+use analysis::purity::Purity;
 
 use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
 
@@ -59,10 +59,10 @@ pub struct SourceUnit {
     pub kind: StatementKind,
     pub purity: Purity,
     pub callback_factory_barriers: Vec<CallbackFactoryBarrierFact>,
-    pub heap_native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
-    pub synchronous_execution: Option<crate::reports::schema::SynchronousExecutionReport>,
-    pub callback_factory_uses: Vec<crate::facts::CallbackFactoryUseFact>,
-    pub returned_record_uses: Vec<crate::facts::ReturnedRecordUseFact>,
+    pub heap_native_integrity_uses: Vec<analysis::reports::schema::NativeIntegrityUse>,
+    pub synchronous_execution: Option<analysis::reports::schema::SynchronousExecutionReport>,
+    pub callback_factory_uses: Vec<analysis::facts::CallbackFactoryUseFact>,
+    pub returned_record_uses: Vec<analysis::facts::ReturnedRecordUseFact>,
 }
 
 /// Declaration-based classification, independent of syntax kind and destination.

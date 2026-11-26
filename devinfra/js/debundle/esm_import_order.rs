@@ -11,12 +11,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::graph::{
+use analysis::ids::ModuleId;
+use graph::module_assignment::ModuleAssignment;
+use graph::{
     ChunkConstrainingEdgeSet, DependencyGraph, chunk_linker_order_from_pairs,
     chunk_source_import_order_from_adjacency, position_lookup,
 };
-use analysis::ids::ModuleId;
-use analysis::module_assignment::ModuleAssignment;
 use petgraph::algo::is_cyclic_directed;
 use petgraph::graphmap::DiGraphMap;
 use source_identity::SourceUnitOrdinal;

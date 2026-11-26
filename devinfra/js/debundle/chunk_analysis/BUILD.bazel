@@ -14,6 +14,7 @@ rust_library(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:binding_targets",
         "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/graph",
         "@crates//:anyhow",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",

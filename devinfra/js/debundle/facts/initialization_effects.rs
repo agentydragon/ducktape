@@ -208,7 +208,7 @@ impl StatementFacts {
     /// One view of this owner's completed-initialization receipt and the own
     /// syntax-opacity bit it can discharge. The receipt is exact to this
     /// source owner; it never changes explicit heap cells or callee effects.
-    pub(crate) fn own_heap_content_summary(&self) -> OwnHeapContentSummary<'_> {
+    pub fn own_heap_content_summary(&self) -> OwnHeapContentSummary<'_> {
         let completed_initialization = self
             .synchronous_calls
             .as_ref()
@@ -223,7 +223,7 @@ impl StatementFacts {
     /// Shared with the binding timeline: module instantiation is not an
     /// evaluation-time write. A variable initialized with a function remains
     /// an evaluation-time initializer.
-    pub(crate) fn initializes_bindings_at_evaluation(&self) -> bool {
+    pub fn initializes_bindings_at_evaluation(&self) -> bool {
         !matches!(self.kind, StatementKind::Import | StatementKind::FnDecl)
             && !(self.kind == StatementKind::Export && self.declares_direct_function)
             && self.export_linkage != Some(ExportLinkage::Local)
@@ -406,8 +406,8 @@ impl StatementFacts {
     }
 }
 
-pub(crate) struct OwnHeapContentSummary<'a> {
-    pub(crate) opaque: bool,
+pub struct OwnHeapContentSummary<'a> {
+    pub opaque: bool,
     pub(crate) completed_initialization: Option<&'a CompletedInitialization>,
 }
 

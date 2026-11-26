@@ -36,12 +36,13 @@ use ::gate::{
     AtInitReadPosition, BlockingRejection, BlockingSccEntry, CutEdgeExplanation, CycleEdge,
     initializer_reason, render_binding_pairs,
 };
-use analysis::{
-    CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DependencyEdgeId,
-    DependencyGraphInput, EdgeRole, EdgeRoleReport, ModuleKey, Purity,
-};
+use analysis::Purity;
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
+use graph::{
+    CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DependencyEdgeId,
+    DependencyGraphInput, EdgeRole, EdgeRoleReport, ModuleKey,
+};
 use serde::Serialize;
 use spec::ModulePath;
 use swc_atoms::Atom;
@@ -291,7 +292,7 @@ pub struct GateDiagnoseTrace {
     pub call_site_source_location: Option<analysis::SourceLocation>,
     pub coverage: GateDiagnoseCoverage,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub matched_contract: Option<analysis::CallbackFactoryContractReport>,
+    pub matched_contract: Option<graph::CallbackFactoryContractReport>,
     pub first_rejected_guard: GateDiagnoseGuard,
 }
 
@@ -615,7 +616,7 @@ fn diagnose_binding(
 }
 
 fn dependency_report(
-    edge: &analysis::DependencyEdgeReport,
+    edge: &graph::DependencyEdgeReport,
     callee_source_unit: &str,
 ) -> GateDiagnoseDependency {
     GateDiagnoseDependency {

@@ -40,7 +40,7 @@ impl CellOverlap {
 }
 
 /// Returns the symmetric address overlap, preserving the source footprints.
-pub(crate) fn may_overlap(left: &EffectCell, right: &EffectCell) -> Option<CellOverlap> {
+pub fn may_overlap(left: &EffectCell, right: &EffectCell) -> Option<CellOverlap> {
     let law = if left == right {
         CellOverlapLaw::ExactCell
     } else if array_contents_alias(left, right) {
@@ -56,7 +56,7 @@ pub(crate) fn may_overlap(left: &EffectCell, right: &EffectCell) -> Option<CellO
 }
 
 /// Addresses conflict only when they overlap and at least one access writes.
-pub(crate) fn may_conflict(
+pub fn may_conflict(
     left: &EffectCell,
     left_writes: bool,
     right: &EffectCell,
@@ -73,7 +73,7 @@ pub(crate) fn may_conflict(
 /// Exact lookups are logarithmic. An `ArrayContents` query may additionally
 /// inspect only that origin's own-property range to find its first index or
 /// `length` alias.
-pub(crate) fn first_overlapping(
+pub fn first_overlapping(
     indexed: &BTreeSet<EffectCell>,
     query: &EffectCell,
 ) -> Option<CellOverlap> {
@@ -162,7 +162,7 @@ impl<V> Default for CellOverlapIndex<V> {
 }
 
 impl<V> CellOverlapIndex<V> {
-    pub(crate) fn insert(&mut self, cell: EffectCell, value: V) -> Option<V> {
+    pub fn insert(&mut self, cell: EffectCell, value: V) -> Option<V> {
         if !self.by_cell.contains_key(&cell) {
             self.index_cell(&cell);
         }
@@ -180,7 +180,7 @@ impl<V> CellOverlapIndex<V> {
         self.by_cell.entry(cell).or_default()
     }
 
-    pub(crate) fn remove_dominated(&mut self, query: &EffectCell) -> Vec<(EffectCell, V)> {
+    pub fn remove_dominated(&mut self, query: &EffectCell) -> Vec<(EffectCell, V)> {
         let cells = self
             .overlapping(query)
             .into_iter()
@@ -193,7 +193,7 @@ impl<V> CellOverlapIndex<V> {
             .collect()
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.by_cell.clear();
         self.array_properties.clear();
     }
@@ -216,7 +216,7 @@ impl<V> CellOverlapIndex<V> {
         Some(value)
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&EffectCell, &V)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&EffectCell, &V)> {
         self.by_cell.iter()
     }
 

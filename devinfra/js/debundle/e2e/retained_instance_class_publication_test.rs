@@ -235,7 +235,7 @@ fn modules(bindings: &[&'static str]) -> Vec<LogicalModuleEntry> {
     vec![module(bindings, &[])]
 }
 
-fn assert_factory_complete(graph: &analysis::DependencyGraphReport, binding: &str) {
+fn assert_factory_complete(graph: &graph::DependencyGraphReport, binding: &str) {
     let execution = node_declaring(graph, binding)
         .synchronous_execution
         .as_ref()
@@ -252,7 +252,7 @@ fn assert_factory_complete(graph: &analysis::DependencyGraphReport, binding: &st
     );
 }
 
-fn assert_class_members_escape_refusal(graph: &analysis::DependencyGraphReport, binding: &str) {
+fn assert_class_members_escape_refusal(graph: &graph::DependencyGraphReport, binding: &str) {
     let execution = node_declaring(graph, binding)
         .synchronous_execution
         .as_ref()
@@ -272,7 +272,7 @@ fn assert_class_members_escape_refusal(graph: &analysis::DependencyGraphReport, 
 }
 
 fn class_members_escape_rejection<'a>(
-    graph: &'a analysis::DependencyGraphReport,
+    graph: &'a graph::DependencyGraphReport,
     binding: &str,
 ) -> &'a analysis::reports::schema::LocalRecordFactoryRejection {
     let execution = node_declaring(graph, binding)

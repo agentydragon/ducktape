@@ -14,11 +14,12 @@ use std::collections::{BTreeSet, HashMap};
 use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
-use analysis::reports::source_unit_key;
 use analysis::{
-    BindingCatalogue, BindingId, BindingKind, BindingScopeError, DependencyGraph, LocalBindings,
-    ModuleId, PlannedModule,
+    BindingCatalogue, BindingId, BindingKind, BindingScopeError, LocalBindings, ModuleId,
+    PlannedModule,
 };
+use graph::DependencyGraph;
+use graph::report::source_unit_key;
 
 /// Per-chunk inputs + IR + input-derived caches.
 ///

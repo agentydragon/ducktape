@@ -35,12 +35,13 @@ use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitId;
 
-use crate::analysis_inputs::ResolvedCommutingStatements;
-use crate::facts::StatementFacts;
-use crate::graph::{
-    CommutingStatementsUnused, DependencyEdge, DependencyGraph, DependencyGraphBuildError,
-    GraphOptions, build_dependency_graph_with,
+use crate::{
+    DependencyEdge, DependencyGraph, DependencyGraphBuildError, GraphOptions,
+    build_dependency_graph_with,
 };
+use analysis::analysis_inputs::ResolvedCommutingStatements;
+use analysis::facts::StatementFacts;
+use analysis::reports::spec_lint::CommutingStatementsUnused;
 
 /// One atomic factor group: a set of source units that any valid
 /// factorization must keep co-located, plus the `DepKind`s of edges that
@@ -218,8 +219,8 @@ pub fn compute_atomic_groups(dependency_graph: &DependencyGraph) -> Vec<AtomicGr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis_inputs::CommutingStatementsRef;
-    use crate::graph::{DependencyEdgeId, EdgeReason, EdgeRole};
+    use crate::{DependencyEdgeId, EdgeReason, EdgeRole};
+    use analysis::analysis_inputs::CommutingStatementsRef;
     use source_identity::SourceUnitOrdinal;
 
     fn edge(kind: DepKind, inert: bool) -> DependencyEdge {
