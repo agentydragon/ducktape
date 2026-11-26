@@ -10,7 +10,10 @@ use relative_path::RelativePath;
 fn explicit_relative_specifier(path: String) -> String {
     if path.is_empty() {
         ".".to_string()
-    } else if path.starts_with('.') {
+    } else if matches!(path.as_str(), "." | "..")
+        || path.starts_with("./")
+        || path.starts_with("../")
+    {
         path
     } else {
         format!("./{path}")
