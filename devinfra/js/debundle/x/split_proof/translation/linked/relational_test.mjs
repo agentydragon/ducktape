@@ -1,22 +1,20 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { assertLinkedPreviewResult, assertMatchedModel, prepareLinkedFixture } from "./fixture_preview.mjs";
 import {
   arrow,
-  assertCertifiedResult,
-  assertRejected,
-  assertRejectedOrOrderKeptSlice,
   binary,
   block,
   call,
   exportNamed,
-  forcePreview,
   id,
   literal,
-  lower,
   moduleEvaluationOrder,
   observe,
-  ownerReaderSplit,
   primitive,
   program,
   returns,
@@ -29,6 +27,31 @@ const owner = "owner.mjs";
 const reader = "reader.mjs";
 const state = "state.mjs";
 
+function prepareComparison(
+  name,
+  source,
+  modules = { [owner]: ["#0"], [reader]: ["#1"], [entry]: ["#2"] },
+  order = [owner, reader]
+) {
+  return prepareLinkedFixture(name, source, { entry, modules, order, sequential: true });
+}
+
+async function checkComparison(fixture, expected) {
+  assertPublicEmissionRefused(fixture.manifest, fixture.out);
+  await assertLinkedPreviewResult(fixture, expected);
+}
+
+async function checkModelRefusal({ manifest, out, sourceFile, specFile }, reason) {
+  assertPublicEmissionRefused(manifest, out);
+  assert.deepEqual(observe(sourceFile, "result"), { result: true });
+  await withSplitPreview({ manifest }, ({ directory, entryFile }) => {
+    assert.deepEqual(observe(entryFile, "result"), { result: true });
+    const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
+    assert.equal(model.status, "refused", JSON.stringify(model));
+    assert.match(model.reason, reason, JSON.stringify(model));
+  });
+}
+
 const inBounds = `function inBounds(index, range) {
   return index >= 0 && index < range.limit;
 }`;
@@ -38,21 +61,30 @@ const numeric = `${inBounds}
   const result = inBounds(2, { limit });
   export { result };`;
 const placement = { [owner]: ["#0"], [state]: ["#1", "#2"], [reader]: ["#3"], [entry]: ["#4"] };
-assertCertifiedResult(ownerReaderSplit("eager-comparison", numeric, placement, [owner, state, reader]), true);
+await checkComparison(prepareComparison("eager-comparison", numeric, placement, [owner, state, reader]), true);
 
 // The hoisted var is undefined in the forced order, so the comparison sees
 // NaN and returns false. Both schedules complete normally.
 const earlyOrder = [owner, reader, state];
-const early = ownerReaderSplit("early-comparison", numeric, placement, earlyOrder);
-assertRejected(early, /probe executions completed normally with different final states/);
-const preview = path.join(early.dir, "preview");
-forcePreview(early.files, preview);
-assert.deepEqual(moduleEvaluationOrder(preview, entry), [...earlyOrder, entry]);
-assert.deepEqual(observe(early.files.sourceFile, "result"), { result: true });
-assert.deepEqual(observe(path.join(preview, entry), "result"), { result: false });
+const early = prepareComparison("early-comparison", numeric, placement, earlyOrder);
+assertPublicEmissionRefused(early.manifest, early.out);
+assert.deepEqual(observe(early.sourceFile, "result"), { result: true });
+await withSplitPreview({ manifest: early.manifest, expectedExit: 1 }, ({ directory, entryFile }) => {
+  assert.deepEqual(moduleEvaluationOrder(directory, entry), [...earlyOrder, entry]);
+  assert.deepEqual(observe(entryFile, "result"), { result: false });
+  const model = probeLinkedModel({
+    source: early.sourceFile,
+    spec: early.specFile,
+    directory,
+    observe: [["result"]],
+  });
+  assert.equal(model.status, "refused", JSON.stringify(model));
+  assert.equal(model.reason_code, "probe_mismatch", JSON.stringify(model));
+  assert.deepEqual(model.observation, { kind: "value", path: ["result"], original: "true", split: "false" });
+});
 
-assertCertifiedResult(
-  ownerReaderSplit(
+await checkComparison(
+  prepareComparison(
     "greater-or-equal-operand-order",
     `const compare = () => {
       let n = 0;
@@ -103,9 +135,9 @@ const generated = program([
   variable("const", "result", call(id("validate"))),
   exportNamed([["result", "result"]]),
 ]);
-assertCertifiedResult(ownerReaderSplit("generated-comparisons", generated), true);
+await checkComparison(prepareComparison("generated-comparisons", generated), true);
 
-const object = ownerReaderSplit(
+const object = prepareComparison(
   "object-coercion",
   `const compare = () => {
     const object = { valueOf: () => 1 };
@@ -114,10 +146,9 @@ const object = ownerReaderSplit(
   const result = compare();
   export { result };`
 );
-assert.deepEqual(observe(object.files.sourceFile, "result"), { result: true });
-assertRejectedOrOrderKeptSlice(object, /an object is converted to a primitive/);
+await checkModelRefusal(object, /an object is converted to a primitive/);
 
-const supplementary = ownerReaderSplit(
+const supplementary = prepareComparison(
   "supplementary-property",
   `const first = "𐀀";
     const text = "A😀\\ufe0fZ";
@@ -134,27 +165,33 @@ const supplementary = ownerReaderSplit(
     export { result };`,
   { [owner]: ["#0", "#1"], [reader]: ["#2", "#3"], [entry]: ["#4"] }
 );
-assertCertifiedResult(supplementary, "𐀂/𐀀/A😀\ufe0fZ");
-const checked = () =>
-  lower(supplementary.files.sourceFile, supplementary.files.specFile, supplementary.out, ["--check-output"]);
-assert.deepEqual(checked().verdict, supplementary.verdict);
-
-const readerFile = path.join(supplementary.out, reader);
-const readerSource = readFileSync(readerFile, "utf8");
-const changedReader = readerSource.replace("𐀂", "𐀃");
-assert.notEqual(changedReader, readerSource);
-writeFileSync(readerFile, changedReader);
-assert.deepEqual(observe(path.join(supplementary.out, entry), "result"), { result: "𐀃/𐀀/A😀\ufe0fZ" });
-const changed = checked();
-assert.equal(changed.verdict.status, "rejected", changed.log);
+const { manifest, out, sourceFile, specFile } = supplementary;
+const expected = "𐀂/𐀀/A😀\ufe0fZ";
+assertPublicEmissionRefused(manifest, out);
+assert.deepEqual(observe(sourceFile, "result"), { result: expected });
+await withSplitPreview({ manifest }, ({ directory, entryFile }) => {
+  assert.deepEqual(observe(entryFile, "result"), { result: expected });
+  assertMatchedModel(supplementary, directory, [[["result"], expected]]);
+  const readerFile = path.join(directory, reader);
+  const readerSource = readFileSync(readerFile, "utf8");
+  const changed = readerSource.replace("𐀂", "𐀃");
+  assert.notEqual(changed, readerSource);
+  writeFileSync(readerFile, changed);
+  assert.deepEqual(observe(entryFile, "result"), { result: "𐀃/𐀀/A😀\ufe0fZ" });
+  const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
+  assert.equal(model.status, "refused", JSON.stringify(model));
+  assert.equal(model.reason_code, "linked_input", JSON.stringify(model));
+  assert.match(model.reason, /emitted syntax differs from original unit 2/);
+  assertPublicEmissionRefused(manifest, directory);
+  assertPublicRecheckRefused(manifest, directory);
+});
 
 for (const index of [0, 1]) {
-  const half = ownerReaderSplit(
+  const half = prepareComparison(
     `supplementary-index-${index}`,
     `const read = () => "𐀀"[${index}] !== "\\ufffd"; const result = read(); export { result };`
   );
-  assert.deepEqual(observe(half.files.sourceFile, "result"), { result: true });
-  assertRejectedOrOrderKeptSlice(half, /string index reads an isolated UTF-16 surrogate/);
+  await checkModelRefusal(half, /string index reads an isolated UTF-16 surrogate/);
 }
 
 // Replacing the isolated surrogate with U+FFFD would flip the result.
@@ -162,10 +199,9 @@ for (const [label, value] of [
   ["literal", '"\\ud800"'],
   ["template", "`\\ud800`"],
 ]) {
-  const isolated = ownerReaderSplit(
+  const isolated = prepareComparison(
     `isolated-surrogate-${label}`,
     `const compare = () => ${value} < "\\ue000"; const result = compare(); export { result };`
   );
-  assert.deepEqual(observe(isolated.files.sourceFile, "result"), { result: true });
-  assertRejectedOrOrderKeptSlice(isolated, /isolated UTF-16 surrogate/);
+  await checkModelRefusal(isolated, /isolated UTF-16 surrogate/);
 }

@@ -226,10 +226,14 @@ _RECORD_TESTS = [
 ]
 
 _FIXTURE_PREVIEW_TESTS = [
+    "regexp_test",
+    "relational_test",
     "rest_parameters_test",
     "sequence_test",
     "spread_arguments_test",
     "strict_arguments_test",
+    "switch_test",
+    "tagged_templates_test",
     "templates_test",
 ]
 

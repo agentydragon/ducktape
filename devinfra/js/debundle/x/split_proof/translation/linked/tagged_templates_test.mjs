@@ -1,12 +1,22 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertCertifiedResult, caseShard, lower, prepare, root, workerSplit } from "./harness.mjs";
+import { writeDeployment } from "../testing/deployment_manifest.mjs";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import {
+  assertLinkedPreviewResult,
+  assertMatchedModel,
+  expectedModelObservations,
+  prepareWorkerFixture,
+} from "./fixture_preview.mjs";
+import { caseShard, observe, prepare, root } from "./harness.mjs";
 
 const runCase = caseShard();
 if (runCase("stable-sites")) {
-  const test = workerSplit(
+  const fixture = prepareWorkerFixture(
     "stable-template-sites",
     "function render(tag) { return [tag`same`, tag`same`]; }\n" +
       `const identity = value => value;
@@ -23,17 +33,22 @@ if (runCase("stable-sites")) {
        })();`,
     ["#1", "#2"]
   );
-  assertCertifiedResult(test, ["same"]);
-  for (const f of [test.files.sourceFile, path.join(test.out, "entry.mjs")]) {
-    const { result } = await import(pathToFileURL(f).href);
-    assert(Object.isFrozen(result) && Object.isFrozen(result.raw));
-    assert.deepEqual(Object.getOwnPropertyDescriptor(result, "raw"), {
-      value: result.raw,
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    });
-  }
+  const { manifest, out, sourceFile } = fixture;
+  assertPublicEmissionRefused(manifest, out);
+  await withSplitPreview({ manifest }, async ({ directory, entryFile }) => {
+    assertMatchedModel(fixture, directory, [[["result", "0"], "same"]]);
+    for (const file of [sourceFile, entryFile]) {
+      const { result } = await import(pathToFileURL(file).href);
+      assert.deepEqual(result, ["same"]);
+      assert(Object.isFrozen(result) && Object.isFrozen(result.raw));
+      assert.deepEqual(Object.getOwnPropertyDescriptor(result, "raw"), {
+        value: result.raw,
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      });
+    }
+  });
 }
 
 if (runCase("imported-tag")) {
@@ -49,20 +64,47 @@ if (runCase("imported-tag")) {
     spec: { entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2"] }, order: [], sequential: true },
   });
   const out = path.join(dir, "out");
-  const contract = path.join(dir, "browser.json");
-  writeFileSync(contract, JSON.stringify({ profile: "browser-page" }));
-  const options = ["--host-contract", contract];
-  const checked = lower(files.sourceFile, files.specFile, out, options);
-  assertCertifiedResult({ ...checked, files, out }, "ab7c");
-  assert(checked.verdict.assumptions.some((a) => a.includes("intrinsic Array constructor")));
-  assert(checked.verdict.assumptions.some((a) => a.includes("intrinsic Array.from function")));
-  const verify = () => lower(files.sourceFile, files.specFile, out, [...options, "--check-output"]);
-  assert.equal(verify().verdict.status, "certified");
-  const entry = path.join(out, "entry.mjs");
-  const printed = readFileSync(entry, "utf8");
-  assert(printed.includes("a\\x62"));
-  writeFileSync(entry, printed.replace("a\\x62", "ab"));
-  assert.equal(verify().verdict.status, "rejected");
+  const { sourceFile, specFile, providerFile } = files;
+  const manifest = writeDeployment(sourceFile, specFile, out);
+  assertPublicEmissionRefused(manifest, out);
+  assert.deepEqual(observe(sourceFile, "result"), { result: "ab7c" });
+  await withSplitPreview({ manifest }, async ({ directory, entryFile }) => {
+    // The unchanged provider lives beside the original fixture and is shared by the model pair.
+    copyFileSync(providerFile, path.join(directory, "provider.mjs"));
+    assert.deepEqual(observe(entryFile, "result"), { result: "ab7c" });
+    const options = {
+      source: sourceFile,
+      spec: specFile,
+      directory,
+      providers: ["provider.mjs"],
+      host: { profile: "browser-page" },
+      observe: [["result"]],
+    };
+    const model = probeLinkedModel(options);
+    assert.equal(model.status, "matched", JSON.stringify(model));
+    assert(model.fuel > 0);
+    assert.deepEqual(model.observed, expectedModelObservations([[["result"], "ab7c"]]));
+    assert(
+      model.assumptions.some((a) => a.includes("intrinsic Array constructor")),
+      JSON.stringify(model)
+    );
+    assert(
+      model.assumptions.some((a) => a.includes("intrinsic Array.from function")),
+      JSON.stringify(model)
+    );
+
+    const printed = readFileSync(entryFile, "utf8");
+    const changed = printed.replace("a\\x62", "ab");
+    assert.notEqual(changed, printed);
+    writeFileSync(entryFile, changed);
+    const mutated = probeLinkedModel(options);
+    assert.equal(mutated.status, "refused", JSON.stringify(mutated));
+    assert.equal(mutated.reason_code, "linked_input", JSON.stringify(mutated));
+    assert.match(mutated.reason, /emitted syntax differs from original unit 1/);
+    await assert.rejects(import(pathToFileURL(entryFile).href), (reason) => reason === "tag");
+    assertPublicEmissionRefused(manifest, directory);
+    assertPublicRecheckRefused(manifest, directory);
+  });
 }
 
 if (runCase("order-and-invalid-escape")) {
@@ -79,5 +121,14 @@ if (runCase("order-and-invalid-escape")) {
     "  return [value, trace.log]; };",
     "export const result = run();",
   ].join("\n");
-  assertCertifiedResult(workerSplit("tag-order", source), [4, "gstgc"]);
+  const fixture = prepareWorkerFixture("tag-order", source);
+  assertPublicEmissionRefused(fixture.manifest, fixture.out);
+  await assertLinkedPreviewResult(
+    fixture,
+    [4, "gstgc"],
+    [
+      [["result", "0"], 4],
+      [["result", "1"], "gstgc"],
+    ]
+  );
 }
