@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { writeDeployment } from "../testing/deployment_manifest.mjs";
 import path from "node:path";
 
@@ -20,9 +20,17 @@ writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs":
 writeFileSync(host, JSON.stringify({ profile: "browser-page" }));
 
 function certify(checkOutput) {
-  const args = [writeDeployment(source, spec, out), out, "--require", "normal-completion", "--host-contract", host];
+  const args = [
+    writeDeployment(source, spec, out),
+    out,
+    "--require",
+    "normal-completion",
+    "--host-contract",
+    host,
+    "--structural",
+  ];
   if (checkOutput) args.push("--check-output");
-  // Generated proofs must use the build-selected SDK and imports.
+  // The compiled checker must not depend on ambient Lean paths.
   const run = spawnSync(process.env.LOWERSPLIT, args, {
     encoding: "utf8",
     env: {
@@ -35,12 +43,35 @@ function certify(checkOutput) {
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const verdict = JSON.parse(run.stdout);
   assert.equal(verdict.status, "certified", run.stdout + run.stderr);
-  assert.equal(verdict.scope, "linked-programs", run.stdout + run.stderr);
-  assert.match(run.stderr, /"phase":"execution_proof"/, run.stderr);
-  assert.match(run.stderr, /"phase":"ast_correspondence"/, run.stderr);
-  assert.doesNotMatch(run.stderr, /"phase":"LinkedReplayInput"/, run.stderr);
+  assert.equal(verdict.scope, "linked-structural-order", run.stdout + run.stderr);
+  assert.match(run.stderr, /"phase":"output_comparison"/, run.stderr);
+  assert.match(run.stderr, /"phase":"structural_certificate"/, run.stderr);
+  assert.doesNotMatch(run.stderr, /"phase":"(?:execution_proof|ast_correspondence|LinkedReplayInput)"/, run.stderr);
   return verdict;
 }
 
 const emitted = certify(false);
 assert.deepEqual(certify(true), emitted);
+
+// The disk gate rejects a changed file and leaves the supplied tree untouched.
+const emittedFile = path.join(out, "entry.mjs");
+const tampered = readFileSync(emittedFile, "utf8").replace("count = 0", "count = 1");
+assert.notEqual(tampered, readFileSync(emittedFile, "utf8"));
+writeFileSync(emittedFile, tampered);
+const check = spawnSync(
+  process.env.LOWERSPLIT,
+  [
+    writeDeployment(source, spec, out),
+    out,
+    "--require",
+    "normal-completion",
+    "--host-contract",
+    host,
+    "--structural",
+    "--check-output",
+  ],
+  { encoding: "utf8" }
+);
+assert.equal(check.status, 1, check.stdout + check.stderr);
+assert.equal(JSON.parse(check.stdout).status, "rejected", check.stdout + check.stderr);
+assert.equal(readFileSync(emittedFile, "utf8"), tampered);
