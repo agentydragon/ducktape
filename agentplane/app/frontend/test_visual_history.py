@@ -235,7 +235,7 @@ async def test_composer_autosuspend_countdown(view: VisualPage, app: AgentplaneF
     await expect(autosuspend).to_be_visible()
     await expect(autosuspend).to_have_text("Sandbox autosuspends in ~12m")
     await expect(activity).to_be_visible()
-    await expect(activity).to_contain_text("Model activity: 13m ago · Idle")
+    await expect(activity).to_contain_text("Model activity: 13 min ago · Idle")
     await view.check(context="autosuspend composer ready")
     await view.capture()
 
