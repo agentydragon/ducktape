@@ -143,8 +143,9 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   widens what it may reach; it never takes a credential away from a call that asks for one.
 - Where several matching rules would decide alike — two naming the same credential, two naming
   none — the first in walk order is the one recorded: bindings by name, their
-  egress policies as listed, their rules in order. Which one that is changes neither the verdict nor what
-  is forwarded, and shows only in the decision log.
+  egress policies as listed, their rules in order. The proxy uses the deciding rule's
+  `clusterInternal` flag for address pinning. Among matches with the same routing and credential
+  behavior, order determines which rule the decision log names.
 - Hosts match exactly (case-insensitive) or by `*.` suffix, which never matches the apex. Path
   globs match the path without its query: `*` stays within one segment, `**` crosses segments.
 - Substitution rebuilds each presented value around the real credential, through the same parse

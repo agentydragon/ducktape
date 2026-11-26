@@ -1,10 +1,8 @@
 # Egress policy composition
 
-How `PolicySet`s, `PolicyBinding`s and the ServiceAccounts workloads run as compose into one egress
-decision: the arity between them, what that makes reusable, and what follows from a rule language
-with no way to express exclusion. The proxy that enforces the result is <../egress/SPEC.md>; the
-kinds are <../crds/manifests/crd-policysets.yaml> and <../crds/manifests/crd-policybindings.yaml>
-([policy sets](adr_policy_sets.md)).
+A Sandbox presents its workload credential to the egress proxy. The proxy resolves its Identity,
+reads that subject's live bindings and evaluates the egress rules in their PolicySets.
+[Egress contract](../egress/SPEC.md#decision) · [Policy sets](adr_policy_sets.md)
 
 ## The shape
 
@@ -17,23 +15,11 @@ kinds are <../crds/manifests/crd-policysets.yaml> and <../crds/manifests/crd-pol
   never authored, and detection is namespace-global.
 - **`PolicyBinding.spec.policySets`** is an array of set names, in precedence order. A binding may
   name many sets and a set may be named by many bindings: n:m.
-- **`PolicyBinding.spec.subject`** names one ServiceAccount by namespace and name; an account may
-  be named by many bindings, and a multi-subject grant is one binding per subject. Every Pod
-  running as an account is that subject, so the app gives each sandbox an account of its own.
+- **`PolicyBinding.spec.subject`** names one Identity or namespaced ServiceAccount. A subject may
+  hold several independent bindings. All Sandboxes acting as the same Identity use its grants.
 
-A set on its own grants nothing; a binding grants by existing. The Policy Controller deletes a
-binding at its `expiresAt`, so the proxy never handles expiry itself.
-
-### The app writes only 1×N
-
-The app writes each runtime grant as a `PolicyBinding` naming the account the Sandbox runs as, for
-the operator who asked and for PolicySets of any rule type, with an `ownerReference` on the Sandbox
-so deleting the sandbox garbage-collects the grant.
-
-The object's name comes from `metadata.generateName` with the prefix `{sandbox}-`, so the API
-server assigns it and a sandbox can be granted any number of times; a name derived from the
-sandbox alone would make every grant after the first a 409. Nothing reads a binding back by name:
-the app selects by subject and revokes whatever name it was given.
+A set grants access only through a live binding. The shared policy reader enforces the binding's
+expiry even while the Policy Controller is down. [Expiry](../policy_controller/SPEC.md#expiry)
 
 ## Worked examples
 
@@ -43,7 +29,7 @@ Each gets one binding:
 ```text
 docs-writer-h2n4q   subject: docs-writer   policySets: [pypi-readonly]
 pr-bot-8fj3d        subject: pr-bot        policySets: [github-agentydragon-agent]
-researcher-4m9tz    subject: researcher    policySets: [github-agentydragon-agent, open-internet]
+researcher-4m9tz    subject: researcher    policySets: [github-agentydragon-agent, public-internet]
 ```
 
 "Extra on top" is a longer set list, not a second mechanism:
@@ -55,13 +41,13 @@ metadata:
   generateName: researcher-
 spec:
   subject:
-    namespace: sandboxes
-    name: researcher
-  policySets: [github-agentydragon-agent, open-internet]
+    identity:
+      name: researcher
+  policySets: [github-agentydragon-agent, public-internet]
 ```
 
-The specific, credentialed set is listed first. Why that order matters, and why it should not
-have to, is the rest of this page.
+The credentialed set can appear in either position. A presented credential placeholder selects
+which matching rules can authorize its use.
 
 ## Rules are alternatives, and there is no exclusion
 
@@ -110,52 +96,17 @@ For requests with no placeholder, the existing first-match ordering still select
 `clusterInternal` flag. Put explicit internal-host sets ahead of `public-internet` when
 those routes are needed; blanket access alone never authorizes a private address.
 
-## A broad set can break a credentialed one
-
-Where the first matching rule decides, adding a broad set to a subject that already has a
-credentialed one can stop the credentialed traffic instead of widening it.
-
-Take `researcher` above with the list reversed, so a credential-less `open-internet` rule
-(`hosts: ["*"]`) precedes `github-agentydragon-agent`. A request to `api.github.com` carrying
-`Authorization: Bearer agentplane-credential-github-pat`:
-
-1. `open-internet`'s rule matches first. It names no credential, so nothing is substituted.
-2. The scan for presented credentials walks every `EgressCredential` in the namespace and finds
-   `github-pat` presented at its `schemeToken` target, which no matching rule names.
-3. The request is refused `403` with `x-agentplane-egress: denied; reason=placeholder-unresolved`.
-
-Granting more would make GitHub start failing, which is what placeholder-directed matching below
-forecloses.
-
-Inside one binding the author chooses that order. Across bindings nobody does: the policy reader
-index walks a subject's bindings in sorted binding-name order, so the **binding name** decides. A
-seed named `all-sandboxes-open` is consulted before `researcher-4m9tz` and produces exactly the
-refusal above; the same binding named `zz-open` is consulted after it and the request succeeds. The
-alphabet is not a policy decision.
-
 ## Decided: placeholder-directed matching
 
-The placeholder a request carries already says which credential the caller wants. The model takes
-it as the selector:
+Selecting the first matching rule used to let a broad credentialless grant shadow a narrower
+credentialed grant. Within a binding, the result depended on set order. Across bindings it
+depended on the generated binding names.
 
-- A request presenting a known placeholder is a request to use that credential. It is allowed if
-  and only if some rule bound to the subject names **that credential** for that host, method and
-  path, and that credential is what gets substituted.
-- A request presenting no known placeholder falls back to the first bound rule that matches.
-
-The scan for presented credentials walks every `EgressCredential` in the namespace rather than only
-the bound ones, so a placeholder is a namespace-global credential identifier rather than a string
-private to the rule that mentions it -- which is also why the placeholder is derived from the
-credential's name instead of being written by hand.
-
-What it buys:
-
-- Allow versus deny becomes a union over the matching rules, which is what "rules are alternatives"
-  already claims. A broad policy is then safely additive: it can widen a subject's reach and cannot
-  take away a credentialed route.
-- Cross-binding name order stops being observable, so there is nothing left to prioritise.
-- Residual order — two rules naming the same credential, or two naming none — decides only which
-  rule the decision log names.
+The proxy now looks for a recognized placeholder across the namespace's credentials. A request
+presenting one needs a matching bound rule for that credential, host, method and path. In the
+example above, adding `public-internet` leaves the GitHub credential usable. Without a known
+placeholder the first matching rule still decides, including whether it permits an internal
+destination. [Egress decisions](../egress/SPEC.md#decision)
 
 ### Rejected: a priority integer on the binding
 
@@ -184,39 +135,20 @@ reusable bundle across rule types is a `PolicySet`, and a launch preset only nam
 
 ## A grant after launch is a new binding
 
-Granting a set to an already-running sandbox creates a new binding naming just that sandbox,
-rather than appending the set to a binding the sandbox already has.
-
-`expiresAt` is per binding. A time-limited grant appended to a binding that also carries the
-launch-time picks would put its expiry on all of them, so at the deadline the sandbox would lose
-the sets it was created with. One binding per grant keeps each lifetime its own, and the union
-over a subject's bindings composes them. Revocation follows the same seam: deleting one grant's
-binding takes back that grant and nothing else.
-
-The app writes it at `POST /sandboxes/{name}/policy-bindings`, which refuses a set name the namespace does
-not hold. A dangling name is not corruption — the CRD admits any string and the proxy reports it
-as `EgressReady=False` (`PolicySetUnavailable`) while the binding's other sets still grant — so
-the refusal is a guard on the typo at the moment of writing, not a guarantee: a set deleted after
-the grant produces the same dangling name.
+The app calls PolicyService to grant selected sets through a running Sandbox. The new binding's
+subject is the Sandbox's current Identity. Other Sandboxes using that Identity share the grant.
+The Kubernetes API generates a binding name for each request, so a later grant can expire or be
+revoked independently of the launch-time sets. PolicyService checks that the requested sets
+exist. A subsequent deletion can leave a missing set, which the proxy reports in `EgressReady`.
+[Grant and revoke contract](../policy_controller/SPEC.md#grants)
 
 ## Where a binding came from, and what ends it
 
-Two provenances, and the view distinguishes them by what is on the object rather than by anything
-we stamp:
-
-- A binding the app created at runtime carries an `ownerReference` to its one Sandbox, so deleting
-  the sandbox garbage-collects the grant.
-- A binding Flux applied carries Flux's inventory labels (`kustomize.toolkit.fluxcd.io/name`),
-  which is what the view reads to say "from git" and what the app refuses to revoke: Flux prunes
-  only what it applied and would re-create it on the next reconcile.
-
-Who created a runtime binding is not re-asserted as a label of our own. Creating one is the whole
-grant, so everyone who may create one is equally entitled, and the API server's audit log and
-`managedFields` record the actor better than we could.
-
-Owner references cascade on deletion, not on liveness. Nothing is owned by the app's Pod or its
-Deployment, so the app going down revokes nothing — `expiresAt` is what fails closed, enforced by the
-Policy Controller with no app in the loop.
+A grant made through a Sandbox has a Sandbox owner reference. A grant made directly to an
+Identity at launch has an Identity owner reference. These lifetimes matter when several Sandboxes
+share an Identity. The Sandbox revoke operation also checks the binding's UID and refuses
+Flux-managed bindings, which GitOps would restore. Authorization continues independently of the
+app's availability. [Revocation timing](../policy_controller/SPEC.md#revocation-timing)
 
 ### Rejected: the app renewing a grant like a lease
 
@@ -237,7 +169,7 @@ until a rule needs one.
 
 The `inference-experiments` set in staging grants direct Ollama
 inference and LiteLLM's existing `cheap-experiments` key. It is separate from
-`basic`, which contains Agentplane platform operations only. New sandbox launches
+`basic-identity`, which contains Agentplane platform operations. New sandbox launches
 receive both through the deployment's default policies; standing caller bindings
 and static OpenClaw explicitly include `inference-experiments`. Existing per-sandbox
 bindings need an explicit grant update or a new sandbox; changing defaults does not
