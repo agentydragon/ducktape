@@ -73,11 +73,6 @@ mod set_iterables;
 pub mod source_unit_read_closure;
 pub mod standard_globals;
 pub mod statement_facts;
-pub mod value_flow;
-#[cfg(test)]
-mod value_flow_tests;
-#[cfg(test)]
-mod value_set_tests;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
@@ -112,8 +107,7 @@ pub use statement_facts::{
     ReturnedRecordUseFact,
 };
 pub(crate) use statement_facts::{ConstructorFacts, ExportLinkage};
-pub(crate) use value_flow::{CandidateObjectIndex, own_data_keys};
-pub use value_flow::{ChunkValueFlow, ProgramFlowModule, ProgramValueFlows, program_value_flows};
+pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, own_data_keys};
 
 // Public API: importable at `facts::<item>` exactly as before the split.
 pub use analyze::{

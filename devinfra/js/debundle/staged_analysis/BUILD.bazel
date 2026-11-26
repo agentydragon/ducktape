@@ -24,6 +24,7 @@ rust_library(
         "//devinfra/js/debundle/artifacts:artifact",
         "//devinfra/js/debundle/chunk_analysis",
         "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/value_flow",
         "//devinfra/js/debundle/vendor",
         "@crates//:anyhow",
         "@crates//:rayon",

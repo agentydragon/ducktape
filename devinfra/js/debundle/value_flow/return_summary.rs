@@ -161,9 +161,9 @@ fn is_effect_prefix(expression: &Expr, parameter: &Ident) -> bool {
 /// Prepared from the final return only; the existing lowering walk separately
 /// certifies all writes, dynamic scope and owned returns before admission.
 pub(super) struct Candidate {
-    pub(crate) parameter: BindingSlot,
-    pub(crate) return_start: u32,
-    pub(crate) summary: ReturnSummary,
+    pub parameter: BindingSlot,
+    pub return_start: u32,
+    pub summary: ReturnSummary,
 }
 
 pub(super) fn candidate(function: &Function, symbols: &mut FlowSymbols) -> Option<Candidate> {
