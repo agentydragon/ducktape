@@ -694,6 +694,25 @@ func TestIdentityWatchFollowsIdentitiesForReaderServicesOnly(t *testing.T) {
 	}
 }
 
+func TestGetIdentityReadsOneIdentityForReaderServicesOnly(t *testing.T) {
+	api, kube := fixture(t)
+	created := testIdentity("just-created-identity", nil)
+	created.ResourceVersion = ""
+	if err := kube.Create(context.Background(), created); err != nil {
+		t.Fatal(err)
+	}
+	got, err := api["app"].GetIdentity(testContext(t), &policypb.GetIdentityRequest{Name: "just-created-identity"})
+	if err != nil || got.GetIdentity().GetIdentity().GetUid() != "uid-just-created-identity" {
+		t.Fatalf("get = %v %v", got, err)
+	}
+	if _, err := api["app"].GetIdentity(testContext(t), &policypb.GetIdentityRequest{Name: "absent-identity"}); status.Code(err) != codes.NotFound {
+		t.Fatalf("absent: %v, want NotFound", err)
+	}
+	if _, err := api["unlisted"].GetIdentity(testContext(t), &policypb.GetIdentityRequest{Name: "just-created-identity"}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("unlisted service: %v, want PermissionDenied", err)
+	}
+}
+
 func TestDeleteIdentityRemovesAnUnreferencedIdentityExactly(t *testing.T) {
 	identity := testIdentity("unreferenced-identity", nil)
 	api, kube := fixture(t, identity, identityBinding("own-launch-binding", "unreferenced-identity", identity))

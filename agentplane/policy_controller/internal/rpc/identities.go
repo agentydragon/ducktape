@@ -19,6 +19,30 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// GetIdentity reads through the uncached client, so it sees an Identity as soon as CreateIdentity returns.
+func (s *Service) GetIdentity(ctx context.Context, request *policypb.GetIdentityRequest) (*policypb.GetIdentityResponse, error) {
+	if err := s.requireReader(ctx); err != nil {
+		return nil, err
+	}
+	if request.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "Identity name is required")
+	}
+	identity := &policyapi.Identity{}
+	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: request.GetName()}, identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Error(codes.NotFound, "Identity not found")
+		}
+		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
+	}
+	message, err := identityMessage(identity)
+	if err != nil {
+		slog.ErrorContext(ctx, "PolicyService read an invalid Identity", "error", err)
+		return nil, status.Error(codes.Internal, "Identity response is invalid")
+	}
+	return &policypb.GetIdentityResponse{Identity: message}, nil
+}
+
 func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteIdentityRequest) (*policypb.DeleteIdentityResponse, error) {
 	if request.GetNamespace() == "" || request.GetName() == "" || request.GetUid() == "" {
 		return nil, status.Error(codes.InvalidArgument, "Identity namespace, name, and UID are required")

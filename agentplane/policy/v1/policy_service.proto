@@ -40,6 +40,12 @@ service PolicyService {
   rpc WatchIdentities(WatchIdentitiesRequest) returns (stream WatchIdentitiesResponse) {
     option (google.api.http) = {get: "/v1/identities:watch"};
   }
+  // One Identity, read from the API server rather than a watch: a reader whose WatchIdentities view
+  // has not yet seen a just-created Identity asks here before refusing it. NotFound when absent.
+  // Reader services only.
+  rpc GetIdentity(GetIdentityRequest) returns (GetIdentityResponse) {
+    option (google.api.http) = {get: "/v1/identities/{name}"};
+  }
   // Deletes one Identity incarnation, and with it, by garbage collection, everything it owns. Refused
   // for an Identity Flux manages, which Flux would recreate; while a PolicyBinding the Identity does
   // not own names it, since such a binding would grant a later Identity of the same name; and while a
@@ -142,6 +148,8 @@ message Identity {
   google.protobuf.Timestamp deletion_timestamp = 5;
 }
 message WatchIdentitiesRequest {}
+message GetIdentityRequest { string name = 1; }
+message GetIdentityResponse { Identity identity = 1; }
 message IdentityChunk { repeated Identity identities = 1; }
 message WatchIdentitiesResponse {
   oneof frame {
