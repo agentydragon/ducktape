@@ -505,13 +505,14 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 				// End the send's lease after Send starts, independent of how long a
 				// PostgreSQL connection or initial snapshot would take to acquire.
 				go func() {
-					ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+					err := sendWatchDispatch(leaseCtx, stream, &dispatcherpb.WatchDispatchesResponse{
 						Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
 					})
-					if !ended && err == nil {
-						err = errors.New("send did not end at its lease boundary")
+					if status.Code(err) != codes.Canceled {
+						done <- fmt.Errorf("send did not end at its lease boundary: %v", err)
+						return
 					}
-					done <- err
+					done <- watchEnd(ctx, leaseCtx, err)
 				}()
 			}
 			select {
