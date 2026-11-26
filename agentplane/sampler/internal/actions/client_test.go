@@ -42,6 +42,8 @@ type actionsService struct {
 	releaseWatch   chan struct{}
 	catalogWait    <-chan struct{}
 	catalogEntered chan struct{}
+	// streamReleased, when set, keeps the watch open after the terminal receipt and is closed once the client releases it.
+	streamReleased chan struct{}
 }
 
 func (s *actionsService) record(ctx context.Context) error {
@@ -153,7 +155,14 @@ func (s *actionsService) WatchActionRequest(request *action_servicepb.WatchActio
 	}
 	terminal := proto.Clone(pending).(*action_servicepb.ActionRequest)
 	terminal.State = action_servicepb.ActionState_ACTION_STATE_SUCCEEDED
-	return stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: terminal})
+	if err := stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: terminal}); err != nil {
+		return err
+	}
+	if s.streamReleased != nil {
+		<-stream.Context().Done()
+		close(s.streamReleased)
+	}
+	return nil
 }
 
 func TestSessionBindsClonedIdentityAndRecoversWithoutResubmitting(t *testing.T) {
@@ -276,6 +285,26 @@ func TestAwaitRetriesWatchAndDoesNotApplyUnaryTimeout(t *testing.T) {
 	service.mu.Unlock()
 	if watchCalls != 2 {
 		t.Fatalf("WatchActionRequest calls = %d, want transient attempt plus reconnect", watchCalls)
+	}
+}
+
+func TestAwaitReleasesWatchStreamAfterTerminalReceipt(t *testing.T) {
+	service := &actionsService{streamReleased: make(chan struct{})}
+	client := newTestClient(t, service, 150*time.Millisecond)
+	defer client.Close()
+	session, err := client.Bind(testSessionID, &identitypb.Identity{Name: "sampler-user", Uid: "identity-incarnation-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The caller context outlives Await, as a delegate call's context does.
+	request, err := session.Await(t.Context(), "018f4e32-6632-7e7f-83dd-7f90ccf84f69")
+	if err != nil || request.GetState() != action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
+		t.Fatalf("Await() = %v, %v", request, err)
+	}
+	select {
+	case <-service.streamReleased:
+	case <-time.After(3 * time.Second):
+		t.Fatal("watch stream stayed open after Await returned")
 	}
 }
 
