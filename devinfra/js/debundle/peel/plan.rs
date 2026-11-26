@@ -689,37 +689,8 @@ fn explain_from_graph(
     )?;
     let mut source_units = source_units_for_ids(report, &source_unit_ids);
 
-    let mut incoming_edges = Vec::<DependencyEdgeReport>::new();
-    let mut outgoing_edges = Vec::<DependencyEdgeReport>::new();
-    let direction_incoming = !matches!(args.direction, ExplainDirection::Outgoing);
-    let direction_outgoing = !matches!(args.direction, ExplainDirection::Incoming);
-    for source_unit_id in &source_unit_ids {
-        let source_unit = graph
-            .source_unit_id(source_unit_id)
-            .with_context(|| {
-                format!(
-                    "explain selection contains source unit {source_unit_id:?} absent from the checked graph input"
-                )
-            })?;
-        if direction_incoming {
-            for &edge_id in graph.graph().in_edges_of(source_unit) {
-                let edge = graph.graph().edge(edge_id);
-                let kind = edge.reason.kind();
-                if args.reasons.is_empty() || args.reasons.contains(&kind) {
-                    incoming_edges.push(graph.edge_report(edge_id).clone());
-                }
-            }
-        }
-        if direction_outgoing {
-            for &edge_id in graph.graph().out_edges_of(source_unit) {
-                let edge = graph.graph().edge(edge_id);
-                let kind = edge.reason.kind();
-                if args.reasons.is_empty() || args.reasons.contains(&kind) {
-                    outgoing_edges.push(graph.edge_report(edge_id).clone());
-                }
-            }
-        }
-    }
+    let (mut incoming_edges, mut outgoing_edges) =
+        selected_dependency_edges(graph, &source_unit_ids, args)?;
     let selected_atomic_group_ids = atomic_group_ids_for_source_unit_set(report, &source_unit_ids);
     let mut atomic_groups: Vec<AtomicGroupReport> = report
         .atomic_graph
@@ -868,59 +839,8 @@ fn explain_from_graph(
     let mut limited_source_unit_ids: Vec<_> = source_unit_ids.into_iter().collect();
     limited_source_unit_ids.sort_by_key(|id| !preferred_source_unit_ids.contains(id));
 
-    let checked_properties: BTreeSet<_> = source_units
-        .iter()
-        .chain(&neighbor_source_units)
-        .filter_map(|unit| unit.synchronous_execution.as_ref())
-        .flat_map(|execution| {
-            execution
-                .native_prototype_property_checks
-                .iter()
-                .map(|check| &check.property)
-        })
-        .collect();
-    let mut native_prototype_mutations: Vec<_> = program_graph
-        .native_prototype_mutations
-        .iter()
-        .filter(|mutation| {
-            !checked_properties.is_empty()
-                && mutation.properties.as_ref().is_none_or(|properties| {
-                    properties
-                        .iter()
-                        .any(|property| checked_properties.contains(property))
-                })
-        })
-        .cloned()
-        .collect();
-    let mut affected_roots: BTreeSet<_> = source_units
-        .iter()
-        .chain(&neighbor_source_units)
-        .filter_map(|unit| unit.synchronous_execution.as_ref())
-        .flat_map(|execution| &execution.native_integrity_checks)
-        .flat_map(|check| check.affected_roots.iter().copied())
-        .collect();
-    affected_roots.extend(
-        native_prototype_mutations
-            .iter()
-            .flat_map(|mutation| mutation.key_dependencies.iter().copied()),
-    );
-    loop {
-        let before = affected_roots.len();
-        for witness in &program_graph.native_integrity_witnesses {
-            if !witness.affected_roots.is_disjoint(&affected_roots) {
-                affected_roots.extend(&witness.invalidated_key_dependencies);
-            }
-        }
-        if before == affected_roots.len() {
-            break;
-        }
-    }
-    let mut native_integrity_witnesses: Vec<_> = program_graph
-        .native_integrity_witnesses
-        .iter()
-        .filter(|witness| !witness.affected_roots.is_disjoint(&affected_roots))
-        .cloned()
-        .collect();
+    let (mut native_integrity_witnesses, mut native_prototype_mutations) =
+        native_integrity_context(program_graph, &source_units, &neighbor_source_units);
     let mut limits = LimitReport::new(args.limit);
     limits.apply(
         "native_integrity_witnesses",
@@ -962,6 +882,113 @@ fn explain_from_graph(
         unknown_binding_ids,
         limits: Some(limits),
     })
+}
+
+/// Dependency edges into and out of the selected source units, filtered by
+/// the requested direction and reasons.
+fn selected_dependency_edges(
+    graph: &DependencyGraphInput,
+    source_unit_ids: &BTreeSet<String>,
+    args: &ExplainArgs,
+) -> Result<(Vec<DependencyEdgeReport>, Vec<DependencyEdgeReport>)> {
+    let mut incoming_edges = Vec::<DependencyEdgeReport>::new();
+    let mut outgoing_edges = Vec::<DependencyEdgeReport>::new();
+    let direction_incoming = !matches!(args.direction, ExplainDirection::Outgoing);
+    let direction_outgoing = !matches!(args.direction, ExplainDirection::Incoming);
+    for source_unit_id in source_unit_ids {
+        let source_unit = graph
+            .source_unit_id(source_unit_id)
+            .with_context(|| {
+                format!(
+                    "explain selection contains source unit {source_unit_id:?} absent from the checked graph input"
+                )
+            })?;
+        if direction_incoming {
+            for &edge_id in graph.graph().in_edges_of(source_unit) {
+                let edge = graph.graph().edge(edge_id);
+                let kind = edge.reason.kind();
+                if args.reasons.is_empty() || args.reasons.contains(&kind) {
+                    incoming_edges.push(graph.edge_report(edge_id).clone());
+                }
+            }
+        }
+        if direction_outgoing {
+            for &edge_id in graph.graph().out_edges_of(source_unit) {
+                let edge = graph.graph().edge(edge_id);
+                let kind = edge.reason.kind();
+                if args.reasons.is_empty() || args.reasons.contains(&kind) {
+                    outgoing_edges.push(graph.edge_report(edge_id).clone());
+                }
+            }
+        }
+    }
+    Ok((incoming_edges, outgoing_edges))
+}
+
+/// Native prototype mutations that touch a property the selected or neighbor
+/// units check, and the integrity witnesses transitively affecting their roots.
+fn native_integrity_context(
+    program_graph: &ProgramGraphReport,
+    source_units: &[SourceUnitReport],
+    neighbor_source_units: &[SourceUnitReport],
+) -> (
+    Vec<analysis::reports::schema::NativeMutationWitness>,
+    Vec<analysis::reports::schema::NativePrototypeMutation>,
+) {
+    let checked_properties: BTreeSet<_> = source_units
+        .iter()
+        .chain(neighbor_source_units)
+        .filter_map(|unit| unit.synchronous_execution.as_ref())
+        .flat_map(|execution| {
+            execution
+                .native_prototype_property_checks
+                .iter()
+                .map(|check| &check.property)
+        })
+        .collect();
+    let native_prototype_mutations: Vec<_> = program_graph
+        .native_prototype_mutations
+        .iter()
+        .filter(|mutation| {
+            !checked_properties.is_empty()
+                && mutation.properties.as_ref().is_none_or(|properties| {
+                    properties
+                        .iter()
+                        .any(|property| checked_properties.contains(property))
+                })
+        })
+        .cloned()
+        .collect();
+    let mut affected_roots: BTreeSet<_> = source_units
+        .iter()
+        .chain(neighbor_source_units)
+        .filter_map(|unit| unit.synchronous_execution.as_ref())
+        .flat_map(|execution| &execution.native_integrity_checks)
+        .flat_map(|check| check.affected_roots.iter().copied())
+        .collect();
+    affected_roots.extend(
+        native_prototype_mutations
+            .iter()
+            .flat_map(|mutation| mutation.key_dependencies.iter().copied()),
+    );
+    loop {
+        let before = affected_roots.len();
+        for witness in &program_graph.native_integrity_witnesses {
+            if !witness.affected_roots.is_disjoint(&affected_roots) {
+                affected_roots.extend(&witness.invalidated_key_dependencies);
+            }
+        }
+        if before == affected_roots.len() {
+            break;
+        }
+    }
+    let native_integrity_witnesses: Vec<_> = program_graph
+        .native_integrity_witnesses
+        .iter()
+        .filter(|witness| !witness.affected_roots.is_disjoint(&affected_roots))
+        .cloned()
+        .collect();
+    (native_integrity_witnesses, native_prototype_mutations)
 }
 
 fn edge_census_rows(edges: &[DependencyEdgeReport]) -> Vec<EdgeCensusRow> {
