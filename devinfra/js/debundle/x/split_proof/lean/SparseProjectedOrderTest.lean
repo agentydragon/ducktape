@@ -102,6 +102,10 @@ def main : IO Unit := do
   match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle wrongOrder row .allOutcomes with
   | .ok _ => throw (IO.userError "indexed constructor accepted an invalid sequential order")
   | .error _ => pure ()
+  let orderWithoutSequential : EsmSplit.Spec := { request with sequential := false }
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle orderWithoutSequential row .allOutcomes with
+  | .ok _ => throw (IO.userError "indexed constructor accepted an order without sequential mode")
+  | .error _ => pure ()
   let privateEntry : EsmSplit.Spec := { request with privateEntryBody := true }
   match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle privateEntry row .allOutcomes with
   | .ok _ => throw (IO.userError "indexed constructor accepted a private entry")
