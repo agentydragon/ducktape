@@ -1,10 +1,12 @@
 package sessionstore
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
 	"math"
+	"slices"
 
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
@@ -108,49 +110,12 @@ type sealedJournalBlock struct {
 	first, last uint64
 	payload     []byte
 	storedBytes int
+	versions    []string
 }
 
-const insertJournalBlock = `INSERT INTO sampler_event_block(session_id,first_sequence,last_sequence,payload) VALUES($1,$2,$3,$4)`
-
-func sealJournalWindow(ctx context.Context, tx *sql.Tx, sessionID string, last uint64) error {
-	// The caller holds the session lock. Only look at the newest completed window
-	// so writes do bounded work and leave the historical prefix alone.
-	first := last - eventcodec.MaxBlockEntries + 1
-	blocks, err := prepareJournalBlocks(ctx, tx, sessionID, first, last)
-	if err != nil {
-		return err
-	}
-	return replaceJournalBlocks(ctx, tx, sessionID, blocks, false)
-}
-
-func replaceJournalBlocks(ctx context.Context, tx *sql.Tx, sessionID string, blocks []sealedJournalBlock, verify bool) error {
-	for _, block := range blocks {
-		if verify {
-			if err := insertVerifiedJournalBlock(ctx, tx, sessionID, block); err != nil {
-				return err
-			}
-		} else if _, err := tx.ExecContext(ctx, insertJournalBlock, sessionID, block.first, block.last, block.payload); err != nil {
-			return err
-		}
-		deleted, err := tx.ExecContext(ctx, `DELETE FROM sampler_event WHERE session_id=$1 AND sequence BETWEEN $2 AND $3`,
-			sessionID, block.first, block.last)
-		if err != nil {
-			return err
-		}
-		count, err := deleted.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if count != int64(block.last-block.first+1) {
-			return fmt.Errorf("deleted %d journal rows while sealing cursors %d–%d", count, block.first, block.last)
-		}
-	}
-	return nil
-}
-
-func prepareJournalBlocks(ctx context.Context, tx *sql.Tx, sessionID string, first, last uint64) ([]sealedJournalBlock, error) {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT sequence, CASE WHEN octet_length(entry) <= $4 THEN entry END FROM sampler_event
+func prepareJournalBlocks(ctx context.Context, q journalQueryer, sessionID string, first, last uint64) ([]sealedJournalBlock, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT sequence, xmin::text, CASE WHEN octet_length(entry) <= $4 THEN entry END FROM sampler_event
 		WHERE session_id=$1 AND sequence BETWEEN $2 AND $3 ORDER BY sequence`, sessionID, first, last, eventcodec.MaxBlockBytes)
 	if err != nil {
 		return nil, err
@@ -158,6 +123,7 @@ func prepareJournalBlocks(ctx context.Context, tx *sql.Tx, sessionID string, fir
 	defer rows.Close()
 	var blocks []sealedJournalBlock
 	var frames [][]byte
+	var versions []string
 	var start uint64
 	var rawSize, storedSize int
 	flush := func() error {
@@ -167,16 +133,27 @@ func prepareJournalBlocks(ctx context.Context, tx *sql.Tx, sessionID string, fir
 				return err
 			}
 			if len(payload) < storedSize {
-				blocks = append(blocks, sealedJournalBlock{first: start, last: start + uint64(len(frames)) - 1, payload: payload, storedBytes: storedSize})
+				verified, err := eventcodec.UnpackBlock(payload, len(frames))
+				if err != nil {
+					return err
+				}
+				if !slices.EqualFunc(frames, verified, bytes.Equal) {
+					return fmt.Errorf("packed frames differ from originals at cursor %d", start)
+				}
+				blocks = append(blocks, sealedJournalBlock{
+					first: start, last: start + uint64(len(frames)) - 1,
+					payload: payload, storedBytes: storedSize, versions: versions,
+				})
 			}
 		}
-		frames, rawSize, storedSize = nil, 0, 0
+		frames, versions, rawSize, storedSize = nil, nil, 0, 0
 		return nil
 	}
 	for rows.Next() {
 		var sequence uint64
+		var version string
 		var stored []byte
-		if err := rows.Scan(&sequence, &stored); err != nil {
+		if err := rows.Scan(&sequence, &version, &stored); err != nil {
 			return nil, err
 		}
 		frame, err := eventcodec.UnpackBlockEntry(stored)
@@ -196,6 +173,7 @@ func prepareJournalBlocks(ctx context.Context, tx *sql.Tx, sessionID string, fir
 			start = sequence
 		}
 		frames = append(frames, frame)
+		versions = append(versions, version)
 		rawSize += size
 		storedSize += len(stored)
 	}

@@ -228,7 +228,6 @@ func TestCommitCheckpointMissingSession(t *testing.T) {
 
 func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testing.T) {
 	store := newTestStore(t)
-	store.eventBlockWrites = true
 	session := exportFixtureSession(t, store)
 	const sealAt = 2 * eventcodec.MaxBlockEntries
 	for cursor := session.Cursor; cursor < sealAt-1; cursor++ {
@@ -236,11 +235,20 @@ func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testi
 			t.Fatal(err)
 		}
 	}
+	if _, err := store.CompactJournal(t.Context(), session.ID, true); err != nil {
+		t.Fatal(err)
+	}
 	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); count == 0 {
 		t.Fatal("export fixture produced no event blocks")
 	}
 	history := &fixtureHistory{entries: map[uint64]*eventlogpb.EventEntry{}, loseAcknowledgement: true, received: make(chan uint64, 1024)}
-	history.onEntry = func() error { return admitExportEvent(t.Context(), store, session.ID, sealAt) }
+	history.onEntry = func() error {
+		if err := admitExportEvent(t.Context(), store, session.ID, sealAt); err != nil {
+			return err
+		}
+		_, err := store.CompactJournal(t.Context(), session.ID, true)
+		return err
+	}
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()

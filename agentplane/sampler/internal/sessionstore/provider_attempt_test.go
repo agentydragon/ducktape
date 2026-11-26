@@ -607,7 +607,6 @@ func TestFailedCompactionPreservesInFlightCellEffect(t *testing.T) {
 
 func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *testing.T) {
 	store, dsn := newTestStoreWithDSN(t)
-	store.eventBlockWrites = true
 	session := openSessionForStore(t, store, "")
 	owner := claim(t, store, session)
 	const commandID = "durable-provider-command"
@@ -651,6 +650,10 @@ func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *tes
 	}
 	if resultValue["failure_reason"] != "provider stream stalled" || !due || resultValue["output_committed"] != false {
 		t.Fatalf("stored abandonment=%v due=%v", resultValue, due)
+	}
+	appendTestJournalThrough(t, store, session.ID, journalWindowSize, 0)
+	if result, err := store.CompactJournal(t.Context(), session.ID, true); err != nil || result.Blocks == 0 {
+		t.Fatalf("pack provider evidence: result=%+v err=%v", result, err)
 	}
 	events, err := store.Events(t.Context(), session.ID, 0, 256)
 	if err != nil {

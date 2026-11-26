@@ -16,6 +16,7 @@ go_library(
         "exporter_outbox.go",
         "host_status.go",
         "intents.go",
+        "journal_compaction_worker.go",
         "leases.go",
         "native_context.go",
         "native_store.go",

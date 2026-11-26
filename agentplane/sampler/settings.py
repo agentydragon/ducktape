@@ -309,7 +309,9 @@ class Settings(BaseModel):
         description="Persist source references on sampler context records after all replicas can read them.",
     )
     event_block_writes: bool = Field(
-        default=False, exclude_if=lambda value: not value, description="Seal sampler evidence into journal blocks."
+        default=False,
+        exclude_if=lambda value: not value,
+        description="Pack completed sampler journal windows in the background.",
     )
     provider_response_header_timeout_seconds: int | None = Field(
         default=None,
