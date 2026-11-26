@@ -293,7 +293,7 @@ the interpreter a conservative path runs under `ExecutionState::assumption`
 outcome's `SynchronousCalls::fallback_only` with that path unless already
 held, and an observed insertion clears the entry. `invoke` clears the
 assumption, so an invocation's outcome and memo stay relative to it, and
-`absorb_binding_effects` re-tags a nested outcome under the merging path. The
+`absorb_call_effects` re-tags a nested outcome under the merging path. The
 per-statement fallback accumulator (`fallback_outcome`) merges under
 `fallback_summary` at the statement's end. Graph build tags the
 unresolved-call read closure's eager uses for the shared-`var` order. A
@@ -589,8 +589,7 @@ emission: a function declaration, class declaration, single
 var-declarator after comma-list splitting, import declaration
 specifier, or residual side-effect statement. The dependency graph
 preserves each source unit as a first-class node and report row.
-`SourceUnitId` identifies the graph vertex (`unit:N`); `SourceUnitIndex`
-indexes the report-row arena used by quotient analysis and is distinct.
+`SourceUnitId` identifies the graph vertex (`unit:N`).
 
 `SourceUnitClass` distinguishes binding declarations from anonymous statements
 using the graph's canonical declaration set. It is independent of syntactic
@@ -1600,25 +1599,17 @@ mutation revoke it monotonically; member projection and invocation keep callback
 reach without transferring that capability. Interned capture keys may share
 revocation conservatively, but do not represent runtime allocation identity.
 
-The first migrated provider-summary slice shares the application's primitive,
-binding and literal-allocation transfers and real heap merging. A strict query
-supplies only scoped opaque parameters and a real empty literal heap. Canonical
-source coverage is collected during the same recursive value lowering, before
-sequence/assignment/template and other syntax can disappear from ValueExpr.
-Only a whole simple-parameter direct-return body can receive the narrow
-allocation-only certificate; normal ambient binding access stays opaque.
-RuntimeResult carries child judgments and dependencies even when a parent
-consumes only Values. Every non-Evaluate or unsupported transfer stays opaque.
-The unmigrated source evaluator remains responsible for its other supported
-cases. This slice adds no provider publication premise, purity fact or public
-shape schema, and does not use Outcome.complete as an effect ledger.
-
-The same transfer also handles strict equality (unknown Boolean, no coercion),
-`void` (evaluate then discard), and conditionals with terminal value arms.
-Conditional lowering retains the test; the strict query joins both covered
-arms without inferring truthiness or runtime identity. Operand and test access
-evidence and possible abrupt outcomes remain even when their values are not
-returned. Other operators and effectful children keep conservative execution.
+Provider summaries for a whole simple-parameter direct-return body share the
+application's primitive, binding and literal-allocation transfers and real heap
+merging; a strict query supplies only scoped opaque parameters and a real empty
+literal heap. Canonical source coverage is collected during the same recursive
+value lowering, before sequence/assignment/template syntax can disappear from
+`ValueExpr`. `RuntimeResult` carries child judgments and dependencies even when a
+parent consumes only values. Other bodies stay with the source evaluator. The
+`CoveredAllocationOnly` certificate's soundness conditions, including strict
+equality, `void` and conditionals, are in
+[purity soundness § Audited callback-factory exports](purity_soundness.md#audited-callback-factory-exports).
+This adds no provider publication premise, purity fact or public shape schema.
 
 Callable own/prototype properties are not tracked as ordinary object records.
 Installing nonprimitive values through a recognized callable receiver or local
@@ -2818,7 +2809,7 @@ use the dependency graph and source bodies for drill-down.
 4. Re-run validator. Iterate until validation is green and the
    residual contains only intentionally generated or low-value noise.
 
-The spec is now fully explicit. The validator is a one-shot
+The validator is a one-shot
 predicate: "given this spec, is the bundle realizable?" — no
 implicit transformation in the middle.
 
@@ -3133,9 +3124,8 @@ materialization. The author still
 materializes it with `anonymous_statements:` because it has no binding
 name, but the atomic-group closure that contains the class also covers
 the anonymous source unit, so an exact placement containing the class also
-contains the anonymous source unit (listed under
-`anonymous_statement_source_unit_ids`, or `extension_source_unit_ids` when it
-extends an existing module); the placement search cannot assign the class
+contains the anonymous source unit (listed under the atomic group's
+`anonymous_statement_source_unit_ids`); the placement search cannot assign the class
 alone.
 
 The unannotated case — `__decorate(...)`, `register(...)`, and
@@ -3190,9 +3180,9 @@ zero-match diagnostic the spec author can fix.
 
 An anonymous source unit belongs to the entry destination unless a
 module claims it through `anonymous_statements`.
-`assignment_assembly::compute_source_unit_claims` resolves those claims (each module's
-`anonymous_statement_ordinals`) into the assignment that
-``AssignmentAnalysis`::build_with` quotients by, so the gate sees the module dep
+`assignment_assembly::assemble_assignment` resolves those claims (each planned module's
+`anonymous_source_unit_ordinals`) into the assignment that
+`AssignmentAnalysis::build_with` quotients by, so the gate sees the module dep
 graph the materializer will emit. Without that resolution, an anonymous source unit with a
 constraining in-edge from a peeled named source unit would create a fake
 cross-module edge, and the validator would reject a spec whose closure the
@@ -4099,26 +4089,3 @@ contract is in <../SPEC.md>
   foundation; if a future change breaks the theorem (e.g.
   introduces an emit strategy that bypasses it), the proof
   needs revision and any dependent claims need re-checking.
-
-### Validation diagnostic retention
-
-The edge-TV checker visits every ordering/placement result and preserves exact
-category totals and its complete legacy conflict-pair set. Diagnostic retention
-is bounded independently: twenty deterministic examples per category, with exact
-totals and explicit truncation. The gate/TV oracle and effect-TV comparison never
-read sampled-vector emptiness. An optional complete-evidence visitor on the same
-checker streams full TV rows; it does not add a second evaluator or change source
-scope. Full diagnostic evidence and graph export are independent sink policies.
-See [the wire contract](wire_format.md#translation-validation).
-
-### Bounded export-reentry presentation
-
-The complete `ExportReentryReport` remains the semantic and staged-analysis
-representation. Materialization borrows it through an output-only summary:
-exact collection/site counts, deterministic first twenty examples, explicit
-truncation, and complete existing failure-kind aggregates. The view is never
-deserialized or fed back into policy. Explicit `--full-report export_reentry`
-uses the shared compact JSON writer to stream the original complete schema and
-flush before summary completion. Sink filtering and full graph selection are
-independent; all source and proof work remains unchanged. See the
-[wire contract](wire_format.md#export-reentry-diagnostics).
