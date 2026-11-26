@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { split } from "../testing/split.mjs";
 import { observe, prepare, root } from "./harness.mjs";
@@ -91,20 +91,32 @@ const callable = prepare(path.join(root, "callable"), {
 });
 const browserContract = path.join(root, "callable-browser-contract.json");
 writeFileSync(browserContract, JSON.stringify({ profile: "browser-page" }));
-for (const [name, options] of [
-  ["default", {}],
-  ["structural", { structural: true }],
-  ["profile", { hostContract: browserContract }],
+for (const [name, options, existingOutput] of [
+  ["default", {}, false],
+  ["structural", { structural: true }, true],
+  ["profile", { hostContract: browserContract }, false],
 ]) {
+  const callableOut = path.join(root, `callable-${name}-out`);
+  const existingOutputFile = path.join(callableOut, entry);
+  const existingBytes = existingOutput ? Buffer.from("existing output\n") : null;
+  if (existingBytes) {
+    mkdirSync(callableOut, { recursive: true });
+    writeFileSync(existingOutputFile, existingBytes);
+  }
   const callableResult = split({
     source: callable.sourceFile,
     spec: callable.specFile,
-    out: path.join(root, `callable-${name}-out`),
+    out: callableOut,
+    allowExistingOut: existingOutput,
     ...options,
   });
   assert.equal(callableResult.status, "refused", callableResult.log);
   assert.equal(callableResult.verdict.reason_code, "strict_observation_unsupported", callableResult.log);
   assert.equal(callableResult.verdict.strategy, "compiled-constructor", callableResult.log);
+  if (existingBytes) {
+    assert.deepEqual(readFileSync(existingOutputFile), existingBytes, "structural refusal changed prior output bytes");
+    assert.deepEqual(readdirSync(callableOut), [entry], "structural refusal changed prior output files");
+  }
 }
 
 assert.deepEqual(snapshot(), beforeUnsupported, "all refusal paths must preserve the previously published files");
