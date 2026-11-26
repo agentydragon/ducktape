@@ -32,6 +32,13 @@ function modelText(value) {
   return JSON.stringify(value);
 }
 
+export function expectedModelObservations(samples) {
+  return samples.map(([path, value]) => {
+    const expected = modelText(value);
+    return { path, original: expected, split: expected };
+  });
+}
+
 /** Check concrete initialization with the test-only CoreJS probe at its chosen fuel. */
 export function assertMatchedModel({ name, sourceFile, specFile }, directory, samples) {
   const model = probeLinkedModel({
@@ -47,10 +54,7 @@ export function assertMatchedModel({ name, sourceFile, specFile }, directory, sa
       status: "matched",
       assumptions: [],
       host_refs: [],
-      observed: samples.map(([path, value]) => {
-        const expected = modelText(value);
-        return { path, original: expected, split: expected };
-      }),
+      observed: expectedModelObservations(samples),
     },
     name
   );

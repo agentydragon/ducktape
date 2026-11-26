@@ -1,14 +1,36 @@
 import assert from "node:assert/strict";
-import {
-  assertCertifiedResult,
-  assertRejectedOrOrderKeptSlice,
-  lower,
-  sequentialSplit,
-  workerSplit,
-} from "./harness.mjs";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { assertMatchedModel, prepareLinkedFixture, prepareWorkerFixture } from "./fixture_preview.mjs";
+import { observe } from "./harness.mjs";
+
+const sequential = {
+  entry: "entry.mjs",
+  modules: { "worker.mjs": ["#0", "#1", "#2", "#3"], "entry.mjs": ["#4"] },
+  order: ["worker.mjs"],
+  sequential: true,
+};
+
+function samples(value, path = ["result"]) {
+  if (!Array.isArray(value)) return [[path, value]];
+  return value.flatMap((item, index) => samples(item, [...path, String(index)]));
+}
+
+async function checkRest(fixture, expected) {
+  const { manifest, out, sourceFile } = fixture;
+  assertPublicEmissionRefused(manifest, out);
+  assert.deepEqual(observe(sourceFile, "result"), { result: expected });
+  await withSplitPreview({ manifest }, ({ directory, entryFile }) => {
+    assert.deepEqual(observe(entryFile, "result"), { result: expected });
+    assertMatchedModel(fixture, directory, samples(expected));
+    assertPublicEmissionRefused(manifest, directory);
+    assertPublicRecheckRefused(manifest, directory);
+  });
+}
 
 {
-  const test = workerSplit(
+  const test = prepareWorkerFixture(
     "array-rest-pattern",
     `function pick(head, ...[first, , third]) {
        var first;
@@ -19,15 +41,11 @@ import {
      export const result = [pick("head", 2, 3, 4), pick.length, arrow(4, 3), arrow.length];`,
     ["#1", "#2"]
   );
-  assertCertifiedResult(test, [["head", 3, 4, 4], 1, 7, 0]);
-  assert.equal(
-    lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]).verdict.status,
-    "certified"
-  );
+  await checkRest(test, [["head", 3, 4, 4], 1, 7, 0]);
 }
 
 {
-  const test = sequentialSplit(
+  const test = prepareLinkedFixture(
     "ordinary-rest",
     `function collect(first, ...items) {
        var items;
@@ -55,9 +73,9 @@ import {
        return [a[1] !== b[1], a, c, collect.length, method, arrow.length, arrow(7, 4, 3), refused];
      };
      export const result = run();`,
-    { "worker.mjs": ["#0", "#1", "#2", "#3"], "entry.mjs": ["#4"] }
+    sequential
   );
-  assertCertifiedResult(test, [
+  await checkRest(test, [
     true,
     ["empty", [], true, "shadow"],
     ["prefix", [4, 3], true, "shadow"],
@@ -67,14 +85,10 @@ import {
     9,
     true,
   ]);
-  assert.equal(
-    lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]).verdict.status,
-    "certified"
-  );
 }
 
 {
-  const test = sequentialSplit(
+  const test = prepareLinkedFixture(
     "constructor-rest-and-super-forwarding",
     `class Base {
        constructor(first, ...tail) { this.first = first; this.tail = tail; }
@@ -100,15 +114,21 @@ import {
          Base.length, Child.length, Record.length, refused];
      };
      export const result = run();`,
-    { "worker.mjs": ["#0", "#1", "#2", "#3"], "entry.mjs": ["#4"] }
+    sequential
   );
-  assertCertifiedResult(test, [1, [2, 3], "child", 3, [], true, 4, [5], 1, 0, 1, true]);
+  await checkRest(test, [1, [2, 3], "child", 3, [], true, 4, [5], 1, 0, 1, true]);
 }
 
-assertRejectedOrOrderKeptSlice(
-  workerSplit(
-    "reached-rest-with-default",
-    "const fn = (first = 1, ...rest) => rest.length; export const result = fn();"
-  ),
-  /rest requires a terminal binding and fixed identifier parameters/
+const { manifest, sourceFile, specFile, out } = prepareWorkerFixture(
+  "reached-rest-with-default",
+  "const fn = (first = 1, ...rest) => rest.length; export const result = fn();"
 );
+assertPublicEmissionRefused(manifest, out);
+assert.deepEqual(observe(sourceFile, "result"), { result: 0 });
+await withSplitPreview({ manifest }, ({ directory, entryFile }) => {
+  assert.deepEqual(observe(entryFile, "result"), { result: 0 });
+  const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
+  assert.equal(model.status, "refused", JSON.stringify(model));
+  assert.equal(model.reason_code, "probe_unknown", JSON.stringify(model));
+  assert.match(model.reason, /rest requires a terminal binding and fixed identifier parameters/);
+});

@@ -226,7 +226,10 @@ _RECORD_TESTS = [
 ]
 
 _FIXTURE_PREVIEW_TESTS = [
+    "rest_parameters_test",
     "sequence_test",
+    "spread_arguments_test",
+    "strict_arguments_test",
     "templates_test",
 ]
 

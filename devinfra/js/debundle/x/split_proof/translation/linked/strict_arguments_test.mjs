@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertifiedResult, lower, workerSplit } from "./harness.mjs";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { assertMatchedModel, prepareWorkerFixture } from "./fixture_preview.mjs";
+import { observe } from "./harness.mjs";
 
-const run = workerSplit(
+const fixture = prepareWorkerFixture(
   "reached-strict-arguments",
   `function inspect(first, second) {
      const original = arguments;
@@ -29,12 +33,28 @@ const run = workerSplit(
      return [a().length, a()[0], a()[1], b()[2]];
    })();`
 );
-assertCertifiedResult(run, [3, 2, 7, 4]);
-const { files, out } = run;
-const verify = () => lower(files.sourceFile, files.specFile, out, ["--check-output"]);
-assert.equal(verify().verdict.status, "certified");
-const worker = path.join(out, "worker.mjs");
-const printed = readFileSync(worker, "utf8");
-assert(printed.includes("arguments[1]"));
-writeFileSync(worker, printed.replace("arguments[1]", "arguments[0]"));
-assert.equal(verify().verdict.status, "rejected");
+const { manifest, out, sourceFile, specFile } = fixture;
+const expected = [3, 2, 7, 4];
+assertPublicEmissionRefused(manifest, out);
+assert.deepEqual(observe(sourceFile, "result"), { result: expected });
+await withSplitPreview({ manifest }, ({ directory, entryFile }) => {
+  assert.deepEqual(observe(entryFile, "result"), { result: expected });
+  assertMatchedModel(
+    fixture,
+    directory,
+    expected.map((value, index) => [["result", String(index)], value])
+  );
+
+  const worker = path.join(directory, "worker.mjs");
+  const source = readFileSync(worker, "utf8");
+  const changed = source.replace("arguments[1]", "arguments[0]");
+  assert.notEqual(changed, source);
+  writeFileSync(worker, changed);
+  const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
+  assert.equal(model.status, "refused", JSON.stringify(model));
+  assert.equal(model.reason_code, "linked_input", JSON.stringify(model));
+  assert.match(model.reason, /emitted syntax differs from original unit 0/);
+
+  assertPublicEmissionRefused(manifest, directory);
+  assertPublicRecheckRefused(manifest, directory);
+});
