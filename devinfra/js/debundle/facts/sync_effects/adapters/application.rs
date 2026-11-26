@@ -2,7 +2,8 @@
 //! application `Executor`, for ordered root initializers and callable bodies.
 
 use super::super::alternatives::execution_state::ExecutionPath;
-use super::super::execution_index::{Call, CallKind, MemberValueWrite, native_own_data_read_slots};
+use super::super::execution_index::intrinsic_roots::native_own_data_read_slots;
+use super::super::execution_index::{Call, CallKind, MemberValueWrite};
 use super::super::interpreter::{Executor, Outcome, unknown};
 use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
 use kernel::cells::missing_activation_binding;
