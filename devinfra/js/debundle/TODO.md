@@ -409,7 +409,7 @@ closure`, conflating unresolved host requests, missing captured chunks,
   hypothesis until a neutral failing fixture establishes it.
 - **F6 — Expose a read-only bulk resolved-claim inventory.** `coverage`
   resolves every non-empty module claim set in one joint call, but emits only
-  module-level binding/atomic-group summaries (<peel/plan.rs>).
+  module-level binding/atomic-group summaries (<peel/patch_plan.rs>).
   `modules.json` describes materialized selected claims. Add a source-only,
   provenance-checked query such as
   `debundle claims inventory` that reports every authored claim in the scoped
