@@ -52,31 +52,9 @@ pub(super) fn lower_atom_constraint(
             rows,
         } => add_projected_allowed_tuples(model, variables, projected_variables, rows),
         SelectorAtom::SourceUnitNotIn {
-            source_unit: SourceUnitTerm::Var { id },
+            source_unit,
             excluded,
-        } => {
-            let variable = model_variable(variables, *id)?;
-            let encoded = excluded
-                .iter()
-                .map(|source_unit| model.intern_source_unit(*source_unit))
-                .collect::<Result<Vec<_>, _>>()?;
-            model.exclude_variable_encoded_values(variable, encoded)?;
-            Ok(())
-        }
-        SelectorAtom::SourceUnitNotIn {
-            source_unit: SourceUnitTerm::Const { source_unit },
-            excluded,
-        } => {
-            if excluded.contains(source_unit) {
-                Err(
-                    CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
-                        atom: format!("source_unit_not_in({source_unit:?})"),
-                    },
-                )
-            } else {
-                Ok(())
-            }
-        }
+        } => lower_source_unit_not_in(source_unit, excluded, variables, model),
         SelectorAtom::SourceUnitReferencesSourceUnit {
             source_unit,
             referenced,
@@ -106,17 +84,14 @@ pub(super) fn lower_atom_constraint(
             object,
             member,
         } => {
-            let member = required_string_term_const(member, "reads_member_of_source_unit.member")?;
-            let facts = domains
-                .relation_supports
-                .reads_member_of_source_unit(&member);
+            let (facts, relation_key) = reads_member_of_source_unit_support(domains, member)?;
             add_cached_source_unit_pair_allowed_tuples(
                 model,
                 variables,
                 source_unit,
                 object,
                 facts,
-                format!("reads_member_of_unit:{member}"),
+                relation_key,
                 support_cache,
             )
         }
@@ -125,17 +100,13 @@ pub(super) fn lower_atom_constraint(
             module,
             member,
         } => {
-            let module = required_string_term_const(module, "consumes_module_member.module")?;
-            let member = required_string_term_const(member, "consumes_module_member.member")?;
-            let facts = domains
-                .relation_supports
-                .module_member_uses(&module, &member);
+            let (facts, relation_key) = module_member_use_support(domains, module, member)?;
             add_cached_source_unit_allowed_tuples(
                 model,
                 variables,
                 source_unit,
                 facts,
-                format!("module_member_uses:{module}:{member}"),
+                relation_key,
                 support_cache,
             )
         }
@@ -144,17 +115,13 @@ pub(super) fn lower_atom_constraint(
             callee_member,
             arg_index,
         } => {
-            let callee_member =
-                required_string_term_const(callee_member, "passed_to_call.callee_member")?;
-            let facts = domains
-                .relation_supports
-                .call_arguments(&callee_member, *arg_index);
+            let (facts, relation_key) = call_argument_support(domains, callee_member, *arg_index)?;
             add_cached_source_unit_allowed_tuples(
                 model,
                 variables,
                 source_unit,
                 facts,
-                format!("call_arguments:{callee_member}:{arg_index:?}"),
+                relation_key,
                 support_cache,
             )
         }
@@ -164,20 +131,15 @@ pub(super) fn lower_atom_constraint(
             callee_member,
             arg_index,
         } => {
-            let callee_member = required_string_term_const(
-                callee_member,
-                "passed_to_call_of_source_unit.callee_member",
-            )?;
-            let facts = domains
-                .relation_supports
-                .call_arguments_from_source_unit(&callee_member, *arg_index);
+            let (facts, relation_key) =
+                call_argument_from_source_unit_support(domains, callee_member, *arg_index)?;
             add_cached_source_unit_pair_allowed_tuples(
                 model,
                 variables,
                 source_unit,
                 callee_object,
                 facts,
-                format!("call_arguments_from_unit:{callee_member}:{arg_index:?}"),
+                relation_key,
                 support_cache,
             )
         }
@@ -186,17 +148,14 @@ pub(super) fn lower_atom_constraint(
             class_anchor,
             member,
         } => {
-            let member = optional_string_term_const(member)?;
-            let facts = domains
-                .relation_supports
-                .makes_decorate_call_for_source_unit(member.as_deref());
+            let (facts, relation_key) = decorate_call_support(domains, member)?;
             add_cached_source_unit_pair_allowed_tuples(
                 model,
                 variables,
                 source_unit,
                 class_anchor,
                 facts,
-                format!("makes_decorate_call_for_unit:{member:?}"),
+                relation_key,
                 support_cache,
             )
         }
@@ -205,21 +164,129 @@ pub(super) fn lower_atom_constraint(
             property,
             referenced_by,
         } => {
-            let property = required_string_term_const(property, "intrinsic_alias.property")?;
-            let facts = domains
-                .relation_supports
-                .intrinsic_alias_referenced_by(&property);
+            let (facts, relation_key) = intrinsic_alias_support(domains, property)?;
             add_cached_source_unit_pair_allowed_tuples(
                 model,
                 variables,
                 source_unit,
                 referenced_by,
                 facts,
-                format!("intrinsic_alias_referenced_by:{property}"),
+                relation_key,
                 support_cache,
             )
         }
     }
+}
+
+fn lower_source_unit_not_in(
+    source_unit: &SourceUnitTerm,
+    excluded: &[SourceUnitId],
+    variables: &[ConstraintVariableId],
+    model: &mut CompiledSelectorProblemBuilder,
+) -> Result<(), CompiledSelectorProblemBuildError> {
+    match source_unit {
+        SourceUnitTerm::Var { id } => {
+            let variable = model_variable(variables, *id)?;
+            let encoded = excluded
+                .iter()
+                .map(|source_unit| model.intern_source_unit(*source_unit))
+                .collect::<Result<Vec<_>, _>>()?;
+            model.exclude_variable_encoded_values(variable, encoded)?;
+            Ok(())
+        }
+        SourceUnitTerm::Const { source_unit } => {
+            if excluded.contains(source_unit) {
+                Err(
+                    CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
+                        atom: format!("source_unit_not_in({source_unit:?})"),
+                    },
+                )
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+/// A relation atom's fact support and the cache key its lowered constraint is shared under.
+/// Each `*_support` function resolves an atom's constant arguments to one.
+type RelationSupport<'a, T> = (&'a BTreeSet<T>, String);
+
+fn reads_member_of_source_unit_support<'a>(
+    domains: &'a FactDomains,
+    member: &StringTerm,
+) -> Result<RelationSupport<'a, (SourceUnitId, SourceUnitId)>, CompiledSelectorProblemBuildError> {
+    let member = required_string_term_const(member, "reads_member_of_source_unit.member")?;
+    let facts = domains
+        .relation_supports
+        .reads_member_of_source_unit(&member);
+    Ok((facts, format!("reads_member_of_unit:{member}")))
+}
+
+fn module_member_use_support<'a>(
+    domains: &'a FactDomains,
+    module: &StringTerm,
+    member: &StringTerm,
+) -> Result<RelationSupport<'a, SourceUnitId>, CompiledSelectorProblemBuildError> {
+    let module = required_string_term_const(module, "consumes_module_member.module")?;
+    let member = required_string_term_const(member, "consumes_module_member.member")?;
+    let facts = domains
+        .relation_supports
+        .module_member_uses(&module, &member);
+    Ok((facts, format!("module_member_uses:{module}:{member}")))
+}
+
+fn call_argument_support<'a>(
+    domains: &'a FactDomains,
+    callee_member: &StringTerm,
+    arg_index: Option<u32>,
+) -> Result<RelationSupport<'a, SourceUnitId>, CompiledSelectorProblemBuildError> {
+    let callee_member = required_string_term_const(callee_member, "passed_to_call.callee_member")?;
+    let facts = domains
+        .relation_supports
+        .call_arguments(&callee_member, arg_index);
+    Ok((
+        facts,
+        format!("call_arguments:{callee_member}:{arg_index:?}"),
+    ))
+}
+
+fn call_argument_from_source_unit_support<'a>(
+    domains: &'a FactDomains,
+    callee_member: &StringTerm,
+    arg_index: Option<u32>,
+) -> Result<RelationSupport<'a, (SourceUnitId, SourceUnitId)>, CompiledSelectorProblemBuildError> {
+    let callee_member =
+        required_string_term_const(callee_member, "passed_to_call_of_source_unit.callee_member")?;
+    let facts = domains
+        .relation_supports
+        .call_arguments_from_source_unit(&callee_member, arg_index);
+    Ok((
+        facts,
+        format!("call_arguments_from_unit:{callee_member}:{arg_index:?}"),
+    ))
+}
+
+fn decorate_call_support<'a>(
+    domains: &'a FactDomains,
+    member: &Option<StringTerm>,
+) -> Result<RelationSupport<'a, (SourceUnitId, SourceUnitId)>, CompiledSelectorProblemBuildError> {
+    let member = optional_string_term_const(member)?;
+    let facts = domains
+        .relation_supports
+        .makes_decorate_call_for_source_unit(member.as_deref());
+    Ok((facts, format!("makes_decorate_call_for_unit:{member:?}")))
+}
+
+fn intrinsic_alias_support<'a>(
+    domains: &'a FactDomains,
+    property: &StringTerm,
+) -> Result<RelationSupport<'a, (SourceUnitId, SourceUnitId)>, CompiledSelectorProblemBuildError> {
+    let property = required_string_term_const(property, "intrinsic_alias.property")?;
+    let facts = domains
+        .relation_supports
+        .intrinsic_alias_referenced_by(&property);
+    Ok((facts, format!("intrinsic_alias_referenced_by:{property}")))
 }
 
 #[derive(Debug, Default)]

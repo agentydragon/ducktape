@@ -459,24 +459,8 @@ impl FactDomains {
     }
 
     fn add_derived_facts(&mut self, requirements: &DerivedFactRequirements) {
-        let source_units_by_binding = &self.declared_bindings_index.source_units_by_value;
         if requirements.references_unit {
-            for (source_unit, binding) in &self.raw_source_unit_references_binding {
-                if !self
-                    .declared_bindings_index
-                    .values_by_unit
-                    .contains_key(source_unit)
-                {
-                    continue;
-                }
-                if let Some(referenced_source_units) = source_units_by_binding.get(binding) {
-                    self.references_unit.extend(
-                        referenced_source_units
-                            .iter()
-                            .map(|referenced| (*source_unit, *referenced)),
-                    );
-                }
-            }
+            self.derive_references_unit();
         }
 
         let needs_source_unit_by_ordinal = requirements.member_reads
@@ -489,141 +473,197 @@ impl FactDomains {
                 .collect::<BTreeMap<_, _>>()
         });
 
-        // Reads of `object.member` by a declaring source unit, which
-        // `reads_member_of_unit` joins to the source units declaring `object`.
-        let mut member_reads_from_binding = BTreeSet::new();
-        if requirements.member_reads || requirements.reads_member_of_unit {
-            let source_unit_by_ordinal = source_unit_by_ordinal
-                .as_ref()
-                .expect("source unit ordinal index should be built for member reads");
-            for (statement_ordinal, object, member) in &self.raw_member_reads {
-                let Some(source_unit) = source_unit_by_ordinal.get(statement_ordinal) else {
-                    continue;
-                };
-                if !self
-                    .declared_bindings_index
-                    .values_by_unit
-                    .contains_key(source_unit)
-                {
-                    continue;
-                }
-                if requirements.member_reads {
-                    self.member_reads.insert((*source_unit, member.clone()));
-                }
-                if requirements.reads_member_of_unit
-                    && let Some(object) = object
-                {
-                    member_reads_from_binding.insert((
-                        *source_unit,
-                        object.clone(),
-                        member.clone(),
-                    ));
-                }
-            }
-        }
+        let member_reads_from_binding =
+            if requirements.member_reads || requirements.reads_member_of_unit {
+                let source_unit_by_ordinal = source_unit_by_ordinal
+                    .as_ref()
+                    .expect("source unit ordinal index should be built for member reads");
+                self.derive_member_reads(requirements, source_unit_by_ordinal)
+            } else {
+                BTreeSet::new()
+            };
 
         if requirements.reads_member_of_unit {
-            for (source_unit, object_binding, member) in &member_reads_from_binding {
-                if let Some(object_source_units) = source_units_by_binding.get(object_binding) {
-                    self.reads_member_of_unit
-                        .extend(object_source_units.iter().map(|object_source_unit| {
-                            (*source_unit, *object_source_unit, member.clone())
-                        }));
-                }
-            }
+            self.derive_reads_member_of_unit(&member_reads_from_binding);
         }
 
         if requirements.module_member_uses {
             let source_unit_by_ordinal = source_unit_by_ordinal
                 .as_ref()
                 .expect("source unit ordinal index should be built for module member uses");
-            for (statement_ordinal, module, member) in &self.raw_module_member_uses {
-                let Some(source_unit) = source_unit_by_ordinal.get(statement_ordinal) else {
-                    continue;
-                };
-                if !self
-                    .declared_bindings_index
-                    .values_by_unit
-                    .contains_key(source_unit)
-                {
-                    continue;
-                }
-                self.module_member_uses
-                    .insert((*source_unit, module.clone(), member.clone()));
-            }
+            self.derive_module_member_uses(source_unit_by_ordinal);
         }
 
         if requirements.call_arguments || requirements.call_arguments_from_unit {
-            for (argument, callee_object, callee_member, arg_index) in &self.raw_call_arguments {
-                let Some(argument_source_units) = source_units_by_binding.get(argument) else {
-                    continue;
-                };
-                for source_unit in argument_source_units {
-                    if requirements.call_arguments {
-                        self.call_arguments.insert((
-                            *source_unit,
-                            callee_member.clone(),
-                            *arg_index,
-                        ));
-                    }
-                    if requirements.call_arguments_from_unit
-                        && let Some(callee_object) = callee_object
-                        && let Some(callee_object_source_units) =
-                            source_units_by_binding.get(callee_object)
-                    {
-                        self.call_arguments_from_unit.extend(
-                            callee_object_source_units
-                                .iter()
-                                .map(|callee_object_source_unit| {
-                                    (
-                                        *source_unit,
-                                        *callee_object_source_unit,
-                                        callee_member.clone(),
-                                        *arg_index,
-                                    )
-                                }),
-                        );
-                    }
-                }
-            }
+            self.derive_call_arguments(requirements);
         }
 
         if requirements.makes_decorate_call_for_unit {
-            for (callee, class_anchor, member) in &self.decorate_calls {
-                let Some(callee_source_units) = source_units_by_binding.get(callee) else {
-                    continue;
-                };
-                for source_unit in callee_source_units {
-                    if let Some(class_source_units) = source_units_by_binding.get(class_anchor) {
-                        self.makes_decorate_call_for_unit
-                            .extend(class_source_units.iter().map(|class_source_unit| {
-                                (*source_unit, *class_source_unit, member.clone())
-                            }));
-                    }
-                }
-            }
+            self.derive_makes_decorate_call_for_unit();
         }
 
         if requirements.intrinsic_alias_referenced_by {
-            let mut raw_referencers_by_binding: BTreeMap<&str, Vec<SourceUnitId>> = BTreeMap::new();
-            for (referencer, binding) in &self.raw_source_unit_references_binding {
-                raw_referencers_by_binding
-                    .entry(binding.as_str())
-                    .or_default()
-                    .push(*referencer);
+            self.derive_intrinsic_alias_referenced_by();
+        }
+    }
+
+    fn derive_references_unit(&mut self) {
+        let source_units_by_binding = &self.declared_bindings_index.source_units_by_value;
+        for (source_unit, binding) in &self.raw_source_unit_references_binding {
+            if !self
+                .declared_bindings_index
+                .values_by_unit
+                .contains_key(source_unit)
+            {
+                continue;
             }
-            for (binding, property) in &self.intrinsic_aliases {
-                let Some(alias_source_units) = source_units_by_binding.get(binding) else {
-                    continue;
-                };
-                if let Some(referencers) = raw_referencers_by_binding.get(binding.as_str()) {
-                    self.intrinsic_alias_referenced_by
-                        .extend(alias_source_units.iter().flat_map(|alias_source_unit| {
-                            referencers.iter().map(|referencer| {
-                                (*alias_source_unit, property.clone(), *referencer)
-                            })
+            if let Some(referenced_source_units) = source_units_by_binding.get(binding) {
+                self.references_unit.extend(
+                    referenced_source_units
+                        .iter()
+                        .map(|referenced| (*source_unit, *referenced)),
+                );
+            }
+        }
+    }
+
+    /// Adds `member_reads` when required and returns the reads of `object.member` by a
+    /// declaring source unit, which `reads_member_of_unit` joins to the source units
+    /// declaring `object`.
+    fn derive_member_reads(
+        &mut self,
+        requirements: &DerivedFactRequirements,
+        source_unit_by_ordinal: &BTreeMap<SourceUnitOrdinal, SourceUnitId>,
+    ) -> BTreeSet<(SourceUnitId, String, String)> {
+        let mut member_reads_from_binding = BTreeSet::new();
+        for (statement_ordinal, object, member) in &self.raw_member_reads {
+            let Some(source_unit) = source_unit_by_ordinal.get(statement_ordinal) else {
+                continue;
+            };
+            if !self
+                .declared_bindings_index
+                .values_by_unit
+                .contains_key(source_unit)
+            {
+                continue;
+            }
+            if requirements.member_reads {
+                self.member_reads.insert((*source_unit, member.clone()));
+            }
+            if requirements.reads_member_of_unit
+                && let Some(object) = object
+            {
+                member_reads_from_binding.insert((*source_unit, object.clone(), member.clone()));
+            }
+        }
+        member_reads_from_binding
+    }
+
+    fn derive_reads_member_of_unit(
+        &mut self,
+        member_reads_from_binding: &BTreeSet<(SourceUnitId, String, String)>,
+    ) {
+        let source_units_by_binding = &self.declared_bindings_index.source_units_by_value;
+        for (source_unit, object_binding, member) in member_reads_from_binding {
+            if let Some(object_source_units) = source_units_by_binding.get(object_binding) {
+                self.reads_member_of_unit.extend(
+                    object_source_units.iter().map(|object_source_unit| {
+                        (*source_unit, *object_source_unit, member.clone())
+                    }),
+                );
+            }
+        }
+    }
+
+    fn derive_module_member_uses(
+        &mut self,
+        source_unit_by_ordinal: &BTreeMap<SourceUnitOrdinal, SourceUnitId>,
+    ) {
+        for (statement_ordinal, module, member) in &self.raw_module_member_uses {
+            let Some(source_unit) = source_unit_by_ordinal.get(statement_ordinal) else {
+                continue;
+            };
+            if !self
+                .declared_bindings_index
+                .values_by_unit
+                .contains_key(source_unit)
+            {
+                continue;
+            }
+            self.module_member_uses
+                .insert((*source_unit, module.clone(), member.clone()));
+        }
+    }
+
+    fn derive_call_arguments(&mut self, requirements: &DerivedFactRequirements) {
+        let source_units_by_binding = &self.declared_bindings_index.source_units_by_value;
+        for (argument, callee_object, callee_member, arg_index) in &self.raw_call_arguments {
+            let Some(argument_source_units) = source_units_by_binding.get(argument) else {
+                continue;
+            };
+            for source_unit in argument_source_units {
+                if requirements.call_arguments {
+                    self.call_arguments
+                        .insert((*source_unit, callee_member.clone(), *arg_index));
+                }
+                if requirements.call_arguments_from_unit
+                    && let Some(callee_object) = callee_object
+                    && let Some(callee_object_source_units) =
+                        source_units_by_binding.get(callee_object)
+                {
+                    self.call_arguments_from_unit
+                        .extend(callee_object_source_units.iter().map(
+                            |callee_object_source_unit| {
+                                (
+                                    *source_unit,
+                                    *callee_object_source_unit,
+                                    callee_member.clone(),
+                                    *arg_index,
+                                )
+                            },
+                        ));
+                }
+            }
+        }
+    }
+
+    fn derive_makes_decorate_call_for_unit(&mut self) {
+        let source_units_by_binding = &self.declared_bindings_index.source_units_by_value;
+        for (callee, class_anchor, member) in &self.decorate_calls {
+            let Some(callee_source_units) = source_units_by_binding.get(callee) else {
+                continue;
+            };
+            for source_unit in callee_source_units {
+                if let Some(class_source_units) = source_units_by_binding.get(class_anchor) {
+                    self.makes_decorate_call_for_unit
+                        .extend(class_source_units.iter().map(|class_source_unit| {
+                            (*source_unit, *class_source_unit, member.clone())
                         }));
                 }
+            }
+        }
+    }
+
+    fn derive_intrinsic_alias_referenced_by(&mut self) {
+        let source_units_by_binding = &self.declared_bindings_index.source_units_by_value;
+        let mut raw_referencers_by_binding: BTreeMap<&str, Vec<SourceUnitId>> = BTreeMap::new();
+        for (referencer, binding) in &self.raw_source_unit_references_binding {
+            raw_referencers_by_binding
+                .entry(binding.as_str())
+                .or_default()
+                .push(*referencer);
+        }
+        for (binding, property) in &self.intrinsic_aliases {
+            let Some(alias_source_units) = source_units_by_binding.get(binding) else {
+                continue;
+            };
+            if let Some(referencers) = raw_referencers_by_binding.get(binding.as_str()) {
+                self.intrinsic_alias_referenced_by
+                    .extend(alias_source_units.iter().flat_map(|alias_source_unit| {
+                        referencers
+                            .iter()
+                            .map(|referencer| (*alias_source_unit, property.clone(), *referencer))
+                    }));
             }
         }
     }
