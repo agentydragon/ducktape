@@ -9,9 +9,10 @@ import EsmSplit.CoreJS.ClassParents
 
 Replay transports a successful probe run across worlds when the reached CoreJS
 operations do not depend on host answers. The executable check covers
-allocation-only initializers, deferred opaque closures, and own data-property
-reads inside arrays and records. It checks each descriptor in the reached heap;
-an accessor or unsupported operation falls back to the generated proof.
+allocation-only initializers, deferred opaque closures, own data-property
+reads, and primitive logical and `void` expressions inside arrays and records.
+It checks each descriptor in the reached heap; an accessor or unsupported
+operation falls back to the generated proof.
 -/
 
 namespace CoreJS.LinkedBehavior
@@ -936,6 +937,15 @@ private def replaySuccessOfEquivalent {source : World} {α : Type}
         rfl }
   | .throw .. | .unknown .. | .fuel => none
 
+/-- `void` evaluates its operand before discarding its value. -/
+theorem evalExpr_void (fuel : Nat) (env : Env) (operand : Expr) :
+    (evalExpr (W := W) (fuel + 1) env (.unary .void operand)) =
+      (evalExpr fuel env operand >>= fun _ => pure Val.undef) := by
+  simp only [evalExpr]
+  apply congrArg (fun f : Val → M W Val => evalExpr fuel env operand >>= f)
+  funext value state
+  rfl
+
 /-- Check the actual own descriptor before bypassing the accessor branch.
 The ordinary evaluator still performs the read in both worlds. -/
 private def replaySuccessOwnData {source : World} (fuel : Nat) (base key : Val) (s : State source) :
@@ -981,15 +991,22 @@ private def literalShortCircuits (op : LogOp) (expr : Expr) : Bool :=
   | none => false
 
 /- Reached syntax remains restricted to primitives, binding reads and plain
-records, keeping functions, host values and accessors on the fallback path. -/
+arrays and records, keeping functions, host values and accessors on the
+fallback path. -/
 mutual
 
 private def primitiveLogicalExpr : Expr → Bool
   | .undef | .null | .bool _ | .num _ | .str _ | .var _ => true
+  | .unary .void operand => primitiveLogicalExpr operand
   | .logical op left right =>
       primitiveLogicalExpr left && (literalShortCircuits op left || primitiveLogicalExpr right)
+  | .arr values => primitiveLogicalExprs values
   | .obj props => primitiveLogicalProps props
   | _ => false
+
+private def primitiveLogicalExprs : List Expr → Bool
+  | [] => true
+  | value :: rest => primitiveLogicalExpr value && primitiveLogicalExprs rest
 
 private def primitiveLogicalProps : List PropDef → Bool
   | [] => true
@@ -1014,6 +1031,15 @@ private def checkReplayExpr {source : World} (allowLogical : Bool) : (fuel : Nat
         (fun _ => replay_evalReplayable (n + 1) env expr supported)
     else
       match expr with
+      | .unary .void operand => do
+        guard allowLogical
+        let evaluated ← checkReplayExpr allowLogical n env operand s
+        let result := replaySuccessBind
+          (f := fun w _ => (pure Val.undef : M w Val)) evaluated
+          (replaySuccessOfPure Val.undef evaluated.next)
+        have result' : ReplaySuccess (fun w => evalExpr (W := w) (n + 1) env (.unary .void operand)) s := by
+          simpa only [evalExpr_void] using result
+        pure result'
       | .logical op left right => do
         guard allowLogical
         let leftRun ← checkReplayExpr allowLogical n env left s
@@ -1480,3 +1506,4 @@ end CoreJS.LinkedBehavior
 #print axioms CoreJS.LinkedBehavior.replayPremised
 #print axioms CoreJS.LinkedBehavior.replayPremised_pair
 #print axioms CoreJS.LinkedBehavior.replayPremisedDynamicWitness
+#print axioms CoreJS.LinkedBehavior.evalExpr_void
