@@ -15,17 +15,10 @@ candidate uniquely selects its target.
 
 ### Repair diagnostics and proposals
 
-Improve keep-going selector reports and offer proven repairs for outcomes that
-can be repaired mechanically. Remaining diagnostic gaps are listed under
-[Automation product flows](../TODO.md#automation-product-flows-over-the-solver):
-first mismatch details for declaration ranges, identifier and expression
-bindings, parameter patterns, and list-hole bindings; near misses for
-multi-statement templates; name-pin debt for `note:` annotations; and readable
-`alpha_all` names for free references. Ambiguous outcomes also need useful
-differentiators when the candidate list is truncated. For duplicate claims,
-identify whether the repair is a binding-group collapse, cross-module group
-support, or a genuine ownership conflict. Preserve relational premises and
-domain reductions when explaining contradictions.
+Follow the [selector diagnostics backlog](../TODO.md#automation-product-flows-over-the-solver)
+for mismatch and relational-contradiction work. For truncated ambiguous results,
+show useful differentiators. For duplicate claims, distinguish binding-group
+collapse, cross-module group support, and genuine ownership conflicts.
 
 A repair proposal must retain the current target and proposed selector, explain
 its evidence and skip reason, and pass the production resolver against the same
@@ -46,12 +39,9 @@ author's behalf. Module proposal follow-ups are in
 
 ### Bulk stabilization follow-through
 
-Continue the unresolved ranking, minimization, and fixture work in
-[selector authoring](../TODO.md#automation-product-flows-over-the-solver) and
-[read-off minimizer polish](../TODO.md#read-off-minimizer-polish). In
-particular, source-aware ranking for multi-statement windows and stable literal
-values, cross-module binding groups, and grounded stabilization examples remain
-open. Keep batches reviewable and report the debt before and after a batch.
+Use the [read-off minimizer backlog](../TODO.md#read-off-minimizer-polish) and
+[fixture follow-ups](../TODO.md#test-infrastructure). Measure selector debt before
+and after each reviewed batch.
 
 ## Acceptance contract
 
@@ -59,10 +49,9 @@ open. Keep batches reviewable and report the debt before and after a batch.
   rules. Similarity to another source snapshot is not evidence.
 - A candidate is accepted only when the shared resolver proves the intended
   binding, group, or anonymous statement unique in the exact configured input.
-- The one-shot `synthesize-selectors --apply` path writes only candidates that
-  already have a uniqueness proof, validates the rewritten YAML, and uses atomic
-  replacement. Dry-run output lists proposed changes and skipped candidates with
-  their reasons. Any future stored plan must re-resolve before writing.
+- Preserve the [reviewed bulk conversion workflow](../docs/selectors.md#bulk-conversion-loop),
+  including skipped-candidate reasons, uniqueness proof, YAML validation and
+  atomic writes.
 - Keep-going validation reports the complete selector backlog. For a real spec
   conversion, verify the resolved binding is unchanged and emitted output stays
   byte-identical under the target gate.
