@@ -9,35 +9,41 @@ import (
 	"github.com/google/go-github/v88/github"
 )
 
+// PullRequest pairs the observed state with the head repository. GitHub omits the latter for a deleted fork.
+type PullRequest struct {
+	githubmodel.PullRequestObservation
+	HeadRepository *githubmodel.Repository
+}
+
 // PullRequest reads a pull request as an installation.
-func (c *Client) PullRequest(ctx context.Context, repository string, number int, installationID int64) (PullRequestObservation, error) {
+func (c *Client) PullRequest(ctx context.Context, repository string, number int, installationID int64) (PullRequest, error) {
 	owner, name, err := splitRepository(repository)
 	if err != nil {
-		return PullRequestObservation{}, err
+		return PullRequest{}, err
 	}
 	pullRequest, err := callAsInstallation(ctx, c, installationID, false, func(ctx context.Context, client *github.Client) (*github.PullRequest, *github.Response, error) {
 		return client.PullRequests.Get(ctx, owner, name, number)
 	})
 	if err != nil {
-		return PullRequestObservation{}, err
+		return PullRequest{}, err
 	}
 	if pullRequest == nil || pullRequest.Number == nil {
-		return PullRequestObservation{}, &InvalidResponseError{Reason: "pull request number is missing"}
+		return PullRequest{}, &InvalidResponseError{Reason: "pull request number is missing"}
 	}
 	if *pullRequest.Number != number {
-		return PullRequestObservation{}, &SourceChangedError{Reason: "GitHub pull request identity changed"}
+		return PullRequest{}, &SourceChangedError{Reason: "GitHub pull request identity changed"}
 	}
 	if pullRequest.State == nil {
-		return PullRequestObservation{}, &InvalidResponseError{Reason: "pull request state is missing"}
+		return PullRequest{}, &InvalidResponseError{Reason: "pull request state is missing"}
 	}
 	if pullRequest.Merged == nil {
-		return PullRequestObservation{}, &InvalidResponseError{Reason: "pull request merged state is missing"}
+		return PullRequest{}, &InvalidResponseError{Reason: "pull request merged state is missing"}
 	}
 	var state githubmodel.PullRequestState
 	switch *pullRequest.State {
 	case "open":
 		if *pullRequest.Merged {
-			return PullRequestObservation{}, &InvalidResponseError{Reason: "open pull request is marked merged"}
+			return PullRequest{}, &InvalidResponseError{Reason: "open pull request is marked merged"}
 		}
 		state = githubmodel.PullRequestOpen
 	case "closed":
@@ -47,44 +53,39 @@ func (c *Client) PullRequest(ctx context.Context, repository string, number int,
 			state = githubmodel.PullRequestClosed
 		}
 	default:
-		return PullRequestObservation{}, &InvalidResponseError{Reason: "pull request state is invalid"}
+		return PullRequest{}, &InvalidResponseError{Reason: "pull request state is invalid"}
 	}
 	base := pullRequest.GetBase()
 	head := pullRequest.GetHead()
 	if head.GetSHA() == "" {
-		return PullRequestObservation{}, &InvalidResponseError{Reason: "pull request head is missing"}
+		return PullRequest{}, &InvalidResponseError{Reason: "pull request head is missing"}
 	}
-	revision := Revision{SHA: head.GetSHA()}
+	observation := PullRequest{PullRequestObservation: githubmodel.PullRequestObservation{
+		HeadSHA: head.GetSHA(), BaseRef: base.GetRef(), State: state, Mergeability: githubmodel.MergeabilityUnknown,
+	}}
 	if head.Repo != nil {
 		fork, err := repositoryFrom(head.Repo)
 		if err != nil {
-			return PullRequestObservation{}, err
+			return PullRequest{}, err
 		}
-		revision.Repository = &fork
-	}
-	var mergeability githubmodel.MergeableState
-	switch {
-	case pullRequest.Mergeable == nil:
-		mergeability = githubmodel.MergeabilityUnknown
-	case *pullRequest.Mergeable:
-		mergeability = githubmodel.Mergeable
-	default:
-		mergeability = githubmodel.Conflicting
+		observation.HeadRepository = &fork
 	}
 	if state != githubmodel.PullRequestOpen {
 		if base.GetRef() == "" {
-			return PullRequestObservation{}, &InvalidResponseError{Reason: "pull request base ref is missing"}
+			return PullRequest{}, &InvalidResponseError{Reason: "pull request base ref is missing"}
 		}
 		if base.SHA == nil || *base.SHA == "" {
-			return PullRequestObservation{}, &InvalidResponseError{Reason: "pull request base sha is missing"}
+			return PullRequest{}, &InvalidResponseError{Reason: "pull request base sha is missing"}
 		}
-		return PullRequestObservation{
-			Head: revision, BaseRef: base.GetRef(), BaseSHA: *base.SHA, State: state, Mergeability: mergeability,
-		}, nil
-	}
-
-	observation := PullRequestObservation{
-		Head: revision, BaseRef: base.GetRef(), State: state, Mergeability: githubmodel.MergeabilityUnknown,
+		observation.BaseSHA = *base.SHA
+		if pullRequest.Mergeable != nil {
+			if *pullRequest.Mergeable {
+				observation.Mergeability = githubmodel.Mergeable
+			} else {
+				observation.Mergeability = githubmodel.Conflicting
+			}
+		}
+		return observation, nil
 	}
 	if observation.BaseRef == "" {
 		return observation, nil
@@ -94,12 +95,12 @@ func (c *Client) PullRequest(ctx context.Context, repository string, number int,
 	if pullRequest.GetMergeable() && pullRequest.MergeCommitSHA != nil && githubmodel.IsCommitSHA(*pullRequest.MergeCommitSHA) {
 		testCommit, err = c.pullRequestTestCommit(ctx, owner, name, *pullRequest.MergeCommitSHA, installationID)
 		if err != nil {
-			return PullRequestObservation{}, err
+			return PullRequest{}, err
 		}
 	}
 	baseSHA, found, err := c.Branch(ctx, repository, observation.BaseRef, installationID)
 	if err != nil {
-		return PullRequestObservation{}, err
+		return PullRequest{}, err
 	}
 	if !found || !githubmodel.IsCommitSHA(baseSHA) {
 		return observation, nil
@@ -118,11 +119,11 @@ func (c *Client) PullRequest(ctx context.Context, repository string, number int,
 	}
 	first, second := testCommit.Parents[0].GetSHA(), testCommit.Parents[1].GetSHA()
 	if !githubmodel.IsCommitSHA(first) || !githubmodel.IsCommitSHA(second) ||
-		!((first == baseSHA && second == revision.SHA) || (second == baseSHA && first == revision.SHA)) {
+		!((first == baseSHA && second == observation.HeadSHA) || (second == baseSHA && first == observation.HeadSHA)) {
 		return observation, nil
 	}
 	observation.Mergeability = githubmodel.Mergeable
-	observation.MergeCommit = &githubmodel.MergeCommit{SHA: testCommit.GetSHA(), BaseSHA: baseSHA, HeadSHA: revision.SHA}
+	observation.MergeCommit = &githubmodel.MergeCommit{SHA: testCommit.GetSHA(), BaseSHA: baseSHA, HeadSHA: observation.HeadSHA}
 	return observation, nil
 }
 

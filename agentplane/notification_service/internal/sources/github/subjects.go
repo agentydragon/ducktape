@@ -40,13 +40,12 @@ func (p *Provider) readSubject(ctx context.Context, source githubmodel.Source, s
 		if err != nil {
 			return subjectObservation{}, err
 		}
-		revisions := []githubmodel.HeadRevision{{Repository: here, SHA: pullRequest.Head.SHA}}
+		revisions := []githubmodel.HeadRevision{{Repository: here, SHA: pullRequest.HeadSHA}}
 		// Base-repository CI may build the fork's head, so the head is associated with the fork by the identity
 		// GitHub names, never by an equal SHA. Only an installation on the fork grants access to its deliveries.
-		if pullRequest.Head.Repository != nil && pullRequest.Head.Repository.ID != subject.RepositoryID {
-			fork := githubmodel.Repository{ID: pullRequest.Head.Repository.ID, Name: pullRequest.Head.Repository.FullName}
-			revisions = append(revisions, githubmodel.HeadRevision{Repository: fork, SHA: pullRequest.Head.SHA})
-			access, err := p.forkAccess(ctx, *pullRequest.Head.Repository)
+		if fork := pullRequest.HeadRepository; fork != nil && fork.ID != subject.RepositoryID {
+			revisions = append(revisions, githubmodel.HeadRevision{Repository: *fork, SHA: pullRequest.HeadSHA})
+			access, err := p.forkAccess(ctx, *fork)
 			if err != nil {
 				return subjectObservation{}, err
 			}
@@ -56,13 +55,7 @@ func (p *Provider) readSubject(ctx context.Context, source githubmodel.Source, s
 				}
 			}
 		}
-		return subjectObservation{
-			revisions: revisions,
-			pullRequest: &githubmodel.PullRequestObservation{
-				BaseRef: pullRequest.BaseRef, HeadSHA: pullRequest.Head.SHA, BaseSHA: pullRequest.BaseSHA,
-				State: pullRequest.State, Mergeability: pullRequest.Mergeability, MergeCommit: pullRequest.MergeCommit,
-			},
-		}, nil
+		return subjectObservation{revisions: revisions, pullRequest: &pullRequest.PullRequestObservation}, nil
 	case githubmodel.IssueSubject:
 		return subjectObservation{}, p.client.CheckIssue(ctx, name, int(s.Number), installation)
 	case githubmodel.BranchSubject:
