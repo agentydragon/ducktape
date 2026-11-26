@@ -9,10 +9,11 @@ use anyhow::{Context, Result, bail, ensure};
 use clap::{Args, ValueEnum};
 use graph_provenance::{CurrentRoots, GraphProvenance, sha256};
 use peel::OutputFormat;
-use pipeline::{ContractAudit, ContractProbeOutcome, load_transform_spec_source};
+use pipeline::{ContractAudit, ContractProbeOutcome};
 use serde::{Deserialize, Serialize};
 use spec::{ChunkExportPurity, RetainedCallbackSignature};
 use tempfile::NamedTempFile;
+use transform_inputs::load_transform_spec_source;
 
 use crate::{emit_report, write_section};
 

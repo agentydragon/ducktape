@@ -27,7 +27,7 @@ use clap::Args as ClapArgs;
 use command_output::write_report;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
 use peel::OutputFormat;
-use pipeline::{RunOutput, TransformRunOptions, TransformSpecSource, run_transform};
+use pipeline::{RunOutput, TransformRunOptions, run_transform};
 use selector_codemod::source_input::resolve_chunk_source_file;
 use selector_outcome::{
     Entity, InvalidSelectorError, InvalidSelectorReport, Outcome, Placement, SelectorKind,
@@ -43,6 +43,7 @@ use spec_resolution::{
     resolve_chunk, spec_module, validate_logical_module_claims,
 };
 use spec_tree::compile_spec_tree;
+use transform_inputs::TransformSpecSource;
 
 /// Args for `debundle spec validate`. The spec source and package-root flags
 /// mirror `debundle run` (`--spec` / `--tree-config` + roots) so the same

@@ -216,7 +216,7 @@ fn resolved_arguments(nodes: &[CommandNode<'_>]) -> Result<Vec<ResolvedArgument>
     for node in nodes {
         for argument in node.command.get_arguments() {
             let name = argument.get_id().as_str();
-            if transform_command::is_inactive_transform_default(node.matches, name) {
+            if transform_inputs::is_inactive_transform_default(node.matches, name) {
                 continue;
             }
             if matches!(

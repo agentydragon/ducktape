@@ -51,10 +51,3 @@ pub fn module_key(id: ModuleId) -> ModuleKey {
 pub fn atomic_group_key(idx: usize) -> String {
     format!("atomic:{idx}")
 }
-
-pub fn module_id_from_key(key: &ModuleKey) -> Option<ModuleId> {
-    key.as_str()
-        .strip_prefix("logical:")
-        .and_then(|idx| idx.parse::<usize>().ok())
-        .map(ModuleId)
-}

@@ -61,7 +61,10 @@ rust_library(
     name = "analysis_thread",
     srcs = ["analysis_thread.rs"],
     edition = "2024",
-    deps = ["@crates//:swc_common"],
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:swc_common",
+    ],
 )
 
 rust_library(
@@ -1698,6 +1701,7 @@ rust_library(
         ":spec_stats",
         ":spec_tree",
         ":transform_command",
+        ":transform_inputs",
         ":yaml_edit",
         "@crates//:anyhow",
         "@crates//:clap",
@@ -2053,6 +2057,7 @@ rust_binary(
     deps = [
         ":analysis_thread",
         ":transform_command",
+        ":transform_inputs",
         "@crates//:anyhow",
         "@crates//:clap",
     ],

@@ -11,10 +11,10 @@ use artifact::{
 };
 use clap::Args;
 use peel::OutputFormat;
-use pipeline::load_transform_spec_source;
 use prepare_chunks::prepare_js_chunks;
 use serde::Serialize;
 use std::io::Write;
+use transform_inputs::load_transform_spec_source;
 
 use crate::emit_report;
 

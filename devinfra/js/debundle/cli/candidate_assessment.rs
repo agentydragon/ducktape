@@ -7,11 +7,12 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use transform_command::{SpecSourceArgs, TransformContextArgs, TransformContextAuxArgs};
+use transform_inputs::{SpecSourceArgs, TransformContextArgs, TransformContextAuxArgs};
 
 use anyhow::{Context, Result, ensure};
 use graph_provenance::VerifiedGraphSourceContext;
-use pipeline::{AnalysisArtifactInput, TransformRequest};
+use pipeline::AnalysisArtifactInput;
+use transform_inputs::TransformRequest;
 
 use crate::binding::ModuleDocs;
 use crate::edit_gate::GraphEditArgs;

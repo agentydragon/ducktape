@@ -67,7 +67,7 @@ fn single_graph_context(
 /// context. This only prepares inputs; it never dispatches the recorded run.
 pub(crate) fn graph_transform_request(
     context: &graph_provenance::VerifiedGraphSourceContext,
-) -> Result<pipeline::TransformRequest> {
+) -> Result<transform_inputs::TransformRequest> {
     let args = DebundleArgs::try_parse_from(context.regeneration_command())
         .context("parsing the verified graph's canonical run context")?;
     let DebundleCommand::Run(run) = args.command else {
@@ -493,7 +493,7 @@ pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> Ex
     let raw_argv = std::env::args_os().collect::<Vec<_>>();
     let command = cli_command();
     let matches = command.clone().get_matches_from(raw_argv.clone());
-    if let Err(error) = transform_command::validate_transform_arg_matches(&matches) {
+    if let Err(error) = transform_inputs::validate_transform_arg_matches(&matches) {
         command
             .clone()
             .error(clap::error::ErrorKind::ArgumentConflict, error.to_string())
