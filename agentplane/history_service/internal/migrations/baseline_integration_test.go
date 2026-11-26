@@ -25,18 +25,16 @@ func execute(t *testing.T, db *sql.DB, query string, args ...any) {
 	}
 }
 
-// rollbackServiceWriterMigration restores the version-18 schema for tests that exercise its baseline adoption.
-func rollbackServiceWriterMigration(t *testing.T, db *sql.DB) {
+// upTo migrates db to version, for tests that exercise adopting an older schema.
+func upTo(t *testing.T, db *sql.DB, version int64) {
 	t.Helper()
-	if postgres.Count(t, db, `SELECT count(*) FROM session_history WHERE writer_service_uri IS NOT NULL`) != 0 {
-		t.Fatal("cannot roll back service-writer migration with service-owned Sessions")
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
 	}
-	execute(t, db, `ALTER TABLE session_history DROP CONSTRAINT history_writer_service_uri_valid`)
-	execute(t, db, `ALTER TABLE session_history DROP CONSTRAINT history_writer_one_kind`)
-	execute(t, db, `ALTER TABLE session_history ADD CONSTRAINT history_writer_one_kind
-		CHECK (writer_uid IS NULL OR writer_identity_uid IS NULL)`)
-	execute(t, db, `ALTER TABLE session_history DROP COLUMN writer_service_uri`)
-	execute(t, db, `DELETE FROM history_service_goose_version WHERE version_id=19`)
+	if _, err := provider.UpTo(t.Context(), version); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestHistoryBaselineCreatesUsableHistory(t *testing.T) {
@@ -75,10 +73,7 @@ func TestHistoryBaselineCreatesUsableHistory(t *testing.T) {
 
 func TestHistoryBaselineAdoptsCompletedRewriteWithoutRecreatingTables(t *testing.T) {
 	db := baselineDB(t)
-	if err := Up(t.Context(), db); err != nil {
-		t.Fatal(err)
-	}
-	rollbackServiceWriterMigration(t, db)
+	upTo(t, db, 18)
 	id := uuid.New()
 	execute(t, db, `INSERT INTO session_history(id,last_cursor,source_id) VALUES($1,3,'fixture-source')`, id)
 	execute(t, db, `INSERT INTO session_event(session_id,cursor,payload,kind) VALUES($1,3,$2,31)`, id, []byte("fixture retained event"))
@@ -114,10 +109,7 @@ func TestHistoryBaselineRejectsIncompletePredecessors(t *testing.T) {
 	for _, mode := range []string{"unmarked", "before_rewrite", "partial_schema"} {
 		t.Run(mode, func(t *testing.T) {
 			db := baselineDB(t)
-			if err := Up(t.Context(), db); err != nil {
-				t.Fatal(err)
-			}
-			rollbackServiceWriterMigration(t, db)
+			upTo(t, db, 18)
 			execute(t, db, `DELETE FROM history_service_goose_version WHERE version_id>0`)
 			if mode != "unmarked" {
 				version := 17
