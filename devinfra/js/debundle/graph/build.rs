@@ -119,61 +119,7 @@ pub fn build_dependency_graph_with(
                 .or_default()
                 .push(SourceUnitId(stmt.ordinal.0));
         }
-        let id = SourceUnitId(stmt.ordinal.0);
-        nodes.push(SourceUnit {
-            id,
-            statement_ordinal: stmt.ordinal,
-            source_location: stmt.source_location.clone(),
-            declared: stmt.declared.clone(),
-            kind: stmt.kind,
-            purity: stmt.purity.clone(),
-            callback_factory_barriers: stmt.callback_factory_barriers.clone(),
-            heap_native_integrity_uses: stmt.heap_native_integrity_uses.clone(),
-            synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
-                crate::reports::schema::SynchronousExecutionReport {
-                    initializer_binding_effects: calls.initializer_binding_effects.clone(),
-                    initializer_external_effects: calls.initializer_external_effects.clone(),
-                    purity_disagreement: calls.purity_disagreement.clone(),
-                    binding_effect_authority: Some(calls.binding_effect_authority_report()),
-                    local_record_factory_uses: calls.local_record_factory_uses.clone(),
-                    local_record_factory_rejections: calls.local_record_factory_rejections.clone(),
-                    complete: calls.complete,
-                    native_integrity_checks: calls.native_integrity_checks.clone(),
-                    native_prototype_property_checks: calls
-                        .native_prototype_property_checks
-                        .clone(),
-                    native_prefix_observations: calls.native_prefix_observations.clone(),
-                    native_integrity_uses: calls.native_integrity_uses.clone(),
-                    native_operation_input_uses: calls.native_operation_input_uses.clone(),
-                    imported_primitive_array_spread_input_uses: calls
-                        .imported_primitive_array_spread_input_uses
-                        .clone(),
-                    inference_uses: calls
-                        .inference_uses
-                        .iter()
-                        .map(crate::reports::schema::InferenceUseReport::from)
-                        .collect(),
-                    precision_losses: calls.precision_losses.clone(),
-                    callback_factory_uses: Vec::new(),
-                    returned_record_uses: Vec::new(),
-                    author_host_contract_uses: calls.author_host_contract_uses.clone(),
-                    heap_frontier: report_heap_frontier(
-                        &stmt.heap_contents,
-                        &calls.heap_contents,
-                        &calls.non_assumed_heap_accesses.reads,
-                        &calls.non_assumed_heap_accesses.writes,
-                    ),
-                }
-            }),
-            callback_factory_uses: stmt
-                .synchronous_calls
-                .as_ref()
-                .map_or_else(Vec::new, |calls| calls.callback_factory_uses.clone()),
-            returned_record_uses: stmt
-                .synchronous_calls
-                .as_ref()
-                .map_or_else(Vec::new, |calls| calls.returned_record_uses.clone()),
-        });
+        nodes.push(source_unit_node(stmt));
     }
 
     // Keep every declaration site. A representative is only an address for a
@@ -182,8 +128,156 @@ pub fn build_dependency_graph_with(
         .iter()
         .map(|(binding, sites)| (binding.clone(), sites[0]))
         .collect();
+    let shared_vars = shared_var_bindings(facts, &declaration_sites)?;
+
+    // Collect (from, to, reason) triples; the final `edges` Vec is
+    // sorted at the end so `DependencyEdgeId` indices are stable.
+    let mut raw_edges = Vec::<(SourceUnitId, SourceUnitId, EdgeReason)>::new();
+    emit_co_location_edges(facts, &declaration_sites, &shared_vars, &mut raw_edges);
+    // Look-aside table for "what statement owns this SourceUnitId" — shared
+    // by the direct eager-read filter, at-init call promotion, and heap-content
+    // call propagation.
+    let stmt_by_source_unit: std::collections::HashMap<SourceUnitId, &StatementFacts> = facts
+        .iter()
+        .map(|stmt| (SourceUnitId(stmt.ordinal.0), stmt))
+        .collect();
+    // A top-level eager read of a binding declared by a `function`
+    // declaration cannot observe a TDZ: ECMAScript Phase 1 of module
+    // linking (`ModuleDeclarationInstantiation`) binds every
+    // `FunctionDeclaration` to its hoisted closure before any module
+    // body runs. So `const x = f()` where `f` is a chunk-declared
+    // FnDecl is safe regardless of which module owns `f` — there is
+    // no init-order constraint to record. Retain the import as `HoistedUse`:
+    // entering the function's module can still change ESM traversal and expose
+    // a TDZ on another binding. Other declaration kinds retain eager
+    // constraints: lexical declarations have a TDZ, while var initializers
+    // change an already-hoisted cell whose value reads must observe in order.
+    let target_is_hoisted = |id: &Id| -> bool {
+        binding_source_unit
+            .get(id)
+            .and_then(|source_unit| stmt_by_source_unit.get(source_unit))
+            .map(|stmt| stmt.kind == StatementKind::FnDecl)
+            .unwrap_or(false)
+    };
+    emit_direct_binding_edges(
+        facts,
+        &binding_source_unit,
+        target_is_hoisted,
+        &mut raw_edges,
+    );
+
+    // At-init call promotion (docs/design.md "At-init call promotion").
+    //
+    // A function body's lazy reads/rebinds fire at-init from the
+    // perspective of any caller that invokes the function at-init.
+    // Without promotion, the realizability primitive's relaxed
+    // clause-3 predicate (constraining-edge subgraph has no
+    // multi-module SCC) is unsound for the canonical
+    // `console.log(readB())` shape: the lazy read inside `readB`'s
+    // body fires when the top-level call evaluates, but only the
+    // graph's lazy edge is recorded, so cross-module cycles that
+    // close through such a lazy edge look acyclic to the constraining
+    // subgraph. After promotion, the primitive's verdict is sound.
+    //
+    // Promoted edges are added at dependency graph level (assignment-
+    // independent): intra-module promoted edges are dropped by the
+    // quotient automatically. Only direct `f(...)` callees that
+    // resolve to chunk-declared bindings are followed; indirect
+    // calls (`const g = f; g()`), method calls (`obj.method()`), and
+    // dynamic dispatch are conservatively unmodelled.
+    let fallback_eager_uses = promote_at_init_calls(
+        facts,
+        &binding_source_unit,
+        &shared_vars,
+        &stmt_by_source_unit,
+        target_is_hoisted,
+        &mut raw_edges,
+    );
+    emit_shared_var_access_order(facts, &shared_vars, &fallback_eager_uses, &mut raw_edges);
+
+    emit_s_chain(facts, options, &mut raw_edges);
+    emit_heap_content_order(facts, &mut raw_edges);
+
+    let mut edges = sorted_dependency_edges(raw_edges);
+    let premise_effects = premise_effects(&stmt_by_source_unit);
+    retain_premise_verdicts(&mut edges, &stmt_by_source_unit, &premise_effects);
+    let analyzed_edge_count = edges.len();
+    let (commuting_premises, unused_commuting_premises) =
+        apply_commuting_statements(&nodes, &mut edges, commuting_statements, &premise_effects)?;
+    retain_premise_verdicts(
+        &mut edges[analyzed_edge_count..],
+        &stmt_by_source_unit,
+        &premise_effects,
+    );
+    Ok((
+        DependencyGraph::from_parts(nodes, edges, commuting_premises),
+        unused_commuting_premises,
+    ))
+}
+
+/// The graph node for one top-level statement, carrying its report-facing facts.
+fn source_unit_node(stmt: &StatementFacts) -> SourceUnit {
+    SourceUnit {
+        id: SourceUnitId(stmt.ordinal.0),
+        statement_ordinal: stmt.ordinal,
+        source_location: stmt.source_location.clone(),
+        declared: stmt.declared.clone(),
+        kind: stmt.kind,
+        purity: stmt.purity.clone(),
+        callback_factory_barriers: stmt.callback_factory_barriers.clone(),
+        heap_native_integrity_uses: stmt.heap_native_integrity_uses.clone(),
+        synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
+            crate::reports::schema::SynchronousExecutionReport {
+                initializer_binding_effects: calls.initializer_binding_effects.clone(),
+                initializer_external_effects: calls.initializer_external_effects.clone(),
+                purity_disagreement: calls.purity_disagreement.clone(),
+                binding_effect_authority: Some(calls.binding_effect_authority_report()),
+                local_record_factory_uses: calls.local_record_factory_uses.clone(),
+                local_record_factory_rejections: calls.local_record_factory_rejections.clone(),
+                complete: calls.complete,
+                native_integrity_checks: calls.native_integrity_checks.clone(),
+                native_prototype_property_checks: calls.native_prototype_property_checks.clone(),
+                native_prefix_observations: calls.native_prefix_observations.clone(),
+                native_integrity_uses: calls.native_integrity_uses.clone(),
+                native_operation_input_uses: calls.native_operation_input_uses.clone(),
+                imported_primitive_array_spread_input_uses: calls
+                    .imported_primitive_array_spread_input_uses
+                    .clone(),
+                inference_uses: calls
+                    .inference_uses
+                    .iter()
+                    .map(crate::reports::schema::InferenceUseReport::from)
+                    .collect(),
+                precision_losses: calls.precision_losses.clone(),
+                callback_factory_uses: Vec::new(),
+                returned_record_uses: Vec::new(),
+                author_host_contract_uses: calls.author_host_contract_uses.clone(),
+                heap_frontier: report_heap_frontier(
+                    &stmt.heap_contents,
+                    &calls.heap_contents,
+                    &calls.non_assumed_heap_accesses.reads,
+                    &calls.non_assumed_heap_accesses.writes,
+                ),
+            }
+        }),
+        callback_factory_uses: stmt
+            .synchronous_calls
+            .as_ref()
+            .map_or_else(Vec::new, |calls| calls.callback_factory_uses.clone()),
+        returned_record_uses: stmt
+            .synchronous_calls
+            .as_ref()
+            .map_or_else(Vec::new, |calls| calls.returned_record_uses.clone()),
+    }
+}
+
+/// Bindings declared at more than one site. Every site must declare `var`.
+fn shared_var_bindings(
+    facts: &[StatementFacts],
+    declaration_sites: &BTreeMap<Id, Vec<SourceUnitId>>,
+) -> Result<BTreeSet<Id>, DependencyGraphBuildError> {
     let mut shared_vars = BTreeSet::new();
-    for (binding, sites) in &declaration_sites {
+    for (binding, sites) in declaration_sites {
         if sites.len() > 1 {
             for &source_unit in sites {
                 if !facts[source_unit.0].var_declared.contains(binding) {
@@ -198,11 +292,18 @@ pub fn build_dependency_graph_with(
             shared_vars.insert(binding.clone());
         }
     }
+    Ok(shared_vars)
+}
 
-    // Collect (from, to, reason) triples; the final `edges` Vec is
-    // sorted at the end so `DependencyEdgeId` indices are stable.
-    let mut raw_edges = Vec::<(SourceUnitId, SourceUnitId, EdgeReason)>::new();
-    for binding in &shared_vars {
+/// Two-way edges that keep co-declared `var` sites and certified stable
+/// spread producers with their consumers in one module.
+fn emit_co_location_edges(
+    facts: &[StatementFacts],
+    declaration_sites: &BTreeMap<Id, Vec<SourceUnitId>>,
+    shared_vars: &BTreeSet<Id>,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) {
+    for binding in shared_vars {
         let sites = &declaration_sites[binding];
         for &source_unit in &sites[1..] {
             raw_edges.push((
@@ -251,31 +352,16 @@ pub fn build_dependency_graph_with(
             ));
         }
     }
-    // Look-aside table for "what statement owns this SourceUnitId" — shared
-    // by the direct eager-read filter, at-init call promotion, and heap-content
-    // call propagation.
-    let stmt_by_source_unit: std::collections::HashMap<SourceUnitId, &StatementFacts> = facts
-        .iter()
-        .map(|stmt| (SourceUnitId(stmt.ordinal.0), stmt))
-        .collect();
-    // A top-level eager read of a binding declared by a `function`
-    // declaration cannot observe a TDZ: ECMAScript Phase 1 of module
-    // linking (`ModuleDeclarationInstantiation`) binds every
-    // `FunctionDeclaration` to its hoisted closure before any module
-    // body runs. So `const x = f()` where `f` is a chunk-declared
-    // FnDecl is safe regardless of which module owns `f` — there is
-    // no init-order constraint to record. Retain the import as `HoistedUse`:
-    // entering the function's module can still change ESM traversal and expose
-    // a TDZ on another binding. Other declaration kinds retain eager
-    // constraints: lexical declarations have a TDZ, while var initializers
-    // change an already-hoisted cell whose value reads must observe in order.
-    let target_is_hoisted = |id: &Id| -> bool {
-        binding_source_unit
-            .get(id)
-            .and_then(|source_unit| stmt_by_source_unit.get(source_unit))
-            .map(|stmt| stmt.kind == StatementKind::FnDecl)
-            .unwrap_or(false)
-    };
+}
+
+/// Edges for each statement's own reads, rebinds and local effects of
+/// chunk-declared bindings.
+fn emit_direct_binding_edges(
+    facts: &[StatementFacts],
+    binding_source_unit: &HashMap<Id, SourceUnitId>,
+    target_is_hoisted: impl Fn(&Id) -> bool,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) {
     for stmt in facts {
         let from = SourceUnitId(stmt.ordinal.0);
         let mut push_binding_edge = |binding: &Id, kind: DepKind| {
@@ -331,38 +417,17 @@ pub fn build_dependency_graph_with(
             push_binding_edge(binding, DepKind::LocalEffect);
         }
     }
+}
 
-    // At-init call promotion (docs/design.md "At-init call promotion").
-    //
-    // A function body's lazy reads/rebinds fire at-init from the
-    // perspective of any caller that invokes the function at-init.
-    // Without promotion, the realizability primitive's relaxed
-    // clause-3 predicate (constraining-edge subgraph has no
-    // multi-module SCC) is unsound for the canonical
-    // `console.log(readB())` shape: the lazy read inside `readB`'s
-    // body fires when the top-level call evaluates, but only the
-    // graph's lazy edge is recorded, so cross-module cycles that
-    // close through such a lazy edge look acyclic to the constraining
-    // subgraph. After promotion, the primitive's verdict is sound.
-    //
-    // Promoted edges are added at dependency graph level (assignment-
-    // independent): intra-module promoted edges are dropped by the
-    // quotient automatically. Only direct `f(...)` callees that
-    // resolve to chunk-declared bindings are followed; indirect
-    // calls (`const g = f; g()`), method calls (`obj.method()`), and
-    // dynamic dispatch are conservatively unmodelled.
-    let fallback_eager_uses = promote_at_init_calls(
-        facts,
-        &binding_source_unit,
-        &shared_vars,
-        &stmt_by_source_unit,
-        target_is_hoisted,
-        &mut raw_edges,
-    );
-
-    // Initializers and eager observations of shared var cells must retain their
-    // order even when the expressions are pure. Include promoted reads from
-    // at-init calls, not just syntactically direct reads.
+/// Initializers and eager observations of shared var cells must retain their
+/// order even when the expressions are pure. Include promoted reads from
+/// at-init calls, not just syntactically direct reads.
+fn emit_shared_var_access_order(
+    facts: &[StatementFacts],
+    shared_vars: &BTreeSet<Id>,
+    fallback_eager_uses: &BTreeMap<usize, AssumedEffectReason>,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) {
     let mut accesses = BindingAccesses::new();
     for stmt in facts {
         for binding in stmt
@@ -414,12 +479,12 @@ pub fn build_dependency_graph_with(
             ));
         }
     }
+}
 
-    emit_s_chain(facts, options, &mut raw_edges);
-    emit_heap_content_order(facts, &mut raw_edges);
-
-    // Sort + assign stable `DependencyEdgeId` indices, then build CSR
-    // adjacency in one pass.
+/// Sort and assign stable `DependencyEdgeId` indices.
+fn sorted_dependency_edges(
+    mut raw_edges: Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) -> Vec<DependencyEdge> {
     raw_edges.sort_by(|(from_a, to_a, reason_a), (from_b, to_b, reason_b)| {
         from_a
             .cmp(from_b)
@@ -428,7 +493,7 @@ pub fn build_dependency_graph_with(
             .then(reason_a.statement_ordinal.cmp(&reason_b.statement_ordinal))
             .then(reason_a.binding.cmp(&reason_b.binding))
     });
-    let mut edges: Vec<DependencyEdge> = raw_edges
+    raw_edges
         .into_iter()
         .enumerate()
         .map(|(idx, (from, to, reason))| DependencyEdge {
@@ -437,8 +502,15 @@ pub fn build_dependency_graph_with(
             to,
             reason,
         })
-        .collect();
-    let premise_effects: HashMap<_, _> = stmt_by_source_unit
+        .collect()
+}
+
+/// Each statement's effects plus the non-assumed heap accesses of its
+/// synchronous calls, as commuting premises compare them.
+fn premise_effects(
+    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+) -> HashMap<SourceUnitId, StatementEffectSummary> {
+    stmt_by_source_unit
         .iter()
         .map(|(id, stmt)| {
             let mut effects = stmt.effects();
@@ -452,18 +524,5 @@ pub fn build_dependency_graph_with(
             }
             (*id, effects)
         })
-        .collect();
-    retain_premise_verdicts(&mut edges, &stmt_by_source_unit, &premise_effects);
-    let analyzed_edge_count = edges.len();
-    let (commuting_premises, unused_commuting_premises) =
-        apply_commuting_statements(&nodes, &mut edges, commuting_statements, &premise_effects)?;
-    retain_premise_verdicts(
-        &mut edges[analyzed_edge_count..],
-        &stmt_by_source_unit,
-        &premise_effects,
-    );
-    Ok((
-        DependencyGraph::from_parts(nodes, edges, commuting_premises),
-        unused_commuting_premises,
-    ))
+        .collect()
 }

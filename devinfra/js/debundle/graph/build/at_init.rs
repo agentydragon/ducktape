@@ -152,91 +152,7 @@ pub(super) fn promote_at_init_calls(
     target_is_hoisted: impl Fn(&Id) -> bool,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
 ) -> BTreeMap<usize, AssumedEffectReason> {
-    // Index statement source units that can change a chunk binding's value or
-    // observable object state when they execute. A callback read must see the
-    // source-prefix value, so the callback-read and writer source units form one
-    // source-order timeline. This also covers mutations of an already
-    // initialized object: an ordinary promoted read dependency on its
-    // declaration alone would not stop a later mutation from moving before
-    // the callback. Unknown effects still take the existing strict S-chain
-    // fallback; this index only records effects with a known binding target.
-    // Each effect carries its provenance: only a synchronous summary's
-    // fallback contributes an assumed one.
-    let mut writers_by_binding = BindingAccesses::new();
-    let mut readers_by_binding = BindingAccesses::new();
-    for stmt in facts {
-        let source_unit = SourceUnitId(stmt.ordinal.0);
-        for binding in &stmt.reads.eager {
-            record_access(
-                &mut readers_by_binding,
-                binding,
-                source_unit,
-                EffectProvenance::Observed,
-            );
-        }
-        // Lexical declarations become observable at their statement. Function
-        // declarations are initialized during module instantiation and are
-        // therefore not execution-time writes.
-        // Imports describe module linkage; evaluating the import declaration
-        // does not write the imported binding in this chunk. Keep this guard
-        // explicit even though `collect_declared_names` currently gives
-        // imports no local declarations.
-        if stmt.initializes_bindings_at_evaluation() {
-            for binding in stmt.declared.difference(&stmt.var_declared) {
-                record_access(
-                    &mut writers_by_binding,
-                    binding,
-                    source_unit,
-                    EffectProvenance::Observed,
-                );
-            }
-        }
-        for binding in stmt
-            .var_initializers
-            .iter()
-            .chain(&stmt.rebinds.eager)
-            .chain(&stmt.local_effects)
-        {
-            record_access(
-                &mut writers_by_binding,
-                binding,
-                source_unit,
-                EffectProvenance::Observed,
-            );
-        }
-        // A summary's rebinds execute at this statement's callsite, not at
-        // the lexical source unit containing the callback body.
-        if let Some(synchronous) = &stmt.synchronous_calls {
-            for (binding, _) in &synchronous.reads {
-                record_access(
-                    &mut readers_by_binding,
-                    binding,
-                    source_unit,
-                    EffectProvenance::from_fallback(synchronous.fallback_read(binding)),
-                );
-            }
-            // Keep the graph sound even if an availability-specific read is
-            // not duplicated in the general read set.
-            for binding in &synchronous.uninitialized_reads {
-                record_access(
-                    &mut readers_by_binding,
-                    binding,
-                    source_unit,
-                    EffectProvenance::from_fallback(
-                        synchronous.fallback_uninitialized_read(binding),
-                    ),
-                );
-            }
-            for (binding, _) in &synchronous.rebinds {
-                record_access(
-                    &mut writers_by_binding,
-                    binding,
-                    source_unit,
-                    EffectProvenance::from_fallback(synchronous.fallback_rebind(binding)),
-                );
-            }
-        }
-    }
+    let (writers_by_binding, readers_by_binding) = binding_effect_timelines(facts);
 
     // A pair may be observed by several callback callsites or be both a
     // future declaration and a future writer. Emit each temporal ordering
@@ -261,46 +177,12 @@ pub(super) fn promote_at_init_calls(
                 .flatten()
         })
         .collect();
-
-    // Preserve each observed binding's writer order and place each reader
-    // against only its nearest preceding/following writer. Ordinary eager
-    // readers need this timeline even when no callback reads the binding:
-    // a pure initializer may otherwise move across a later assignment.
-    // The timeline of observed effects alone is offered too: when an assumed
-    // (fallback) effect sits between two observed ones, the nearest-effect
-    // edges route their derived order through it, and a premise making an
-    // assumed edge inert must not drop that order.
-    let no_readers = BTreeMap::new();
-    for (binding, writers) in &writers_by_binding {
-        let readers = readers_by_binding.get(binding).unwrap_or(&no_readers);
-        if readers.is_empty() {
-            continue;
-        }
-        offer_binding_timeline(
-            binding,
-            writers,
-            readers,
-            &existing_order_pairs,
-            &mut binding_order,
-        );
-        let observed = |accesses: &BTreeMap<SourceUnitId, EffectProvenance>| {
-            accesses
-                .iter()
-                .filter(|(_, provenance)| **provenance == EffectProvenance::Observed)
-                .map(|(source_unit, provenance)| (*source_unit, provenance.clone()))
-                .collect::<BTreeMap<_, _>>()
-        };
-        let (observed_writers, observed_readers) = (observed(writers), observed(readers));
-        if observed_writers.len() != writers.len() || observed_readers.len() != readers.len() {
-            offer_binding_timeline(
-                binding,
-                &observed_writers,
-                &observed_readers,
-                &existing_order_pairs,
-                &mut binding_order,
-            );
-        }
-    }
+    offer_binding_timelines(
+        &writers_by_binding,
+        &readers_by_binding,
+        &existing_order_pairs,
+        &mut binding_order,
+    );
 
     // Bindings rebound anywhere in the chunk: their value at call
     // time may not be the function lexically defined at their source unit,
@@ -326,28 +208,15 @@ pub(super) fn promote_at_init_calls(
         )
     };
 
-    // 1. Build the call graph: source unit → source unit edges for each
-    //    resolvable callee reachable via *first-order* calls.lazy.
-    //    Nested-closure calls (e.g. inside an arrow returned by the
-    //    body) don't fire when the body is invoked synchronously, so
-    //    they don't belong on the promotion call graph — see
-    //    docs/design.md "At-init call promotion" and the e2e test
-    //    `e2e/cases/initialization/nested_closure_{read,rebind}`.
-    //
-    //    Add every source unit whose body has any first-order lazy reads /
-    //    rebinds / calls — or an unresolvable first-order callee — as
-    //    a node, so the closure pass below covers it even if it makes
-    //    no resolvable calls (e.g. `function readB() { return B; }`).
-    //
-    //    Per-source unit "fallback roots": source units through which a function
-    //    value could reach a call the source unit's first-order body makes
-    //    but promotion can't follow — the source units of bindings the
-    //    unresolved call mentions, the source units of chunk-declared
-    //    Ident callees that aren't direct never-rebound functions,
-    //    and the source unit itself when the unresolved call carries an
-    //    inline function expression. At-init callers inherit these
-    //    roots transitively through the call graph and expand them
-    //    through the source-unit read closure.
+    // Per-source unit "fallback roots": source units through which a function
+    // value could reach a call the source unit's first-order body makes
+    // but promotion can't follow — the source units of bindings the
+    // unresolved call mentions, the source units of chunk-declared
+    // Ident callees that aren't direct never-rebound functions,
+    // and the source unit itself when the unresolved call carries an
+    // inline function expression. At-init callers inherit these
+    // roots transitively through the call graph and expand them
+    // through the source-unit read closure.
     let fallback_roots_of = |sources: &BTreeSet<Id>,
                              inline_fn: bool,
                              self_source_unit: SourceUnitId|
@@ -361,132 +230,20 @@ pub(super) fn promote_at_init_calls(
         }
         roots
     };
-    let source_unit_first_order_roots = |stmt: &StatementFacts| -> BTreeSet<SourceUnitId> {
-        let source_unit = SourceUnitId(stmt.ordinal.0);
-        let mut roots = fallback_roots_of(
-            stmt.first_order_unresolved_sources(),
-            stmt.first_order_unresolved_inline_fn(),
-            source_unit,
-        );
-        for callee_id in stmt.first_order_calls() {
-            if resolvable_callee(callee_id).is_none()
-                && let Some(&callee_source_unit) = binding_source_unit.get(callee_id)
-            {
-                roots.insert(callee_source_unit);
-            }
-        }
-        roots
-    };
-    let mut call_graph: DiGraphMap<SourceUnitId, ()> = DiGraphMap::new();
-    for stmt in facts {
-        let source_unit = SourceUnitId(stmt.ordinal.0);
-        if !stmt.first_order_calls().is_empty()
-            || !stmt.first_order_reads().is_empty()
-            || !stmt.first_order_rebinds().is_empty()
-            || !stmt.first_order_unresolved_sources().is_empty()
-            || stmt.first_order_unresolved_inline_fn()
-        {
-            call_graph.add_node(source_unit);
-        }
-    }
-    for stmt in facts {
-        if stmt.first_order_calls().is_empty() {
-            continue;
-        }
-        let caller = SourceUnitId(stmt.ordinal.0);
-        for callee_id in stmt.first_order_calls() {
-            let Some(callee_source_unit) = resolvable_callee(callee_id) else {
-                continue;
-            };
-            call_graph.add_node(callee_source_unit);
-            call_graph.add_edge(caller, callee_source_unit, ());
-        }
-    }
-
-    // 2. Tarjan SCC. `tarjan_scc` returns SCCs in reverse topological
-    //    order: leaves (no outgoing edges to other SCCs) first.
-    let sccs = tarjan_scc(&call_graph);
-    let mut scc_of: BTreeMap<SourceUnitId, usize> = BTreeMap::new();
-    for (idx, scc) in sccs.iter().enumerate() {
-        for source_unit in scc {
-            scc_of.insert(*source_unit, idx);
-        }
-    }
-
-    // 3. Per-source unit seeds: own reads.lazy / rebinds.lazy resolved to
-    //    SWC Ids. Filters out targets whose source unit is a function
-    //    declaration — function bindings are hoisted at module
-    //    instantiation (Phase 1 of ESM linking), so a cross-module
-    //    read of a function never observes a TDZ. Promoting such
-    //    reads would spuriously close cycles for shapes like mutual
-    //    recursion across modules (`function even(){odd()}` /
-    //    `function odd(){even()}`), which are actually realizable.
-    //    Other declared kinds (VarDecl, ClassDecl) are kept: const /
-    //    let / class are TDZ-locked until their statement runs, so a
-    //    cross-module read inside an at-init-called function does
-    //    fire the realizability hazard. `var` is technically hoisted
-    //    too but is rare enough not to warrant a separate distinction
-    //    in StatementKind.
-    let mut scc_reads: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
-    let mut scc_rebinds: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
-    let mut scc_fallback_roots: Vec<BTreeSet<SourceUnitId>> = vec![BTreeSet::new(); sccs.len()];
-    // A first-order call through a parameter/local cannot be mapped to a
-    // chunk-top source unit here. The value may have come from an argument at the
-    // eventual at-init call site, so carry that obligation through the call
-    // graph instead of silently dropping the Id in fallback_roots_of.
-    let mut scc_needs_caller_values = vec![false; sccs.len()];
-
-    // 4. Closure over the call graph. Iterate SCCs in
-    //    reverse-topological order (leaves first). For each SCC,
-    //    union members' own seeds plus successor SCC closures, and
-    //    propagate fallback roots the same way.
-    for (scc_idx, scc) in sccs.iter().enumerate() {
-        let mut reads: BTreeSet<Id> = BTreeSet::new();
-        let mut rebinds: BTreeSet<Id> = BTreeSet::new();
-        let mut roots: BTreeSet<SourceUnitId> = BTreeSet::new();
-        let mut needs_caller_values = false;
-        for source_unit in scc {
-            let Some(stmt) = stmt_by_source_unit.get(source_unit) else {
-                continue;
-            };
-            roots.extend(source_unit_first_order_roots(stmt));
-            needs_caller_values |= stmt
-                .first_order_unresolved_sources()
-                .iter()
-                .chain(stmt.first_order_calls().iter())
-                .any(|id| {
-                    stmt.local_bindings.contains(id) && !binding_source_unit.contains_key(id)
-                });
-            for id in stmt.first_order_reads() {
-                if binding_source_unit.contains_key(id) && !target_is_hoisted(id) {
-                    reads.insert(id.clone());
-                }
-            }
-            for id in stmt.first_order_rebinds() {
-                if binding_source_unit.contains_key(id) {
-                    rebinds.insert(id.clone());
-                }
-            }
-        }
-        for source_unit in scc {
-            for (_, target, _) in call_graph.edges(*source_unit) {
-                let Some(&target_scc) = scc_of.get(&target) else {
-                    continue;
-                };
-                if target_scc == scc_idx {
-                    continue;
-                }
-                reads.extend(scc_reads[target_scc].iter().cloned());
-                rebinds.extend(scc_rebinds[target_scc].iter().cloned());
-                roots.extend(scc_fallback_roots[target_scc].iter().copied());
-                needs_caller_values |= scc_needs_caller_values[target_scc];
-            }
-        }
-        scc_reads[scc_idx] = reads;
-        scc_rebinds[scc_idx] = rebinds;
-        scc_fallback_roots[scc_idx] = roots;
-        scc_needs_caller_values[scc_idx] = needs_caller_values;
-    }
+    let CallGraphClosure {
+        scc_of,
+        reads: scc_reads,
+        rebinds: scc_rebinds,
+        fallback_roots: scc_fallback_roots,
+        needs_caller_values: scc_needs_caller_values,
+    } = close_over_call_graph(
+        facts,
+        binding_source_unit,
+        stmt_by_source_unit,
+        &resolvable_callee,
+        &fallback_roots_of,
+        &target_is_hoisted,
+    );
 
     // 5. Emit promoted edges with per-statement, per-kind dedup.
     //    Each emitted reason carries `EdgeRole::PromotedAtInit {
@@ -725,4 +482,305 @@ pub(super) fn promote_at_init_calls(
         ));
     }
     fallback_eager_uses
+}
+
+/// Index statement source units that can change a chunk binding's value or
+/// observable object state when they execute, and those that read it. A
+/// callback read must see the source-prefix value, so the callback-read and
+/// writer source units form one source-order timeline. This also covers
+/// mutations of an already initialized object: an ordinary promoted read
+/// dependency on its declaration alone would not stop a later mutation from
+/// moving before the callback. Unknown effects still take the existing strict
+/// S-chain fallback; this index only records effects with a known binding
+/// target. Each effect carries its provenance: only a synchronous summary's
+/// fallback contributes an assumed one. Returns `(writers, readers)`.
+fn binding_effect_timelines(facts: &[StatementFacts]) -> (BindingAccesses, BindingAccesses) {
+    let mut writers_by_binding = BindingAccesses::new();
+    let mut readers_by_binding = BindingAccesses::new();
+    for stmt in facts {
+        let source_unit = SourceUnitId(stmt.ordinal.0);
+        for binding in &stmt.reads.eager {
+            record_access(
+                &mut readers_by_binding,
+                binding,
+                source_unit,
+                EffectProvenance::Observed,
+            );
+        }
+        // Lexical declarations become observable at their statement. Function
+        // declarations are initialized during module instantiation and are
+        // therefore not execution-time writes.
+        // Imports describe module linkage; evaluating the import declaration
+        // does not write the imported binding in this chunk. Keep this guard
+        // explicit even though `collect_declared_names` currently gives
+        // imports no local declarations.
+        if stmt.initializes_bindings_at_evaluation() {
+            for binding in stmt.declared.difference(&stmt.var_declared) {
+                record_access(
+                    &mut writers_by_binding,
+                    binding,
+                    source_unit,
+                    EffectProvenance::Observed,
+                );
+            }
+        }
+        for binding in stmt
+            .var_initializers
+            .iter()
+            .chain(&stmt.rebinds.eager)
+            .chain(&stmt.local_effects)
+        {
+            record_access(
+                &mut writers_by_binding,
+                binding,
+                source_unit,
+                EffectProvenance::Observed,
+            );
+        }
+        // A summary's rebinds execute at this statement's callsite, not at
+        // the lexical source unit containing the callback body.
+        if let Some(synchronous) = &stmt.synchronous_calls {
+            for (binding, _) in &synchronous.reads {
+                record_access(
+                    &mut readers_by_binding,
+                    binding,
+                    source_unit,
+                    EffectProvenance::from_fallback(synchronous.fallback_read(binding)),
+                );
+            }
+            // Keep the graph sound even if an availability-specific read is
+            // not duplicated in the general read set.
+            for binding in &synchronous.uninitialized_reads {
+                record_access(
+                    &mut readers_by_binding,
+                    binding,
+                    source_unit,
+                    EffectProvenance::from_fallback(
+                        synchronous.fallback_uninitialized_read(binding),
+                    ),
+                );
+            }
+            for (binding, _) in &synchronous.rebinds {
+                record_access(
+                    &mut writers_by_binding,
+                    binding,
+                    source_unit,
+                    EffectProvenance::from_fallback(synchronous.fallback_rebind(binding)),
+                );
+            }
+        }
+    }
+    (writers_by_binding, readers_by_binding)
+}
+
+/// Preserve each observed binding's writer order and place each reader
+/// against only its nearest preceding/following writer. Ordinary eager
+/// readers need this timeline even when no callback reads the binding:
+/// a pure initializer may otherwise move across a later assignment.
+/// The timeline of observed effects alone is offered too: when an assumed
+/// (fallback) effect sits between two observed ones, the nearest-effect
+/// edges route their derived order through it, and a premise making an
+/// assumed edge inert must not drop that order.
+fn offer_binding_timelines(
+    writers_by_binding: &BindingAccesses,
+    readers_by_binding: &BindingAccesses,
+    existing_order_pairs: &BTreeSet<(SourceUnitId, SourceUnitId)>,
+    binding_order: &mut BindingOrderEdges,
+) {
+    let no_readers = BTreeMap::new();
+    for (binding, writers) in writers_by_binding {
+        let readers = readers_by_binding.get(binding).unwrap_or(&no_readers);
+        if readers.is_empty() {
+            continue;
+        }
+        offer_binding_timeline(
+            binding,
+            writers,
+            readers,
+            existing_order_pairs,
+            binding_order,
+        );
+        let observed = |accesses: &BTreeMap<SourceUnitId, EffectProvenance>| {
+            accesses
+                .iter()
+                .filter(|(_, provenance)| **provenance == EffectProvenance::Observed)
+                .map(|(source_unit, provenance)| (*source_unit, provenance.clone()))
+                .collect::<BTreeMap<_, _>>()
+        };
+        let (observed_writers, observed_readers) = (observed(writers), observed(readers));
+        if observed_writers.len() != writers.len() || observed_readers.len() != readers.len() {
+            offer_binding_timeline(
+                binding,
+                &observed_writers,
+                &observed_readers,
+                existing_order_pairs,
+                binding_order,
+            );
+        }
+    }
+}
+
+/// Per-SCC transitive effects of the at-init promotion call graph, indexed by
+/// the SCC numbering in `scc_of`.
+struct CallGraphClosure {
+    scc_of: BTreeMap<SourceUnitId, usize>,
+    reads: Vec<BTreeSet<Id>>,
+    rebinds: Vec<BTreeSet<Id>>,
+    fallback_roots: Vec<BTreeSet<SourceUnitId>>,
+    needs_caller_values: Vec<bool>,
+}
+
+fn close_over_call_graph(
+    facts: &[StatementFacts],
+    binding_source_unit: &HashMap<Id, SourceUnitId>,
+    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+    resolvable_callee: &impl Fn(&Id) -> Option<SourceUnitId>,
+    fallback_roots_of: &impl Fn(&BTreeSet<Id>, bool, SourceUnitId) -> BTreeSet<SourceUnitId>,
+    target_is_hoisted: &impl Fn(&Id) -> bool,
+) -> CallGraphClosure {
+    // 1. Build the call graph: source unit → source unit edges for each
+    //    resolvable callee reachable via *first-order* calls.lazy.
+    //    Nested-closure calls (e.g. inside an arrow returned by the
+    //    body) don't fire when the body is invoked synchronously, so
+    //    they don't belong on the promotion call graph — see
+    //    docs/design.md "At-init call promotion" and the e2e test
+    //    `e2e/cases/initialization/nested_closure_{read,rebind}`.
+    //
+    //    Add every source unit whose body has any first-order lazy reads /
+    //    rebinds / calls — or an unresolvable first-order callee — as
+    //    a node, so the closure pass below covers it even if it makes
+    //    no resolvable calls (e.g. `function readB() { return B; }`).
+    let source_unit_first_order_roots = |stmt: &StatementFacts| -> BTreeSet<SourceUnitId> {
+        let source_unit = SourceUnitId(stmt.ordinal.0);
+        let mut roots = fallback_roots_of(
+            stmt.first_order_unresolved_sources(),
+            stmt.first_order_unresolved_inline_fn(),
+            source_unit,
+        );
+        for callee_id in stmt.first_order_calls() {
+            if resolvable_callee(callee_id).is_none()
+                && let Some(&callee_source_unit) = binding_source_unit.get(callee_id)
+            {
+                roots.insert(callee_source_unit);
+            }
+        }
+        roots
+    };
+    let mut call_graph: DiGraphMap<SourceUnitId, ()> = DiGraphMap::new();
+    for stmt in facts {
+        let source_unit = SourceUnitId(stmt.ordinal.0);
+        if !stmt.first_order_calls().is_empty()
+            || !stmt.first_order_reads().is_empty()
+            || !stmt.first_order_rebinds().is_empty()
+            || !stmt.first_order_unresolved_sources().is_empty()
+            || stmt.first_order_unresolved_inline_fn()
+        {
+            call_graph.add_node(source_unit);
+        }
+    }
+    for stmt in facts {
+        if stmt.first_order_calls().is_empty() {
+            continue;
+        }
+        let caller = SourceUnitId(stmt.ordinal.0);
+        for callee_id in stmt.first_order_calls() {
+            let Some(callee_source_unit) = resolvable_callee(callee_id) else {
+                continue;
+            };
+            call_graph.add_node(callee_source_unit);
+            call_graph.add_edge(caller, callee_source_unit, ());
+        }
+    }
+
+    // 2. Tarjan SCC. `tarjan_scc` returns SCCs in reverse topological
+    //    order: leaves (no outgoing edges to other SCCs) first.
+    let sccs = tarjan_scc(&call_graph);
+    let mut scc_of: BTreeMap<SourceUnitId, usize> = BTreeMap::new();
+    for (idx, scc) in sccs.iter().enumerate() {
+        for source_unit in scc {
+            scc_of.insert(*source_unit, idx);
+        }
+    }
+
+    // 3. Per-source unit seeds: own reads.lazy / rebinds.lazy resolved to
+    //    SWC Ids. Filters out targets whose source unit is a function
+    //    declaration — function bindings are hoisted at module
+    //    instantiation (Phase 1 of ESM linking), so a cross-module
+    //    read of a function never observes a TDZ. Promoting such
+    //    reads would spuriously close cycles for shapes like mutual
+    //    recursion across modules (`function even(){odd()}` /
+    //    `function odd(){even()}`), which are actually realizable.
+    //    Other declared kinds (VarDecl, ClassDecl) are kept: const /
+    //    let / class are TDZ-locked until their statement runs, so a
+    //    cross-module read inside an at-init-called function does
+    //    fire the realizability hazard. `var` is technically hoisted
+    //    too but is rare enough not to warrant a separate distinction
+    //    in StatementKind.
+    let mut scc_reads: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
+    let mut scc_rebinds: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
+    let mut scc_fallback_roots: Vec<BTreeSet<SourceUnitId>> = vec![BTreeSet::new(); sccs.len()];
+    // A first-order call through a parameter/local cannot be mapped to a
+    // chunk-top source unit here. The value may have come from an argument at the
+    // eventual at-init call site, so carry that obligation through the call
+    // graph instead of silently dropping the Id in fallback_roots_of.
+    let mut scc_needs_caller_values = vec![false; sccs.len()];
+
+    // 4. Closure over the call graph. Iterate SCCs in
+    //    reverse-topological order (leaves first). For each SCC,
+    //    union members' own seeds plus successor SCC closures, and
+    //    propagate fallback roots the same way.
+    for (scc_idx, scc) in sccs.iter().enumerate() {
+        let mut reads: BTreeSet<Id> = BTreeSet::new();
+        let mut rebinds: BTreeSet<Id> = BTreeSet::new();
+        let mut roots: BTreeSet<SourceUnitId> = BTreeSet::new();
+        let mut needs_caller_values = false;
+        for source_unit in scc {
+            let Some(stmt) = stmt_by_source_unit.get(source_unit) else {
+                continue;
+            };
+            roots.extend(source_unit_first_order_roots(stmt));
+            needs_caller_values |= stmt
+                .first_order_unresolved_sources()
+                .iter()
+                .chain(stmt.first_order_calls().iter())
+                .any(|id| {
+                    stmt.local_bindings.contains(id) && !binding_source_unit.contains_key(id)
+                });
+            for id in stmt.first_order_reads() {
+                if binding_source_unit.contains_key(id) && !target_is_hoisted(id) {
+                    reads.insert(id.clone());
+                }
+            }
+            for id in stmt.first_order_rebinds() {
+                if binding_source_unit.contains_key(id) {
+                    rebinds.insert(id.clone());
+                }
+            }
+        }
+        for source_unit in scc {
+            for (_, target, _) in call_graph.edges(*source_unit) {
+                let Some(&target_scc) = scc_of.get(&target) else {
+                    continue;
+                };
+                if target_scc == scc_idx {
+                    continue;
+                }
+                reads.extend(scc_reads[target_scc].iter().cloned());
+                rebinds.extend(scc_rebinds[target_scc].iter().cloned());
+                roots.extend(scc_fallback_roots[target_scc].iter().copied());
+                needs_caller_values |= scc_needs_caller_values[target_scc];
+            }
+        }
+        scc_reads[scc_idx] = reads;
+        scc_rebinds[scc_idx] = rebinds;
+        scc_fallback_roots[scc_idx] = roots;
+        scc_needs_caller_values[scc_idx] = needs_caller_values;
+    }
+    CallGraphClosure {
+        scc_of,
+        reads: scc_reads,
+        rebinds: scc_rebinds,
+        fallback_roots: scc_fallback_roots,
+        needs_caller_values: scc_needs_caller_values,
+    }
 }
