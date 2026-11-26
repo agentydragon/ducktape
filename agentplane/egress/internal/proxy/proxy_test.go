@@ -207,7 +207,7 @@ func newLabWithIdentityReader(t *testing.T, wrap func(client.Reader) client.Read
 	authentication, err := identity.NewAuthenticator(listener.Config{
 		ListenAddress: "127.0.0.1:8888",
 		TLS:           &listener.TLS{CertFile: proxyLeaf.CertFile, KeyFile: proxyLeaf.KeyFile},
-		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: proxyCA.RootFile}},
+		Auth:          []*listener.SPIFFEAuth{{CAFile: proxyCA.RootFile}},
 	}, svids)
 	if err != nil {
 		t.Fatal(err)

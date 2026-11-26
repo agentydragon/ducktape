@@ -125,8 +125,8 @@ func TestSharedListenerKeepsWorkloadAndServiceGrantsSeparate(t *testing.T) {
 	}
 	ca := transporttesting.NewCA(t)
 	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
-	config := authlistener.Config{ListenAddress: ":443", TLS: &authlistener.TLS{CertFile: serverFiles.CertFile, KeyFile: serverFiles.KeyFile}, Auth: []authlistener.Authentication{
-		&authlistener.SPIFFEAuth{CAFile: serverFiles.CAFile},
+	config := authlistener.Config{ListenAddress: ":443", TLS: &authlistener.TLS{CertFile: serverFiles.CertFile, KeyFile: serverFiles.KeyFile}, Auth: []*authlistener.SPIFFEAuth{
+		{CAFile: serverFiles.CAFile},
 	}}
 	serverCredentials, err := config.ServerCredentialsWithServices(peertls.HistoryIngressURI)
 	if err != nil {

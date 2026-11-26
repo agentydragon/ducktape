@@ -71,7 +71,7 @@ func run() error {
 		RPC: listener.Config{
 			ListenAddress: os.Getenv("ENVIRONMENTS_TEST_LISTEN_ADDRESS"),
 			TLS:           &listener.TLS{CertFile: os.Getenv("ENVIRONMENTS_TEST_CERT"), KeyFile: os.Getenv("ENVIRONMENTS_TEST_KEY")},
-			Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: os.Getenv("ENVIRONMENTS_TEST_CA")}},
+			Auth:          []*listener.SPIFFEAuth{{CAFile: os.Getenv("ENVIRONMENTS_TEST_CA")}},
 		},
 		ServiceReaders: callers, ServiceManagers: callers, ServiceOperators: callers,
 		RuntimeProxy: runtimeProxy,

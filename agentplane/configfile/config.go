@@ -20,7 +20,6 @@ var (
 
 // MapstructureOptions preserves the few mapping differences used by existing services.
 type MapstructureOptions struct {
-	DecodeHook       mapstructure.DecodeHookFunc
 	ExactFieldNames  bool
 	WeaklyTypedInput bool
 }
@@ -51,14 +50,10 @@ func DecodeMapstructureYAML(contents []byte, result any, options MapstructureOpt
 
 // DecodeMapstructure decodes a settings mapping after a caller has separated any specially decoded fields.
 func DecodeMapstructure(settings map[string]any, result any, options MapstructureOptions) error {
-	var hook mapstructure.DecodeHookFunc = mapstructure.TextUnmarshallerHookFunc()
-	if options.DecodeHook != nil {
-		hook = mapstructure.ComposeDecodeHookFunc(hook, options.DecodeHook)
-	}
 	decoderConfig := &mapstructure.DecoderConfig{
 		Result: result, TagName: "mapstructure", ErrorUnused: true,
 		WeaklyTypedInput: options.WeaklyTypedInput,
-		DecodeHook:       hook,
+		DecodeHook:       mapstructure.TextUnmarshallerHookFunc(),
 	}
 	if options.ExactFieldNames {
 		decoderConfig.MatchName = func(mapKey, fieldName string) bool { return mapKey == fieldName }

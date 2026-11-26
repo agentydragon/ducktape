@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/identity/auth/listener",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/configfile",
         "//agentplane/net/peertls",
-        "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@org_golang_google_grpc//credentials",
     ],
 )
@@ -16,4 +16,5 @@ go_test(
     name = "listener_test",
     srcs = ["config_test.go"],
     embed = [":listener"],
+    deps = ["//agentplane/configfile"],
 )

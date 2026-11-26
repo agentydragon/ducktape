@@ -136,9 +136,7 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("Notification Service settings file path is required")
 	}
 	c := defaultConfig()
-	raw, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
-		DecodeHook: listener.AuthenticationDecodeHook,
-	})
+	raw, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{})
 	if err != nil {
 		return config{}, configfile.RedactMapstructureError("Notification Service", err)
 	}
@@ -210,9 +208,6 @@ func (c *config) validate() error {
 	}
 	if err := auth.ValidateServiceCallers(c.OperatorReaderServices); err != nil {
 		return fmt.Errorf("invalid operator_reader_services: %w", err)
-	}
-	if !c.RPC.Has(listener.SPIFFE) {
-		return errors.New("rpc requires spiffe client trust")
 	}
 	for _, quota := range []struct {
 		name  string

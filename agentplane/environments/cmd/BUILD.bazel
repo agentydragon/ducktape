@@ -13,7 +13,6 @@ go_library(
         "//agentplane/environments/internal/controller",
         "//agentplane/environments/internal/runtimecontrol",
         "//agentplane/environments/internal/serving",
-        "//agentplane/identity/auth/listener",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/requester",
         "//agentplane/net/peertls",

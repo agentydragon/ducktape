@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
@@ -110,7 +109,7 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 	}
 	if c.Actions.TLS == nil || c.Actions.TLS.ServerURI != "spiffe://agentplane/actions" ||
 		c.HistoryService.TLS == nil || c.SessionDispatcher.TLS == nil ||
-		c.RPC.TLS == nil || !c.RPC.Has(listener.SPIFFE) {
+		c.RPC.TLS == nil || !c.RPC.HasSPIFFE() {
 		t.Errorf("the peer or listener TLS and authentication settings were not read: %+v", c)
 	}
 }

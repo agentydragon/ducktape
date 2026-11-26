@@ -32,9 +32,6 @@ func NewAuthenticator(policy listener.Config, records *resolver.Resolver) (*Auth
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	if !policy.Has(listener.SPIFFE) {
-		return nil, errors.New("workload authentication accepts SPIFFE alone")
-	}
 	if records == nil {
 		return nil, errors.New("SPIFFE authentication requires a live WorkloadCredential resolver")
 	}

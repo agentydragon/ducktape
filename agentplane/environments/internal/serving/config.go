@@ -43,9 +43,6 @@ func (c Config) Validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)
 	}
-	if !c.RPC.Has(listener.SPIFFE) {
-		return errors.New("EnvironmentService rpc.auth must include spiffe")
-	}
 	for _, callers := range [][]string{c.ServiceReaders, c.ServiceManagers, c.ServiceLaunchers, c.ServiceOperators, c.WakeServiceCallers} {
 		if err := auth.ValidateServiceCallers(callers); err != nil {
 			return err
