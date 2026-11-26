@@ -1,8 +1,8 @@
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("@lean_native_rules//lean:defs.bzl", native_lean_binary = "lean_binary", native_lean_library = "lean_library", native_lean_proof_test = "lean_proof_test")
 load("@rules_lean//lean:lean.bzl", "lean_axiom_test", "lean_binary", "lean_library", "lean_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//devinfra/js/debundle/x/split_proof/lean/native:native.bzl", "native_lean_binary", "native_lean_module")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load(":splitter_launcher.bzl", "splitter_launcher")
 
@@ -1148,29 +1148,21 @@ lean_axiom_test(
     deps = [":corejs_runtime"],
 )
 
-native_lean_module(
-    name = "native_syntax",
-    src = "EsmSplit/CoreJS/Syntax.lean",
-    module = "EsmSplit.CoreJS.Syntax",
-)
-
-native_lean_module(
-    name = "native_fragment",
-    src = "EsmSplit/CoreJS/Fragment.lean",
-    module = "EsmSplit.CoreJS.Fragment",
-    deps = [":native_syntax"],
-)
-
-native_lean_module(
-    name = "native_fragment_main",
-    src = "NativeFragmentMain.lean",
-    module = "NativeFragmentMain",
-    deps = [":native_fragment"],
+native_lean_library(
+    name = "native_fragment_modules",
+    # This rule requires import order; concatenation keeps buildifier from sorting it.
+    srcs = ["EsmSplit/CoreJS/Syntax.lean"] + ["EsmSplit/CoreJS/Fragment.lean"] + ["NativeFragmentMain.lean"],
 )
 
 native_lean_binary(
     name = "native_fragment_program",
-    root = ":native_fragment_main",
+    deps = [":native_fragment_modules"],
+)
+
+native_lean_proof_test(
+    name = "native_fragment_axioms_test",
+    required_theorems = ["CoreJS.allocOnly_class_staticField_accepted"],
+    deps = [":native_fragment_modules"],
 )
 
 sh_test(

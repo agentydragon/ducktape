@@ -1,0 +1,5 @@
+--- a/lean/toolchain.bzl
++++ b/lean/toolchain.bzl
+@@ -7 +7 @@
+-LEAN_TOOLCHAIN_TYPE = "@rules_lean//lean:toolchain_type"
++LEAN_TOOLCHAIN_TYPE = Label("//lean:toolchain_type")

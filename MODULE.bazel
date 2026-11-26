@@ -20,6 +20,22 @@ use_repo(lean, "lean_dist")
 
 register_toolchains("@lean_dist//:lean_toolchain_def")
 
+# Native Lean experiment: this ruleset publishes as rules_lean too. Keep it
+# separate from the existing rules while comparing the two implementations.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "lean_native_rules",
+    patch_args = ["-p1"],
+    # Resolve its toolchain type within that repository when both rulesets coexist.
+    patches = ["//patches:martianoff_rules_lean_repo_name.patch"],
+    sha256 = "44ea374683a33ecc5989b8d819636a0275844068a53cdcc453dd45ec22efb250",
+    strip_prefix = "rules_lean-44fc4e4b299a32fd278865a45df24e0d05eb96a8",
+    urls = ["https://github.com/martianoff/rules_lean/archive/44fc4e4b299a32fd278865a45df24e0d05eb96a8.tar.gz"],
+)
+
+register_toolchains("//devinfra/js/debundle/x/split_proof/lean/native_toolchain:toolchain")
+
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "rules_python", version = "2.5.1")

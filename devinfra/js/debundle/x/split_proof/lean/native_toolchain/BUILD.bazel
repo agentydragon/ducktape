@@ -1,0 +1,18 @@
+load("@lean_native_rules//lean:toolchain.bzl", "lean_toolchain")
+
+# Both Lean rulesets use the same pinned distribution while they coexist.
+lean_toolchain(
+    name = "toolchain_impl",
+    cc_files = "@lean_dist//:runtime",
+    lean = "@lean_dist//:lean_toolchain/bin/lean",
+    lean_files = "@lean_dist//:runtime",
+    leanc = "@lean_dist//:lean_toolchain/bin/leanc",
+    version = "4.35.0",
+)
+
+toolchain(
+    name = "toolchain",
+    toolchain = ":toolchain_impl",
+    toolchain_type = "@lean_native_rules//lean:toolchain_type",
+    visibility = ["//visibility:public"],
+)
