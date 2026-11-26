@@ -41,9 +41,9 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-use crate::{
-    ChunkSelectorIndex, IndexedDeclaration, SynthesizedTargetBinding, prove_synthesized_selector,
-};
+use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
+use crate::group_synthesis::SynthesizedTargetBinding;
+use crate::proof::prove_synthesized_selector;
 use selector_render::{AnchorSpan, ident_node, span_key};
 
 /// Derive an anchored `STR_LITERAL_MATCHING_RE` pattern that pins the stable

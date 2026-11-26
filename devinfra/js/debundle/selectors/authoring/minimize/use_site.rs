@@ -11,9 +11,8 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::finish_minimized_selector;
-use crate::{
-    ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-};
+use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
+use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
 use selector_render::{
     anything_expr, args_hole, emit_selector, hole_object_padded, ident_node, named_pat,
 };

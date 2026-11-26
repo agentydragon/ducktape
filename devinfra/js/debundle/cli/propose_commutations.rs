@@ -32,7 +32,7 @@ use peel::OutputFormat;
 use petgraph::algo::{is_cyclic_directed, tarjan_scc};
 use petgraph::graphmap::DiGraphMap;
 use petgraph::visit::EdgeFiltered;
-use selector_codemod::{
+use selector_codemod::source_unit::{
     SourceUnitSelectorRequest, SourceUnitSelectorSynthesis, SourceUnitSelectorSynthesizer,
     with_source_unit_selector_synthesizer,
 };

@@ -50,11 +50,10 @@ use source_match_holes::{
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
+use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
+use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
+use crate::proof::{matched_body_indices, prove_synthesized_selector};
 use crate::regex_anchor::RegexAnchorSubstitution;
-use crate::{
-    ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    matched_body_indices, prove_synthesized_selector, single_ident_pat_name,
-};
 use match_selector::relax_progressively;
 use selector_render::{
     AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
@@ -940,6 +939,13 @@ fn extend_anchor_cover(
         kept.insert(anchor);
     }
     Ok(kept)
+}
+
+fn single_ident_pat_name(pat: &Pat) -> Option<&str> {
+    match pat {
+        Pat::Ident(ident) => Some(ident.id.sym.as_ref()),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

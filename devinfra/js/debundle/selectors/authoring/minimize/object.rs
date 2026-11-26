@@ -9,10 +9,9 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::{extend_anchor_cover, finish_minimized_selector, push_candidate, render_var_slots};
-use crate::{
-    ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    match_single_member_selector, prove_synthesized_selector,
-};
+use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
+use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
+use crate::proof::{match_single_member_selector, prove_synthesized_selector};
 use selector_render::{AnchorSpan, node_holds_anchor, span_key};
 
 /// Ranked anchor spans for an object literal's key-set cover, best-first: each
