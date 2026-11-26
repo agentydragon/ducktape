@@ -2040,3 +2040,20 @@ lean_proof_test(
     ],
     deps = [":corejs_indexed_constructor_cells"],
 )
+
+lean_library(
+    name = "corejs_indexed_allocated_cells",
+    srcs = ["EsmSplit/CoreJS/IndexedAllocatedCells.lean"],
+    deps = [":corejs_indexed_constructor_cells"],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_allocated_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedAllocatedCells"],
+    required_theorems = [
+        "CoreJS.IndexedAllocatedCells.row_allocated_cells",
+        "CoreJS.IndexedAllocatedCells.scope_cell_present",
+    ],
+    deps = [":corejs_indexed_allocated_cells"],
+)

@@ -2,7 +2,7 @@ import EsmSplit.CoreJS.InteriorPlanExports
 import EsmSplit.CoreJS.SparseProjectedOrder
 
 /-! The source-ID-aware CoreJS constructor satisfies the structural interface
-used by the interior export and live-cell lemmas. No constructed program is
+used by the interior export and scope-address lemmas. No constructed program is
 executed or compared with the source to establish this fact. -/
 
 namespace CoreJS.IndexedConstructorCells
@@ -16,7 +16,7 @@ theorem projection (source : List (Nat × Stmt)) (B : EsmSplit.Bundle) (P : EsmS
   exports := by intro md; rfl
   imports := by intro md; rfl
 
-/-- The same constructor used for live-cell linkage has the original source
+/-- The same constructor used for scope-address linkage has the original source
 ID schedule whenever the source and authored plan satisfy `OrderKept`. -/
 theorem projection_and_schedule {source : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
     (kept : SparseProjectedOrder.OrderKept source P) :
