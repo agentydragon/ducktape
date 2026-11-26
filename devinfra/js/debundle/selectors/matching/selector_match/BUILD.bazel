@@ -1,0 +1,18 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+# The shape matcher's kernel: a structural homomorphism from a selector needle's
+# chunk_facts onto a candidate's, fail-closed outside the faithful subset.
+# Operates over the AST-facts EDB, not by re-walking ASTs.
+rust_library(
+    name = "selector_match",
+    srcs = glob(["*.rs"]),
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle/selectors/matching:chunk_facts",
+        "//devinfra/js/debundle/selectors/matching:source_match_holes",
+        "@crates//:regex",
+    ],
+)

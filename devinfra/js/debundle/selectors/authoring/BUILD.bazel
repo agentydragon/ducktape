@@ -1,0 +1,199 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "selector_candidate_index",
+    srcs = ["selector_candidate_index.rs"],
+    crate_root = "selector_candidate_index.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle/selectors/matching:source_match_holes",
+        "@crates//:roaring",
+        "@crates//:serde",
+        "@crates//:strum",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "selector_candidate_index_test",
+    crate = ":selector_candidate_index",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:js_ast",
+    ],
+)
+
+# AST-shape index + read-off API for selector synthesis.
+rust_library(
+    name = "shape_index",
+    srcs = ["shape_index.rs"],
+    crate_root = "shape_index.rs",
+    edition = "2024",
+    deps = [
+        ":selector_candidate_index",
+        "//devinfra/js/debundle:js_ast",
+        "@crates//:rustc-hash",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "shape_index_test",
+    crate = ":shape_index",
+    edition = "2024",
+)
+
+# Read-off selector renderer (W2): maps a read-off AnchorSet to the kept-span
+# set the existing selector_codemod prune machinery consumes. No second
+# serializer — rendering reuses the per-form render_with closure.
+rust_library(
+    name = "readoff_render",
+    srcs = ["readoff_render.rs"],
+    crate_root = "readoff_render.rs",
+    edition = "2024",
+    deps = [
+        ":selector_candidate_index",
+        ":shape_index",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "readoff_render_test",
+    crate = ":readoff_render",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:js_ast",
+    ],
+)
+
+rust_library(
+    name = "source_input",
+    srcs = ["source_input.rs"],
+    crate_root = "source_input.rs",
+    edition = "2024",
+    deps = ["@crates//:anyhow"],
+)
+
+rust_library(
+    name = "synthesis_failure",
+    srcs = ["synthesis_failure.rs"],
+    crate_root = "synthesis_failure.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle/selectors/resolution:selector_outcome",
+        "@crates//:anyhow",
+        "@crates//:serde",
+    ],
+)
+
+rust_library(
+    name = "selector_render",
+    srcs = ["render.rs"],
+    crate_root = "render.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle/selectors/matching:source_match_holes",
+        "@crates//:anyhow",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "selector_render_test",
+    crate = ":selector_render",
+    edition = "2024",
+)
+
+# Read-only agent-facing selector query primitives (`debundle spec
+# match-selector`): resolve a candidate selector and report its holing slack.
+rust_library(
+    name = "match_selector",
+    srcs = ["match_selector.rs"],
+    crate_root = "match_selector.rs",
+    edition = "2024",
+    deps = [
+        ":selector_render",
+        ":source_input",
+        "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle/selectors/matching:source_match_holes",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/resolution:selector_outcome",
+        "//devinfra/js/debundle/selectors/resolution/selector_resolve",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_library(
+    name = "selector_codemod",
+    srcs = [
+        "chunk_index.rs",
+        "driver.rs",
+        "group_synthesis.rs",
+        "minimize/class.rs",
+        "minimize/function.rs",
+        "minimize/group.rs",
+        "minimize/mod.rs",
+        "minimize/object.rs",
+        "minimize/use_site.rs",
+        "minimize/var.rs",
+        "module_yaml.rs",
+        "name_binding_rewrite.rs",
+        "proof.rs",
+        "regex_anchor.rs",
+        "report.rs",
+        "selector_codemod.rs",
+        "selector_minimizer_proptest.rs",
+        "shape_runs.rs",
+        "source_unit.rs",
+    ],
+    crate_root = "selector_codemod.rs",
+    edition = "2024",
+    deps = [
+        ":match_selector",
+        ":readoff_render",
+        ":selector_render",
+        ":shape_index",
+        ":source_input",
+        ":synthesis_failure",
+        "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/selectors/matching:source_match_holes",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/resolution:selector_outcome",
+        "//devinfra/js/debundle/selectors/resolution/selector_resolve",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
+        "//devinfra/js/debundle/spec:yaml_edit",
+        "@crates//:anyhow",
+        "@crates//:regex",
+        "@crates//:serde",
+        "@crates//:serde_yaml",
+        "@crates//:strum",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "selector_codemod_test",
+    crate = ":selector_codemod",
+    edition = "2024",
+    deps = ["@crates//:proptest"],
+)
