@@ -191,11 +191,15 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
+	ingressOptions := storage.Options{SettleDeltas: c.Ingress.SettleDeltas, CompactDeltas: c.Ingress.CompactDeltas, CompactExecutionEvidence: c.Ingress.CompactExecutionEvidence}
+	if c.Ingress.EventBlockWrites {
+		ingressOptions.EventPackers, err = c.Ingress.packers()
+		if err != nil {
+			return fmt.Errorf("configure History event blocks: %w", err)
+		}
+	}
 	session_ingresspb.RegisterSessionJournalIngressServer(server, &ingress.Service{
-		History: storage.NewStore(ingressDB, storage.Options{
-			SettleDeltas: c.Ingress.SettleDeltas, CompactDeltas: c.Ingress.CompactDeltas,
-			CompactExecutionEvidence: c.Ingress.CompactExecutionEvidence,
-		}),
+		History:             storage.NewStore(ingressDB, ingressOptions),
 		SamplerServiceActor: c.Ingress.SamplerServiceActor,
 		Timing:              ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
 	})

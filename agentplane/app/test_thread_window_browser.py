@@ -247,6 +247,15 @@ async def entity_stream(thread_browser: ThreadBrowser) -> AsyncIterator[_EntityS
         await session.detach()
 
 
+async def open_without_saved_history(page: Page) -> None:
+    """Exercise initial pagination even though the seeding document saw every row arrive live."""
+    url = page.url
+    # Leave the app before deleting its checkpoint so a pending write cannot recreate it.
+    await page.goto(urlsplit(url)._replace(path="/auth/me", query="", fragment="").geturl())
+    await page.evaluate("navigator.storageBuckets.delete('agentplane-history')")
+    await page.goto(url)
+
+
 async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place(
     thread_browser: ThreadBrowser, entity_stream: _EntityStream
 ) -> None:
@@ -259,7 +268,7 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
 
     # Opened now, the thread is longer than its eager initial load: older rows are still a page away.
     requests = _recording_requests(page)
-    await page.reload()
+    await open_without_saved_history(page)
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
     await expect(page.get_by_text("Window message 129", exact=False)).to_be_visible()
     composer = message_composer(page)
@@ -375,7 +384,7 @@ async def test_an_older_page_landing_mid_gesture_does_not_move_the_reader(thread
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
     latest = append_items(thread_browser, "window-item", range(130))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
-    await page.reload()
+    await open_without_saved_history(page)
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
 
     history = page.get_by_role("region", name="Thread history", exact=True)
@@ -411,7 +420,7 @@ async def test_scrolling_up_continuously_through_a_landing_older_page_does_not_j
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible(timeout=30_000)
     latest = append_items(thread_browser, "window-item", range(130))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
-    await page.reload()
+    await open_without_saved_history(page)
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
 
     history = page.get_by_role("region", name="Thread history", exact=True)
@@ -455,7 +464,7 @@ async def test_repeated_pagination_through_wildly_uneven_row_heights_keeps_the_r
     # has nothing left to scroll into, so it never fires the scrollend this test waits on.
     latest = _append_uneven_items(thread_browser, "uneven-item", range(600))
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
-    await page.reload()
+    await open_without_saved_history(page)
     await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
 
     history = page.get_by_role("region", name="Thread history", exact=True)
@@ -492,7 +501,7 @@ async def test_a_thread_shorter_than_the_eager_load_shows_in_full_without_a_scro
     # Opened again in a view taller than the whole (short) thread: there is no scrollbar, and
     # nothing for the reader to ever scroll up to -- the eager initial load already covers it all.
     await page.set_viewport_size({"width": 1280, "height": 8000})
-    await page.reload()
+    await open_without_saved_history(page)
     await expect(page.get_by_text("Window message 031", exact=False)).to_be_visible(timeout=30_000)
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     history = page.get_by_role("region", name="Thread history", exact=True)

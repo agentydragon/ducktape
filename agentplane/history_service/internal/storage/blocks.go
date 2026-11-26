@@ -9,6 +9,7 @@ import (
 	"io"
 	"slices"
 
+	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
@@ -92,6 +93,26 @@ func encodeBlock(entries []*eventlogpb.EventEntry) ([]byte, error) {
 }
 
 func decodeBlock(payload []byte) ([]*eventlogpb.EventEntry, error) {
+	if eventblock.IsBlock(payload) {
+		frames, err := eventblock.Decode(payload)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]*eventlogpb.EventEntry, 0, len(frames))
+		var previous uint64
+		for _, f := range frames {
+			e := new(eventlogpb.EventEntry)
+			if err := proto.Unmarshal(f, e); err != nil {
+				return nil, err
+			}
+			if e.GetCursor() <= previous || e.GetEvent() == nil {
+				return nil, fmt.Errorf("invalid event block cursor or event")
+			}
+			entries = append(entries, e)
+			previous = e.Cursor
+		}
+		return entries, nil
+	}
 	reader, err := gzip.NewReader(bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("event block gzip: %w", err)
@@ -194,6 +215,18 @@ func compactEvents(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, options
 	return nil
 }
 
+// All concrete enum values are readable even with only legacy writers enabled.
+var readableKinds = func() []int64 {
+	var result []int64
+	for n := range historypb.EventKind_name {
+		if n != 0 {
+			result = append(result, int64(n))
+		}
+	}
+	slices.Sort(result)
+	return result
+}()
+
 // eventReferences merges the singleton index and the packed-kind indexes. Each seek is bounded
 // by the requested event count, independent of the length of an excluded or already-read prefix.
 func eventReferences(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, after, through uint64, kinds []historypb.EventKind, limit int, reverse bool) ([]eventReference, error) {
@@ -237,63 +270,65 @@ func eventReferences(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, after
 			}
 		}
 	}
-	for _, kind := range compactKinds {
-		if len(kinds) > 0 && !slices.Contains(kinds, kind) {
-			continue
+	// Seek one straddling block and a bounded range per kind in one round trip.
+	selected := readableKinds
+	if len(kinds) > 0 {
+		selected = make([]int64, len(kinds))
+		for i, k := range kinds {
+			selected[i] = int64(k)
 		}
-		// One block can straddle the requested boundary for a kind. The rest begin (or end,
-		// for reverse reads) inside the window. Blocks of one kind never overlap.
-		query := `SELECT first_cursor,cursors,sizes FROM (
-			(SELECT first_cursor,cursors,sizes FROM session_event_block WHERE session_id=$1 AND kind=$2
-				AND first_cursor<=$3 ORDER BY first_cursor DESC LIMIT 1)
-			UNION ALL
-			(SELECT first_cursor,cursors,sizes FROM session_event_block WHERE session_id=$1 AND kind=$2
-				AND first_cursor>$3 AND first_cursor<=$4 ORDER BY first_cursor LIMIT $5)
-		) blocks ORDER BY first_cursor`
-		if reverse {
-			query = `SELECT first_cursor,cursors,sizes FROM (
-				(SELECT first_cursor,cursors,sizes FROM session_event_block WHERE session_id=$1 AND kind=$2
-					AND last_cursor>$4 ORDER BY last_cursor LIMIT 1)
-				UNION ALL
-				(SELECT first_cursor,cursors,sizes FROM session_event_block WHERE session_id=$1 AND kind=$2
-					AND last_cursor<=$4 AND last_cursor>$3 ORDER BY last_cursor DESC LIMIT $5)
-			) blocks ORDER BY first_cursor DESC`
-		}
-		rows, err := tx.QueryContext(ctx, query, sessionID, kind, after, through, limit)
-		if err != nil {
+	}
+	seek := `(SELECT first_cursor,cursors,sizes FROM session_event_block WHERE session_id=$1 AND kind=k.kind
+                AND first_cursor<=$3 ORDER BY first_cursor DESC LIMIT 1)
+            UNION ALL
+            (SELECT first_cursor,cursors,sizes FROM session_event_block WHERE session_id=$1 AND kind=k.kind
+                AND first_cursor>$3 AND first_cursor<=$4 ORDER BY first_cursor LIMIT $5)`
+	if reverse {
+		seek = `(SELECT first_cursor,cursors,sizes FROM session_event_block WHERE session_id=$1 AND kind=k.kind
+                AND last_cursor>$4 ORDER BY last_cursor LIMIT 1)
+            UNION ALL
+            (SELECT first_cursor,cursors,sizes FROM session_event_block WHERE session_id=$1 AND kind=k.kind
+                AND last_cursor<=$4 AND last_cursor>$3 ORDER BY last_cursor DESC LIMIT $5)`
+	}
+	query := `SELECT b.first_cursor,k.kind,b.cursors,b.sizes FROM unnest($2::integer[]) k(kind)
+        CROSS JOIN LATERAL (` + seek + `) b ORDER BY k.kind,b.first_cursor ` + order
+	rows, err := tx.QueryContext(ctx, query, sessionID, pq.Array(selected), after, through, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var prev historypb.EventKind
+	count := 0
+	for rows.Next() {
+		var first uint64
+		var kind historypb.EventKind
+		var cursors, sizes pq.Int64Array
+		if err := rows.Scan(&first, &kind, &cursors, &sizes); err != nil {
 			return nil, err
 		}
-		count := 0
-		for rows.Next() {
-			var first uint64
-			var cursors, sizes pq.Int64Array
-			if err := rows.Scan(&first, &cursors, &sizes); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			if len(cursors) != len(sizes) {
-				rows.Close()
-				return nil, fmt.Errorf("event block index lengths disagree")
-			}
-			if reverse {
-				slices.Reverse(cursors)
-				slices.Reverse(sizes)
-			}
-			for index, cursor := range cursors {
-				if uint64(cursor) > after && uint64(cursor) <= through && count < limit {
-					references = append(references, eventReference{uint64(cursor), kind, int(sizes[index]), &first})
-					count++
-				}
-			}
+		if len(cursors) != len(sizes) {
+			return nil, fmt.Errorf("event block index lengths disagree")
+		}
+		if kind != prev {
+			prev = kind
+			count = 0
+		}
+		if reverse {
+			slices.Reverse(cursors)
+			slices.Reverse(sizes)
+		}
+		for i, c := range cursors {
 			if count == limit {
 				break
 			}
+			if uint64(c) > after && uint64(c) <= through {
+				references = append(references, eventReference{uint64(c), kind, int(sizes[i]), &first})
+				count++
+			}
 		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		rows.Close()
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	slices.SortFunc(references, func(a, b eventReference) int {
 		if a.cursor == b.cursor {
@@ -448,6 +483,7 @@ func deleteEventRanges(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, ran
 		return err
 	}
 	type retainedBlock struct {
+		frames  [][]byte
 		first   uint64
 		entries []*eventlogpb.EventEntry
 	}
@@ -464,10 +500,27 @@ func deleteEventRanges(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, ran
 			rows.Close()
 			return err
 		}
-		entries = slices.DeleteFunc(entries, func(entry *eventlogpb.EventEntry) bool {
-			return slices.ContainsFunc(ranges, func(r *historypb.CursorRange) bool { return entry.Cursor >= r.First && entry.Cursor <= r.Last })
-		})
-		retained = append(retained, retainedBlock{first, entries})
+		kept := retainedBlock{first: first}
+		if eventblock.IsBlock(payload) {
+			frames, err := eventblock.Decode(payload)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			for i, e := range entries {
+				if !slices.ContainsFunc(ranges, func(r *historypb.CursorRange) bool { return e.Cursor >= r.First && e.Cursor <= r.Last }) {
+					kept.frames = append(kept.frames, frames[i])
+					kept.entries = append(kept.entries, e)
+				}
+			}
+		} else {
+			kept.entries = slices.DeleteFunc(entries, func(entry *eventlogpb.EventEntry) bool {
+				return slices.ContainsFunc(ranges, func(r *historypb.CursorRange) bool { return entry.Cursor >= r.First && entry.Cursor <= r.Last })
+			})
+		}
+		if len(kept.entries) < len(entries) || !eventblock.IsBlock(payload) {
+			retained = append(retained, kept)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -478,7 +531,16 @@ func deleteEventRanges(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, ran
 		if _, err := tx.ExecContext(ctx, `DELETE FROM session_event_block WHERE session_id=$1 AND first_cursor=$2`, sessionID, block.first); err != nil {
 			return err
 		}
-		if len(block.entries) > 0 {
+		if len(block.frames) > 0 {
+			// Restore exact survivor frames as ordinary rows. Legacy block encoding cannot
+			// represent every versioned block; a later explicit repack can seal them again.
+			for i, f := range block.frames {
+				e := block.entries[i]
+				if _, err := tx.ExecContext(ctx, `INSERT INTO session_event(session_id,cursor,kind,payload) VALUES($1,$2,$3,$4)`, sessionID, e.Cursor, observationNumber(e), f); err != nil {
+					return err
+				}
+			}
+		} else if len(block.entries) > 0 {
 			if _, err := insertBlock(ctx, tx, sessionID, block.entries); err != nil {
 				return err
 			}

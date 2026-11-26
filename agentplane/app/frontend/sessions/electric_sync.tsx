@@ -27,10 +27,11 @@ import {
   type SubsetParams,
 } from "@electric-sql/client";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from "react";
-import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import { z } from "zod";
 
-import { displayableError, fetchWithLogin } from "../transport/client";
+import { displayableError, fetchWithLogin, HttpError } from "../transport/client";
+import { ThreadCache, type SavedWindow } from "./thread_cache";
 import { threadScope } from "./client";
 import { backoff, type StreamConnection } from "../transport/stream_reader";
 import { followWatch } from "../transport/watch_stream";
@@ -514,7 +515,17 @@ class PayloadShape extends Listeners {
   #reading = 0;
   #draining = false;
 
-  constructor(url: string, onGone: () => void, onAttempt: (failure: string | null) => void) {
+  readonly #extents = new Map<string, ThreadPayloadReference>();
+  readonly #lookups = new Set<string>();
+  readonly #checked = new Set<string>();
+
+  constructor(
+    url: string,
+    onGone: () => void,
+    onAttempt: (failure: string | null) => void,
+    private cache: ThreadCache | null,
+    private restored: boolean
+  ) {
     super();
     this.#url = url;
     this.#onGone = onGone;
@@ -523,7 +534,44 @@ class PayloadShape extends Listeners {
 
   getVersion = (): number => this.#version;
 
+  #recordId(ref: ThreadPayloadReference): string {
+    return JSON.stringify([ref.field, ref.ownerId, String(ref.generation), String(ref.chunkCount)]);
+  }
+
+  // A complete cached revision needs no payload stream. An entity announcing more chunks has
+  // a different record ID, so it can trigger its own lookup and (on a miss) a normal subset read.
+  #fromDisk(reference: ThreadPayloadReference, miss: () => void): boolean {
+    if (!this.cache || !reference.chunkCount) return false;
+    const key = bodyKey(reference.ownerId, String(reference.generation));
+    this.#extents.set(key, reference);
+    if (this.#requested.has(key)) {
+      this.#saveComplete(reference);
+      return false;
+    }
+    if (!this.restored) return false;
+    const id = this.#recordId(reference);
+    if (this.#checked.has(id)) return this.#chunks.get(key)?.has(reference.chunkCount - 1n) ?? false;
+    if (!this.#lookups.has(id)) {
+      this.#lookups.add(id);
+      void this.cache.readBody(id).then((parts) => {
+        this.#lookups.delete(id);
+        this.#checked.add(id);
+        if (this.#closed) return;
+        if (!parts || BigInt(parts.length) !== reference.chunkCount) {
+          if (!this.#suspended) miss();
+          return;
+        }
+        let chunks = this.#chunks.get(key);
+        if (!chunks) this.#chunks.set(key, (chunks = new Map()));
+        parts.forEach((text, i) => chunks.set(BigInt(i), text));
+        this.#changed();
+      });
+    }
+    return true;
+  }
+
   want(reference: ThreadPayloadReference): void {
+    if (this.#fromDisk(reference, () => this.want(reference))) return;
     const key = bodyKey(reference.ownerId, reference.generation.toString());
     if (this.#requested.has(key)) return;
     this.#ahead.delete(key);
@@ -534,6 +582,13 @@ class PayloadShape extends Listeners {
 
   /** Reads the body once nothing a reader waits on is being read, unless a reader asks for it first. */
   readAhead(reference: ThreadPayloadReference): void {
+    // A restored window can be much larger than the viewport. Only its mounted readers should
+    // read bodies or fetch evicted ones.
+    if (this.restored) {
+      if (this.#requested.has(bodyKey(reference.ownerId, String(reference.generation)))) this.#saveComplete(reference);
+      return;
+    }
+    if (this.#fromDisk(reference, () => this.readAhead(reference))) return;
     const key = bodyKey(reference.ownerId, reference.generation.toString());
     if (reference.chunkCount === 0n || this.#requested.has(key) || this.#ahead.has(key)) return;
     this.#ahead.set(key, { ownerId: reference.ownerId, generation: reference.generation.toString() });
@@ -659,6 +714,7 @@ class PayloadShape extends Listeners {
   }
 
   #apply(messages: Message<Row>[]): void {
+    const touched = new Set<string>();
     let changed = false;
     let retired = false;
     for (const message of messages) {
@@ -675,13 +731,30 @@ class PayloadShape extends Listeners {
       let chunks = this.#chunks.get(key);
       if (chunks === undefined) this.#chunks.set(key, (chunks = new Map()));
       chunks.set(BigInt(chunk.chunkIndex), chunk.text);
+      touched.add(key);
       this.#failures.delete(key);
       changed = true;
+    }
+    for (const key of touched) {
+      const ref = this.#extents.get(key);
+      if (ref) this.#saveComplete(ref);
     }
     if (changed && this.#failures.size === 0) this.#retries = 0;
     if (changed) this.#changed();
     // The chunks written while the log was being rebuilt are not on it: read the bodies shown again.
     if (retired) this.#queue([...this.#requested.values()]);
+  }
+
+  readonly #saved = new Map<string, bigint>();
+  #saveComplete(reference: ThreadPayloadReference): void {
+    if (!this.cache) return;
+    const key = bodyKey(reference.ownerId, String(reference.generation));
+    if ((this.#saved.get(key) ?? 0n) >= reference.chunkCount || !this.#chunks.get(key)?.has(reference.chunkCount - 1n))
+      return;
+    const parts = this.#arrived(reference);
+    if (BigInt(parts.length) !== reference.chunkCount) return;
+    this.#saved.set(key, reference.chunkCount);
+    void this.cache.saveBody(this.#recordId(reference), parts);
   }
 
   /** `error` stopped the read of `bodies`, or of every body requested where it ended the shape. */
@@ -727,6 +800,7 @@ const NO_WINDOW: WindowState = {
 /** A thread's rows at one projection epoch: the pages a reader has loaded, and what it waits on. */
 class EpochWindow extends Listeners {
   readonly epoch: string;
+  readonly #restored: boolean;
   readonly #threadId: string;
   #shape: Shape;
   readonly #onGone: () => void;
@@ -760,12 +834,30 @@ class EpochWindow extends Listeners {
   #position: ShapePosition | null = null;
   #state: WindowState = NO_WINDOW;
 
-  constructor(threadId: string, scope: ReadThreadEntitiesResponse, onGone: () => void) {
+  constructor(
+    threadId: string,
+    scope: ReadThreadEntitiesResponse,
+    onGone: () => void,
+    private cache: ThreadCache | null,
+    readonly cacheAccount: string | null,
+    saved: SavedWindow | null
+  ) {
     super();
     this.#threadId = threadId;
     this.epoch = scope.projectionEpoch;
+    this.#restored = saved !== null;
     this.#through = scope.throughCursor;
     this.#onGone = onGone;
+    if (saved) {
+      for (const [key, json] of saved.rows) this.#rows.set(key, fromJson(ThreadEntitySchema, json));
+      this.#lowest = saved.lowest === null ? null : BigInt(saved.lowest);
+      this.#exhausted = saved.exhausted;
+      this.#ready = true;
+      this.#state = { ...NO_WINDOW, hasCaughtUp: true };
+      this.#shape = this.#open(saved.position);
+      this.#publish();
+      return;
+    }
     this.#shape = this.#open(null);
     void this.#guard(async () => {
       await Promise.all([
@@ -806,8 +898,12 @@ class EpochWindow extends Listeners {
       if (path === undefined) throw new Error(`Unknown Thread payload field: ${field}`);
       this.#bodies.set(
         field,
-        (shape = new PayloadShape(this.#url(`chunks/${path}`), this.#onGone, (failure) =>
-          this.#attempted(path, failure)
+        (shape = new PayloadShape(
+          this.#url(`chunks/${path}`),
+          this.#onGone,
+          (failure) => this.#attempted(path, failure),
+          this.cache,
+          this.#restored
         ))
       );
     }
@@ -1030,6 +1126,35 @@ class EpochWindow extends Listeners {
     this.#publish();
   }
 
+  #saving = false;
+  #dirty = false;
+  #checkpoint(): void {
+    if (!this.cache || this.#closed || this.#suspended) return;
+    this.#dirty = true;
+    if (this.#saving) return;
+    this.#saving = true;
+    // Coalesce streaming changes and snapshot synchronously after Shape has applied its batch
+    // and recorded its offset. Never persist a partial initial window or a refetch in progress.
+    window.setTimeout(() => void this.#saveCheckpoint(), 150);
+  }
+
+  async #saveCheckpoint(): Promise<void> {
+    this.#dirty = false;
+    try {
+      const position = this.#suspended ? this.#position : this.#shape.position;
+      if (!position || !this.resumable || !this.#state.hasCaughtUp || this.#loadingOlder) return;
+      await this.cache?.saveWindow({
+        position,
+        lowest: this.#lowest?.toString() ?? null,
+        exhausted: this.#exhausted,
+        rows: [...this.#rows].map(([key, row]) => [key, toJson(ThreadEntitySchema, row)]),
+      });
+    } finally {
+      this.#saving = false;
+      if (this.#dirty) this.#checkpoint();
+    }
+  }
+
   #publish(error: string | null = this.#state.error): void {
     const rows = [...this.#rows.values()];
     if (!this.#suspended)
@@ -1047,6 +1172,7 @@ class EpochWindow extends Listeners {
       connection: this.#connection,
       error,
     };
+    this.#checkpoint();
     this.notify();
   }
 }
@@ -1168,6 +1294,10 @@ class ThreadEpochs extends Listeners {
       if (resolving.signal.aborted || this.#closed) return;
       // The app can know the Thread before History records the Session, and the first fold may
       // have no epoch yet. Keep the event watch open until the next projection change.
+      if (!scope || (this.#state.window?.cacheAccount !== scope.cacheAccount && this.#state.window)) {
+        this.#state.window?.close();
+        this.#set({ window: null, error: null });
+      }
       if (scope === null || scope.projectionEpoch === "") {
         scopeMissing = true;
         return;
@@ -1186,7 +1316,16 @@ class ThreadEpochs extends Listeners {
         return this.#set({ window: suspended, error: null });
       }
       this.#next?.close();
-      const next = new EpochWindow(this.#threadId, scope, this.refresh);
+      const cache = await ThreadCache.open(scope.cacheAccount, this.#threadId, scope.projectionEpoch);
+      const saved = await cache?.readWindow();
+      if (resolving.signal.aborted || this.#closed) return;
+      let next: EpochWindow;
+      try {
+        next = new EpochWindow(this.#threadId, scope, this.refresh, cache, scope.cacheAccount, saved ?? null);
+      } catch (error) {
+        if (!saved) throw error;
+        next = new EpochWindow(this.#threadId, scope, this.refresh, cache, scope.cacheAccount, null);
+      }
       // The first window shows its own catch-up; a replacement takes over once it has caught up,
       // or has an error to show.
       if (this.#state.window === null) return this.#set({ window: next, error: null });
@@ -1202,7 +1341,10 @@ class ThreadEpochs extends Listeners {
       this.#set({ ...this.#state, error: null });
     } catch (error) {
       if (resolving.signal.aborted || this.#closed) return;
-      this.#set({ ...this.#state, error: displayableError(error) });
+      if (error instanceof HttpError && [401, 403].includes(error.status)) {
+        this.#state.window?.close();
+        this.#set({ window: null, error: displayableError(error) });
+      } else this.#set({ ...this.#state, error: displayableError(error) });
       // A watch reconnect replays its initial changed frame and retries this failed scope read.
       this.#scopeRetry = window.setTimeout(() => {
         this.#scopeRetry = undefined;

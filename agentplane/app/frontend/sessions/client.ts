@@ -458,20 +458,29 @@ export async function interruptTurn(threadId: string, commandId: string, turnId:
 /** Reads the current projection scope through History's generated HTTP facade. The Session may
  * not have been recorded yet, or its fold may not have materialized; both are resolved by the
  * caller's WatchSessionSummaries subscription. */
-export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ReadThreadEntitiesResponse | null> {
+export async function threadScope(
+  threadId: string,
+  signal?: AbortSignal
+): Promise<(ReadThreadEntitiesResponse & { cacheAccount: string | null }) | null> {
   const request = create(ReadThreadEntitiesRequestSchema, {
     sessionId: threadId,
     projectionEpoch: "",
     window: { case: "range", value: { startEntityIndex: 0n, limit: 1 } },
   });
   try {
-    const value = await historyJson(`/sessions/${encodeURIComponent(threadId)}/entities`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: facadeBody(toJson(ReadThreadEntitiesRequestSchema, request), "sessionId"),
-      signal,
+    const response = await fetchWithLogin(
+      new URL(`/upstream/history/v1/sessions/${encodeURIComponent(threadId)}/entities`, window.location.href),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: facadeBody(toJson(ReadThreadEntitiesRequestSchema, request), "sessionId"),
+        signal,
+      }
+    );
+    if (!response.ok) throw await HttpError.fromResponse(response);
+    return Object.assign(fromJson(ReadThreadEntitiesResponseSchema, await response.json()), {
+      cacheAccount: response.headers.get("Agentplane-Cache-Account"),
     });
-    return fromJson(ReadThreadEntitiesResponseSchema, value);
   } catch (error) {
     if (error instanceof HttpError && error.status === 404) return null;
     throw error;

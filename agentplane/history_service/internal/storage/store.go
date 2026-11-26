@@ -13,6 +13,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -154,6 +155,7 @@ type Store struct {
 
 // Options controls writes only. Every reader supports packed entries regardless of these flags.
 type Options struct {
+	EventPackers             map[historypb.EventKind]*eventblock.Packer
 	SettleDeltas             bool
 	CompactDeltas            bool
 	CompactExecutionEvidence bool
@@ -477,6 +479,9 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 			}
 			kind := observationNumber(entry)
 			compactable := len(payload) <= blockBytes/2 && liveCompactionEnabled(s.options, historypb.EventKind(kind))
+			if s.options.EventPackers != nil {
+				compactable = s.options.EventPackers[historypb.EventKind(kind)] != nil && len(payload) <= eventblock.MaxBytes-4
+			}
 			if _, err := tx.ExecContext(ctx, "INSERT INTO session_event (session_id, cursor, payload, kind, compactable) VALUES ($1, $2, $3, $4, $5)",
 				sessionID, cursor, payload, kind, compactable); err != nil {
 				return err
@@ -497,7 +502,18 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 			}
 		}
 		if len(appended) > 0 {
-			if s.options.CompactDeltas || s.options.CompactExecutionEvidence {
+			if s.options.EventPackers != nil {
+				seen := map[historypb.EventKind]bool{}
+				for _, e := range appended {
+					kind := historypb.EventKind(observationNumber(e))
+					if p := s.options.EventPackers[kind]; p != nil && !seen[kind] {
+						seen[kind] = true
+						if err := sealVersionedTail(ctx, tx, sessionID, kind, p); err != nil {
+							return err
+						}
+					}
+				}
+			} else if s.options.CompactDeltas || s.options.CompactExecutionEvidence {
 				if err := compactEvents(ctx, tx, sessionID, s.options); err != nil {
 					return err
 				}
@@ -832,10 +848,6 @@ func readSequenceChunk(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, las
 	}
 	// At most two neighboring blocks per requested cursor and packed kind. DISTINCT shares a
 	// block's metadata across requests; loadEntries likewise decompresses each selected block once.
-	kinds := make([]int64, len(compactKinds))
-	for index, kind := range compactKinds {
-		kinds[index] = int64(kind)
-	}
 	rows, err = tx.QueryContext(ctx, `SELECT DISTINCT b.first_cursor,b.kind,b.cursors,b.sizes
 		FROM unnest($2::bigint[]) requested(sequence) CROSS JOIN unnest($4::integer[]) requested_kind(kind)
 		CROSS JOIN LATERAL (
@@ -846,7 +858,7 @@ func readSequenceChunk(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, las
 			(SELECT first_cursor,kind,cursors,sizes FROM session_event_block
 				WHERE session_id=$1 AND kind=requested_kind.kind AND first_cursor>requested.sequence AND first_cursor<=$3
 				ORDER BY first_cursor LIMIT 1)
-		) b`, sessionID, pq.Array(sequences), lastCursor, pq.Array(kinds))
+		) b`, sessionID, pq.Array(sequences), lastCursor, pq.Array(readableKinds))
 	if err != nil {
 		return err
 	}

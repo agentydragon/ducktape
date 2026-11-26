@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -303,6 +304,97 @@ func TestCorruptPackedContentOrIndexFailsBodyRead(t *testing.T) {
 		}
 		if _, err := store.ReadPage(t.Context(), id, 0, 128); err == nil {
 			t.Fatal("corrupt block was served as valid history")
+		}
+	}
+}
+
+func TestReadVersionedSparseBlockOfPreviouslyUnpackedKind(t *testing.T) {
+	store := testStore(t)
+	id := opened(t, store)
+	originals := []*eventlogpb.EventEntry{entry(1), executionEvidenceEntry(2, true), entry(3)}
+	appendEntries(t, store, id, originals...)
+	p, err := eventblock.NewPacker(eventblock.Profile{TargetBytes: 65536, TargetEntries: 32, Level: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := marshal(originals[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := marshal(originals[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := p.Encode([][]byte{a, b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kind := observationNumber(originals[0])
+	if _, err := store.db.ExecContext(t.Context(), `INSERT INTO session_event_block(session_id,first_cursor,last_cursor,kind,cursors,sizes,payload)
+    VALUES($1,1,3,$2,'{1,3}',ARRAY[$3::bigint,$4::bigint],$5)`, id, kind, len(a), len(b), wire); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(t.Context(), `DELETE FROM session_event WHERE session_id=$1 AND cursor IN (1,3)`, id); err != nil {
+		t.Fatal(err)
+	}
+	assertEntries(t, readPage(t, store, id, 0, 3).Entries, originals...)
+	assertEntries(t, followPage(t, store, id, 1, historypb.EventKind(kind)).Entries, originals[2])
+	reads, err := store.ReadSequences(t.Context(), id, []uint64{1, 2, 3}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, r := range reads.Reads {
+		if !proto.Equal(r.NextEntry, originals[i]) {
+			t.Fatalf("sequence %d lost", i+1)
+		}
+	}
+	tx, err := store.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	refs, err := eventReferences(t.Context(), tx, id, 0, 2, nil, 2, true)
+	if err != nil || len(refs) != 2 || refs[0].cursor != 2 || refs[1].cursor != 1 {
+		t.Fatalf("reverse: %+v, %v", refs, err)
+	}
+	if err := deleteEventRanges(t.Context(), tx, id, []*historypb.CursorRange{{First: 1, Last: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	surviving, err := ReadEntry(t.Context(), tx, id, 3)
+	if err != nil || !proto.Equal(surviving, originals[2]) {
+		t.Fatalf("after removal: %v, %v", surviving, err)
+	}
+}
+
+func TestVersionedWriterPacksLargeBoundaryOnCrossing(t *testing.T) {
+	p, err := eventblock.NewPacker(eventblock.Profile{TargetBytes: 2 << 20, TargetEntries: 32, Level: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(testDB(t), Options{EventPackers: map[historypb.EventKind]*eventblock.Packer{historypb.EventKind_EVENT_KIND_BOUNDARY_RECORD: p}})
+	id := opened(t, store)
+	var original []*eventlogpb.EventEntry
+	for i := uint64(1); i <= 4; i++ {
+		e := executionEvidenceEntry(i, true)
+		e.Event.GetBoundaryRecord().Payload = []byte(strings.Repeat("journal", 100000))
+		appendEntries(t, store, id, e)
+		original = append(original, e)
+		if i == 2 {
+			if raw, blocks := packedRows(t, store, id); raw != 2 || blocks != 0 {
+				t.Fatalf("early seal: %d %d", raw, blocks)
+			}
+		}
+	}
+	if raw, blocks := packedRows(t, store, id); raw != 1 || blocks != 1 {
+		t.Fatalf("after crossing: %d rows, %d blocks", raw, blocks)
+	}
+	got, err := store.ReadSequences(t.Context(), id, []uint64{1, 2, 3, 4}, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, r := range got.Reads {
+		if !proto.Equal(r.NextEntry, original[i]) {
+			t.Fatalf("read differs at %d", i+1)
 		}
 	}
 }
