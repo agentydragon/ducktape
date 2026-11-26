@@ -191,7 +191,7 @@ func (a *codexAdapter) Recover(ctx context.Context) error {
 	requestIDs := map[string]bool{}
 	inputIDs := map[string]string{}
 	inFlightChanges := map[string]bool{}
-	var replayFrom uint64
+	var firstAdmission uint64
 	a.mu.Lock()
 	for _, request := range requests {
 		if request.Kind != harness.CodexTurnStart {
@@ -206,12 +206,8 @@ func (a *codexAdapter) Recover(ctx context.Context) error {
 				if record.TerminalCursor == nil {
 					inputIDs[request.ID] = command.GetCommandId()
 				}
-				before := uint64(0)
-				if record.AdmittedCursor > 0 {
-					before = record.AdmittedCursor - 1
-				}
-				if len(requestIDs) == 0 || before < replayFrom {
-					replayFrom = before
+				if len(requestIDs) == 0 || record.AdmittedCursor < firstAdmission {
+					firstAdmission = record.AdmittedCursor
 				}
 			}
 			inFlightChanges[command.GetCommandId()] = true
@@ -249,53 +245,41 @@ func (a *codexAdapter) Recover(ctx context.Context) error {
 		return nil
 	}
 
-	cursor := replayFrom
-	for cursor < a.host.Journal().LastCursor() {
-		entries, err := a.host.Journal().Since(ctx, cursor, 128)
-		if err != nil {
+	err = harness.ReplayNativeFrames(ctx, a.host.Journal(), firstAdmission, func(native *eventpb.Native, sequence uint64) error {
+		if native.GetDirection() == eventpb.Direction_DIRECTION_TO_HARNESS {
+			var sent struct {
+				ID     string `json:"id"`
+				Method string `json:"method"`
+				Params struct {
+					ClientID string `json:"clientUserMessageId"`
+				} `json:"params"`
+			}
+			if json.Unmarshal([]byte(native.GetLine()), &sent) == nil && sent.Method == "turn/start" && sent.Params.ClientID != "" && sent.Params.ClientID == inputIDs[sent.ID] {
+				a.mu.Lock()
+				a.awaitingInputs[sent.Params.ClientID] = true
+				a.mu.Unlock()
+			}
+			return nil
+		}
+		if native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
+			return nil
+		}
+		frame, err := jsonrpc.Parse([]byte(native.GetLine()))
+		if err != nil || !frame.IsResponse() {
+			return nil
+		}
+		requestID, ok := frame.StringID()
+		if !ok || !requestIDs[requestID] {
+			return nil
+		}
+		if err := a.onResponse(ctx, frame, requestID, []uint64{sequence}); err != nil {
 			return err
 		}
-		if len(entries) == 0 {
-			break
-		}
-		for _, entry := range entries {
-			cursor = entry.GetCursor()
-			native := entry.GetEvent().GetNative()
-			if native == nil {
-				continue
-			}
-			if native.GetDirection() == eventpb.Direction_DIRECTION_TO_HARNESS {
-				var sent struct {
-					ID     string `json:"id"`
-					Method string `json:"method"`
-					Params struct {
-						ClientID string `json:"clientUserMessageId"`
-					} `json:"params"`
-				}
-				if json.Unmarshal([]byte(native.GetLine()), &sent) == nil && sent.Method == "turn/start" && sent.Params.ClientID != "" && sent.Params.ClientID == inputIDs[sent.ID] {
-					a.mu.Lock()
-					a.awaitingInputs[sent.Params.ClientID] = true
-					a.mu.Unlock()
-				}
-				continue
-			}
-			if native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
-				continue
-			}
-			frame, err := jsonrpc.Parse([]byte(native.GetLine()))
-			if err != nil || !frame.IsResponse() {
-				continue
-			}
-			requestID, ok := frame.StringID()
-			if !ok || !requestIDs[requestID] {
-				continue
-			}
-			sequence := entry.GetOrigin().GetSequence()
-			if err := a.onResponse(ctx, frame, requestID, []uint64{sequence}); err != nil {
-				return err
-			}
-			delete(requestIDs, requestID)
-		}
+		delete(requestIDs, requestID)
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	// Recovery uses journaled replies to settle old requests. Unanswered commands stay
 	// uncertain; only requests sent by this adapter can block dispatch awaiting a live reply.
@@ -395,18 +379,8 @@ func (a *codexAdapter) ChangeReasoningEffort(_ context.Context, commandID, effor
 
 func (a *codexAdapter) takePendingChange(ctx context.Context, changes *[]codexPendingChange, label string) (*codexPendingChange, error) {
 	a.mu.Lock()
-	var pending []codexPendingChange
-	switch changes {
-	case &a.pendingModelChanges:
-		pending = a.pendingModelChanges
-		a.pendingModelChanges = nil
-	case &a.pendingEffortChanges:
-		pending = a.pendingEffortChanges
-		a.pendingEffortChanges = nil
-	default:
-		a.mu.Unlock()
-		return nil, errors.New("unexpected Codex pending-change queue")
-	}
+	pending := *changes
+	*changes = nil
 	a.mu.Unlock()
 	if len(pending) == 0 {
 		return nil, nil

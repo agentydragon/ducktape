@@ -209,18 +209,22 @@ func TestCodexRecoveryReplaysJournaledLateTurnStartResponse(t *testing.T) {
 	host.JournalState.Requests = []harness.NativeRequest{{
 		ID: requestID, Kind: harness.CodexTurnStart,
 		Commands: []harness.CommandRecord{
-			{Command: command, DispatchPlanned: true},
+			{Command: command, AdmittedCursor: 2, DispatchPlanned: true},
 			{Command: &commandpb.Command{CommandId: "model-1", Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "recovered-model"}}}, DispatchPlanned: true},
 			{Command: &commandpb.Command{CommandId: "effort-1", Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: "high"}}}, DispatchPlanned: true},
 		},
 	}}
-	host.JournalState.Events = []*eventlogpb.EventEntry{{
-		Cursor: 1, Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: 43},
+	// The response is on a later page after a full page of non-native entries.
+	for cursor := uint64(1); cursor <= 130; cursor++ {
+		host.JournalState.Events = append(host.JournalState.Events, &eventlogpb.EventEntry{Cursor: cursor})
+	}
+	host.JournalState.Events = append(host.JournalState.Events, &eventlogpb.EventEntry{
+		Cursor: 131, Origin: &eventlogpb.EventOrigin{SourceId: "test-source", Sequence: 43},
 		Event: &eventpb.Event{Observation: &eventpb.Event_Native{Native: &eventpb.Native{
 			Direction: eventpb.Direction_DIRECTION_FROM_HARNESS,
 			Line:      string(codexTurnStartResponse(t, requestID, "turn-late")),
 		}}},
-	}}
+	})
 	adapter := New(host)
 	if err := adapter.(harness.RecoveryAdapter).Recover(ctx); err != nil {
 		t.Fatal(err)
