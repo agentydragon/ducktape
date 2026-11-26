@@ -39,7 +39,7 @@ Acknowledgement may already have advanced and entries newer than the coverage sn
    `payload` is the `body` and, when the sender gave one, `from_session`, an unverified label for the
    Session it wrote from. Reply only through a send of your own
    ([messages](messages.md)).
-   A GitHub event's `payload` is a compact, versioned projection of notification facts, not the
+   A GitHub event's `payload` is a compact projection of notification facts, not the
    signed request body; consumers should rely only on the documented event fields.
 4. Page after the last returned cursor until caught up, including beyond `through_at_preparation`.
    A notice can cover multiple updates; its coverage or count is not a substitute for retrieving them.

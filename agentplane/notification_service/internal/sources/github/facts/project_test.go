@@ -19,9 +19,6 @@ func TestProjectPreservesMeaningfulFieldsWithoutCopyingRawBody(t *testing.T) {
 	if value["action"] != "created" {
 		t.Fatalf("action = %v, want created", value["action"])
 	}
-	if value["projectionVersion"] != float64(1) {
-		t.Fatalf("projectionVersion = %v, want 1", value["projectionVersion"])
-	}
 	if value["state"] != nil {
 		t.Fatalf("unrelated root state leaked into issue-comment projection: %v", value["state"])
 	}

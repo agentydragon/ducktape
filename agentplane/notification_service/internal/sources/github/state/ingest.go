@@ -36,7 +36,7 @@ type Ingest struct {
 	Digest []byte
 	// Payload is the raw body, a JSON object.
 	Payload json.RawMessage
-	// Fact is the versioned event-specific notification projection; it never duplicates the entire body.
+	// Fact is the event-specific notification projection; it never duplicates the entire body.
 	Fact   json.RawMessage
 	Action *string
 	// HeadSHA is the commit the event is about, if it is about one.

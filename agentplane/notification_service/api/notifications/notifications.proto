@@ -618,7 +618,7 @@ message InboxEntry {
   // Which event this is. One event can match several subscriptions, and is one entry.
   EventIdentity event = 2;
   // The provider's JSON for the event: an Action event's `sequence`, `state`, `at` and `actor`; a GitHub
-  // webhook's event-specific fact projection (with `projectionVersion`) or a generated mergeability observation; a message's
+  // webhook's event-specific fact projection or a generated mergeability observation; a message's
   // sender-written `body` and optional `from_session`. GitHub webhook payloads omit unrelated upstream fields
   // while preserving the action, subject, revision and event content defined in the GitHub notification guide.
   google.protobuf.Struct payload = 3;

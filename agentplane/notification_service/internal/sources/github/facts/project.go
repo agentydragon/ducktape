@@ -189,14 +189,14 @@ var (
 	correlationNested = map[string][]string{"pull_requests": {"number", "head"}}
 )
 
-// Project returns the versioned notification payload for a webhook body. It copies only documented
+// Project returns the notification payload for a webhook body. It copies only documented
 // notification fields; it never duplicates the complete signed body.
 func Project(event string, raw []byte) (json.RawMessage, error) {
 	body := decodeObject(raw)
 	if body == nil {
 		return nil, errors.New("GitHub webhook body is not a JSON object")
 	}
-	out := object{"projectionVersion": json.RawMessage("1")}
+	out := object{}
 	put(out, body, "action")
 	putObject(out, body, "repository", repositoryFields, nil)
 	putObject(out, body, "sender", userFields, nil)

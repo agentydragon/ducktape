@@ -248,7 +248,7 @@ inbox already containing the event still deduplicates it. Delivered inbox payloa
 their own 30-day lifetime.
 
 Webhook `payload` is a normalized event-specific projection, not the signed request body. It retains the exact
-`projectionVersion: 1`, the exact action, repository and subject/revision details, plus notification content such as original comment/review text,
+action, repository and subject/revision details, plus notification content such as original comment/review text,
 check and job identifiers, status/conclusion, steps, URLs and full SHAs. The projection is explicitly defined by
 the [GitHub notification guide](agents/github.md#follow-github-activity); arbitrary fields from the upstream body
 are omitted. The raw body remains stored with its receipt under the existing receipt retention setting and is never

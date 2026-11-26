@@ -56,7 +56,7 @@ state, continue independent work or end your turn; subsequent notices can start 
 the harness remains running.
 
 Webhook entries contain `event.github` (`deliveryId`, `repositoryId`, `event`, `action`) and a compact,
-versioned event-specific projection in `payload`. Its top-level `projectionVersion` is `1`. The projection keeps the exact action and repository identity;
+event-specific projection in `payload`. The projection keeps the exact action and repository identity;
 pull-request and issue facts retain their number, title, body, state and relevant refs; comments and reviews retain
 their original text, IDs, author and URLs; and CI activity retains the relevant run/check IDs, status, conclusion,
 steps or context, and full commit SHA. Push facts retain the ref and before/after SHAs. Optional fields are omitted
