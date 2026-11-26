@@ -187,27 +187,15 @@ To run the same builder outside Bazel, copy `package.json.in` to `package.json` 
 
 Compare their footprints with `bb run "$p/lowering:compare_footprints" -- "$out/"*.json`.
 
-## 7. Real splits: halves, cuts, blocks, random placements
+## 7. Historical library split sweep
 
-`library_smoke_test` runs the original Acorn and semver bundles through the Node API probes in `smoke.mjs`. The former `library_certificate_test` depended on CLI construction routes that were retired, so its split assertions and preview control were removed.
+The current `library_smoke_test` runs the original Acorn and semver bundles
+through the Node API probes in [`smoke.mjs`](../integration/library_splits/smoke.mjs).
 
-A bundle cannot be cut anywhere. This section runs the checker on 2,892 splits of six real bundles and runs each result in Node.
-Each bundle has an opt-in Bazel test, with the same strategies as the full sweep.
-Run one library variant or the whole corpus from the repository root:
+The historical sweep ran 2,892 placements of six bundles. It compared the
+original API probe results with the diagnostic preview from each placement.
+The preview emitter and its scheduled sweep have been retired.
 
-```sh
-p=//devinfra/js/debundle/x/split_proof
-bbr test "$p/integration/library_splits:real_split_zod_test"
-bbr test "$p/integration/library_splits:real_split_zod_min_test" --test_arg=--sample
-bbr test "$p/integration/library_splits:real_split_sweep"
-```
-
-The other labels are `real_split_acorn_test`, `real_split_acorn_min_test`,
-`real_split_lodash_test`, and `real_split_semver_test`. Each test consumes its bundle and AST from a cacheable build action, computes
-its footprints once, and publishes JSONL and a summary as Bazel test outputs. Use `--test_arg=--sample` for one halves split instead of all strategies.
-
-For every split, the diagnostic invocation `lowersplit --diagnostic … --force` checks it and writes an uncertified preview even when a check rejects it. Then [`smoke.mjs`](../integration/library_splits/smoke.mjs) calls the
-entry module's exported API and prints the result as JSON. The split behaves like the bundle when that line equals the bundle's own.
 The calls: lodash `chunk`, `get`, `set`, `merge`, `cloneDeep`, `groupBy`, `sortBy`, `uniqBy`; acorn `parse` of ES2022 programs, tokens and four syntax errors;
 semver `valid`, `compare`, `satisfies`, `inc`, `coerce`, `Range`; zod `parse` and the issues for bad input.
 One JSON line per split is in [split results](../integration/library_splits/results); [`results/summary.md`](../integration/library_splits/results/summary.md) has the per-bundle table.

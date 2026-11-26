@@ -1,7 +1,6 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/lint:linters.bzl", "eslint_test")
-load(":sweep.bzl", "real_split_sweeps")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -38,41 +37,29 @@ js_test(
     entry_point = "standalone_parser_dump_test.mjs",
 )
 
-js_binary(
-    name = "real_split",
-    data = [
-        "gen_spec.mjs",
-        "smoke.mjs",
-        "//devinfra/js/debundle/x/split_proof:seeded_random",
-        "//devinfra/js/debundle/x/split_proof/lean:lower",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
-    ],
-    entry_point = "run_splits.mjs",
-    env = {
-        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-    },
-    tags = ["manual"],
-)
-
-js_binary(
-    name = "summarize_real_splits",
-    data = ["//devinfra/js/debundle/x/split_proof:reporting"],
-    entry_point = "summarize.mjs",
-    tags = ["manual"],
-)
-
-real_split_sweeps()
-
-_LIBRARY_SOURCES = [
-    ":real_bundles/" + library + ".mjs"
-    for library in [
-        "acorn",
-        "semver",
-    ]
+_LIBRARY_SMOKE_VARIANTS = [
+    "acorn",
+    "semver",
 ]
+
+[
+    js_run_binary(
+        name = "prepare_" + variant,
+        outs = ["real_bundles/" + variant + ext for ext in [
+            ".mjs",
+            ".json",
+        ]],
+        args = [
+            "real_bundles",
+            variant,
+        ],
+        chdir = package_name(),
+        tool = ":prepare",
+    )
+    for variant in _LIBRARY_SMOKE_VARIANTS
+]
+
+_LIBRARY_SOURCES = [":real_bundles/" + variant + ".mjs" for variant in _LIBRARY_SMOKE_VARIANTS]
 
 js_test(
     name = "library_smoke_test",
