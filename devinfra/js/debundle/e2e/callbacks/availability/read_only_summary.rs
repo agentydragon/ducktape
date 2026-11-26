@@ -3,7 +3,7 @@
 
 use super::{assert_unmoved_output, expect_single_binding_rejection};
 use debundle_e2e_graph_support::FixtureGraphExt;
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged};
+use debundle_e2e_support::saved_analysis::assert_staged_entry_output;
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
 
@@ -90,31 +90,12 @@ fn prefix_values_and_saved_analysis_are_rechecked_between_host_calls() {
         state = 2;\n\
         const second = host(reader);\n\
         console.log(first, second);\n";
-    let (staged, _fixture) = staged(
+    assert_staged_entry_output(
         FixtureOpts::new(source, vec![])
             .with_extra_chunks(&HOST)
             .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_node_output(
-        &staged.root().join("snapshot/static/app.js"),
         "1,1 2,2\n",
-        "",
     );
-    let fresh = staged.run(&[]);
-    let saved = staged.run_saved(&[]);
-    assert_same_invocation_trees(&fresh, &saved);
-    for invocation in [&fresh, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "1,1 2,2\n",
-            "",
-        );
-    }
 }
 
 #[test]

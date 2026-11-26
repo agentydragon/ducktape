@@ -1,7 +1,7 @@
 //! Imported initializer bodies and their evaluation-time availability.
 
 use super::{assert_unmoved_output, expect_single_binding_rejection};
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
+use debundle_e2e_support::saved_analysis::assert_staged_entry_output;
 use debundle_e2e_support::*;
 
 const ENTRY: &str = "field(() => later);\n\
@@ -62,7 +62,7 @@ fn passive_provider_cycles_and_saved_analysis_preserve_availability() {
             logical_module("second", &binding_members(["second", "field"])),
         ],
     )];
-    let (case, _fixture) = staged(
+    assert_staged_entry_output(
         FixtureOpts::new(
             &source,
             vec![logical_module("icons", &[Member::new("icon")])],
@@ -71,27 +71,8 @@ fn passive_provider_cycles_and_saved_analysis_preserve_availability() {
         .with_extra_chunk_logical_modules(&provider_modules)
         .with_chunk_import_order("static/peer", &["first", "second", "residual"])
         .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_node_output(
-        &case.root().join("snapshot/static/app.js"),
         "svg\ntrue true\n",
-        "",
     );
-    let fresh = case.run(&[]);
-    let saved = case.run(&["--analysis", path(&case.artifact)]);
-    for invocation in [&fresh, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "svg\ntrue true\n",
-            "",
-        );
-    }
-    assert_same_invocation_trees(&fresh, &saved);
 }
 
 #[test]

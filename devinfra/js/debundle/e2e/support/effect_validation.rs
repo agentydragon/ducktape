@@ -103,6 +103,26 @@ pub fn candidate_relocation_assessment(fixture: &Fixture) -> Value {
     )
 }
 
+/// `assert_effect_verdict_accepts`, with the inversions accepted as
+/// statement-order commutation.
+pub fn assert_commuting_relocation(fixture: &Fixture, case: &str) -> Value {
+    let report = assert_effect_verdict_accepts(fixture, case);
+    assert_commutation_accepted(&report, case);
+    report
+}
+
+/// The effect report accepts its inversions as statement-order commutation.
+pub fn assert_commutation_accepted(report: &Value, case: &str) {
+    assert_eq!(
+        report["decision"]["status"], "accepted",
+        "{case}: {report:#}"
+    );
+    assert_eq!(
+        report["decision"]["scope"], "statement_order_commutation",
+        "{case}: {report:#}"
+    );
+}
+
 /// A relocation the legacy gate accepted and the effect verdict proved: the
 /// candidate swaps at least one pair and the assessment accepts within its
 /// checked scope.

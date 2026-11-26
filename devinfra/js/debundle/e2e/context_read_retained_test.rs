@@ -1,6 +1,6 @@
 //! Context-read return pooling must preserve distinct runtime receivers.
 
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged as stage};
+use debundle_e2e_support::saved_analysis::staged;
 use debundle_e2e_support::*;
 
 fn assert_context_read_cut(write: bool, wrapper_alias: bool) {
@@ -37,7 +37,7 @@ fn assert_context_read_cut(write: bool, wrapper_alias: bool) {
                     }\n\
                     export function read(context) { return context.value; }\n\
                     export const api = { make(callback, compare) { return { invoke: callback, compare }; } };\n";
-    let (staged, _fixture) = stage(
+    let (staged, _fixture) = staged(
         FixtureOpts::new(
             &source,
             vec![
@@ -57,27 +57,7 @@ fn assert_context_read_cut(write: bool, wrapper_alias: bool) {
             .build()])
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "42 7\n", "");
-    let direct = staged.run(&[]);
-    let saved = staged.run_saved(&[]);
-    eprintln!(
-        "context-read case write={write} wrapper_alias={wrapper_alias}: original=42 7 direct={:?} saved={:?}",
-        direct.result.status.code(),
-        saved.result.status.code(),
-    );
-    for invocation in [&direct, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "context-read cut failed (write={write}, wrapper_alias={wrapper_alias}):\n{}",
-            invocation.result.stderr,
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "42 7\n",
-            "",
-        );
-    }
-    assert_same_invocation_trees(&direct, &saved);
+    staged.assert_fresh_saved_parity(&[], 0, "42 7\n", "42 7\n");
 }
 
 #[test]
@@ -116,7 +96,7 @@ fn context_read_alias_to_original_callback_keeps_an_unsafe_cut_rejected() {
     let callbacks = binding_members([
         "callback", "context", "alias", "install", "wrapped", "observed",
     ]);
-    let (staged, _fixture) = stage(
+    let (staged, _fixture) = staged(
         FixtureOpts::new(
             source,
             vec![
@@ -128,27 +108,7 @@ fn context_read_alias_to_original_callback_keeps_an_unsafe_cut_rejected() {
         .with_chunk_export_purity(&contracts)
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 42\n", "");
-    let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run_saved(&["--emit-on-rejection"]);
-    eprintln!(
-        "original-callback context alias: original=0 42 direct={:?} saved={:?}",
-        direct.result.status.code(),
-        saved.result.status.code()
-    );
-    for invocation in [&direct, &saved] {
-        assert_eq!(
-            invocation.result.status.code(),
-            Some(3),
-            "{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "42 42\n",
-            "",
-        );
-    }
+    staged.assert_fresh_saved_parity(&["--emit-on-rejection"], 3, "0 42\n", "42 42\n");
 }
 
 #[test]
@@ -165,7 +125,7 @@ fn sequence_prefix_keeps_call_effects_with_a_static_property_result() {
                     export function read(context) { return (recordCall(), context.value); }\n\
                     export function readCount() { return calls; }\n\
                     export const api = { make(callback, compare) { return { invoke: callback, compare }; } };\n";
-    let (staged, _fixture) = stage(
+    let (staged, _fixture) = staged(
         FixtureOpts::new(
             source,
             vec![
@@ -187,24 +147,5 @@ fn sequence_prefix_keeps_call_effects_with_a_static_property_result() {
             .build()])
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_node_output(
-        &staged.root().join("snapshot/static/app.js"),
-        "42 7 1\n",
-        "",
-    );
-    let direct = staged.run(&[]);
-    let saved = staged.run_saved(&[]);
-    for invocation in [&direct, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "42 7 1\n",
-            "",
-        );
-    }
-    assert_same_invocation_trees(&direct, &saved);
+    staged.assert_fresh_saved_parity(&[], 0, "42 7 1\n", "42 7 1\n");
 }

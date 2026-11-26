@@ -1,8 +1,6 @@
 //! A call's return relationship must not import another call's callback.
 
-use analysis::{DependencyGraphReport, reports::schema::EdgeRoleReport};
-use analysis_model::DepKind;
-use debundle_e2e_graph_support::source_unit_for_binding;
+use debundle_e2e_graph_support::{FixtureGraphExt, has_promoted_read};
 use debundle_e2e_support::saved_analysis::{
     assert_same_invocation_trees, assert_staged_entry_output, path, staged,
 };
@@ -56,42 +54,17 @@ console.log(observed, unrelated());
         )
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_node_output(&stage.root().join("snapshot/static/app.js"), "41 7\n", "");
-    let fresh = stage.run(&[]);
-    let saved = stage.run(&["--analysis", path(&stage.artifact)]);
-    for invocation in [&fresh, &saved] {
+    for invocation in stage.assert_fresh_saved_parity(&[], 0, "41 7\n", "41 7\n") {
+        let graph = invocation.dependency_graph();
         assert!(
-            invocation.result.status.success(),
-            "{}",
-            invocation.result.stderr
+            has_promoted_read(&graph, "observed", "earlier", "selectedCallback"),
+            "the selected callback's read was lost"
         );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "41 7\n",
-            "",
+        assert!(
+            !has_promoted_read(&graph, "observed", "later", "unrelatedCallback"),
+            "an independent return polluted the selected call"
         );
-        let graph: DependencyGraphReport = read_gzip_json(
-            &invocation
-                .output_root()
-                .join("reports/tree/static/app/dependency_graph.json.gz"),
-        );
-        let observed = source_unit_for_binding(&graph, "observed");
-        let selected = source_unit_for_binding(&graph, "selectedCallback");
-        let earlier = source_unit_for_binding(&graph, "earlier");
-        let unrelated = source_unit_for_binding(&graph, "unrelatedCallback");
-        let later = source_unit_for_binding(&graph, "later");
-        assert!(graph.edges.iter().any(|edge|
-            edge.source == observed && edge.target == earlier
-                && edge.edge_kind == DepKind::EagerUse
-                && matches!(&edge.role, Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) if *callee_source_unit == selected)
-        ), "the selected callback's read was lost");
-        assert!(!graph.edges.iter().any(|edge|
-            edge.source == observed && edge.target == later
-                && edge.edge_kind == DepKind::EagerUse
-                && matches!(&edge.role, Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) if *callee_source_unit == unrelated)
-        ), "an independent return polluted the selected call");
     }
-    assert_same_invocation_trees(&fresh, &saved);
 }
 
 #[test]
@@ -143,27 +116,8 @@ fn assert_unsafe_return_summary_cut(
         )
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_node_output(
-        &stage.root().join("snapshot/static/app.js"),
-        original_output,
-        "",
-    );
-    let fresh = stage.run(&["--emit-on-rejection"]);
-    let saved = stage.run(&["--emit-on-rejection", "--analysis", path(&stage.artifact)]);
-    for invocation in [&fresh, &saved] {
-        assert_eq!(
-            invocation.result.status.code(),
-            Some(3),
-            "an unsupported return relationship must keep the unsafe cut rejected:\n{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            emitted_output,
-            "",
-        );
-    }
-    assert_same_invocation_trees(&fresh, &saved);
+    // An unsupported return relationship must keep the unsafe cut rejected.
+    stage.assert_fresh_saved_parity(&["--emit-on-rejection"], 3, original_output, emitted_output);
 }
 
 fn assert_eval_admission_refused(source: &str, members: &[&'static str], original_output: &str) {

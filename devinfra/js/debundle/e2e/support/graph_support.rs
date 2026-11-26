@@ -5,8 +5,10 @@ mod graph_fixture;
 pub mod reflective_provider;
 pub use graph_fixture::GraphFixture;
 
-use analysis::reports::schema::SourceUnitReport;
+use analysis::reports::schema::{EdgeRoleReport, SourceUnitReport};
 use analysis::{DependencyGraphReport, ProgramGraphReport};
+use analysis_model::DepKind;
+use debundle_e2e_support::saved_analysis::StagedInvocation;
 use debundle_e2e_support::{Fixture, RejectedFixture, read_gzip_json, read_json};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -51,6 +53,13 @@ impl FixtureGraphExt for Fixture {
 impl FixtureGraphExt for RejectedFixture {
     fn dependency_graph_path(&self) -> PathBuf {
         self.report_path("dependency_graph.json.gz")
+    }
+}
+
+impl FixtureGraphExt for StagedInvocation {
+    fn dependency_graph_path(&self) -> PathBuf {
+        self.output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz")
     }
 }
 
@@ -157,6 +166,28 @@ pub fn node_declaring<'a>(graph: &'a DependencyGraphReport, binding: &str) -> &'
 /// SourceUnit-graph node id that declares `binding`.
 pub fn source_unit_for_binding<'a>(graph: &'a DependencyGraphReport, binding: &str) -> &'a str {
     node_declaring(graph, binding).id.as_str()
+}
+
+/// Whether `graph` has an eager at-init read from the node declaring `reader`
+/// to the node declaring `target`, promoted through the call to the node
+/// declaring `callee`.
+pub fn has_promoted_read(
+    graph: &DependencyGraphReport,
+    reader: &str,
+    target: &str,
+    callee: &str,
+) -> bool {
+    let (reader, target, callee) = (
+        source_unit_for_binding(graph, reader),
+        source_unit_for_binding(graph, target),
+        source_unit_for_binding(graph, callee),
+    );
+    graph.edges.iter().any(|edge| {
+        edge.source == reader
+            && edge.target == target
+            && edge.edge_kind == DepKind::EagerUse
+            && matches!(&edge.role, Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) if callee_source_unit == callee)
+    })
 }
 
 /// The dependency-graph node at source-unit `ordinal`.

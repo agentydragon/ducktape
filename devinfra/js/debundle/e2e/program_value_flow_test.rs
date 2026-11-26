@@ -2,53 +2,31 @@
 //! Call edges supplement the Node/refusal oracle so these fixtures cannot pass
 //! merely because an opaque-call fallback happens to reject the same split.
 
-use analysis::{DependencyGraphReport, reports::schema::EdgeRoleReport};
-use analysis_model::DepKind;
-use debundle_e2e_graph_support::source_unit_for_binding;
-use debundle_e2e_support::saved_analysis::{
-    assert_same_invocation_trees, assert_staged_entry_output, staged as stage,
-};
+use debundle_e2e_graph_support::{FixtureGraphExt, has_promoted_read};
+use debundle_e2e_support::saved_analysis::{assert_staged_entry_output, staged};
 use debundle_e2e_support::*;
 
 fn assert_flow_case(source: &str, peers: &[(&str, &str)], calls: &[(&str, &str)]) {
-    let opts = || {
+    let (case, _fixture) = staged(
         FixtureOpts::new(source, vec![])
             .with_extra_chunks(peers)
-            .with_unassigned_mode(unassigned_mode_inline())
-    };
-    let (staged, _fixture) = stage(opts());
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 7\n", "");
-    let direct = staged.run(&[]);
-    let saved = staged.run_saved(&[]);
-    for invocation in [&direct, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "0 7\n",
-            "",
-        );
-        let graph: DependencyGraphReport = read_gzip_json(
-            &invocation
-                .output_root()
-                .join("reports/tree/static/app/dependency_graph.json.gz"),
-        );
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    for invocation in case.assert_fresh_saved_parity(&[], 0, "0 7\n", "0 7\n") {
+        let graph = invocation.dependency_graph();
         for (caller, callee) in calls {
-            let caller = source_unit_for_binding(&graph, caller);
-            let callee = source_unit_for_binding(&graph, callee);
-            let target = source_unit_for_binding(&graph, "later");
-            assert!(graph.edges.iter().any(|edge| edge.source == caller && edge.target == target && edge.edge_kind == DepKind::EagerUse && matches!(&edge.role, Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) if callee_source_unit == callee)), "missing callback-specific promoted read {caller} -> {target} via {callee}: {:#?}", graph.edges);
+            assert!(
+                has_promoted_read(&graph, caller, "later", callee),
+                "missing callback-specific promoted read {caller} -> later via {callee}: {:#?}",
+                graph.edges
+            );
         }
     }
-    assert_same_invocation_trees(&direct, &saved);
 
     // Moving the cell's initializer and write into an eagerly imported module
     // changes the observed callback result from 0 to 7. Both analysis paths
     // must refuse it; emit-on-rejection demonstrates the concrete divergence.
-    let (staged, _fixture) = stage(
+    staged(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -59,23 +37,9 @@ fn assert_flow_case(source: &str, peers: &[(&str, &str)], calls: &[(&str, &str)]
         )
         .with_extra_chunks(peers)
         .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run_saved(&["--emit-on-rejection"]);
-    for invocation in [&direct, &saved] {
-        assert_eq!(
-            invocation.result.status.code(),
-            Some(3),
-            "{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "7 7\n",
-            "",
-        );
-    }
-    assert_same_invocation_trees(&direct, &saved);
+    )
+    .0
+    .assert_fresh_saved_parity(&["--emit-on-rejection"], 3, "0 7\n", "7 7\n");
 }
 
 #[test]
@@ -243,42 +207,27 @@ fn equal_offsets_and_names_in_two_providers_are_distinct() {
     // Identical source gives identical local function offsets and names.
     let provider = "export function relay(value) { return value; }\n";
     let peers = [("static/first", provider), ("static/second", provider)];
-    let (staged, _fixture) = stage(
+    let (case, _fixture) = staged(
         FixtureOpts::new(source, vec![])
             .with_extra_chunks(&peers)
             .with_unassigned_mode(unassigned_mode_inline()),
     );
-    let direct = staged.run(&[]);
-    let saved = staged.run_saved(&[]);
-    for invocation in [&direct, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "1 2\n",
-            "",
-        );
-        let graph: DependencyGraphReport = read_gzip_json(
-            &invocation
-                .output_root()
-                .join("reports/tree/static/app/dependency_graph.json.gz"),
-        );
+    for invocation in case.assert_fresh_saved_parity(&[], 0, "1 2\n", "1 2\n") {
+        let graph = invocation.dependency_graph();
         for (caller, expected, excluded, target) in [
             ("observed", "callback", "other", "alpha"),
             ("unrelated", "other", "callback", "beta"),
         ] {
-            let caller = source_unit_for_binding(&graph, caller);
-            let target = source_unit_for_binding(&graph, target);
             for (callee, present) in [(expected, true), (excluded, false)] {
-                let callee = source_unit_for_binding(&graph, callee);
-                assert_eq!(graph.edges.iter().any(|edge| edge.source == caller && edge.target == target && edge.edge_kind == DepKind::EagerUse && matches!(&edge.role, Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) if callee_source_unit == callee)), present, "qualified callback {caller} -> {target} via {callee}: {:#?}", graph.edges);
+                assert_eq!(
+                    has_promoted_read(&graph, caller, target, callee),
+                    present,
+                    "qualified callback {caller} -> {target} via {callee}: {:#?}",
+                    graph.edges
+                );
             }
         }
     }
-    assert_same_invocation_trees(&direct, &saved);
 }
 
 #[test]

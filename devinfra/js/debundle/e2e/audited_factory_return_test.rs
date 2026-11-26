@@ -1,6 +1,6 @@
 //! Declared fresh factories refine direct result identity, preserving captures.
 
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged as stage};
+use debundle_e2e_support::saved_analysis::staged;
 use debundle_e2e_support::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -72,7 +72,7 @@ fn assert_factory_cut(
     } else {
         vec![]
     };
-    let (staged, _fixture) = stage(
+    let (staged, _fixture) = staged(
         FixtureOpts::new(
             &source,
             vec![
@@ -96,34 +96,16 @@ fn assert_factory_cut(
             .build()])
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "42 7\n", "");
-    let direct = staged.run(&[]);
-    let saved = staged.run_saved(&[]);
-    for invocation in [&direct, &saved] {
-        eprintln!(
-            "factory cut shape={shape:?} always_fresh={always_fresh} mutate_second={mutate_second}: original=42 7 status={:?}",
-            invocation.result.status.code()
-        );
-        if !accepts {
-            assert!(
-                !invocation.result.status.success(),
-                "a provider backedge must decline direct-return refinement"
-            );
-            continue;
-        }
-        assert!(
-            invocation.result.status.success(),
-            "independent wrapper mutation rejected a valid cut (always_fresh={always_fresh}, mutate_second={mutate_second}):\n{}",
-            invocation.result.stderr,
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "42 7\n",
-            "",
-        );
-    }
     if accepts {
-        assert_same_invocation_trees(&direct, &saved);
+        staged.assert_fresh_saved_parity(&[], 0, "42 7\n", "42 7\n");
+        return;
+    }
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "42 7\n", "");
+    for invocation in [staged.run(&[]), staged.run_saved(&[])] {
+        assert!(
+            !invocation.result.status.success(),
+            "a provider backedge must decline direct-return refinement"
+        );
     }
 }
 
@@ -208,7 +190,7 @@ fn assert_named_factory_cut(conditional_identity_helper: bool, write_second_meta
          export function factory(callback) {{\n  {factory_body}\n}}\n\
          export const api = {{ make(callback, compare) {{ return {{ invoke: callback, compare }}; }} }};\n"
     );
-    let (staged, _fixture) = stage(
+    let (staged, _fixture) = staged(
         FixtureOpts::new(
             &source,
             vec![
@@ -232,22 +214,7 @@ fn assert_named_factory_cut(conditional_identity_helper: bool, write_second_meta
             .build()])
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "42 7\n", "");
-    let direct = staged.run(&[]);
-    let saved = staged.run_saved(&[]);
-    for invocation in [&direct, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "named callback factory split rejected (conditional_identity_helper={conditional_identity_helper}, write_second_metadata={write_second_metadata}):\n{}",
-            invocation.result.stderr,
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "42 7\n",
-            "",
-        );
-    }
-    assert_same_invocation_trees(&direct, &saved);
+    staged.assert_fresh_saved_parity(&[], 0, "42 7\n", "42 7\n");
 }
 
 #[test]
@@ -266,7 +233,7 @@ fn always_fresh_named_callback_factory_keeps_metadata_cut_valid() {
 }
 
 fn assert_unsafe_cut(source: &str, provider: &str, members: &[&'static str], setup: &[&str]) {
-    let (staged, _fixture) = stage(
+    let (staged, _fixture) = staged(
         FixtureOpts::new(
             source,
             vec![
@@ -285,27 +252,7 @@ fn assert_unsafe_cut(source: &str, provider: &str, members: &[&'static str], set
             .build()])
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 42\n", "");
-    let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run_saved(&["--emit-on-rejection"]);
-    for invocation in [&direct, &saved] {
-        eprintln!(
-            "unsafe factory cut: original=0 42 status={:?}",
-            invocation.result.status.code()
-        );
-        assert_eq!(
-            invocation.result.status.code(),
-            Some(3),
-            "{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "42 42\n",
-            "",
-        );
-    }
-    assert_same_invocation_trees(&direct, &saved);
+    staged.assert_fresh_saved_parity(&["--emit-on-rejection"], 3, "0 42\n", "42 42\n");
 }
 
 #[test]
@@ -382,7 +329,7 @@ fn namespace_alias_mutation_keeps_an_unsafe_factory_cut_rejected() {
                 return wrappers.wrap(callback);\n\
             }\n\
         };\n";
-    let (staged, _fixture) = stage(
+    let (staged, _fixture) = staged(
         FixtureOpts::new(
             SOURCE,
             vec![
@@ -406,22 +353,7 @@ fn namespace_alias_mutation_keeps_an_unsafe_factory_cut_rejected() {
             .build()])
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 42\n", "");
-
-    let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run_saved(&["--emit-on-rejection"]);
-    for invocation in [&direct, &saved] {
-        assert_eq!(
-            invocation.result.status.code(),
-            Some(3),
-            "a callback-factory member replaced through a namespace alias must not authorize this split:\n{}",
-            invocation.result.stderr,
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "42 42\n",
-            "",
-        );
-    }
-    assert_same_invocation_trees(&direct, &saved);
+    // A callback-factory member replaced through a namespace alias must not
+    // authorize this split.
+    staged.assert_fresh_saved_parity(&["--emit-on-rejection"], 3, "0 42\n", "42 42\n");
 }
