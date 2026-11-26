@@ -102,7 +102,7 @@ fn captured_local_bindings(index: &ExecutionIndex) -> FxHashSet<Id> {
             if index
                 .callable_spans
                 .get(owner)
-                .is_some_and(|outer| outer.lo <= span.lo && span.hi <= outer.hi)
+                .is_some_and(|outer| outer.contains(*span))
             {
                 captured.insert(binding.clone());
             }
@@ -1184,8 +1184,7 @@ pub(crate) fn annotate_synchronous_calls(
             .iter()
             .filter(|(_, span)| {
                 index.callable_spans.iter().any(|(inner, inner_span)| {
-                    span.lo <= inner_span.lo
-                        && inner_span.hi <= span.hi
+                    span.contains(*inner_span)
                         && index.callables.get(inner).is_some_and(|callable| {
                             callable.reads.iter().any(|id| id.0 == "arguments")
                         })
@@ -1200,7 +1199,7 @@ pub(crate) fn annotate_synchronous_calls(
                 let reads = index
                     .callable_spans
                     .iter()
-                    .filter(|(_, callable)| span.lo <= callable.lo && callable.hi <= span.hi)
+                    .filter(|(_, callable)| span.contains(**callable))
                     .filter_map(|(key, _)| index.callables.get(key))
                     .flat_map(|callable| callable.captured_reads().into_iter().cloned())
                     .collect();

@@ -2035,7 +2035,9 @@ fn matches_resolved_native_initializer(
 ) -> bool {
     declaration.direct_top_level
         && declaration.simple_identifier
-        && span_contains(input.selected_statement_span, declaration.binding_span)
+        && input
+            .selected_statement_span
+            .contains(declaration.binding_span)
         && declaration.binding_span == input.declaration_span
         && declaration.initializer_span == Some(input.initializer_span)
         && declaration.owner == input.initializer_ordinal
@@ -2111,10 +2113,6 @@ fn set_from_set_spread_source(expression: &Expr) -> Option<(Id, Span, Span)> {
             first.spread.expect("checked spread"),
         )
     })
-}
-
-fn span_contains(outer: Span, inner: Span) -> bool {
-    outer.lo.0 <= inner.lo.0 && inner.hi.0 <= outer.hi.0
 }
 
 /// First milestone accepts only a source-local opaque slot/member read. This
@@ -5490,7 +5488,7 @@ impl ExecutionIndex {
                     writes.iter().filter_map(move |write| {
                         (write.simple_identifier
                             && write.direct_top_level
-                            && span_contains(input.selected_statement_span, write.binding_span))
+                            && input.selected_statement_span.contains(write.binding_span))
                         .then_some((binding.clone(), write.clone()))
                     })
                 })
@@ -5747,7 +5745,7 @@ impl ExecutionIndex {
                         self.hoisted_bindings
                             .get(*binding)
                             .and_then(|key| self.callable_spans.get(key))
-                            .is_some_and(|span| span_contains(input.selected_statement_span, *span))
+                            .is_some_and(|span| input.selected_statement_span.contains(*span))
                     })
                     .collect();
                 let [binding] = candidates.as_slice() else {
@@ -5788,7 +5786,7 @@ impl ExecutionIndex {
                     writes.iter().filter_map(move |write| {
                         (write.simple_identifier
                             && write.direct_top_level
-                            && span_contains(input.selected_statement_span, write.binding_span))
+                            && input.selected_statement_span.contains(write.binding_span))
                         .then_some((binding.clone(), write.clone()))
                     })
                 })
@@ -6304,7 +6302,7 @@ impl ExecutionIndex {
         }
         let key = *self.hoisted_bindings.get(binding)?;
         let declaration = *self.callable_spans.get(&key)?;
-        if !span_contains(selected_span, declaration) || self.async_callables.contains(&key) {
+        if !selected_span.contains(declaration) || self.async_callables.contains(&key) {
             return None;
         }
         let callable = self.callables.get(&key)?;
@@ -8090,7 +8088,7 @@ impl ExecutionIndex {
                         && write.direct_top_level
                         && write
                             .initializer_span
-                            .is_some_and(|span| span.lo <= call.span.lo && call.span.hi <= span.hi)
+                            .is_some_and(|span| span.contains(call.span))
                 })
     }
 
