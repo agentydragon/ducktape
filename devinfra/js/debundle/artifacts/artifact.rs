@@ -12,8 +12,8 @@ use swc_common::{BytePos, SourceFile, sync::Lrc};
 
 use js_ast::{ParsedJsModule, emit_js_module_with_comments};
 use paths::{
-    chunk_id_for_js_path, join_module_path, module_path_dirname, normalize_module_path,
-    parse_js_list, resolve_chunk_source_path_reference,
+    chunk_id_for_js_path, is_path_specifier, join_module_path, module_path_dirname,
+    normalize_module_path, parse_js_list, resolve_chunk_source_path_reference,
 };
 use reports::{ChunkAnalysisReport, ImportRecord, ImportSpecifierKind};
 
@@ -498,7 +498,7 @@ impl ArtifactIndexes {
         caller_file: &str,
         chunk_table: &ChunkTable,
     ) -> Option<ResolvedImportReference> {
-        if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
+        if !is_path_specifier(source) {
             return None;
         }
         let caller_source_path = self

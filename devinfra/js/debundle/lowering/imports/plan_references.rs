@@ -5,6 +5,7 @@
 use crate::body_facts::NaturalizedBodyFacts;
 use analysis::{BindingId, BindingKind, ImportedSourceTarget, ModuleId};
 use anyhow::{Context, Result};
+use artifact::paths::is_path_specifier;
 use artifact::runtime_resources::{
     RuntimeResourceDestination, RuntimeResourceDestinations, RuntimeResourceKind,
     UnresolvedResourceReason, local_resource_path,
@@ -155,7 +156,7 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
         caller_chunk_id: &str,
         caller_file: &str,
     ) -> Result<SourceImportResolution> {
-        if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
+        if !is_path_specifier(source) {
             return Ok(None);
         }
         let key = (

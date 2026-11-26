@@ -12,7 +12,7 @@ use crate::imports::{
 use analysis::ImportedSourceTarget;
 use anyhow::{Context, Result, bail};
 use artifact::paths::{
-    join_module_path, module_path_dirname, normalize_relative_module_specifier,
+    is_path_specifier, join_module_path, module_path_dirname, normalize_relative_module_specifier,
     relative_module_specifier,
 };
 use frontend_elaboration::source_ast::{RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind};
@@ -42,7 +42,7 @@ pub(crate) fn resolve_imported_binding(
             source_import_cache.resolve(&info.src, source_chunk_id, source_runtime_file)?
         {
             ImportedSourceTarget::OutputPath(target.path)
-        } else if info.src.starts_with('.') || info.src.starts_with('/') {
+        } else if is_path_specifier(&info.src) {
             // Source path doesn't reference a known chunk (e.g. a
             // synthetic e2e snapshot file with no entry in the artifact).
             // Resolve from the source chunk root in the output tree; the

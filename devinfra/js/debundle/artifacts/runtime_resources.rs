@@ -4,7 +4,8 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 use crate::paths::{
-    join_module_path, module_path_dirname, normalize_module_path, relative_module_specifier,
+    is_path_specifier, join_module_path, module_path_dirname, normalize_module_path,
+    relative_module_specifier,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -83,9 +84,7 @@ pub fn local_resource_path(
 ) -> Option<String> {
     if specifier.starts_with("//")
         || url::Url::parse(specifier).is_ok()
-        || (kind == RuntimeResourceKind::DynamicImport
-            && !specifier.starts_with('.')
-            && !specifier.starts_with('/'))
+        || (kind == RuntimeResourceKind::DynamicImport && !is_path_specifier(specifier))
     {
         return None;
     }

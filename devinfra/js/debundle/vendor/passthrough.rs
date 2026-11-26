@@ -29,7 +29,9 @@ use std::collections::BTreeMap;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use artifact::paths::{join_module_path, module_path_dirname, relative_module_specifier};
+use artifact::paths::{
+    is_path_specifier, join_module_path, module_path_dirname, relative_module_specifier,
+};
 use artifact::{ArtifactIndexes, ImportReferenceKind};
 use binding_targets::{imported_export_name, module_export_name, public_export_name};
 use js_ast::{
@@ -396,7 +398,7 @@ impl SourceCanonicalizer<'_> {
     /// `Some(rewritten)` when the source canonicalizes to a different
     /// spelling; `None` to keep the source untouched.
     fn rewrite_source(&self, source: &str) -> Option<String> {
-        if source.is_empty() || (!source.starts_with('.') && !source.starts_with('/')) {
+        if !is_path_specifier(source) {
             return None;
         }
         let target_path = match self.context.references.resolve_runtime_import_reference(

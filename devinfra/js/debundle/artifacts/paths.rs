@@ -7,6 +7,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use relative_path::RelativePath;
 
+/// Whether a source starts with a path prefix recognized by the artifact resolver.
+pub fn is_path_specifier(source: &str) -> bool {
+    source.starts_with('.') || source.starts_with('/')
+}
+
 fn explicit_relative_specifier(path: String) -> String {
     if path.is_empty() {
         ".".to_string()
