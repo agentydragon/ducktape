@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::ids::ModuleId;
 
-use crate::esm_import_order::EsmImportOrder;
-use crate::esm_schedule::EsmImportSchedule;
+use esm_schedule::EsmImportOrder;
+use esm_schedule::EsmImportSchedule;
 
 /// Exact evaluation for the canonical graph used by incremental verdicts.
 /// Preserve the preferred policy when valid; otherwise derive a concrete ESM

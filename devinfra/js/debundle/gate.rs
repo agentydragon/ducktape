@@ -7,7 +7,7 @@
 //! per-chunk assignment analysis (`chunk_analysis`,
 //! `assignment_analysis`). The shared ESM import ordering consumed by
 //! both the gate's simulator and the emitter lives in
-//! `esm_import_order`.
+//! the `esm_schedule` crate.
 
 use std::path::PathBuf;
 
@@ -17,8 +17,6 @@ mod assignment_analysis;
 mod assignment_inputs;
 #[cfg(test)]
 mod counted_digraph;
-mod esm_import_order;
-mod esm_schedule;
 mod realizability;
 mod report_builders;
 mod validation;
@@ -32,10 +30,6 @@ pub use assignment_analysis::{
     ValidatedAssignment, tv_audit_dir,
 };
 pub use assignment_inputs::AssignmentInputs;
-pub use esm_import_order::EsmImportOrder;
-#[cfg(test)]
-pub use esm_schedule::ScheduleObstruction;
-pub use esm_schedule::{EsmImportSchedule, ImportScheduleError};
 pub use realizability::{
     AssignmentConstraints, CrossRebindEdge, EffectConflictCell, EffectConflictDiagnosticRow,
     EffectConflictDisposition, EffectConflictRow, EffectCoverageReport, EffectOpacity,

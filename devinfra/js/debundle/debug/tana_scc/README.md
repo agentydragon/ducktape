@@ -55,7 +55,7 @@ cell is involved.
 
 ## The 1,800-module SCC is a gate artifact
 
-**Mechanism.** `EsmImportOrder::build` (`esm_import_order.rs`) takes
+**Mechanism.** `EsmImportOrder::build` (`esm_schedule/esm_import_order.rs`) takes
 `linker_order` from `chunk_linker_order_from_pairs`. That function returns an
 empty vector when the constraining pairs are cyclic, so any Pass-1 cycle
 empties the linker order. Every import list then sorts by `ModuleId`. At the

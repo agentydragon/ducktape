@@ -8,13 +8,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use analysis::ids::ModuleId;
 use thiserror::Error;
 
-use crate::esm_import_order::EsmImportOrder;
+mod esm_import_order;
+pub use esm_import_order::EsmImportOrder;
 
 // General schedule existence is used only by bounded test oracles. Production
-// callers supply a priority and verify it with `from_priority`.
-#[cfg(test)]
+// callers supply a priority and verify it with `from_priority`; the
+// `test_oracle` feature is enabled only by test targets (see BUILD.bazel).
+#[cfg(any(test, feature = "test_oracle"))]
 mod construct;
-#[cfg(test)]
+#[cfg(any(test, feature = "test_oracle"))]
 pub use construct::ScheduleObstruction;
 
 #[derive(Debug, Clone, Eq, PartialEq)]

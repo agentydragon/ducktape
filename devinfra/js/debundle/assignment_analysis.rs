@@ -15,7 +15,6 @@ use graph::{atomic_groups::AtomicGroup, atomic_groups::DependencyGraphAndAtomicG
 use source_identity::SourceUnitId;
 
 use crate::AssignmentInputs;
-use crate::esm_schedule::{EsmImportSchedule, ImportScheduleError};
 use crate::realizability::CrossRebindEdge;
 use crate::realizability::{
     CandidateEmittedOrder, EffectConflictDiagnosticRow, EffectRelocationAssessment,
@@ -28,6 +27,7 @@ use crate::validation::{
     AssignmentReport, AssignmentValidation, validate_assignment_with_priority,
     validation_from_verdict,
 };
+use esm_schedule::{EsmImportSchedule, ImportScheduleError};
 
 #[cfg(test)]
 mod tests;

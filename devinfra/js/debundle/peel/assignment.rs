@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use analysis::{EntryDestination, ModuleId, StatementKind};
 use anyhow::{Context, Result, ensure};
-use gate::{AssignmentValidation, EsmImportSchedule};
+use esm_schedule::EsmImportSchedule;
+use gate::AssignmentValidation;
 use graph::assignment_assembly::detect_atomic_group_conflict;
 use graph::{
     AtomicGroup, DependencyGraphInput, ModuleAssignment, ModuleDestinationKind,
