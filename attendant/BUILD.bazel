@@ -1,0 +1,70 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+js_library(
+    name = "fetch_js",
+    srcs = ["fetch.js"],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    data = [":fetch_js"],
+    deps = ["@pypi//playwright"],
+)
+
+py_library(
+    name = "host",
+    srcs = ["host.py"],
+    deps = [
+        ":runtime",
+        "//platform_sessions/provider:interactive_browser",
+        "@pypi//playwright",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    data = ["//attendant/viewer:bundle"],
+    deps = [
+        ":host",
+        ":runtime",
+        "@pypi//fastapi",
+        "@pypi//starlette",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_browser",
+    srcs = ["test_browser.py"],
+    deps = [
+        ":host",
+        ":runtime",
+        "//:conftest",
+        "//testing/browser:launcher",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":host",
+        ":runtime",
+        ":server",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",  # keep: Starlette TestClient requires httpx
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)

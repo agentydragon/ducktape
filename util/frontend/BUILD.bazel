@@ -67,6 +67,20 @@ ts_config(
     visibility = ["//util/frontend/transcript:__pkg__"],
 )
 
+ts_library(
+    name = "rfb",
+    srcs = [
+        "novnc.d.ts",
+        "rfb.ts",
+    ],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//attendant/viewer:__pkg__",
+        "//platform_sessions/frontend:__pkg__",
+    ],
+    deps = ["//:node_modules/@novnc/novnc"],
+)
+
 js_library(
     name = "code_block_css",
     srcs = ["code_block.css"],
