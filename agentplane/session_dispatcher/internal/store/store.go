@@ -617,19 +617,8 @@ func initialWakeAssessment() *environmentpb.WakeAssessment {
 	return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED}
 }
 
-const dispatchColumns = `position, command_id, session_id, sandbox_name, sandbox_uid::text,
-	wake_eligible, wake_caller_namespace, wake_caller_name, wake_from_incarnation,
-	wake_requested_at, COALESCE(operation_value,0), command, COALESCE(state_value,0), reason, admission, traceparent,
-	actor_account_namespace, actor_account_name, actor_account_uid, actor_pod_name, actor_pod_uid,
-	effective_caller_account_namespace, effective_caller_account_name, effective_caller_account_uid,
-	action_request_id::text, action_execution_id::text, created_at, updated_at,
-	delivery_blocker, wake_assessment, delivery_attempted,
-	actor_identity_name, actor_identity_uid, actor_identity_pod_name, actor_identity_pod_uid,
-	delegated_identity_name, delegated_identity_uid, delegator_account_namespace, delegator_account_name,
-	delegator_account_uid, delegator_pod_name, delegator_pod_uid,
-	delegated_action_request_id::text, delegated_action_execution_id::text, service_attribution`
-
-const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sandbox_name, d.sandbox_uid::text,
+// dispatchColumns and scanDispatch use the same field order. The Dispatch row has SQL alias d.
+const dispatchColumns = `d.position, d.command_id, d.session_id, d.sandbox_name, d.sandbox_uid::text,
 	d.wake_eligible, d.wake_caller_namespace, d.wake_caller_name, d.wake_from_incarnation,
 	d.wake_requested_at, COALESCE(d.operation_value,0), d.command, COALESCE(d.state_value,0), d.reason, d.admission, d.traceparent,
 	d.actor_account_namespace, d.actor_account_name, d.actor_account_uid, d.actor_pod_name, d.actor_pod_uid,
@@ -783,7 +772,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "command:"+command.GetCommandId()); err != nil {
 			return err
 		}
-		existing, err := scanDispatch(tx.QueryRowContext(ctx, "SELECT "+dispatchColumns+" FROM dispatch WHERE command_id=$1", command.GetCommandId()))
+		existing, err := scanDispatch(tx.QueryRowContext(ctx, "SELECT "+dispatchColumns+" FROM dispatch AS d WHERE command_id=$1", command.GetCommandId()))
 		if err == nil {
 			oldBytes, err := Wire(existing.Command)
 			if err != nil {
@@ -828,7 +817,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 			return err
 		}
 		arguments = append(arguments, serviceBytes)
-		result, err = scanDispatch(tx.QueryRowContext(ctx, `INSERT INTO dispatch
+		result, err = scanDispatch(tx.QueryRowContext(ctx, `INSERT INTO dispatch AS d
 			(command_id,session_id,sandbox_name,sandbox_uid,wake_eligible,wake_caller_namespace,wake_caller_name,
 			 operation_value,command,state_value,traceparent,actor_account_namespace,actor_account_name,actor_account_uid,actor_pod_name,actor_pod_uid,
 			 effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,action_request_id,action_execution_id,
@@ -848,7 +837,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 }
 
 func (s *Store) GetDispatch(ctx context.Context, id string) (*Dispatch, error) {
-	d, err := scanDispatch(s.DB.QueryRowContext(ctx, "SELECT "+dispatchColumns+" FROM dispatch WHERE command_id=$1", id))
+	d, err := scanDispatch(s.DB.QueryRowContext(ctx, "SELECT "+dispatchColumns+" FROM dispatch AS d WHERE command_id=$1", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -857,7 +846,7 @@ func (s *Store) GetDispatch(ctx context.Context, id string) (*Dispatch, error) {
 
 func (s *Store) GetDispatchForCaller(ctx context.Context, id string, caller Caller) (*Dispatch, error) {
 	scope, arguments := OwnerScope(caller, "o.", 2)
-	query := `SELECT ` + qualifiedDispatchColumns + ` FROM dispatch d
+	query := `SELECT ` + dispatchColumns + ` FROM dispatch AS d
 		LEFT JOIN session o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 		WHERE d.command_id=$1 AND ` + scope
 	d, err := scanDispatch(s.DB.QueryRowContext(ctx, query, append([]any{id}, arguments...)...))
@@ -904,11 +893,11 @@ func (s *Store) CancelForCaller(ctx context.Context, id string, caller Caller) (
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		scope, arguments := OwnerScope(caller, "o.", 5)
 		var err error
-		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch d SET state_value=$1, reason='sender', updated_at=now()
+		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch AS d SET state_value=$1, reason='sender', updated_at=now()
 			WHERE d.command_id=$2 AND d.state_value=$3 AND NOT d.delivery_attempted AND ($4 OR EXISTS (
 				SELECT 1 FROM session o WHERE o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 				AND `+scope+`))
-			RETURNING `+qualifiedDispatchColumns,
+			RETURNING `+dispatchColumns,
 			append([]any{CancelledState, id, QueueState, Privileged(caller)}, arguments...)...))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -1254,8 +1243,12 @@ func (s *Store) GetSessionForCaller(ctx context.Context, id string, caller Calle
 
 func (s *Store) ListSessionsForCaller(ctx context.Context, after string, limit int, caller Caller) ([]*Session, error) {
 	scope, arguments := OwnerScope(caller, "", 3)
-	rows, err := s.DB.QueryContext(ctx, `SELECT `+sessionColumns+` FROM session
+	return s.querySessions(ctx, `SELECT `+sessionColumns+` FROM session
 		WHERE session_id > $1 AND `+scope+` ORDER BY session_id LIMIT $2`, append([]any{after, limit}, arguments...)...)
+}
+
+func (s *Store) querySessions(ctx context.Context, query string, args ...any) ([]*Session, error) {
+	rows, err := s.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1282,7 +1275,7 @@ func (s *Store) SessionHead(ctx context.Context, sessionID string) (*Session, *D
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, err
 	}
-	head, err := scanDispatch(s.DB.QueryRowContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch d WHERE d.session_id=$1 AND d.state_value=$2
+	head, err := scanDispatch(s.DB.QueryRowContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch AS d WHERE d.session_id=$1 AND d.state_value=$2
 		AND NOT EXISTS (SELECT 1 FROM dispatch earlier WHERE earlier.session_id=d.session_id
 			AND earlier.position<d.position AND earlier.state_value IN ($2,$3))
 		AND NOT EXISTS (SELECT 1 FROM session o WHERE o.session_id=d.session_id
@@ -1295,7 +1288,7 @@ func (s *Store) SessionHead(ctx context.Context, sessionID string) (*Session, *D
 
 // WakeCommands includes cancelled work that can still have an external wake in flight.
 func (s *Store) WakeCommands(ctx context.Context, sessionID, sandboxName, sandboxUID string) ([]*Dispatch, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT "+dispatchColumns+` FROM dispatch
+	rows, err := s.DB.QueryContext(ctx, "SELECT "+dispatchColumns+` FROM dispatch AS d
 		WHERE session_id=$1 AND sandbox_name=$2 AND sandbox_uid=$3
 		AND (state_value=$4 OR wake_from_incarnation IS NOT NULL) ORDER BY position`, sessionID, sandboxName, sandboxUID, QueueState)
 	if err != nil {
@@ -1315,23 +1308,10 @@ func (s *Store) WakeCommands(ctx context.Context, sessionID, sandboxName, sandbo
 
 // SessionsWithPendingWork includes stranded in-flight work even when no lease row exists.
 func (s *Store) SessionsWithPendingWork(ctx context.Context) ([]*Session, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT `+sessionColumns+` FROM session o
+	return s.querySessions(ctx, `SELECT `+sessionColumns+` FROM session o
 		WHERE o.state_value = ANY($1) OR EXISTS (
 			SELECT 1 FROM dispatch d WHERE d.session_id=o.session_id AND d.state_value = ANY($2))`,
 		pq.Array([]dispatcherpb.SessionStatus_Materialization{SessionWaitingState, SessionInProgressState}), pq.Array([]dispatcherpb.DeliveryState{QueueState, DeliveringState}))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var result []*Session
-	for rows.Next() {
-		row, err := scanSession(rows)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, row)
-	}
-	return result, rows.Err()
 }
 
 // MarkDeliveryAttempt commits possible forwarding before issuing the external RPC.
@@ -1371,7 +1351,7 @@ func (s *Store) Settle(ctx context.Context, id string, owner SessionOwner, from 
 				return err
 			}
 		}
-		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state_value=CASE WHEN $3::integer=$7 AND state_value=$8 AND delivery_attempted THEN $9::integer ELSE $3 END, reason=$4, admission=$5, updated_at=now()
+		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch AS d SET state_value=CASE WHEN $3::integer=$7 AND state_value=$8 AND delivery_attempted THEN $9::integer ELSE $3 END, reason=$4, admission=$5, updated_at=now()
 			WHERE command_id=$1 AND session_id=$2 AND state_value = ANY($6) RETURNING `+dispatchColumns,
 			id, owner.SessionID, to, nullIfEmpty(reason), payload, pq.Array(from), FailedState, QueueState, UnknownState))
 		if errors.Is(err, sql.ErrNoRows) {
