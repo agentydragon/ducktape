@@ -3,32 +3,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
+import { moduleGraphFixture } from "./module_graph_fixture.mjs";
 import { assertCertified, lower, moduleEvaluationOrder, observe, prepare, root } from "./harness.mjs";
 
 // Sixteen provider/reader pairs reach the staged linking threshold of 32 executable units.
 const count = process.argv.includes("--full-graph") ? 48 : 16;
-const names = Array.from({ length: count }, (_, index) => `reader${index}`);
-const expected = Object.fromEntries(names.map((name, index) => [name, `value${index}`]));
-const values = names.map((name, index) => `const data${index} = ${JSON.stringify(expected[name])};`);
-const readers = names.map((name, index) => `const ${name} = data${index};`);
-const source = [...values, ...readers, `export { ${names.join(", ")} };`].join("\n");
-
-const entry = "entry.mjs";
-const modules = {};
-for (const [group, offset] of [
-  ["provider", 0],
-  ["consumer", count],
-]) {
-  for (let index = 0; index < count; index++) {
-    const module = `${group}${Math.floor(index / 8)}.mjs`;
-    (modules[module] ??= []).push(`#${offset + index}`);
-  }
-}
-const order = Object.keys(modules);
-modules[entry] = [`#${2 * count}`];
+const { names, expected, source, entry, order, spec } = moduleGraphFixture(count);
 
 const dir = path.join(root, "module-graph");
-const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
+const files = prepare(dir, { source, provider: "", spec });
 const out = path.join(dir, "out");
 const { verdict, log } = lower(files.sourceFile, files.specFile, out);
 assertCertified(verdict, log);

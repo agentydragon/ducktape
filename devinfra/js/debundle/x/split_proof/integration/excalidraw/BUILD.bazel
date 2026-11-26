@@ -132,6 +132,23 @@ _EXCALIDRAW_SCROLL_ENV = {
     "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
 }
 
+# Compare the production constructor route against the unchanged scroll placement.
+js_test(
+    name = "constructor_acceptance_test",
+    size = "large",
+    timeout = "long",
+    data = _EXCALIDRAW_SCROLL_DATA + [
+        "//devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "constructor_acceptance_test.mjs",
+    env = dict(
+        _EXCALIDRAW_SCROLL_ENV,
+        LINKED_INPUT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)",
+    ),
+    tags = ["manual"],
+)
+
 js_test(
     name = "excalidraw_scroll_certificate",
     size = "medium",
