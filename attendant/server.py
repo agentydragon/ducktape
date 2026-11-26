@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, Response
 from python.runfiles import Runfiles
 from starlette.requests import ClientDisconnect, HTTPConnection
-from starlette.websockets import WebSocketState
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from attendant.host import Host
 from attendant.runtime import Operation, Reply, SessionError, valid_target
@@ -323,7 +323,7 @@ def create_app(
             revoked.cancel()
             await asyncio.gather(relay, revoked, return_exceptions=True)
             if websocket.application_state is not WebSocketState.DISCONNECTED:
-                with suppress(OSError, RuntimeError):
+                with suppress(OSError, RuntimeError, WebSocketDisconnect):
                     await websocket.close(code=close_code)
 
     @app.post("/api/providers/{provider}/request")
