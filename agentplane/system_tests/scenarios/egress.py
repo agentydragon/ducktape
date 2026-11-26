@@ -164,10 +164,10 @@ async def the_model_call_itself_goes_through_the_proxy(
     turn = answered.result()
 
     rules_command = "agentplane --json egress rules"
-    rules_turn = await agent.run_shell(model, rules_command)
+    rules_turn = await model.run_shell(agent.run, rules_command)
     assert rules_turn.shell_json(rules_command).get("identity") == {"name": view.identity_name}, rules_turn.transcript
-    notifications_turn = await agent.run_shell(
-        model, "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK"
+    notifications_turn = await model.run_shell(
+        agent.run, "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK"
     )
     assert "NOTIFICATIONS_GRPC_OK" in notifications_turn.tool_outputs[-1], notifications_turn.transcript
 
@@ -210,7 +210,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     )
     command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}:{port}{path}"
 
-    await agent.run_shell(model, command)
+    await model.run_shell(agent.run, command)
     refused = await decision_for(
         cluster, await client.get_environment(view.target), host, reader_svid_secret="app-workload-tls"
     )
@@ -226,7 +226,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
         async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
             with attempt:
                 after = datetime.now(UTC)
-                turn = await agent.run_shell(model, command)
+                turn = await model.run_shell(agent.run, command)
                 admitted = await decision_for(
                     cluster,
                     await client.get_environment(view.target),

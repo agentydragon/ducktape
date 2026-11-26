@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import abc
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
+from typing import Any
+from uuid import uuid4
 
 from agentplane.native.testing.model_endpoint import JsonResponse, ModelExchange, SseEvent, StreamableRequest
 
@@ -81,6 +83,14 @@ class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
     async def reply(self, request: ModelRequest[RequestT], *items: Item) -> None:
         async with request._exchange as exchange:
             await exchange.send(*self.stream(request, list(items)))
+
+    async def run_shell[TurnT](self, run: Callable[[str], Coroutine[Any, Any, TurnT]], command: str) -> TurnT:
+        """Script one shell command and finish the turn through the caller's driver."""
+        async with asyncio.TaskGroup() as turns:
+            turn = turns.create_task(run(f"Run: {command}"))
+            await self.reply(await self.request(), ShellCall(call_id=f"call-{uuid4().hex[:8]}", command=command))
+            await self.reply(await self.request(), Text("Done."))
+        return turn.result()
 
     async def http_error(self, request: ModelRequest[RequestT], *, status: int = 502) -> None:
         """Return an HTTP error before streaming any model content."""

@@ -216,7 +216,7 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
             view.actions.resume_token,
         ]
     )
-    denied_turn = await agent.run_shell(model, resume_command + " || true")
+    denied_turn = await model.run_shell(agent.run, resume_command + " || true")
     denied_output = "\n".join(denied_turn.tool_outputs)
     start = denied_output.find("{")
     assert start >= 0, denied_turn.transcript
@@ -225,7 +225,7 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     async with _environment_grant(
         cluster, name=f"{target.name}-resume", target=target, identity_name=view.identity_name, operation="resume"
     ):
-        granted_turn = await agent.run_shell(model, resume_command)
+        granted_turn = await model.run_shell(agent.run, resume_command)
         granted_output = "\n".join(granted_turn.tool_outputs)
         granted_start = granted_output.find("{")
         assert granted_start >= 0, granted_turn.transcript
@@ -270,7 +270,7 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     assert resumed.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
 
     resumed_model = scripted.model(resumed.kubernetes_diagnostics.pod.name, harness)
-    fresh_turn = await agent.run_shell(resumed_model, "printf 'EXPLICIT_RESUME_EXEC_OK\\n'")
+    fresh_turn = await resumed_model.run_shell(agent.run, "printf 'EXPLICIT_RESUME_EXEC_OK\\n'")
     assert fresh_turn.input_confirmed
     assert fresh_turn.resumed
     assert any("EXPLICIT_RESUME_EXEC_OK" in output for output in fresh_turn.tool_outputs), fresh_turn.transcript
@@ -361,7 +361,7 @@ async def an_identity_creates_a_native_session_only_with_an_explicit_binding_gra
     )
 
     async def create() -> dict[str, Any]:
-        turn = await agent.run_shell(model, command + " || true")
+        turn = await model.run_shell(agent.run, command + " || true")
         output = "\n".join(turn.tool_outputs)
         start = output.find("{")
         assert start >= 0, turn.transcript
