@@ -114,20 +114,7 @@ export { first, second };
         .with_extra_chunks(&[("static/provider", provider)]),
     );
 
-    let direct = staged.run(&[]);
-    assert_ok(&direct.result, "direct run of shared imported impure calls");
-    let loaded = staged.run_saved(&[]);
-    assert_ok(
-        &loaded.result,
-        "run shared imported impure calls from analysis",
-    );
-    assert_same_invocation_trees(&direct, &loaded);
-
-    let direct_entry = direct.output_root().join("app/static/app/entry.js");
-    let loaded_entry = loaded.output_root().join("app/static/app/entry.js");
-    assert_node_output(&direct_entry, "1 2\n", "");
-    assert_node_output(&loaded_entry, "1 2\n", "");
-
+    let [direct, _] = staged.assert_fresh_saved_parity(&[], 0, "1 2\n", "1 2\n");
     let graph: Value = read_gzip_json(
         &direct
             .output_root()
@@ -219,11 +206,12 @@ fn assert_lexical_authority_staged_parity(
         source,
         vec![logical_module("all", members)],
     ));
-    let direct = staged.run(&[]);
-    assert_ok(&direct.result, "direct lexical-authority run");
-    let direct_out = direct.output_root();
-    let direct_graph: Value =
-        read_gzip_json(&direct_out.join("reports/tree/static/app/dependency_graph.json.gz"));
+    let [direct, loaded] = staged.assert_fresh_saved_parity(&[], 0, "41\n", "41\n");
+    let direct_graph: Value = read_gzip_json(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
     let direct_result = graph_node_for_binding(&direct_graph, "result");
     let direct_execution = &direct_result["synchronous_execution"];
     assert_eq!(direct_execution["complete"], true, "{direct_execution:#}");
@@ -247,16 +235,6 @@ fn assert_lexical_authority_staged_parity(
         "the observed readSeed effect must remain in the graph: {direct_graph:#}"
     );
 
-    let analysis = path(&staged.artifact).to_owned();
-    let loaded = staged.run(&["--analysis", analysis.as_str()]);
-    assert_ok(&loaded.result, "run from saved analysis artifact");
-    assert_same_invocation_trees(&direct, &loaded);
-    assert_node_output(&direct_out.join("app/static/app/entry.js"), "41\n", "");
-    assert_node_output(
-        &loaded.output_root().join("app/static/app/entry.js"),
-        "41\n",
-        "",
-    );
     let loaded_graph: Value = read_gzip_json(
         &loaded
             .output_root()
@@ -333,16 +311,7 @@ fn captured_value_bindings_survive_saved_program_summary() {
         projection.source_sites.source_sha256["static/peer"],
         source_sha256(PROVIDER)
     );
-    let direct = staged.run(&[]);
-    assert_ok(&direct.result, "direct captured-value run");
-    let saved = staged.run_saved(&[]);
-    assert_ok(&saved.result, "saved captured-value run");
-    assert_same_invocation_trees(&direct, &saved);
-    assert_node_output(
-        &saved.output_root().join("app/static/app/entry.js"),
-        "41\n",
-        "",
-    );
+    staged.assert_fresh_saved_parity(&[], 0, "41\n", "41\n");
 }
 
 fn assert_reexported_value_input_provider_is_in_saved_summary(bridge: &str) {
@@ -381,20 +350,7 @@ fn assert_reexported_value_input_provider_is_in_saved_summary(bridge: &str) {
     assert_eq!(declaration.binding, "captured");
     assert_eq!(declaration.body_index, 0);
 
-    let direct = staged.run(&[]);
-    assert_ok(&direct.result, "direct re-exported captured-value run");
-    let saved = staged.run_saved(&[]);
-    assert_ok(&saved.result, "saved re-exported captured-value run");
-    assert_same_invocation_trees(&direct, &saved);
-
-    let source_entry = staged.root().join("snapshot/static/app.js");
-    let direct_entry = direct.output_root().join("app/static/app/entry.js");
-    let saved_entry = saved.output_root().join("app/static/app/entry.js");
-    for entry in [&source_entry, &direct_entry, &saved_entry] {
-        assert_node_output(entry, "41 true\n", "");
-    }
-
-    for invocation in [&direct, &saved] {
+    for invocation in staged.assert_fresh_saved_parity(&[], 0, "41 true\n", "41 true\n") {
         let program: Value = read_gzip_json(
             &invocation
                 .output_root()
@@ -541,17 +497,9 @@ export { read };\n",
         )
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    let direct = staged.run(&[]);
-    assert_ok(&direct.result, "direct global-resolution run");
-    let saved = staged.run_saved(&[]);
-    assert_ok(&saved.result, "saved global-resolution run");
-    assert_same_invocation_trees(&direct, &saved);
-    for invocation in [&direct, &saved] {
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "undefined:number\n",
-            "",
-        );
+    for invocation in
+        staged.assert_fresh_saved_parity(&[], 0, "undefined:number\n", "undefined:number\n")
+    {
         let report: Value = read_json(
             &invocation
                 .output_root()
@@ -765,18 +713,8 @@ fn inferred_set_spread_bindings_survive_saved_analysis() {
         )],
     );
     let (staged, _fixture) = staged(opts);
-    let direct = staged.run(&[]);
-    assert_ok(&direct.result, "direct Set spread run");
-    let loaded = staged.run_saved(&[]);
-    assert_ok(&loaded.result, "Set spread run from saved analysis");
-    assert_same_invocation_trees(&direct, &loaded);
-    for invocation in [&direct, &loaded] {
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "before\nafter 3\n",
-            "",
-        );
-    }
+    let [_, loaded] =
+        staged.assert_fresh_saved_parity(&[], 0, "before\nafter 3\n", "before\nafter 3\n");
     let graph: Value = read_gzip_json(
         &loaded
             .output_root()
@@ -796,7 +734,7 @@ fn inferred_set_spread_bindings_survive_saved_analysis() {
 
 #[test]
 fn unselected_provider_preserves_redeclarations_and_hygiene_on_replay() {
-    let (case, _fixture) = staged(
+    assert_staged_entry_output(
         FixtureOpts::new(
             "import { read } from './bridge.js';\nconst value = read();\nconsole.log(value);\n",
             vec![logical_module("value", &[Member::new("value")])],
@@ -804,17 +742,6 @@ fn unselected_provider_preserves_redeclarations_and_hygiene_on_replay() {
             ("static/bridge", "export { read } from './provider.js';\n"),
             ("static/provider", "var value = 1; var value = 2;\nexport function read() { return ((value) => value)(40) + value; }\n"),
         ]).with_unassigned_mode(unassigned_mode_inline()),
+        "42\n",
     );
-    assert_node_output(&case.root().join("snapshot/static/app.js"), "42\n", "");
-    let fresh = case.run(&[]);
-    let saved = case.run(&["--analysis", path(&case.artifact)]);
-    assert_same_invocation_trees(&fresh, &saved);
-    for invocation in [&fresh, &saved] {
-        assert_ok(&invocation.result, "prepared provider replay");
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "42\n",
-            "",
-        );
-    }
 }

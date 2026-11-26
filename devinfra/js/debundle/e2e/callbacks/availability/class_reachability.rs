@@ -1,6 +1,6 @@
 //! Opaque calls may invoke methods reached through a class prototype.
 
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged};
+use debundle_e2e_support::saved_analysis::assert_staged_entry_output;
 use debundle_e2e_support::*;
 
 #[test]
@@ -232,27 +232,12 @@ console.log(first, second);
         "static/peer",
         "export function observe(receiver) { return receiver.run(); }\n",
     )];
-    let (staged, _fixture) = staged(
+    assert_staged_entry_output(
         FixtureOpts::new(source, vec![])
             .with_extra_chunks(&peer)
             .with_unassigned_mode(unassigned_mode_inline()),
+        "1 2\n",
     );
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), "1 2\n", "");
-    let direct = staged.run(&[]);
-    let saved = staged.run_saved(&[]);
-    assert_same_invocation_trees(&direct, &saved);
-    for invocation in [&direct, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "1 2\n",
-            "",
-        );
-    }
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             source,

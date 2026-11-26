@@ -759,19 +759,41 @@ pub fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
 /// Check the accepted fresh/saved CLI paths under Node, including the original
 /// source, and compare their emitted trees and semantic reports.
 pub fn assert_staged_entry_output(opts: FixtureOpts<'_>, expected: &str) {
-    let (staged, _fixture) = staged(opts);
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
-    let fresh = staged.run(&[]);
-    let saved = staged.run_saved(&[]);
-    for invocation in [&fresh, &saved] {
-        assert_ok(&invocation.result, "fresh/saved run");
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            expected,
-            "",
-        );
+    staged(opts)
+        .0
+        .assert_fresh_saved_parity(&[], 0, expected, expected);
+}
+
+impl Staged {
+    /// The original source prints `original`; the fresh and saved-analysis runs
+    /// with `run_args` both exit `exit`, emit an entry printing `emitted`, and
+    /// produce identical trees. Returns `[fresh, saved]` for report assertions.
+    pub fn assert_fresh_saved_parity(
+        &self,
+        run_args: &[&str],
+        exit: i32,
+        original: &str,
+        emitted: &str,
+    ) -> [StagedInvocation; 2] {
+        assert_node_output(&self.root().join("snapshot/static/app.js"), original, "");
+        let fresh = self.run(run_args);
+        let saved = self.run_saved(run_args);
+        for (kind, invocation) in [("fresh", &fresh), ("saved", &saved)] {
+            assert_eq!(
+                invocation.result.status.code(),
+                Some(exit),
+                "{kind} run exit status\nstderr:\n{}",
+                invocation.result.stderr
+            );
+            assert_node_output(
+                &invocation.output_root().join("app/static/app/entry.js"),
+                emitted,
+                "",
+            );
+        }
+        assert_same_invocation_trees(&fresh, &saved);
+        [fresh, saved]
     }
-    assert_same_invocation_trees(&fresh, &saved);
 }
 
 pub fn graph_node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value {

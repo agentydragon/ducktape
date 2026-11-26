@@ -2,7 +2,7 @@
 //! error. It must not inherit deferred reads from the binding's initializer.
 
 use super::{assert_unmoved_output, expect_single_binding_rejection};
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged};
+use debundle_e2e_support::saved_analysis::staged;
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
 
@@ -58,22 +58,12 @@ fn assert_availability_parity(
         .with_extra_chunks(&PEER)
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_node_output(&staged.root().join("snapshot/static/app.js"), original, "");
-    let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run_saved(&["--emit-on-rejection"]);
-    assert_same_invocation_trees(&direct, &saved);
-    for invocation in [&direct, &saved] {
-        assert_eq!(
-            invocation.result.status.code(),
-            Some(exit),
-            "{}",
-            invocation.result.stderr
-        );
-        let root = invocation.output_root().join("app");
-        assert_node_output(&root.join("static/app/entry.js"), candidate, "");
-        if exit == 0 {
+    let invocations =
+        staged.assert_fresh_saved_parity(&["--emit-on-rejection"], exit, original, candidate);
+    if exit == 0 {
+        for invocation in invocations {
             assert_module_exports(
-                &root,
+                &invocation.output_root().join("app"),
                 &format!("static/app/modules/{destination}.js"),
                 &[binding],
                 &[],
