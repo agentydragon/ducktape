@@ -425,7 +425,7 @@ private theorem replay_modify {source target : World}
     (commutes : ∀ s, g (replaceWorld target s) = replaceWorld target (f s)) :
     ReplayEquivalent (modifyState f) (modifyState g) := by
   intro s
-  simp [ReplayEquivalent, modifyState, transportResult, commutes]
+  simp [modifyState, transportResult, commutes]
 
 private theorem replay_region {source : World} (target : World) (id : Nat) (s : State source) :
     { replaceWorld target s with region := id + 1 } =
@@ -451,7 +451,7 @@ private theorem replay_outOfFuel {source target : World} {α : Type} :
 private theorem replay_setCell {source target : World} (addr : Addr) (value : Val) :
     ReplayEquivalent (setCell addr value : M source Unit) (setCell addr value : M target Unit) := by
   intro s
-  simp [ReplayEquivalent, setCell, transportResult, replaceWorld]
+  simp [setCell, transportResult, replaceWorld]
 
 private theorem replay_unknown {source target : World} {α : Type} (why : String) :
     ReplayEquivalent (unknown why : M source α) (unknown why : M target α) := by
@@ -482,7 +482,7 @@ private theorem replay_alloc {source target : World} (obj : Obj) :
 private theorem replay_modifyObj {source target : World} (addr : Addr) (f : Obj → Obj) :
     ReplayEquivalent (modifyObj addr f : M source Unit) (modifyObj addr f : M target Unit) := by
   intro s
-  simp [ReplayEquivalent, modifyObj, transportResult, replaceWorld]
+  simp [modifyObj, transportResult, replaceWorld]
 
 private theorem replay_newCell {source target : World} (binding : Binding) :
     ReplayEquivalent (newCell binding : M source Addr) (newCell binding : M target Addr) := by
@@ -498,8 +498,8 @@ private theorem replay_getObj {source target : World} (addr : Addr) :
   unfold getObj
   have sameObj : (replaceWorld target s).objAt addr = s.objAt addr := rfl
   rw [sameObj]
-  cases h : s.objAt addr <;>
-    simp [h, transportResult, replaceWorld]
+  cases s.objAt addr <;>
+    simp [transportResult, replaceWorld]
 
 private theorem replay_newCells {source target : World} :
     ∀ bindings : List (Name × Binding),
@@ -534,14 +534,14 @@ private theorem replay_readVar_bound {source target : World} (env : Env) (name :
   have sameCell : (replaceWorld target s).cellAt addr = s.cellAt addr := rfl
   simp only [readVar, bound, getState, M.bind_apply]
   rw [sameCell]
-  cases h : s.cellAt addr with
-  | none => simp [h, pure, throwErr, throwVal, M.bind_apply, transportResult, replaceWorld]
+  cases s.cellAt addr with
+  | none => simp [throwErr, throwVal, transportResult, replaceWorld]
   | some binding =>
     cases binding with
     | mk value mutable =>
       cases value with
-      | none => simp [pure, throwErr, throwVal, M.bind_apply, transportResult, replaceWorld]
-      | some value => simp [pure, throwErr, throwVal, M.bind_apply, transportResult, replaceWorld]
+      | none => simp [throwErr, throwVal, transportResult, replaceWorld]
+      | some value => simp [pure, transportResult, replaceWorld]
 
 private theorem replay_initVar {source target : World} (env : Env) (name : Name) (value : Val) :
     ReplayEquivalent (initVar env name value : M source Unit) (initVar env name value : M target Unit) := by
@@ -618,7 +618,7 @@ private theorem replay_makeFunc {source target : World} (env : Env) (f : Func) (
         else (pure () : M source Unit))
       (if f.kind.hasOwnPrototype then (addPrototype (W := target) addr f.kind : M target Unit)
         else (pure () : M target Unit)) := by
-    cases h : f.kind.hasOwnPrototype <;> simp [h]
+    cases f.kind.hasOwnPrototype <;> simp
     · exact replay_pure ()
     · exact replay_addPrototype addr f.kind
   apply replay_bind prototype
@@ -651,9 +651,9 @@ private theorem replay_makeOpaque {source target : World} (code part : Nat) (cel
         else (pure () : M source Unit))
       (if constructor then (addPrototype (W := target) addr : M target Unit)
         else (pure () : M target Unit)) := by
-    cases h : constructor with
-    | false => simp [h]; exact replay_pure ()
-    | true => simp [h]; exact replay_addPrototype addr .normal
+    cases constructor with
+    | false => simp; exact replay_pure ()
+    | true => simp; exact replay_addPrototype addr .normal
   apply replay_bind prototype
   intro _
   exact replay_pure (Val.obj addr)
@@ -837,7 +837,7 @@ private theorem replay_allocOnly {source target : World} :
           apply NamesResolved.of_subset resolved
           intro name member
           simp [readsNowAll, member]
-        simp only [evalArgs, Expr.argument_of_allocOnly allocOnly.1, ↓reduceIte, pure, M.bind_apply]
+        simp only [evalArgs, Expr.argument_of_allocOnly allocOnly.1, pure]
         apply replay_bind (ihExpr env expr allocOnly.1 noClassExpr' resolvedExpr)
         intro value
         apply replay_bind (ihArgs env rest allocOnly.2 noClassRest resolvedRest)
@@ -866,7 +866,7 @@ private theorem replay_allocOnly {source target : World} :
                 apply NamesResolved.of_subset resolved
                 intro name member
                 simp [readsNowProps, member]
-              simp only [evalProps, evalExpr, toKey, toStr, lift, pure, M.bind_apply]
+              simp only [evalProps, evalExpr, toKey, toStr, lift, pure]
               apply replay_bind (ihExpr env value allocOnly.1 noClassValue resolvedValue)
               intro initValue
               apply replay_bind (replay_createData addr (.str name) initValue)
@@ -882,7 +882,7 @@ private theorem replay_allocOnly {source target : World} :
               exact replay_outOfFuel
             | succ fuel =>
               simp only [allocOnlyProps, noClassProps] at allocOnly noClass
-              simp only [evalProps, evalExpr, toKey, toStr, lift, pure, M.bind_apply]
+              simp only [evalProps, evalExpr, toKey, toStr, lift, pure]
               apply replay_bind (replay_makeClassMethod env addr (.str name) "" f)
               intro method
               apply replay_bind (replay_createData addr (.str name) method)
@@ -1450,7 +1450,7 @@ theorem replayPremised_hoisted {premises : HostPremises} {p : Program} {fuel : N
       simpa [worldUnitsEq] using exhausted
     have mapReady : replaceWorld (HostPremises.specialize premises w) probeChecked.ready = worldChecked.ready := rfl
     rw [worldAfterLink, worldUnits]
-    simp only [if_neg worldNotExhausted]
+    simp only [ite_eq_right worldNotExhausted]
     rw [probeStateEq, replaceWorld_finishHoisted, mapReady]
 
 /-- A probe run of a replayable schedule is its run in every world, with only
