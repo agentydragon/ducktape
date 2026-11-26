@@ -256,7 +256,7 @@ impl OwnSlot<'_> {
 
 /// What a consumer may assume about a group of slots.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Integrity<'a> {
+pub enum Integrity<'a> {
     /// The closed-write census proves the slots, consuming these captured-value
     /// refinements.
     Intact(&'a ProofDependencies),
@@ -267,7 +267,7 @@ pub(crate) enum Integrity<'a> {
 
 impl Integrity<'_> {
     /// The typed premise a consumer records.
-    pub(crate) fn dependencies(self) -> Option<ProofDependencies> {
+    pub fn dependencies(self) -> Option<ProofDependencies> {
         match self {
             Self::Intact(dependencies) => Some(dependencies.clone()),
             Self::AuthorAsserted(reference) => Some(ProofDependencies {
@@ -282,16 +282,16 @@ impl Integrity<'_> {
 /// `IntrinsicIntact(slots, site)`: one validated native input asserts these
 /// slots at its exact source site, keyed by the site's start offset.
 #[derive(Debug, Clone)]
-pub(crate) struct IntrinsicIntact {
-    pub(crate) slots: BTreeSet<IntrinsicSlot>,
-    pub(crate) reference: NativeOperationInputRef,
+pub struct IntrinsicIntact {
+    pub slots: BTreeSet<IntrinsicSlot>,
+    pub reference: NativeOperationInputRef,
 }
 
 /// Possible writes to `%Object.prototype%` properties, from the separate
 /// prototype census: it also sees descriptor capabilities escaping into calls
 /// and reflective writes, which the family census does not.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct PrototypeWrites {
+pub struct PrototypeWrites {
     /// Writes whose key is unknown.
     any_key: usize,
     /// Writes per known string key.
@@ -300,7 +300,7 @@ pub(crate) struct PrototypeWrites {
 
 impl PrototypeWrites {
     /// One entry per write: its finite key set, or `None` for any key.
-    pub(crate) fn new<'a>(writes: impl IntoIterator<Item = Option<&'a BTreeSet<String>>>) -> Self {
+    pub fn new<'a>(writes: impl IntoIterator<Item = Option<&'a BTreeSet<String>>>) -> Self {
         let mut counts = Self::default();
         for keys in writes {
             match keys {
@@ -699,7 +699,7 @@ impl OwnSlotWrites {
 /// The completed census as slot flags, plus the axioms resolved from validated
 /// author inputs. The default answers `Unknown` for every census query.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct IntegrityFlags {
+pub struct IntegrityFlags {
     /// Every analyzed chunk contributed its writes and no dynamic scope can
     /// hide one.
     census_closed: bool,
@@ -715,7 +715,7 @@ pub(crate) struct IntegrityFlags {
 
 impl IntegrityFlags {
     /// `witnesses` are the completed census's, from every analyzed chunk.
-    pub(crate) fn new(
+    pub fn new(
         census_closed: bool,
         mutated: BTreeSet<NativeIntrinsic>,
         witnesses: &[NativeMutationWitness],
@@ -739,7 +739,7 @@ impl IntegrityFlags {
 
     /// Applies `program_premises.intrinsics_never_written`; its key is among
     /// `census_dependencies` when it overrode a witness.
-    pub(crate) fn with_never_written(mut self, families: BTreeSet<NativeIntrinsic>) -> Self {
+    pub fn with_never_written(mut self, families: BTreeSet<NativeIntrinsic>) -> Self {
         self.never_written = families;
         self
     }
@@ -769,7 +769,7 @@ impl IntegrityFlags {
     /// All `slots` at `site`. An axiom at the site is consumed when it covers
     /// every slot, so the proof names the premise the site was audited under;
     /// otherwise every slot must be census-intact. Mixed coverage is unknown.
-    pub(crate) fn require(&self, slots: &[IntrinsicSlot], site: Option<u32>) -> Integrity<'_> {
+    pub fn require(&self, slots: &[IntrinsicSlot], site: Option<u32>) -> Integrity<'_> {
         if let Some(axiom) = site.and_then(|site| self.axioms.get(&site))
             && slots.iter().all(|slot| axiom.slots.contains(slot))
         {
@@ -787,7 +787,7 @@ impl IntegrityFlags {
     /// `%Object.prototype%` without the global `Object` binding, so writes to
     /// the `Object` constructor or other global slots do not touch it. Returns
     /// whether the property is intact and how many writes block it.
-    pub(crate) fn object_prototype_property(&self, property: &str) -> (bool, usize) {
+    pub fn object_prototype_property(&self, property: &str) -> (bool, usize) {
         let blocking = self.prototype_writes.blocking(property);
         let never_written = self.never_written.contains(&NativeIntrinsic::Object);
         (
@@ -797,7 +797,7 @@ impl IntegrityFlags {
     }
 
     /// The census families (and the global object) that make `slots` unknown.
-    pub(crate) fn mutated_roots(&self, slots: &[IntrinsicSlot]) -> BTreeSet<NativeIntrinsic> {
+    pub fn mutated_roots(&self, slots: &[IntrinsicSlot]) -> BTreeSet<NativeIntrinsic> {
         slots
             .iter()
             .filter(|slot| !self.never_written.contains(&slot.family()))

@@ -3,7 +3,7 @@
 use super::value_model::{
     PropertyDefinition, ValueExpr, object_data_property_name, static_property_name,
 };
-use crate::facts::abstract_domain::value::Kind;
+use analysis::facts::abstract_domain::value::Kind;
 use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;

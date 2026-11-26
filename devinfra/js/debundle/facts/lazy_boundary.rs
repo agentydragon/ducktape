@@ -173,7 +173,7 @@ fn visit_class_decl<V: Visit>(
     }
 }
 
-pub(crate) fn visit_eager_member_parts<V: Visit>(v: &mut V, member: &ClassMember) {
+pub fn visit_eager_member_parts<V: Visit>(v: &mut V, member: &ClassMember) {
     match member {
         ClassMember::Method(method) => {
             visit_computed_prop_name(v, &method.key);

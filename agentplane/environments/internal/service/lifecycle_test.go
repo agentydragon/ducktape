@@ -111,7 +111,7 @@ func newConfiguredHarness(
 	t.Helper()
 	budget := &testWakeBudget{}
 	service, err := resume.NewManager(lifecycle.Options{
-		Namespace: testNamespace, Objects: object,
+		Namespace: testNamespace, Objects: object, Identities: kubernetesIdentities(t, object, testNamespace),
 		WakeServiceCallers:     []string{peertls.NotificationsURI},
 		OperatorServiceCallers: operatorServiceCallers,
 		EnvironmentRules:       rules, PolicyReady: policyReady,
@@ -120,7 +120,7 @@ func newConfiguredHarness(
 		t.Fatal(err)
 	}
 	automatic, err := wake.NewManager(wake.Options{
-		Namespace: testNamespace, Objects: object, WakeBudget: budget,
+		Namespace: testNamespace, Objects: object, Identities: kubernetesIdentities(t, object, testNamespace), WakeBudget: budget,
 		WakeServiceCallers: []string{peertls.NotificationsURI},
 	})
 	if err != nil {
@@ -154,7 +154,7 @@ func serveEnvironmentService(
 			t.Fatal(err)
 		}
 	}
-	apiService, err := environmentservice.New(testNamespace, object, runtimeconfig.Catalog{}, lifecycleManager, environmentservice.Options{})
+	apiService, err := environmentservice.New(testNamespace, object, kubernetesIdentities(t, object, testNamespace), runtimeconfig.Catalog{}, lifecycleManager, environmentservice.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,7 +616,9 @@ func TestExplicitResumeDoesNotReserveWakeBudget(t *testing.T) {
 
 func TestNewManagerRequiresWakeBudget(t *testing.T) {
 	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4), executionUID)
-	if _, err := wake.NewManager(wake.Options{Namespace: testNamespace, Objects: objects}); err == nil {
+	if _, err := wake.NewManager(wake.Options{
+		Namespace: testNamespace, Objects: objects, Identities: kubernetesIdentities(t, objects, testNamespace),
+	}); err == nil {
 		t.Fatal("automatic-wake manager was constructed without a shared wake budget")
 	}
 }
@@ -624,7 +626,7 @@ func TestNewManagerRequiresWakeBudget(t *testing.T) {
 func TestEnvironmentServiceManagerResumesWithoutWakeBudget(t *testing.T) {
 	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4), executionUID)
 	manager, err := resume.NewManager(lifecycle.Options{
-		Namespace: testNamespace, Objects: objects,
+		Namespace: testNamespace, Objects: objects, Identities: kubernetesIdentities(t, objects, testNamespace),
 		WakeServiceCallers:     []string{peertls.NotificationsURI},
 		OperatorServiceCallers: []string{peertls.AppURI},
 	})
@@ -861,7 +863,8 @@ func TestConfiguredServiceWakeUsesItsSPIFFEIDBudget(t *testing.T) {
 	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 7), executionUID)
 	budget := &testWakeBudget{}
 	manager, err := wake.NewManager(wake.Options{
-		Namespace: testNamespace, Objects: objects, WakeBudget: budget, WakeServiceCallers: []string{serviceID},
+		Namespace: testNamespace, Objects: objects, Identities: kubernetesIdentities(t, objects, testNamespace),
+		WakeBudget: budget, WakeServiceCallers: []string{serviceID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1049,4 +1052,14 @@ func TestAutomaticWakeLostPatchReplyIsUnknownAndNeverReplayed(t *testing.T) {
 	if patches != 1 || len(h.budget.calls) != 1 || current.Spec.WakeGeneration != 10 {
 		t.Fatalf("patches=%d budget=%+v generation=%d, want one attempt with committed generation 10", patches, h.budget.calls, current.Spec.WakeGeneration)
 	}
+}
+
+// kubernetesIdentities reads namespace's Identities through objects, as the Kubernetes-backed production wiring does.
+func kubernetesIdentities(t *testing.T, objects client.Reader, namespace string) auth.IdentityUIDReader {
+	t.Helper()
+	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identities
 }

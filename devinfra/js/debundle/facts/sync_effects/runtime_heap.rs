@@ -39,13 +39,13 @@ pub(super) struct NativeIterableReceipt {
     pub(super) yields: NativeIterableYields,
     /// Body reads are retained even for a private input whose read cannot
     /// observe a caller's earlier heap. The external projection is below.
-    pub(super) heap_contents: crate::facts::HeapContentCells,
+    pub(super) heap_contents: analysis::facts::HeapContentCells,
     pub(super) input: NativeIterableInput,
     pub(super) coverage: EffectCoverageFragment,
 }
 
 impl NativeIterableReceipt {
-    pub(super) fn external_heap_contents(&self) -> crate::facts::HeapContentCells {
+    pub(super) fn external_heap_contents(&self) -> analysis::facts::HeapContentCells {
         let mut external = self.heap_contents.clone();
         if let NativeIterableInput::ImmediateArrayLiteral(origin) = self.input
             && self.source == Some(origin)
@@ -56,7 +56,7 @@ impl NativeIterableReceipt {
             // Keep the Set allocation and every other source/body read.
             external
                 .reads
-                .remove(&crate::facts::EffectCell::ArrayContents(origin));
+                .remove(&analysis::facts::EffectCell::ArrayContents(origin));
         }
         external
     }

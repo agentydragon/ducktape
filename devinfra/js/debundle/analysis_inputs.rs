@@ -330,7 +330,7 @@ impl From<spec::IntrinsicFamily> for NativeIntrinsic {
 
 impl NativeIntrinsic {
     /// Every global property name `for_global_binding` recognizes.
-    pub(crate) const GLOBAL_BINDINGS: &[&str] = &[
+    pub const GLOBAL_BINDINGS: &[&str] = &[
         "Error",
         "Function",
         "Object",
@@ -352,7 +352,7 @@ impl NativeIntrinsic {
         "top",
     ];
 
-    pub(crate) fn for_global_binding(property: &str) -> Option<Self> {
+    pub fn for_global_binding(property: &str) -> Option<Self> {
         match property {
             "TextEncoder" => Some(Self::TextEncoder),
             "Error" => Some(Self::Error),
@@ -375,7 +375,7 @@ impl NativeIntrinsic {
 
     /// The global object's own property holding the family's constructor or
     /// namespace.
-    pub(crate) fn global_binding(self) -> Option<&'static str> {
+    pub fn global_binding(self) -> Option<&'static str> {
         match self {
             Self::GlobalObject | Self::UnknownGlobalValue => None,
             Self::TextEncoder => Some("TextEncoder"),
@@ -1047,7 +1047,7 @@ pub struct AnalysisAssumptions {
 
 impl AnalysisAssumptions {
     /// Whether an author contract describes calls through this imported local.
-    pub(crate) fn names_imported_callable(&self, local: &str) -> bool {
+    pub fn names_imported_callable(&self, local: &str) -> bool {
         self.inline_callback_factories.contains(local)
             || self.callback_factory_members.contains_key(local)
             || self.retained_callback_factories.contains_key(local)
@@ -1110,12 +1110,12 @@ pub struct AnalysisInputs {
 /// Exact-site native inputs after the canonical execution index validated
 /// source shape and local slot contradictions. Whole-program callers also
 /// checked the shared cross-chunk native write census before supplying them.
-pub(crate) struct ValidatedNativeOperationFacts {
+pub struct ValidatedNativeOperationFacts {
     inputs: Vec<ResolvedNativeOperationInput>,
 }
 
 impl ValidatedNativeOperationFacts {
-    pub(crate) fn new(inputs: Vec<ResolvedNativeOperationInput>) -> Self {
+    pub fn new(inputs: Vec<ResolvedNativeOperationInput>) -> Self {
         Self { inputs }
     }
 

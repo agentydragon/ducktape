@@ -14,8 +14,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::AnalysisInputs;
-use analysis::facts::analyze_chunk;
 use analysis::ids::ModuleId;
+use analyze::analyze_chunk;
 use debundle_e2e_support::*;
 use gate::check_realizability_with_priority;
 use graph::build_dependency_graph_with;

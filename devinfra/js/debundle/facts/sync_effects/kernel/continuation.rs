@@ -26,16 +26,16 @@ use super::frame::{
     CallableSelection, EvaluatedCallee, Invocation, LocalCallRequest, LocalExecutionAttempt,
     LocalFrame, LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
 };
-use crate::execution_evidence::OrderedFieldReadRefusal;
-use crate::facts::EffectCell;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis::execution_evidence::OrderedFieldReadRefusal;
+use analysis::facts::EffectCell;
+use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::{BinaryOp, Id};
 
-pub(in crate::facts::sync_effects) enum LocalSuspension {
+pub(crate) enum LocalSuspension {
     Call(LocalCallRequest),
     Complete(LocalExecutionAttempt),
     /// The body continues on every one of these paths from the same state.
@@ -171,8 +171,8 @@ impl Step {
 }
 
 #[derive(Clone)]
-pub(in crate::facts::sync_effects) struct LocalContinuation {
-    pub(in crate::facts::sync_effects) frame: LocalFrame,
+pub(crate) struct LocalContinuation {
+    pub(crate) frame: LocalFrame,
     steps: Vec<Step>,
     /// The value of the most recently completed expression, consumed by the
     /// step that scheduled it.
@@ -185,7 +185,7 @@ pub(in crate::facts::sync_effects) struct LocalContinuation {
 }
 
 impl LocalContinuation {
-    pub(in crate::facts::sync_effects) fn new(frame: LocalFrame) -> Self {
+    pub(crate) fn new(frame: LocalFrame) -> Self {
         Self {
             frame,
             steps: vec![Step::Prepare],
@@ -199,7 +199,7 @@ impl LocalContinuation {
 
     /// A scalar consumer has one result and no join: the body is refused at
     /// its first undecided test and nothing after it runs.
-    pub(in crate::facts::sync_effects) fn refuse_branching(&mut self) {
+    pub(crate) fn refuse_branching(&mut self) {
         self.frame.ledger.allocation = AllocationJudgment::Opaque;
         self.refused = Some(RemainderDisposition::NeedsSummary);
     }
@@ -220,17 +220,14 @@ impl LocalContinuation {
         Ok(LocalSuspension::Fork(vec![left_path, right_path]))
     }
 
-    pub(in crate::facts::sync_effects) fn resume_call(
-        &mut self,
-        result: Result<LocalValueResult, RemainderDisposition>,
-    ) {
+    pub(crate) fn resume_call(&mut self, result: Result<LocalValueResult, RemainderDisposition>) {
         match result {
             Ok(result) => self.value = Some(absorb(&mut self.frame, result)),
             Err(remainder) => self.refused = Some(remainder),
         }
     }
 
-    pub(in crate::facts::sync_effects) fn poll(
+    pub(crate) fn poll(
         &mut self,
         context: &mut impl KernelContext,
         body: &LocalBody,
@@ -1347,7 +1344,7 @@ impl<C: KernelContext> AllocationContext for LocalValueContext<'_, C> {
 
 /// Transfer one closed value expression in this frame. Scalar consumers
 /// (the strict provider's direct allocation return) enter the kernel here.
-pub(in crate::facts::sync_effects) fn value_of(
+pub(crate) fn value_of(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     expression: &ValueExpr,

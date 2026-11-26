@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/runtimeproxy"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"golang.org/x/sync/errgroup"
@@ -25,7 +26,7 @@ type runtimeProxy struct {
 	health *watchhealth.Health
 }
 
-func newRuntimeProxy(c RuntimeProxyConfig, namespace string, apiConfig *rest.Config, scheme *runtime.Scheme) (*runtimeProxy, error) {
+func newRuntimeProxy(c RuntimeProxyConfig, namespace string, apiConfig *rest.Config, scheme *runtime.Scheme, identities reader.IdentitySource) (*runtimeProxy, error) {
 	if err := c.ValidateCredentials(); err != nil {
 		return nil, err
 	}
@@ -47,13 +48,18 @@ func newRuntimeProxy(c RuntimeProxyConfig, namespace string, apiConfig *rest.Con
 	if err != nil {
 		return nil, err
 	}
+	// Kubernetes-backed Identities are read through the inventory, as Sandboxes are.
+	sandboxIdentities, err := identityUIDs(identities, inventory, namespace)
+	if err != nil {
+		return nil, err
+	}
 	// No bearer accounts or workload SVID resolver are installed on the proxy's methods.
 	// Only the four exact service allowlists confer authority; delegation stays absent.
 	server, err := runtimeproxy.New(runtimeproxy.Config{
 		Namespace: namespace, RunnerSecurity: c.RunnerSecurity,
 		RuntimeReaders: c.Readers, SessionServices: c.SessionCallers,
 		ControllerServices: c.ControllerCallers, ExecutorServices: c.ExecutorCallers,
-	}, inventory, health)
+	}, inventory, health, sandboxIdentities)
 	if err != nil {
 		return nil, err
 	}

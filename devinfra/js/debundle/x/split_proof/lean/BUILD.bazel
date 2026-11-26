@@ -429,6 +429,37 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "ordered_region",
+    srcs = ["EsmSplit/CoreJS/OrderedRegion.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_single_module",
+        ":planner",
+    ],
+)
+
+executable_test(
+    name = "ordered_region_test",
+    src = "OrderedRegionTest.lean",
+    deps = [":ordered_region"],
+)
+
+lean_proof_test(
+    name = "ordered_region_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.OrderedRegion"],
+    required_theorems = [
+        "CoreJS.OrderedRegion.matching_link",
+        "CoreJS.OrderedRegion.planned_link",
+        "CoreJS.OrderedRegion.planned_runs",
+        "CoreJS.OrderedRegion.planned_runs_with_exports",
+        "CoreJS.OrderedRegion.planned_scopes",
+        "CoreJS.OrderedRegion.sameUnits_capture",
+    ],
+    deps = [":ordered_region"],
+)
+
+lean_library(
     name = "named_declaration_split",
     srcs = ["EsmSplit/CoreJS/NamedDeclarationSplit.lean"],
     deps = [
@@ -842,11 +873,15 @@ test_runner(
 test_runner(
     name = "linked_input_test_runner",
     src = "LinkedInputTest.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+    ],
     deps = [
         ":corejs_linked_input",
         ":corejs_runtime",
         ":effects",
+        ":named_declaration_split",
         ":planner",
     ],
 )
@@ -1016,6 +1051,8 @@ lean_proof_test(
     ],
     required_theorems = [
         "CoreJS.evaluatorFrames",
+        "CoreJS.split_import_alias",
+        "CoreJS.split_import_original_cell",
         "CoreJS.LinkedBehavior.checkedPivot_move",
         "CoreJS.LinkedBehavior.pivotFrameOk_move",
         "CoreJS.LinkedBehavior.pivotFrameOk_sound",

@@ -12,7 +12,8 @@ mod chunk_constraining_module_edges_tests {
     use analysis_model::DepKind;
     use source_identity::SourceUnitId;
 
-    use analysis::{AnalysisInputs, facts::analyze_chunk};
+    use analysis::AnalysisInputs;
+    use analyze::analyze_chunk;
 
     use crate::DependencyGraph;
 

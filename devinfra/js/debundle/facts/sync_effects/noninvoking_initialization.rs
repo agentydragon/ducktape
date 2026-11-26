@@ -3,11 +3,11 @@
 use super::allocation_transfer::AllocationJudgment;
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, CallSite, HeapAddress, ValueExpr, Values};
-use crate::analysis_inputs::ProofDependencies;
-use crate::facts::OwnerInitializationCoverageRefusalReason;
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::initialization_effects::CompletedInitialization;
-use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
+use analysis::analysis_inputs::ProofDependencies;
+use analysis::facts::OwnerInitializationCoverageRefusalReason;
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::initialization_effects::CompletedInitialization;
+use analysis::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use swc_common::{Span, Spanned};
@@ -742,8 +742,8 @@ impl OriginalInitializer {
 #[cfg(test)]
 mod source_identity_tests {
     use super::{InitializationSourceIdentity, OriginalInitializer};
-    use crate::facts::OwnerInitializationCoverageRefusalReason;
-    use crate::facts::item_views::top_level_item_views;
+    use analysis::facts::OwnerInitializationCoverageRefusalReason;
+    use analysis::facts::item_views::top_level_item_views;
     use source_identity::SourceUnitOrdinal;
     use swc_common::{Spanned, SyntaxContext};
     use swc_ecma_ast::Id;

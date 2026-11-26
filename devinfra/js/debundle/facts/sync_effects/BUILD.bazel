@@ -1,0 +1,40 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "sync_effects",
+    srcs = glob(["**/*.rs"]),
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_codec",
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle:work_metrics",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:imbl",
+        "@crates//:rustc-hash",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:strum",
+        "@crates//:swc_atoms",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "sync_effects_test",
+    crate = ":sync_effects",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:raw_js_test_support",
+        "@crates//:swc_ecma_parser",
+    ],
+)

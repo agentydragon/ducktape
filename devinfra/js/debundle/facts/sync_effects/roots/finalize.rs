@@ -12,11 +12,11 @@ use super::super::value_model::AbstractValue;
 use super::assignment::RootAssignment;
 use super::body::expected_root_calls;
 use super::operands::RootOperands;
-use crate::facts::OwnerInitializationCoverageRefusalReason;
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::binding_effect_coverage::BindingEffectCoverage;
-use crate::facts::evaluation_effects::EvaluationEffects;
-use crate::facts::statement_facts::SynchronousCalls;
+use analysis::facts::OwnerInitializationCoverageRefusalReason;
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::binding_effect_coverage::BindingEffectCoverage;
+use analysis::facts::evaluation_effects::EvaluationEffects;
+use analysis::facts::statement_facts::SynchronousCalls;
 
 pub(super) fn finalize(
     inputs: &ExecutionInputs<'_>,
@@ -58,7 +58,7 @@ pub(super) fn finalize(
         && !observations.record_factory_prototype_premises().is_empty()
     {
         outcome.effects.local_record_factory_uses.push(
-            crate::reports::schema::LocalRecordFactoryUse {
+            analysis::reports::schema::LocalRecordFactoryUse {
                 factory_binding: factory.0.to_string(),
                 prototype_properties: observations
                     .record_factory_prototype_premises()
@@ -103,7 +103,7 @@ pub(super) fn finalize(
             outcome.effects.local_record_factory_heap_call = Some(proof.call_span);
         }
         outcome.effects.local_record_factory_purity =
-            Some(crate::facts::LocalRecordFactoryPurityCertificate {
+            Some(analysis::facts::LocalRecordFactoryPurityCertificate {
                 call_span: proof.call_span,
                 checked_owners: proof.checked_owners,
                 dependencies,
@@ -130,7 +130,7 @@ pub(super) fn finalize(
         }
     }
     if outcome.effects.local_record_factory_heap_call.is_some() {
-        outcome.effects.heap_contents = crate::facts::HeapContentCells::default();
+        outcome.effects.heap_contents = analysis::facts::HeapContentCells::default();
         outcome.effects.non_assumed_heap_accesses = Default::default();
     }
     let proven_reads = if outcome.complete

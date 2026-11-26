@@ -42,7 +42,6 @@ pub(crate) use crate::execution_evidence::{SourceLocation, SourceLocator};
 pub(crate) use crate::purity::{
     ChunkCodeGraph, Purity, RedundantPureMemberHint, RedundantPurityHint,
     classify_class_static_purity, classify_expr_purity, classify_var_decl_purity,
-    detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };
 
 macro_rules! impl_lazy_callable_visits {
@@ -109,36 +108,31 @@ macro_rules! impl_lazy_optional_path_visits {
 }
 
 pub mod abstract_domain;
-#[cfg(test)]
-mod analysis_tests;
-mod analyze;
+pub mod analyze;
 mod array_spreads;
-mod at_init_fallback;
-#[cfg(test)]
-mod at_init_fallback_tests;
+pub mod at_init_fallback;
 pub mod binding_effect_coverage;
-mod callable_inference;
+pub mod callable_inference;
 mod cell_overlap;
-mod collector;
+pub mod collector;
 mod dynamic_scope;
-mod evaluation_effects;
-mod global_object;
-pub(crate) mod heap_contents;
-mod initialization_effects;
-mod item_views;
-mod lazy_boundary;
+pub mod evaluation_effects;
+pub mod global_object;
+pub mod heap_contents;
+pub mod initialization_effects;
+pub mod item_views;
+pub mod lazy_boundary;
 mod local_class_construction;
-mod local_effect_targets;
-mod local_effects;
-mod purity_classification;
+pub mod local_effect_targets;
+pub mod local_effects;
+pub mod purity_classification;
 pub mod saved;
-mod semantic_inference;
+pub mod semantic_inference;
 mod set_iterables;
-mod source_unit_read_closure;
+pub mod source_unit_read_closure;
 pub mod standard_globals;
-mod statement_facts;
-pub mod sync_effects;
-mod value_flow;
+pub mod statement_facts;
+pub mod value_flow;
 #[cfg(test)]
 mod value_flow_tests;
 #[cfg(test)]
@@ -146,44 +140,50 @@ mod value_set_tests;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
-pub(crate) use array_spreads::StableArraySpreadShapes;
+pub use array_spreads::StableArraySpreadShapes;
 pub(crate) use at_init_fallback::*;
 pub use cell_overlap::{CellOverlap, CellOverlapIndex, CellOverlapLaw};
 pub use cell_overlap::{first_overlapping, may_conflict, may_overlap};
 pub(crate) use collector::*;
-pub(crate) use dynamic_scope::DynamicScopeFact;
+pub use dynamic_scope::DynamicScopeFact;
 pub(crate) use global_object::*;
+pub use item_views::compute_shadowed_globals;
 pub(crate) use item_views::*;
 pub(crate) use lazy_boundary::*;
 pub use local_class_construction::LocalClassConstructionProof;
-pub(crate) use local_class_construction::{LocalClassConstructionShapes, LocalClassHeapProof};
+pub use local_class_construction::LocalClassConstructionShapes;
+pub use local_class_construction::LocalClassHeapProof;
 pub(crate) use local_effect_targets::*;
-pub(crate) use purity_classification::*;
+pub use purity_classification::CompletedPurity;
+pub use purity_classification::NativeOwnDataReadDiagnostic;
+pub use purity_classification::PreparedPurity;
+pub use purity_classification::StatementPurityContext;
 pub(crate) use semantic_inference::ArgumentNoEscapeFacts;
+pub use set_iterables::NativeIterableOperandOrigin;
 pub use set_iterables::SetIterableProof;
+pub use set_iterables::SetIterableShapes;
+pub use set_iterables::TopLevelNativeIterableOperandSite;
 pub(crate) use set_iterables::{
-    NativeIterableOperandOrigin, SetIterableShapes, TopLevelNativeIterableOperandProjection,
-    TopLevelNativeIterableOperandSite, primitive_literal_property_keys,
+    TopLevelNativeIterableOperandProjection, primitive_literal_property_keys,
 };
 pub use source_unit_read_closure::SourceUnitReadClosure;
 pub use statement_facts::HeapContentCells;
+pub use statement_facts::LocalRecordFactoryPurityCertificate;
 pub use statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection,
     CallbackFactoryCallArgumentWitness, CallbackFactoryUseFact, CallbackFactoryWriteWitness,
     ReturnedRecordUseFact,
 };
-pub(crate) use statement_facts::{
-    ConstructorFacts, ExportLinkage, LocalRecordFactoryPurityCertificate,
-};
+pub(crate) use statement_facts::{ConstructorFacts, ExportLinkage};
 pub(crate) use value_flow::{CandidateObjectIndex, own_data_keys};
 pub use value_flow::{ChunkValueFlow, ProgramFlowModule, ProgramValueFlows, program_value_flows};
 
 // Public API: importable at `facts::<item>` exactly as before the split.
 pub use analyze::{
-    ExportReentryPolicy, analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy,
-    analyze_vendor_prune_chunk, collect_chunk_source_facts, collect_chunk_source_facts_from_items,
-    complete_chunk_structural, complete_chunk_structural_with_flow,
-    complete_chunk_structural_with_inputs, module_has_top_level_await,
+    ExportReentryPolicy, analyze_chunk_structural, collect_chunk_source_facts,
+    collect_chunk_source_facts_from_items, complete_chunk_structural,
+    complete_chunk_structural_with_flow, complete_chunk_structural_with_inputs,
+    module_has_top_level_await,
 };
 pub use evaluation_effects::{
     GlobalAccessEvidence, GlobalAccessKind, GlobalAccessSite, GlobalMayAccess,

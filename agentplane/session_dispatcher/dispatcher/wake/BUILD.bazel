@@ -11,6 +11,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake",
     deps = [
         "//agentplane/environments/lifecycle",
+        "//agentplane/identity/auth",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "@io_k8s_sigs_controller_runtime//pkg/client",
     ],

@@ -55,15 +55,13 @@ use analysis::analysis_inputs::{
 use analysis::execution_evidence::SourceLocator;
 
 use analysis::facts::abstract_domain::value::Value;
-use analysis::facts::sync_effects::execution_index::{
-    InferredCallableCapabilities, PreparedCallableCapabilities,
-};
 use analysis::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
 use analysis::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis::program_bindings::{
     BindingId, ExportId, ModuleBindings, ProgramBindings, ResolvedImport, SourceModuleKey,
 };
 use analysis::purity::{ChunkCodeGraph, Purity, PurityEffectRules, PurityMode};
+use sync_effects::execution_index::{InferredCallableCapabilities, PreparedCallableCapabilities};
 
 /// A stable export after its imports resolved: its own types and the exports
 /// it copies.
@@ -627,12 +625,12 @@ impl<'a> ModulePurityFacts<'a> {
         let set_iterable_proof = structural.set_iterable_shapes;
         let local_class_construction_proof = structural.local_class_shapes;
         let prepared_sync_index =
-            analysis::facts::sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index_with_source_facts(
+            sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index_with_source_facts(
                 &views,
                 &value_flow,
                 inputs,
                 &plain_array_bindings,
-                analysis::facts::sync_effects::interpreter::synchronous_calls::PreparedSyncShapeInputs {
+                sync_effects::interpreter::synchronous_calls::PreparedSyncShapeInputs {
                     local_class_construction: &local_class_construction_proof,
                     set_iterable_shapes: set_iterable_proof,
                     stable_array_spread_shapes,
@@ -1283,25 +1281,24 @@ pub fn resolve_imported_callable_summaries(
                 .map(|(_, local)| local.clone())
                 .collect();
             let views = top_level_item_views(facts.body);
-            let mut prepared_module =
-                analysis::facts::sync_effects::execution_index::prepare_callable_capabilities(
-                    &views,
-                    locals,
-                    selected_value_inputs
-                        .get(module)
-                        .cloned()
-                        .unwrap_or_default(),
-                    selected_native_operation_inputs
-                        .get(module)
-                        .cloned()
-                        .unwrap_or_default(),
-                    predefined_globals,
-                    bundle_globals.clone(),
-                    namespace_privacy_members
-                        .get(module)
-                        .cloned()
-                        .unwrap_or_default(),
-                );
+            let mut prepared_module = sync_effects::execution_index::prepare_callable_capabilities(
+                &views,
+                locals,
+                selected_value_inputs
+                    .get(module)
+                    .cloned()
+                    .unwrap_or_default(),
+                selected_native_operation_inputs
+                    .get(module)
+                    .cloned()
+                    .unwrap_or_default(),
+                predefined_globals,
+                bundle_globals.clone(),
+                namespace_privacy_members
+                    .get(module)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
             if !prepared_module.value_input_errors().is_empty() {
                 bail!(
                     "invalid captured value input for provider {module}: {}",
@@ -1347,7 +1344,7 @@ pub fn resolve_imported_callable_summaries(
         prepare(&BundleGlobalNames::default())?;
     let mut bundle_globals = BundleGlobalNames::default();
     if predefined_globals != spec::PredefinedGlobals::Unknown {
-        bundle_globals = analysis::facts::sync_effects::execution_index::bundle_globals::resolve(
+        bundle_globals = sync_effects::execution_index::bundle_globals::resolve(
             prepared.iter().map(|(module, facts)| {
                 (
                     facts,
@@ -1488,12 +1485,11 @@ pub fn resolve_imported_callable_summaries(
         );
         facts.locate_native_writes(module, modules[*module].locator());
     }
-    let mut native_integrity =
-        analysis::facts::sync_effects::execution_index::resolve_native_integrity(
-            prepared.values().map(|facts| facts.native_writes()),
-        );
+    let mut native_integrity = sync_effects::execution_index::resolve_native_integrity(
+        prepared.values().map(|facts| facts.native_writes()),
+    );
     if !intrinsics_never_written.is_empty() {
-        analysis::facts::sync_effects::execution_index::apply_intrinsics_never_written(
+        sync_effects::execution_index::apply_intrinsics_never_written(
             &mut native_integrity,
             &intrinsics_never_written,
         )
@@ -1528,7 +1524,7 @@ pub fn resolve_imported_callable_summaries(
                 .collect();
             (
                 module,
-                analysis::facts::sync_effects::execution_index::infer_callable_capabilities(
+                sync_effects::execution_index::infer_callable_capabilities(
                     views,
                     prepared,
                     &native_integrity,
@@ -1769,15 +1765,14 @@ fn preflow_set_constructions(
     // Source inference must finish before any root can seed structural flow.
     // The completed raw census is conservative; later branch refinement may
     // not retroactively introduce a root into an already solved flow.
-    let mut preflow_native_integrity =
-        analysis::facts::sync_effects::execution_index::resolve_native_integrity(
-            prepared.values().map(|facts| facts.native_writes()),
-        );
+    let mut preflow_native_integrity = sync_effects::execution_index::resolve_native_integrity(
+        prepared.values().map(|facts| facts.native_writes()),
+    );
     // Validate the existing program premise against the conservative raw
     // census too. Failure only declines this early inference; the established
     // refined-census check below remains authoritative for the author input.
     let preflow_premises_hold = intrinsics_never_written.is_empty()
-        || analysis::facts::sync_effects::execution_index::apply_intrinsics_never_written(
+        || sync_effects::execution_index::apply_intrinsics_never_written(
             &mut preflow_native_integrity,
             intrinsics_never_written,
         )
@@ -1927,7 +1922,7 @@ fn reject_contradicted_array_spread_inputs(
         });
     if let Some(request) = array_spread_request {
         let protocol_integrity =
-            analysis::facts::sync_effects::execution_index::resolve_array_spread_protocol_integrity(
+            sync_effects::execution_index::resolve_array_spread_protocol_integrity(
                 prepared.values().map(|facts| facts.native_writes()),
             );
         if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {

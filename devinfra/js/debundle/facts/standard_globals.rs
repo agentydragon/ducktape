@@ -83,7 +83,7 @@ const BUN: &[&str] = &[
 
 /// Whether a `host` claiming its predefined globals may predefine a global
 /// property named `name`.
-pub(crate) fn is_predefined_global(name: &str, host: PredefinedGlobals) -> bool {
+pub fn is_predefined_global(name: &str, host: PredefinedGlobals) -> bool {
     is_standard_global(name) || host == PredefinedGlobals::Bun && BUN.contains(&name)
 }
 

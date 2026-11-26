@@ -11,6 +11,7 @@ go_library(
         "//agentplane/environments/internal/service",
         "//agentplane/environments/lifecycle",
         "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/sandboxes/runtimeconfig",
         "//agentplane/testing/grpcmethods",

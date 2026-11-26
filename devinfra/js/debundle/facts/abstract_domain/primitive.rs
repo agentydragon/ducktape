@@ -74,12 +74,12 @@ fn unary(op: UnaryOp, operand: Option<PrimKinds>) -> PrimKinds {
 }
 
 /// ECMA-262 § 13.4 update expressions.
-pub(crate) fn update(operand: Option<PrimKinds>) -> PrimKinds {
+pub fn update(operand: Option<PrimKinds>) -> PrimKinds {
     to_numeric(operand)
 }
 
 /// Symbol conversion throws; BigInt growth may exceed the engine's size limit.
-pub(crate) fn update_throws(operand: PrimKinds) -> bool {
+pub fn update_throws(operand: PrimKinds) -> bool {
     operand.intersects(PrimKinds::SYMBOL.union(PrimKinds::BIGINT))
 }
 
@@ -151,7 +151,7 @@ fn binary(op: BinaryOp, left: Option<PrimKinds>, right: Option<PrimKinds>) -> Op
 /// The primitive result kinds for one binary operator after both operands
 /// have already been evaluated. Operators with operand-valued results are
 /// outside this transfer.
-pub(crate) fn binary_result(op: BinaryOp, left: PrimKinds, right: PrimKinds) -> Option<PrimKinds> {
+pub fn binary_result(op: BinaryOp, left: PrimKinds, right: PrimKinds) -> Option<PrimKinds> {
     binary(op, Some(left), Some(right))
 }
 
@@ -270,8 +270,8 @@ fn intrinsic_call(call: &CallExpr, scope: &impl PrimScope) -> Option<PrimKinds> 
 /// Primitive types of chunk-top bindings (`collect_binding_prims`) and the
 /// global names whose intrinsic the chunk may replace.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct BindingPrims {
-    pub(crate) kinds: BTreeMap<String, PrimKinds>,
+pub struct BindingPrims {
+    pub kinds: BTreeMap<String, PrimKinds>,
     /// Shadowed globals plus every `G` and `G.m` a visible write may replace.
     replaced_globals: BTreeSet<String>,
 }

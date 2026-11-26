@@ -52,13 +52,13 @@ func TestEnvironmentServiceServiceRolesStayMethodScoped(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "agent", UID: "agent-uid"},
 	})}
 	lifecycleManager, err := resume.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects,
+		Namespace: discoveryNamespace, Objects: objects, Identities: kubernetesIdentities(t, objects, discoveryNamespace),
 		OperatorServiceCallers: []string{operatorID},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, lifecycleManager, Options{
+	service, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), runtimeconfig.Catalog{}, lifecycleManager, Options{
 		ServiceReaders: sets.New(readerID), ServiceManagers: sets.New(managerID), ServiceLaunchers: sets.New(launcherID),
 	})
 	if err != nil {
@@ -167,12 +167,12 @@ func TestEnvironmentServiceActionDelegationKeepsIdentityScopeAndNoLifecycleAutho
 		&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: otherName, UID: otherUID}},
 	)
 	lifecycleManager, err := resume.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects, OperatorServiceCallers: []string{actionsID},
+		Namespace: discoveryNamespace, Objects: objects, Identities: kubernetesIdentities(t, objects, discoveryNamespace), OperatorServiceCallers: []string{actionsID},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, lifecycleManager, Options{
+	service, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), runtimeconfig.Catalog{}, lifecycleManager, Options{
 		ServiceReaders: sets.New(actionsID),
 	})
 	if err != nil {

@@ -11,7 +11,7 @@ use super::super::value_model::{
 };
 use super::context::KernelContext;
 use super::frame::{CallableSelection, LocalFrame, LocalValueResult, RemainderDisposition};
-use crate::facts::abstract_domain::value::Value;
+use analysis::facts::abstract_domain::value::Value;
 use imbl::OrdMap;
 use rustc_hash::FxHashSet;
 use std::collections::BTreeSet;
@@ -19,7 +19,7 @@ use swc_ecma_ast::Id;
 
 /// How a closure created now retains a free binding that has no active cell.
 #[derive(Clone, Copy)]
-pub(in crate::facts::sync_effects) enum CapturePolicy<'a> {
+pub(crate) enum CapturePolicy<'a> {
     /// The application prefix. Module bindings are read live at call time,
     /// so creation captures nothing for them. A binding some closure writes
     /// is unknown (its stores reach a cell or are published); a value past
@@ -38,14 +38,14 @@ pub(in crate::facts::sync_effects) enum CapturePolicy<'a> {
 const CAPTURE_BUDGET: usize = 64;
 
 /// What the adapter admits about one closure creation.
-pub(in crate::facts::sync_effects) struct ClosureAdmission {
-    pub(in crate::facts::sync_effects) effects: EffectCoverageFragment,
-    pub(in crate::facts::sync_effects) judgment: AllocationJudgment,
+pub(crate) struct ClosureAdmission {
+    pub(crate) effects: EffectCoverageFragment,
+    pub(crate) judgment: AllocationJudgment,
 }
 
 /// The lexical captures of `callable` created in `environment`: a captured
 /// binding with an active cell is shared by identity, any other is a snapshot.
-pub(in crate::facts::sync_effects) fn lexical_captures(
+pub(crate) fn lexical_captures(
     index: &ExecutionIndex,
     active_cells: &OrdMap<Id, LexicalCellId>,
     environment: &Context,

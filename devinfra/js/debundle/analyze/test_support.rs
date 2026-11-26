@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use swc_common::SyntaxContext;
 use swc_ecma_ast::{Id, Module};
 
-use crate::{AnalysisAssumptions, AnalysisInputs, KnownEffect, StatementFacts};
+use analysis::{AnalysisAssumptions, AnalysisInputs, KnownEffect, StatementFacts};
 
 /// Construct a test binding ID using the empty syntax context. The shared parser
 /// does not run SWC's resolver; production chunks use their top-level mark instead.
@@ -28,7 +28,7 @@ pub(crate) fn analyze_facts_with_hints(
     module: &Module,
     hints: &AnalysisInputs,
 ) -> Vec<StatementFacts> {
-    crate::facts::analyze_chunk(module, hints, None).facts
+    crate::analyze_chunk(module, hints, None).facts
 }
 
 pub(crate) fn analyze_facts(module: &Module) -> Vec<StatementFacts> {

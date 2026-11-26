@@ -7,16 +7,12 @@ use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::value_model::{AbstractValue, Values};
 use super::context::{Disposition, KernelContext, Unproved};
 use super::frame::{LocalFrame, RemainderDisposition};
-use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::abstract_domain::value::{Kind, Value};
 use swc_common::Span;
 
 /// Bind the activation of a base constructor of `class` to its receiver:
 /// `this` is the fresh instance the adapter named for this construction.
-pub(in crate::facts::sync_effects) fn bind_receiver(
-    frame: &mut LocalFrame,
-    class: u32,
-    instance: Values,
-) {
+pub(crate) fn bind_receiver(frame: &mut LocalFrame, class: u32, instance: Values) {
     frame.inputs.extend(instance.iter().cloned());
     frame.this_values = Some(instance);
     frame.constructed_class = Some(class);
@@ -26,10 +22,7 @@ pub(in crate::facts::sync_effects) fn bind_receiver(
 /// instance. A primitive or undefined return keeps it. An object return is
 /// outside this rule; the caller refuses it. `Unavailable` (an abrupt path)
 /// is kept beside the instance.
-pub(in crate::facts::sync_effects) fn construct_result(
-    returns: &Values,
-    instance: &Values,
-) -> Option<Values> {
+pub(crate) fn construct_result(returns: &Values, instance: &Values) -> Option<Values> {
     let mut result = Values::new();
     for value in returns {
         match value {
@@ -61,7 +54,7 @@ fn fresh_receiver(frame: &LocalFrame) -> Option<&AbstractValue> {
 /// of an object no other code holds yet, so no user code runs and no exterior
 /// state changes. An adapter instance identity keeps its own retention model;
 /// only a kernel-allocated record retains the value in the literal heap.
-pub(in crate::facts::sync_effects) fn define_field(
+pub(crate) fn define_field(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     property: &str,
@@ -96,7 +89,7 @@ pub(in crate::facts::sync_effects) fn define_field(
 /// the fresh instance it creates or overwrites an own data property unless the
 /// prototype chain holds an accessor or a non-writable property of that name;
 /// the adapter proves that absence, otherwise the store is unproved.
-pub(in crate::facts::sync_effects) fn assign_field(
+pub(crate) fn assign_field(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     property: &str,

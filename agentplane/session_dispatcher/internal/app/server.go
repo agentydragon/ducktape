@@ -165,18 +165,18 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	queueStore := store.NewStore(db, c.QueueCap)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	wakeManager, err := wake.NewManager(wake.Options{
-		Namespace: c.Namespace, Objects: objects, WakeBudget: queueStore,
-		WakeServiceCallers: c.WakeServiceCallers,
-	})
-	if err != nil {
-		return err
-	}
 	identities, err := startIdentities(ctx, c, config, objects)
 	if err != nil {
 		return err
 	}
 	defer identities.stop()
+	wakeManager, err := wake.NewManager(wake.Options{
+		Namespace: c.Namespace, Objects: objects, Identities: identities.sandboxes, WakeBudget: queueStore,
+		WakeServiceCallers: c.WakeServiceCallers,
+	})
+	if err != nil {
+		return err
+	}
 	catalog, err := sandboxinventory.NewKubernetesSandboxes(inventory, objects, c.Namespace, identities.sandboxes)
 	if err != nil {
 		return err

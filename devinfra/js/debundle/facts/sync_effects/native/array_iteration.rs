@@ -21,20 +21,20 @@ use super::super::kernel::frame::{
 use super::super::own_data_transfer::OwnDataContext;
 use super::super::value_model::{AbstractValue, CallSite, CapturedContext, HeapAddress, Values};
 use super::operation::{self, IterationResultArray};
-use crate::analysis_inputs::NativeIntrinsic;
-use crate::execution_evidence::{
+use analysis::analysis_inputs::NativeIntrinsic;
+use analysis::execution_evidence::{
     ExecutionOperation, ExecutionPrecisionLossReason, OrderedCallAdmissionRefusal,
 };
-use crate::facts::EffectCell;
-use crate::facts::abstract_domain::builtins::IterationResult;
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
+use analysis::facts::EffectCell;
+use analysis::facts::abstract_domain::builtins::IterationResult;
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
 use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 use swc_common::Span;
 
 /// The callback a row may invoke: one local callable with no live captures.
-pub(in crate::facts::sync_effects) struct AdmittedCallback {
+pub(crate) struct AdmittedCallback {
     key: u32,
     owner: source_identity::SourceUnitOrdinal,
     captured: Option<CapturedContext>,
@@ -42,7 +42,7 @@ pub(in crate::facts::sync_effects) struct AdmittedCallback {
 
 /// The callback a row may invoke: one local, synchronous, non-generator
 /// callable with simple parameters and no live captures.
-pub(in crate::facts::sync_effects) fn admitted_callback(
+pub(crate) fn admitted_callback(
     index: &ExecutionIndex,
     values: &Values,
 ) -> Result<AdmittedCallback, OrderedCallAdmissionRefusal> {
@@ -80,10 +80,7 @@ pub(in crate::facts::sync_effects) fn admitted_callback(
 
 /// The iteration rows `iterate_array` executes, by result shape and
 /// argument count. Other rows refuse with a typed reason.
-pub(in crate::facts::sync_effects) fn supported_row(
-    result: IterationResult,
-    arguments: usize,
-) -> bool {
+pub(crate) fn supported_row(result: IterationResult, arguments: usize) -> bool {
     matches!(
         (result, arguments),
         (
@@ -94,7 +91,7 @@ pub(in crate::facts::sync_effects) fn supported_row(
 }
 
 impl LocalExecutionContext<'_, '_, '_> {
-    pub(in crate::facts::sync_effects) fn iterate_array(
+    pub(crate) fn iterate_array(
         &mut self,
         frame: &mut LocalFrame,
         selection: &ArrayIterationSelection,

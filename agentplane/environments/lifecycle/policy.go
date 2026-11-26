@@ -38,9 +38,12 @@ var (
 // automatic-wake brokers; they do not authorize explicit RPC calls or override a requested stop.
 // OperatorServiceCallers are a separate explicit-resume grant. EnvironmentRules and PolicyReady
 // provide Identity explicit-resume authority; either being absent fails closed for Identity callers.
+// Identities resolves the live incarnation of Identities in Namespace: Sandbox execution principals and
+// Identity callers.
 type Options struct {
 	Namespace              string
 	Objects                client.Client
+	Identities             auth.IdentityUIDReader
 	WakeServiceCallers     []string
 	OperatorServiceCallers []string
 	EnvironmentRules       *reader.Index[access.Rule]
@@ -55,6 +58,7 @@ type Options struct {
 type Policy struct {
 	namespace        string
 	objects          client.Client
+	identities       auth.IdentityUIDReader
 	sandboxes        *sandboxreader.Reader
 	wakeServices     sets.Set[string]
 	operatorServices sets.Set[string]
@@ -64,8 +68,8 @@ type Policy struct {
 
 // NewPolicy requires an uncached Kubernetes client; policy views remain local to each consumer.
 func NewPolicy(options Options) (*Policy, error) {
-	if options.Namespace == "" || options.Objects == nil {
-		return nil, errors.New("Sandbox namespace and uncached Kubernetes client are required")
+	if options.Namespace == "" || options.Objects == nil || options.Identities == nil {
+		return nil, errors.New("Sandbox namespace, uncached Kubernetes client and Identity reader are required")
 	}
 	if err := auth.ValidateServiceCallers(options.WakeServiceCallers); err != nil {
 		return nil, fmt.Errorf("wake service callers: %w", err)
@@ -73,16 +77,12 @@ func NewPolicy(options Options) (*Policy, error) {
 	if err := auth.ValidateServiceCallers(options.OperatorServiceCallers); err != nil {
 		return nil, fmt.Errorf("operator service callers: %w", err)
 	}
-	identities, err := auth.KubernetesIdentityUIDs(options.Objects, options.Namespace)
-	if err != nil {
-		return nil, err
-	}
-	sandboxes, err := sandboxreader.New(options.Namespace, options.Objects, identities)
+	sandboxes, err := sandboxreader.New(options.Namespace, options.Objects, options.Identities)
 	if err != nil {
 		return nil, err
 	}
 	return &Policy{
-		namespace: options.Namespace, objects: options.Objects, sandboxes: sandboxes,
+		namespace: options.Namespace, objects: options.Objects, identities: options.Identities, sandboxes: sandboxes,
 		environmentRules: options.EnvironmentRules, policyReady: options.PolicyReady,
 		wakeServices: sets.New(options.WakeServiceCallers...), operatorServices: sets.New(options.OperatorServiceCallers...),
 	}, nil
@@ -453,14 +453,11 @@ func (s *Policy) callerIdentityCurrent(ctx context.Context, caller *identitypb.I
 	if !validIdentity(caller) {
 		return false, nil
 	}
-	var identity policyapi.Identity
-	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: caller.GetName()}, &identity); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
+	uid, found, err := s.identities.GetIdentityUID(ctx, caller.GetName())
+	if err != nil {
 		return false, err
 	}
-	return identity.UID != "" && string(identity.UID) == caller.GetUid() && identity.DeletionTimestamp == nil, nil
+	return found && uid != "" && uid == caller.GetUid(), nil
 }
 
 // ResumeDenial hides a foreign target when the denied Identity cannot read it.

@@ -1,6 +1,9 @@
 //! Source-only callback admission, independent of ordered runtime facts.
-use super::*;
+use analysis::facts::at_init_fallback::safe_plain_array_at_init_fallback_sources;
+use analysis::facts::*;
+use analysis::purity::code_graph::ChunkCodeGraph;
 use raw_js_test_support::parse;
+use std::collections::BTreeSet;
 use swc_common::SyntaxContext;
 
 fn admitted(statement: &str) -> bool {
@@ -13,7 +16,7 @@ fn admitted(statement: &str) -> bool {
         &body,
         &shadowed,
         &BTreeSet::new(),
-        &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+        &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
     );
     safe_plain_array_at_init_fallback_sources(
         body.last().expect("statement").as_module_item(),

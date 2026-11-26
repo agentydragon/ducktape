@@ -9,7 +9,7 @@ mod finalize;
 mod operands;
 
 use super::interpreter::Executor;
-use crate::facts::statement_facts::SynchronousCalls;
+use analysis::facts::statement_facts::SynchronousCalls;
 use source_identity::SourceUnitOrdinal;
 
 impl Executor<'_, '_> {

@@ -8,28 +8,27 @@ use source_identity::SourceUnitOrdinal;
 /// facts. Each input is source-only: the transfer runs at the statement's
 /// program point in the synchronous runtime store (or, on the vendor-prune
 /// path, outside it) and produces the purity the interpreter consumes there.
-pub(crate) struct StatementPurityContext<'a> {
-    pub(crate) body: &'a [TopLevelItemView<'a>],
-    pub(crate) shadowed: &'a BTreeSet<&'static str>,
-    pub(crate) hints: &'a AnalysisInputs,
-    pub(crate) graph: &'a ChunkCodeGraph,
-    pub(crate) proofs: ItemPurityProofs<'a>,
+pub struct StatementPurityContext<'a> {
+    pub body: &'a [TopLevelItemView<'a>],
+    pub shadowed: &'a BTreeSet<&'static str>,
+    pub hints: &'a AnalysisInputs,
+    pub graph: &'a ChunkCodeGraph,
+    pub proofs: ItemPurityProofs<'a>,
     /// `var` bindings declared by more than one statement.
-    pub(crate) shared_vars: &'a BTreeSet<Id>,
+    pub shared_vars: &'a BTreeSet<Id>,
     /// Native-root member reads with their exact integrity proof or the
     /// diagnostic explaining why this read did not have one.
-    pub(crate) native_own_data_reads:
-        &'a BTreeMap<SourceUnitOrdinal, Vec<NativeOwnDataReadDiagnostic>>,
+    pub native_own_data_reads: &'a BTreeMap<SourceUnitOrdinal, Vec<NativeOwnDataReadDiagnostic>>,
 }
 
-pub(crate) enum NativeOwnDataReadDiagnostic {
+pub enum NativeOwnDataReadDiagnostic {
     Proven { dependencies: ProofDependencies },
     MissingProof { span: Span, detail: String },
     Unrecognized { span: Span, detail: String },
 }
 
 impl StatementPurityContext<'_> {
-    pub(crate) fn statement_effects(&self, fact: &StatementFacts) -> Effects {
+    pub fn statement_effects(&self, fact: &StatementFacts) -> Effects {
         let item = self.body[fact.ordinal.0].as_module_item();
         let mut effects = item_purity(
             item,
@@ -89,32 +88,32 @@ impl StatementPurityContext<'_> {
 
 /// The unchanged classifier obligations consumed while preparing one owner.
 /// Timing completeness is independent of these evaluation-effect obligations.
-pub(crate) struct PreparedPurity(Effects);
+pub struct PreparedPurity(Effects);
 
 /// Final evaluation purity after retaining residual classifier obligations
 /// and applying only exact existing execution certificates. This is not a
 /// claim that the current timing Outcome is a complete effect ledger.
-pub(crate) struct CompletedPurity {
-    pub(crate) verdict: Purity,
+pub struct CompletedPurity {
+    pub verdict: Purity,
     // NotPure's projection drops dependencies; runtime ledger evidence must
     // retain them independently of the projected verdict.
     dependencies: ProofDependencies,
 }
 
 impl PreparedPurity {
-    pub(crate) fn new(effects: Effects) -> Self {
+    pub fn new(effects: Effects) -> Self {
         Self(effects)
     }
 
-    pub(crate) fn is_pure(&self) -> bool {
+    pub fn is_pure(&self) -> bool {
         self.0.is_pure()
     }
 
-    pub(crate) fn proof_dependencies(&self) -> ProofDependencies {
+    pub fn proof_dependencies(&self) -> ProofDependencies {
         self.0.proof_dependencies()
     }
 
-    pub(crate) fn complete(
+    pub fn complete(
         self,
         certificate: Option<&LocalRecordFactoryPurityCertificate>,
         private_own_field_reads: &[Span],
@@ -158,25 +157,25 @@ impl PreparedPurity {
 impl CompletedPurity {
     /// The vendor-prune path finalizes the same classifier without executing
     /// or minting a runtime refinement certificate.
-    pub(crate) fn unrefined(effects: Effects) -> Self {
+    pub fn unrefined(effects: Effects) -> Self {
         Self {
             dependencies: effects.proof_dependencies(),
             verdict: effects.project(),
         }
     }
 
-    pub(crate) fn proof_dependencies(&self) -> &ProofDependencies {
+    pub fn proof_dependencies(&self) -> &ProofDependencies {
         &self.dependencies
     }
 
-    pub(crate) fn is_pure(&self) -> bool {
+    pub fn is_pure(&self) -> bool {
         self.verdict.is_pure()
     }
 }
 
-pub(crate) struct ItemPurityProofs<'a> {
-    pub(crate) native_operations: &'a ValidatedNativeOperationFacts,
-    pub(crate) fresh_record_destructuring: &'a crate::purity::FreshRecordDestructuringContext<'a>,
+pub struct ItemPurityProofs<'a> {
+    pub native_operations: &'a ValidatedNativeOperationFacts,
+    pub fresh_record_destructuring: &'a crate::purity::FreshRecordDestructuringContext<'a>,
 }
 
 pub(crate) fn item_purity(
@@ -294,7 +293,7 @@ fn native_pure_initializer<'a>(
 /// Whether this exact top-level item is the simple initialized declarator
 /// carrying the initializer-only trust assertion. It deliberately does not
 /// feed any call or constructor purity rule.
-pub(crate) fn has_trusted_initializer_purity(item: &ModuleItem, hints: &AnalysisInputs) -> bool {
+pub fn has_trusted_initializer_purity(item: &ModuleItem, hints: &AnalysisInputs) -> bool {
     let Some(var) = var_decl_of_item(item) else {
         return false;
     };

@@ -8,10 +8,12 @@ use super::value_model::{
     AbstractValue, HeapAddress, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
     ordered_own_property_names,
 };
-use crate::analysis_inputs::ProofDependencies;
-use crate::analysis_provenance::{InferenceRule, InferenceUse};
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::semantic_inference::{NativePremise, SemanticFact, SemanticFacts, SemanticKey};
+use analysis::analysis_inputs::ProofDependencies;
+use analysis::analysis_provenance::{InferenceRule, InferenceUse};
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::semantic_inference::{
+    NativePremise, SemanticFact, SemanticFacts, SemanticKey,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -272,18 +274,18 @@ pub(super) fn infer_own_property_projection(
 
 #[cfg(test)]
 mod tests {
-    use super::super::value_model::{
+    use super::{OwnPropertyProjection, OwnPropertyRequest, infer_own_property_projection};
+    use crate::value_model::{
         AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
         ordered_own_property_names,
     };
-    use super::{OwnPropertyProjection, OwnPropertyRequest, infer_own_property_projection};
-    use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
-    use crate::analysis_provenance::InferenceRule;
-    use crate::facts::abstract_domain::integrity::{
+    use analysis::analysis_inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
+    use analysis::analysis_provenance::InferenceRule;
+    use analysis::facts::abstract_domain::integrity::{
         IntegrityFlags, IntrinsicSlot, PrototypeWrites,
     };
-    use crate::facts::abstract_domain::value::{Kind, Value};
-    use crate::facts::semantic_inference::{SemanticFacts, native_premise};
+    use analysis::facts::abstract_domain::value::{Kind, Value};
+    use analysis::facts::semantic_inference::{SemanticFacts, native_premise};
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]

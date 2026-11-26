@@ -2,7 +2,7 @@
 
 use super::interpreter::{Executor, Outcome, ValidatedMetadataDecoration};
 use super::value_model::{AbstractValue, CallSite, Context, Values};
-use crate::facts::local_effect_targets::MetadataDecorateCall;
+use analysis::facts::local_effect_targets::MetadataDecorateCall;
 use source_identity::SourceUnitOrdinal;
 
 pub(super) enum ModelOperation {
@@ -34,7 +34,7 @@ pub(super) enum ModelResult {
         outcome: Box<Outcome>,
     },
     LocalClassConstruction(
-        Box<Result<(Outcome, AbstractValue), crate::execution_evidence::ConstructionRejection>>,
+        Box<Result<(Outcome, AbstractValue), analysis::execution_evidence::ConstructionRejection>>,
     ),
     MetadataDecoration {
         outcome: Box<Outcome>,

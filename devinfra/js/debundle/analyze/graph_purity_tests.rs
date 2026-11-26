@@ -1,10 +1,15 @@
-use crate::analysis_inputs::AnalysisAssumptions;
+use crate::analyze_chunk;
+use analysis::AnalysisInputs;
+use analysis::analysis_inputs::AnalysisAssumptions;
+use analysis::purity::classifier::classify_expr_purity;
 use std::collections::{BTreeMap, BTreeSet};
+use swc_ecma_ast::Decl;
+use swc_ecma_ast::ModuleItem;
+use swc_ecma_ast::Stmt;
 
-use super::*;
-use crate::analysis_test_support::{analyze_facts, test_id};
-use crate::facts::{compute_shadowed_globals, top_level_item_views};
-use crate::*;
+use crate::test_support::{analyze_facts, test_id};
+use analysis::facts::{compute_shadowed_globals, top_level_item_views};
+use analysis::purity::*;
 
 #[test]
 fn local_class_construction_before_declaration_is_not_pure() {
@@ -60,7 +65,7 @@ impl TestGraph {
             &body,
             &shadowed,
             &declared_pure,
-            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+            &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         );
         Self { graph }
     }
@@ -111,7 +116,7 @@ fn enum_member_reads_need_plain_data_after_the_initializer() {
             &body,
             &shadowed,
             &BTreeSet::new(),
-            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+            &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         );
         assert_eq!(
             graph.is_plain_data("Flags"),
@@ -127,7 +132,7 @@ fn enum_member_reads_need_plain_data_after_the_initializer() {
         &body,
         &shadowed,
         &BTreeSet::new(),
-        &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+        &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
     );
     assert!(
         graph.is_plain_data("Flags"),
@@ -187,7 +192,7 @@ fn fn_purity_call_inherits_chunk_local_function_purity() {
         &body,
         &shadowed,
         &BTreeSet::new(),
-        &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+        &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
     );
     let var = match body[1].as_module_item() {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
@@ -1364,7 +1369,7 @@ fn body_shadowed_pure_member_binding_is_not_pure() {
         &BTreeMap::new(),
         &BTreeSet::new(),
         &BTreeSet::new(),
-        &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+        &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
     );
     assert_eq!(
         graph.function_purity("f").map(|p| rules_of(p)),

@@ -41,7 +41,7 @@ type sandboxView struct {
 
 // sandboxResolver names the Sandbox and Environment Runtime Pod a request is for, and admits it only while the Pod serves it.
 // It reads objects, the informer cache in production, and admits nothing while health says the cache may
-// not be acted on.
+// not be acted on. identities resolves the live incarnation of each Sandbox's execution Identity.
 type sandboxResolver struct {
 	namespace string
 	sandboxes *sandboxreader.Reader
@@ -49,13 +49,9 @@ type sandboxResolver struct {
 	health    *watchhealth.Health
 }
 
-func newSandboxResolver(namespace string, objects client.Reader, health *watchhealth.Health) (*sandboxResolver, error) {
+func newSandboxResolver(namespace string, objects client.Reader, health *watchhealth.Health, identities auth.IdentityUIDReader) (*sandboxResolver, error) {
 	if health == nil {
 		return nil, fmt.Errorf("Kubernetes cache health is required")
-	}
-	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
-	if err != nil {
-		return nil, err
 	}
 	sandboxes, err := sandboxreader.New(namespace, objects, identities)
 	if err != nil {

@@ -8,7 +8,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// A validated factory retains the inline callback only in its fresh
     /// returned graph. Creating that graph does not publish the callback;
     /// later calls, writes, and exports still flow through the value model.
-    pub(in crate::facts::sync_effects) fn private_callback_factory_result(
+    pub(crate) fn private_callback_factory_result(
         &self,
         fact: &StatementFacts,
     ) -> Option<PrivateCallbackFactoryResult> {
@@ -240,7 +240,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// An author assertion is attached to the canonical top-level factory,
     /// and only supplies premises at an exact, syntactically fresh call site.
     /// `Err` names the refused argument shape of a direct annotated call.
-    pub(in crate::facts::sync_effects) fn annotated_record_factory(
+    pub(crate) fn annotated_record_factory(
         &mut self,
         fact: &StatementFacts,
     ) -> Option<Result<(Id, Span), LocalRecordFactoryRejection>> {
@@ -297,7 +297,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// The first record property the checked constructor proof refused, for
     /// an annotated call whose argument passed the syntax check.
-    pub(in crate::facts::sync_effects) fn record_factory_input_rejection(
+    pub(crate) fn record_factory_input_rejection(
         &mut self,
         fact: &StatementFacts,
     ) -> Option<(RecordFactoryRejectionReason, Option<String>)> {
@@ -317,7 +317,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// The failed check of the factory's returned top-level allocation, with
     /// its class identity when the source resolves one.
-    pub(in crate::facts::sync_effects) fn returned_class_construction_rejection(
+    pub(crate) fn returned_class_construction_rejection(
         &mut self,
         factory: &Id,
     ) -> Option<(Option<u32>, ConstructionRejection)> {
@@ -509,7 +509,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// exposing them during the initializer. The ordinary executor still runs
     /// the wrapper and constructor. Exported results require a closure that
     /// rules out synchronous importer reentry during provider initialization.
-    pub(in crate::facts::sync_effects) fn closed_local_constructor_factory_result(
+    pub(crate) fn closed_local_constructor_factory_result(
         &mut self,
         fact: &StatementFacts,
     ) -> Result<CheckedLocalConstructorFactory, RecordFactoryRejectionReason> {

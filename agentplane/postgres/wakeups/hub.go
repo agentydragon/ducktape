@@ -23,19 +23,49 @@ type Hub struct {
 	connected  atomic.Bool
 	generation atomic.Uint64
 	mu         sync.Mutex
-	// subscribers holds each listened channel's subscribers' signals.
-	subscribers map[string]map[chan struct{}]struct{}
-	keyed       map[string]map[string]map[chan struct{}]struct{}
-	payloads    map[string]map[*payloadSubscription]struct{}
+	channels   map[string]*channelSubscribers
+}
+
+type channelSubscribers struct {
+	all      signals
+	byKey    map[string]signals
+	payloads map[*payloadSubscription]struct{}
+}
+
+type signals map[chan struct{}]struct{}
+
+func (s signals) wake() {
+	for signal := range s {
+		select {
+		case signal <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func newHub(channels ...string) *Hub {
+	h := &Hub{channels: make(map[string]*channelSubscribers, len(channels))}
+	for _, name := range channels {
+		h.channels[name] = &channelSubscribers{
+			all:      make(signals),
+			byKey:    make(map[string]signals),
+			payloads: make(map[*payloadSubscription]struct{}),
+		}
+	}
+	return h
+}
+
+func (h *Hub) channel(name string) (*channelSubscribers, error) {
+	if subscribers := h.channels[name]; subscribers != nil {
+		return subscribers, nil
+	}
+	return nil, fmt.Errorf("not listening to channel %q", name)
 }
 
 // Listen opens the LISTEN connection to dsn and returns once it listens to every channel, or fails when ctx
 // ends first. It reconnects by itself after that; Close ends it.
 func Listen(ctx context.Context, dsn string, channels ...string) (*Hub, error) {
-	hub := &Hub{subscribers: make(map[string]map[chan struct{}]struct{}, len(channels)), keyed: make(map[string]map[string]map[chan struct{}]struct{}, len(channels))}
-	for _, channel := range channels {
-		hub.subscribers[channel] = map[chan struct{}]struct{}{}
-	}
+	hub := newHub(channels...)
 	hub.listener = pq.NewListener(postgres.DriverURL(dsn), time.Second, 30*time.Second, func(event pq.ListenerEventType, err error) {
 		hub.observeConnectionEvent(event)
 		if err != nil {
@@ -77,18 +107,17 @@ type payloadSubscription struct{ enqueue func(string) }
 func (h *Hub) SubscribePayload(channel string, enqueue func(string)) (func(), error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if _, ok := h.subscribers[channel]; !ok {
-		return nil, fmt.Errorf("not listening to channel %q", channel)
-	}
-	if h.payloads == nil {
-		h.payloads = make(map[string]map[*payloadSubscription]struct{})
-	}
-	if h.payloads[channel] == nil {
-		h.payloads[channel] = make(map[*payloadSubscription]struct{})
+	subs, err := h.channel(channel)
+	if err != nil {
+		return nil, err
 	}
 	sub := &payloadSubscription{enqueue: enqueue}
-	h.payloads[channel][sub] = struct{}{}
-	return func() { h.mu.Lock(); delete(h.payloads[channel], sub); h.mu.Unlock() }, nil
+	subs.payloads[sub] = struct{}{}
+	return func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		delete(subs.payloads, sub)
+	}, nil
 }
 
 // SubscribeKey receives notifications whose payload is exactly key. On listener loss or reconnect
@@ -96,23 +125,21 @@ func (h *Hub) SubscribePayload(channel string, enqueue func(string)) (func(), er
 func (h *Hub) SubscribeKey(channel, key string) (<-chan struct{}, func(), error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if _, ok := h.subscribers[channel]; !ok {
-		return nil, nil, fmt.Errorf("not listening to channel %q", channel)
+	subs, err := h.channel(channel)
+	if err != nil {
+		return nil, nil, err
 	}
-	if h.keyed[channel] == nil {
-		h.keyed[channel] = make(map[string]map[chan struct{}]struct{})
-	}
-	if h.keyed[channel][key] == nil {
-		h.keyed[channel][key] = make(map[chan struct{}]struct{})
+	if subs.byKey[key] == nil {
+		subs.byKey[key] = make(signals)
 	}
 	signal := make(chan struct{}, 1)
-	h.keyed[channel][key][signal] = struct{}{}
+	subs.byKey[key][signal] = struct{}{}
 	return signal, func() {
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		delete(h.keyed[channel][key], signal)
-		if len(h.keyed[channel][key]) == 0 {
-			delete(h.keyed[channel], key)
+		delete(subs.byKey[key], signal)
+		if len(subs.byKey[key]) == 0 {
+			delete(subs.byKey, key)
 		}
 	}, nil
 }
@@ -152,20 +179,23 @@ func sqlState(err error) string {
 func (h *Hub) Subscribe(channels ...string) (<-chan struct{}, func(), error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for _, channel := range channels {
-		if _, listening := h.subscribers[channel]; !listening {
-			return nil, nil, fmt.Errorf("not listening to channel %q", channel)
+	groups := make([]signals, 0, len(channels))
+	for _, name := range channels {
+		subs, err := h.channel(name)
+		if err != nil {
+			return nil, nil, err
 		}
+		groups = append(groups, subs.all)
 	}
 	signal := make(chan struct{}, 1)
-	for _, channel := range channels {
-		h.subscribers[channel][signal] = struct{}{}
+	for _, group := range groups {
+		group[signal] = struct{}{}
 	}
 	return signal, func() {
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		for _, channel := range channels {
-			delete(h.subscribers[channel], signal)
+		for _, group := range groups {
+			delete(group, signal)
 		}
 	}, nil
 }
@@ -184,54 +214,29 @@ func (h *Hub) fanOut() {
 			h.wakeAll()
 			continue
 		}
-		h.wake(notification.Channel)
-		h.wakeKey(notification.Channel, notification.Extra)
+		h.notify(notification.Channel, notification.Extra)
 	}
 }
 
-func (h *Hub) wakeKey(channel, key string) {
+func (h *Hub) notify(channel, key string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for sub := range h.payloads[channel] {
-		sub.enqueue(key)
-	}
-	for signal := range h.keyed[channel][key] {
-		select {
-		case signal <- struct{}{}:
-		default:
+	if subs := h.channels[channel]; subs != nil {
+		subs.all.wake()
+		for sub := range subs.payloads {
+			sub.enqueue(key)
 		}
-	}
-}
-
-func (h *Hub) wake(channels ...string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for _, channel := range channels {
-		for signal := range h.subscribers[channel] {
-			select {
-			case signal <- struct{}{}:
-			default:
-			}
-		}
+		subs.byKey[key].wake()
 	}
 }
 
 func (h *Hub) wakeAll() {
 	h.mu.Lock()
-	channels := make([]string, 0, len(h.subscribers))
-	for channel := range h.subscribers {
-		channels = append(channels, channel)
-	}
-	for _, byKey := range h.keyed {
-		for _, subscribers := range byKey {
-			for signal := range subscribers {
-				select {
-				case signal <- struct{}{}:
-				default:
-				}
-			}
+	defer h.mu.Unlock()
+	for _, subs := range h.channels {
+		subs.all.wake()
+		for _, group := range subs.byKey {
+			group.wake()
 		}
 	}
-	h.mu.Unlock()
-	h.wake(channels...)
 }

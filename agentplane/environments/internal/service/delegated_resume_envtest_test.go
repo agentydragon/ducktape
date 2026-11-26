@@ -106,14 +106,14 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 				})
 			}
 			manager, err := resume.NewManager(lifecycle.Options{
-				Namespace: namespace, Objects: objects,
+				Namespace: namespace, Objects: objects, Identities: kubernetesIdentities(t, objects, namespace),
 				EnvironmentRules: rules, PolicyReady: func() error { return nil },
 				OperatorServiceCallers: []string{peertls.ActionsURI},
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			service, err := New(namespace, objects, runtimeconfig.Catalog{}, manager, Options{})
+			service, err := New(namespace, objects, kubernetesIdentities(t, objects, namespace), runtimeconfig.Catalog{}, manager, Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -192,11 +192,11 @@ func TestServiceManagerCreateAdmission(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	manager, err := resume.NewManager(lifecycle.Options{Namespace: namespace, Objects: objects})
+	manager, err := resume.NewManager(lifecycle.Options{Namespace: namespace, Objects: objects, Identities: kubernetesIdentities(t, objects, namespace)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(namespace, objects, runtimeconfig.Catalog{}, manager, Options{
+	service, err := New(namespace, objects, kubernetesIdentities(t, objects, namespace), runtimeconfig.Catalog{}, manager, Options{
 		ServiceManagers: sets.New(peertls.AppURI), ServiceLaunchers: sets.New(peertls.ActionsURI),
 	})
 	if err != nil {

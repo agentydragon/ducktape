@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -279,6 +280,45 @@ func TestEnvironmentRuntimeProxyIsOptionalAndStrict(t *testing.T) {
 			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings+runtimeProxySettings))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("accepted invalid runtime_proxy settings")
+			}
+		})
+	}
+}
+
+func TestPolicyServiceMustBeACompleteMutualTLSCallerAsTheController(t *testing.T) {
+	block := func(target, clientURI, serverURI string) string {
+		return fmt.Sprintf(`policy_service:
+  target: %q
+  tls:
+    ca_file: /run/test/ca.crt
+    server_uri: %s
+    cert_file: /run/test/tls.crt
+    key_file: /run/test/tls.key
+    client_uri: %s
+`, target, serverURI, clientURI)
+	}
+	controller, policy := peertls.SandboxControllerURI, peertls.PolicyControllerURI
+	for _, tc := range []struct {
+		name     string
+		settings string
+		valid    bool
+	}{
+		{"complete", environmentServiceSettings + block("policy-controller:8443", controller, policy), true},
+		{"no EnvironmentService to read it", block("policy-controller:8443", controller, policy), false},
+		{"no target", environmentServiceSettings + block("", controller, policy), false},
+		{"another caller identity", environmentServiceSettings + block("policy-controller:8443", peertls.AppURI, policy), false},
+		{"another server", environmentServiceSettings + block("policy-controller:8443", controller, peertls.ActionsURI), false},
+		{"no client SVID", environmentServiceSettings + "policy_service:\n  target: policy-controller:8443\n  tls:\n    ca_file: /run/test/ca.crt\n    server_uri: " + policy + "\n", false},
+		{"unknown key", environmentServiceSettings + block("policy-controller:8443", controller, policy) + "  unknown: true\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+tc.settings))
+			c, err := loadConfig()
+			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "policy-controller:8443") {
+				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
+			}
+			if !tc.valid && err == nil {
+				t.Fatal("loadConfig accepted an incomplete policy_service")
 			}
 		})
 	}

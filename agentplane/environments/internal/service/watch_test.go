@@ -183,11 +183,11 @@ func newWatchFixtureWithReadHook(t *testing.T, afterRead func(context.Context, c
 			return err
 		},
 	})
-	manager, err := resume.NewManager(lifecycle.Options{Namespace: namespace, Objects: observedObjects})
+	manager, err := resume.NewManager(lifecycle.Options{Namespace: namespace, Objects: observedObjects, Identities: kubernetesIdentities(t, observedObjects, namespace)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, manager, Options{ServiceReaders: sets.New(peertls.CentralSamplerURI)})
+	service, err := New(namespace, observedObjects, kubernetesIdentities(t, observedObjects, namespace), runtimeconfig.Catalog{}, manager, Options{ServiceReaders: sets.New(peertls.CentralSamplerURI)})
 	if err != nil {
 		t.Fatal(err)
 	}

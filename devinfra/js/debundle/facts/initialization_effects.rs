@@ -18,13 +18,13 @@ use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss, Sou
 /// owner's initialization. Never composed through a child ledger, generic
 /// Evaluate result, callee outcome or invocation memo.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct CompletedInitialization {
+pub struct CompletedInitialization {
     owner: SourceUnitOrdinal,
     dependencies: ProofDependencies,
 }
 
 impl CompletedInitialization {
-    pub(crate) fn new(owner: SourceUnitOrdinal, dependencies: ProofDependencies) -> Self {
+    pub fn new(owner: SourceUnitOrdinal, dependencies: ProofDependencies) -> Self {
         Self {
             owner,
             dependencies,

@@ -1,7 +1,7 @@
 use super::*;
 use crate::facts::abstract_domain::value::{Kind, Value};
 
-pub(crate) fn collect_local_effects(
+pub fn collect_local_effects(
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
@@ -54,7 +54,7 @@ fn recognized_local_effect_target(
 }
 
 #[derive(Clone)]
-pub(crate) struct MetadataDecorateCall {
+pub struct MetadataDecorateCall {
     pub helper: Id,
     pub target: Id,
     pub decorators: Vec<Id>,
@@ -64,7 +64,7 @@ pub(crate) struct MetadataDecorateCall {
 }
 
 impl MetadataDecorateCall {
-    pub(crate) fn stable_origins(&self, flow: &ChunkValueFlow) -> Option<(u32, u32)> {
+    pub fn stable_origins(&self, flow: &ChunkValueFlow) -> Option<(u32, u32)> {
         let helpers = flow.values_of_binding(&self.helper);
         let mut helpers = helpers.iter();
         let Value::Alloc(Kind::Function, helper) = helpers.next()? else {
@@ -81,7 +81,7 @@ impl MetadataDecorateCall {
 
 /// The stronger timing assertion covers a complete member-decoration statement,
 /// never calls nested in another expression or argument evaluation with effects.
-pub(crate) fn metadata_decorate_call(
+pub fn metadata_decorate_call(
     item: &ModuleItem,
     known_effects: &BTreeMap<String, KnownEffect>,
 ) -> Option<MetadataDecorateCall> {

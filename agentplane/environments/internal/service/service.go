@@ -41,6 +41,7 @@ type Service struct {
 
 	namespace              string
 	objects                client.WithWatch
+	identities             auth.IdentityUIDReader
 	sandboxes              *sandboxreader.Reader
 	runtime                runtimeconfig.Catalog
 	lifecycle              *resume.Manager
@@ -51,26 +52,24 @@ type Service struct {
 	runtimeDiagnostics     RuntimeDiagnostics
 }
 
+// New serves namespace's Sandboxes; identities resolves the live incarnation of Identities in namespace.
 func New(
 	namespace string,
 	objects client.WithWatch,
+	identities auth.IdentityUIDReader,
 	runtime runtimeconfig.Catalog,
 	lifecycleManager *resume.Manager,
 	options Options,
 ) (*Service, error) {
-	if namespace == "" || objects == nil || lifecycleManager == nil {
-		return nil, errors.New("Sandbox namespace, uncached Kubernetes watch client, and lifecycle manager are required")
-	}
-	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
-	if err != nil {
-		return nil, err
+	if namespace == "" || objects == nil || identities == nil || lifecycleManager == nil {
+		return nil, errors.New("Sandbox namespace, uncached Kubernetes watch client, Identity reader and lifecycle manager are required")
 	}
 	sandboxes, err := sandboxreader.New(namespace, objects, identities)
 	if err != nil {
 		return nil, err
 	}
 	return &Service{
-		namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime,
+		namespace: namespace, objects: objects, identities: identities, sandboxes: sandboxes, runtime: runtime,
 		lifecycle:              lifecycleManager,
 		runtimeDiagnostics:     options.RuntimeDiagnostics,
 		serviceReaders:         options.ServiceReaders,

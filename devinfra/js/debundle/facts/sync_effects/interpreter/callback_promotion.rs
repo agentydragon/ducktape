@@ -7,21 +7,13 @@ use super::*;
 impl<'source, 'rule> Executor<'source, 'rule> {
     /// [`Self::promote_raw_callbacks`] for values handed to opaque code, which
     /// may or may not invoke them: the promoted closure is assumed.
-    pub(in crate::facts::sync_effects) fn promote_escaped_callbacks(
-        &mut self,
-        values: &Values,
-        outcome: &mut Outcome,
-    ) {
+    pub(crate) fn promote_escaped_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
         self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
             this.promote_raw_callbacks(values, outcome)
         });
     }
 
-    pub(in crate::facts::sync_effects) fn promote_raw_callbacks(
-        &mut self,
-        values: &Values,
-        outcome: &mut Outcome,
-    ) {
+    pub(crate) fn promote_raw_callbacks(&mut self, values: &Values, outcome: &mut Outcome) {
         let prior_outcome = std::mem::take(outcome);
         let result = self.request_callback_operation(CallbackOperation::PromoteRaw {
             values: values.clone(),
@@ -33,7 +25,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         *outcome = *result;
     }
 
-    pub(in crate::facts::sync_effects) fn promote_raw_callbacks_transfer(
+    pub(crate) fn promote_raw_callbacks_transfer(
         &mut self,
         values: &Values,
         outcome: &mut Outcome,
@@ -120,11 +112,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    pub(in crate::facts::sync_effects) fn promote_deferred_callbacks(
-        &mut self,
-        captured: &Values,
-        outcome: &mut Outcome,
-    ) {
+    pub(crate) fn promote_deferred_callbacks(&mut self, captured: &Values, outcome: &mut Outcome) {
         let prior_outcome = std::mem::take(outcome);
         let result = self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
             this.request_callback_operation(CallbackOperation::PromoteDeferred {
@@ -138,7 +126,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         *outcome = *result;
     }
 
-    pub(in crate::facts::sync_effects) fn promote_deferred_callbacks_transfer(
+    pub(crate) fn promote_deferred_callbacks_transfer(
         &mut self,
         captured: &Values,
         outcome: &mut Outcome,
@@ -184,10 +172,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
     }
 
-    pub(in crate::facts::sync_effects) fn promote_returned_callbacks_transfer(
-        &mut self,
-        returned: &Values,
-    ) {
+    pub(crate) fn promote_returned_callbacks_transfer(&mut self, returned: &Values) {
         let callbacks: Values = self
             .callback_values(returned)
             .into_iter()
@@ -373,11 +358,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    pub(in crate::facts::sync_effects) fn closure_captures(
-        &mut self,
-        key: u32,
-        captures: &Context,
-    ) -> CapturedContext {
+    pub(crate) fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
         let captured = lexical_captures(
             self.inputs.index,
             &self.state.world.active_cells,
@@ -470,7 +451,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.invoke_possible_callbacks_at(args, no_sync_arguments, None, outcome);
     }
 
-    pub(in crate::facts::sync_effects) fn invoke_possible_callbacks_at(
+    pub(crate) fn invoke_possible_callbacks_at(
         &mut self,
         args: &[Values],
         no_sync_arguments: bool,
@@ -493,7 +474,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         *outcome = *result;
     }
 
-    pub(in crate::facts::sync_effects) fn invoke_possible_callbacks_transfer(
+    pub(crate) fn invoke_possible_callbacks_transfer(
         &mut self,
         args: &[Values],
         no_sync_arguments: bool,
@@ -778,10 +759,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         false
     }
 
-    pub(in crate::facts::sync_effects) fn apply_rebind_effects(
-        &mut self,
-        rebinds: &BTreeSet<(Id, SourceUnitOrdinal)>,
-    ) {
+    pub(crate) fn apply_rebind_effects(&mut self, rebinds: &BTreeSet<(Id, SourceUnitOrdinal)>) {
         for (id, _) in rebinds {
             self.state
                 .world_mut()
@@ -816,7 +794,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         *result
     }
 
-    pub(in crate::facts::sync_effects) fn bounded_invocation_fallback_transfer(
+    pub(crate) fn bounded_invocation_fallback_transfer(
         &mut self,
         request: BoundedInvocationFallbackRequest,
     ) -> Outcome {

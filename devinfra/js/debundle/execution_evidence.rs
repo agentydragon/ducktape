@@ -137,7 +137,7 @@ pub struct ExecutionPrecisionLoss {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     #[serde(skip)]
-    pub(crate) span: swc_common::Span,
+    pub span: swc_common::Span,
 }
 
 impl ExecutionPrecisionLoss {

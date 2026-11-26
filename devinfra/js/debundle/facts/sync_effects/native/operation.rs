@@ -11,15 +11,15 @@ use super::super::value_model::{AbstractValue, CallSite, Values};
 use super::super::world::descriptor_heap::{
     DescriptorApplication, DescriptorHeap, DynamicKeyDefinition,
 };
-use crate::facts::abstract_domain::builtins::{ArgSel, Row};
-use crate::facts::abstract_domain::heap::Mutation;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::abstract_domain::builtins::{ArgSel, Row};
+use analysis::facts::abstract_domain::heap::Mutation;
+use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 
 /// One heap mutation of an admitted row, fully materialized by `plan`.
 #[derive(Debug, Clone)]
-pub(in crate::facts::sync_effects) enum NativeOperationCommit {
+pub(crate) enum NativeOperationCommit {
     /// `SetIntegrityLevel(frozen)`: the literal writability witness of every
     /// object operand is gone. Values are unchanged.
     Integrity {
@@ -49,14 +49,14 @@ pub(in crate::facts::sync_effects) enum NativeOperationCommit {
 }
 
 /// The fresh array an iteration row creates, after every callback ran.
-pub(in crate::facts::sync_effects) enum IterationResultArray {
+pub(crate) enum IterationResultArray {
     Slots(Vec<Values>),
     Contents(Values),
 }
 
 /// Materialize an iteration row's fresh result at `allocation`, the
 /// result-array identity the execution index assigned to the call site.
-pub(in crate::facts::sync_effects) fn plan_iteration_result(
+pub(crate) fn plan_iteration_result(
     allocation: u32,
     result: IterationResultArray,
     revision: u64,
@@ -83,7 +83,7 @@ pub(in crate::facts::sync_effects) fn plan_iteration_result(
 /// A complete native operation after its callee, operands and current-prefix
 /// preconditions have been checked, but before any mutation.
 #[derive(Debug, Clone)]
-pub(in crate::facts::sync_effects) struct CheckedNativePlan {
+pub(crate) struct CheckedNativePlan {
     expected_revision: u64,
     commits: Vec<NativeOperationCommit>,
     /// The fresh allocation the commits create, when the row returns one.
@@ -91,11 +91,11 @@ pub(in crate::facts::sync_effects) struct CheckedNativePlan {
 }
 
 /// The prefix changed between planning and execution; nothing was committed.
-pub(in crate::facts::sync_effects) struct StalePlan;
+pub(crate) struct StalePlan;
 
 /// Adapter-owned prefix state. Implementations apply a checked commit exactly
 /// once and cannot turn it into a post-entry refusal.
-pub(in crate::facts::sync_effects) trait NativeOperationContext {
+pub(crate) trait NativeOperationContext {
     fn native_operation_revision(&self) -> u64;
     fn descriptor_heap(&mut self) -> DescriptorHeap<'_>;
 }
@@ -104,7 +104,7 @@ pub(in crate::facts::sync_effects) trait NativeOperationContext {
 /// `projection` is the admitted own-property proof of the inspected operand,
 /// `application` and `definition` the admitted definitions onto their
 /// targets; a row that needs one without having it was not admitted.
-pub(in crate::facts::sync_effects) fn plan(
+pub(crate) fn plan(
     row: &Row,
     site: CallSite,
     arguments: &[Values],
@@ -180,10 +180,7 @@ pub(in crate::facts::sync_effects) fn plan(
 
 /// The one commit implementation for every adapter: apply each materialized
 /// mutation to the borrowed prefix heap.
-pub(in crate::facts::sync_effects) fn commit(
-    heap: &mut DescriptorHeap<'_>,
-    commit: NativeOperationCommit,
-) {
+pub(crate) fn commit(heap: &mut DescriptorHeap<'_>, commit: NativeOperationCommit) {
     match commit {
         NativeOperationCommit::Integrity { targets } => {
             for target in targets {
@@ -214,7 +211,7 @@ pub(in crate::facts::sync_effects) fn commit(
 
 /// Reject a stale plan before touching the prefix; otherwise commit every
 /// mutation once and return the fresh allocation's values, if the row has one.
-pub(in crate::facts::sync_effects) fn execute(
+pub(crate) fn execute(
     context: &mut impl NativeOperationContext,
     plan: CheckedNativePlan,
 ) -> Result<Option<Values>, StalePlan> {

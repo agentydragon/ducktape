@@ -3,9 +3,9 @@
 use super::value_model::{
     AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values, canonical_array_index,
 };
-use crate::execution_evidence::OrderedFieldReadRefusal;
-use crate::facts::EffectCell;
-use crate::facts::abstract_domain::value::Value;
+use analysis::execution_evidence::OrderedFieldReadRefusal;
+use analysis::facts::EffectCell;
+use analysis::facts::abstract_domain::value::Value;
 use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 

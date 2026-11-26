@@ -2,7 +2,7 @@ use super::*;
 use crate::facts::abstract_domain::effect::{CoerceCheck, CoerceOperand, CoerceOperands};
 use analysis_model::PrimKinds;
 
-pub(crate) fn classify_var_decl_purity(
+pub fn classify_var_decl_purity(
     var: &VarDecl,
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,
@@ -60,7 +60,7 @@ pub(crate) fn classify_var_decl_purity(
         .fold(Effects::none(), Effects::then)
 }
 
-pub(crate) fn classify_expr_purity(
+pub fn classify_expr_purity(
     expr: &Expr,
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,
@@ -969,7 +969,7 @@ fn classify_propname_purity(
 ///
 /// Static blocks always run. Instance field/accessor initializers,
 /// constructor and method bodies are lazy and not consulted.
-pub(crate) fn classify_class_static_purity(
+pub fn classify_class_static_purity(
     class: &Class,
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,

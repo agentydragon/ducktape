@@ -34,47 +34,47 @@ use super::value_model::{
     OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, infer_namespace_aliases,
     object_data_property_name, static_prop, static_property_name,
 };
-use crate::analysis_inputs::{
+use analysis::analysis_inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
     InferredSetOperation, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
     NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef, ProgramPremiseKey,
     ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
-use crate::execution_evidence::SourceLocator;
-use crate::facts::abstract_domain::builtins::{
+use analysis::execution_evidence::SourceLocator;
+use analysis::facts::abstract_domain::builtins::{
     self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
 };
-use crate::facts::abstract_domain::integrity::{
+use analysis::facts::abstract_domain::integrity::{
     IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
 };
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::at_init_fallback::{
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::at_init_fallback::{
     is_no_sync_callback_member_call, member_row_invokes_no_argument,
 };
-use crate::facts::callable_inference::{
+use analysis::facts::callable_inference::{
     CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
 };
-use crate::facts::collector::UnresolvedCallSourceCollector;
-use crate::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
-use crate::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
-use crate::facts::lazy_boundary::visit_eager_member_parts;
-use crate::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
-use crate::facts::semantic_inference::{
+use analysis::facts::collector::UnresolvedCallSourceCollector;
+use analysis::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
+use analysis::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
+use analysis::facts::lazy_boundary::visit_eager_member_parts;
+use analysis::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
+use analysis::facts::semantic_inference::{
     DescriptorCopyCallCandidate as SemanticDescriptorCopyCallCandidate, NativeBindingContext,
     NativeCallee, NativePremise, NativePremises, SemanticFact, SemanticFacts, SemanticKey,
     SemanticRules, native_premise,
 };
-use crate::facts::statement_facts::{
+use analysis::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness,
 };
-use crate::facts::value_flow::ChunkValueFlow;
-use crate::facts::{
+use analysis::facts::value_flow::ChunkValueFlow;
+use analysis::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes,
     OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
 };
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::reports::schema::{
+use analysis::inference::{FactContext, IterativeInference, IterativeRules};
+use analysis::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
 };
@@ -1215,9 +1215,9 @@ pub(super) struct IndexedRetainedCallbackCall {
 
 #[derive(Debug, Clone)]
 pub(super) struct DescriptorCopyCallCandidate {
-    pub(super) source_object: u32,
-    pub(super) signature: spec::DescriptorCopyFactorySignature,
-    pub(super) provider_binding: Id,
+    pub source_object: u32,
+    pub signature: spec::DescriptorCopyFactorySignature,
+    pub provider_binding: Id,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2793,7 +2793,7 @@ mod iterative_alias_closure_tests {
         close_prepublication_derived_bindings, close_raw_intrinsic_aliases,
         infer_mutation_receiver_aliases,
     };
-    use crate::analysis_inputs::NativeIntrinsic;
+    use analysis::analysis_inputs::NativeIntrinsic;
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
     use swc_common::SyntaxContext;
@@ -4607,7 +4607,8 @@ pub(super) struct ExecutionIndex {
     /// The top-level owner whose source contains each object literal.
     pub(super) object_literal_owners: BTreeMap<u32, SourceUnitOrdinal>,
     pub(super) own_descriptor_shapes: BTreeMap<u32, OwnPropertyShape>,
-    descriptor_copy_factories: BTreeMap<Id, crate::analysis_inputs::DescriptorCopyFactorySummary>,
+    descriptor_copy_factories:
+        BTreeMap<Id, analysis::analysis_inputs::DescriptorCopyFactorySummary>,
     pub(super) descriptor_copy_calls: BTreeMap<CallSite, DescriptorCopyCallCandidate>,
     pub(super) null_proto_data_objects: BTreeSet<u32>,
     pub(super) exact_object_spread_copies: BTreeSet<u32>,
@@ -4617,7 +4618,7 @@ pub(super) struct ExecutionIndex {
     literal_property_kinds: BTreeMap<u32, Vec<super::value_model::LiteralPropertyKind>>,
     callable_creations: BTreeMap<u32, DeferredCallableCreation>,
     pub(super) method_record_members:
-        BTreeMap<u32, Vec<crate::facts::abstract_domain::foreign_call::RecordMember>>,
+        BTreeMap<u32, Vec<analysis::facts::abstract_domain::foreign_call::RecordMember>>,
     pub(super) array_iterations: BTreeMap<CallSite, ArrayIteration>,
     pub(super) async_callables: BTreeSet<u32>,
     pub(super) callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
@@ -4766,17 +4767,17 @@ pub(super) struct ExecutionIndex {
     pub(super) opaque_top: BTreeSet<SourceUnitOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_imports: BTreeSet<Id>,
-    pub(super) callback_factory_summaries: BTreeMap<Id, crate::analysis_inputs::CallableSummary>,
+    pub(super) callback_factory_summaries: BTreeMap<Id, analysis::analysis_inputs::CallableSummary>,
     /// The existing canonical call-shape check accepted one syntactic inline
     /// callback. Lowered values cannot establish this source prerequisite.
     pub(super) direct_inline_callback_calls: BTreeMap<CallSite, Id>,
-    pub(super) foreign_call_imports: BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
+    pub(super) foreign_call_imports: BTreeMap<Id, analysis::analysis_inputs::ForeignCallSummary>,
     pub(super) importer_cell_reads: BTreeMap<Id, BTreeSet<Id>>,
     /// The derived summary of an import whose callback-factory evidence is
     /// all source-inferred. The evidence keeps the call's timing and result
     /// consumers; the summary is the receipt for the provider body's effects.
     pub(super) callback_factory_call_summaries:
-        BTreeMap<Id, crate::analysis_inputs::ForeignCallSummary>,
+        BTreeMap<Id, analysis::analysis_inputs::ForeignCallSummary>,
     pub(super) inline_callback_factory_imports: BTreeSet<Id>,
     pub(super) callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     /// Union used only for namespace privacy/mutation guards. Admission of the
@@ -4808,7 +4809,7 @@ pub(super) struct ExecutionIndex {
     pub(super) no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     pub(super) no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
     pub(super) returned_record_summaries:
-        BTreeMap<Id, crate::analysis_inputs::ReturnedRecordSummary>,
+        BTreeMap<Id, analysis::analysis_inputs::ReturnedRecordSummary>,
     pub(super) namespace_wrapper_summaries: BTreeMap<Id, NamespaceWrapperSummary>,
 }
 
@@ -5514,7 +5515,7 @@ impl ExecutionIndex {
                     if summary.callback_factory_evidence().iter().all(|evidence| {
                         matches!(
                             evidence,
-                            crate::analysis_inputs::CallbackFactoryEvidence::InferredImmutableWrapper { .. }
+                            analysis::analysis_inputs::CallbackFactoryEvidence::InferredImmutableWrapper { .. }
                         )
                     }) {
                         self
@@ -6932,13 +6933,13 @@ impl ExecutionIndex {
             &self.integrity,
             slots,
             Some(span.lo.0),
-            crate::analysis_provenance::InferenceRule::NativeOwnDataRead,
+            analysis::analysis_provenance::InferenceRule::NativeOwnDataRead,
         )
     }
 
     pub(crate) fn locate_native_integrity_witnesses(
         &mut self,
-        mut locate: impl FnMut(Span) -> Option<crate::execution_evidence::SourceLocation>,
+        mut locate: impl FnMut(Span) -> Option<analysis::execution_evidence::SourceLocation>,
     ) {
         if self
             .native_integrity_witnesses
@@ -7383,10 +7384,12 @@ impl Visit for ExecutionIndex {
                     && let Some(name) = object_data_property_name(key)
                     && member_names.insert(name.clone())
                 {
-                    members.push(crate::facts::abstract_domain::foreign_call::RecordMember {
-                        name,
-                        function_start,
-                    });
+                    members.push(
+                        analysis::facts::abstract_domain::foreign_call::RecordMember {
+                            name,
+                            function_start,
+                        },
+                    );
                 } else {
                     record_members = None;
                 }
@@ -9810,18 +9813,18 @@ fn deferred_callback_closure(index: &ExecutionIndex, outer: u32, closure: &Range
 /// captures for the report.
 pub struct InferredReturnedRecord {
     pub members: Vec<(String, u32, BTreeSet<String>)>,
-    pub inference: crate::analysis_provenance::InferenceUse,
+    pub inference: analysis::analysis_provenance::InferenceUse,
 }
 
 pub struct InferredNamespaceWrapper {
     pub function_start: u32,
-    pub inference: crate::analysis_provenance::InferenceUse,
+    pub inference: analysis::analysis_provenance::InferenceUse,
     pub dependencies: ProofDependencies,
 }
 
 pub struct InferredCallableCapabilities {
     /// Exported local → derived call summary
-    /// (`crate::facts::abstract_domain::foreign_call`).
+    /// (`analysis::facts::abstract_domain::foreign_call`).
     pub foreign_calls: BTreeMap<String, InferredForeignCall>,
     /// Keyed-collection families whose global constructor slot this module's
     /// census leaves intact.
@@ -9831,9 +9834,9 @@ pub struct InferredCallableCapabilities {
 }
 
 pub struct InferredForeignCall {
-    pub derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
+    pub derived: analysis::facts::abstract_domain::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
-    pub declaration: crate::facts::value_flow::CallableDeclaration,
+    pub declaration: analysis::facts::value_flow::CallableDeclaration,
     pub dependencies: ProofDependencies,
     pub record: Option<InferredReturnedRecord>,
     /// The returned closure defers its first argument (`deferred_callback_closure`).
@@ -10119,7 +10122,7 @@ impl PreparedCallableCapabilities {
 
     pub fn refine_native_branches(
         &mut self,
-        summaries: &BTreeMap<String, crate::analysis_inputs::CallableSummary>,
+        summaries: &BTreeMap<String, analysis::analysis_inputs::CallableSummary>,
     ) {
         self.index.refine_native_branches(summaries);
     }
@@ -10195,7 +10198,7 @@ pub fn prepare_callable_capabilities(
             &AnalysisInputs {
                 selected_value_inputs,
                 selected_native_operation_inputs,
-                assumptions: crate::analysis_inputs::AnalysisAssumptions {
+                assumptions: analysis::analysis_inputs::AnalysisAssumptions {
                     predefined_globals,
                     bundle_globals,
                     namespace_independent_members: namespace_privacy_members,
@@ -10242,7 +10245,7 @@ pub fn infer_callable_capabilities<'f>(
         let flow = prepared_flow
             .take()
             .unwrap_or_else(|| ChunkValueFlow::analyze(body));
-        let shadowed = crate::facts::compute_shadowed_globals(body);
+        let shadowed = analysis::facts::compute_shadowed_globals(body);
         let callables = callable_inference_inputs(&index, &flow, &exported_locals);
         index.semantic_facts = Some(index.prepare_semantic_facts(
             &flow,
@@ -10286,7 +10289,7 @@ pub fn infer_callable_capabilities<'f>(
                     index
                         .integrity
                         .require(&[IntrinsicSlot::Global(family)], None),
-                    crate::facts::abstract_domain::integrity::Integrity::Intact(_)
+                    analysis::facts::abstract_domain::integrity::Integrity::Intact(_)
                 )
             },
             |call| call.permits_foreign_summary() || call.callback_factory,
@@ -10304,7 +10307,7 @@ pub fn infer_callable_capabilities<'f>(
             index
                 .integrity
                 .require(&[IntrinsicSlot::Global(*family)], None),
-            crate::facts::abstract_domain::integrity::Integrity::Intact(_)
+            analysis::facts::abstract_domain::integrity::Integrity::Intact(_)
         )
     })
     .collect();
@@ -10332,7 +10335,7 @@ fn infer_foreign_calls<'f>(
         Some(flow) => flow,
         None => structural_flow(),
     };
-    let shadowed = crate::facts::compute_shadowed_globals(body);
+    let shadowed = analysis::facts::compute_shadowed_globals(body);
     let candidates: Vec<_> = flow
         .callable_declarations()
         .filter(|(binding, _)| exported_locals.contains(binding.0.as_ref()))
@@ -10341,7 +10344,7 @@ fn infer_foreign_calls<'f>(
             let declaration_start = declaration.start();
             let derived = if matches!(
                 declaration,
-                crate::facts::value_flow::CallableDeclaration::Class(_)
+                analysis::facts::value_flow::CallableDeclaration::Class(_)
             ) {
                 strict_provider::derive_class(index, declaration_start, &shadowed)?
             } else {
@@ -10390,9 +10393,9 @@ fn infer_foreign_calls<'f>(
 
 fn foreign_call(
     index: &ExecutionIndex,
-    derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
+    derived: analysis::facts::abstract_domain::foreign_call::DerivedForeignCall,
     declaration_start: u32,
-    declaration: crate::facts::value_flow::CallableDeclaration,
+    declaration: analysis::facts::value_flow::CallableDeclaration,
 ) -> InferredForeignCall {
     let mut dependencies = derived.dependencies.clone();
     for family in &derived.native_constructions {
@@ -10409,7 +10412,8 @@ fn foreign_call(
         .as_ref()
         .map(|members| returned_record(index, members, &derived, &dependencies));
     let callback_factory = derived.closure.as_ref().is_some_and(|closure| {
-        derived.returns == BTreeSet::from([crate::analysis_inputs::ForeignReturn::FreshAllocation])
+        derived.returns
+            == BTreeSet::from([analysis::analysis_inputs::ForeignReturn::FreshAllocation])
             && deferred_callback_closure(index, declaration_start, closure)
     });
     InferredForeignCall {
@@ -10426,11 +10430,11 @@ fn foreign_call(
 /// bindings, and the rules the derivation used.
 fn returned_record(
     index: &ExecutionIndex,
-    members: &[crate::facts::abstract_domain::foreign_call::RecordMember],
-    derived: &crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
+    members: &[analysis::facts::abstract_domain::foreign_call::RecordMember],
+    derived: &analysis::facts::abstract_domain::foreign_call::DerivedForeignCall,
     dependencies: &ProofDependencies,
 ) -> InferredReturnedRecord {
-    use crate::analysis_provenance::{InferenceRule, InferenceUse};
+    use analysis::analysis_provenance::{InferenceRule, InferenceUse};
     let members = members
         .iter()
         .map(|member| {
@@ -10612,7 +10616,7 @@ mod preflow_set_protocol_tests {
         families: &BTreeSet<NativeIntrinsic>,
     ) -> BTreeMap<u32, InferredSetConstruction> {
         let module = parse(source);
-        let views = crate::facts::top_level_item_views(&module.body);
+        let views = analysis::facts::top_level_item_views(&module.body);
         let prepared = prepare_callable_capabilities(
             &views,
             BTreeSet::new(),
