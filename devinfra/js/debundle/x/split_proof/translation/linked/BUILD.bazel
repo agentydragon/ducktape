@@ -226,6 +226,7 @@ _RECORD_TESTS = [
 ]
 
 _FIXTURE_PREVIEW_TESTS = [
+    "record_prefix_test",
     "regexp_test",
     "relational_test",
     "rest_parameters_test",
