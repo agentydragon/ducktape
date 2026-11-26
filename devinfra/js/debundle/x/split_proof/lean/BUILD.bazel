@@ -2020,3 +2020,23 @@ lean_proof_test(
     ],
     deps = [":corejs_interior_plan_exports"],
 )
+
+lean_library(
+    name = "corejs_indexed_constructor_cells",
+    srcs = ["EsmSplit/CoreJS/IndexedConstructorCells.lean"],
+    deps = [
+        ":corejs_interior_plan_exports",
+        ":corejs_sparse_projected_order",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_constructor_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedConstructorCells"],
+    required_theorems = [
+        "CoreJS.IndexedConstructorCells.projection",
+        "CoreJS.IndexedConstructorCells.projection_and_schedule",
+    ],
+    deps = [":corejs_indexed_constructor_cells"],
+)
