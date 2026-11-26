@@ -44,6 +44,22 @@
   background: var(--mantine-color-default-hover);
 }
 
+.agentplane-thread-group-links {
+  display: flex;
+  align-items: baseline;
+}
+.agentplane-thread-group-links > .agentplane-thread-list-group-label {
+  flex: 1;
+  min-width: 0;
+}
+.agentplane-thread-identity-link {
+  display: inline-flex;
+  align-self: stretch;
+  align-items: center;
+  padding: 4px;
+  color: var(--mantine-color-anchor);
+}
+
 .agentplane-thread-list-group-count {
   margin-left: auto;
   flex: 0 0 auto;
@@ -144,20 +160,4 @@
   padding: 8px 6px 4px;
   margin-top: 4px;
   border-top: 1px solid var(--mantine-color-default-border);
-}
-
-.agentplane-thread-group-links {
-  display: flex;
-  align-items: baseline;
-}
-.agentplane-thread-group-links > .agentplane-thread-list-group-label {
-  flex: 1;
-  min-width: 0;
-}
-.agentplane-thread-identity-link {
-  display: inline-flex;
-  align-self: stretch;
-  align-items: center;
-  padding: 4px;
-  color: var(--mantine-color-anchor);
 }
