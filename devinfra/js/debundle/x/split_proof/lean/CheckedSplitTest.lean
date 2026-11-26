@@ -37,7 +37,7 @@ private def checkValue (p : Program) : IO Unit := do
 
 def main : IO Unit := do
   let built ← IO.ofExcept (checkedSplit source spec .allOutcomes)
-  let output := built.val
+  let output := built.program
   unless requestedPlacement source spec == [(0, worker), (1, worker), (2, entry), (3, entry)] do
     throw (IO.userError "expected the authored owners")
   let some moved := output.find worker | throw (IO.userError "missing worker module")

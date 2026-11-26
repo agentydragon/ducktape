@@ -462,6 +462,36 @@ lean_axiom_test(
 )
 
 lean_library(
+    name = "checked_artifact",
+    testonly = True,
+    srcs = ["EsmSplit/LowerSplit/CheckedArtifact.lean"],
+    deps = [
+        ":corejs_checked_split",
+        ":corejs_linked_input",
+    ],
+)
+
+lean_binary(
+    name = "checked_artifact_test_runner",
+    testonly = True,
+    srcs = ["CheckedSplitArtifactMain.lean"],
+    entry = "CheckedSplitArtifactMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [
+        ":checked_artifact",
+        ":lowersplit_support",
+        ":lowersplit_workflows",
+    ],
+)
+
+lean_axiom_test(
+    name = "checked_artifact_axioms_test",
+    imports = ["EsmSplit.LowerSplit.CheckedArtifact"],
+    theorems = ["EsmSplit.LowerSplit.CheckedArtifact.verify_sound"],
+    deps = [":checked_artifact"],
+)
+
+lean_library(
     name = "lowersplit_workflows",
     srcs = [
         "EsmSplit/LowerSplit/Certified.lean",

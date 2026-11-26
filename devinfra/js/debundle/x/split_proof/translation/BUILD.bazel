@@ -47,6 +47,7 @@ js_binary(
     visibility = [
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
         "//devinfra/js/debundle/x/split_proof/lean:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
     ],
 )
 

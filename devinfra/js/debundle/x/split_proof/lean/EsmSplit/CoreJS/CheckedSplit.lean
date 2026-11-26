@@ -42,6 +42,14 @@ def Sound (source : Program) (spec : EsmSplit.Spec) (requested : Guarantee) (out
   SameExports source output ∧
   ScheduleEquivalent requested (fun _ => True) source output
 
+/-- The layout used to construct the program is also available to an artifact
+writer. The guarantee is tied to the CoreJS program. -/
+structure Construction (source : Program) (spec : EsmSplit.Spec) (requested : Guarantee) where
+  bundle : EsmSplit.Bundle
+  plan : EsmSplit.Plan
+  program : Program
+  sound : Sound source spec requested program
+
 private theorem forRequest {source output : Program}
     (requested : Guarantee) (runs : ∀ w n, runProgram w n source = runProgram w n output) :
     ScheduleEquivalent requested (fun _ => True) source output := by
@@ -55,7 +63,7 @@ private theorem forRequest {source output : Program}
 /-- Check the source and plan, then construct the sole candidate. Successful
 results carry the requested guarantee for every CoreJS world. -/
 def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarantee) :
-    Except String { output : Program // Sound source spec requested output } := do
+    Except String (Construction source spec requested) := do
   unless spec.order.isEmpty && !spec.sequential && !spec.privateEntryBody do
     throw "checked split supports placement without an explicit schedule or private entry body"
   EsmSplit.validateModulePaths (spec.modules.map Prod.fst)
@@ -87,27 +95,27 @@ def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarante
         exact runProgram_singleModuleMetadata body (zip_range_sorted stmts) m.name m.exports w n
       exact sourceRun.trans (run_same (split_holds_statements (orderKept_perm kept)).1
         (split_holds_statements (orderKept_perm kept)).2 (split_scopes_agree valid footprints kept) n)
-    return ⟨output, placed, links.sameExports exportsMatch, forRequest requested runs⟩
+    return ⟨bundle, plan, output, placed, links.sameExports exportsMatch, forRequest requested runs⟩
   else
     throw "the split entry does not export the source's public live cells"
 
-theorem checkedSplit_sound {source spec requested} {result : { output : Program // Sound source spec requested output }}
+theorem checkedSplit_sound {source spec requested} {result : Construction source spec requested}
     (_accepted : checkedSplit source spec requested = .ok result) :
-    Sound source spec requested result.val :=
-  result.property
+    Sound source spec requested result.program :=
+  result.sound
 
 /-- An artifact reader supplies the independently decoded output. Acceptance
 requires equality with the constructed program, including its file and cell identities. -/
-def checkOutput {source spec requested} (checked : { output : Program // Sound source spec requested output })
-    (decoded : Program) : Except String (PLift (decoded = checked.val)) :=
-  match SyntaxMatch.programEq decoded checked.val with
+def checkOutput {source spec requested} (checked : Construction source spec requested)
+    (decoded : Program) : Except String (PLift (decoded = checked.program)) :=
+  match SyntaxMatch.programEq decoded checked.program with
   | some proof => .ok proof
   | none => .error "decoded output differs from the constructed modules"
 
 theorem checkOutput_sound {source spec requested decoded}
-    (checked : { output : Program // Sound source spec requested output })
-    (same : decoded = checked.val) : Sound source spec requested decoded :=
-  same ▸ checked.property
+    (checked : Construction source spec requested)
+    (same : decoded = checked.program) : Sound source spec requested decoded :=
+  same ▸ checked.sound
 
 #print axioms checkedSplit_sound
 #print axioms checkOutput_sound

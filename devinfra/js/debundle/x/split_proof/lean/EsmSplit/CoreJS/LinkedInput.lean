@@ -483,6 +483,16 @@ def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : Ho
     Except String (Program × Program) :=
   DecodedDeployment.programs <$> decodeSingleton source providers files P profile
 
+/-- Lower the import-free original before constructing a split. Use the
+ordinary linked parser with the empty profile and the same original unit IDs
+as `decodeSingleton`. The caller's constructor checks the supported syntax. -/
+def decodeSingletonSource (source : Json) (entry : String) : Except String Program := do
+  let nodes ← ESTreeUnits.nodes source
+  let original ← (parse .linked .empty "bundle.mjs" nodes 0).mapError StructuralRefusal.reason
+  unless original.imports.isEmpty do throw "checked construction requires an import-free original"
+  unless original.templates.isEmpty do throw "checked construction does not install template objects"
+  return { entry, modules := [original.numbered entry 0] }
+
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use
 disjoint ordinals. Selected pivots have their actual CoreJS statements on both sides. Retained statements
