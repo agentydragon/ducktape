@@ -119,7 +119,7 @@ function ThreadRow({
           <span className="agentplane-thread-list-row-detail agentplane-thread-metadata">
             <span>{harnessLabel(harness)}</span>
             <span title={model}>{model}</span>
-            <span>{lastEventAt ? <TimeAgo value={lastEventAt} compact /> : "no events yet"}</span>
+            <span>{lastEventAt ? <TimeAgo value={lastEventAt} /> : "no events yet"}</span>
           </span>
         )}
       </span>

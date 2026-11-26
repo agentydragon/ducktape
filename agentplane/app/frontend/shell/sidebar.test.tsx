@@ -430,7 +430,7 @@ it("keeps Dispatcher activity live while retained History rows reconnect", async
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
   await act(async () => vi.advanceTimersByTime(DEGRADED_AFTER_MS));
   expect(container.querySelector('[data-connection="degraded"]')?.getAttribute("aria-label")).toMatch(
-    /^Threads: reconnecting since 5 seconds ago \(.+\) · attempt 1 · test stream dropped$/
+    /^Threads: reconnecting since 5 s ago \(.+\) · attempt 1 · test stream dropped$/
   );
   expect(container.textContent).toContain("Retained thread");
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);

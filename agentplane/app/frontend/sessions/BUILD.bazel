@@ -396,7 +396,6 @@ ts_library(
         ":virtualized_history",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/date-fns",
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app:app_service_pb",

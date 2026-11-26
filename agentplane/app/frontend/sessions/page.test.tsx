@@ -544,8 +544,8 @@ it("shows inferred model activity with its provider-measurement explanation", as
   };
   const container = await render();
   const activity = container.querySelector<HTMLElement>(".agentplane-composer-model-activity");
-  expect(activity?.textContent).toContain("Model activity: 8m ago");
-  expect(container.querySelector(".agentplane-thread-tail-model-activity")?.textContent).toContain("8m ago");
+  expect(activity?.textContent).toContain("Model activity: 8 min ago");
+  expect(container.querySelector(".agentplane-thread-tail-model-activity")?.textContent).toContain("8 min ago");
   expect(activity?.getAttribute("title")).toContain("not a measured provider request or cache hit");
   expect(container.querySelector(".agentplane-sidebar-row-activity")).toBeNull();
 });
@@ -555,7 +555,7 @@ it("shows how long the harness has been idle, with the full time on hover", asyn
   sharedThread = { summary: { idleSince: timestampFromDate(new Date("2026-01-01T12:04:00Z")) } };
   const container = await render();
   const idle = container.querySelector(".agentplane-composer-model-activity time");
-  expect(idle?.textContent).toBe("6 minutes ago");
+  expect(idle?.textContent).toBe("6 min ago");
   expect(idle?.getAttribute("title")).toBe("2026-01-01T12:04:00.000Z");
 });
 
@@ -568,7 +568,7 @@ it("collapses model activity and idle timestamps that are close and display the 
     },
   };
   const activity = (await render()).querySelector<HTMLElement>(".agentplane-composer-model-activity");
-  expect(activity?.textContent).toBe("Model activity: 13m ago · Idle");
+  expect(activity?.textContent).toBe("Model activity: 13 min ago · Idle");
   expect(activity?.querySelector("time")?.getAttribute("title")).toBe("2026-01-01T11:56:55.000Z");
 });
 
@@ -581,7 +581,7 @@ it("keeps distinct model activity and idle ages visible", async () => {
     },
   };
   const activity = (await render()).querySelector<HTMLElement>(".agentplane-composer-model-activity");
-  expect(activity?.textContent).toContain("Model activity: 13m ago · Idle since");
+  expect(activity?.textContent).toContain("Model activity: 13 min ago · Idle since");
   expect(activity?.querySelector("time")?.getAttribute("title")).toBe("2026-01-01T11:54:00.000Z");
 });
 
@@ -759,8 +759,8 @@ it("handles a past deadline without showing a negative countdown", async () => {
 
 it.each([
   ["2026-01-01T12:09:30Z", "just now"],
-  ["2026-01-01T10:10:00Z", "2h ago"],
-  ["2025-12-29T12:10:00Z", "3d ago"],
+  ["2026-01-01T10:10:00Z", "2 h ago"],
+  ["2025-12-29T12:10:00Z", "3 d ago"],
   ["2026-01-01T12:12:00Z", "unknown"],
   ["invalid", "unknown"],
 ])("formats model activity at %s as %s", async (at, expected) => {
@@ -791,7 +791,7 @@ it("keeps inferred model activity but hides History idle time while Session acti
   };
   const container = await render();
   const activity = container.querySelector<HTMLElement>(".agentplane-composer-model-activity");
-  expect(activity?.textContent).toContain("Model activity: 8m ago");
+  expect(activity?.textContent).toContain("Model activity: 8 min ago");
   expect(activity?.textContent).not.toContain("Idle since");
 });
 
