@@ -63,6 +63,12 @@ Read Identities through PolicyService: `policy/identitycache` for name lookups, 
 readers (informers, GETs, `identities` RBAC). Only the Policy Controller touches Identity CRs, so the
 record can leave Kubernetes without touching callers. The remaining direct readers are being retired.
 
+## Tests
+
+Pick the tier per [test tiers](docs/test_tiers.md). Before writing a new fake, fixture or launcher, check the
+[shared helper index](testing/README.md) and extend it; shared helpers go in `agentplane/testing/` or the owning
+service's `testing/`.
+
 ## System overview diagram
 
 A PR that adds, removes, splits or renames a service or Deployment, or changes traffic between them
