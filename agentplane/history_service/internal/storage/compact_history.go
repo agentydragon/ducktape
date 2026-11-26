@@ -101,11 +101,6 @@ func (s *Store) repackKinds() ([]historypb.EventKind, error) {
 	return kinds, nil
 }
 
-// CompactHistory retains the maintenance command's single-Session API.
-func (s *Store) CompactHistory(ctx context.Context, sessionID uuid.UUID, apply bool) (CompactionResult, error) {
-	return s.RepackSession(ctx, sessionID, apply, nil)
-}
-
 // RepackSession repacks one canary Session using in-memory cursors. If the process stops,
 // the next invocation safely scans its current history again.
 func (s *Store) RepackSession(ctx context.Context, sessionID uuid.UUID, apply bool, before RepackBeforeBatch) (CompactionResult, error) {
@@ -623,7 +618,7 @@ func buildRepackPlan(packer *eventblock.Packer, frames []repackRawFrame, cut eve
 		}
 	}
 	plan.encoded = encoded
-	plan.pack = int64(len(encoded)+16*len(frames)+160) < oldBytes
+	plan.pack = estimatedBlockBytes(encoded, len(frames)) < oldBytes
 	return plan, nil
 }
 

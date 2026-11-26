@@ -460,6 +460,7 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 		if err != nil {
 			return err
 		}
+		legacyKinds := legacyCompactionKinds(s.options)
 		var appended []*eventlogpb.EventEntry
 		for _, entry := range entries {
 			cursor, sourceID := entry.GetCursor(), entry.GetOrigin().GetSourceId()
@@ -483,7 +484,7 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 				return err
 			}
 			kind := observationNumber(entry)
-			compactable := len(payload) <= blockBytes/2 && liveCompactionEnabled(s.options, historypb.EventKind(kind))
+			compactable := len(payload) <= blockBytes/2 && slices.Contains(legacyKinds, historypb.EventKind(kind))
 			if s.options.EventPackers != nil {
 				compactable = s.options.EventPackers[historypb.EventKind(kind)] != nil && len(payload) <= eventblock.MaxBytes-4
 			}
@@ -518,10 +519,8 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 						}
 					}
 				}
-			} else if s.options.CompactDeltas || s.options.CompactExecutionEvidence {
-				if err := compactEvents(ctx, tx, sessionID, s.options); err != nil {
-					return err
-				}
+			} else if err := compactEvents(ctx, tx, sessionID, legacyKinds); err != nil {
+				return err
 			}
 			if _, err := tx.ExecContext(ctx, "UPDATE session_history SET source_id = $2, last_cursor = $3 WHERE id = $1",
 				sessionID, *row.sourceID, row.lastCursor); err != nil {

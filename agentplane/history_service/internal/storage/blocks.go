@@ -42,20 +42,13 @@ var executionEvidenceKinds = []historypb.EventKind{
 	historypb.EventKind_EVENT_KIND_EXECUTION_PROGRESS,
 }
 
-// compactKinds is the complete set of block kinds understood by readers.
-var compactKinds = slices.Concat(compactDeltaKinds, executionEvidenceKinds)
+// The legacy writer can enable both groups at once.
+var allLegacyKinds = slices.Concat(compactDeltaKinds, executionEvidenceKinds)
 
-func liveCompactionEnabled(options Options, kind historypb.EventKind) bool {
-	if slices.Contains(compactDeltaKinds, kind) {
-		return options.CompactDeltas
-	}
-	return slices.Contains(executionEvidenceKinds, kind) && options.CompactExecutionEvidence
-}
-
-func liveCompactionKinds(options Options) []historypb.EventKind {
+func legacyCompactionKinds(options Options) []historypb.EventKind {
 	switch {
 	case options.CompactDeltas && options.CompactExecutionEvidence:
-		return compactKinds
+		return allLegacyKinds
 	case options.CompactDeltas:
 		return compactDeltaKinds
 	case options.CompactExecutionEvidence:
@@ -63,13 +56,6 @@ func liveCompactionKinds(options Options) []historypb.EventKind {
 	default:
 		return nil
 	}
-}
-
-func historicalCompactionKinds(options Options) []historypb.EventKind {
-	if options.CompactExecutionEvidence {
-		return compactKinds
-	}
-	return compactDeltaKinds
 }
 
 type eventReference struct {
@@ -193,8 +179,8 @@ func insertBlock(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, entries [
 
 // compactEvents seeks only the partial index of eligible new writes. Oversized frames and entries
 // written with compaction disabled cannot make each append rescan an ever-growing retained prefix.
-func compactEvents(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, options Options) error {
-	for _, kind := range liveCompactionKinds(options) {
+func compactEvents(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, kinds []historypb.EventKind) error {
+	for _, kind := range kinds {
 		for {
 			rows, err := tx.QueryContext(ctx, `SELECT payload FROM session_event
 				WHERE session_id=$1 AND kind=$2 AND compactable
