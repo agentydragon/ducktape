@@ -3,12 +3,12 @@
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 from agentplane.identity.auth.listener import Listener
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.log_levels import LogLevels
-from agentplane.net.peertls.config import ServiceSPIFFEID
+from agentplane.net.peertls.config import LLM_INGRESS_URI, PolicyServicePeer, ServiceSPIFFEID
 from util.urls import HttpEndpointUrl
 
 
@@ -34,6 +34,21 @@ class Settings(BaseModel):
             "Every attribution output must then carry the `identity` claim."
         ),
     )
+    # CLEANUP(added 2026-11-26): require policy_service and drop policy_namespace once the staging manifests set it
+    #   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+    policy_service: PolicyServicePeer | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="PolicyService supplying Identities through WatchIdentities instead of reads in policy_namespace.",
+    )
+
+    @field_validator("policy_service")
+    @classmethod
+    def policy_service_caller_is_llm_ingress(cls, value: PolicyServicePeer | None) -> PolicyServicePeer | None:
+        if value is not None:
+            value.tls.validate_caller(None, LLM_INGRESS_URI)
+        return value
+
     model_config_service_callers: list[ServiceSPIFFEID] = Field(
         exclude_if=lambda value: not value,
         default_factory=list,
