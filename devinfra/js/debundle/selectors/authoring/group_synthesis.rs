@@ -202,6 +202,48 @@ pub(crate) fn synthesize_simplest_selector_for_group(
         .get(decl.body_idx)
         .with_context(|| format!("missing source body index {}", decl.body_idx))?;
     let mut targets = synthesis_targets(members);
+    let Some(specialized) = primary_selector(index, item, decl, &mut targets)? else {
+        return Ok(GroupSelectorOutcome::Skipped(exact_declaration_rejection(
+            index, item, decl, &targets,
+        )?));
+    };
+    let match_source = collapse_statement_holes(
+        index,
+        decl,
+        &targets,
+        specialized.match_source,
+        &specialized.rewritten_holes,
+    )?;
+    if let Err(error) = prove_synthesized_selector(index, decl, &targets, &match_source) {
+        return Ok(GroupSelectorOutcome::Skipped(
+            SynthesisSkipReason::NormalizationRejected {
+                failure: ProofFailure::from_error(error)?,
+            },
+        ));
+    };
+    let rewritten_holes = specialized.rewritten_holes;
+    let alternatives =
+        alternative_selectors(index, item, decl, &targets, candidates_limit, &match_source)?;
+
+    Ok(GroupSelectorOutcome::Synthesized(
+        SynthesizedSelectorGroup {
+            body_idx: decl.body_idx,
+            target_bindings: targets,
+            match_source,
+            rewritten_holes: rewritten_holes.into_iter().collect(),
+            alternatives,
+        },
+    ))
+}
+
+/// The minimizer's primary pick, or the relaxed exact declaration when the
+/// minimizer finds none.
+fn primary_selector(
+    index: &ChunkSelectorIndex<'_>,
+    item: &ModuleItem,
+    decl: &IndexedDeclaration,
+    targets: &mut [SynthesizedTargetBinding],
+) -> Result<Option<SpecializedSelector>> {
     // Try readable selector locals first. The var renderer rewrites uses of
     // selected bindings inside sibling initializers to the same local names.
     let primary =
@@ -214,62 +256,60 @@ pub(crate) fn synthesize_simplest_selector_for_group(
             Some(selector) => Ok(Some(selector)),
             None => relax_exact_declaration(index, item, decl, targets),
         };
-    let mut specialized = primary(&targets)?;
+    let specialized = primary(targets)?;
     // The old source spelling remains a fallback for name-only codemods.
     if specialized.is_none() && targets.len() > 1 {
-        for target in &mut targets {
+        for target in targets.iter_mut() {
             target.selector_local = target.runtime_binding.clone();
         }
-        specialized = primary(&targets)?;
+        return primary(targets);
     }
-    let Some(specialized) = specialized else {
-        return Ok(GroupSelectorOutcome::Skipped(exact_declaration_rejection(
-            index, item, decl, &targets,
-        )?));
-    };
+    Ok(specialized)
+}
+
+/// Collapse runs of statement holes when the collapsed selector still proves.
+fn collapse_statement_holes(
+    index: &ChunkSelectorIndex<'_>,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+    match_source: String,
+    rewritten_holes: &BTreeSet<String>,
+) -> Result<String> {
     // The rendered selector is JavaScript. Trailing spaces inside template
     // literals are data, so a line-based whitespace trim can invalidate a
     // selector that the resolver already proved.
-    let mut match_source = specialized.match_source;
-    if specialized.rewritten_holes.contains(STMT_LIST_HOLE_KEYWORD) {
+    if rewritten_holes.contains(STMT_LIST_HOLE_KEYWORD) {
         let collapsed = collapse_statement_hole_runs(&match_source)?;
-        if prove_synthesized_selector(index, decl, &targets, &collapsed).is_ok() {
-            match_source = collapsed;
+        if prove_synthesized_selector(index, decl, targets, &collapsed).is_ok() {
+            return Ok(collapsed);
         }
     }
-    if let Err(error) = prove_synthesized_selector(index, decl, &targets, &match_source) {
-        return Ok(GroupSelectorOutcome::Skipped(
-            SynthesisSkipReason::NormalizationRejected {
-                failure: ProofFailure::from_error(error)?,
-            },
-        ));
-    };
-    let rewritten_holes = specialized.rewritten_holes;
+    Ok(match_source)
+}
 
-    // `--candidates N > 1`: collect the rest of the ranked read-off menu beyond the
-    // primary pick (deduped against it).
-    let alternatives = if candidates_limit > 1 {
-        synthesize_specialized_selector_candidates(index, item, decl, &targets, candidates_limit)?
+/// `--candidates N > 1`: collect the rest of the ranked read-off menu beyond the
+/// primary pick (deduped against it).
+fn alternative_selectors(
+    index: &ChunkSelectorIndex<'_>,
+    item: &ModuleItem,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+    candidates_limit: usize,
+    match_source: &str,
+) -> Result<Vec<SelectorAlternative>> {
+    if candidates_limit <= 1 {
+        return Ok(Vec::new());
+    }
+    Ok(
+        synthesize_specialized_selector_candidates(index, item, decl, targets, candidates_limit)?
             .into_iter()
             .map(|candidate| SelectorAlternative {
                 match_source: candidate.match_source,
                 rewritten_holes: candidate.rewritten_holes.into_iter().collect(),
             })
             .filter(|alternative| alternative.match_source != match_source)
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    Ok(GroupSelectorOutcome::Synthesized(
-        SynthesizedSelectorGroup {
-            body_idx: decl.body_idx,
-            target_bindings: targets,
-            match_source,
-            rewritten_holes: rewritten_holes.into_iter().collect(),
-            alternatives,
-        },
-    ))
+            .collect(),
+    )
 }
 
 pub(crate) struct SpecializedSelector {

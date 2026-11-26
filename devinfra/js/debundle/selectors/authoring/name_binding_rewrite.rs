@@ -65,6 +65,76 @@ pub(crate) fn rewrite_name_bindings_to_source_match(
         });
     };
     let mut candidates = Vec::new();
+    let collected = group_name_binding_members(
+        module,
+        file,
+        members,
+        index,
+        selected_exports,
+        &mut candidates,
+    );
+    let synthesized_groups = synthesize_member_groups(
+        module,
+        file,
+        index,
+        collected.grouped,
+        options.candidates,
+        &mut candidates,
+    )?;
+
+    // Anti-unification grouping: collapse
+    // maximal runs of adjacent, same-shape single-target declarations (any kind:
+    // function, class, var) into one run-based source_matches[] claim. Multi-declarator var
+    // groups (already grouped by shared declaration) and lone groups pass through
+    // unchanged.
+    let prepared_groups = merge_adjacent_same_shape_runs(index, synthesized_groups);
+    let groups_changed = prepared_groups.len();
+    let edits = emit_synthesized_groups(
+        module,
+        file,
+        prepared_groups,
+        options.apply,
+        &mut annotations,
+        &mut candidates,
+    )?;
+
+    if options.apply {
+        apply_member_replacements(members, edits.replacements);
+        write_module_edits(
+            module,
+            root,
+            edits.source_matches,
+            annotations,
+            &original_annotations,
+        )?;
+    }
+
+    Ok(NameBindingRewriteOutcomes {
+        candidates,
+        members_scanned: collected.members_scanned,
+        members_seen: collected.members_seen,
+        groups_changed,
+    })
+}
+
+/// Members with a `binding.name` pin, grouped by their source declaration.
+struct CollectedMembers {
+    grouped: BTreeMap<usize, Vec<NameBindingMember>>,
+    members_scanned: usize,
+    members_seen: usize,
+}
+
+/// Group `binding.name` members by the one source declaration of their
+/// binding. A binding without exactly one declaration becomes a skipped
+/// candidate.
+fn group_name_binding_members(
+    module: &str,
+    file: &Path,
+    members: &[Value],
+    index: &ChunkSelectorIndex<'_>,
+    selected_exports: Option<&BTreeSet<String>>,
+    candidates: &mut Vec<SelectorCodemodCandidate>,
+) -> CollectedMembers {
     let mut grouped: BTreeMap<usize, Vec<NameBindingMember>> = BTreeMap::new();
     let mut remaining_exports = selected_exports.cloned();
     let mut members_scanned = 0;
@@ -122,16 +192,30 @@ pub(crate) fn rewrite_name_bindings_to_source_match(
                 annotation_fields: synthesized_member_annotation_fields(member),
             });
     }
+    CollectedMembers {
+        grouped,
+        members_scanned,
+        members_seen,
+    }
+}
 
-    // Synthesize each declaration group; collect the successes for the grouping
-    // pass and emit skip/error candidates immediately (they carry no selector to
-    // group).
+/// Synthesize each declaration group; collect the successes for the grouping
+/// pass and emit skip/error candidates immediately (they carry no selector to
+/// group).
+fn synthesize_member_groups(
+    module: &str,
+    file: &Path,
+    index: &ChunkSelectorIndex<'_>,
+    grouped: BTreeMap<usize, Vec<NameBindingMember>>,
+    candidates_limit: usize,
+    candidates: &mut Vec<SelectorCodemodCandidate>,
+) -> Result<Vec<SynthesizedDeclGroup>> {
     let mut synthesized_groups = Vec::new();
     for RequestedDeclGroup {
         decl_idx,
         members: group_members,
         outcome,
-    } in synthesize_requested_declaration_groups(index, grouped, options.candidates)?
+    } in synthesize_requested_declaration_groups(index, grouped, candidates_limit)?
     {
         // Some groups still have no proving joint selector. Salvage members
         // whose own declarators prove as separate claims.
@@ -143,7 +227,7 @@ pub(crate) fn rewrite_name_bindings_to_source_match(
                     index,
                     decl_idx,
                     &only_member,
-                    options.candidates,
+                    candidates_limit,
                 ) {
                     Ok(GroupSelectorOutcome::Synthesized(synthesized)) => {
                         synthesized_groups.push(SynthesizedDeclGroup {
@@ -188,20 +272,28 @@ pub(crate) fn rewrite_name_bindings_to_source_match(
             Err(error) => return Err(error),
         }
     }
+    Ok(synthesized_groups)
+}
 
-    // Anti-unification grouping: collapse
-    // maximal runs of adjacent, same-shape single-target declarations (any kind:
-    // function, class, var) into one run-based source_matches[] claim. Multi-declarator var
-    // groups (already grouped by shared declaration) and lone groups pass through
-    // unchanged.
-    let prepared_groups = merge_adjacent_same_shape_runs(index, synthesized_groups);
+/// The YAML edits a rewrite applies: members to drop and claims to append.
+struct ModuleEdits {
+    replacements: BTreeMap<usize, Option<Value>>,
+    source_matches: Vec<Value>,
+}
 
-    // Successful rewrites become canonical `source_matches[]` claims. Rewritten
-    // members are removed from `members`, and explicit member note/comment fields
-    // move into module-level `annotations`.
+/// Successful rewrites become canonical `source_matches[]` claims. Rewritten
+/// members are removed from `members`, and explicit member note/comment fields
+/// move into module-level `annotations`.
+fn emit_synthesized_groups(
+    module: &str,
+    file: &Path,
+    prepared_groups: Vec<SynthesizedDeclGroup>,
+    apply: bool,
+    annotations: &mut serde_yaml::Mapping,
+    candidates: &mut Vec<SelectorCodemodCandidate>,
+) -> Result<ModuleEdits> {
     let mut replacements: BTreeMap<usize, Option<Value>> = BTreeMap::new();
     let mut source_matches = Vec::new();
-    let groups_changed = prepared_groups.len();
     for (group_id, prepared) in prepared_groups.into_iter().enumerate() {
         let SynthesizedDeclGroup {
             members: group_members,
@@ -216,13 +308,13 @@ pub(crate) fn rewrite_name_bindings_to_source_match(
                 file,
                 member_index: member.member_index,
                 export_name: Some(member.export_name.clone()),
-                apply: options.apply,
+                apply,
                 group_id,
                 synthesized: &synthesized,
                 target_binding: Some(target.selector_local.clone()),
             }));
-            if options.apply {
-                add_synthesized_member_annotations(module, member, &mut annotations)?;
+            if apply {
+                add_synthesized_member_annotations(module, member, annotations)?;
                 source_matches.push(source_match_claim_value(
                     &synthesized.match_source,
                     vec![MigratedSourceBinding {
@@ -239,42 +331,46 @@ pub(crate) fn rewrite_name_bindings_to_source_match(
                     file,
                     member_index: member.member_index,
                     export_name: Some(member.export_name.clone()),
-                    apply: options.apply,
+                    apply,
                     group_id,
                     synthesized: &synthesized,
                     target_binding: None,
                 }));
-                if options.apply {
-                    add_synthesized_member_annotations(module, member, &mut annotations)?;
+                if apply {
+                    add_synthesized_member_annotations(module, member, annotations)?;
                     replacements.insert(member.member_index, None);
                 }
             }
-            if options.apply {
+            if apply {
                 source_matches.push(synthesized_source_match_claim_value(&synthesized));
             }
         }
     }
+    Ok(ModuleEdits {
+        replacements,
+        source_matches,
+    })
+}
 
-    if options.apply {
-        apply_member_replacements(members, replacements);
-        if !source_matches.is_empty() {
-            let entry = root
-                .entry(yk("source_matches"))
-                .or_insert_with(|| Value::Sequence(Vec::new()));
-            match entry {
-                Value::Sequence(existing) => existing.extend(source_matches),
-                _ => bail!("{module}: source_matches exists but is not a sequence"),
-            }
-        }
-        if annotations != original_annotations {
-            root.insert(yk("annotations"), Value::Mapping(annotations));
+/// Append the new claims to `source_matches[]` and store changed annotations.
+fn write_module_edits(
+    module: &str,
+    root: &mut serde_yaml::Mapping,
+    source_matches: Vec<Value>,
+    annotations: serde_yaml::Mapping,
+    original_annotations: &serde_yaml::Mapping,
+) -> Result<()> {
+    if !source_matches.is_empty() {
+        let entry = root
+            .entry(yk("source_matches"))
+            .or_insert_with(|| Value::Sequence(Vec::new()));
+        match entry {
+            Value::Sequence(existing) => existing.extend(source_matches),
+            _ => bail!("{module}: source_matches exists but is not a sequence"),
         }
     }
-
-    Ok(NameBindingRewriteOutcomes {
-        candidates,
-        members_scanned,
-        members_seen,
-        groups_changed,
-    })
+    if annotations != *original_annotations {
+        root.insert(yk("annotations"), Value::Mapping(annotations));
+    }
+    Ok(())
 }
