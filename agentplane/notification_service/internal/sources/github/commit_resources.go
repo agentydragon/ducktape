@@ -16,42 +16,37 @@ func (p *Provider) refreshCommitResource(ctx context.Context, key githubstate.Co
 	return p.refreshResource(ctx, key, func(lease githubstate.RefreshLease) error {
 		switch key.Event {
 		case githubmodel.EventCheckRun:
-			runs, err := p.readCheckRuns(ctx, key.Subject, fences)
-			if err != nil {
-				return p.refreshFailed(ctx, lease, err)
-			}
-			return p.state.CompleteCheckRuns(ctx, lease, fences, runs)
+			return refreshCommitObservations(ctx, p, key.Subject, lease, fences, p.client.CheckRuns, p.state.CompleteCheckRuns)
 		case githubmodel.EventStatus:
-			statuses, err := p.readCommitStatuses(ctx, key.Subject, fences)
-			if err != nil {
-				return p.refreshFailed(ctx, lease, err)
-			}
-			return p.state.CompleteCommitStatuses(ctx, lease, fences, statuses)
+			return refreshCommitObservations(ctx, p, key.Subject, lease, fences, p.client.CommitStatuses, p.state.CompleteCommitStatuses)
 		default:
 			return fmt.Errorf("unsupported commit resource %q", key.Event)
 		}
 	})
 }
 
-type commitTarget struct {
-	repository     githubmodel.Repository
-	sha            string
-	installationID int64
-}
-
-func (p *Provider) commitTargets(ctx context.Context, subject githubstate.SubjectKey, fences []githubstate.AccessFence) ([]commitTarget, error) {
+// Read every covered copy of the head before committing any observations under this resource's lease.
+func refreshCommitObservations[T any](ctx context.Context, p *Provider, subject githubstate.SubjectKey, lease githubstate.RefreshLease, fences []githubstate.AccessFence,
+	read func(context.Context, githubmodel.HeadRevision, int64) ([]T, error),
+	complete func(context.Context, githubstate.RefreshLease, []githubstate.AccessFence, []T) error,
+) error {
 	revisions, err := p.state.CommitTargets(ctx, subject)
 	if err != nil {
-		return nil, err
+		return p.refreshFailed(ctx, lease, err)
 	}
-	var targets []commitTarget
+	var observations []T
 	for _, revision := range revisions {
 		for _, fence := range fences {
-			if fence.Key.RepositoryID == revision.Repository.ID {
-				targets = append(targets, commitTarget{repository: revision.Repository, sha: revision.SHA, installationID: fence.Key.InstallationID})
-				break
+			if fence.Key.RepositoryID != revision.Repository.ID {
+				continue
 			}
+			batch, err := read(ctx, revision, fence.Key.InstallationID)
+			if err != nil {
+				return p.refreshFailed(ctx, lease, err)
+			}
+			observations = append(observations, batch...)
+			break
 		}
 	}
-	return targets, nil
+	return complete(ctx, lease, fences, observations)
 }

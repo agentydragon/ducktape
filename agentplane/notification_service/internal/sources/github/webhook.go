@@ -480,29 +480,19 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 		ingest.Subjects = append(ingest.Subjects, key)
 	}
 	if common.repository != nil && found.sha != nil {
-		ingest.Revisions = append(ingest.Revisions, githubmodel.HeadRevision{Repository: *common.repository, SHA: *found.sha})
+		revision := githubmodel.HeadRevision{Repository: *common.repository, SHA: *found.sha}
+		ingest.Revisions = append(ingest.Revisions, revision)
 		if found.head != nil {
 			ingest.Revisions = append(ingest.Revisions, githubmodel.HeadRevision{Repository: *found.head, SHA: *found.sha})
 		}
 		switch event {
 		case string(githubmodel.EventCheckRun):
-			checkRun, err := webhookCheckRun(body, common.action, *found.sha)
-			if err != nil {
-				return githubstate.Ingest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
-			}
-			if checkRun != nil {
-				checkRun.RepositoryID = common.repository.ID
-				ingest.CheckRun = checkRun
-			}
+			ingest.CheckRun, err = webhookCheckRun(body, common.action, revision)
 		case string(githubmodel.EventStatus):
-			commitStatus, err := webhookCommitStatus(body, *found.sha)
-			if err != nil {
-				return githubstate.Ingest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
-			}
-			if commitStatus != nil {
-				commitStatus.RepositoryID = common.repository.ID
-				ingest.CommitStatus = commitStatus
-			}
+			ingest.CommitStatus, err = webhookCommitStatus(body, revision)
+		}
+		if err != nil {
+			return githubstate.Ingest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
 		}
 	}
 	ingest.Review, ingest.Lifecycle, err = webhookPRState(body, event, common.action)
@@ -515,7 +505,7 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 
 // A check webhook may carry only correlation fields. Preserve those as raw activity; complete state
 // observations share normalization with polling so the same change has one durable identity.
-func webhookCheckRun(body object, action *string, sha string) (*githubmodel.CheckRun, error) {
+func webhookCheckRun(body object, action *string, revision githubmodel.HeadRevision) (*githubmodel.CheckRun, error) {
 	if action == nil || (*action != "created" && *action != "in_progress" && *action != "completed") {
 		return nil, nil
 	}
@@ -531,7 +521,7 @@ func webhookCheckRun(body object, action *string, sha string) (*githubmodel.Chec
 	if err := json.Unmarshal(body["check_run"], &run); err != nil {
 		return nil, err
 	}
-	observation, err := client.CheckRunObservation(&run, sha)
+	observation, err := client.CheckRunObservation(&run, revision)
 	if err != nil {
 		return nil, err
 	}
@@ -540,7 +530,7 @@ func webhookCheckRun(body object, action *string, sha string) (*githubmodel.Chec
 }
 
 // A status webhook may carry only correlation fields. Preserve those as raw activity.
-func webhookCommitStatus(body object, sha string) (*githubmodel.CommitStatus, error) {
+func webhookCommitStatus(body object, revision githubmodel.HeadRevision) (*githubmodel.CommitStatus, error) {
 	if body.present("id") == nil || body.present("context") == nil || body.present("state") == nil {
 		return nil, nil
 	}
@@ -552,7 +542,7 @@ func webhookCommitStatus(body object, sha string) (*githubmodel.CommitStatus, er
 	if err := json.Unmarshal(raw, &status); err != nil {
 		return nil, err
 	}
-	observation, err := client.CommitStatusObservation(&status, sha)
+	observation, err := client.CommitStatusObservation(&status, revision)
 	if err != nil {
 		return nil, err
 	}

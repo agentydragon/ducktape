@@ -4,9 +4,7 @@ go_library(
     name = "github",
     srcs = [
         "access.go",
-        "check_runs.go",
         "commit_resources.go",
-        "commit_statuses.go",
         "failures.go",
         "maintenance.go",
         "pr_state_webhook.go",

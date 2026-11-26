@@ -40,23 +40,18 @@ func TestCommitStatusesPaginatesAndPreservesEveryNativeState(t *testing.T) {
 		return true
 	}
 
-	statuses, err := newTestClient(t, fake).CommitStatuses(t.Context(), "owner/repo", fixture.SHA, installationID)
+	statuses, err := newTestClient(t, fake).CommitStatuses(t.Context(), testRevision(fixture.SHA), installationID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []githubmodel.CommitStatus{
-		{SHA: fixture.SHA, ID: 501, State: githubmodel.CommitStatusError, Context: "continuous-integration/error", TargetURL: "https://ci.test/error", UpdatedAt: ciUTC(2026, 10, 27, 8, 6, 7)},
-		{SHA: fixture.SHA, ID: 502, State: githubmodel.CommitStatusFailure, Context: "continuous-integration/failure", TargetURL: "https://ci.test/failure"},
-		{SHA: fixture.SHA, ID: 503, State: githubmodel.CommitStatusPending, Context: "continuous-integration/pending"},
-		{SHA: fixture.SHA, ID: 504, State: githubmodel.CommitStatusSuccess, Context: "continuous-integration/success", TargetURL: "https://ci.test/success", UpdatedAt: ciUTC(2026, 10, 27, 1, 9, 10)},
+		{RepositoryID: 100, SHA: fixture.SHA, ID: 501, State: githubmodel.CommitStatusError, Context: "continuous-integration/error", TargetURL: "https://ci.test/error", UpdatedAt: ciUTC(2026, 10, 27, 8, 6, 7)},
+		{RepositoryID: 100, SHA: fixture.SHA, ID: 502, State: githubmodel.CommitStatusFailure, Context: "continuous-integration/failure", TargetURL: "https://ci.test/failure"},
+		{RepositoryID: 100, SHA: fixture.SHA, ID: 503, State: githubmodel.CommitStatusPending, Context: "continuous-integration/pending"},
+		{RepositoryID: 100, SHA: fixture.SHA, ID: 504, State: githubmodel.CommitStatusSuccess, Context: "continuous-integration/success", TargetURL: "https://ci.test/success", UpdatedAt: ciUTC(2026, 10, 27, 1, 9, 10)},
 	}
 	if !reflect.DeepEqual(statuses, want) {
 		t.Errorf("CommitStatuses() = %+v, want %+v", statuses, want)
-	}
-	for i, status := range statuses {
-		if status.RepositoryID != 0 {
-			t.Errorf("status %d repository ID = %d, want provider to fill it", i, status.RepositoryID)
-		}
 	}
 	if fake.Count("/repos/owner/repo/commits/"+fixture.SHA+"/status") != 2 {
 		t.Errorf("commit status page count = %d, want 2", fake.Count("/repos/owner/repo/commits/"+fixture.SHA+"/status"))
@@ -68,7 +63,7 @@ func TestCommitStatusesPaginatesAndPreservesEveryNativeState(t *testing.T) {
 
 func TestCommitStatusesUsesStatusesOnlyTokenAndReturnsNonNilEmptySuccess(t *testing.T) {
 	fake := fixture.NewFake(t)
-	statuses, err := newTestClient(t, fake).CommitStatuses(t.Context(), "owner/repo", fixture.SHA, installationID)
+	statuses, err := newTestClient(t, fake).CommitStatuses(t.Context(), testRevision(fixture.SHA), installationID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +83,7 @@ func TestCommitStatusesRejectsWrongCommitAndInvalidFacts(t *testing.T) {
 		fake := fixture.NewFake(t)
 		fake.Respond("/repos/owner/repo/commits/"+fixture.SHA+"/status", http.StatusOK, nil,
 			fmt.Sprintf(`{"state":"success","sha":%q,"total_count":0,"statuses":[]}`, fixture.OtherBaseSHA))
-		_, err := newTestClient(t, fake).CommitStatuses(t.Context(), "owner/repo", fixture.SHA, installationID)
+		_, err := newTestClient(t, fake).CommitStatuses(t.Context(), testRevision(fixture.SHA), installationID)
 		fixture.AsError[*SourceChangedError](t, err)
 	})
 	for name, status := range map[string]string{
@@ -100,7 +95,7 @@ func TestCommitStatusesRejectsWrongCommitAndInvalidFacts(t *testing.T) {
 			fake := fixture.NewFake(t)
 			fake.Respond("/repos/owner/repo/commits/"+fixture.SHA+"/status", http.StatusOK, nil,
 				fmt.Sprintf(`{"state":"success","sha":%q,"total_count":1,"statuses":[%s]}`, fixture.SHA, status))
-			_, err := newTestClient(t, fake).CommitStatuses(t.Context(), "owner/repo", fixture.SHA, installationID)
+			_, err := newTestClient(t, fake).CommitStatuses(t.Context(), testRevision(fixture.SHA), installationID)
 			fixture.AsError[*InvalidResponseError](t, err)
 		})
 	}
@@ -109,7 +104,7 @@ func TestCommitStatusesRejectsWrongCommitAndInvalidFacts(t *testing.T) {
 			fake := fixture.NewFake(t)
 			fake.Respond("/repos/owner/repo/commits/"+fixture.SHA+"/status", http.StatusOK, nil,
 				fmt.Sprintf(`{"state":%q,"sha":%q,"total_count":0,"statuses":[]}`, combinedState, fixture.SHA))
-			_, err := newTestClient(t, fake).CommitStatuses(t.Context(), "owner/repo", fixture.SHA, installationID)
+			_, err := newTestClient(t, fake).CommitStatuses(t.Context(), testRevision(fixture.SHA), installationID)
 			fixture.AsError[*InvalidResponseError](t, err)
 		})
 	}
@@ -117,7 +112,7 @@ func TestCommitStatusesRejectsWrongCommitAndInvalidFacts(t *testing.T) {
 
 func TestCommitStatusesRejectsNonImmutableSHAWithoutRequest(t *testing.T) {
 	fake := fixture.NewFake(t)
-	_, err := newTestClient(t, fake).CommitStatuses(t.Context(), "owner/repo", "main", installationID)
+	_, err := newTestClient(t, fake).CommitStatuses(t.Context(), testRevision("main"), installationID)
 	if err == nil || fake.Total() != 0 {
 		t.Errorf("CommitStatuses with a branch name = %v after %d requests, want argument error without requests", err, fake.Total())
 	}
