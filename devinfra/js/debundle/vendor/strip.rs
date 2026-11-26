@@ -1902,10 +1902,7 @@ fn is_primitive_valued_expr(expr: &Expr) -> bool {
         Expr::Paren(paren) => is_primitive_valued_expr(&paren.expr),
         Expr::Lit(lit) => !matches!(lit, Lit::Regex(_)),
         Expr::Tpl(_) | Expr::Unary(_) | Expr::Update(_) => true,
-        Expr::Bin(bin) => !matches!(
-            bin.op,
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-        ),
+        Expr::Bin(bin) => !bin.op.may_short_circuit(),
         _ => false,
     }
 }

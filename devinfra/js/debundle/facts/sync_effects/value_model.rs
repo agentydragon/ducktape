@@ -1285,20 +1285,13 @@ impl ValueExpr {
                     Arc::new(Self::lower(&bin.right, covered)),
                 )
             }
-            Expr::Bin(bin)
-                if matches!(
-                    bin.op,
-                    BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-                ) =>
-            {
-                Self::Alternatives(
-                    [
-                        Self::lower(&bin.left, covered),
-                        Self::lower(&bin.right, covered),
-                    ]
-                    .into(),
-                )
-            }
+            Expr::Bin(bin) if bin.op.may_short_circuit() => Self::Alternatives(
+                [
+                    Self::lower(&bin.left, covered),
+                    Self::lower(&bin.right, covered),
+                ]
+                .into(),
+            ),
             Expr::Bin(bin) => Self::Primitive(
                 [
                     Self::lower(&bin.left, covered),

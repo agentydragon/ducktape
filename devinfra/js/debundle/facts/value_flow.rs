@@ -1389,15 +1389,9 @@ impl ChunkValueFlow {
             Expr::Cond(cond) => self
                 .values_of_expr(&cond.cons)
                 .union(self.values_of_expr(&cond.alt)),
-            Expr::Bin(bin)
-                if matches!(
-                    bin.op,
-                    BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-                ) =>
-            {
-                self.values_of_expr(&bin.left)
-                    .union(self.values_of_expr(&bin.right))
-            }
+            Expr::Bin(bin) if bin.op.may_short_circuit() => self
+                .values_of_expr(&bin.left)
+                .union(self.values_of_expr(&bin.right)),
             Expr::Seq(seq) => seq
                 .exprs
                 .last()
@@ -2080,12 +2074,7 @@ impl FlowValueExpr {
     fn from_ast(expr: &Expr, symbols: &mut FlowSymbols) -> Self {
         match expr.unwrap_parens() {
             Expr::Cond(cond) => Self::from_union_branches(&cond.cons, &cond.alt, symbols),
-            Expr::Bin(bin)
-                if matches!(
-                    bin.op,
-                    BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-                ) =>
-            {
+            Expr::Bin(bin) if bin.op.may_short_circuit() => {
                 Self::from_union_branches(&bin.left, &bin.right, symbols)
             }
             expr => Self::from_ast_leaf(expr, symbols),
@@ -2101,12 +2090,7 @@ impl FlowValueExpr {
                     pending.push(&cond.alt);
                     pending.push(&cond.cons);
                 }
-                Expr::Bin(bin)
-                    if matches!(
-                        bin.op,
-                        BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-                    ) =>
-                {
+                Expr::Bin(bin) if bin.op.may_short_circuit() => {
                     pending.push(&bin.right);
                     pending.push(&bin.left);
                 }
@@ -4508,10 +4492,7 @@ impl Visit for FlowCallCollector<'_> {
     impl_lazy_optional_path_visits!();
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        if matches!(
-            node.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if node.op.may_short_circuit() {
             lazy_visit_may_skip(self, node);
         } else {
             node.visit_children_with(self);

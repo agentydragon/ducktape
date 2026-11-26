@@ -967,10 +967,7 @@ fn has_definite_primitive_result(expression: &Expr) -> bool {
     match expression.unwrap_parens() {
         Expr::Lit(Lit::Regex(_)) => false,
         Expr::Lit(_) | Expr::Tpl(_) | Expr::Unary(_) | Expr::Update(_) => true,
-        Expr::Bin(binary) => !matches!(
-            binary.op,
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-        ),
+        Expr::Bin(binary) => !binary.op.may_short_circuit(),
         _ => false,
     }
 }
@@ -9779,10 +9776,7 @@ impl Visit for ExecutionIndex {
     fn visit_bin_expr(&mut self, expression: &BinExpr) {
         expression.left.visit_with(self);
         let after_left = self.past_await;
-        if matches!(
-            expression.op,
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-        ) {
+        if expression.op.may_short_circuit() {
             self.conditional_depth += 1;
         }
         let previous_target = self.safe_class_target.take();
@@ -9796,10 +9790,7 @@ impl Visit for ExecutionIndex {
         };
         expression.right.visit_with(self);
         self.safe_class_target = previous_target;
-        if matches!(
-            expression.op,
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-        ) {
+        if expression.op.may_short_circuit() {
             self.conditional_depth -= 1;
             self.past_await = after_left;
         }
@@ -10861,17 +10852,11 @@ impl Visit for ExecutionIndex {
         assignment.left.visit_with(self);
         self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = previous_source;
-        if matches!(
-            assignment.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if assignment.op.may_short_circuit() {
             self.may_skip_member_read_depth += 1;
         }
         assignment.right.visit_with(self);
-        if matches!(
-            assignment.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if assignment.op.may_short_circuit() {
             self.may_skip_member_read_depth -= 1;
             self.past_await = before_assignment;
         }

@@ -578,10 +578,7 @@ impl Visit for SyncInlineEffectCollector {
             record_assign_target(&node.left, self);
         }
         node.visit_children_with(self);
-        if matches!(
-            node.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if node.op.may_short_circuit() {
             self.position.past_await = before_assignment;
         }
     }
@@ -817,10 +814,7 @@ impl Visit for StatementFactsCollector {
         }
         node.left.visit_with(self);
         node.right.visit_with(self);
-        if matches!(
-            node.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if node.op.may_short_circuit() {
             self.position.past_await = before_assignment;
         }
     }

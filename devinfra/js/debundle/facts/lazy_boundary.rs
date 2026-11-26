@@ -57,10 +57,7 @@ pub(crate) fn lazy_visit_bin_expr<V: LazyBoundary>(v: &mut V, node: &BinExpr) {
     node.left.visit_with(v);
     let before_right = v.position().past_await;
     node.right.visit_with(v);
-    if matches!(
-        node.op,
-        BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-    ) {
+    if node.op.may_short_circuit() {
         v.position().past_await = before_right;
     }
 }

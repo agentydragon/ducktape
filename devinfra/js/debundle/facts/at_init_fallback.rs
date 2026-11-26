@@ -662,10 +662,7 @@ impl Visit for NoSyncMemberArgumentSourceCollector<'_> {
     impl_lazy_optional_path_visits!();
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        if matches!(
-            node.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if node.op.may_short_circuit() {
             lazy_visit_may_skip(self, node);
         } else {
             node.visit_children_with(self);
