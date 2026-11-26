@@ -690,8 +690,8 @@ lean_library(
     srcs = ["EsmSplit/LowerSplit/SparseArtifact.lean"],
     deps = [
         ":corejs_sparse_checked_split",
+        ":lowersplit_input",
         ":lowersplit_support",
-        ":lowersplit_workflows",
     ],
 )
 
@@ -714,8 +714,8 @@ lean_library(
     visibility = ["//visibility:private"],
     deps = [
         ":checked_artifact",
+        ":lowersplit_input",
         ":lowersplit_support",
-        ":lowersplit_workflows",
         ":sparse_checked_artifact",
     ],
 )
@@ -735,11 +735,22 @@ lean_proof_test(
     deps = [":checked_artifact"],
 )
 
+# Input-only consumers do not need to compile or link the certification workflows.
+lean_library(
+    name = "lowersplit_input",
+    srcs = ["EsmSplit/LowerSplit/Input.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":effects",
+        ":lowersplit_support",
+        ":planner",
+    ],
+)
+
 lean_library(
     name = "lowersplit_workflows",
     srcs = [
         # Keep import order for the native Lean rule.
-        "EsmSplit/LowerSplit/Input.lean",
         "EsmSplit/LowerSplit/Diagnostic.lean",
         "EsmSplit/LowerSplit/InstanceGenerator.lean",
         "EsmSplit/LowerSplit/SliceCertificate.lean",
@@ -750,6 +761,7 @@ lean_library(
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
+        ":lowersplit_input",
         ":lowersplit_support",
         ":planner",
     ],
@@ -896,7 +908,7 @@ lean_library(
     visibility = ["//visibility:private"],
     deps = [
         ":corejs_structural",
-        ":lowersplit_workflows",
+        ":lowersplit_input",
     ],
 )
 
@@ -1480,7 +1492,7 @@ lean_library(
     testonly = True,
     srcs = ["Experiments/ReplicatePlan.lean"],
     visibility = ["//visibility:private"],
-    deps = [":lowersplit_workflows"],
+    deps = [":lowersplit_input"],
 )
 
 lean_binary(
