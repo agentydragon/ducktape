@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -23,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -74,14 +74,9 @@ func TestRuntimeCompactsWithLiveCellAndInFlightNestedTool(t *testing.T) {
 	runtimetesting.AdmitInput(t, store, session.ID, commandID, strings.Repeat("retain this task ", 64))
 
 	nestedGate := make(chan struct{})
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	executor := grpc.NewServer()
 	executorpb.RegisterExecutorServer(executor, &drainExecutorServer{startGate: nestedGate})
-	go func() { _ = executor.Serve(listener) }()
-	t.Cleanup(executor.Stop)
+	executorTarget := grpcserver.Serve(t, executor)
 
 	requests := make(chan []byte, 4)
 	compactionGate := make(chan struct{})
@@ -132,7 +127,7 @@ func TestRuntimeCompactsWithLiveCellAndInFlightNestedTool(t *testing.T) {
 	model := settings.Models["fixture-model"]
 	model.AutoCompactTokens = new(50)
 	settings.Models["fixture-model"] = model
-	settings.DirectExecutorTarget = listener.Addr().String()
+	settings.DirectExecutorTarget = executorTarget
 	settings.DirectExecutorInsecureLocaltest = true
 	manager, peers := newFakeCodeModeManager(t)
 	runtime := New(store, settings, residentsession.NewCodeModeHost(manager.Manager, store, nil))

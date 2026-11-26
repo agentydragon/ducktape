@@ -1,7 +1,6 @@
 package server
 
 import (
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,25 +10,18 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func TestSystemStatusUsesConnectionServiceAppSVID(t *testing.T) {
-	plainListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	plainServer := grpc.NewServer()
 	plainHealth := health.NewServer()
 	plainHealth.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(plainServer, plainHealth)
-	go func() { _ = plainServer.Serve(plainListener) }()
-	t.Cleanup(func() {
-		plainServer.Stop()
-		_ = plainListener.Close()
-	})
+	plainTarget := grpcserver.Serve(t, plainServer)
 
 	ca := peertlstesting.NewCA(t)
 	connectionServerCertificate := ca.Issue(t, peertls.MCPEdgeURI)
@@ -37,34 +29,26 @@ func TestSystemStatusUsesConnectionServiceAppSVID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connectionListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	connectionServer := grpc.NewServer(grpc.Creds(serverCredentials))
 	connectionHealth := health.NewServer()
 	connectionHealth.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(connectionServer, connectionHealth)
-	go func() { _ = connectionServer.Serve(connectionListener) }()
-	t.Cleanup(func() {
-		connectionServer.Stop()
-		_ = connectionListener.Close()
-	})
+	connectionTarget := grpcserver.Serve(t, connectionServer)
 
 	appCertificate := ca.Issue(t, peertls.AppURI)
 	config := settings.Config{
-		RunnerGatewayTarget:  plainListener.Addr().String(),
-		HistoryServiceTarget: plainListener.Addr().String(),
+		RunnerGatewayTarget:  plainTarget,
+		HistoryServiceTarget: plainTarget,
 		ActionFederation: settings.ActionFederationConfig{
-			ServiceURL: "http://" + plainListener.Addr().String(),
+			ServiceURL: "http://" + plainTarget,
 		},
-		ConnectionServiceURL: "http://" + connectionListener.Addr().String(),
+		ConnectionServiceURL: "http://" + connectionTarget,
 		ConnectionServiceTLS: &peertls.ClientTLS{
 			CAFile: ca.RootFile, ServerURI: peertls.MCPEdgeURI,
 			CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
 		},
-		NotificationsURL: "http://" + plainListener.Addr().String(),
-		EgressAdminURL:   "http://" + plainListener.Addr().String(),
+		NotificationsURL: "http://" + plainTarget,
+		EgressAdminURL:   "http://" + plainTarget,
 	}
 	checker, connections, err := newSystemStatus(config, &http.Client{})
 	if err != nil {
