@@ -47,23 +47,7 @@ class PolicyObjects:
     ) -> bool:
         del traceback
         with tracer.start_as_current_span("system_test.mcp.policy_cleanup"):
-            result = await finish_cleanup(self._delete_all())
-
-            if exc is not None:
-                if result.failure is not None:
-                    exc.add_note(
-                        "Policy resource cleanup also failed "
-                        f"({len(result.failure.exceptions) if isinstance(result.failure, BaseExceptionGroup) else 1} "
-                        "resource(s)); cleanup details are suppressed to preserve the original failure."
-                    )
-                return False
-
-            if result.cancellation is not None:
-                if result.failure is not None and result.failure is not result.cancellation:
-                    raise result.cancellation from result.failure
-                raise result.cancellation
-            if result.failure is not None:
-                raise result.failure
+            (await finish_cleanup(self._delete_all())).propagate(exc, note="Policy resource cleanup also failed")
         return False
 
     async def _create(self, kind: str, plural: str, name: str, spec: dict[str, Any]) -> str:

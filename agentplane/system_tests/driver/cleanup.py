@@ -19,8 +19,8 @@ async def close_resources(resources: AsyncExitStack, error: BaseException | None
             result.failure if error is None else BaseExceptionGroup("Case and cleanup failed", [error, result.failure])
         )
         raise CleanupError("Owned test resources could not be released") from cause
-    if error is None and result.cancellation is not None:
-        raise result.cancellation
+    if error is None:
+        result.raise_outcome()
 
 
 @asynccontextmanager
@@ -41,6 +41,29 @@ async def resource_scope() -> AsyncIterator[AsyncExitStack]:
 class CleanupResult:
     failure: BaseException | None = None
     cancellation: asyncio.CancelledError | None = None
+
+    def raise_outcome(self) -> None:
+        """Raise the caller's deferred cancellation, chained from any cleanup failure, else the failure."""
+        if self.cancellation is not None:
+            # A cleanup that re-raised the caller's own cancellation must not chain it to itself.
+            if self.failure is not None and self.failure is not self.cancellation:
+                raise self.cancellation from self.failure
+            raise self.cancellation
+        if self.failure is not None:
+            raise self.failure
+
+    def propagate(self, primary: BaseException | None, *, note: str) -> None:
+        """Keep `primary` primary with a content-free `note` on a cleanup failure; without one, raise the outcome.
+
+        The note names only the failure's type, so cleanup error text never reaches the primary's report.
+        """
+        if primary is None:
+            self.raise_outcome()
+        elif self.failure is not None:
+            kind = type(self.failure).__name__
+            if isinstance(self.failure, BaseExceptionGroup):
+                kind = f"{kind} of {len(self.failure.exceptions)}"
+            primary.add_note(f"{note} ({kind}).")
 
 
 async def finish_cleanup(work: Awaitable[object]) -> CleanupResult:

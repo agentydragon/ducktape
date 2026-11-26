@@ -54,14 +54,4 @@ async def open_resources(
                     error.__traceback__ if error is not None else None,
                 )
             )
-            if result.failure is not None:
-                if error is not None:
-                    error.add_note(f"Scenario cleanup also failed ({type(result.failure).__name__}).")
-                elif result.cancellation is not None:
-                    if result.failure is result.cancellation:
-                        raise result.cancellation
-                    raise result.cancellation from result.failure
-                else:
-                    raise result.failure
-            if error is None and result.cancellation is not None:
-                raise result.cancellation
+            result.propagate(error, note="Scenario cleanup also failed")
