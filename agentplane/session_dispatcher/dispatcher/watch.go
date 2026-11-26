@@ -3,8 +3,9 @@ package dispatcher
 import (
 	"context"
 	"slices"
+	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/resumetoken"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
@@ -14,14 +15,31 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// subscribeWatch registers before the initial read, closing the subscribe/snapshot race.
-// The same Hub and helper serve dispatch and Session watches. Reconnects coalesce into a
-// wakeup, so the next version read covers commits made while LISTEN was disconnected.
-func subscribeWatch(hub *wakeups.Hub, channels ...string) (<-chan struct{}, func(), error) {
-	if hub == nil {
+// watchWriteTimeout bounds how long a slow reader can hold a Dispatcher watch.
+const watchWriteTimeout = 5 * time.Second
+
+func sendWatchDispatch(
+	ctx context.Context,
+	stream grpc.ServerStreamingServer[dispatcherpb.WatchDispatchesResponse],
+	frame *dispatcherpb.WatchDispatchesResponse,
+) error {
+	return streaming.SendWithinStatus(ctx, watchWriteTimeout, stream.Send, frame, "dispatcher watch write deadline expired")
+}
+
+// subscribeDispatches registers before the initial read. A reconnect wakes both
+// kinds of subscription so each watch can handle a gap in notifications.
+func (s *Service) subscribeDispatches(sessionID string) (<-chan struct{}, func(), error) {
+	if s.Hub == nil {
 		return nil, nil, status.Error(codes.Unavailable, "dispatcher watch listener unavailable")
 	}
-	changed, unsubscribe, err := hub.Subscribe(channels...)
+	var changed <-chan struct{}
+	var unsubscribe func()
+	var err error
+	if sessionID == "" {
+		changed, unsubscribe, err = s.Hub.Subscribe(store.NotifyChannel)
+	} else {
+		changed, unsubscribe, err = s.Hub.SubscribeKey(store.NotifyChannel, sessionID)
+	}
 	if err != nil {
 		return nil, nil, status.Error(codes.Unavailable, "dispatcher watch subscription unavailable")
 	}
@@ -71,15 +89,12 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 		return status.Error(codes.Internal, "cannot encode watch filter")
 	}
 	digest := resumetoken.Digest(append([]byte("dispatches\x00"), filterBytes...))
-	var last int64
-	resuming := request.GetResumeToken() != ""
-	if resuming {
-		last, err = resumetoken.Decode(request.GetResumeToken(), digest)
-		if err != nil {
-			return status.Error(codes.InvalidArgument, err.Error())
-		}
+	last, err := resumetoken.Decode(request.GetResumeToken(), digest)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
-	changed, unsubscribe, err := subscribeWatch(s.Hub, store.NotifyChannel)
+	resuming := request.GetResumeToken() != ""
+	changed, unsubscribe, err := s.subscribeDispatches("")
 	if err != nil {
 		return err
 	}
@@ -94,30 +109,22 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 		generation := s.Hub.Generation()
 		batch, err := s.Store.ReadDispatchChanges(leaseCtx, filter, caller, last, resuming)
 		if err != nil {
-			if leaseCtx.Err() != nil && ctx.Err() == nil {
-				return nil
-			}
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return apiError(err)
+			return watchEnd(ctx, leaseCtx, apiError(err))
 		}
 		for _, change := range batch.Changes {
-			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+			if err := sendWatchDispatch(leaseCtx, stream, &dispatcherpb.WatchDispatchesResponse{
 				Frame:       &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: change.Dispatch},
 				ResumeToken: resumetoken.Encode(change.Version, digest),
-			})
-			if ended || err != nil {
-				return err
+			}); err != nil {
+				return watchEnd(ctx, leaseCtx, err)
 			}
 		}
 		if first || batch.Through > last {
-			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+			if err := sendWatchDispatch(leaseCtx, stream, &dispatcherpb.WatchDispatchesResponse{
 				Frame:       &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
 				ResumeToken: resumetoken.Encode(batch.Through, digest),
-			})
-			if ended || err != nil {
-				return err
+			}); err != nil {
+				return watchEnd(ctx, leaseCtx, err)
 			}
 		}
 		last, first, resuming = batch.Through, false, true
@@ -128,11 +135,20 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 		}
 		select {
 		case <-leaseCtx.Done():
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return nil
+			return ctx.Err()
 		case <-changed:
 		}
 	}
+}
+
+// watchEnd treats lease expiry as a clean end after a read or a write fails. The
+// caller starts a fresh authorized watch. A cancelled RPC keeps its status.
+func watchEnd(ctx, leaseCtx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if leaseCtx.Err() != nil {
+		return nil
+	}
+	return err
 }
