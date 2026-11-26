@@ -208,6 +208,7 @@ class InteractiveBrowserRuntime:
             else:
                 reject = None
                 self._viewer_connected = True
+                logger.info("viewer admitted")
                 self._viewer_socket = websocket
                 port = self._websockify_port
                 self._viewer_ended.clear()
@@ -272,6 +273,7 @@ class InteractiveBrowserRuntime:
                     if quiesce_failed and self._state == "running":
                         self._state = "quiesce_failed"
                     self._viewer_connected = False
+                    logger.info("viewer released")
                     self._viewer_socket = None
                 self._viewer_ended.set()
             if quiesce_failed:
