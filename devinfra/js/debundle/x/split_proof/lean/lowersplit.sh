@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-core=$(rlocation "$1")
+core=$(rlocation '{CORE}')
 export SPLIT_PROOF_MODULE_IO
-SPLIT_PROOF_MODULE_IO=$(rlocation "$2")
-shift 2
+SPLIT_PROOF_MODULE_IO=$(rlocation '{MODULE_IO}')
 exec "$core" "$@"

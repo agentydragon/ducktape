@@ -739,16 +739,16 @@ genrule(
     name = "lowersplit_launcher",
     srcs = ["lowersplit.sh"],
     outs = ["lowersplit_launcher.sh"],
-    cmd = "cp $(location lowersplit.sh) $@",
+    cmd = "sed -e 's|{CORE}|$(rlocationpath :lowersplit_core)|g' -e 's|{MODULE_IO}|$(rlocationpath //devinfra/js/debundle/x/split_proof/translation:module_io)|g' $< > $@",
+    tools = [
+        ":lowersplit_core",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
 )
 
 sh_binary(
     name = "lowersplit",
     srcs = [":lowersplit_launcher"],
-    args = [
-        "$(rlocationpath :lowersplit_core)",
-        "$(rlocationpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
-    ],
     data = [
         ":lowersplit_core",
         "//devinfra/js/debundle/x/split_proof/translation:module_io",
