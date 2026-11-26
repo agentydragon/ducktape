@@ -26,7 +26,7 @@ import json
 import logging
 import math
 import time
-from collections.abc import Set
+from collections.abc import Callable, Set
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -139,7 +139,11 @@ def _sign_in_failed(message: str) -> HTMLResponse:
     return HTMLResponse(f'<main><p>{message}</p><a href="/auth/login">Try again</a></main>', status_code=401)
 
 
-def _login_router(config: LoginConfig) -> APIRouter:
+type SessionStarted = Callable[[Request, Response, LoginSession], None]
+type SessionEnded = Callable[[Request, Response], None]
+
+
+def _login_router(config: LoginConfig, on_login: SessionStarted | None, on_logout: SessionEnded | None) -> APIRouter:
     router = APIRouter(prefix="/auth", tags=["auth"], include_in_schema=False)
 
     def client(request: Request) -> Any:
@@ -169,22 +173,30 @@ def _login_router(config: LoginConfig) -> APIRouter:
 
         request.session.clear()
         # Keep only the identity and expiry; never store Authentik tokens in the browser cookie.
-        request.session["user"] = LoginSession(
+        identity = LoginSession(
             issuer=config.issuer,
             subject=claims["sub"],
             username=claims["preferred_username"],
             expires_at=min(time.time() + config.session_seconds, float(claims["exp"])),
-        ).model_dump()
+        )
+        response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+        if on_login is None:
+            request.session["user"] = identity.model_dump()
+        else:
+            on_login(request, response, identity)
         if config.session_created_log is not None:
             logger.info(config.session_created_log)
-        return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+        return response
 
     @router.post("/logout")
     async def logout(request: Request) -> RedirectResponse:
         if request.headers.get("origin") != config.public_base_url:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Logout requires a same-origin request")
         request.session.clear()
-        return RedirectResponse(url="/auth/signed-out", status_code=status.HTTP_303_SEE_OTHER)
+        response = RedirectResponse(url="/auth/signed-out", status_code=status.HTTP_303_SEE_OTHER)
+        if on_logout is not None:
+            on_logout(request, response)
+        return response
 
     @router.get("/signed-out", response_class=HTMLResponse)
     async def signed_out() -> str:
@@ -245,7 +257,9 @@ def install_login(app: FastAPI, config: LoginConfig) -> None:
     install_login_routes(app, config)
 
 
-def install_login_routes(app: FastAPI, config: LoginConfig) -> None:
+def install_login_routes(
+    app: FastAPI, config: LoginConfig, *, on_login: SessionStarted | None = None, on_logout: SessionEnded | None = None
+) -> None:
     """Install login and signed sessions for an app that owns its per-route guards."""
     app.state.oauth = build_oauth(issuer=config.issuer, client_id=config.client_id, client_secret=config.client_secret)
     app.add_middleware(
@@ -257,4 +271,4 @@ def install_login_routes(app: FastAPI, config: LoginConfig) -> None:
         https_only=config.https,
         path="/",
     )
-    app.include_router(_login_router(config))
+    app.include_router(_login_router(config, on_login, on_logout))
