@@ -23,6 +23,16 @@ from testing.frontend_visual.capture import VisualPage
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
+async def test_running_sandbox_status_hover(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.set_running_sandbox_conditions("ready-sandbox")
+    await app.mount_app("/sandboxes/ready-sandbox")
+    await view.page.get_by_role("img", name="Sandbox status: Ready").hover()
+    tooltip = view.page.get_by_role("tooltip")
+    await expect(tooltip).to_contain_text("EnvironmentRuntimeConnected")
+    await expect(tooltip).to_contain_text("ContainersReady")
+    await view.capture(target=view.page.locator("#app"))
+
+
 @DESKTOP_AND_MOBILE
 async def test_session_recovery_messages(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.recovery("messages")

@@ -7,7 +7,7 @@ import {
   type EnvironmentDescriptor,
 } from "../../../environments/v1/environment_service_pb";
 
-import { durationLabel } from "../ui/format_time";
+import { durationLabel, timeAgo } from "../ui/format_time";
 import type { SandboxStatusKind } from "../ui/status_mark";
 
 type RawObject = Record<string, unknown>;
@@ -231,15 +231,29 @@ export function containerStatuses(status: RawObject | null | undefined): Contain
   });
 }
 
-function conditionLine(condition: RawCondition): string {
-  return [
-    `${condition.type}=${condition.status}`,
-    condition.reason,
-    condition.message,
-    condition.lastTransitionTime ? `changed ${condition.lastTransitionTime}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+/** Keep unhealthy diagnostics explicit. Healthy checks that changed together share one line. */
+function conditionLines(conditions: RawCondition[]): string[] {
+  const healthy = new Map<string, string[]>();
+  const lines: string[] = [];
+  for (const condition of conditions) {
+    const stamp = condition.lastTransitionTime;
+    const age = stamp && Number.isFinite(Date.parse(stamp)) ? timeAgo(stamp) : "";
+    if (condition.status === "True") {
+      const names = healthy.get(age) ?? [];
+      names.push(condition.type);
+      healthy.set(age, names);
+    } else {
+      lines.push(
+        [
+          ...new Set(
+            [`${condition.type}: ${condition.status}`, condition.reason, condition.message, age].filter(Boolean)
+          ),
+        ].join(" · ")
+      );
+    }
+  }
+  for (const [age, names] of healthy) lines.push([`✓ ${names.join(", ")}`, age].filter(Boolean).join(" · "));
+  return lines;
 }
 
 export function sandboxStatusDetail(sandbox: EnvironmentDescriptor): string {
@@ -254,11 +268,7 @@ export function sandboxStatusDetail(sandbox: EnvironmentDescriptor): string {
         : `Suspended ${reason}`
     );
   }
-  lines.push(
-    ...rawConditions(rawObject(sandbox.kubernetesDiagnostics?.sandboxStatus)).map(
-      (condition) => `Sandbox condition · ${conditionLine(condition)}`
-    )
-  );
+  lines.push(...conditionLines(rawConditions(rawObject(sandbox.kubernetesDiagnostics?.sandboxStatus))));
   if (pod) {
     const status = pod.status;
     lines.push(`Pod: ${podPhase(sandbox) ?? "phase unknown"}${pod.deleting ? " · deleting" : ""}`);
@@ -266,7 +276,7 @@ export function sandboxStatusDetail(sandbox: EnvironmentDescriptor): string {
     if (controllers.length !== 1 || controllers[0]?.uid !== sandbox.target?.uid) {
       lines.push("Pod controller identity does not match this Sandbox");
     }
-    lines.push(...rawConditions(status).map((condition) => `Pod condition · ${conditionLine(condition)}`));
+    lines.push(...conditionLines(rawConditions(status)));
     lines.push(
       ...containerStatuses(status).map((container) =>
         [
