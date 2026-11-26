@@ -130,7 +130,7 @@ func TestHistoricalSettlementPreservesFoldedContentAndCorrectsPastReaders(t *tes
 	}
 	// This is the correction query FollowSession makes after catching up, including on an idle wake.
 	removed, err := f.history.ReadFollowRemoved(t.Context(), f.id, 0, 9)
-	if err != nil || len(removed) != 1 || removed[0].GetFirst() != 3 || removed[0].GetLast() != 6 {
+	if err != nil || len(removed.Ranges) != 1 || removed.Ranges[0].GetFirst() != 3 || removed.Ranges[0].GetLast() != 6 {
 		t.Fatalf("late reader correction: %v %v", removed, err)
 	}
 	if _, err := f.history.Append(t.Context(), f.id, f.span.Entries); err != nil {

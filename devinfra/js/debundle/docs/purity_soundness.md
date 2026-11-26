@@ -63,7 +63,7 @@ namespace facade's fresh result), an object check (a fresh object literal), or
 iteration (a fresh array literal, element by element). An operand that fails
 a conversion keeps a `coercing_operator` reason; any other mismatch leaves the
 call `unknown_call` / `unknown_new`. Every row needs a positive and a negative
-case in `purity/classifier_tests.rs`. The synchronous interpreter reads the
+case in `analyze/classifier_tests.rs`. The synchronous interpreter reads the
 same rows with its census premise (`requires`); a row outside the census
 (empty `requires`) is purity-only.
 
@@ -893,7 +893,7 @@ The incomplete statement's global reach preserves its own ordering constraints;
 it does not prove a later property's value or descriptor. The synthetic CLI
 controls in `e2e/synchronous_precision_report_test.rs` cover reads after skipped
 mutations and an unrelated object that remains settled.
-`facts/at_init_fallback_tests.rs` pins the skipped-code routes against plain-array
+`analyze/at_init_fallback_tests.rs` pins the skipped-code routes against plain-array
 element settlement.
 
 ## Plain-array at-init fallback
@@ -1518,7 +1518,7 @@ exist), and the mutation in `freeze`'s case targets a value that is not
 aliased through any user-observable channel before the call. On an arbitrary
 receiver the calls stay unknown; reading the functions themselves stays pure
 (§ Function-valued data properties). New rows of this kind need paired tests
-in `purity/classifier_tests.rs`: a positive
+in `analyze/classifier_tests.rs`: a positive
 `object_<prop>_on_plain_<shape>_classifies_pure` (`Object.<prop>({lit})` is
 Pure) and a negative `object_<prop>_on_<non-plain>_stays_unknown`
 (`Object.<prop>(somefn())` and the opaque-binding form are Unknown).

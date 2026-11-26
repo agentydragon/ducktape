@@ -332,6 +332,14 @@ lean_library(
     ],
 )
 
+lean_proof_test(
+    name = "constructed_output_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LinkedInput"],
+    required_theorems = ["CoreJS.LinkedInput.checkConstructedOutput_sound"],
+    deps = [":corejs_linked_input"],
+)
+
 # Generated certificates import the proof layer on its own.
 lean_library(
     name = "corejs_certificate_proof",
@@ -972,6 +980,7 @@ lean_library(
     ],
     deps = [
         ":corejs_certificates",
+        ":corejs_indexed_checked_split",
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",

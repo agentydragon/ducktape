@@ -44,7 +44,7 @@ func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream 
 	if err != nil {
 		return err
 	}
-	call := &followCall{service: s, reader: reader, stream: stream, sessionID: sessionID, request: request, through: after, sentRemoved: map[removedRange]struct{}{}}
+	call := &followCall{service: s, reader: reader, stream: stream, sessionID: sessionID, request: request, through: after}
 	initial := true
 	for {
 		if leased.Err() != nil {
@@ -79,12 +79,9 @@ type followCall struct {
 	sessionID uuid.UUID
 	request   *historypb.FollowSessionRequest
 	through   uint64
-	// sentRemoved holds the removals this stream already reported; corrections are idempotent,
-	// so a catch-up sends only ranges new since the previous one.
-	sentRemoved map[removedRange]struct{}
+	// removedThrough is the position of the last removal this stream reported.
+	removedThrough uint64
 }
-
-type removedRange struct{ first, last uint64 }
 
 type terminalWriteError struct{ err error }
 
@@ -147,7 +144,7 @@ func (c *followCall) catchUp(ctx context.Context, initial bool) error {
 		}
 	}
 	readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
-	removed, err := c.reader.History.ReadFollowRemoved(readCtx, c.sessionID, 0, c.through)
+	removed, err := c.reader.History.ReadFollowRemoved(readCtx, c.sessionID, c.removedThrough, c.through)
 	if err != nil {
 		err = failure(readCtx, err)
 	}
@@ -155,17 +152,13 @@ func (c *followCall) catchUp(ctx context.Context, initial bool) error {
 	if err != nil {
 		return err
 	}
-	for _, cursorRange := range removed {
-		key := removedRange{first: cursorRange.GetFirst(), last: cursorRange.GetLast()}
-		if _, sent := c.sentRemoved[key]; sent {
-			continue
-		}
-		c.sentRemoved[key] = struct{}{}
+	for _, cursorRange := range removed.Ranges {
 		if err := c.send(ctx, &historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Removed{Removed: cursorRange}}); err != nil {
 			return err
 		}
 		sentFrame = true
 	}
+	c.removedThrough = removed.Position
 	if initial || c.through != startThrough || sentFrame {
 		return c.send(ctx, &historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
 	}

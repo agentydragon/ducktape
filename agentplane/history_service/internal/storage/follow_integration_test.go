@@ -161,17 +161,23 @@ func TestFollowMetadataReplaysLateCorrectionsWithBoundedPagination(t *testing.T)
 	if page.ThroughCursor != 10 {
 		t.Fatalf("through %d", page.ThroughCursor)
 	}
-	removed, err := store.ReadFollowRemoved(t.Context(), sessionID, 0, 10)
-	if err != nil || len(removed) != 0 {
-		t.Fatalf("initial removal %v, error %v", removed, err)
+	wantRemovals := func(position, through uint64, wantPosition uint64, want ...*historypb.CursorRange) {
+		t.Helper()
+		removed, err := store.ReadFollowRemoved(t.Context(), sessionID, position, through)
+		if err != nil || removed.Position != wantPosition ||
+			!proto.Equal(&historypb.ReadSessionEventsResponse{Removed: removed.Ranges}, &historypb.ReadSessionEventsResponse{Removed: want}) {
+			t.Fatalf("removals after position %d through %d: %+v, error %v; want %v at position %d", position, through, removed, err, want, wantPosition)
+		}
 	}
+	wantRemovals(0, 10, 0)
 	removeEntries(t, db, sessionID, 2, 3, 8)
-	removed, err = store.ReadFollowRemoved(t.Context(), sessionID, 0, page.ThroughCursor)
-	if err != nil || !proto.Equal(&historypb.ReadSessionEventsResponse{Removed: removed}, &historypb.ReadSessionEventsResponse{
-		Removed: []*historypb.CursorRange{{First: 2, Last: 3}, {First: 8, Last: 8}},
-	}) {
-		t.Fatalf("removals %v, error %v", removed, err)
-	}
+	wantRemovals(0, page.ThroughCursor, 2, &historypb.CursorRange{First: 2, Last: 3}, &historypb.CursorRange{First: 8, Last: 8})
+	wantRemovals(2, page.ThroughCursor, 2)
+	// A removal past the follower's cursor waits for it, and so does every later removal.
+	wantRemovals(0, 5, 1, &historypb.CursorRange{First: 2, Last: 3})
+	// A later cleanup below the earlier removals gets the next position, so it is found past them.
+	removeEntries(t, db, sessionID, 1)
+	wantRemovals(2, page.ThroughCursor, 3, &historypb.CursorRange{First: 1, Last: 1})
 	settlements := []*historypb.SettledDeltas{
 		{ItemId: "first", CompletionCursor: 6, Ranges: []*historypb.CursorRange{{First: 4, Last: 5}}},
 		{ItemId: "second", CompletionCursor: 10, Ranges: []*historypb.CursorRange{{First: 7, Last: 7}}},
@@ -187,7 +193,7 @@ func TestFollowMetadataReplaysLateCorrectionsWithBoundedPagination(t *testing.T)
 	if len(page.Settlements) != 2 || !proto.Equal(page.Settlements[0], settlements[0]) || !proto.Equal(page.Settlements[1], settlements[1]) {
 		t.Fatalf("follow settlements %v, want %v", page.Settlements, settlements)
 	}
-	page, err = store.ReadFollowEntries(t.Context(), sessionID, 6, nil, true)
+	page, err := store.ReadFollowEntries(t.Context(), sessionID, 6, nil, true)
 	if err != nil || len(page.Settlements) != 1 || !proto.Equal(page.Settlements[0], settlements[1]) {
 		t.Fatalf("settlements after completion 6: %v, error %v", page.Settlements, err)
 	}
