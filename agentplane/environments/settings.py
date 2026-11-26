@@ -76,13 +76,11 @@ class Settings(BaseModel):
     runner_gateway_tls: ClientTLS | None = None
     runner_security: Security
     environment_service: EnvironmentService | None = Field(default=None, exclude_if=lambda value: value is None)
-    # CLEANUP(added 2026-11-26): require it and drop EnvironmentService's Kubernetes Identity reads once the staging
-    #   manifests set it (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
     policy_service: PolicyServicePeer | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
-        description="Where EnvironmentService follows Identities instead of reading Identity resources; "
-        "the reconciler still reads Identity resources.",
+        description="Where EnvironmentService follows Identities; required exactly when environment_service is set. "
+        "The reconciler reads Identity resources directly.",
     )
 
     namespace: str = Field(
@@ -107,8 +105,8 @@ class Settings(BaseModel):
             self.runner_gateway_tls.validate_caller(self.runner_gateway_token_file, SANDBOX_CONTROLLER_URI)
         elif self.runner_gateway_token_file is None:
             raise ValueError("a bearer token file or service SVID is required")
+        if (self.environment_service is None) != (self.policy_service is None):
+            raise ValueError("policy_service and environment_service must be set together")
         if self.policy_service is not None:
-            if self.environment_service is None:
-                raise ValueError("policy_service requires environment_service, its only reader")
             self.policy_service.tls.validate_caller(None, SANDBOX_CONTROLLER_URI)
         return self

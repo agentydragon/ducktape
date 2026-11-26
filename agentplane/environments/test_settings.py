@@ -67,6 +67,7 @@ def test_policy_service_is_rendered_for_the_environment_service() -> None:
     "settings",
     [
         {"policy_service": policy_service()},
+        {"environment_service": receiver_settings()},
         {"environment_service": receiver_settings(), "policy_service": policy_service(target="")},
         {"environment_service": receiver_settings(), "policy_service": policy_service(client_uri=APP_URI)},
         {"environment_service": receiver_settings(), "policy_service": policy_service(server_uri=ACTIONS_URI)},
@@ -75,7 +76,7 @@ def test_policy_service_is_rendered_for_the_environment_service() -> None:
             "policy_service": policy_service(cert_file=None, key_file=None, client_uri=None),
         },
     ],
-    ids=["no-environment-service", "no-target", "another-caller", "another-server", "no-svid"],
+    ids=["no-environment-service", "no-policy-service", "no-target", "another-caller", "another-server", "no-svid"],
 )
 def test_policy_service_rejects_incomplete_or_foreign_peers(settings: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
