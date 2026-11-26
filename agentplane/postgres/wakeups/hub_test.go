@@ -102,11 +102,17 @@ func TestABurstOfNotificationsLeavesOneWakeup(t *testing.T) {
 }
 
 func TestAnEndedSubscriptionIsNotWoken(t *testing.T) {
-	db, hub := openDB(t), listen(t, "test-wakeups-unsubscribe", "test_wakeups_end")
-	ended, unsubscribe := subscribe(t, hub, "test_wakeups_end")
+	db, hub := openDB(t), listen(t, "test-wakeups-unsubscribe", "test_wakeups_end", "test_wakeups_barrier")
+	channels := []string{"test_wakeups_end"}
+	ended, unsubscribe := subscribe(t, hub, channels...)
+	// The caller may reuse the slice after subscribing.
+	channels[0] = "another_channel"
 	kept, _ := subscribe(t, hub, "test_wakeups_end")
+	barrier, _ := subscribe(t, hub, "test_wakeups_barrier")
 	unsubscribe()
 	notify(t, db, "test_wakeups_end")
+	notify(t, db, "test_wakeups_barrier")
+	awaitWakeup(t, barrier)
 	awaitWakeup(t, kept)
 	assertQuiet(t, ended)
 }
@@ -119,11 +125,24 @@ func TestSubscribingToAChannelNobodyListensToIsRefused(t *testing.T) {
 }
 
 func TestDisconnectWakesSubscribersWithTheDisconnectedState(t *testing.T) {
-	hub := &Hub{subscribers: map[string]map[chan struct{}]struct{}{"updates": {}}}
+	hub := newHub("updates")
 	onUpdates, _ := subscribe(t, hub, "updates")
+	onKey, stopKey, err := hub.SubscribeKey("updates", "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopKey()
+	stopPayloads, err := hub.SubscribePayload("updates", func(key string) {
+		t.Errorf("disconnect delivered payload %q", key)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopPayloads()
 	hub.connected.Store(true)
 	hub.observeConnectionEvent(pq.ListenerEventDisconnected)
 	awaitWakeup(t, onUpdates)
+	awaitWakeup(t, onKey)
 	if hub.Connected() {
 		t.Fatal("disconnect wakeup must expose the disconnected state")
 	}
