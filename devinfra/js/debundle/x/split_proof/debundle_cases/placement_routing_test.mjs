@@ -6,8 +6,14 @@ import path from "node:path";
 const root = process.env.TEST_TMPDIR;
 const dir = path.join(root, "cases", "routing");
 mkdirSync(dir, { recursive: true });
-writeFileSync(path.join(dir, "main.js"), "const a=1, other=2, b=3; console.log(a + other + b);");
-writeFileSync(path.join(dir, "expect.yaml"), 'spec.yaml: {accept: {stdout: "6\\n"}}');
+writeFileSync(
+  path.join(dir, "main.js"),
+  `const a = 1, other = 2, b = 3;
+if (true) { var hoisted = 4; }
+if (true) { let blockLocal = 0; }
+console.log(a + other + b + hoisted);`
+);
+writeFileSync(path.join(dir, "expect.yaml"), 'spec.yaml: {accept: {stdout: "10\\n"}}');
 const spec = `logical_modules:
   main:
     scene/Shape: { members: [{selector: {binding: {name: a}}}] }
@@ -29,7 +35,8 @@ assert.equal(good.status, 0, good.stderr);
 assert.equal(JSON.parse(readFileSync(baseline)).outcome, "agree-accept");
 const plan = JSON.parse(readFileSync(path.join(keep, "routing/spec/lean_spec.json")));
 assert.deepEqual(plan.order, ["scene_shape.mjs", "rest.mjs", "tail.mjs"]);
-assert.deepEqual(plan.modules["rest.mjs"], ["#1"]);
+assert.deepEqual(plan.modules["rest.mjs"], ["#1", "#3"]);
+assert.deepEqual(plan.modules["entry.mjs"], ["#4", "#5"]);
 
 writeFileSync(specPath, spec.replace("name: a", "name: missing"));
 const lost = run(["--out", path.join(root, "broken.jsonl"), "--baseline", baseline, "--regression"]);
