@@ -16,6 +16,16 @@ use crate::facts::{
 };
 use crate::{StatementEffectSummary, StatementFacts, StatementKind};
 
+mod at_init;
+mod cell_order;
+mod commuting;
+mod diagnostics;
+
+use at_init::*;
+use cell_order::*;
+pub use commuting::*;
+pub use diagnostics::*;
+
 /// The per-chunk options dependency-graph construction reads.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GraphOptions {
@@ -84,236 +94,6 @@ fn report_heap_frontier(
     })
 }
 
-/// Multiple declarations of one binding are supported only when every site
-/// declares `var`. Other duplicate declaration shapes remain rejected.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error(
-    "duplicate top-level declaration of binding `{binding}`: statements #{} and #{} both \
-     declare it; only repeated `var` declarations are supported.",
-    .first.0,
-    .second.0
-)]
-pub struct DuplicateTopLevelDeclaration {
-    pub binding: swc_atoms::Atom,
-    pub first: SourceUnitOrdinal,
-    pub second: SourceUnitOrdinal,
-}
-
-/// A derived source fact an author `commuting_statements` premise contradicts.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum KnownConflict {
-    /// The retained cause of a `Sequenced` edge derived from both
-    /// endpoints' recorded effects (a cell relation, a binding timeline, a
-    /// shared `var`, an uninitialized observation).
-    #[strum(to_string = "{0}")]
-    Sequenced(SequencedCause),
-    /// The two summaries have overlapping cell footprints with at least one write, whatever
-    /// rule emitted the edge between them.
-    #[strum(to_string = "both summaries have an overlapping cell effect: {overlap}")]
-    SharedCell {
-        cell: EffectCellReport,
-        overlap: CellOverlapReport,
-    },
-    /// Both source units declare the shared `var` `binding`.
-    #[strum(to_string = "both declare shared `var` `{binding}`")]
-    CoDeclaration { binding: swc_atoms::Atom },
-    /// A `Sequenced` edge without a retained cause (never produced by this
-    /// builder); treated as a conflict so the premise never widens silently.
-    #[strum(to_string = "side-effect ordering of unclassified cause")]
-    Unclassified,
-}
-
-/// One dependency edge `from -> to` between the premise's endpoints whose
-/// cause the premise contradicts.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ContradictingEdge {
-    pub from: SourceUnitOrdinal,
-    pub to: SourceUnitOrdinal,
-    pub conflict: KnownConflict,
-}
-
-/// A `commuting_statements` entry whose endpoints have a modeled effect-set
-/// conflict (SPEC.md § Commuting statements).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
-#[error(
-    "{spec_location} contradicts a source fact: source units {} and {} have a modeled effect conflict: {}",
-    source_unit_label(*.a, .a_binding),
-    source_unit_label(*.b, .b_binding),
-    .conflicts
-        .iter()
-        .map(|edge| format!("#{} -> #{}: {}", edge.from.0, edge.to.0, edge.conflict))
-        .collect::<Vec<_>>()
-        .join("; ")
-)]
-pub struct CommutingStatementsContradiction {
-    pub spec_location: String,
-    pub a: SourceUnitOrdinal,
-    pub a_binding: Option<String>,
-    pub b: SourceUnitOrdinal,
-    pub b_binding: Option<String>,
-    pub conflicts: Vec<ContradictingEdge>,
-}
-
-fn source_unit_label(ordinal: SourceUnitOrdinal, binding: &Option<String>) -> String {
-    match binding {
-        Some(binding) => format!("#{} (`{binding}`)", ordinal.0),
-        None => format!("#{} (anonymous statement)", ordinal.0),
-    }
-}
-
-fn source_unit_location(
-    nodes: &[SourceUnit],
-    ordinal: SourceUnitOrdinal,
-) -> Option<SourceLocation> {
-    nodes
-        .iter()
-        .find(|node| node.statement_ordinal == ordinal)
-        .and_then(|node| node.source_location.clone())
-}
-
-/// Why a `commuting_statements` entry inerts nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum UnusedPremiseReason {
-    /// No `sequenced` edge joins the two source units.
-    NoSequencedEdge,
-    /// Every `sequenced` edge between them orders two summarized effects on
-    /// disjoint cells (the strict S-chain's adjacency): the analysis already
-    /// knows the pair commutes and `dataflow_aware_s_chain` drops the edge
-    /// without any premise.
-    SummarizedEndpoints,
-}
-
-impl UnusedPremiseReason {
-    /// Clause completing the diagnostic's endpoint sentence.
-    pub fn explanation(self) -> &'static str {
-        match self {
-            Self::NoSequencedEdge => "are already unordered",
-            Self::SummarizedEndpoints => {
-                "have summarized effects on disjoint cells, which `dataflow_aware_s_chain` already leaves unordered"
-            }
-        }
-    }
-}
-
-/// A `commuting_statements` entry whose endpoints resolve but which inerts
-/// no edge: the premise buys nothing. A warning, never a failure — an engine
-/// improvement that makes a premise unnecessary must not reject a spec that
-/// passed (SPEC.md § Commuting statements). Identifies the entry by what the
-/// author wrote, not by analysis ordinals or input binding spellings.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
-#[error(
-    "{spec_location} inerts no sequenced edge: endpoints {} and {} {}; the entry is \
-     removable — delete it in a reviewed spec edit and revalidate",
-    .a,
-    .b,
-    .reason.explanation()
-)]
-pub struct CommutingStatementsUnused {
-    /// `<spec path>:chunk_analysis_options.<chunk>.commuting_statements[<i>]`.
-    pub spec_location: String,
-    pub a: UnusedCommutingEndpoint,
-    pub b: UnusedCommutingEndpoint,
-    pub reason: UnusedPremiseReason,
-}
-
-/// One endpoint of an unused `commuting_statements` entry, by authored
-/// identity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UnusedCommutingEndpoint {
-    /// The endpoint selector exactly as authored.
-    pub selector: spec::SourceUnitSelector,
-    /// Authored module/member assignments that resolve to this endpoint.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub logical_members: Vec<spec::ResolvedMemberSelector>,
-    /// Source location of the endpoint in this run's input snapshot.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_location: Option<SourceLocation>,
-}
-
-impl UnusedCommutingEndpoint {
-    fn new(nodes: &[SourceUnit], endpoint: &CommutingEndpoint) -> Self {
-        Self {
-            selector: endpoint.selector.clone(),
-            logical_members: endpoint.logical_members.clone(),
-            source_location: source_unit_location(nodes, endpoint.source_unit),
-        }
-    }
-}
-
-impl fmt::Display for UnusedCommutingEndpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let members = self
-            .logical_members
-            .iter()
-            .map(|member| format!("module `{}` member `{}`", member.module, member.name))
-            .collect::<Vec<_>>();
-        match (members.as_slice(), &self.selector) {
-            ([member], _) => f.write_str(member)?,
-            ([], spec::SourceUnitSelector::ResolvedMember(member)) => {
-                write!(f, "module `{}` member `{}`", member.module, member.name)?;
-            }
-            ([], spec::SourceUnitSelector::SourceMatch(claim)) => {
-                let source = claim.match_source.split_whitespace().collect::<Vec<_>>();
-                let mut preview = source.join(" ");
-                if preview.chars().count() > 60 {
-                    preview = preview.chars().take(57).collect::<String>() + "...";
-                }
-                write!(f, "source_match `{preview}`")?;
-            }
-            (members, _) => write!(f, "members [{}]", members.join(", "))?,
-        }
-        if let Some(location) = &self.source_location {
-            write!(f, " at {}:{}", location.source_path, location.start_line)?;
-            if let Some(column) = location.start_column {
-                write!(f, ":{column}")?;
-            }
-        }
-        Ok(())
-    }
-}
-
-/// The typed diagnostic of a `commuting_statements` entry the graph build
-/// rejected, as `spec validate` reports it beside the selector outcomes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CommutingStatementsDiagnostic {
-    #[strum(to_string = "{0}")]
-    Contradicted(CommutingStatementsContradiction),
-    #[strum(to_string = "{0}")]
-    Unused(Box<CommutingStatementsUnused>),
-}
-
-/// Graph construction is intentionally source-free. Captured value and native
-/// author inputs must be resolved by the prepared whole-program AST/index
-/// pipeline before callers extract StatementFacts and build this graph.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum DependencyGraphBuildError {
-    #[error(transparent)]
-    DuplicateTopLevelDeclaration(DuplicateTopLevelDeclaration),
-    #[error(transparent)]
-    CommutingStatementsContradicted(CommutingStatementsContradiction),
-}
-
-impl DependencyGraphBuildError {
-    /// The rejected `commuting_statements` entry, for the variant that is an
-    /// author-premise diagnostic rather than a pipeline fault.
-    pub fn commuting_statements_contradiction(&self) -> Option<&CommutingStatementsContradiction> {
-        match self {
-            Self::CommutingStatementsContradicted(error) => Some(error),
-            Self::DuplicateTopLevelDeclaration(_) => None,
-        }
-    }
-}
-
-impl From<DuplicateTopLevelDeclaration> for DependencyGraphBuildError {
-    fn from(error: DuplicateTopLevelDeclaration) -> Self {
-        Self::DuplicateTopLevelDeclaration(error)
-    }
-}
-
 /// Build the fine dependency graph from per-statement facts under the
 /// per-chunk [`GraphOptions`]. Module-level dependencies are derived later
 /// by projecting edges through a [`ModuleAssignment`].
@@ -339,61 +119,7 @@ pub fn build_dependency_graph_with(
                 .or_default()
                 .push(SourceUnitId(stmt.ordinal.0));
         }
-        let id = SourceUnitId(stmt.ordinal.0);
-        nodes.push(SourceUnit {
-            id,
-            statement_ordinal: stmt.ordinal,
-            source_location: stmt.source_location.clone(),
-            declared: stmt.declared.clone(),
-            kind: stmt.kind,
-            purity: stmt.purity.clone(),
-            callback_factory_barriers: stmt.callback_factory_barriers.clone(),
-            heap_native_integrity_uses: stmt.heap_native_integrity_uses.clone(),
-            synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
-                crate::reports::schema::SynchronousExecutionReport {
-                    initializer_binding_effects: calls.initializer_binding_effects.clone(),
-                    initializer_external_effects: calls.initializer_external_effects.clone(),
-                    purity_disagreement: calls.purity_disagreement.clone(),
-                    binding_effect_authority: Some(calls.binding_effect_authority_report()),
-                    local_record_factory_uses: calls.local_record_factory_uses.clone(),
-                    local_record_factory_rejections: calls.local_record_factory_rejections.clone(),
-                    complete: calls.complete,
-                    native_integrity_checks: calls.native_integrity_checks.clone(),
-                    native_prototype_property_checks: calls
-                        .native_prototype_property_checks
-                        .clone(),
-                    native_prefix_observations: calls.native_prefix_observations.clone(),
-                    native_integrity_uses: calls.native_integrity_uses.clone(),
-                    native_operation_input_uses: calls.native_operation_input_uses.clone(),
-                    imported_primitive_array_spread_input_uses: calls
-                        .imported_primitive_array_spread_input_uses
-                        .clone(),
-                    inference_uses: calls
-                        .inference_uses
-                        .iter()
-                        .map(crate::reports::schema::InferenceUseReport::from)
-                        .collect(),
-                    precision_losses: calls.precision_losses.clone(),
-                    callback_factory_uses: Vec::new(),
-                    returned_record_uses: Vec::new(),
-                    author_host_contract_uses: calls.author_host_contract_uses.clone(),
-                    heap_frontier: report_heap_frontier(
-                        &stmt.heap_contents,
-                        &calls.heap_contents,
-                        &calls.non_assumed_heap_accesses.reads,
-                        &calls.non_assumed_heap_accesses.writes,
-                    ),
-                }
-            }),
-            callback_factory_uses: stmt
-                .synchronous_calls
-                .as_ref()
-                .map_or_else(Vec::new, |calls| calls.callback_factory_uses.clone()),
-            returned_record_uses: stmt
-                .synchronous_calls
-                .as_ref()
-                .map_or_else(Vec::new, |calls| calls.returned_record_uses.clone()),
-        });
+        nodes.push(source_unit_node(stmt));
     }
 
     // Keep every declaration site. A representative is only an address for a
@@ -402,8 +128,156 @@ pub fn build_dependency_graph_with(
         .iter()
         .map(|(binding, sites)| (binding.clone(), sites[0]))
         .collect();
+    let shared_vars = shared_var_bindings(facts, &declaration_sites)?;
+
+    // Collect (from, to, reason) triples; the final `edges` Vec is
+    // sorted at the end so `DependencyEdgeId` indices are stable.
+    let mut raw_edges = Vec::<(SourceUnitId, SourceUnitId, EdgeReason)>::new();
+    emit_co_location_edges(facts, &declaration_sites, &shared_vars, &mut raw_edges);
+    // Look-aside table for "what statement owns this SourceUnitId" — shared
+    // by the direct eager-read filter, at-init call promotion, and heap-content
+    // call propagation.
+    let stmt_by_source_unit: std::collections::HashMap<SourceUnitId, &StatementFacts> = facts
+        .iter()
+        .map(|stmt| (SourceUnitId(stmt.ordinal.0), stmt))
+        .collect();
+    // A top-level eager read of a binding declared by a `function`
+    // declaration cannot observe a TDZ: ECMAScript Phase 1 of module
+    // linking (`ModuleDeclarationInstantiation`) binds every
+    // `FunctionDeclaration` to its hoisted closure before any module
+    // body runs. So `const x = f()` where `f` is a chunk-declared
+    // FnDecl is safe regardless of which module owns `f` — there is
+    // no init-order constraint to record. Retain the import as `HoistedUse`:
+    // entering the function's module can still change ESM traversal and expose
+    // a TDZ on another binding. Other declaration kinds retain eager
+    // constraints: lexical declarations have a TDZ, while var initializers
+    // change an already-hoisted cell whose value reads must observe in order.
+    let target_is_hoisted = |id: &Id| -> bool {
+        binding_source_unit
+            .get(id)
+            .and_then(|source_unit| stmt_by_source_unit.get(source_unit))
+            .map(|stmt| stmt.kind == StatementKind::FnDecl)
+            .unwrap_or(false)
+    };
+    emit_direct_binding_edges(
+        facts,
+        &binding_source_unit,
+        target_is_hoisted,
+        &mut raw_edges,
+    );
+
+    // At-init call promotion (docs/design.md "At-init call promotion").
+    //
+    // A function body's lazy reads/rebinds fire at-init from the
+    // perspective of any caller that invokes the function at-init.
+    // Without promotion, the realizability primitive's relaxed
+    // clause-3 predicate (constraining-edge subgraph has no
+    // multi-module SCC) is unsound for the canonical
+    // `console.log(readB())` shape: the lazy read inside `readB`'s
+    // body fires when the top-level call evaluates, but only the
+    // graph's lazy edge is recorded, so cross-module cycles that
+    // close through such a lazy edge look acyclic to the constraining
+    // subgraph. After promotion, the primitive's verdict is sound.
+    //
+    // Promoted edges are added at dependency graph level (assignment-
+    // independent): intra-module promoted edges are dropped by the
+    // quotient automatically. Only direct `f(...)` callees that
+    // resolve to chunk-declared bindings are followed; indirect
+    // calls (`const g = f; g()`), method calls (`obj.method()`), and
+    // dynamic dispatch are conservatively unmodelled.
+    let fallback_eager_uses = promote_at_init_calls(
+        facts,
+        &binding_source_unit,
+        &shared_vars,
+        &stmt_by_source_unit,
+        target_is_hoisted,
+        &mut raw_edges,
+    );
+    emit_shared_var_access_order(facts, &shared_vars, &fallback_eager_uses, &mut raw_edges);
+
+    emit_s_chain(facts, options, &mut raw_edges);
+    emit_heap_content_order(facts, &mut raw_edges);
+
+    let mut edges = sorted_dependency_edges(raw_edges);
+    let premise_effects = premise_effects(&stmt_by_source_unit);
+    retain_premise_verdicts(&mut edges, &stmt_by_source_unit, &premise_effects);
+    let analyzed_edge_count = edges.len();
+    let (commuting_premises, unused_commuting_premises) =
+        apply_commuting_statements(&nodes, &mut edges, commuting_statements, &premise_effects)?;
+    retain_premise_verdicts(
+        &mut edges[analyzed_edge_count..],
+        &stmt_by_source_unit,
+        &premise_effects,
+    );
+    Ok((
+        DependencyGraph::from_parts(nodes, edges, commuting_premises),
+        unused_commuting_premises,
+    ))
+}
+
+/// The graph node for one top-level statement, carrying its report-facing facts.
+fn source_unit_node(stmt: &StatementFacts) -> SourceUnit {
+    SourceUnit {
+        id: SourceUnitId(stmt.ordinal.0),
+        statement_ordinal: stmt.ordinal,
+        source_location: stmt.source_location.clone(),
+        declared: stmt.declared.clone(),
+        kind: stmt.kind,
+        purity: stmt.purity.clone(),
+        callback_factory_barriers: stmt.callback_factory_barriers.clone(),
+        heap_native_integrity_uses: stmt.heap_native_integrity_uses.clone(),
+        synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
+            crate::reports::schema::SynchronousExecutionReport {
+                initializer_binding_effects: calls.initializer_binding_effects.clone(),
+                initializer_external_effects: calls.initializer_external_effects.clone(),
+                purity_disagreement: calls.purity_disagreement.clone(),
+                binding_effect_authority: Some(calls.binding_effect_authority_report()),
+                local_record_factory_uses: calls.local_record_factory_uses.clone(),
+                local_record_factory_rejections: calls.local_record_factory_rejections.clone(),
+                complete: calls.complete,
+                native_integrity_checks: calls.native_integrity_checks.clone(),
+                native_prototype_property_checks: calls.native_prototype_property_checks.clone(),
+                native_prefix_observations: calls.native_prefix_observations.clone(),
+                native_integrity_uses: calls.native_integrity_uses.clone(),
+                native_operation_input_uses: calls.native_operation_input_uses.clone(),
+                imported_primitive_array_spread_input_uses: calls
+                    .imported_primitive_array_spread_input_uses
+                    .clone(),
+                inference_uses: calls
+                    .inference_uses
+                    .iter()
+                    .map(crate::reports::schema::InferenceUseReport::from)
+                    .collect(),
+                precision_losses: calls.precision_losses.clone(),
+                callback_factory_uses: Vec::new(),
+                returned_record_uses: Vec::new(),
+                author_host_contract_uses: calls.author_host_contract_uses.clone(),
+                heap_frontier: report_heap_frontier(
+                    &stmt.heap_contents,
+                    &calls.heap_contents,
+                    &calls.non_assumed_heap_accesses.reads,
+                    &calls.non_assumed_heap_accesses.writes,
+                ),
+            }
+        }),
+        callback_factory_uses: stmt
+            .synchronous_calls
+            .as_ref()
+            .map_or_else(Vec::new, |calls| calls.callback_factory_uses.clone()),
+        returned_record_uses: stmt
+            .synchronous_calls
+            .as_ref()
+            .map_or_else(Vec::new, |calls| calls.returned_record_uses.clone()),
+    }
+}
+
+/// Bindings declared at more than one site. Every site must declare `var`.
+fn shared_var_bindings(
+    facts: &[StatementFacts],
+    declaration_sites: &BTreeMap<Id, Vec<SourceUnitId>>,
+) -> Result<BTreeSet<Id>, DependencyGraphBuildError> {
     let mut shared_vars = BTreeSet::new();
-    for (binding, sites) in &declaration_sites {
+    for (binding, sites) in declaration_sites {
         if sites.len() > 1 {
             for &source_unit in sites {
                 if !facts[source_unit.0].var_declared.contains(binding) {
@@ -418,11 +292,18 @@ pub fn build_dependency_graph_with(
             shared_vars.insert(binding.clone());
         }
     }
+    Ok(shared_vars)
+}
 
-    // Collect (from, to, reason) triples; the final `edges` Vec is
-    // sorted at the end so `DependencyEdgeId` indices are stable.
-    let mut raw_edges = Vec::<(SourceUnitId, SourceUnitId, EdgeReason)>::new();
-    for binding in &shared_vars {
+/// Two-way edges that keep co-declared `var` sites and certified stable
+/// spread producers with their consumers in one module.
+fn emit_co_location_edges(
+    facts: &[StatementFacts],
+    declaration_sites: &BTreeMap<Id, Vec<SourceUnitId>>,
+    shared_vars: &BTreeSet<Id>,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) {
+    for binding in shared_vars {
         let sites = &declaration_sites[binding];
         for &source_unit in &sites[1..] {
             raw_edges.push((
@@ -471,31 +352,16 @@ pub fn build_dependency_graph_with(
             ));
         }
     }
-    // Look-aside table for "what statement owns this SourceUnitId" — shared
-    // by the direct eager-read filter, at-init call promotion, and heap-content
-    // call propagation.
-    let stmt_by_source_unit: std::collections::HashMap<SourceUnitId, &StatementFacts> = facts
-        .iter()
-        .map(|stmt| (SourceUnitId(stmt.ordinal.0), stmt))
-        .collect();
-    // A top-level eager read of a binding declared by a `function`
-    // declaration cannot observe a TDZ: ECMAScript Phase 1 of module
-    // linking (`ModuleDeclarationInstantiation`) binds every
-    // `FunctionDeclaration` to its hoisted closure before any module
-    // body runs. So `const x = f()` where `f` is a chunk-declared
-    // FnDecl is safe regardless of which module owns `f` — there is
-    // no init-order constraint to record. Retain the import as `HoistedUse`:
-    // entering the function's module can still change ESM traversal and expose
-    // a TDZ on another binding. Other declaration kinds retain eager
-    // constraints: lexical declarations have a TDZ, while var initializers
-    // change an already-hoisted cell whose value reads must observe in order.
-    let target_is_hoisted = |id: &Id| -> bool {
-        binding_source_unit
-            .get(id)
-            .and_then(|source_unit| stmt_by_source_unit.get(source_unit))
-            .map(|stmt| stmt.kind == StatementKind::FnDecl)
-            .unwrap_or(false)
-    };
+}
+
+/// Edges for each statement's own reads, rebinds and local effects of
+/// chunk-declared bindings.
+fn emit_direct_binding_edges(
+    facts: &[StatementFacts],
+    binding_source_unit: &HashMap<Id, SourceUnitId>,
+    target_is_hoisted: impl Fn(&Id) -> bool,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) {
     for stmt in facts {
         let from = SourceUnitId(stmt.ordinal.0);
         let mut push_binding_edge = |binding: &Id, kind: DepKind| {
@@ -551,38 +417,17 @@ pub fn build_dependency_graph_with(
             push_binding_edge(binding, DepKind::LocalEffect);
         }
     }
+}
 
-    // At-init call promotion (docs/design.md "At-init call promotion").
-    //
-    // A function body's lazy reads/rebinds fire at-init from the
-    // perspective of any caller that invokes the function at-init.
-    // Without promotion, the realizability primitive's relaxed
-    // clause-3 predicate (constraining-edge subgraph has no
-    // multi-module SCC) is unsound for the canonical
-    // `console.log(readB())` shape: the lazy read inside `readB`'s
-    // body fires when the top-level call evaluates, but only the
-    // graph's lazy edge is recorded, so cross-module cycles that
-    // close through such a lazy edge look acyclic to the constraining
-    // subgraph. After promotion, the primitive's verdict is sound.
-    //
-    // Promoted edges are added at dependency graph level (assignment-
-    // independent): intra-module promoted edges are dropped by the
-    // quotient automatically. Only direct `f(...)` callees that
-    // resolve to chunk-declared bindings are followed; indirect
-    // calls (`const g = f; g()`), method calls (`obj.method()`), and
-    // dynamic dispatch are conservatively unmodelled.
-    let fallback_eager_uses = promote_at_init_calls(
-        facts,
-        &binding_source_unit,
-        &shared_vars,
-        &stmt_by_source_unit,
-        target_is_hoisted,
-        &mut raw_edges,
-    );
-
-    // Initializers and eager observations of shared var cells must retain their
-    // order even when the expressions are pure. Include promoted reads from
-    // at-init calls, not just syntactically direct reads.
+/// Initializers and eager observations of shared var cells must retain their
+/// order even when the expressions are pure. Include promoted reads from
+/// at-init calls, not just syntactically direct reads.
+fn emit_shared_var_access_order(
+    facts: &[StatementFacts],
+    shared_vars: &BTreeSet<Id>,
+    fallback_eager_uses: &BTreeMap<usize, AssumedEffectReason>,
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) {
     let mut accesses = BindingAccesses::new();
     for stmt in facts {
         for binding in stmt
@@ -634,12 +479,12 @@ pub fn build_dependency_graph_with(
             ));
         }
     }
+}
 
-    emit_s_chain(facts, options, &mut raw_edges);
-    emit_heap_content_order(facts, &mut raw_edges);
-
-    // Sort + assign stable `DependencyEdgeId` indices, then build CSR
-    // adjacency in one pass.
+/// Sort and assign stable `DependencyEdgeId` indices.
+fn sorted_dependency_edges(
+    mut raw_edges: Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) -> Vec<DependencyEdge> {
     raw_edges.sort_by(|(from_a, to_a, reason_a), (from_b, to_b, reason_b)| {
         from_a
             .cmp(from_b)
@@ -648,7 +493,7 @@ pub fn build_dependency_graph_with(
             .then(reason_a.statement_ordinal.cmp(&reason_b.statement_ordinal))
             .then(reason_a.binding.cmp(&reason_b.binding))
     });
-    let mut edges: Vec<DependencyEdge> = raw_edges
+    raw_edges
         .into_iter()
         .enumerate()
         .map(|(idx, (from, to, reason))| DependencyEdge {
@@ -657,8 +502,15 @@ pub fn build_dependency_graph_with(
             to,
             reason,
         })
-        .collect();
-    let premise_effects: HashMap<_, _> = stmt_by_source_unit
+        .collect()
+}
+
+/// Each statement's effects plus the non-assumed heap accesses of its
+/// synchronous calls, as commuting premises compare them.
+fn premise_effects(
+    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+) -> HashMap<SourceUnitId, StatementEffectSummary> {
+    stmt_by_source_unit
         .iter()
         .map(|(id, stmt)| {
             let mut effects = stmt.effects();
@@ -672,1849 +524,5 @@ pub fn build_dependency_graph_with(
             }
             (*id, effects)
         })
-        .collect();
-    retain_premise_verdicts(&mut edges, &stmt_by_source_unit, &premise_effects);
-    let analyzed_edge_count = edges.len();
-    let (commuting_premises, unused_commuting_premises) =
-        apply_commuting_statements(&nodes, &mut edges, commuting_statements, &premise_effects)?;
-    retain_premise_verdicts(
-        &mut edges[analyzed_edge_count..],
-        &stmt_by_source_unit,
-        &premise_effects,
-    );
-    Ok((
-        DependencyGraph::from_parts(nodes, edges, commuting_premises),
-        unused_commuting_premises,
-    ))
-}
-
-/// How a `commuting_statements` premise over an edge's two endpoints may
-/// treat that edge. Decided once per edge by [`premise_verdict`] when the
-/// graph is built and retained on the edge (`EdgeReason::premise_verdict`,
-/// `dependency_graph.json.gz` `edges[].premise_verdict`), so the gate applying
-/// a premise and `spec propose-commutations` drafting one read the same
-/// classification.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "verdict", rename_all = "snake_case")]
-pub enum PremiseVerdict {
-    /// The premise may make the edge inert.
-    Inertable,
-    /// The analysis already knows the two effects are unordered; the edge
-    /// exists only as strict-chain adjacency.
-    Summarized,
-    /// The analysis derived a modeled conflict the premise contradicts.
-    Known { conflict: KnownConflict },
-}
-
-/// Classify one dependency edge between the two source units of a premise
-/// from its retained cause and the endpoints' recorded effects. This is the
-/// soundness boundary of `commuting_statements`:
-///
-/// - `CoDeclaration` is derived from syntax: known.
-/// - `SharedVarAccess`, `BindingTimeline` and `UninitializedObservation`
-///   order two effects on a named binding: known when both effects are
-///   `EffectProvenance::Observed`; inertable when either was only assumed by
-///   a conservative path (an opaque effect, like a barrier).
-///   Derived order routed through an assumed effect is retained separately
-///   (`promote_at_init_calls` offers the observed-only timeline too).
-/// - `CellOrder` with an explicit relation (`ReadAfterWrite`,
-///   `WriteAfterWrite`, `WriteAfterRead`, `UseAfterAllocation`) is derived
-///   from recorded effects on both sides, whatever each side's class: known.
-///   A `CellOrder` edge carrying only barrier relations (`AfterBarrier`,
-///   `BarrierAfterPrior`, `FrontierAfterCell`) exists because one side's
-///   effects are not summarizable; that is what the premise certifies.
-/// - `StrictChain` consults no cells, so the endpoints' facts decide: an
-///   unsummarizable endpoint (`havoc` non-empty) makes the edge
-///   inertable; two summarized endpoints are already decided by the
-///   analysis and the premise buys nothing (`Summarized`).
-/// - Before accepting any edge, the two recorded summaries are compared:
-///   a shared cell with a write is a known conflict even when the emitting
-///   rule did not name it (a barrier target's own recorded effects).
-///   `StatementFacts::effects` holds only syntax-derived cells, never a
-///   fallback contribution.
-/// - A missing cause is treated as known, so the premise never widens
-///   through an unclassified edge.
-///
-/// The premise cell view also includes source-known callee heap accesses on
-/// non-assumed invocation paths. Assumed callback and fallback cells remain
-/// conservative ordering barriers, not contradictions to author assertions.
-fn premise_verdict(
-    edge: &DependencyEdge,
-    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
-    premise_effects: &HashMap<SourceUnitId, StatementEffectSummary>,
-) -> Option<PremiseVerdict> {
-    let from = stmt_by_source_unit[&edge.from];
-    let to = stmt_by_source_unit[&edge.to];
-    let known = |conflict| PremiseVerdict::Known { conflict };
-    let verdict = match edge.reason.kind {
-        DepKind::CoDeclaration => known(KnownConflict::CoDeclaration {
-            binding: edge
-                .reason
-                .binding()
-                .expect("co-declaration edges name their binding")
-                .0
-                .clone(),
-        }),
-        DepKind::Sequenced => match edge.reason.sequenced_cause() {
-            None => known(KnownConflict::Unclassified),
-            Some(
-                cause @ (SequencedCause::SharedVarAccess { .. }
-                | SequencedCause::BindingTimeline { .. }
-                | SequencedCause::UninitializedObservation { .. }),
-            ) => {
-                if binding_effects_observed(cause) {
-                    known(KnownConflict::Sequenced(cause.clone()))
-                } else {
-                    PremiseVerdict::Inertable
-                }
-            }
-            Some(cause @ SequencedCause::CellOrder { conflicts, .. }) => {
-                let explicit = conflicts.iter().any(|conflict| {
-                    matches!(
-                        conflict,
-                        CellConflict::ReadAfterWrite { .. }
-                            | CellConflict::WriteAfterWrite { .. }
-                            | CellConflict::WriteAfterRead { .. }
-                            | CellConflict::UseAfterAllocation { .. }
-                    )
-                });
-                if explicit {
-                    known(KnownConflict::Sequenced(cause.clone()))
-                } else {
-                    PremiseVerdict::Inertable
-                }
-            }
-            Some(SequencedCause::StrictChain) => {
-                if from.dataflow_summarizable() && to.dataflow_summarizable() {
-                    PremiseVerdict::Summarized
-                } else {
-                    PremiseVerdict::Inertable
-                }
-            }
-            Some(SequencedCause::PreservedOrder { .. }) => PremiseVerdict::Inertable,
-        },
-        _ => return None,
-    };
-    if matches!(verdict, PremiseVerdict::Known { .. }) {
-        return Some(verdict);
-    }
-    // Recorded cells are facts even on an unsummarizable statement (its
-    // unknown effects come on top), so a shared written cell wins.
-    Some(
-        conflicting_cell(&premise_effects[&edge.from], &premise_effects[&edge.to]).map_or(
-            verdict,
-            |overlap| {
-                known(KnownConflict::SharedCell {
-                    cell: EffectCellReport::from(overlap.right()),
-                    overlap: CellOverlapReport::from(&overlap),
-                })
-            },
-        ),
-    )
-}
-
-/// Retain [`premise_verdict`] on every edge it classifies, so a premise
-/// applied now ([`apply_commuting_statements`]) and one drafted later from
-/// `dependency_graph.json.gz` read the same classification.
-fn retain_premise_verdicts(
-    edges: &mut [DependencyEdge],
-    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
-    premise_effects: &HashMap<SourceUnitId, StatementEffectSummary>,
-) {
-    for edge in edges.iter_mut() {
-        edge.reason.premise_verdict =
-            premise_verdict(edge, stmt_by_source_unit, premise_effects).map(Box::new);
-    }
-}
-
-/// An overlapping cell footprint where one summary writes and the other reads
-/// or writes, if any.
-fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> Option<CellOverlap> {
-    for left in &a.writes {
-        if let Some(overlap) = first_overlapping(&b.writes, left)
-            && let Some(conflict) = may_conflict(left, true, overlap.left(), true)
-        {
-            return Some(conflict);
-        }
-        if let Some(overlap) = first_overlapping(&b.reads, left)
-            && let Some(conflict) = may_conflict(left, true, overlap.left(), false)
-        {
-            return Some(conflict);
-        }
-    }
-    for left in &a.reads {
-        if let Some(overlap) = first_overlapping(&b.writes, left)
-            && let Some(conflict) = may_conflict(left, false, overlap.left(), true)
-        {
-            return Some(conflict);
-        }
-    }
-    None
-}
-
-/// Apply the chunk's `commuting_statements` premises (SPEC.md § Commuting
-/// statements). For each pair, every `Sequenced` edge between the two source
-/// units (either direction) becomes inert — unless the edge's retained
-/// [`PremiseVerdict`] is a modeled conflict, in which case the entry
-/// contradicts a source fact and the build fails. `EagerUse` edges are never
-/// touched: an at-init read is a dataflow dependence, not an ordering of
-/// effects. A pair with no inertable edge is unused: it is returned as a
-/// warning and leaves the graph exactly as without the entry.
-fn apply_commuting_statements(
-    nodes: &[SourceUnit],
-    edges: &mut Vec<DependencyEdge>,
-    commuting_statements: &[ResolvedCommutingStatements],
-    premise_effects: &HashMap<SourceUnitId, StatementEffectSummary>,
-) -> Result<(Vec<AppliedCommutingPremise>, Vec<CommutingStatementsUnused>), DependencyGraphBuildError>
-{
-    let mut applied = Vec::with_capacity(commuting_statements.len());
-    let mut summarized_endpoints = Vec::with_capacity(commuting_statements.len());
-    for premise in commuting_statements {
-        let a = SourceUnitId(premise.a.source_unit.0);
-        let b = SourceUnitId(premise.b.source_unit.0);
-        let mut conflicts = Vec::new();
-        let mut inertable = Vec::new();
-        let mut summarized = false;
-        for edge in edges.iter() {
-            if !((edge.from == a && edge.to == b) || (edge.from == b && edge.to == a)) {
-                continue;
-            }
-            match edge.reason.premise_verdict() {
-                None => {}
-                Some(PremiseVerdict::Inertable) => inertable.push(edge.id),
-                Some(PremiseVerdict::Summarized) => summarized = true,
-                Some(PremiseVerdict::Known { conflict }) => conflicts.push(ContradictingEdge {
-                    from: SourceUnitOrdinal(edge.from.0),
-                    to: SourceUnitOrdinal(edge.to.0),
-                    conflict: conflict.clone(),
-                }),
-            }
-        }
-        // A pair may first acquire a direct edge during order preservation.
-        // Its explicit cells still contradict commutation even before then.
-        if conflicts.is_empty()
-            && let Some(overlap) = conflicting_cell(&premise_effects[&a], &premise_effects[&b])
-        {
-            conflicts.push(ContradictingEdge {
-                from: premise.a.source_unit,
-                to: premise.b.source_unit,
-                conflict: KnownConflict::SharedCell {
-                    cell: EffectCellReport::from(overlap.right()),
-                    overlap: CellOverlapReport::from(&overlap),
-                },
-            });
-        }
-        if !conflicts.is_empty() {
-            return Err(DependencyGraphBuildError::CommutingStatementsContradicted(
-                CommutingStatementsContradiction {
-                    spec_location: premise.spec_location.clone(),
-                    a: premise.a.source_unit,
-                    a_binding: premise.a.selected_binding.clone(),
-                    b: premise.b.source_unit,
-                    b_binding: premise.b.selected_binding.clone(),
-                    conflicts,
-                },
-            ));
-        }
-        for id in &inertable {
-            edges[id.0].reason.inerted_by = Some(premise.reference.clone());
-        }
-        summarized_endpoints.push(summarized);
-        applied.push(AppliedCommutingPremise {
-            reference: premise.reference.clone(),
-            spec_location: premise.spec_location.clone(),
-            a,
-            b,
-            inerted_edges: inertable,
-            note: premise.note.clone(),
-        });
-    }
-    if !applied.is_empty() {
-        preserve_commuting_order(nodes, edges, &mut applied);
-    }
-    // An assertion can discharge an edge exposed by another assertion, in
-    // either spec order. Only the completed closure decides whether it was used.
-    let mut used = Vec::with_capacity(applied.len());
-    let mut unused = Vec::new();
-    for ((premise, result), summarized) in commuting_statements
-        .iter()
-        .zip(applied)
-        .zip(summarized_endpoints)
-    {
-        if !result.inerted_edges.is_empty() {
-            used.push(result);
-            continue;
-        }
-        unused.push(CommutingStatementsUnused {
-            spec_location: premise.spec_location.clone(),
-            a: UnusedCommutingEndpoint::new(nodes, &premise.a),
-            b: UnusedCommutingEndpoint::new(nodes, &premise.b),
-            reason: if summarized {
-                UnusedPremiseReason::SummarizedEndpoints
-            } else {
-                UnusedPremiseReason::NoSequencedEdge
-            },
-        });
-    }
-    Ok((used, unused))
-}
-
-/// Preserve third-statement paths using the same closure as proposal queries.
-fn preserve_commuting_order(
-    nodes: &[SourceUnit],
-    edges: &mut Vec<DependencyEdge>,
-    applied: &mut [AppliedCommutingPremise],
-) {
-    use super::CommutationOrder;
-    use std::ops::ControlFlow;
-
-    let pairs: Vec<_> = applied
-        .iter()
-        .map(|premise| (premise.a, premise.b))
-        .collect();
-    let order = CommutationOrder::from_edges(
-        nodes.len(),
-        edges
-            .iter()
-            .map(|edge| (edge, edge.reason.premise_verdict())),
-        applied,
-    );
-    order.preserve(&pairs, |preserved| {
-        let id = DependencyEdgeId(edges.len());
-        let mut reason = EdgeReason::sequenced(
-            nodes[preserved.from.0].statement_ordinal,
-            SequencedCause::PreservedOrder {
-                via: nodes[preserved.via.0].statement_ordinal,
-                commuting_premise: applied[preserved.by_premise].reference.clone(),
-            },
-        );
-        if let Some(index) = preserved.inerted_by {
-            reason.inerted_by = Some(applied[index].reference.clone());
-            applied[index].inerted_edges.push(id);
-        }
-        edges.push(DependencyEdge {
-            id,
-            from: preserved.from,
-            to: preserved.to,
-            reason,
-        });
-        ControlFlow::Continue(())
-    });
-}
-
-/// Preserve source-order observations of mutable array contents. Binding-cell
-/// ordering cannot do this: an array initializer writes the object binding,
-/// while a later `push` or indexed write changes the object behind it.
-///
-/// A statement's cells are its own at-init cells and those of the callables
-/// its synchronous execution invoked; an execution the interpreter could not
-/// complete may touch any contents and is a heap-frontier barrier.
-fn emit_heap_content_order(
-    facts: &[StatementFacts],
-    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
-) {
-    // Only one eager occurrence with no deferred occurrence proves that a
-    // cell was born at this source position. A literal inside a callable may
-    // have allocated before an intervening opaque call, even if invoked again
-    // afterwards, so its site cannot discharge the old frontier.
-    let unique_eager_allocations = OneShotEagerAllocations::from_facts(facts);
-
-    // A hoisted or escaped callable can allocate before its lexical statement.
-    // Ordinary own-property cells likewise have no unique eager birth proof.
-    // Array length inherits the array's checked eager birth below.
-    let mut has_live_heap_contents = facts.iter().any(|stmt| {
-        // A lexical-only initializer assertion can remove the conservative
-        // binding coupling without bounding provider-owned heap state. Keep
-        // opaque ordering on both sides of it even with no modeled local cells.
-        stmt.synchronous_calls
-            .as_ref()
-            .is_some_and(|calls| calls.initializer_binding_effects.is_some())
-            || !stmt.deferred_heap_allocations.is_empty()
-            || stmt
-                .synchronous_calls
-                .iter()
-                .flat_map(|calls| {
-                    calls
-                        .heap_contents
-                        .reads
-                        .iter()
-                        .chain(&calls.heap_contents.writes)
-                })
-                .any(|cell| {
-                    matches!(
-                        cell,
-                        EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_)
-                    )
-                })
-    });
-    let mut events = Vec::new();
-    for stmt in facts {
-        let own = &stmt.heap_contents;
-        let own_heap = stmt.own_heap_content_summary();
-        let mut allocations = own.allocations.clone();
-        let mut effects = heap_content_cells(&own.reads, &own.writes);
-        // Every disjunct that holds is retained as a `HeapBarrierCause`
-        // on the edges the barrier emits.
-        let mut opaque_causes = BTreeSet::new();
-        if own_heap.opaque {
-            opaque_causes.insert(HeapBarrierCause::ArrayContentEffects);
-        }
-        if !stmt.dataflow_summarizable() && !stmt.purity.is_pure() {
-            opaque_causes.insert(HeapBarrierCause::NonSummarizableImpure);
-        }
-        if let Some(calls) = &stmt.synchronous_calls {
-            let callees = &calls.heap_contents;
-            allocations.extend(callees.allocations.iter().cloned());
-            union_effects(
-                &mut effects,
-                &heap_content_cells(&callees.reads, &callees.writes),
-            );
-            if callees.opaque {
-                opaque_causes.insert(HeapBarrierCause::CalleeHeapEffects);
-            }
-        }
-        // If the interpreter cannot completely summarize this source unit, an
-        // otherwise-pure expression may still observe mutable array contents
-        // through coercion, a getter, or a callable it did not resolve.
-        if !stmt
-            .synchronous_calls
-            .as_ref()
-            .is_some_and(|calls| calls.complete)
-        {
-            opaque_causes.insert(HeapBarrierCause::IncompleteSynchronousExecution);
-        }
-        if let Some(calls) = &stmt.synchronous_calls
-            && calls
-                .initializer_external_effects
-                .as_ref()
-                .is_some_and(|effect_use| {
-                    matches!(
-                        effect_use.effects,
-                        spec::InitializerExternalEffects::Isolated
-                            | spec::InitializerExternalEffects::PrivateMetadata
-                    )
-                })
-        {
-            // A validated author promise covers only this initializer's
-            // unknown heap accesses. Keep source-observed cells, allocation
-            // events and non-heap/impure ordering; never complete execution.
-            effects = heap_content_cells(&own.reads, &own.writes);
-            union_effects(
-                &mut effects,
-                &heap_content_cells(
-                    &calls.non_assumed_heap_accesses.reads,
-                    &calls.non_assumed_heap_accesses.writes,
-                ),
-            );
-            opaque_causes.remove(&HeapBarrierCause::ArrayContentEffects);
-            opaque_causes.remove(&HeapBarrierCause::CalleeHeapEffects);
-            opaque_causes.remove(&HeapBarrierCause::IncompleteSynchronousExecution);
-        }
-        let opaque = !opaque_causes.is_empty();
-        has_live_heap_contents |=
-            !allocations.is_empty() || !effects.reads.is_empty() || !effects.writes.is_empty();
-        if !allocations.is_empty() {
-            events.push((
-                SourceUnitId(stmt.ordinal.0),
-                stmt.ordinal,
-                crate::StatementEffectSummary {
-                    reads: BTreeSet::new(),
-                    writes: allocations,
-                },
-                CellOrderBarrier::HeapAllocation,
-            ));
-        }
-        if has_live_heap_contents
-            && (!effects.reads.is_empty() || !effects.writes.is_empty() || opaque)
-        {
-            events.push((
-                SourceUnitId(stmt.ordinal.0),
-                stmt.ordinal,
-                effects,
-                if opaque {
-                    CellOrderBarrier::HeapFrontier {
-                        causes: opaque_causes,
-                    }
-                } else {
-                    CellOrderBarrier::None
-                },
-            ));
-        }
-    }
-    let mut sequence_pairs: BTreeSet<_> = raw_edges
-        .iter()
-        .filter(|(_, _, reason)| reason.kind == DepKind::Sequenced)
-        .map(|(from, to, _)| (*from, *to))
-        .collect();
-    emit_cell_order_events(
-        events,
-        raw_edges,
-        &mut sequence_pairs,
-        Some(&unique_eager_allocations),
-    );
-}
-
-fn heap_content_cells(
-    reads: &BTreeSet<EffectCell>,
-    writes: &BTreeSet<EffectCell>,
-) -> crate::StatementEffectSummary {
-    crate::StatementEffectSummary {
-        reads: reads
-            .iter()
-            .filter(|cell| {
-                matches!(
-                    cell,
-                    EffectCell::ArrayContents(_)
-                        | EffectCell::SetContents(_)
-                        | EffectCell::ObjectShape(_)
-                        | EffectCell::OwnProperty { .. }
-                )
-            })
-            .cloned()
-            .collect(),
-        writes: writes
-            .iter()
-            .filter(|cell| {
-                matches!(
-                    cell,
-                    EffectCell::ArrayContents(_)
-                        | EffectCell::SetContents(_)
-                        | EffectCell::ObjectShape(_)
-                        | EffectCell::OwnProperty { .. }
-                )
-            })
-            .cloned()
-            .collect(),
-    }
-}
-
-/// A source allocation site that can occur only in one eager top-level owner.
-/// The graph may use its birth after an opaque frontier as negative alias
-/// evidence for that earlier frontier. A lazy or duplicate site is excluded.
-struct OneShotEagerAllocations(BTreeSet<EffectCell>);
-
-impl OneShotEagerAllocations {
-    fn from_facts(facts: &[StatementFacts]) -> Self {
-        let lazy: BTreeSet<_> = facts
-            .iter()
-            .flat_map(|stmt| stmt.deferred_heap_allocations.iter().cloned())
-            .collect();
-        let mut eager_counts = BTreeMap::<EffectCell, usize>::new();
-        for cell in facts
-            .iter()
-            .flat_map(|stmt| stmt.heap_one_shot_allocations.iter().cloned())
-        {
-            *eager_counts.entry(cell).or_default() += 1;
-        }
-        Self(
-            eager_counts
-                .into_iter()
-                .filter_map(|(cell, count)| (count == 1 && !lazy.contains(&cell)).then_some(cell))
-                .collect(),
-        )
-    }
-
-    fn contains(&self, cell: &EffectCell) -> bool {
-        self.0.contains(cell)
-    }
-}
-
-/// Resolve only chunk bindings initialized directly to a function/class
-/// summary and never rebound or split by a shared `var` declaration.
-/// Both at-init promotion and heap-content propagation use this boundary so
-/// their call graph assumptions stay aligned.
-fn resolve_direct_function_source_unit(
-    binding: &Id,
-    binding_source_unit: &HashMap<Id, SourceUnitId>,
-    shared_vars: &BTreeSet<Id>,
-    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
-    rebound: &BTreeSet<Id>,
-) -> Option<SourceUnitId> {
-    let source_unit = *binding_source_unit.get(binding)?;
-    let stmt = stmt_by_source_unit.get(&source_unit)?;
-    (stmt.declares_direct_function || stmt.constructor.is_some())
-        .then_some(source_unit)
-        .filter(|_| !rebound.contains(binding) && !shared_vars.contains(binding))
-}
-
-fn union_effects(
-    into: &mut crate::StatementEffectSummary,
-    from: &crate::StatementEffectSummary,
-) -> bool {
-    let old_reads = into.reads.len();
-    let old_writes = into.writes.len();
-    into.reads.extend(from.reads.iter().cloned());
-    into.writes.extend(from.writes.iter().cloned());
-    old_reads != into.reads.len() || old_writes != into.writes.len()
-}
-
-#[derive(Clone, PartialEq, Eq)]
-enum CellOrderBarrier {
-    None,
-    /// A fresh allocation seeds later heap observations without depending on
-    /// prior heap effects or resetting an existing source-origin timeline.
-    HeapAllocation,
-    /// Preserve the S-chain behavior: an unsummarized impure statement
-    /// depends on every preceding impure source unit. `causes` is
-    /// retained on every edge the fallback emits.
-    AllPriorEvents {
-        causes: BTreeSet<DataflowOpacityCause>,
-    },
-    /// Unknown heap effects depend on the current heap-cell frontier and
-    /// become the barrier for later heap observations. `causes` is
-    /// retained on every edge the barrier emits.
-    HeapFrontier {
-        causes: BTreeSet<HeapBarrierCause>,
-    },
-}
-
-impl CellOrderBarrier {
-    fn from_opacity(causes: &BTreeSet<DataflowOpacityCause>) -> Self {
-        if causes.is_empty() {
-            Self::None
-        } else {
-            Self::AllPriorEvents {
-                causes: causes.clone(),
-            }
-        }
-    }
-
-    /// The endpoint classification retained on emitted edges.
-    fn effect_class(&self) -> CellEffectClass {
-        match self {
-            Self::None => CellEffectClass::Summarized,
-            Self::HeapAllocation => CellEffectClass::HeapAllocation,
-            Self::AllPriorEvents { causes } => CellEffectClass::OpaqueBarrier {
-                causes: causes.clone(),
-            },
-            Self::HeapFrontier { causes } => CellEffectClass::HeapFrontier {
-                causes: causes.clone(),
-            },
-        }
-    }
-}
-
-/// Side-effect ordering edges (`S` per docs/design.md "Module dep graphs").
-/// At source unit level, links impure top-level statements so any realizable
-/// schedule preserves their observable order.
-///
-/// Two emission modes selected by [`GraphOptions`]:
-///
-/// - **Strict chain** (default): every later impure statement gets one
-///   incoming `Sequenced` edge from the immediately previous impure
-///   statement. Transitive reduction of the total order; soundest path.
-/// - **Dataflow-aware** (`dataflow_aware_s_chain = true`): emit
-///   `Sequenced(curr → prev)` only when `curr` reads or writes a cell
-///   `prev` wrote (last-writer-precedes-reader). Statements that fail
-///   the `dataflow_summarizable` check (dynamic globalThis key, `with`,
-///   direct `eval`, `Function(...)` constructor, `defineProperty` on
-///   globals, `Proxy` on globals) fall back to the strict edge against
-///   every prior impure source unit. See `README.md` →
-///   "Conditionally-correct optimizations" for the precondition this
-///   relaxation requires.
-///
-/// `purity` is computed upstream (`classify_expr_purity`) so pure
-/// literal initializers (`const X = 42`, `const X = { a: 1 }`,
-/// function/class declarations without observable static init) don't
-/// contribute to S. Without that precision the cross-module S graph
-/// would be dense enough to reject realistic specs for trivially pure
-/// const sequences.
-fn emit_s_chain(
-    facts: &[StatementFacts],
-    options: GraphOptions,
-    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
-) {
-    if !options.dataflow_aware_s_chain {
-        let mut prev: Option<SourceUnitId> = None;
-        for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
-            let from = SourceUnitId(stmt.ordinal.0);
-            if let Some(to) = prev
-                && from != to
-            {
-                raw_edges.push((
-                    from,
-                    to,
-                    EdgeReason::sequenced(stmt.ordinal, SequencedCause::StrictChain),
-                ));
-            }
-            prev = Some(from);
-        }
-        return;
-    }
-
-    // Dataflow-aware emission. For each impure `curr`, emit an
-    // incoming Sequenced edge from:
-    //
-    // - the most recent prior impure source unit that wrote any cell in
-    //   `curr.reads ∪ curr.writes` (read-after-write /
-    //   write-after-write), and
-    // - every prior impure source unit that READ a cell `curr` writes
-    //   since that cell's last write (write-after-read — without
-    //   this, a later writer could be scheduled before an earlier
-    //   reader and the reader would observe the new value).
-    //
-    // Statements with `dataflow_summarizable = false` are treated as
-    // touching every cell — they get edges to every prior impure
-    // source unit and become a barrier for subsequent statements.
-    let mut sequence_pairs: BTreeSet<(SourceUnitId, SourceUnitId)> = raw_edges
-        .iter()
-        .filter(|(_, _, reason)| reason.kind == DepKind::Sequenced)
-        .map(|(from, to, _)| (*from, *to))
-        .collect();
-    emit_cell_order_events(
-        facts
-            .iter()
-            .filter(|stmt| !stmt.purity.is_pure())
-            .map(|stmt| {
-                (
-                    SourceUnitId(stmt.ordinal.0),
-                    stmt.ordinal,
-                    stmt.effects(),
-                    CellOrderBarrier::from_opacity(&stmt.dataflow_opacity()),
-                )
-            }),
-        raw_edges,
-        &mut sequence_pairs,
-        None,
-    );
-}
-
-/// Shared last-writer / reader-since-write timeline for binding, global, and
-/// heap-content cells. Write-after-read dependencies preserve the value that
-/// an earlier pure observer sees before a later mutation.
-fn emit_cell_order_events(
-    events: impl IntoIterator<
-        Item = (
-            SourceUnitId,
-            SourceUnitOrdinal,
-            crate::StatementEffectSummary,
-            CellOrderBarrier,
-        ),
-    >,
-    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
-    sequence_pairs: &mut BTreeSet<(SourceUnitId, SourceUnitId)>,
-    unique_eager_allocations: Option<&OneShotEagerAllocations>,
-) {
-    let mut last_writer = CellOverlapIndex::<SourceUnitId>::default();
-    let mut readers_since_last_write = CellOverlapIndex::<BTreeSet<SourceUnitId>>::default();
-    let mut prior_source_units: Vec<SourceUnitId> = Vec::new();
-    let mut opaque_barrier: Option<SourceUnitId> = None;
-    let mut pending_allocations = CellOverlapIndex::<BTreeSet<SourceUnitId>>::default();
-    let mut born_after_barrier = BTreeSet::new();
-    // Classification of every source unit seen so far, for the `to` side
-    // of retained causes. A source unit's content event (summarized or
-    // barrier) supersedes its earlier allocation event.
-    let mut class_of: BTreeMap<SourceUnitId, CellEffectClass> = BTreeMap::new();
-    // Every reason `from` must follow each target, keyed by target.
-    let mut targets: BTreeMap<SourceUnitId, BTreeSet<CellConflict>> = BTreeMap::new();
-    fn depend(
-        targets: &mut BTreeMap<SourceUnitId, BTreeSet<CellConflict>>,
-        to: SourceUnitId,
-        conflict: CellConflict,
-    ) {
-        targets.entry(to).or_default().insert(conflict);
-    }
-    for (from, ordinal, effects, barrier_mode) in events {
-        let from_class = barrier_mode.effect_class();
-        if barrier_mode == CellOrderBarrier::HeapAllocation {
-            for cell in effects.writes {
-                if opaque_barrier.is_some()
-                    && unique_eager_allocations.is_some_and(|unique| unique.contains(&cell))
-                {
-                    born_after_barrier.insert(cell.clone());
-                }
-                pending_allocations.get_or_default(cell).insert(from);
-            }
-            class_of.entry(from).or_insert(from_class);
-            continue;
-        }
-        let all_prior = matches!(barrier_mode, CellOrderBarrier::AllPriorEvents { .. });
-        if !all_prior {
-            for (cell, is_write) in effects
-                .reads
-                .iter()
-                .map(|cell| (cell, false))
-                .chain(effects.writes.iter().map(|cell| (cell, true)))
-            {
-                for (overlap, allocations) in pending_allocations.overlapping(cell) {
-                    for &to in allocations {
-                        depend(
-                            &mut targets,
-                            to,
-                            CellConflict::UseAfterAllocation {
-                                cell: EffectCellReport::from(cell),
-                                overlap: CellOverlapReport::from(&overlap),
-                            },
-                        );
-                    }
-                }
-                for (overlap, &to) in last_writer.overlapping(cell) {
-                    let conflict = if is_write {
-                        CellConflict::WriteAfterWrite {
-                            cell: EffectCellReport::from(cell),
-                            overlap: CellOverlapReport::from(&overlap),
-                        }
-                    } else {
-                        CellConflict::ReadAfterWrite {
-                            cell: EffectCellReport::from(cell),
-                            overlap: CellOverlapReport::from(&overlap),
-                        }
-                    };
-                    depend(&mut targets, to, conflict);
-                }
-                if is_write {
-                    for (overlap, readers) in readers_since_last_write.overlapping(cell) {
-                        for &to in readers {
-                            depend(
-                                &mut targets,
-                                to,
-                                CellConflict::WriteAfterRead {
-                                    cell: EffectCellReport::from(cell),
-                                    overlap: CellOverlapReport::from(&overlap),
-                                },
-                            );
-                        }
-                    }
-                }
-            }
-            // Unknown effects are barriers for subsequent summarized events.
-            // Checked own array slots share the uniquely eager array's birth,
-            // never a repeated site's or an ordinary record property's.
-            if let Some(barrier) = opaque_barrier
-                && (barrier_mode != CellOrderBarrier::None
-                    || effects.reads.iter().chain(&effects.writes).any(|cell| {
-                        !born_after_barrier.contains(cell)
-                            && !matches!(cell,
-                                    EffectCell::OwnProperty { origin, .. }
-                                        if born_after_barrier.contains(
-                                            &EffectCell::ArrayContents(*origin))
-                                            && may_overlap(
-                                                cell,
-                                                &EffectCell::ArrayContents(*origin),
-                                            ).is_some())
-                    }))
-            {
-                depend(&mut targets, barrier, CellConflict::AfterBarrier);
-            }
-        }
-        if all_prior {
-            // The S-chain's historical fallback: depend on every prior event
-            // and become a barrier for later summarized events.
-            for &to in &prior_source_units {
-                depend(&mut targets, to, CellConflict::BarrierAfterPrior);
-            }
-            opaque_barrier = Some(from);
-            born_after_barrier.clear();
-        } else if matches!(barrier_mode, CellOrderBarrier::HeapFrontier { .. }) {
-            // An opaque heap operation only needs the live cell frontier.
-            // Every earlier read/write is either on that frontier or already
-            // constrained before a frontier event. Reset the per-cell state
-            // so later observations depend on the opaque operation itself.
-            for (cell, allocations) in pending_allocations.iter() {
-                for &to in allocations {
-                    depend(
-                        &mut targets,
-                        to,
-                        CellConflict::FrontierAfterCell { cell: cell.into() },
-                    );
-                }
-            }
-            pending_allocations.clear();
-            for (cell, &to) in last_writer.iter() {
-                depend(
-                    &mut targets,
-                    to,
-                    CellConflict::FrontierAfterCell { cell: cell.into() },
-                );
-            }
-            for (cell, readers) in readers_since_last_write.iter() {
-                for &to in readers {
-                    depend(
-                        &mut targets,
-                        to,
-                        CellConflict::FrontierAfterCell { cell: cell.into() },
-                    );
-                }
-            }
-            opaque_barrier = Some(from);
-            born_after_barrier.clear();
-            last_writer.clear();
-            readers_since_last_write.clear();
-        }
-        for (to, conflicts) in std::mem::take(&mut targets) {
-            if from != to && sequence_pairs.insert((from, to)) {
-                let to_class = class_of
-                    .get(&to)
-                    .cloned()
-                    .expect("every cell-timeline target is an earlier event");
-                raw_edges.push((
-                    from,
-                    to,
-                    EdgeReason::sequenced(
-                        ordinal,
-                        SequencedCause::CellOrder {
-                            from: from_class.clone(),
-                            to: to_class,
-                            conflicts,
-                        },
-                    ),
-                ));
-            }
-        }
-        if barrier_mode == CellOrderBarrier::None {
-            for cell in effects.writes {
-                readers_since_last_write.remove_dominated(&cell);
-                last_writer.remove_dominated(&cell);
-                last_writer.insert(cell, from);
-            }
-            for cell in effects.reads {
-                readers_since_last_write.get_or_default(cell).insert(from);
-            }
-        }
-        class_of.insert(from, from_class);
-        prior_source_units.push(from);
-    }
-}
-
-/// Binding-ordering `Sequenced` edges of one `promote_at_init_calls` pass,
-/// one per `(from, to)` pair. A pair several rules order keeps the first
-/// cause offered, unless a later one is derived on both sides and the kept one
-/// is not: the commuting-statements gate reads only the retained cause, so a
-/// derived conflict must not hide behind an assumed one.
-#[derive(Default)]
-struct BindingOrderEdges(BTreeMap<(SourceUnitId, SourceUnitId), SequencedCause>);
-
-impl BindingOrderEdges {
-    fn offer(&mut self, from: SourceUnitId, to: SourceUnitId, cause: SequencedCause) {
-        match self.0.entry((from, to)) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(cause);
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                if binding_effects_observed(&cause) && !binding_effects_observed(entry.get()) {
-                    entry.insert(cause);
-                }
-            }
-        }
-    }
-}
-
-/// Whether a binding-ordering cause was derived from observed effects on
-/// both endpoints; `false` for every other rule.
-fn binding_effects_observed(cause: &SequencedCause) -> bool {
-    match cause {
-        SequencedCause::SharedVarAccess { source, target, .. }
-        | SequencedCause::BindingTimeline { source, target, .. } => {
-            *source == EffectProvenance::Observed && *target == EffectProvenance::Observed
-        }
-        SequencedCause::UninitializedObservation { observation, .. } => {
-            *observation == EffectProvenance::Observed
-        }
-        SequencedCause::StrictChain
-        | SequencedCause::PreservedOrder { .. }
-        | SequencedCause::CellOrder { .. } => false,
-    }
-}
-
-/// Source units that write or observe one binding, each with the provenance
-/// of its effect (observed wins when a unit has both).
-type BindingAccesses = BTreeMap<Id, BTreeMap<SourceUnitId, EffectProvenance>>;
-
-fn record_access(
-    accesses: &mut BindingAccesses,
-    binding: &Id,
-    source_unit: SourceUnitId,
-    provenance: EffectProvenance,
-) {
-    accesses
-        .entry(binding.clone())
-        .or_default()
-        .entry(source_unit)
-        .and_modify(|existing| existing.join(&provenance))
-        .or_insert(provenance);
-}
-
-/// Offer one binding's source-order timeline: consecutive writers, and each
-/// reader against its nearest preceding and following writer. No
-/// reader-to-reader edges: independent observations of an unchanged cell need
-/// no relative order and can form false cycles.
-fn offer_binding_timeline(
-    binding: &Id,
-    writers: &BTreeMap<SourceUnitId, EffectProvenance>,
-    readers: &BTreeMap<SourceUnitId, EffectProvenance>,
-    existing_order_pairs: &BTreeSet<(SourceUnitId, SourceUnitId)>,
-    edges: &mut BindingOrderEdges,
-) {
-    let mut offer = |from: SourceUnitId,
-                     to: SourceUnitId,
-                     order: BindingTimelineOrder,
-                     source: &EffectProvenance,
-                     target: &EffectProvenance| {
-        if !existing_order_pairs.contains(&(from, to)) {
-            edges.offer(
-                from,
-                to,
-                SequencedCause::BindingTimeline {
-                    binding: binding.0.clone(),
-                    order,
-                    source: source.clone(),
-                    target: target.clone(),
-                },
-            );
-        }
-    };
-    let writer_events: Vec<_> = writers.iter().collect();
-    for pair in writer_events.windows(2) {
-        let (&earlier, earlier_provenance) = pair[0];
-        let (&later, later_provenance) = pair[1];
-        offer(
-            later,
-            earlier,
-            BindingTimelineOrder::WriterAfterWriter,
-            later_provenance,
-            earlier_provenance,
-        );
-    }
-    for (&reader, read) in readers {
-        if let Some((&previous_writer, write)) = writers.range(..reader).next_back() {
-            offer(
-                reader,
-                previous_writer,
-                BindingTimelineOrder::ReaderAfterWriter,
-                read,
-                write,
-            );
-        }
-        if let Some((&next_writer, write)) = writers
-            .range((
-                std::ops::Bound::Excluded(reader),
-                std::ops::Bound::Unbounded,
-            ))
-            .next()
-        {
-            offer(
-                next_writer,
-                reader,
-                BindingTimelineOrder::WriterAfterReader,
-                write,
-                read,
-            );
-        }
-    }
-}
-
-/// Promote function-body lazy reads/rebinds to eager source unit edges from
-/// every statement that at-init-calls the function. Transitive over
-/// the call graph among chunk-declared functions: a top-level
-/// `f()` whose `f` calls `g` in its body promotes through `g`'s lazy
-/// reads/rebinds too. See docs/design.md "At-init call promotion".
-///
-/// Per-statement dedup: at most one promoted eager edge per
-/// (caller, target-source unit) pair. Rebind targets are also promoted as
-/// eager order edges; the write site's direct rebind edge enforces
-/// write legality. Without dedup, a single at-init call to a
-/// function with N transitive lazy reads would emit N edges from the
-/// caller, and multiple at-init calls in the same statement would
-/// multiply that further.
-///
-/// Promote at-init call effects into the graph. Returns the raw-edge index
-/// of every promoted `EagerUse` whose read or rebind only a conservative path
-/// contributed, with that path (the shared-`var` access order reads it).
-fn promote_at_init_calls(
-    facts: &[StatementFacts],
-    binding_source_unit: &HashMap<Id, SourceUnitId>,
-    shared_vars: &BTreeSet<Id>,
-    stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
-    target_is_hoisted: impl Fn(&Id) -> bool,
-    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
-) -> BTreeMap<usize, AssumedEffectReason> {
-    // Index statement source units that can change a chunk binding's value or
-    // observable object state when they execute. A callback read must see the
-    // source-prefix value, so the callback-read and writer source units form one
-    // source-order timeline. This also covers mutations of an already
-    // initialized object: an ordinary promoted read dependency on its
-    // declaration alone would not stop a later mutation from moving before
-    // the callback. Unknown effects still take the existing strict S-chain
-    // fallback; this index only records effects with a known binding target.
-    // Each effect carries its provenance: only a synchronous summary's
-    // fallback contributes an assumed one.
-    let mut writers_by_binding = BindingAccesses::new();
-    let mut readers_by_binding = BindingAccesses::new();
-    for stmt in facts {
-        let source_unit = SourceUnitId(stmt.ordinal.0);
-        for binding in &stmt.reads.eager {
-            record_access(
-                &mut readers_by_binding,
-                binding,
-                source_unit,
-                EffectProvenance::Observed,
-            );
-        }
-        // Lexical declarations become observable at their statement. Function
-        // declarations are initialized during module instantiation and are
-        // therefore not execution-time writes.
-        // Imports describe module linkage; evaluating the import declaration
-        // does not write the imported binding in this chunk. Keep this guard
-        // explicit even though `collect_declared_names` currently gives
-        // imports no local declarations.
-        if stmt.initializes_bindings_at_evaluation() {
-            for binding in stmt.declared.difference(&stmt.var_declared) {
-                record_access(
-                    &mut writers_by_binding,
-                    binding,
-                    source_unit,
-                    EffectProvenance::Observed,
-                );
-            }
-        }
-        for binding in stmt
-            .var_initializers
-            .iter()
-            .chain(&stmt.rebinds.eager)
-            .chain(&stmt.local_effects)
-        {
-            record_access(
-                &mut writers_by_binding,
-                binding,
-                source_unit,
-                EffectProvenance::Observed,
-            );
-        }
-        // A summary's rebinds execute at this statement's callsite, not at
-        // the lexical source unit containing the callback body.
-        if let Some(synchronous) = &stmt.synchronous_calls {
-            for (binding, _) in &synchronous.reads {
-                record_access(
-                    &mut readers_by_binding,
-                    binding,
-                    source_unit,
-                    EffectProvenance::from_fallback(synchronous.fallback_read(binding)),
-                );
-            }
-            // Keep the graph sound even if an availability-specific read is
-            // not duplicated in the general read set.
-            for binding in &synchronous.uninitialized_reads {
-                record_access(
-                    &mut readers_by_binding,
-                    binding,
-                    source_unit,
-                    EffectProvenance::from_fallback(
-                        synchronous.fallback_uninitialized_read(binding),
-                    ),
-                );
-            }
-            for (binding, _) in &synchronous.rebinds {
-                record_access(
-                    &mut writers_by_binding,
-                    binding,
-                    source_unit,
-                    EffectProvenance::from_fallback(synchronous.fallback_rebind(binding)),
-                );
-            }
-        }
-    }
-
-    // A pair may be observed by several callback callsites or be both a
-    // future declaration and a future writer. Emit each temporal ordering
-    // constraint only once within this pass; pairs an earlier rule already
-    // orders get no timeline edge.
-    let mut binding_order = BindingOrderEdges::default();
-    let existing_order_pairs: BTreeSet<(SourceUnitId, SourceUnitId)> = raw_edges
-        .iter()
-        .filter(|(_, _, reason)| reason.constrains_init_order())
-        .map(|(from, to, _)| (*from, *to))
-        .collect();
-    let mut direct_eager_bindings: BTreeSet<(SourceUnitId, SourceUnitId, Id)> = raw_edges
-        .iter()
-        .filter_map(|(from, to, reason)| {
-            (reason.kind == DepKind::EagerUse && reason.role == EdgeRole::Direct)
-                .then(|| {
-                    reason
-                        .binding
-                        .as_ref()
-                        .map(|binding| (*from, *to, binding.clone()))
-                })
-                .flatten()
-        })
-        .collect();
-
-    // Preserve each observed binding's writer order and place each reader
-    // against only its nearest preceding/following writer. Ordinary eager
-    // readers need this timeline even when no callback reads the binding:
-    // a pure initializer may otherwise move across a later assignment.
-    // The timeline of observed effects alone is offered too: when an assumed
-    // (fallback) effect sits between two observed ones, the nearest-effect
-    // edges route their derived order through it, and a premise making an
-    // assumed edge inert must not drop that order.
-    let no_readers = BTreeMap::new();
-    for (binding, writers) in &writers_by_binding {
-        let readers = readers_by_binding.get(binding).unwrap_or(&no_readers);
-        if readers.is_empty() {
-            continue;
-        }
-        offer_binding_timeline(
-            binding,
-            writers,
-            readers,
-            &existing_order_pairs,
-            &mut binding_order,
-        );
-        let observed = |accesses: &BTreeMap<SourceUnitId, EffectProvenance>| {
-            accesses
-                .iter()
-                .filter(|(_, provenance)| **provenance == EffectProvenance::Observed)
-                .map(|(source_unit, provenance)| (*source_unit, provenance.clone()))
-                .collect::<BTreeMap<_, _>>()
-        };
-        let (observed_writers, observed_readers) = (observed(writers), observed(readers));
-        if observed_writers.len() != writers.len() || observed_readers.len() != readers.len() {
-            offer_binding_timeline(
-                binding,
-                &observed_writers,
-                &observed_readers,
-                &existing_order_pairs,
-                &mut binding_order,
-            );
-        }
-    }
-
-    // Bindings rebound anywhere in the chunk: their value at call
-    // time may not be the function lexically defined at their source unit,
-    // so calls to them are not precisely resolvable.
-    let rebound: BTreeSet<Id> = facts
-        .iter()
-        .flat_map(|s| s.rebinds.eager.iter().chain(s.rebinds.lazy.iter()).cloned())
-        .collect();
-
-    // A callee binding is precisely resolvable iff (a) its declaring
-    // statement binds it directly to a function value (`function f`,
-    // `const f = () => ...`) and (b) it is never rebound. Everything
-    // else — aliases (`const g = readB`), object-literal methods,
-    // conditional initializers, rebound functions — takes the
-    // conservative read-closure fallback below.
-    let resolvable_callee = |id: &Id| {
-        resolve_direct_function_source_unit(
-            id,
-            binding_source_unit,
-            shared_vars,
-            stmt_by_source_unit,
-            &rebound,
-        )
-    };
-
-    // 1. Build the call graph: source unit → source unit edges for each
-    //    resolvable callee reachable via *first-order* calls.lazy.
-    //    Nested-closure calls (e.g. inside an arrow returned by the
-    //    body) don't fire when the body is invoked synchronously, so
-    //    they don't belong on the promotion call graph — see
-    //    docs/design.md "At-init call promotion" and the e2e test
-    //    `e2e/cases/initialization/nested_closure_{read,rebind}`.
-    //
-    //    Add every source unit whose body has any first-order lazy reads /
-    //    rebinds / calls — or an unresolvable first-order callee — as
-    //    a node, so the closure pass below covers it even if it makes
-    //    no resolvable calls (e.g. `function readB() { return B; }`).
-    //
-    //    Per-source unit "fallback roots": source units through which a function
-    //    value could reach a call the source unit's first-order body makes
-    //    but promotion can't follow — the source units of bindings the
-    //    unresolved call mentions, the source units of chunk-declared
-    //    Ident callees that aren't direct never-rebound functions,
-    //    and the source unit itself when the unresolved call carries an
-    //    inline function expression. At-init callers inherit these
-    //    roots transitively through the call graph and expand them
-    //    through the source-unit read closure.
-    let fallback_roots_of = |sources: &BTreeSet<Id>,
-                             inline_fn: bool,
-                             self_source_unit: SourceUnitId|
-     -> BTreeSet<SourceUnitId> {
-        let mut roots: BTreeSet<SourceUnitId> = sources
-            .iter()
-            .filter_map(|id| binding_source_unit.get(id).copied())
-            .collect();
-        if inline_fn {
-            roots.insert(self_source_unit);
-        }
-        roots
-    };
-    let source_unit_first_order_roots = |stmt: &StatementFacts| -> BTreeSet<SourceUnitId> {
-        let source_unit = SourceUnitId(stmt.ordinal.0);
-        let mut roots = fallback_roots_of(
-            stmt.first_order_unresolved_sources(),
-            stmt.first_order_unresolved_inline_fn(),
-            source_unit,
-        );
-        for callee_id in stmt.first_order_calls() {
-            if resolvable_callee(callee_id).is_none()
-                && let Some(&callee_source_unit) = binding_source_unit.get(callee_id)
-            {
-                roots.insert(callee_source_unit);
-            }
-        }
-        roots
-    };
-    let mut call_graph: DiGraphMap<SourceUnitId, ()> = DiGraphMap::new();
-    for stmt in facts {
-        let source_unit = SourceUnitId(stmt.ordinal.0);
-        if !stmt.first_order_calls().is_empty()
-            || !stmt.first_order_reads().is_empty()
-            || !stmt.first_order_rebinds().is_empty()
-            || !stmt.first_order_unresolved_sources().is_empty()
-            || stmt.first_order_unresolved_inline_fn()
-        {
-            call_graph.add_node(source_unit);
-        }
-    }
-    for stmt in facts {
-        if stmt.first_order_calls().is_empty() {
-            continue;
-        }
-        let caller = SourceUnitId(stmt.ordinal.0);
-        for callee_id in stmt.first_order_calls() {
-            let Some(callee_source_unit) = resolvable_callee(callee_id) else {
-                continue;
-            };
-            call_graph.add_node(callee_source_unit);
-            call_graph.add_edge(caller, callee_source_unit, ());
-        }
-    }
-
-    // 2. Tarjan SCC. `tarjan_scc` returns SCCs in reverse topological
-    //    order: leaves (no outgoing edges to other SCCs) first.
-    let sccs = tarjan_scc(&call_graph);
-    let mut scc_of: BTreeMap<SourceUnitId, usize> = BTreeMap::new();
-    for (idx, scc) in sccs.iter().enumerate() {
-        for source_unit in scc {
-            scc_of.insert(*source_unit, idx);
-        }
-    }
-
-    // 3. Per-source unit seeds: own reads.lazy / rebinds.lazy resolved to
-    //    SWC Ids. Filters out targets whose source unit is a function
-    //    declaration — function bindings are hoisted at module
-    //    instantiation (Phase 1 of ESM linking), so a cross-module
-    //    read of a function never observes a TDZ. Promoting such
-    //    reads would spuriously close cycles for shapes like mutual
-    //    recursion across modules (`function even(){odd()}` /
-    //    `function odd(){even()}`), which are actually realizable.
-    //    Other declared kinds (VarDecl, ClassDecl) are kept: const /
-    //    let / class are TDZ-locked until their statement runs, so a
-    //    cross-module read inside an at-init-called function does
-    //    fire the realizability hazard. `var` is technically hoisted
-    //    too but is rare enough not to warrant a separate distinction
-    //    in StatementKind.
-    let mut scc_reads: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
-    let mut scc_rebinds: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
-    let mut scc_fallback_roots: Vec<BTreeSet<SourceUnitId>> = vec![BTreeSet::new(); sccs.len()];
-    // A first-order call through a parameter/local cannot be mapped to a
-    // chunk-top source unit here. The value may have come from an argument at the
-    // eventual at-init call site, so carry that obligation through the call
-    // graph instead of silently dropping the Id in fallback_roots_of.
-    let mut scc_needs_caller_values = vec![false; sccs.len()];
-
-    // 4. Closure over the call graph. Iterate SCCs in
-    //    reverse-topological order (leaves first). For each SCC,
-    //    union members' own seeds plus successor SCC closures, and
-    //    propagate fallback roots the same way.
-    for (scc_idx, scc) in sccs.iter().enumerate() {
-        let mut reads: BTreeSet<Id> = BTreeSet::new();
-        let mut rebinds: BTreeSet<Id> = BTreeSet::new();
-        let mut roots: BTreeSet<SourceUnitId> = BTreeSet::new();
-        let mut needs_caller_values = false;
-        for source_unit in scc {
-            let Some(stmt) = stmt_by_source_unit.get(source_unit) else {
-                continue;
-            };
-            roots.extend(source_unit_first_order_roots(stmt));
-            needs_caller_values |= stmt
-                .first_order_unresolved_sources()
-                .iter()
-                .chain(stmt.first_order_calls().iter())
-                .any(|id| {
-                    stmt.local_bindings.contains(id) && !binding_source_unit.contains_key(id)
-                });
-            for id in stmt.first_order_reads() {
-                if binding_source_unit.contains_key(id) && !target_is_hoisted(id) {
-                    reads.insert(id.clone());
-                }
-            }
-            for id in stmt.first_order_rebinds() {
-                if binding_source_unit.contains_key(id) {
-                    rebinds.insert(id.clone());
-                }
-            }
-        }
-        for source_unit in scc {
-            for (_, target, _) in call_graph.edges(*source_unit) {
-                let Some(&target_scc) = scc_of.get(&target) else {
-                    continue;
-                };
-                if target_scc == scc_idx {
-                    continue;
-                }
-                reads.extend(scc_reads[target_scc].iter().cloned());
-                rebinds.extend(scc_rebinds[target_scc].iter().cloned());
-                roots.extend(scc_fallback_roots[target_scc].iter().copied());
-                needs_caller_values |= scc_needs_caller_values[target_scc];
-            }
-        }
-        scc_reads[scc_idx] = reads;
-        scc_rebinds[scc_idx] = rebinds;
-        scc_fallback_roots[scc_idx] = roots;
-        scc_needs_caller_values[scc_idx] = needs_caller_values;
-    }
-
-    // 5. Emit promoted edges with per-statement, per-kind dedup.
-    //    Each emitted reason carries `EdgeRole::PromotedAtInit {
-    //    callee_source_unit }` so the realizability gate can drop the edge
-    //    when caller and callee land in different assignment slots —
-    //    the body read fires inside a call into a different module,
-    //    after that callee module (and its imports) have already
-    //    evaluated, so the manufactured constraint from R to the
-    //    target's module is redundant with the already-recorded
-    //    R -> callee-module edge. See [`EdgeRole`].
-    //
-    //    Statements whose at-init calls can't all be resolved also take
-    //    the conservative fallback. Any function value an unresolved call
-    //    invokes must have reached it through a mentioned binding (callee,
-    //    arguments or computed keys) or an inline function expression. Each
-    //    such root expands through the full source-unit read graph; every
-    //    reachable unit contributes its lazy reads and rebinds at any depth.
-    //    Values from other chunks and dynamic global/property stashes may not
-    //    resolve to one callable (see docs/design.md, "At-init call promotion").
-    //    Fallback edges use the caller as their callee source unit, so neither
-    //    projection drops them for a precisely known callee in another module.
-    let mut fallback: Option<SourceUnitReadClosure> = None;
-    let mut fallback_eager_uses = BTreeMap::new();
-    for stmt in facts {
-        if let Some(synchronous) = &stmt.synchronous_calls {
-            let caller = SourceUnitId(stmt.ordinal.0);
-            let mut emitted = BTreeSet::new();
-
-            // A read known to observe a binding before its source
-            // initialization is not a safely-droppable call promotion: moving
-            // the declaration ahead of this callback would erase a TDZ or
-            // change the initial `undefined` value. Keep a direct dependency
-            // on the declaration, and when that declaration is later in the
-            // source, pair it with reverse source order. EagerUse alone would
-            // merely ask the later provider to run first; the pair makes the
-            // two source units atomic so the emitted module retains original order.
-            for target_binding in &synchronous.uninitialized_reads {
-                let Some(&target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == target_source_unit {
-                    continue;
-                }
-                if direct_eager_bindings.insert((
-                    caller,
-                    target_source_unit,
-                    target_binding.clone(),
-                )) {
-                    if let Some(reason) = synchronous.fallback_read(target_binding) {
-                        fallback_eager_uses.insert(raw_edges.len(), reason.clone());
-                    }
-                    raw_edges.push((
-                        caller,
-                        target_source_unit,
-                        EdgeReason::for_binding(
-                            DepKind::EagerUse,
-                            stmt.ordinal,
-                            target_binding.clone(),
-                        ),
-                    ));
-                }
-                if caller < target_source_unit {
-                    binding_order.offer(
-                        target_source_unit,
-                        caller,
-                        SequencedCause::UninitializedObservation {
-                            binding: target_binding.0.clone(),
-                            observation: EffectProvenance::from_fallback(
-                                synchronous.fallback_uninitialized_read(target_binding),
-                            ),
-                        },
-                    );
-                }
-            }
-
-            let reads = synchronous
-                .reads
-                .iter()
-                .filter(|(binding, _)| !synchronous.uninitialized_reads.contains(binding))
-                .map(|(binding, callee)| (binding, callee, synchronous.fallback_read(binding)));
-            let rebinds = synchronous
-                .rebinds
-                .iter()
-                .map(|(binding, callee)| (binding, callee, synchronous.fallback_rebind(binding)));
-            for (target_binding, callee_ordinal, fallback) in reads.chain(rebinds) {
-                if target_is_hoisted(target_binding) {
-                    continue;
-                }
-                let Some(&target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                let callee_source_unit = SourceUnitId(callee_ordinal.0);
-                if caller == target_source_unit
-                    || !emitted.insert((target_source_unit, callee_source_unit))
-                {
-                    continue;
-                }
-                if let Some(reason) = fallback {
-                    fallback_eager_uses.insert(raw_edges.len(), reason.clone());
-                }
-                raw_edges.push((
-                    caller,
-                    target_source_unit,
-                    EdgeReason::for_binding(
-                        DepKind::EagerUse,
-                        stmt.ordinal,
-                        target_binding.clone(),
-                    )
-                    .promoted_at_init(callee_source_unit),
-                ));
-            }
-            match synchronous.binding_effect_authority() {
-                crate::facts::sync_effects::BindingEffectAuthority::Unclassified => {}
-                crate::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
-                    complete: true,
-                }
-                | crate::facts::sync_effects::BindingEffectAuthority::AuthorSourceOnly
-                | crate::facts::sync_effects::BindingEffectAuthority::OperationReceipt => {
-                    continue;
-                }
-                crate::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
-                    complete: false,
-                }
-                | crate::facts::sync_effects::BindingEffectAuthority::OrderedRootInitializerUncovered => {}
-            }
-        }
-        if stmt.calls.eager.is_empty()
-            && stmt.at_init_unresolved_sources.is_empty()
-            && !stmt.at_init_unresolved_inline_fn
-        {
-            continue;
-        }
-        let caller = SourceUnitId(stmt.ordinal.0);
-        let mut promoted_read_targets: BTreeSet<SourceUnitId> = BTreeSet::new();
-        let mut fallback_roots = fallback_roots_of(&stmt.at_init_unresolved_sources, false, caller);
-        let mut promote_scc_bindings = |scc_idx: usize, callee| {
-            // Reads precede rebinds: when both identify the same target unit,
-            // its first binding and callee are retained as the edge witness.
-            for binding in scc_reads[scc_idx].iter().chain(&scc_rebinds[scc_idx]) {
-                let target = binding_source_unit[binding];
-                if target != caller && promoted_read_targets.insert(target) {
-                    raw_edges.push((
-                        caller,
-                        target,
-                        EdgeReason::for_binding(DepKind::EagerUse, stmt.ordinal, binding.clone())
-                            .promoted_at_init(callee),
-                    ));
-                }
-            }
-        };
-        if stmt.at_init_unresolved_inline_fn
-            && let Some(&scc_idx) = scc_of.get(&caller)
-        {
-            fallback_roots.extend(scc_fallback_roots[scc_idx].iter().copied());
-            promote_scc_bindings(scc_idx, caller);
-        }
-        for callee_id in &stmt.calls.eager {
-            let Some(callee_source_unit) = resolvable_callee(callee_id) else {
-                // A bare-Ident callee that isn't chunk-declared is a
-                // global/import — out of single-chunk analysis scope
-                // (documented precondition in docs/design.md). A
-                // chunk-declared but unresolvable callee falls back
-                // through the read closure of its own source unit.
-                if let Some(&callee_source_unit) = binding_source_unit.get(callee_id) {
-                    fallback_roots.insert(callee_source_unit);
-                }
-                continue;
-            };
-            let Some(&scc_idx) = scc_of.get(&callee_source_unit) else {
-                continue;
-            };
-            fallback_roots.extend(scc_fallback_roots[scc_idx].iter().copied());
-            if scc_needs_caller_values[scc_idx] {
-                // Include the caller itself (inline callback bodies and
-                // local aliases) and every chunk binding it reads (argument
-                // values). The fallback then closes over their
-                // lazy bodies. This is deliberately conservative until a
-                // parameter's specific value can be proven.
-                fallback_roots.insert(caller);
-                fallback_roots.extend(fallback_roots_of(&stmt.reads.eager, false, caller));
-            }
-            promote_scc_bindings(scc_idx, callee_source_unit);
-        }
-        if fallback_roots.is_empty() {
-            continue;
-        }
-        let fallback =
-            fallback.get_or_insert_with(|| SourceUnitReadClosure::new_synchronous(facts));
-        for root in fallback_roots {
-            let (closure_reads, closure_rebinds) =
-                fallback.lazy_effects_for_source_unit(SourceUnitOrdinal(root.0));
-            // Rebind targets get an *order* constraint only (EagerUse,
-            // not EagerRebind): assignment to a TDZ-locked binding
-            // throws until its statement runs, so the target must
-            // evaluate before the caller — but write LEGALITY
-            // (read-only imports) is already enforced by the direct
-            // `LazyRebind` / `DeferredRebind` edge from the statement
-            // lexically containing the write, which forces the write
-            // site to co-locate with the declarer. Emitting
-            // `EagerRebind` here would force the *caller* into the
-            // co-location group too, rejecting realizable shapes
-            // (`c.bump(1)` calling a co-located setter).
-            for target_binding in closure_reads.iter().chain(closure_rebinds.iter()) {
-                if target_is_hoisted(target_binding) {
-                    continue;
-                }
-                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == *target_source_unit
-                    || !promoted_read_targets.insert(*target_source_unit)
-                {
-                    continue;
-                }
-                // The closure assumes the unresolved callee may run here.
-                fallback_eager_uses
-                    .insert(raw_edges.len(), AssumedEffectReason::UnresolvedCallClosure);
-                raw_edges.push((
-                    caller,
-                    *target_source_unit,
-                    EdgeReason::for_binding(
-                        DepKind::EagerUse,
-                        stmt.ordinal,
-                        target_binding.clone(),
-                    )
-                    .promoted_at_init(caller),
-                ));
-            }
-        }
-    }
-    for ((from, to), cause) in binding_order.0 {
-        raw_edges.push((
-            from,
-            to,
-            EdgeReason::sequenced(SourceUnitOrdinal(from.0), cause),
-        ));
-    }
-    fallback_eager_uses
-}
-
-#[cfg(test)]
-mod array_heap_frontier_tests {
-    use super::*;
-
-    fn heap_frontier() -> CellOrderBarrier {
-        CellOrderBarrier::HeapFrontier {
-            causes: BTreeSet::from([HeapBarrierCause::ArrayContentEffects]),
-        }
-    }
-
-    fn heap_event(
-        ordinal: usize,
-        reads: &[u32],
-        writes: &[u32],
-        barrier: CellOrderBarrier,
-    ) -> (
-        SourceUnitId,
-        SourceUnitOrdinal,
-        crate::StatementEffectSummary,
-        CellOrderBarrier,
-    ) {
-        (
-            SourceUnitId(ordinal),
-            SourceUnitOrdinal(ordinal),
-            crate::StatementEffectSummary {
-                reads: reads
-                    .iter()
-                    .copied()
-                    .map(EffectCell::ArrayContents)
-                    .collect(),
-                writes: writes
-                    .iter()
-                    .copied()
-                    .map(EffectCell::ArrayContents)
-                    .collect(),
-            },
-            barrier,
-        )
-    }
-
-    fn cell_event(
-        ordinal: usize,
-        reads: &[EffectCell],
-        writes: &[EffectCell],
-    ) -> (
-        SourceUnitId,
-        SourceUnitOrdinal,
-        crate::StatementEffectSummary,
-        CellOrderBarrier,
-    ) {
-        (
-            SourceUnitId(ordinal),
-            SourceUnitOrdinal(ordinal),
-            crate::StatementEffectSummary {
-                reads: reads.iter().cloned().collect(),
-                writes: writes.iter().cloned().collect(),
-            },
-            CellOrderBarrier::None,
-        )
-    }
-
-    fn own_property(origin: u32, property: &str) -> EffectCell {
-        EffectCell::OwnProperty {
-            origin,
-            property: property.into(),
-        }
-    }
-
-    #[test]
-    fn narrow_array_write_keeps_broad_writer_live_for_later_index_read() {
-        let events = [
-            cell_event(0, &[], &[EffectCell::ArrayContents(9)]),
-            cell_event(1, &[], &[own_property(9, "0")]),
-            cell_event(2, &[own_property(9, "1")], &[]),
-        ];
-        let mut edges = Vec::new();
-        let mut pairs = BTreeSet::new();
-        emit_cell_order_events(events, &mut edges, &mut pairs, None);
-        assert!(pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
-        assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(0))));
-        assert!(!pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
-    }
-
-    #[test]
-    fn narrow_array_write_keeps_broad_reader_live_for_later_index_write() {
-        let events = [
-            cell_event(0, &[EffectCell::ArrayContents(9)], &[]),
-            cell_event(1, &[], &[own_property(9, "0")]),
-            cell_event(2, &[], &[own_property(9, "1")]),
-        ];
-        let mut edges = Vec::new();
-        let mut pairs = BTreeSet::new();
-        emit_cell_order_events(events, &mut edges, &mut pairs, None);
-        assert!(pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
-        assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(0))));
-        assert!(!pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
-    }
-
-    #[test]
-    fn fresh_allocation_is_pending_without_reading_prior_opaque_effects() {
-        let events = [
-            heap_event(0, &[], &[], heap_frontier()),
-            heap_event(1, &[], &[10], CellOrderBarrier::HeapAllocation),
-            heap_event(2, &[], &[], heap_frontier()),
-        ];
-        let mut edges = Vec::new();
-        let mut pairs = BTreeSet::new();
-        emit_cell_order_events(events, &mut edges, &mut pairs, None);
-        assert!(!pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
-        assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
-        assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(0))));
-    }
-
-    #[test]
-    fn repeated_source_origin_allocation_preserves_content_writer_and_readers() {
-        let events = [
-            heap_event(0, &[], &[10], CellOrderBarrier::HeapAllocation),
-            heap_event(1, &[], &[10], CellOrderBarrier::None),
-            heap_event(2, &[10], &[], CellOrderBarrier::None),
-            heap_event(3, &[], &[10], CellOrderBarrier::HeapAllocation),
-            heap_event(4, &[10], &[], CellOrderBarrier::None),
-            heap_event(5, &[], &[10], CellOrderBarrier::None),
-        ];
-        let mut edges = Vec::new();
-        let mut pairs = BTreeSet::new();
-        emit_cell_order_events(events, &mut edges, &mut pairs, None);
-        assert!(pairs.contains(&(SourceUnitId(4), SourceUnitId(1))));
-        assert!(pairs.contains(&(SourceUnitId(4), SourceUnitId(3))));
-        assert!(pairs.contains(&(SourceUnitId(5), SourceUnitId(2))));
-        assert!(pairs.contains(&(SourceUnitId(5), SourceUnitId(4))));
-    }
-
-    #[test]
-    fn allocation_does_not_exempt_same_statement_opaque_execution() {
-        let events = [
-            heap_event(0, &[], &[10], CellOrderBarrier::HeapAllocation),
-            heap_event(1, &[], &[], heap_frontier()),
-            heap_event(2, &[], &[20], CellOrderBarrier::HeapAllocation),
-            heap_event(2, &[], &[], heap_frontier()),
-            heap_event(3, &[10], &[], CellOrderBarrier::None),
-        ];
-        let mut edges = Vec::new();
-        let mut pairs = BTreeSet::new();
-        emit_cell_order_events(events, &mut edges, &mut pairs, None);
-        assert!(pairs.contains(&(SourceUnitId(1), SourceUnitId(0))));
-        assert!(pairs.contains(&(SourceUnitId(2), SourceUnitId(1))));
-        assert!(pairs.contains(&(SourceUnitId(3), SourceUnitId(2))));
-    }
-
-    #[test]
-    fn repeated_opaque_heap_barriers_keep_edges_linear_in_the_live_frontier() {
-        const ARRAY_COUNT: usize = 1024;
-        const BARRIER_COUNT: usize = 16;
-
-        let mut events = Vec::new();
-        for array in 0..ARRAY_COUNT {
-            let mut effects = crate::StatementEffectSummary::default();
-            effects
-                .reads
-                .insert(EffectCell::ArrayContents(array as u32));
-            events.push((
-                SourceUnitId(array),
-                SourceUnitOrdinal(array),
-                effects,
-                CellOrderBarrier::None,
-            ));
-        }
-        for barrier in 0..BARRIER_COUNT {
-            let source_unit = ARRAY_COUNT + barrier;
-            events.push((
-                SourceUnitId(source_unit),
-                SourceUnitOrdinal(source_unit),
-                crate::StatementEffectSummary::default(),
-                heap_frontier(),
-            ));
-        }
-        let last_barrier = ARRAY_COUNT + BARRIER_COUNT - 1;
-        for array in 0..ARRAY_COUNT {
-            let source_unit = ARRAY_COUNT + BARRIER_COUNT + array;
-            let mut effects = crate::StatementEffectSummary::default();
-            effects
-                .reads
-                .insert(EffectCell::ArrayContents(array as u32));
-            events.push((
-                SourceUnitId(source_unit),
-                SourceUnitOrdinal(source_unit),
-                effects,
-                CellOrderBarrier::None,
-            ));
-        }
-
-        let mut edges = Vec::new();
-        let mut sequence_pairs = BTreeSet::new();
-        emit_cell_order_events(events, &mut edges, &mut sequence_pairs, None);
-
-        // First barrier follows the 1,024 live readers. The following 15
-        // barriers form a chain, and the final readers follow the last one.
-        // Retaining the old per-array reader frontier would add 15 * 1,024
-        // redundant edges between earlier readers and later barriers.
-        assert_eq!(edges.len(), 2 * ARRAY_COUNT + BARRIER_COUNT - 1);
-        for array in 0..ARRAY_COUNT {
-            assert!(sequence_pairs.contains(&(SourceUnitId(ARRAY_COUNT), SourceUnitId(array),)));
-            assert!(sequence_pairs.contains(&(
-                SourceUnitId(ARRAY_COUNT + BARRIER_COUNT + array),
-                SourceUnitId(last_barrier),
-            )));
-        }
-        for barrier in 1..BARRIER_COUNT {
-            assert!(sequence_pairs.contains(&(
-                SourceUnitId(ARRAY_COUNT + barrier),
-                SourceUnitId(ARRAY_COUNT + barrier - 1),
-            )));
-        }
-    }
+        .collect()
 }
