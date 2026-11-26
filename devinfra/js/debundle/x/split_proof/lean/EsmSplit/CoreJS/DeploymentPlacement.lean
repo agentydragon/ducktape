@@ -10,7 +10,7 @@ def Module.unitPlacements (m : Module) : List UnitPlacement :=
 
 /-- Model-only modules for host capabilities or template objects have reserved
 names outside the space of JavaScript file paths. -/
-private def Program.fileUnitPlacements (p : Program) : List UnitPlacement :=
+def Program.fileUnitPlacements (p : Program) : List UnitPlacement :=
   (p.modules.filter fun m => EsmSplit.safeModulePath m.name).flatMap Module.unitPlacements
 
 /-- Every executable source unit occurs once in the authored assignment, and
