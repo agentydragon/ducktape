@@ -18,9 +18,7 @@ use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 use ::gate::{BlockingSccEntry, CycleEdge};
-use analysis::graph::{
-    CommutationOrder, EndpointView, TemporalConstraint, TemporalEdge, assignment_endpoints,
-};
+use analysis::graph::{CommutationOrder, EndpointView, assignment_endpoints};
 use analysis::{
     DependencyEdgeId, DependencyEdgeReport, DependencyGraph, DependencyGraphInput,
     DependencyGraphReport, EntryDestination, KnownConflict, ModuleAssignment,
@@ -642,37 +640,12 @@ impl<'a> Analysis<'a> {
             .iter()
             .map(|premise| (premise.a, premise.b))
             .collect();
-        let temporal_order = CommutationOrder::new(
+        let temporal_order = CommutationOrder::from_edges(
             graph.num_nodes(),
-            graph.iter_edges().filter_map(|edge| {
-                if !matches!(edge.reason.kind(), DepKind::EagerUse | DepKind::Sequenced) {
-                    return None;
-                }
-                let constraint = if let Some(reference) = edge.reason.commuting_premise() {
-                    TemporalConstraint::Commuting(
-                        existing
-                            .iter()
-                            .position(|premise| &premise.reference == reference)
-                            .expect("every inert edge has a retained premise"),
-                    )
-                } else if edge.reason.constrains_init_order() {
-                    if matches!(
-                        input.edge_report(edge.id).premise_verdict,
-                        Some(PremiseVerdict::Inertable)
-                    ) {
-                        TemporalConstraint::Inertable
-                    } else {
-                        TemporalConstraint::Fixed
-                    }
-                } else {
-                    return None;
-                };
-                Some(TemporalEdge {
-                    from: edge.from,
-                    to: edge.to,
-                    constraint,
-                })
-            }),
+            graph
+                .iter_edges()
+                .map(|edge| (edge, input.edge_report(edge.id).premise_verdict.as_ref())),
+            existing,
         );
         Ok(Self {
             report,

@@ -428,12 +428,20 @@ pub fn build_dependency_graph_with(
             raw_edges.push((
                 source_unit,
                 sites[0],
-                EdgeReason::co_declaration(SourceUnitOrdinal(source_unit.0), binding.clone()),
+                EdgeReason::for_binding(
+                    DepKind::CoDeclaration,
+                    SourceUnitOrdinal(source_unit.0),
+                    binding.clone(),
+                ),
             ));
             raw_edges.push((
                 sites[0],
                 source_unit,
-                EdgeReason::co_declaration(SourceUnitOrdinal(sites[0].0), binding.clone()),
+                EdgeReason::for_binding(
+                    DepKind::CoDeclaration,
+                    SourceUnitOrdinal(sites[0].0),
+                    binding.clone(),
+                ),
             ));
         }
     }
@@ -450,12 +458,16 @@ pub fn build_dependency_graph_with(
             raw_edges.push((
                 consumer,
                 producer,
-                EdgeReason::co_location(stmt.ordinal, binding.clone()),
+                EdgeReason::for_binding(DepKind::CoLocation, stmt.ordinal, binding.clone()),
             ));
             raw_edges.push((
                 producer,
                 consumer,
-                EdgeReason::co_location(SourceUnitOrdinal(producer.0), binding),
+                EdgeReason::for_binding(
+                    DepKind::CoLocation,
+                    SourceUnitOrdinal(producer.0),
+                    binding,
+                ),
             ));
         }
     }
@@ -484,51 +496,34 @@ pub fn build_dependency_graph_with(
             .map(|stmt| stmt.kind == StatementKind::FnDecl)
             .unwrap_or(false)
     };
-    let push_binding_edge = |raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
-                             from: SourceUnitId,
-                             binding: &Id,
-                             make_reason: fn(SourceUnitOrdinal, Id) -> EdgeReason,
-                             statement_ordinal: SourceUnitOrdinal| {
-        let Some(to) = binding_source_unit.get(binding) else {
-            return; // not declared in this chunk (global, ImportSpecifier, never-declared)
-        };
-        if from == *to {
-            return;
-        }
-        raw_edges.push((from, *to, make_reason(statement_ordinal, binding.clone())));
-    };
     for stmt in facts {
         let from = SourceUnitId(stmt.ordinal.0);
+        let mut push_binding_edge = |binding: &Id, kind: DepKind| {
+            if let Some(&to) = binding_source_unit.get(binding)
+                && from != to
+            {
+                raw_edges.push((
+                    from,
+                    to,
+                    EdgeReason::for_binding(kind, stmt.ordinal, binding.clone()),
+                ));
+            }
+        };
         for binding in &stmt.reads.eager {
             push_binding_edge(
-                &mut raw_edges,
-                from,
                 binding,
                 if target_is_hoisted(binding) {
-                    EdgeReason::hoisted_use
+                    DepKind::HoistedUse
                 } else {
-                    EdgeReason::eager_use
+                    DepKind::EagerUse
                 },
-                stmt.ordinal,
             );
         }
         for binding in &stmt.reads.lazy {
-            push_binding_edge(
-                &mut raw_edges,
-                from,
-                binding,
-                EdgeReason::lazy_use,
-                stmt.ordinal,
-            );
+            push_binding_edge(binding, DepKind::LazyUse);
         }
         for binding in &stmt.rebinds.eager {
-            push_binding_edge(
-                &mut raw_edges,
-                from,
-                binding,
-                EdgeReason::eager_rebind,
-                stmt.ordinal,
-            );
+            push_binding_edge(binding, DepKind::EagerRebind);
         }
         // Only first-order body rebinds emit a constraining
         // `LazyRebind` edge: a rebind inside a nested closure (e.g.
@@ -537,13 +532,7 @@ pub fn build_dependency_graph_with(
         // constrain init order or feed at-init call promotion. See
         // the e2e test `e2e/cases/initialization/nested_closure_{read,rebind}`.
         for binding in &stmt.rebinds.first_order_lazy {
-            push_binding_edge(
-                &mut raw_edges,
-                from,
-                binding,
-                EdgeReason::lazy_rebind,
-                stmt.ordinal,
-            );
+            push_binding_edge(binding, DepKind::LazyRebind);
         }
         // Deeper-nested (or post-await) rebinds still rebind the
         // binding cell whenever they DO fire — and ESM imports are
@@ -556,22 +545,10 @@ pub fn build_dependency_graph_with(
             if stmt.rebinds.first_order_lazy.contains(binding) {
                 continue;
             }
-            push_binding_edge(
-                &mut raw_edges,
-                from,
-                binding,
-                EdgeReason::deferred_rebind,
-                stmt.ordinal,
-            );
+            push_binding_edge(binding, DepKind::DeferredRebind);
         }
         for binding in &stmt.local_effects {
-            push_binding_edge(
-                &mut raw_edges,
-                from,
-                binding,
-                EdgeReason::local_effect,
-                stmt.ordinal,
-            );
+            push_binding_edge(binding, DepKind::LocalEffect);
         }
     }
 
@@ -599,6 +576,7 @@ pub fn build_dependency_graph_with(
         &binding_source_unit,
         &shared_vars,
         &stmt_by_source_unit,
+        target_is_hoisted,
         &mut raw_edges,
     );
 
@@ -987,48 +965,19 @@ fn preserve_commuting_order(
     edges: &mut Vec<DependencyEdge>,
     applied: &mut [AppliedCommutingPremise],
 ) {
-    use super::{CommutationOrder, TemporalConstraint, TemporalEdge};
+    use super::CommutationOrder;
     use std::ops::ControlFlow;
 
-    let references: Vec<_> = applied
-        .iter()
-        .map(|premise| premise.reference.clone())
-        .collect();
     let pairs: Vec<_> = applied
         .iter()
         .map(|premise| (premise.a, premise.b))
         .collect();
-    let order = CommutationOrder::new(
+    let order = CommutationOrder::from_edges(
         nodes.len(),
-        edges.iter().filter_map(|edge| {
-            if !matches!(edge.reason.kind, DepKind::EagerUse | DepKind::Sequenced) {
-                return None;
-            }
-            let constraint = if let Some(reference) = edge.reason.commuting_premise() {
-                TemporalConstraint::Commuting(
-                    references
-                        .iter()
-                        .position(|item| item == reference)
-                        .expect("every inert edge has an applied premise"),
-                )
-            } else if edge.reason.constrains_init_order() {
-                if matches!(
-                    edge.reason.premise_verdict(),
-                    Some(PremiseVerdict::Inertable)
-                ) {
-                    TemporalConstraint::Inertable
-                } else {
-                    TemporalConstraint::Fixed
-                }
-            } else {
-                return None;
-            };
-            Some(TemporalEdge {
-                from: edge.from,
-                to: edge.to,
-                constraint,
-            })
-        }),
+        edges
+            .iter()
+            .map(|edge| (edge, edge.reason.premise_verdict())),
+        applied,
     );
     order.preserve(&pairs, |preserved| {
         let id = DependencyEdgeId(edges.len());
@@ -1036,11 +985,11 @@ fn preserve_commuting_order(
             nodes[preserved.from.0].statement_ordinal,
             SequencedCause::PreservedOrder {
                 via: nodes[preserved.via.0].statement_ordinal,
-                commuting_premise: references[preserved.by_premise].clone(),
+                commuting_premise: applied[preserved.by_premise].reference.clone(),
             },
         );
         if let Some(index) = preserved.inerted_by {
-            reason.inerted_by = Some(references[index].clone());
+            reason.inerted_by = Some(applied[index].reference.clone());
             applied[index].inerted_edges.push(id);
         }
         edges.push(DependencyEdge {
@@ -1776,6 +1725,7 @@ fn promote_at_init_calls(
     binding_source_unit: &HashMap<Id, SourceUnitId>,
     shared_vars: &BTreeSet<Id>,
     stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+    target_is_hoisted: impl Fn(&Id) -> bool,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
 ) -> BTreeMap<usize, AssumedEffectReason> {
     // Index statement source units that can change a chunk binding's value or
@@ -2053,15 +2003,6 @@ fn promote_at_init_calls(
     //    fire the realizability hazard. `var` is technically hoisted
     //    too but is rare enough not to warrant a separate distinction
     //    in StatementKind.
-    let target_is_hoisted = |id: &Id| -> bool {
-        let Some(target_source_unit) = binding_source_unit.get(id) else {
-            return false;
-        };
-        stmt_by_source_unit
-            .get(target_source_unit)
-            .map(|stmt| stmt.kind == StatementKind::FnDecl)
-            .unwrap_or(false)
-    };
     let mut scc_reads: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
     let mut scc_rebinds: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
     let mut scc_fallback_roots: Vec<BTreeSet<SourceUnitId>> = vec![BTreeSet::new(); sccs.len()];
@@ -2176,7 +2117,11 @@ fn promote_at_init_calls(
                     raw_edges.push((
                         caller,
                         target_source_unit,
-                        EdgeReason::eager_use(stmt.ordinal, target_binding.clone()),
+                        EdgeReason::for_binding(
+                            DepKind::EagerUse,
+                            stmt.ordinal,
+                            target_binding.clone(),
+                        ),
                     ));
                 }
                 if caller < target_source_unit {
@@ -2221,8 +2166,12 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     caller,
                     target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(callee_source_unit),
+                    EdgeReason::for_binding(
+                        DepKind::EagerUse,
+                        stmt.ordinal,
+                        target_binding.clone(),
+                    )
+                    .promoted_at_init(callee_source_unit),
                 ));
             }
             match synchronous.binding_effect_authority() {
@@ -2249,44 +2198,26 @@ fn promote_at_init_calls(
         let caller = SourceUnitId(stmt.ordinal.0);
         let mut promoted_read_targets: BTreeSet<SourceUnitId> = BTreeSet::new();
         let mut fallback_roots = fallback_roots_of(&stmt.at_init_unresolved_sources, false, caller);
+        let mut promote_scc_bindings = |scc_idx: usize, callee| {
+            // Reads precede rebinds: when both identify the same target unit,
+            // its first binding and callee are retained as the edge witness.
+            for binding in scc_reads[scc_idx].iter().chain(&scc_rebinds[scc_idx]) {
+                let target = binding_source_unit[binding];
+                if target != caller && promoted_read_targets.insert(target) {
+                    raw_edges.push((
+                        caller,
+                        target,
+                        EdgeReason::for_binding(DepKind::EagerUse, stmt.ordinal, binding.clone())
+                            .promoted_at_init(callee),
+                    ));
+                }
+            }
+        };
         if stmt.at_init_unresolved_inline_fn
             && let Some(&scc_idx) = scc_of.get(&caller)
         {
             fallback_roots.extend(scc_fallback_roots[scc_idx].iter().copied());
-            for target_binding in &scc_reads[scc_idx] {
-                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == *target_source_unit {
-                    continue;
-                }
-                if !promoted_read_targets.insert(*target_source_unit) {
-                    continue;
-                }
-                raw_edges.push((
-                    caller,
-                    *target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(caller),
-                ));
-            }
-            for target_binding in &scc_rebinds[scc_idx] {
-                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == *target_source_unit {
-                    continue;
-                }
-                if !promoted_read_targets.insert(*target_source_unit) {
-                    continue;
-                }
-                raw_edges.push((
-                    caller,
-                    *target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(caller),
-                ));
-            }
+            promote_scc_bindings(scc_idx, caller);
         }
         for callee_id in &stmt.calls.eager {
             let Some(callee_source_unit) = resolvable_callee(callee_id) else {
@@ -2313,40 +2244,7 @@ fn promote_at_init_calls(
                 fallback_roots.insert(caller);
                 fallback_roots.extend(fallback_roots_of(&stmt.reads.eager, false, caller));
             }
-            for target_binding in &scc_reads[scc_idx] {
-                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == *target_source_unit {
-                    continue;
-                }
-                if !promoted_read_targets.insert(*target_source_unit) {
-                    continue;
-                }
-                raw_edges.push((
-                    caller,
-                    *target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(callee_source_unit),
-                ));
-            }
-            for target_binding in &scc_rebinds[scc_idx] {
-                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == *target_source_unit {
-                    continue;
-                }
-                if !promoted_read_targets.insert(*target_source_unit) {
-                    continue;
-                }
-                raw_edges.push((
-                    caller,
-                    *target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(callee_source_unit),
-                ));
-            }
+            promote_scc_bindings(scc_idx, callee_source_unit);
         }
         if fallback_roots.is_empty() {
             continue;
@@ -2385,8 +2283,12 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     caller,
                     *target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(caller),
+                    EdgeReason::for_binding(
+                        DepKind::EagerUse,
+                        stmt.ordinal,
+                        target_binding.clone(),
+                    )
+                    .promoted_at_init(caller),
                 ));
             }
         }
