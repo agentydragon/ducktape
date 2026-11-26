@@ -56,7 +56,7 @@ if (runCase("ordered-disk-mutations")) {
   const out = path.join(root, "mutations");
   const ast = prepare(source, placement3, [left, right]);
   const orderedVerdict = check(out, all, "certified");
-  assert.equal(orderedVerdict.scope, "closed-declarations");
+  assert.equal(orderedVerdict.scope, "named-declarations");
   assert.equal(orderedVerdict.guarantee, all);
   // The ordinary JavaScript entry point and the annotated dump share the same checker.
   const sourceFile = path.join(root, "source.mjs");
@@ -71,7 +71,7 @@ if (runCase("ordered-disk-mutations")) {
   assert.equal(imports.length, 2, emitted);
   for (const changed of [
     emitted.replace("result = a", "result = 0"),
-    emitted.replace("export const", "const"),
+    emitted.replace(/export \{[^}]*\}/, "export {}"),
     emitted.replace("result =", "different ="),
     emitted.replace("./left.mjs", "./right.mjs"),
     emitted.replace(/\ba\b/, "a as shadow"),

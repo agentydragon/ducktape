@@ -1,10 +1,12 @@
 package server
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
@@ -179,5 +181,42 @@ func TestSharedListenerRequiresTLS(t *testing.T) {
 func TestSamplerIdentityDelegationRequiresServiceActors(t *testing.T) {
 	if _, err := loadSettings(t, validSettings+"central_sampler_identity_callers: true\n"); err == nil {
 		t.Fatal("sampler Identity delegation accepted without a service actor")
+	}
+}
+
+func TestPolicyServiceMustBeACompleteMutualTLSCallerAsTheIngress(t *testing.T) {
+	block := func(target, clientURI, serverURI string) string {
+		return fmt.Sprintf(`policy_service:
+  target: %q
+  tls:
+    ca_file: /tls/ca
+    server_uri: %s
+    cert_file: /tls/cert
+    key_file: /tls/key
+    client_uri: %s
+`, target, serverURI, clientURI)
+	}
+	ingress, policy := peertls.LLMIngressURI, peertls.PolicyControllerURI
+	for _, tc := range []struct {
+		name     string
+		settings string
+		valid    bool
+	}{
+		{"complete", block("policy-controller:8443", ingress, policy), true},
+		{"no target", block("", ingress, policy), false},
+		{"another caller identity", block("policy-controller:8443", peertls.MCPEdgeURI, policy), false},
+		{"another server", block("policy-controller:8443", ingress, peertls.ActionsURI), false},
+		{"no client SVID", "policy_service:\n  target: policy-controller:8443\n  tls:\n    ca_file: /tls/ca\n    server_uri: " + policy + "\n", false},
+		{"unknown key", block("policy-controller:8443", ingress, policy) + "  surprise: true\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := loadSettings(t, validSettings+tc.settings)
+			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "policy-controller:8443") {
+				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
+			}
+			if !tc.valid && err == nil {
+				t.Fatal("loadConfig accepted an incomplete policy_service")
+			}
+		})
 	}
 }

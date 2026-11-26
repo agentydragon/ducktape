@@ -500,6 +500,37 @@ func TestInventoryValidatesOwnerCoverageAndEncodingClasses(t *testing.T) {
 	}
 }
 
+func TestRepackPreservesMisplacedSingletonForRecovery(t *testing.T) {
+	for _, misplaced := range []string{"APB in event row", "event in block row"} {
+		t.Run(misplaced, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			appendAPBTestJournalThrough(t, store, session.ID, 3)
+			want := eventFrames(t, store, session.ID, 1, 3)
+			if misplaced == "APB in event row" {
+				replaceRowsWithBlock(t, store, session.ID, 2, 2, false)
+				migrationExec(t, store.DB(), `WITH moved AS (
+					DELETE FROM sampler_event_block WHERE session_id=$1 AND first_sequence=2 RETURNING payload)
+					INSERT INTO sampler_event(session_id,sequence,entry) SELECT $1,2,payload FROM moved`, session.ID)
+			} else {
+				migrationExec(t, store.DB(), `WITH moved AS (
+					DELETE FROM sampler_event WHERE session_id=$1 AND sequence=2 RETURNING entry)
+					INSERT INTO sampler_event_block(session_id,first_sequence,last_sequence,payload) SELECT $1,2,2,entry FROM moved`, session.ID)
+			}
+			for _, apply := range []bool{false, true} {
+				if result, err := store.CompactJournal(t.Context(), session.ID, apply); err == nil || result.Batches != 0 {
+					t.Errorf("apply=%v repacked misplaced record: batches=%d err=%v", apply, result.Batches, err)
+				}
+			}
+			inventory, err := store.VerifyJournalInventory(t.Context())
+			if err != nil || len(inventory.Issues) != 1 || inventory.Issues[0].Classification != journalUnsupported || inventory.Issues[0].First != 2 {
+				t.Fatalf("inventory after repack attempts: %+v, %v", inventory.Issues, err)
+			}
+			assertFramesEqual(t, eventFrames(t, store, session.ID, 1, 3), want)
+		})
+	}
+}
+
 func TestInventoryDistinguishesInvalidBlockFromUnsupportedBlock(t *testing.T) {
 	if class, _ := classifyJournalBlock([]byte("APB\x01bad"), 1, 1); class != "invalid" {
 		t.Fatalf("malformed supported block classified as %q", class)

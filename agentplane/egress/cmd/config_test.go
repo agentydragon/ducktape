@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"net/netip"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
@@ -279,5 +281,41 @@ func TestAdminGRPCRequiresTLSAndSPIFFETrust(t *testing.T) {
 		if err := c.validateAdminGRPC(); err == nil {
 			t.Fatalf("accepted admin listener without TLS and SPIFFE trust: %+v", forward)
 		}
+	}
+}
+
+func TestPolicyServiceMustBeACompleteMutualTLSCallerAsTheProxy(t *testing.T) {
+	block := func(target, clientURI, serverURI string) string {
+		return fmt.Sprintf(`policy_service:
+  target: %q
+  tls:
+    ca_file: /etc/agentplane/tls/ca.crt
+    server_uri: %s
+    cert_file: /etc/agentplane/tls/tls.crt
+    key_file: /etc/agentplane/tls/tls.key
+    client_uri: %s
+`, target, serverURI, clientURI)
+	}
+	proxy, policy := peertls.EgressProxyURI, peertls.PolicyControllerURI
+	for _, tc := range []struct {
+		name     string
+		settings string
+		valid    bool
+	}{
+		{"complete", block("policy-controller:8443", proxy, policy), true},
+		{"no target", block("", proxy, policy), false},
+		{"another caller identity", block("policy-controller:8443", peertls.MCPEdgeURI, policy), false},
+		{"another server", block("policy-controller:8443", proxy, peertls.ActionsURI), false},
+		{"no client SVID", "policy_service:\n  target: policy-controller:8443\n  tls:\n    ca_file: /etc/agentplane/tls/ca.crt\n    server_uri: " + policy + "\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings+tc.settings))
+			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "policy-controller:8443") {
+				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
+			}
+			if !tc.valid && err == nil {
+				t.Fatal("loadConfig accepted an incomplete policy_service")
+			}
+		})
 	}
 }

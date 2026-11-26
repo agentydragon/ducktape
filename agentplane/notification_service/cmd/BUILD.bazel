@@ -6,6 +6,7 @@ go_library(
     name = "main_lib",
     srcs = [
         "config.go",
+        "identities.go",
         "main.go",
         "workers.go",
     ],
@@ -41,6 +42,8 @@ go_library(
         "//agentplane/notification_service/migrations",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/identitycache",
+        "//agentplane/policy/reader",
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/probes",

@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -130,7 +131,11 @@ func newDeliveryFixture(t *testing.T) *deliveryFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := NewKubernetesSandboxes(inventory, objects, namespace)
+	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := NewKubernetesSandboxes(inventory, objects, namespace, identities)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -31,6 +31,7 @@ import (
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -107,17 +108,28 @@ func run(ctx context.Context, c config) error {
 	return serve(ctx, c, rpcListener)
 }
 
+// startIdentities is the one Identity source for SVID resolution and delegation: the PolicyService view when
+// policy_service is set, else live Policy namespace reads. stop ends the view.
+func startIdentities(ctx context.Context, base *rest.Config, c config) (auth.IdentityUIDReader, func(), error) {
+	if c.PolicyService == nil {
+		identities, err := auth.NewKubernetesIdentityUIDs(base, c.PolicyNamespace)
+		return identities, func() {}, err
+	}
+	return identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
+}
+
 // serve answers the read API and journal ingress on one native gRPC listener until ctx ends.
 func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	base, err := kubernetesConfig(c)
 	if err != nil {
 		return err
 	}
-	writerIdentities, err := auth.NewKubernetesIdentityUIDs(base, c.PolicyNamespace)
+	identities, stopIdentities, err := startIdentities(ctx, base, c)
 	if err != nil {
 		return err
 	}
-	svids, err := auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces, writerIdentities)
+	defer stopIdentities()
+	svids, err := auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces, identities)
 	if err != nil {
 		return err
 	}
@@ -157,12 +169,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	methods := auth.HealthMethods()
 	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
 	historyMethods := rpc.Methods(svids)
-	var identityReader auth.IdentityUIDReader
-	if c.ServiceDelegation != nil || c.Ingress.SamplerServiceActor != "" {
-		if identityReader, err = auth.NewKubernetesIdentityUIDs(base, c.PolicyNamespace); err != nil {
-			return err
-		}
-	}
 	if len(c.ReaderServiceCallers) > 0 {
 		historyMethods, err = historyMethods.WithServiceCallers(rpc.ReadMethods(), c.ReaderServiceCallers)
 		if err != nil {
@@ -171,7 +177,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	}
 	if c.ServiceDelegation != nil {
 		historyMethods, err = historyMethods.WithServiceDelegation(
-			c.ServiceDelegation.Methods, c.ServiceDelegation.Actors, identityReader,
+			c.ServiceDelegation.Methods, c.ServiceDelegation.Actors, identities,
 		)
 		if err != nil {
 			return fmt.Errorf("configure History service delegation: %w", err)
@@ -185,7 +191,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 			return fmt.Errorf("configure sampler service caller: %w", err)
 		}
 		if pushRule, err = pushRule.AllowServiceDelegationFrom(
-			[]auth.ServiceDelegator{{SPIFFEID: c.Ingress.SamplerServiceActor}}, identityReader,
+			[]auth.ServiceDelegator{{SPIFFEID: c.Ingress.SamplerServiceActor}}, identities,
 		); err != nil {
 			return fmt.Errorf("configure sampler service delegation: %w", err)
 		}

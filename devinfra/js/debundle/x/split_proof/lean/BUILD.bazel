@@ -1,5 +1,6 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_lean//lean:defs.bzl", "lean_binary", "lean_library", "lean_proof_test")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load(":executable_test.bzl", "executable_test", "test_runner")
 
 lean_library(
@@ -690,6 +691,7 @@ lean_library(
         ":corejs_structural",
         ":lowersplit_input",
         ":lowersplit_support",
+        ":named_declaration_split",
         ":planner",
     ],
 )
@@ -709,7 +711,13 @@ lean_library(
     name = "lowersplit_certified",
     srcs = ["EsmSplit/LowerSplit/Certified.lean"],
     visibility = ["//visibility:private"],
-    deps = [":planner"],
+    deps = [
+        ":corejs_linked_input",
+        ":lowersplit_input",
+        ":lowersplit_support",
+        ":named_declaration_split",
+        ":planner",
+    ],
 )
 
 lean_library(
@@ -723,7 +731,22 @@ lean_library(
 )
 
 lean_binary(
+    name = "lowersplit_core",
+    deps = [":lowersplit_core_modules"],
+)
+
+sh_binary(
     name = "lowersplit",
+    srcs = ["lowersplit.sh"],
+    args = [
+        "$(rlocationpath :lowersplit_core)",
+        "$(rlocationpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+    ],
+    data = [
+        ":lowersplit_core",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
+    use_bash_launcher = True,
     visibility = [
         "//devinfra/js/debundle/x/split_proof:__pkg__",
         "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
@@ -734,7 +757,6 @@ lean_binary(
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
     ],
-    deps = [":lowersplit_core_modules"],
 )
 
 test_runner(
@@ -1460,4 +1482,27 @@ lean_proof_test(
         "CoreJS.TwoConstBoundary.effectThenThrow",
     ],
     deps = [":two_const_boundary"],
+)
+
+lean_library(
+    name = "terminal_reader_construction",
+    srcs = ["EsmSplit/CoreJS/TerminalReaderConstruction.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_linked_input",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "terminal_reader_construction_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalReaderConstruction"],
+    required_theorems = [
+        "CoreJS.TerminalReaderConstruction.authored_order",
+        "CoreJS.TerminalReaderConstruction.exact_cell",
+        "CoreJS.TerminalReaderConstruction.placement",
+        "CoreJS.TerminalReaderConstruction.same_exports",
+    ],
+    deps = [":terminal_reader_construction"],
 )

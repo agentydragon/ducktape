@@ -542,49 +542,23 @@ pub fn analyze_indexed(
     options: &Options,
     index: &mut crate::derive::ProgramIndex<'_>,
 ) -> Tier0 {
-    let ModuleBindings {
-        sources,
-        bindings,
-        imports,
-        mut exported,
-        declared_by_unit,
-    } = module_bindings(module);
-
-    let mut assigned_anywhere: FxHashSet<Binding> = FxHashSet::default();
-    for source in &sources {
-        let assigned = match source {
-            Source::Item(item) => assigned_ids(*item),
-            Source::Declarator(declarator) => assigned_ids(*declarator),
-        };
-        assigned_anywhere.extend(assigned.iter().filter_map(|id| bindings.get(id)));
-    }
-    let mut declarations = vec![0u32; bindings.len()];
-    for binding in declared_by_unit.iter().flatten() {
-        declarations[*binding as usize] += 1;
-    }
+    let (chunk, mut exported) = Chunk::new(module, unresolved, options);
     let (enums, enum_declarations) = enum_bindings(
         module,
         options,
-        &sources,
-        &declared_by_unit,
-        &bindings,
-        &declarations,
+        &chunk.sources,
+        &chunk.declared_by_unit,
+        &chunk.bindings,
+        &chunk.declarations,
     );
-    let ObjectShapes {
-        classes,
-        literals,
-        nested_literals,
-        symbols,
-        arrays,
-    } = object_shapes(
+    let shapes = object_shapes(
         options,
         unresolved,
-        &sources,
-        &declared_by_unit,
-        &declarations,
-        &assigned_anywhere,
+        &chunk.sources,
+        &chunk.declared_by_unit,
+        &chunk.declarations,
+        &chunk.assigned_anywhere,
     );
-    let mut derived_primitive_imports = 0;
     let found = options
         .derive
         .then(|| crate::derive::derive(module, unresolved, options.program.as_ref(), index));
@@ -597,96 +571,310 @@ pub fn analyze_indexed(
         .is_some_and(|program| !program.on_import_cycle());
     if let (Some(found), true) = (&found, off_cycle) {
         for (id, keys) in &found.settled_imports {
-            if let Some(binding) = bindings.get(id) {
+            if let Some(binding) = chunk.bindings.get(id) {
                 settled.insert(*binding, keys.iter().cloned().collect());
             }
         }
     }
-    let mut primitives: FxHashSet<Binding> = FxHashSet::default();
-    let mut function_candidates: Vec<(Binding, Option<&Expr>)> = Vec::new();
-    if options.upgrades.contains(&Upgrade::PrimitiveBindings) {
-        // The initializer of each binding declared by one identifier
-        // declarator and never assigned.
-        let mut candidates: Vec<(Binding, Option<&Expr>)> = Vec::new();
-        for (source, declared) in sources.iter().zip(&declared_by_unit) {
-            let declarator = match source {
-                Source::Declarator(declarator) => Some(*declarator),
-                Source::Item(
-                    ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
-                    | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                        decl: Decl::Var(var),
-                        ..
-                    })),
-                ) => var.decls.first(),
-                Source::Item(_) => None,
-            };
-            if let (Some(declarator), [binding]) = (declarator, declared.as_slice())
-                && matches!(declarator.name, Pat::Ident(_))
-                && declarations[*binding as usize] == 1
-                && !assigned_anywhere.contains(binding)
-            {
-                candidates.push((*binding, declarator.init.as_deref()));
-            }
-        }
-        function_candidates = candidates.clone();
-        // An import that only ever holds a primitive, by its exporting
-        // chunk's declaration. Off an import cycle that chunk has run before
-        // this one starts, so the binding already holds its one value.
-        if let (Some(found), true) = (&found, off_cycle) {
-            let imported = found.primitive_imports.iter();
-            primitives.extend(imported.filter_map(|id| bindings.get(id).copied()));
-            derived_primitive_imports = found.primitive_imports.len();
-        }
-        loop {
-            let before = primitives.len();
-            for (binding, init) in &candidates {
-                let holds_primitive = init.is_none_or(|init| {
-                    primitive(
-                        init,
-                        &bindings,
-                        &primitives,
-                        PrimitiveScope::Initialization(&settled),
-                        &mut Vec::new(),
-                    )
-                });
-                if holds_primitive {
-                    primitives.insert(*binding);
-                }
-            }
-            if primitives.len() == before {
-                break;
-            }
-        }
-    }
-    let primitive_functions: FxHashMap<Binding, Vec<Binding>> =
-        if options.upgrades.contains(&Upgrade::PrimitiveCalls) {
-            function_candidates
-                .iter()
-                .filter_map(|(binding, init)| {
-                    let reads = primitive_function(unparen((*init)?), &bindings, &primitives)?;
-                    Some((*binding, reads))
-                })
-                .collect()
-        } else {
-            FxHashMap::default()
-        };
+    let (primitives, primitive_functions, derived_primitive_imports) =
+        chunk.primitive_bindings(found.as_ref(), off_cycle, &settled);
 
-    let mut refused = 0;
-    let mut top_level_awaits = 0;
-    let mut intrinsics_denied = 0;
-    let mut intrinsic_refusals: std::collections::BTreeMap<
-        (&'static str, crate::intrinsics::Refusal),
-        usize,
-    > = Default::default();
-    let mut premise_uses: std::collections::BTreeMap<PremiseKind, usize> = Default::default();
-    let mut premises = resolve_premises(module, &options.premises, &bindings, &declared_by_unit);
-    let mut settled_refusals: Vec<SettledRefusalRow> = Vec::new();
+    let mut tallies = Tallies::default();
+    let mut premises = resolve_premises(
+        module,
+        &options.premises,
+        &chunk.bindings,
+        &chunk.declared_by_unit,
+    );
     let mut derived = DerivedCounts {
         primitive_imports: derived_primitive_imports,
         settled_imports: settled.len(),
         ..DerivedCounts::default()
     };
-    if let Some(found) = &found {
+    let settled_refusals = match &found {
+        Some(found) => {
+            chunk.derive_premises(found, off_cycle, &exported, &mut premises, &mut derived)
+        }
+        None => Vec::new(),
+    };
+    let (census, imported_strings) = chunk.census();
+    let (sealed, sealed_members) = chunk.sealed_literals(&shapes, &census, &exported, &premises);
+    let facts = ClassifierFacts {
+        primitives,
+        primitive_functions,
+        shapes,
+        enums,
+        enum_declarations,
+        settled,
+        sealed,
+        sealed_members,
+        census,
+        premises,
+    };
+    let mut units = chunk.classify_units(&facts, &mut exported, &mut tallies);
+    let (lazy_first_uses, lazy_later_uses) = first_lazy_uses(&mut units, &chunk.imports);
+    if tallies.refused > 0 {
+        // `eval` or `with` can name any binding: nothing is a pure definition.
+        for unit in &mut units {
+            if unit.kind != Kind::Inert {
+                unit.kind = Kind::Impure(ImpureCause::Unmodeled);
+            }
+        }
+    }
+
+    let Stamps {
+        reach_stamp,
+        write_stamp,
+        declarer,
+        own_reach,
+        premised_reading_imports,
+        exports_reachable,
+    } = chunk.stamps(&mut units, &exported, tallies.top_level_awaits);
+    let declared_names = chunk.declared_names(&units);
+    let ClassifierFacts {
+        census, premises, ..
+    } = facts;
+    let Tallies {
+        refused,
+        top_level_awaits,
+        intrinsics_denied,
+        intrinsic_refusals,
+        premise_uses,
+        families_used,
+        site_premise_uses,
+    } = tallies;
+    Tier0 {
+        premised_reading_imports,
+        site_premise_uses,
+        derived,
+        lazy_first_uses,
+        lazy_later_uses,
+        commuting: options
+            .premises
+            .commuting
+            .iter()
+            .map(|(a, b)| (*a.min(b), *a.max(b)))
+            .collect(),
+        premises_given: premises.given,
+        premises_matched: premises.matched,
+        premise_uses,
+        units,
+        reach_stamp,
+        write_stamp,
+        declarer,
+        own_reach,
+        bindings: chunk.bindings.len(),
+        declared_names,
+        refused,
+        top_level_awaits,
+        imported_strings,
+        exports_reachable,
+        intrinsics_denied,
+        intrinsic_refusals,
+        settled_refusals,
+        families_used,
+        census,
+    }
+}
+
+/// What every phase of `analyze_indexed` reads about the chunk.
+struct Chunk<'a> {
+    module: &'a Module,
+    unresolved: SyntaxContext,
+    options: &'a Options,
+    sources: Vec<Source<'a>>,
+    bindings: FxHashMap<Id, Binding>,
+    imports: FxHashSet<Binding>,
+    declared_by_unit: Vec<Vec<Binding>>,
+    declarations: Vec<u32>,
+    assigned_anywhere: FxHashSet<Binding>,
+}
+
+/// What `Chunk::classify_units` counts over the units.
+#[derive(Default)]
+struct Tallies {
+    refused: usize,
+    top_level_awaits: usize,
+    intrinsics_denied: usize,
+    intrinsic_refusals:
+        std::collections::BTreeMap<(&'static str, crate::intrinsics::Refusal), usize>,
+    premise_uses: std::collections::BTreeMap<PremiseKind, usize>,
+    families_used: std::collections::BTreeMap<&'static str, usize>,
+    site_premise_uses: usize,
+}
+
+/// The chunk-wide facts each unit's `Classifier` reads.
+struct ClassifierFacts {
+    primitives: FxHashSet<Binding>,
+    primitive_functions: FxHashMap<Binding, Vec<Binding>>,
+    shapes: ObjectShapes,
+    enums: FxHashSet<Binding>,
+    enum_declarations: FxHashSet<Binding>,
+    settled: Settled,
+    sealed: FxHashSet<Binding>,
+    sealed_members: FxHashSet<(Binding, String)>,
+    census: Census,
+    premises: ResolvedPremises,
+}
+
+/// The `Tier0` stamps over bindings and impure units.
+struct Stamps {
+    reach_stamp: Vec<u32>,
+    write_stamp: Vec<u32>,
+    declarer: Vec<u32>,
+    own_reach: FxHashMap<usize, FxHashSet<Binding>>,
+    premised_reading_imports: usize,
+    exports_reachable: bool,
+}
+
+impl<'a> Chunk<'a> {
+    /// Also returns the bindings the chunk exports.
+    fn new(
+        module: &'a Module,
+        unresolved: SyntaxContext,
+        options: &'a Options,
+    ) -> (Self, FxHashSet<Binding>) {
+        let ModuleBindings {
+            sources,
+            bindings,
+            imports,
+            exported,
+            declared_by_unit,
+        } = module_bindings(module);
+
+        let mut assigned_anywhere: FxHashSet<Binding> = FxHashSet::default();
+        for source in &sources {
+            let assigned = match source {
+                Source::Item(item) => assigned_ids(*item),
+                Source::Declarator(declarator) => assigned_ids(*declarator),
+            };
+            assigned_anywhere.extend(assigned.iter().filter_map(|id| bindings.get(id)));
+        }
+        let mut declarations = vec![0u32; bindings.len()];
+        for binding in declared_by_unit.iter().flatten() {
+            declarations[*binding as usize] += 1;
+        }
+        (
+            Self {
+                module,
+                unresolved,
+                options,
+                sources,
+                bindings,
+                imports,
+                declared_by_unit,
+                declarations,
+                assigned_anywhere,
+            },
+            exported,
+        )
+    }
+
+    /// Returns `(primitives, primitive_functions, derived_primitive_imports)`.
+    fn primitive_bindings(
+        &self,
+        found: Option<&crate::derive::Derived>,
+        off_cycle: bool,
+        settled: &Settled,
+    ) -> (FxHashSet<Binding>, FxHashMap<Binding, Vec<Binding>>, usize) {
+        let Self {
+            options,
+            sources,
+            bindings,
+            declared_by_unit,
+            declarations,
+            assigned_anywhere,
+            ..
+        } = self;
+        let mut derived_primitive_imports = 0;
+        let mut primitives: FxHashSet<Binding> = FxHashSet::default();
+        let mut function_candidates: Vec<(Binding, Option<&Expr>)> = Vec::new();
+        if options.upgrades.contains(&Upgrade::PrimitiveBindings) {
+            // The initializer of each binding declared by one identifier
+            // declarator and never assigned.
+            let mut candidates: Vec<(Binding, Option<&Expr>)> = Vec::new();
+            for (source, declared) in sources.iter().zip(declared_by_unit) {
+                let declarator = match source {
+                    Source::Declarator(declarator) => Some(*declarator),
+                    Source::Item(
+                        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+                        | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                            decl: Decl::Var(var),
+                            ..
+                        })),
+                    ) => var.decls.first(),
+                    Source::Item(_) => None,
+                };
+                if let (Some(declarator), [binding]) = (declarator, declared.as_slice())
+                    && matches!(declarator.name, Pat::Ident(_))
+                    && declarations[*binding as usize] == 1
+                    && !assigned_anywhere.contains(binding)
+                {
+                    candidates.push((*binding, declarator.init.as_deref()));
+                }
+            }
+            function_candidates = candidates.clone();
+            // An import that only ever holds a primitive, by its exporting
+            // chunk's declaration. Off an import cycle that chunk has run before
+            // this one starts, so the binding already holds its one value.
+            if let (Some(found), true) = (found, off_cycle) {
+                let imported = found.primitive_imports.iter();
+                primitives.extend(imported.filter_map(|id| bindings.get(id).copied()));
+                derived_primitive_imports = found.primitive_imports.len();
+            }
+            loop {
+                let before = primitives.len();
+                for (binding, init) in &candidates {
+                    let holds_primitive = init.is_none_or(|init| {
+                        primitive(
+                            init,
+                            bindings,
+                            &primitives,
+                            PrimitiveScope::Initialization(settled),
+                            &mut Vec::new(),
+                        )
+                    });
+                    if holds_primitive {
+                        primitives.insert(*binding);
+                    }
+                }
+                if primitives.len() == before {
+                    break;
+                }
+            }
+        }
+        let primitive_functions: FxHashMap<Binding, Vec<Binding>> =
+            if options.upgrades.contains(&Upgrade::PrimitiveCalls) {
+                function_candidates
+                    .iter()
+                    .filter_map(|(binding, init)| {
+                        let reads = primitive_function(unparen((*init)?), bindings, &primitives)?;
+                        Some((*binding, reads))
+                    })
+                    .collect()
+            } else {
+                FxHashMap::default()
+            };
+        (primitives, primitive_functions, derived_primitive_imports)
+    }
+
+    /// Takes derivation's findings as premises, counting them in `derived`;
+    /// returns the chunk's settled refusals.
+    fn derive_premises(
+        &self,
+        found: &crate::derive::Derived,
+        off_cycle: bool,
+        exported: &FxHashSet<Binding>,
+        premises: &mut ResolvedPremises,
+        derived: &mut DerivedCounts,
+    ) -> Vec<SettledRefusalRow> {
+        let Self {
+            module,
+            bindings,
+            declared_by_unit,
+            ..
+        } = self;
+        let mut settled_refusals: Vec<SettledRefusalRow> = Vec::new();
         // An author premise on the same callee wins.
         let binding = |id: &Id| bindings.get(id).copied();
         let mut callee = |id: &Id, kind: PremiseKind, count: &mut usize| {
@@ -795,233 +983,482 @@ pub fn analyze_indexed(
                     .or_insert((vec![PremiseKind::Allocator], 0));
             }
         }
+        settled_refusals
     }
-    let mut families_used: std::collections::BTreeMap<&'static str, usize> = Default::default();
-    let object_aliases = crate::helpers::prepass(module, unresolved).object_aliases;
-    let imported_strings = options
-        .program
-        .as_ref()
-        .map(|program| program.imported_strings(&program.chunk(), module))
-        .unwrap_or_default();
-    let mut census = census(module, unresolved, &object_aliases, &imported_strings);
-    if let Some(program) = &options.program {
-        // A write by any chunk of the program counts.
-        census.merge(program.census.clone());
-    }
-    for member in &options.premises.intrinsic_members_present {
-        census.assume_present(member);
-    }
-    // A literal that is not exported and that no statement of the chunk
-    // mentions other than to read a named member is never held by anything
-    // but its binding: no code can change it. Nor can the uses of the whole
-    // binding that `derive::mentions` passes over, if `Object`'s statics are
-    // the intrinsics. A premise says the same of a binding outright.
-    let unexported_literal = |binding: &Binding| {
-        literals
-            .get(binding)
-            .is_some_and(|keys| !keys.contains_key("__proto__"))
-            && !exported.contains(binding)
-    };
-    let strict = crate::derive::mentions(module, None);
-    let relaxed = crate::derive::mentions(module, Some(unresolved)).filter(|mentions| {
-        !mentions.object_statics
-            || census.untouched("Object", &["keys", "values", "entries"], false)
-    });
-    let unhandled = |mentions: &Option<crate::derive::Mentions>| -> FxHashSet<Binding> {
-        let Some(mentions) = mentions else {
-            return FxHashSet::default();
-        };
-        bindings
-            .iter()
-            .filter(|(id, binding)| {
-                unexported_literal(binding)
-                    && !mentions.handled.contains(*id)
-                    && !mentions.evaluated.contains(&*id.0)
-            })
-            .map(|(_, binding)| *binding)
-            .collect()
-    };
-    let premised: FxHashSet<Binding> = options
-        .premises
-        .immutable_bindings
-        .iter()
-        .filter_map(|unit| declared_by_unit.get(*unit))
-        .flatten()
-        .copied()
-        .filter(|binding| literals.contains_key(binding))
-        .collect();
-    // The object a member of such a literal holds is as written while every
-    // use of that member reads a named member of it.
-    let mut sealed_members: FxHashSet<(Binding, String)> = FxHashSet::default();
-    if let Some(mentions) = &strict {
-        let whole = unhandled(&strict);
-        for (binding, member) in nested_literals.keys() {
-            let id = bindings
-                .iter()
-                .find(|(_, candidate)| *candidate == binding)
-                .map(|(id, _)| id.clone());
-            let untouched = id.is_some_and(|id| !mentions.inner.contains(&(id, member.clone())));
-            if untouched && (whole.contains(binding) || premised.contains(binding)) {
-                sealed_members.insert((*binding, member.clone()));
-            }
-        }
-    }
-    let mut sealed = unhandled(&strict);
-    sealed.extend(unhandled(&relaxed));
-    sealed.extend(&premised);
-    // The whole program only reads named members of these, exported or not.
-    let program_wide = premises.settled_locals.iter().copied();
-    sealed.extend(program_wide.filter(|binding| {
-        literals
-            .get(binding)
-            .is_some_and(|keys| !keys.contains_key("__proto__"))
-    }));
-    let mut units = Vec::with_capacity(sources.len());
-    let never_written: FxHashSet<String> = options
-        .premises
-        .intrinsics_never_written
-        .iter()
-        .cloned()
-        .collect();
-    let sites: FxHashMap<usize, SiteKind> = options
-        .premises
-        .sites
-        .iter()
-        .map(|site| (site.unit, site.kind))
-        .collect();
-    let mut site_premise_uses = 0;
-    for (ordinal, (source, declared)) in sources.iter().zip(declared_by_unit).enumerate() {
-        let site = sites.get(&ordinal).copied();
-        let mut scan = Scan {
-            bindings: &bindings,
+
+    /// Returns the census of the program's writes on globals and the count of
+    /// imports that only ever hold one string.
+    fn census(&self) -> (Census, usize) {
+        let Self {
+            module,
             unresolved,
-            mentions: FxHashSet::default(),
-            eager: FxHashSet::default(),
-            refused: 0,
-            top_level_awaits: 0,
-            function_depth: 0,
-        };
-        let mut classifier = Classifier {
-            bindings: &bindings,
-            imports: &imports,
-            primitives: &primitives,
-            classes: &classes,
-            literals: &literals,
-            symbols: &symbols,
-            arrays: &arrays,
-            settled: &settled,
-            sealed: &sealed,
-            sealed_members: &sealed_members,
-            nested_literals: &nested_literals,
-            enums: &enums,
-            enum_declarations: &enum_declarations,
-            primitive_functions: &primitive_functions,
-            pristine: Vec::new(),
-            upgrades: &options.upgrades,
-            census: &census,
+            options,
+            ..
+        } = self;
+        let object_aliases = crate::helpers::prepass(module, *unresolved).object_aliases;
+        let imported_strings = options
+            .program
+            .as_ref()
+            .map(|program| program.imported_strings(&program.chunk(), module))
+            .unwrap_or_default();
+        let mut census = census(module, *unresolved, &object_aliases, &imported_strings);
+        if let Some(program) = &options.program {
+            // A write by any chunk of the program counts.
+            census.merge(program.census.clone());
+        }
+        for member in &options.premises.intrinsic_members_present {
+            census.assume_present(member);
+        }
+        (census, imported_strings.len())
+    }
+
+    /// Returns `(sealed, sealed_members)`.
+    fn sealed_literals(
+        &self,
+        shapes: &ObjectShapes,
+        census: &Census,
+        exported: &FxHashSet<Binding>,
+        premises: &ResolvedPremises,
+    ) -> (FxHashSet<Binding>, FxHashSet<(Binding, String)>) {
+        let Self {
+            module,
             unresolved,
-            eager: Vec::new(),
-            intrinsics: Vec::new(),
-            denied: Vec::new(),
-            premises: &premises,
-            deep: Vec::new(),
-            targets: Vec::new(),
-            replaces: Vec::new(),
-            premise_uses: Vec::new(),
-            callee_slots: FxHashSet::default(),
-            premised_args: 0,
-            providers: Vec::new(),
-            lazy_uses: Vec::new(),
-            native_site: site == Some(SiteKind::NativeOperation),
-            never_written: &never_written,
+            options,
+            bindings,
+            declared_by_unit,
+            ..
+        } = self;
+        let ObjectShapes {
+            literals,
+            nested_literals,
+            ..
+        } = shapes;
+        // A literal that is not exported and that no statement of the chunk
+        // mentions other than to read a named member is never held by anything
+        // but its binding: no code can change it. Nor can the uses of the whole
+        // binding that `derive::mentions` passes over, if `Object`'s statics are
+        // the intrinsics. A premise says the same of a binding outright.
+        let unexported_literal = |binding: &Binding| {
+            literals
+                .get(binding)
+                .is_some_and(|keys| !keys.contains_key("__proto__"))
+                && !exported.contains(binding)
         };
-        let (kind, assigned) = match source {
-            Source::Item(item) => {
-                item.visit_with(&mut scan);
-                (classifier.item(item), assigned_ids(*item))
-            }
-            Source::Declarator(declarator) => {
-                declarator.visit_with(&mut scan);
-                (classifier.declarator(declarator), assigned_ids(*declarator))
-            }
-        };
-        let kind = match kind {
-            Kind::Impure(cause) if options.what_if_pure.contains(&cause) => Kind::Pure,
-            kind => kind,
-        };
-        let kind = match kind {
-            Kind::Impure(_) if site == Some(SiteKind::Pure) => {
-                site_premise_uses += 1;
-                classifier.eager = scan.eager.iter().copied().collect();
-                classifier.deep = classifier.eager.clone();
-                classifier.providers.clear();
-                Kind::Pure
-            }
-            // The site premise says more than a contained callee's kind.
-            Kind::Pure if site == Some(SiteKind::Pure) && !classifier.providers.is_empty() => {
-                site_premise_uses += 1;
-                classifier.providers.clear();
-                classifier.lazy_uses.clear();
-                Kind::Pure
-            }
-            Kind::Pure if !classifier.providers.is_empty() => Kind::Contained,
-            kind => kind,
-        };
-        site_premise_uses +=
-            usize::from(classifier.native_site && !classifier.intrinsics.is_empty());
-        refused += scan.refused;
-        top_level_awaits += scan.top_level_awaits;
-        intrinsics_denied += classifier.denied.len();
-        for refusal in classifier.denied {
-            *intrinsic_refusals.entry(refusal).or_default() += 1;
-        }
-        if matches!(kind, Kind::Pure | Kind::Contained) {
-            for global in &classifier.intrinsics {
-                *families_used.entry(*global).or_default() += 1;
-            }
-        }
-        let mut mentions: Vec<Binding> = scan.mentions.into_iter().collect();
-        mentions.sort_unstable();
-        // A default export hands its value to other chunks.
-        let default_export = matches!(
-            source,
-            Source::Item(ModuleItem::ModuleDecl(
-                ModuleDecl::ExportDefaultDecl(_) | ModuleDecl::ExportDefaultExpr(_)
-            ))
-        );
-        if default_export {
-            exported.extend(mentions.iter().copied());
-        }
-        if matches!(kind, Kind::Pure | Kind::Contained | Kind::Confined) {
-            for used in &classifier.premise_uses {
-                *premise_uses.entry(*used).or_default() += 1;
-            }
-        }
-        units.push(Unit {
-            kind,
-            declared,
-            eager: classifier.eager,
-            mentions,
-            assigns: assigned
-                .iter()
-                .filter_map(|id| bindings.get(id).copied())
-                .collect(),
-            deep: classifier.deep.into_iter().collect(),
-            deep_stamp: NEVER,
-            targets: classifier.targets,
-            replaces: classifier.replaces,
-            providers: classifier.providers,
-            lazy_uses: classifier.lazy_uses,
-            lazy_first: Vec::new(),
-            pristine: classifier.pristine,
+        let strict = crate::derive::mentions(module, None);
+        let relaxed = crate::derive::mentions(module, Some(*unresolved)).filter(|mentions| {
+            !mentions.object_statics
+                || census.untouched("Object", &["keys", "values", "entries"], false)
         });
+        let unhandled = |mentions: &Option<crate::derive::Mentions>| -> FxHashSet<Binding> {
+            let Some(mentions) = mentions else {
+                return FxHashSet::default();
+            };
+            bindings
+                .iter()
+                .filter(|(id, binding)| {
+                    unexported_literal(binding)
+                        && !mentions.handled.contains(*id)
+                        && !mentions.evaluated.contains(&*id.0)
+                })
+                .map(|(_, binding)| *binding)
+                .collect()
+        };
+        let premised: FxHashSet<Binding> = options
+            .premises
+            .immutable_bindings
+            .iter()
+            .filter_map(|unit| declared_by_unit.get(*unit))
+            .flatten()
+            .copied()
+            .filter(|binding| literals.contains_key(binding))
+            .collect();
+        // The object a member of such a literal holds is as written while every
+        // use of that member reads a named member of it.
+        let mut sealed_members: FxHashSet<(Binding, String)> = FxHashSet::default();
+        if let Some(mentions) = &strict {
+            let whole = unhandled(&strict);
+            for (binding, member) in nested_literals.keys() {
+                let id = bindings
+                    .iter()
+                    .find(|(_, candidate)| *candidate == binding)
+                    .map(|(id, _)| id.clone());
+                let untouched =
+                    id.is_some_and(|id| !mentions.inner.contains(&(id, member.clone())));
+                if untouched && (whole.contains(binding) || premised.contains(binding)) {
+                    sealed_members.insert((*binding, member.clone()));
+                }
+            }
+        }
+        let mut sealed = unhandled(&strict);
+        sealed.extend(unhandled(&relaxed));
+        sealed.extend(&premised);
+        // The whole program only reads named members of these, exported or not.
+        let program_wide = premises.settled_locals.iter().copied();
+        sealed.extend(program_wide.filter(|binding| {
+            literals
+                .get(binding)
+                .is_some_and(|keys| !keys.contains_key("__proto__"))
+        }));
+        (sealed, sealed_members)
     }
-    // The first definition to call a lazy module's thunk may run the module
-    // body. An imported module's body is another chunk's code; a local one
-    // is this chunk's, and the statement stays impure.
+
+    fn classify_units(
+        &self,
+        facts: &ClassifierFacts,
+        exported: &mut FxHashSet<Binding>,
+        tallies: &mut Tallies,
+    ) -> Vec<Unit> {
+        let Self {
+            unresolved,
+            options,
+            sources,
+            bindings,
+            imports,
+            declared_by_unit,
+            ..
+        } = self;
+        let Tallies {
+            refused,
+            top_level_awaits,
+            intrinsics_denied,
+            intrinsic_refusals,
+            premise_uses,
+            families_used,
+            site_premise_uses,
+        } = tallies;
+        let mut units = Vec::with_capacity(sources.len());
+        let never_written: FxHashSet<String> = options
+            .premises
+            .intrinsics_never_written
+            .iter()
+            .cloned()
+            .collect();
+        let sites: FxHashMap<usize, SiteKind> = options
+            .premises
+            .sites
+            .iter()
+            .map(|site| (site.unit, site.kind))
+            .collect();
+        for (ordinal, (source, declared)) in sources.iter().zip(declared_by_unit).enumerate() {
+            let site = sites.get(&ordinal).copied();
+            let mut scan = Scan {
+                bindings,
+                unresolved: *unresolved,
+                mentions: FxHashSet::default(),
+                eager: FxHashSet::default(),
+                refused: 0,
+                top_level_awaits: 0,
+                function_depth: 0,
+            };
+            let mut classifier = Classifier {
+                bindings,
+                imports,
+                primitives: &facts.primitives,
+                classes: &facts.shapes.classes,
+                literals: &facts.shapes.literals,
+                symbols: &facts.shapes.symbols,
+                arrays: &facts.shapes.arrays,
+                settled: &facts.settled,
+                sealed: &facts.sealed,
+                sealed_members: &facts.sealed_members,
+                nested_literals: &facts.shapes.nested_literals,
+                enums: &facts.enums,
+                enum_declarations: &facts.enum_declarations,
+                primitive_functions: &facts.primitive_functions,
+                pristine: Vec::new(),
+                upgrades: &options.upgrades,
+                census: &facts.census,
+                unresolved: *unresolved,
+                eager: Vec::new(),
+                intrinsics: Vec::new(),
+                denied: Vec::new(),
+                premises: &facts.premises,
+                deep: Vec::new(),
+                targets: Vec::new(),
+                replaces: Vec::new(),
+                premise_uses: Vec::new(),
+                callee_slots: FxHashSet::default(),
+                premised_args: 0,
+                providers: Vec::new(),
+                lazy_uses: Vec::new(),
+                native_site: site == Some(SiteKind::NativeOperation),
+                never_written: &never_written,
+            };
+            let (kind, assigned) = match source {
+                Source::Item(item) => {
+                    item.visit_with(&mut scan);
+                    (classifier.item(item), assigned_ids(*item))
+                }
+                Source::Declarator(declarator) => {
+                    declarator.visit_with(&mut scan);
+                    (classifier.declarator(declarator), assigned_ids(*declarator))
+                }
+            };
+            let kind = match kind {
+                Kind::Impure(cause) if options.what_if_pure.contains(&cause) => Kind::Pure,
+                kind => kind,
+            };
+            let kind = match kind {
+                Kind::Impure(_) if site == Some(SiteKind::Pure) => {
+                    *site_premise_uses += 1;
+                    classifier.eager = scan.eager.iter().copied().collect();
+                    classifier.deep = classifier.eager.clone();
+                    classifier.providers.clear();
+                    Kind::Pure
+                }
+                // The site premise says more than a contained callee's kind.
+                Kind::Pure if site == Some(SiteKind::Pure) && !classifier.providers.is_empty() => {
+                    *site_premise_uses += 1;
+                    classifier.providers.clear();
+                    classifier.lazy_uses.clear();
+                    Kind::Pure
+                }
+                Kind::Pure if !classifier.providers.is_empty() => Kind::Contained,
+                kind => kind,
+            };
+            *site_premise_uses +=
+                usize::from(classifier.native_site && !classifier.intrinsics.is_empty());
+            *refused += scan.refused;
+            *top_level_awaits += scan.top_level_awaits;
+            *intrinsics_denied += classifier.denied.len();
+            for refusal in classifier.denied {
+                *intrinsic_refusals.entry(refusal).or_default() += 1;
+            }
+            if matches!(kind, Kind::Pure | Kind::Contained) {
+                for global in &classifier.intrinsics {
+                    *families_used.entry(*global).or_default() += 1;
+                }
+            }
+            let mut mentions: Vec<Binding> = scan.mentions.into_iter().collect();
+            mentions.sort_unstable();
+            // A default export hands its value to other chunks.
+            let default_export = matches!(
+                source,
+                Source::Item(ModuleItem::ModuleDecl(
+                    ModuleDecl::ExportDefaultDecl(_) | ModuleDecl::ExportDefaultExpr(_)
+                ))
+            );
+            if default_export {
+                exported.extend(mentions.iter().copied());
+            }
+            if matches!(kind, Kind::Pure | Kind::Contained | Kind::Confined) {
+                for used in &classifier.premise_uses {
+                    *premise_uses.entry(*used).or_default() += 1;
+                }
+            }
+            units.push(Unit {
+                kind,
+                declared: declared.clone(),
+                eager: classifier.eager,
+                mentions,
+                assigns: assigned
+                    .iter()
+                    .filter_map(|id| bindings.get(id).copied())
+                    .collect(),
+                deep: classifier.deep.into_iter().collect(),
+                deep_stamp: NEVER,
+                targets: classifier.targets,
+                replaces: classifier.replaces,
+                providers: classifier.providers,
+                lazy_uses: classifier.lazy_uses,
+                lazy_first: Vec::new(),
+                pristine: classifier.pristine,
+            });
+        }
+        units
+    }
+
+    fn stamps(
+        &self,
+        units: &mut [Unit],
+        exported: &FxHashSet<Binding>,
+        top_level_awaits: usize,
+    ) -> Stamps {
+        let Self {
+            options,
+            bindings,
+            imports,
+            ..
+        } = self;
+        // What a binding's value can reference: everything mentioned by the
+        // unit that declares it and by every unit that assigns it.
+        let binding_count = bindings.len();
+        let mut edges: Vec<Vec<Binding>> = vec![Vec::new(); binding_count];
+        for unit in units.iter() {
+            for binding in unit.declared.iter().chain(&unit.assigns) {
+                edges[*binding as usize].extend(&unit.mentions);
+            }
+            // A decorator helper may store what it was given in its target.
+            for binding in &unit.targets {
+                edges[*binding as usize].extend(&unit.mentions);
+            }
+        }
+        let closure = |seeds: &[Binding], visit: &mut dyn FnMut(Binding) -> bool| {
+            let mut pending: Vec<Binding> = seeds.to_vec();
+            while let Some(binding) = pending.pop() {
+                if visit(binding) {
+                    pending.extend(&edges[binding as usize]);
+                }
+            }
+        };
+
+        let exports_reachable = options.exports_reachable
+            || top_level_awaits > 0
+            || options
+                .program
+                .as_ref()
+                .is_some_and(|program| program.on_import_cycle());
+        // Per binding: the first impure ordinal whose reach holds it.
+        let reach = |units: &[Unit]| {
+            let mut reach_stamp = vec![NEVER; binding_count];
+            if exports_reachable {
+                let seeds: Vec<Binding> = exported.iter().copied().collect();
+                closure(&seeds, &mut |binding| {
+                    let fresh = reach_stamp[binding as usize] == NEVER;
+                    reach_stamp[binding as usize] = 0;
+                    fresh
+                });
+            }
+            for (ordinal, unit) in units.iter().enumerate() {
+                if !matches!(unit.kind, Kind::Impure(_)) {
+                    continue;
+                }
+                closure(&unit.mentions, &mut |binding| {
+                    let fresh = reach_stamp[binding as usize] == NEVER;
+                    if fresh {
+                        reach_stamp[binding as usize] = ordinal as u32;
+                    }
+                    fresh
+                });
+            }
+            reach_stamp
+        };
+        // A property read of a literal runs no code only while the literal is as
+        // written. Assume every such read is a pure definition, then make impure
+        // each one an earlier impure statement can reach, until none is left:
+        // making one impure only widens what is reached.
+        let reach_stamp = loop {
+            let reach_stamp = reach(&*units);
+            let mut changed = false;
+            for (ordinal, unit) in units.iter_mut().enumerate() {
+                let reached = unit
+                    .pristine
+                    .iter()
+                    .any(|table| reach_stamp[*table as usize] <= ordinal as u32);
+                if reached && !matches!(unit.kind, Kind::Impure(_)) {
+                    unit.kind = Kind::Impure(ImpureCause::MemberRead);
+                    unit.providers.clear();
+                    changed = true;
+                }
+            }
+            if !changed {
+                break reach_stamp;
+            }
+        };
+        let mut own_reach = FxHashMap::default();
+        for (ordinal, unit) in units.iter().enumerate() {
+            if !matches!(unit.kind, Kind::Impure(_)) {
+                continue;
+            }
+            let mut own = FxHashSet::default();
+            closure(&unit.mentions, &mut |binding| own.insert(binding));
+            own_reach.insert(ordinal, own);
+        }
+        // An assignment can run once its unit runs, if the unit is impure, or
+        // once a binding the unit declares is reachable.
+        let mut write_stamp = vec![NEVER; binding_count];
+        let mut declarer = vec![NEVER; binding_count];
+        for (ordinal, unit) in units.iter().enumerate() {
+            let enabled = match unit.kind {
+                Kind::Impure(_) => ordinal as u32,
+                _ => unit
+                    .declared
+                    .iter()
+                    .map(|binding| reach_stamp[*binding as usize])
+                    .min()
+                    .unwrap_or(NEVER),
+            };
+            for binding in &unit.assigns {
+                let stamp = &mut write_stamp[*binding as usize];
+                *stamp = (*stamp).min(enabled);
+            }
+            // An impure declaration writes its bindings when it runs, and only
+            // then. A binding with two of them is treated as assigned.
+            if matches!(unit.kind, Kind::Impure(_)) {
+                for binding in &unit.declared {
+                    let declarer = &mut declarer[*binding as usize];
+                    if *declarer == NEVER {
+                        *declarer = ordinal as u32;
+                    } else {
+                        let stamp = &mut write_stamp[*binding as usize];
+                        *stamp = (*stamp).min(*declarer);
+                    }
+                }
+            }
+        }
+        // A premised call may read, and through a function it is given run,
+        // everything its arguments can reference. What an import references is
+        // another chunk's, which any impure statement may change.
+        let mut premised_reading_imports = 0;
+        for unit in units.iter_mut() {
+            if !matches!(unit.kind, Kind::Pure | Kind::Contained | Kind::Confined) {
+                unit.providers.clear();
+                unit.deep.clear();
+            }
+            let seeds: Vec<Binding> = unit.deep.drain().collect();
+            closure(&seeds, &mut |binding| unit.deep.insert(binding));
+            unit.deep_stamp = unit
+                .deep
+                .iter()
+                .map(|binding| {
+                    if imports.contains(binding) {
+                        0
+                    } else {
+                        reach_stamp[*binding as usize]
+                    }
+                })
+                .min()
+                .unwrap_or(NEVER);
+            premised_reading_imports +=
+                usize::from(unit.deep.iter().any(|binding| imports.contains(binding)));
+        }
+        Stamps {
+            reach_stamp,
+            write_stamp,
+            declarer,
+            own_reach,
+            premised_reading_imports,
+            exports_reachable,
+        }
+    }
+
+    /// Per source unit: the names it declares.
+    fn declared_names(&self, units: &[Unit]) -> Vec<Vec<String>> {
+        let binding_count = self.bindings.len();
+        let mut names = vec![String::new(); binding_count];
+        for (id, binding) in &self.bindings {
+            names[*binding as usize] = id.0.to_string();
+        }
+        units
+            .iter()
+            .map(|unit| {
+                unit.declared
+                    .iter()
+                    .map(|binding| names[*binding as usize].clone())
+                    .collect()
+            })
+            .collect()
+    }
+}
+
+/// The first definition to call a lazy module's thunk may run the module
+/// body. An imported module's body is another chunk's code; a local one
+/// is this chunk's, and the statement stays impure.
+/// Returns `(lazy_first_uses, lazy_later_uses)`.
+fn first_lazy_uses(units: &mut [Unit], imports: &FxHashSet<Binding>) -> (usize, usize) {
     let mut initialized: FxHashSet<Binding> = FxHashSet::default();
     let (mut lazy_first_uses, mut lazy_later_uses) = (0, 0);
-    for unit in &mut units {
+    for unit in units {
         if !matches!(unit.kind, Kind::Pure | Kind::Contained) {
             unit.lazy_uses.clear();
             continue;
@@ -1045,204 +1482,7 @@ pub fn analyze_indexed(
         }
         unit.lazy_first = firsts;
     }
-    if refused > 0 {
-        // `eval` or `with` can name any binding: nothing is a pure definition.
-        for unit in &mut units {
-            if unit.kind != Kind::Inert {
-                unit.kind = Kind::Impure(ImpureCause::Unmodeled);
-            }
-        }
-    }
-
-    // What a binding's value can reference: everything mentioned by the
-    // unit that declares it and by every unit that assigns it.
-    let binding_count = bindings.len();
-    let mut edges: Vec<Vec<Binding>> = vec![Vec::new(); binding_count];
-    for unit in &units {
-        for binding in unit.declared.iter().chain(&unit.assigns) {
-            edges[*binding as usize].extend(&unit.mentions);
-        }
-        // A decorator helper may store what it was given in its target.
-        for binding in &unit.targets {
-            edges[*binding as usize].extend(&unit.mentions);
-        }
-    }
-    let closure = |seeds: &[Binding], visit: &mut dyn FnMut(Binding) -> bool| {
-        let mut pending: Vec<Binding> = seeds.to_vec();
-        while let Some(binding) = pending.pop() {
-            if visit(binding) {
-                pending.extend(&edges[binding as usize]);
-            }
-        }
-    };
-
-    let exports_reachable = options.exports_reachable
-        || top_level_awaits > 0
-        || options
-            .program
-            .as_ref()
-            .is_some_and(|program| program.on_import_cycle());
-    // Per binding: the first impure ordinal whose reach holds it.
-    let reach = |units: &[Unit]| {
-        let mut reach_stamp = vec![NEVER; binding_count];
-        if exports_reachable {
-            let seeds: Vec<Binding> = exported.iter().copied().collect();
-            closure(&seeds, &mut |binding| {
-                let fresh = reach_stamp[binding as usize] == NEVER;
-                reach_stamp[binding as usize] = 0;
-                fresh
-            });
-        }
-        for (ordinal, unit) in units.iter().enumerate() {
-            if !matches!(unit.kind, Kind::Impure(_)) {
-                continue;
-            }
-            closure(&unit.mentions, &mut |binding| {
-                let fresh = reach_stamp[binding as usize] == NEVER;
-                if fresh {
-                    reach_stamp[binding as usize] = ordinal as u32;
-                }
-                fresh
-            });
-        }
-        reach_stamp
-    };
-    // A property read of a literal runs no code only while the literal is as
-    // written. Assume every such read is a pure definition, then make impure
-    // each one an earlier impure statement can reach, until none is left:
-    // making one impure only widens what is reached.
-    let reach_stamp = loop {
-        let reach_stamp = reach(&units);
-        let mut changed = false;
-        for (ordinal, unit) in units.iter_mut().enumerate() {
-            let reached = unit
-                .pristine
-                .iter()
-                .any(|table| reach_stamp[*table as usize] <= ordinal as u32);
-            if reached && !matches!(unit.kind, Kind::Impure(_)) {
-                unit.kind = Kind::Impure(ImpureCause::MemberRead);
-                unit.providers.clear();
-                changed = true;
-            }
-        }
-        if !changed {
-            break reach_stamp;
-        }
-    };
-    let mut own_reach = FxHashMap::default();
-    for (ordinal, unit) in units.iter().enumerate() {
-        if !matches!(unit.kind, Kind::Impure(_)) {
-            continue;
-        }
-        let mut own = FxHashSet::default();
-        closure(&unit.mentions, &mut |binding| own.insert(binding));
-        own_reach.insert(ordinal, own);
-    }
-    // An assignment can run once its unit runs, if the unit is impure, or
-    // once a binding the unit declares is reachable.
-    let mut write_stamp = vec![NEVER; binding_count];
-    let mut declarer = vec![NEVER; binding_count];
-    for (ordinal, unit) in units.iter().enumerate() {
-        let enabled = match unit.kind {
-            Kind::Impure(_) => ordinal as u32,
-            _ => unit
-                .declared
-                .iter()
-                .map(|binding| reach_stamp[*binding as usize])
-                .min()
-                .unwrap_or(NEVER),
-        };
-        for binding in &unit.assigns {
-            let stamp = &mut write_stamp[*binding as usize];
-            *stamp = (*stamp).min(enabled);
-        }
-        // An impure declaration writes its bindings when it runs, and only
-        // then. A binding with two of them is treated as assigned.
-        if matches!(unit.kind, Kind::Impure(_)) {
-            for binding in &unit.declared {
-                let declarer = &mut declarer[*binding as usize];
-                if *declarer == NEVER {
-                    *declarer = ordinal as u32;
-                } else {
-                    let stamp = &mut write_stamp[*binding as usize];
-                    *stamp = (*stamp).min(*declarer);
-                }
-            }
-        }
-    }
-    // A premised call may read, and through a function it is given run,
-    // everything its arguments can reference. What an import references is
-    // another chunk's, which any impure statement may change.
-    let mut premised_reading_imports = 0;
-    for unit in &mut units {
-        if !matches!(unit.kind, Kind::Pure | Kind::Contained | Kind::Confined) {
-            unit.providers.clear();
-            unit.deep.clear();
-        }
-        let seeds: Vec<Binding> = unit.deep.drain().collect();
-        closure(&seeds, &mut |binding| unit.deep.insert(binding));
-        unit.deep_stamp = unit
-            .deep
-            .iter()
-            .map(|binding| {
-                if imports.contains(binding) {
-                    0
-                } else {
-                    reach_stamp[*binding as usize]
-                }
-            })
-            .min()
-            .unwrap_or(NEVER);
-        premised_reading_imports +=
-            usize::from(unit.deep.iter().any(|binding| imports.contains(binding)));
-    }
-    let declared_names = {
-        let mut names = vec![String::new(); binding_count];
-        for (id, binding) in &bindings {
-            names[*binding as usize] = id.0.to_string();
-        }
-        units
-            .iter()
-            .map(|unit| {
-                unit.declared
-                    .iter()
-                    .map(|binding| names[*binding as usize].clone())
-                    .collect()
-            })
-            .collect()
-    };
-    Tier0 {
-        premised_reading_imports,
-        site_premise_uses,
-        derived,
-        lazy_first_uses,
-        lazy_later_uses,
-        commuting: options
-            .premises
-            .commuting
-            .iter()
-            .map(|(a, b)| (*a.min(b), *a.max(b)))
-            .collect(),
-        premises_given: premises.given,
-        premises_matched: premises.matched,
-        premise_uses,
-        units,
-        reach_stamp,
-        write_stamp,
-        declarer,
-        own_reach,
-        bindings: binding_count,
-        declared_names,
-        refused,
-        top_level_awaits,
-        imported_strings: imported_strings.len(),
-        exports_reachable,
-        intrinsics_denied,
-        intrinsic_refusals,
-        settled_refusals,
-        families_used,
-        census,
-    }
+    (lazy_first_uses, lazy_later_uses)
 }
 
 impl Tier0 {

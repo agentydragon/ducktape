@@ -4,7 +4,8 @@ The goal is to turn the production bundle in `gaffer-private` into runnable, rea
 
 ## Acceptance contract
 
-**Current status.** The public command refuses without writing output; the
+**Current status.** The public command uses a compiled named-declaration
+constructor and refuses unsupported splits without writing output; the
 per-input Lean compiler and unchecked diagnostic emitter have been removed.
 Historical results below describe earlier versions. The JavaScript frontend
 and printer are trusted; the proved obligation is equivalence of the CoreJS
@@ -396,7 +397,7 @@ The counts are category presence, not disjoint buckets: the proof increments nee
 
 ### Check the printed files
 
-**Now.** The public command refuses every request without writing output. Existing staging and printing tests are engineering checks for the trusted frontend and printer.
+**Now.** The named-declaration constructor publishes its checked output and refuses unsupported splits. Staging and printing tests are engineering checks for the trusted frontend and printer.
 
 **Target.** The compiled CoreJS transformation constructs `Y` and proves its equivalence to the input. The JavaScript frontend and printer are trusted; staging and reparse checks remain useful engineering validation.
 

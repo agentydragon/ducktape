@@ -1,11 +1,13 @@
 # Splitting a bundle into ES modules, with a Lean proof
 
 The splitter is being rebuilt around a proved transformation of CoreJS programs.
-The public `lowersplit` command currently refuses every request with
-`no_constructed_rule` and exit status 1, before reading inputs or changing the
-output directory. It does not run Lean at split time or emit a preview. The
-[acceptance plan](PLAN.md#acceptance-contract) describes the intended compiled
-constructor and its CoreJS equivalence theorem.
+The public `lowersplit` command uses a compiled CoreJS constructor for a
+sequential authored split of supported, import-free constant declarations. It
+stages and checks the output, and `--check-output` checks an existing tree.
+When the constructor declines, it returns `no_constructed_rule` with exit 1
+without changing the destination. It does not run Lean at split time or emit
+an unchecked preview. The [acceptance plan](PLAN.md#acceptance-contract)
+describes the constructor and its CoreJS equivalence theorem.
 
 The JavaScript-to-CoreJS frontend and CoreJS-to-JavaScript printer are trusted
 components. The machine-checked claim concerns the CoreJS transformation;
@@ -39,10 +41,10 @@ For a closed module containing only identifier declarations, the checker also ha
 
 ## Request a CoreJS guarantee
 
-The command below currently refuses without publishing output. The discussion
-following it records the previous checker and its model coverage; its strategy
-flags, diagnostic emitter, generated proofs, and successful verdicts are no
-longer available through `lowersplit`.
+The command below certifies supported sequential named-declaration splits and
+refuses unsupported requests. The discussion following it records the previous
+checker and its model coverage; its strategy flags, diagnostic emitter, and
+generated proofs are no longer available through `lowersplit`.
 
 ```sh
 bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- deployment.json output

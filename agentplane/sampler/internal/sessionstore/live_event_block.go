@@ -91,8 +91,7 @@ func sealJournalTail(ctx context.Context, tx *sql.Tx, sessionID string, through 
 				offset += cut.N
 			case eventblock.Seal:
 				selected := stream[offset : offset+cut.N]
-				blockFrames := wireFrames[:cut.N]
-				payload, err := packer.Encode(blockFrames)
+				payload, err := packer.Encode(wireFrames[:cut.N])
 				if err != nil {
 					return err
 				}
@@ -101,7 +100,7 @@ func sealJournalTail(ctx context.Context, tx *sql.Tx, sessionID string, through 
 					storedBytes += len(frame.wire)
 				}
 				if len(payload) < storedBytes {
-					if err := insertLiveJournalBlock(ctx, tx, sessionID, selected, blockFrames, payload); err != nil {
+					if err := insertLiveJournalBlock(ctx, tx, sessionID, selected, payload); err != nil {
 						return err
 					}
 				}
@@ -119,21 +118,18 @@ func packableJournalFrame(frame pendingJournalFrame) bool {
 	return len(frame.frame) > 0
 }
 
-func insertLiveJournalBlock(ctx context.Context, tx *sql.Tx, sessionID string, source []pendingJournalFrame, frames [][]byte, payload []byte) error {
+func insertLiveJournalBlock(ctx context.Context, tx *sql.Tx, sessionID string, source []pendingJournalFrame, payload []byte) error {
 	first, last := source[0].sequence, source[len(source)-1].sequence
 	if uint64(len(source)) != last-first+1 {
 		return fmt.Errorf("noncontiguous live journal block %d–%d", first, last)
 	}
-	decoded, err := eventblock.Decode(payload)
+	decoded, err := decodeAPBJournalBlock(payload, first, last)
 	if err != nil {
 		return fmt.Errorf("verify live event block %d–%d: %w", first, last, err)
 	}
-	if len(decoded) != len(frames) {
-		return fmt.Errorf("live event block %d–%d contains %d frames, want %d", first, last, len(decoded), len(frames))
-	}
-	for i := range frames {
-		if !bytes.Equal(decoded[i], frames[i]) {
-			return fmt.Errorf("live event block frame at cursor %d changed during encoding", source[i].sequence)
+	for i, original := range source {
+		if !bytes.Equal(decoded[i], original.frame) {
+			return fmt.Errorf("live event block frame at cursor %d changed during encoding", original.sequence)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, insertJournalBlock, sessionID, first, last, payload); err != nil {

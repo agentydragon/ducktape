@@ -11,6 +11,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/history"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 )
 
 const (
@@ -27,26 +29,33 @@ const (
 //
 // local_api_server is where kubernetesServiceAccount credentials naming the `local` API server act,
 // and the token file holding the proxy's own bearer for it; unset, those credentials are unavailable.
+//
+// policy_service, when set, is where every Identity read goes (workload authentication and the rules
+// watch) instead of the Identity CRs in rules_namespace.
+// CLEANUP(added 2026-11-26): require policy_service and drop the Kubernetes Identity reads once the
+//
+//	staging manifests set it (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
 type config struct {
-	RulesNamespace                  string            `mapstructure:"rules_namespace"`
-	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
-	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
-	Forward                         listener.Config   `mapstructure:"forward"`
-	TLSPassthroughTargets           []string          `mapstructure:"tls_passthrough_targets"`
-	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
-	AdminGRPCServiceCallers         []string          `mapstructure:"admin_grpc_service_callers"`
-	CACert                          string            `mapstructure:"ca_cert"`
-	CAKey                           string            `mapstructure:"ca_key"`
-	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
-	Kubeconfig                      string            `mapstructure:"kubeconfig"`
-	LogLevels                       map[string]string `mapstructure:"log_levels"`
-	DatabaseURL                     string            `mapstructure:"-"`
-	DecisionHistorySize             int               `mapstructure:"decision_history_size"`
-	DecisionRetentionDays           int               `mapstructure:"decision_retention_days"`
-	DecisionQueueSize               int               `mapstructure:"decision_queue_size"`
-	DecisionBatchSize               int               `mapstructure:"decision_batch_size"`
-	ExemptNetworks                  []netip.Prefix    `mapstructure:"exempt_networks"`
-	LocalAPIServer                  *apiServerConfig  `mapstructure:"local_api_server"`
+	RulesNamespace                  string              `mapstructure:"rules_namespace"`
+	CredentialsNamespace            string              `mapstructure:"credentials_namespace"`
+	AllowedServiceAccountNamespaces []string            `mapstructure:"allowed_service_account_namespaces"`
+	Forward                         listener.Config     `mapstructure:"forward"`
+	TLSPassthroughTargets           []string            `mapstructure:"tls_passthrough_targets"`
+	AdminListenAddress              string              `mapstructure:"admin_listen_address"`
+	AdminGRPCServiceCallers         []string            `mapstructure:"admin_grpc_service_callers"`
+	CACert                          string              `mapstructure:"ca_cert"`
+	CAKey                           string              `mapstructure:"ca_key"`
+	UpstreamCAFile                  string              `mapstructure:"upstream_ca_file"`
+	Kubeconfig                      string              `mapstructure:"kubeconfig"`
+	LogLevels                       map[string]string   `mapstructure:"log_levels"`
+	DatabaseURL                     string              `mapstructure:"-"`
+	DecisionHistorySize             int                 `mapstructure:"decision_history_size"`
+	DecisionRetentionDays           int                 `mapstructure:"decision_retention_days"`
+	DecisionQueueSize               int                 `mapstructure:"decision_queue_size"`
+	DecisionBatchSize               int                 `mapstructure:"decision_batch_size"`
+	ExemptNetworks                  []netip.Prefix      `mapstructure:"exempt_networks"`
+	LocalAPIServer                  *apiServerConfig    `mapstructure:"local_api_server"`
+	PolicyService                   *identitycache.Peer `mapstructure:"policy_service"`
 }
 
 // apiServerConfig is an API server the proxy impersonates ServiceAccounts on: the host and port
@@ -122,6 +131,11 @@ func (c *config) validate() error {
 	if server := c.LocalAPIServer; server != nil &&
 		(server.Host == "" || server.TokenFile == "" || server.Port < 1 || server.Port > 65535) {
 		return errors.New("local_api_server needs a host, a port between 1 and 65535 and a token_file")
+	}
+	if c.PolicyService != nil {
+		if err := c.PolicyService.Validate(peertls.EgressProxyURI); err != nil {
+			return err
+		}
 	}
 	for logger, level := range c.LogLevels {
 		if logger != "root" {

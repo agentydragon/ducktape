@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from agentplane.eventblock.settings import EventBlockProfile
 from agentplane.identity.auth.delegation import ServiceDelegation
 from agentplane.identity.auth.listener import Listener
-from agentplane.net.peertls.config import ServiceSPIFFEID
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI, PolicyServicePeer, ServiceSPIFFEID
 
 
 class IngressSettings(BaseModel):
@@ -71,6 +71,13 @@ class Settings(BaseModel):
     rpc: Listener
     kubeconfig: Path | None = None
     policy_namespace: str = Field(min_length=1, description="Namespace holding the Identities a Sandbox SVID may name.")
+    # CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
+    #   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+    policy_service: PolicyServicePeer | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="PolicyService serving every Identity this service resolves, instead of policy_namespace reads.",
+    )
     ingress: IngressSettings
     fold_concurrency: int = Field(default=4, ge=1, le=64)
     # A backfill advances each Session one page per cycle; the history store serves at most 1000.
@@ -86,3 +93,9 @@ class Settings(BaseModel):
     @field_serializer("reader_service_callers")
     def sorted_reader_service_callers(self, value: frozenset[ServiceSPIFFEID]) -> list[ServiceSPIFFEID]:
         return sorted(value)
+
+    @model_validator(mode="after")
+    def policy_service_as_history(self) -> Self:
+        if self.policy_service is not None:
+            self.policy_service.tls.validate_caller(None, HISTORY_SERVICE_URI)
+        return self

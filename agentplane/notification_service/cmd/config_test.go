@@ -360,3 +360,36 @@ func TestReceiverRequiresSVIDTrust(t *testing.T) {
 		t.Fatal("bearer-only listener accepted")
 	}
 }
+
+func TestPolicyServiceBlockRequiresMutualTLSAsNotificationsToThePolicyController(t *testing.T) {
+	const block = `policy_service:
+  target: test-policy.invalid:8443
+  tls:
+    ca_file: /test/ca.pem
+    server_uri: spiffe://agentplane/policy-controller
+    cert_file: /test/notifications.crt
+    key_file: /test/notifications.key
+    client_uri: spiffe://agentplane/notifications
+`
+	c, err := loadTestConfig(t, requiredFile+block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PolicyService == nil || c.PolicyService.Target != "test-policy.invalid:8443" ||
+		c.PolicyService.TLS.ServerURI != peertls.PolicyControllerURI || c.PolicyService.TLS.ClientURI != peertls.NotificationsURI {
+		t.Errorf("policy_service was not read: %+v", c.PolicyService)
+	}
+	for name, file := range map[string]string{
+		"no target":          strings.Replace(block, "  target: test-policy.invalid:8443\n", "", 1),
+		"other client URI":   strings.Replace(block, "client_uri: spiffe://agentplane/notifications", "client_uri: spiffe://agentplane/actions", 1),
+		"other server URI":   strings.Replace(block, "server_uri: spiffe://agentplane/policy-controller", "server_uri: spiffe://agentplane/actions", 1),
+		"no service SVID":    strings.Replace(block, "    cert_file: /test/notifications.crt\n    key_file: /test/notifications.key\n    client_uri: spiffe://agentplane/notifications\n", "", 1),
+		"unknown nested key": strings.Replace(block, "  target:", "  bogus: 1\n  target:", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, requiredFile+file); err == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+}

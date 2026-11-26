@@ -30,6 +30,7 @@ go_library(
         "//agentplane/net/listener",
         "//agentplane/net/peertls",
         "//agentplane/observability",
+        "//agentplane/policy/identitycache",
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
@@ -58,6 +59,7 @@ go_test(
     embed = [":main_lib"],
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/net/peertls",
         "//agentplane/testing/configtest",
     ],
 )

@@ -11,6 +11,7 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
@@ -255,6 +256,52 @@ def test_receiver_requires_spiffe_trust() -> None:
         "auth": [{"mode": "kubernetes_bearer", "audiences": ["agentplane-notifications"]}],
     }
     with pytest.raises(ValidationError, match="does not match any of the expected tags"):
+        Settings.model_validate(values)
+
+
+def policy_service_block(**tls: str) -> dict[str, object]:
+    return {
+        "target": "test-policy.invalid:8443",
+        "tls": {
+            "ca_file": "/trust/agentplane.pem",
+            "server_uri": POLICY_CONTROLLER_URI,
+            "cert_file": "/tls/notifications.crt",
+            "key_file": "/tls/notifications.key",
+            "client_uri": NOTIFICATIONS_URI,
+        }
+        | tls,
+    }
+
+
+def test_policy_service_is_omitted_until_set() -> None:
+    values = static_values()
+    assert "policy_service" not in Settings.model_validate(values).model_dump()
+    values["policy_service"] = policy_service_block()
+    assert (
+        Settings.model_validate(values).model_dump(mode="json")["policy_service"]["target"]
+        == "test-policy.invalid:8443"
+    )
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        pytest.param({"tls": policy_service_block()["tls"]}, id="no target"),
+        pytest.param(policy_service_block(client_uri=ACTIONS_URI), id="other client URI"),
+        pytest.param(policy_service_block(server_uri=ACTIONS_URI), id="other server URI"),
+        pytest.param(
+            {
+                "target": "test-policy.invalid:8443",
+                "tls": {"ca_file": "/trust/agentplane.pem", "server_uri": POLICY_CONTROLLER_URI},
+            },
+            id="no service SVID",
+        ),
+    ],
+)
+def test_policy_service_requires_mutual_tls_as_notifications(block: dict[str, object]) -> None:
+    values = static_values()
+    values["policy_service"] = block
+    with pytest.raises(ValidationError):
         Settings.model_validate(values)
 
 

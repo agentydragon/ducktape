@@ -13,6 +13,8 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 )
 
 const (
@@ -35,9 +37,13 @@ type config struct {
 	RPC                   listener.Config `mapstructure:"rpc"`
 	Kubeconfig            string          `mapstructure:"kubeconfig"`
 	// PolicyNamespace holds the Identities a Sandbox SVID may name.
-	PolicyNamespace string        `mapstructure:"policy_namespace"`
-	Ingress         ingressConfig `mapstructure:"ingress"`
-	FoldConcurrency int           `mapstructure:"fold_concurrency"`
+	PolicyNamespace string `mapstructure:"policy_namespace"`
+	// PolicyService, when set, serves every Identity this service resolves instead of PolicyNamespace reads.
+	// CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
+	//   (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+	PolicyService   *identitycache.Peer `mapstructure:"policy_service"`
+	Ingress         ingressConfig       `mapstructure:"ingress"`
+	FoldConcurrency int                 `mapstructure:"fold_concurrency"`
 	// FoldPageSize is how many entries a cycle folds per Session; the history store serves at most 1000.
 	FoldPageSize             int     `mapstructure:"fold_page_size"`
 	FoldIntervalSeconds      float64 `mapstructure:"fold_interval_s"`
@@ -145,6 +151,11 @@ func (c *config) validate() error {
 	if d := c.ServiceDelegation; d != nil {
 		if err := d.Validate(); err != nil {
 			return fmt.Errorf("service_delegation: %w", err)
+		}
+	}
+	if c.PolicyService != nil {
+		if err := c.PolicyService.Validate(peertls.HistoryIngressURI); err != nil {
+			return err
 		}
 	}
 	if c.Ingress.SamplerServiceActor != "" {

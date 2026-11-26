@@ -29,6 +29,8 @@ type Config struct {
 	RulesNamespace string
 	// CredentialsNamespace holds the Secrets those credentials read.
 	CredentialsNamespace string
+	// Identities is where the rules learn which Identity incarnations are live.
+	Identities reader.IdentitySource
 }
 
 // Informer fills the Index from the API server and keeps EgressReady on the bindings.
@@ -50,7 +52,7 @@ func New(base *rest.Config, config Config) (*Informer, error) {
 	}
 	i := &Informer{index: config.Index, watches: watches}
 	if err := errors.Join(
-		reader.WatchRules(watches, config.Index.Rules, config.RulesNamespace, EgressReady, reader.KubernetesIdentities{}),
+		reader.WatchRules(watches, config.Index.Rules, config.RulesNamespace, EgressReady, config.Identities),
 		reader.Watch(watches, policy.Credentials, egressinformers.NewTypedFilteredEgressCredentialInformer(credentials, config.RulesNamespace, 0, nil, nil), i.putCredential, i.index.DeleteCredential),
 		reader.Watch(watches, policy.Secrets, coreinformers.NewTypedFilteredSecretInformer(core, config.CredentialsNamespace, 0, nil, nil), i.putSecret, i.index.DeleteSecret),
 	); err != nil {

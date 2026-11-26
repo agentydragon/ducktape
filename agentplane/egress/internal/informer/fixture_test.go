@@ -85,6 +85,7 @@ func (f *fixture) startThrough(base *rest.Config) {
 	var err error
 	f.informer, err = New(base, Config{
 		Index: f.index, RulesNamespace: f.rules, CredentialsNamespace: f.credentials,
+		Identities: reader.KubernetesIdentities{},
 	})
 	if err != nil {
 		f.t.Fatal(err)

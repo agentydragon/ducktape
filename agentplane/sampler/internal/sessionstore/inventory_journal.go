@@ -9,7 +9,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
-	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 )
 
@@ -213,9 +212,12 @@ func inspectJournalCoverage(
 	return nil
 }
 
+func blockPayloadInEventRow(payload []byte) bool {
+	return eventblock.IsBlock(payload) || bytes.HasPrefix(payload, []byte{0x28, 0xb5, 0x2f, 0xfd})
+}
+
 func classifyJournalRow(payload []byte, sequence uint64) (JournalClassification, string) {
-	isLegacy := isGzipJournalPayload(payload)
-	if eventblock.IsBlock(payload) || bytes.HasPrefix(payload, []byte{0x28, 0xb5, 0x2f, 0xfd}) {
+	if blockPayloadInEventRow(payload) {
 		return journalUnsupported, "block-compressed payload stored in a standalone event row"
 	}
 	frame, err := eventcodec.UnpackPackableEntry(payload)
@@ -225,65 +227,26 @@ func classifyJournalRow(payload []byte, sequence uint64) (JournalClassification,
 	if len(frame) == 0 {
 		return journalUnsupported, "standalone event exceeds the bounded inventory decode limit"
 	}
-	var entry eventlogpb.EventEntry
-	if err := eventcodec.Decode(frame, &entry); err != nil {
-		return journalInvalid, "standalone event protobuf is invalid"
+	if _, err := decodeJournalEvent(frame, sequence); err != nil {
+		return journalInvalid, err.Error()
 	}
-	if entry.GetCursor() != sequence {
-		return journalInvalid, fmt.Sprintf("stored cursor %d differs from row sequence %d", entry.GetCursor(), sequence)
-	}
-	if isLegacy {
+	if eventcodec.IsGzip(payload) {
 		return journalLegacyGzip, ""
 	}
 	return journalOrdinary, ""
 }
 
 func classifyJournalBlock(payload []byte, first, last uint64) (JournalClassification, string) {
-	if last < first {
-		return journalInvalid, "block interval is reversed"
-	}
-	count := last - first + 1
-	var frames [][]byte
-	switch {
-	case eventblock.IsBlock(payload):
-		if !bytes.HasPrefix(payload, []byte("APB\x01")) {
-			return journalUnsupported, "unknown APB block version"
-		}
-		decoded, err := eventblock.Decode(payload)
-		if err != nil {
-			return journalInvalid, "APB v1 block is malformed: " + err.Error()
-		}
-		frames = decoded
-	case isGzipJournalPayload(payload):
-		decoded, err := eventcodec.UnpackBlock(payload, int(count))
-		if err != nil {
-			return journalInvalid, "legacy gzip block is malformed: " + err.Error()
-		}
-		frames = decoded
-	default:
-		return journalUnsupported, "unknown event block encoding"
-	}
-	if uint64(len(frames)) != count {
-		return journalInvalid, fmt.Sprintf("block interval contains %d entries but payload contains %d frames", count, len(frames))
+	frames, class, err := decodeJournalBlock(payload, first, last)
+	if err != nil {
+		return class, err.Error()
 	}
 	for i, frame := range frames {
-		var entry eventlogpb.EventEntry
-		if err := eventcodec.Decode(frame, &entry); err != nil {
-			return journalInvalid, fmt.Sprintf("event frame %d in block is invalid", i)
-		}
-		sequence := first + uint64(i)
-		if entry.GetCursor() != sequence {
-			return journalInvalid, fmt.Sprintf("event frame %d cursor %d differs from sequence %d", i, entry.GetCursor(), sequence)
+		if _, err := decodeJournalEvent(frame, first+uint64(i)); err != nil {
+			return journalInvalid, err.Error()
 		}
 	}
-	if eventblock.IsBlock(payload) {
-		return journalCurrent, ""
-	}
-	return journalLegacyGzip, ""
-}
-
-func isGzipJournalPayload(payload []byte) bool {
-	return len(payload) >= 2 && payload[0] == 0x1f && payload[1] == 0x8b
+	return class, ""
 }
 
 // JournalInventoryError rejects proof when any legacy block or unclassified

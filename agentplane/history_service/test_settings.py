@@ -7,6 +7,15 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.history_service.settings import Settings
+from agentplane.net.peertls.config import APP_URI, HISTORY_SERVICE_URI, POLICY_CONTROLLER_URI
+
+_POLICY_SERVICE_TLS = {
+    "ca_file": "/test/workload-ca.crt",
+    "server_uri": POLICY_CONTROLLER_URI,
+    "cert_file": "/test/history.crt",
+    "key_file": "/test/history.key",
+    "client_uri": HISTORY_SERVICE_URI,
+}
 
 
 def _settings_source(
@@ -81,6 +90,21 @@ def test_disabled_service_callers_are_absent_from_serialized_settings() -> None:
     assert "service_delegation" not in serialized
     assert "sampler_service_actor" not in serialized["ingress"]
     assert "compact_execution_evidence" not in serialized["ingress"]
+    assert "policy_service" not in serialized
+
+
+def test_policy_service_is_reached_as_history() -> None:
+    source = _settings_source()
+    source["policy_service"] = {"target": "test-policy-controller:8443", "tls": _POLICY_SERVICE_TLS}
+    assert Settings.model_validate(source).model_dump(mode="json")["policy_service"]["target"] == (
+        "test-policy-controller:8443"
+    )
+    source["policy_service"] = {
+        "target": "test-policy-controller:8443",
+        "tls": {**_POLICY_SERVICE_TLS, "client_uri": APP_URI},
+    }
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
 
 
 def test_execution_evidence_compaction_can_be_enabled_explicitly() -> None:

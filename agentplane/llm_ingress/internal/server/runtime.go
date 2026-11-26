@@ -19,6 +19,7 @@ import (
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -53,19 +54,18 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	callerIdentities, err := auth.NewKubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace)
+	identities, stopIdentities, err := startIdentities(ctx, c, kubeConfig)
 	if err != nil {
 		return err
 	}
-	callers, err := auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces, callerIdentities)
+	defer stopIdentities()
+	callers, err := auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces, identities)
 	if err != nil {
 		return err
 	}
 	var identityUIDs auth.IdentityUIDReader
 	if c.CentralSamplerIdentityCallers {
-		if identityUIDs, err = auth.NewKubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace); err != nil {
-			return err
-		}
+		identityUIDs = identities
 	}
 	handler, err := newIngressHandler(c, callers, identityUIDs, logger)
 	if err != nil {
@@ -130,6 +130,20 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 		}
 		return err
 	}
+}
+
+// startIdentities reads Identities through PolicyService when policy_service is set, else directly from
+// policy_namespace; the SVID resolver and the delegation boundary share it. stop ends the PolicyService watch.
+func startIdentities(ctx context.Context, c config, kubeConfig *rest.Config) (auth.IdentityUIDReader, func(), error) {
+	if c.PolicyService == nil {
+		identities, err := auth.NewKubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace)
+		return identities, func() {}, err
+	}
+	cache, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cache, stop, nil
 }
 
 func rpcHandler(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {

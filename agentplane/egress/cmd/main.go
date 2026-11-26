@@ -31,6 +31,8 @@ import (
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -184,10 +186,11 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 		return err
 	}
 
-	identities, err := auth.NewKubernetesIdentityUIDs(base, c.RulesNamespace)
+	identities, rulesIdentities, stopIdentities, err := startIdentities(ctx, c, base)
 	if err != nil {
-		return fmt.Errorf("create live Identity reader: %w", err)
+		return err
 	}
+	defer stopIdentities()
 	records, err := resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, identities)
 	if err != nil {
 		return fmt.Errorf("create live WorkloadCredential resolver: %w", err)
@@ -207,6 +210,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	}
 	watcher, err := informer.New(base, informer.Config{
 		Index: index, RulesNamespace: c.RulesNamespace, CredentialsNamespace: c.CredentialsNamespace,
+		Identities: rulesIdentities,
 	})
 	if err != nil {
 		return err
@@ -263,6 +267,24 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 		return drain(egress, index, adminServer)
 	})
 	return group.Wait()
+}
+
+// startIdentities returns the one Identity source workload authentication and the rules watch both read:
+// the PolicyService view when policy_service is set, else the Identity CRs in rules_namespace. stop ends
+// the view.
+func startIdentities(ctx context.Context, c config, base *rest.Config) (auth.IdentityUIDReader, reader.IdentitySource, func(), error) {
+	if c.PolicyService == nil {
+		identities, err := auth.NewKubernetesIdentityUIDs(base, c.RulesNamespace)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("create live Identity reader: %w", err)
+		}
+		return identities, reader.KubernetesIdentities{}, func() {}, nil
+	}
+	cache, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("start PolicyService Identity view: %w", err)
+	}
+	return cache, reader.CachedIdentities{View: cache}, stop, nil
 }
 
 // drain marks the proxy unready, lets admitted requests finish, then stops the other listeners. The

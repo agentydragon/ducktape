@@ -182,10 +182,11 @@ Two facts connect `order_kept_preserves` to a plan that `Valid` accepts.
   the binding of the one statement that declares the name. That needs the exporting module to declare the name
   itself, which `Linkable` asks: the model does not follow an `export` statement that publishes an imported name.
 
-`AssignsHome` is not among the hypotheses, and has to hold all the same: `splitProgram` moves a statement as it is,
-and the front end reads an assignment to an imported name as another statement (`Target.frozen`). With `AssignsHome`
-no statement assigns a name its module imports, so the files the tool writes are read as `splitProgram`. The test
-checks that on every split (`model/differential.mjs`).
+The theorem begins and ends with CoreJS programs. Parsing and lowering the source,
+and printing the constructed program, are trusted boundaries; this theorem does not
+prove correspondence with JavaScript source or output bytes.
+`AssignsHome` is not a hypothesis of this model theorem; the trusted lowering must
+account for assignments to imported bindings (`Target.frozen`).
 -/
 
 /-- A module of a plan as a module of the model. -/
