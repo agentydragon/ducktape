@@ -53,6 +53,9 @@ use crate::analysis_inputs::{
 use crate::execution_evidence::SourceLocator;
 
 use crate::facts::abstract_domain::value::Value;
+use crate::facts::sync_effects::execution_index::{
+    InferredCallableCapabilities, PreparedCallableCapabilities,
+};
 use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::program_bindings::{
@@ -1253,40 +1256,8 @@ pub fn resolve_imported_callable_summaries(
         .modules()
         .flat_map(|module| bindings.imports(module).map(|(_, export)| export))
         .collect();
-    let mut export_summaries: BTreeMap<ExportId, CallableExportProof> = BTreeMap::new();
-    for (module, exports) in asserted {
-        for export in exports {
-            if modules
-                .get(module)
-                .is_some_and(|facts| facts.exports.contains_key(export))
-            {
-                export_summaries
-                    .entry(
-                        bindings
-                            .export_id(module, export)
-                            .expect("prepared callable export"),
-                    )
-                    .or_default()
-                    .add(
-                        CallableSummary::callback_factory(
-                            CallbackFactoryEvidence::AuthorAssertion {
-                                defining_module: module.clone(),
-                                export: export.clone(),
-                            },
-                        ),
-                        ProofDependencies::default(),
-                    );
-            } else {
-                diagnostics.record_chunk(
-                    module,
-                    ChunkDiagnostic::DanglingExportContract {
-                        contract: ExportContract::CallbackFactoryExports,
-                        export: export.clone(),
-                    },
-                );
-            }
-        }
-    }
+    let mut export_summaries =
+        asserted_callback_factory_proofs(bindings, modules, asserted, diagnostics);
     // The bundle-owned globals are a whole-program greatest fixed point over
     // every module's writes; a second preparation reads them.
     let prepare = |bundle_globals: &BundleGlobalNames| -> Result<_> {
@@ -1392,141 +1363,14 @@ pub fn resolve_imported_callable_summaries(
             ) = prepare(&bundle_globals)?;
         }
     }
-    let mut requested_original_exports = (*requested_original_provider_exports).clone();
-    let mut pending = requested_original_exports
-        .iter()
-        .cloned()
-        .collect::<Vec<_>>();
-    while let Some((module, export)) = pending.pop() {
-        let Some(local) = modules
-            .get(&module)
-            .and_then(|facts| facts.exports.get(&export))
-        else {
-            continue;
-        };
-        let Some(target) = modules[&module].imports.get(local) else {
-            continue;
-        };
-        let next = (target.module.clone(), target.export.clone());
-        if requested_original_exports.insert(next.clone()) {
-            pending.push(next);
-        }
-    }
-    let mut known_original_external_writes = BTreeMap::new();
-    for (module, export) in requested_original_exports {
-        let Some(index) = prepared.get(&module) else {
-            continue;
-        };
-        let Some(local) = modules[&module].exports.get(&export) else {
-            continue;
-        };
-        if let Some(reason) = index.known_external_write_for_local(local) {
-            known_original_external_writes
-                .entry(module)
-                .or_insert_with(BTreeMap::new)
-                .insert(export, reason);
-        }
-    }
-    for input in selected_native_operation_inputs.values().flatten() {
-        let name = match input.evidence.operation {
-            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => Some("Symbol"),
-            operation => operation.empty_constructor_name(),
-        };
-        let Some(name) = name else {
-            continue;
-        };
-        if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
-            facts
-                .known_global_native_operation_mutation_owner(input.evidence.operation)
-                .map(|owner| (module, owner))
-        }) {
-            bail!(
-                "{} is contradicted by a positively identified global {name} replacement or operation mutation in provider {module}, source unit {}",
-                input.evidence.spec_location,
-                owner.0
-            );
-        }
-    }
-    if selected_native_operation_inputs
-        .values()
-        .flatten()
-        .any(|input| {
-            input.evidence.operation
-                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
-        })
-        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
-            facts
-                .known_object_freeze_mutation_owner()
-                .map(|owner| (module, owner))
-        })
-    {
-        let request = selected_native_operation_inputs
-            .values()
-            .flatten()
-            .find(|input| {
-                input.evidence.operation
-                    == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
-            })
-            .map(|input| input.evidence.spec_location.as_str())
-            .unwrap_or("native_call_identity_inputs");
-        bail!(
-            "{request} is contradicted by a positively identified required Object.freeze slot write in provider {module}, source unit {}",
-            owner.0
-        );
-    }
-    if selected_native_operation_inputs
-        .values()
-        .flatten()
-        .any(|input| {
-            input.evidence.operation
-                == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
-        })
-        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
-            facts
-                .known_set_protocol_mutation_owner()
-                .map(|owner| (module, owner))
-        })
-    {
-        let request = selected_native_operation_inputs
-            .values()
-            .flatten()
-            .find(|input| {
-                input.evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
-            })
-            .map(|input| input.evidence.spec_location.as_str())
-            .unwrap_or("native_operation_inputs");
-        bail!(
-            "{request} is contradicted by a positively identified required Set construction protocol slot write in provider {module}, source unit {}",
-            owner.0
-        );
-    }
-    // Source inference must finish before any root can seed structural flow.
-    // The completed raw census is conservative; later branch refinement may
-    // not retroactively introduce a root into an already solved flow.
-    let mut preflow_native_integrity =
-        crate::facts::sync_effects::execution_index::resolve_native_integrity(
-            prepared.values().map(|facts| facts.native_writes()),
-        );
-    // Validate the existing program premise against the conservative raw
-    // census too. Failure only declines this early inference; the established
-    // refined-census check below remains authoritative for the author input.
-    let preflow_premises_hold = intrinsics_never_written.is_empty()
-        || crate::facts::sync_effects::execution_index::apply_intrinsics_never_written(
-            &mut preflow_native_integrity,
-            &intrinsics_never_written,
-        )
-        .is_ok();
-    let inferred_set_constructions: BTreeMap<_, _> = prepared
-        .iter()
-        .filter_map(|(module, facts)| {
-            if !preflow_premises_hold {
-                return None;
-            }
-            let proofs = facts.inferred_set_constructions(&preflow_native_integrity);
-            (!proofs.is_empty()).then_some(((*module).clone(), proofs))
-        })
-        .collect();
+    let known_original_external_writes = resolve_known_original_external_writes(
+        modules,
+        &prepared,
+        requested_original_provider_exports,
+    );
+    reject_contradicted_native_operation_inputs(selected_native_operation_inputs, &prepared)?;
+    let inferred_set_constructions =
+        preflow_set_constructions(&prepared, &intrinsics_never_written);
 
     // Author declarations are available before flow. Inferred wrapper proofs
     // depend on the completed flow and must never feed this solve back into itself.
@@ -1619,6 +1463,342 @@ pub fn resolve_imported_callable_summaries(
         diagnostics,
     );
     diagnostics.progress("*", progress::Phase::ProgramValueFlow, progress::State::End);
+    add_inferred_wrapper_summaries(
+        bindings,
+        modules,
+        &prepared,
+        &flow_views,
+        &structural_flows,
+        &mut export_summaries,
+    );
+    // This projection is the source-only input to native branch refinement.
+    // Generic inferred callback factories are deliberately added after the
+    // completed all-module native census and cannot flow back into it.
+    let source_only_imports = solve_callable_import_projections(bindings, export_summaries.clone());
+    for (module, facts) in &mut prepared {
+        facts.refine_native_branches(
+            source_only_imports
+                .get(module.as_str())
+                .expect("every prepared module has an import projection"),
+        );
+        facts.locate_native_writes(module, modules[*module].locator());
+    }
+    let mut native_integrity =
+        crate::facts::sync_effects::execution_index::resolve_native_integrity(
+            prepared.values().map(|facts| facts.native_writes()),
+        );
+    if !intrinsics_never_written.is_empty() {
+        crate::facts::sync_effects::execution_index::apply_intrinsics_never_written(
+            &mut native_integrity,
+            &intrinsics_never_written,
+        )
+        .map_err(|refutations| {
+            anyhow::anyhow!(
+                "program_premises.intrinsics_never_written is refuted by census writes on the exact objects of named families: {}",
+                refutations.join("; ")
+            )
+        })?;
+    }
+    validate_descriptor_copy_assertions(
+        bindings,
+        modules,
+        descriptor_copy_asserted,
+        &required,
+        &prepared,
+    )?;
+    reject_contradicted_array_spread_inputs(
+        selected_imported_primitive_array_spread_inputs,
+        &prepared,
+    )?;
+    let inferred: BTreeMap<_, _> = prepared
+        .into_iter()
+        .map(|(module, prepared)| {
+            let views = &flow_views[module];
+            let required_stable_providers = descriptor_copy_asserted
+                .get(module)
+                .into_iter()
+                .flat_map(|exports| exports.keys())
+                .filter_map(|export| modules[module].exports.get(export.as_str()))
+                .cloned()
+                .collect();
+            (
+                module,
+                crate::facts::sync_effects::execution_index::infer_callable_capabilities(
+                    views,
+                    prepared,
+                    &native_integrity,
+                    &required_stable_providers,
+                    modules[module].exports.keys().any(|export| {
+                        required.contains(
+                            &bindings
+                                .export_id(module, export)
+                                .expect("prepared callable export"),
+                        )
+                    }),
+                    || structural_flows.get(module).expect("prepared program flow"),
+                ),
+            )
+        })
+        .collect();
+    add_descriptor_copy_summaries(
+        bindings,
+        modules,
+        descriptor_copy_asserted,
+        &required,
+        &inferred,
+        &mut export_summaries,
+    )?;
+    add_inferred_capability_summaries(
+        bindings,
+        modules,
+        &required,
+        &inferred,
+        &mut export_summaries,
+    );
+    let mut imported_callables = solve_callable_import_projections(bindings, export_summaries);
+    for (module, calls) in structural_flows.take_importer_cell_reads(bindings) {
+        for (callee, cells) in calls {
+            imported_callables
+                .entry(module.clone())
+                .or_default()
+                .entry(callee)
+                .or_default()
+                .may_read_importer_cells
+                .extend(cells);
+        }
+    }
+    Ok(ResolvedCallableSummaries {
+        bundle_globals,
+        imported_callables,
+        native_integrity: Some(native_integrity),
+        value_inputs: resolved_value_inputs,
+        native_operation_inputs: resolved_native_operation_inputs,
+        imported_primitive_array_spread_inputs: BTreeMap::new(),
+        selected_imported_primitive_array_spread_inputs:
+            selected_imported_primitive_array_spread_inputs.clone(),
+        inferred_set_constructions,
+        argument_inputs: argument_inputs.clone(),
+        structural_flows,
+        known_original_external_writes,
+    })
+}
+
+/// Callback-factory proofs for the author-asserted exports that exist.
+fn asserted_callback_factory_proofs(
+    bindings: &ProgramBindings,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+    diagnostics: &Diagnostics,
+) -> BTreeMap<ExportId, CallableExportProof> {
+    let mut export_summaries: BTreeMap<ExportId, CallableExportProof> = BTreeMap::new();
+    for (module, exports) in asserted {
+        for export in exports {
+            if modules
+                .get(module)
+                .is_some_and(|facts| facts.exports.contains_key(export))
+            {
+                export_summaries
+                    .entry(
+                        bindings
+                            .export_id(module, export)
+                            .expect("prepared callable export"),
+                    )
+                    .or_default()
+                    .add(
+                        CallableSummary::callback_factory(
+                            CallbackFactoryEvidence::AuthorAssertion {
+                                defining_module: module.clone(),
+                                export: export.clone(),
+                            },
+                        ),
+                        ProofDependencies::default(),
+                    );
+            } else {
+                diagnostics.record_chunk(
+                    module,
+                    ChunkDiagnostic::DanglingExportContract {
+                        contract: ExportContract::CallbackFactoryExports,
+                        export: export.clone(),
+                    },
+                );
+            }
+        }
+    }
+    export_summaries
+}
+
+/// Source-known external writes of the requested original exports and the
+/// exports they re-export.
+fn resolve_known_original_external_writes(
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
+    requested_original_provider_exports: &BTreeSet<(SourceModuleKey, String)>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, String>> {
+    let mut requested_original_exports = (*requested_original_provider_exports).clone();
+    let mut pending = requested_original_exports
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    while let Some((module, export)) = pending.pop() {
+        let Some(local) = modules
+            .get(&module)
+            .and_then(|facts| facts.exports.get(&export))
+        else {
+            continue;
+        };
+        let Some(target) = modules[&module].imports.get(local) else {
+            continue;
+        };
+        let next = (target.module.clone(), target.export.clone());
+        if requested_original_exports.insert(next.clone()) {
+            pending.push(next);
+        }
+    }
+    let mut known_original_external_writes = BTreeMap::new();
+    for (module, export) in requested_original_exports {
+        let Some(index) = prepared.get(&module) else {
+            continue;
+        };
+        let Some(local) = modules[&module].exports.get(&export) else {
+            continue;
+        };
+        if let Some(reason) = index.known_external_write_for_local(local) {
+            known_original_external_writes
+                .entry(module)
+                .or_insert_with(BTreeMap::new)
+                .insert(export, reason);
+        }
+    }
+    known_original_external_writes
+}
+
+/// Rejects native-operation inputs a positively identified source mutation
+/// contradicts.
+fn reject_contradicted_native_operation_inputs(
+    selected_native_operation_inputs: &BTreeMap<SourceModuleKey, Vec<SelectedNativeOperationInput>>,
+    prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
+) -> Result<()> {
+    for input in selected_native_operation_inputs.values().flatten() {
+        let name = match input.evidence.operation {
+            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => Some("Symbol"),
+            operation => operation.empty_constructor_name(),
+        };
+        let Some(name) = name else {
+            continue;
+        };
+        if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_global_native_operation_mutation_owner(input.evidence.operation)
+                .map(|owner| (module, owner))
+        }) {
+            bail!(
+                "{} is contradicted by a positively identified global {name} replacement or operation mutation in provider {module}, source unit {}",
+                input.evidence.spec_location,
+                owner.0
+            );
+        }
+    }
+    if selected_native_operation_inputs
+        .values()
+        .flatten()
+        .any(|input| {
+            input.evidence.operation
+                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+        })
+        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_object_freeze_mutation_owner()
+                .map(|owner| (module, owner))
+        })
+    {
+        let request = selected_native_operation_inputs
+            .values()
+            .flatten()
+            .find(|input| {
+                input.evidence.operation
+                    == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+            })
+            .map(|input| input.evidence.spec_location.as_str())
+            .unwrap_or("native_call_identity_inputs");
+        bail!(
+            "{request} is contradicted by a positively identified required Object.freeze slot write in provider {module}, source unit {}",
+            owner.0
+        );
+    }
+    if selected_native_operation_inputs
+        .values()
+        .flatten()
+        .any(|input| {
+            input.evidence.operation
+                == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
+        })
+        && let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
+            facts
+                .known_set_protocol_mutation_owner()
+                .map(|owner| (module, owner))
+        })
+    {
+        let request = selected_native_operation_inputs
+            .values()
+            .flatten()
+            .find(|input| {
+                input.evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
+            })
+            .map(|input| input.evidence.spec_location.as_str())
+            .unwrap_or("native_operation_inputs");
+        bail!(
+            "{request} is contradicted by a positively identified required Set construction protocol slot write in provider {module}, source unit {}",
+            owner.0
+        );
+    }
+    Ok(())
+}
+
+/// `Set` constructions inferred against the raw pre-flow census, or none
+/// when the program premises fail on it.
+fn preflow_set_constructions(
+    prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
+    intrinsics_never_written: &BTreeSet<NativeIntrinsic>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>> {
+    // Source inference must finish before any root can seed structural flow.
+    // The completed raw census is conservative; later branch refinement may
+    // not retroactively introduce a root into an already solved flow.
+    let mut preflow_native_integrity =
+        crate::facts::sync_effects::execution_index::resolve_native_integrity(
+            prepared.values().map(|facts| facts.native_writes()),
+        );
+    // Validate the existing program premise against the conservative raw
+    // census too. Failure only declines this early inference; the established
+    // refined-census check below remains authoritative for the author input.
+    let preflow_premises_hold = intrinsics_never_written.is_empty()
+        || crate::facts::sync_effects::execution_index::apply_intrinsics_never_written(
+            &mut preflow_native_integrity,
+            intrinsics_never_written,
+        )
+        .is_ok();
+    let inferred_set_constructions: BTreeMap<_, _> = prepared
+        .iter()
+        .filter_map(|(module, facts)| {
+            if !preflow_premises_hold {
+                return None;
+            }
+            let proofs = facts.inferred_set_constructions(&preflow_native_integrity);
+            (!proofs.is_empty()).then_some(((*module).clone(), proofs))
+        })
+        .collect();
+    inferred_set_constructions
+}
+
+/// Adds the structurally inferred immutable-wrapper callback factories.
+fn add_inferred_wrapper_summaries(
+    bindings: &ProgramBindings,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
+    flow_views: &BTreeMap<&SourceModuleKey, Vec<TopLevelItemView<'_>>>,
+    structural_flows: &crate::facts::ProgramValueFlows,
+    export_summaries: &mut BTreeMap<ExportId, CallableExportProof>,
+) {
     // Argument/entry coverage is structural and independent of the native
     // integrity that it can refine. Author timing assertions cannot supply it.
     for (module, facts) in modules {
@@ -1653,34 +1833,20 @@ pub fn resolve_imported_callable_summaries(
                 .add(summary, ProofDependencies::default());
         }
     }
-    // This projection is the source-only input to native branch refinement.
-    // Generic inferred callback factories are deliberately added after the
-    // completed all-module native census and cannot flow back into it.
-    let source_only_imports = solve_callable_import_projections(bindings, export_summaries.clone());
-    for (module, facts) in &mut prepared {
-        facts.refine_native_branches(
-            source_only_imports
-                .get(module.as_str())
-                .expect("every prepared module has an import projection"),
-        );
-        facts.locate_native_writes(module, modules[*module].locator());
-    }
-    let mut native_integrity =
-        crate::facts::sync_effects::execution_index::resolve_native_integrity(
-            prepared.values().map(|facts| facts.native_writes()),
-        );
-    if !intrinsics_never_written.is_empty() {
-        crate::facts::sync_effects::execution_index::apply_intrinsics_never_written(
-            &mut native_integrity,
-            &intrinsics_never_written,
-        )
-        .map_err(|refutations| {
-            anyhow::anyhow!(
-                "program_premises.intrinsics_never_written is refuted by census writes on the exact objects of named families: {}",
-                refutations.join("; ")
-            )
-        })?;
-    }
+}
+
+/// Rejects malformed or source-contradicted descriptor-copy factory
+/// assertions on required exports.
+fn validate_descriptor_copy_assertions(
+    bindings: &ProgramBindings,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    descriptor_copy_asserted: &BTreeMap<
+        SourceModuleKey,
+        BTreeMap<String, Vec<spec::DescriptorCopyFactorySignature>>,
+    >,
+    required: &BTreeSet<ExportId>,
+    prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
+) -> Result<()> {
     for (module, exports) in descriptor_copy_asserted {
         for (export, signatures) in exports {
             if !required.contains(
@@ -1731,6 +1897,18 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
+    Ok(())
+}
+
+/// Rejects imported primitive-array spread inputs when the all-source
+/// census writes the Array iterator protocol.
+fn reject_contradicted_array_spread_inputs(
+    selected_imported_primitive_array_spread_inputs: &BTreeMap<
+        SourceModuleKey,
+        Vec<crate::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+    >,
+    prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
+) -> Result<()> {
     // Imported spread premises use a premise-relative view of the all-source
     // census while preserving each candidate's Array effect and fallback.
     let array_spread_request = selected_imported_primitive_array_spread_inputs
@@ -1758,36 +1936,22 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
-    let inferred: BTreeMap<_, _> = prepared
-        .into_iter()
-        .map(|(module, prepared)| {
-            let views = &flow_views[module];
-            let required_stable_providers = descriptor_copy_asserted
-                .get(module)
-                .into_iter()
-                .flat_map(|exports| exports.keys())
-                .filter_map(|export| modules[module].exports.get(export.as_str()))
-                .cloned()
-                .collect();
-            (
-                module,
-                crate::facts::sync_effects::execution_index::infer_callable_capabilities(
-                    views,
-                    prepared,
-                    &native_integrity,
-                    &required_stable_providers,
-                    modules[module].exports.keys().any(|export| {
-                        required.contains(
-                            &bindings
-                                .export_id(module, export)
-                                .expect("prepared callable export"),
-                        )
-                    }),
-                    || structural_flows.get(module).expect("prepared program flow"),
-                ),
-            )
-        })
-        .collect();
+    Ok(())
+}
+
+/// Adds descriptor-copy factory summaries for asserted required exports
+/// that are stable direct function providers.
+fn add_descriptor_copy_summaries(
+    bindings: &ProgramBindings,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    descriptor_copy_asserted: &BTreeMap<
+        SourceModuleKey,
+        BTreeMap<String, Vec<spec::DescriptorCopyFactorySignature>>,
+    >,
+    required: &BTreeSet<ExportId>,
+    inferred: &BTreeMap<&SourceModuleKey, InferredCallableCapabilities>,
+    export_summaries: &mut BTreeMap<ExportId, CallableExportProof>,
+) -> Result<()> {
     for (module, exports) in descriptor_copy_asserted {
         for (export, signatures) in exports {
             let key = bindings
@@ -1820,6 +1984,18 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
+    Ok(())
+}
+
+/// Adds the inferred callback-factory, returned-record, foreign-call and
+/// namespace-wrapper summaries of required exports.
+fn add_inferred_capability_summaries(
+    bindings: &ProgramBindings,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    required: &BTreeSet<ExportId>,
+    inferred: &BTreeMap<&SourceModuleKey, InferredCallableCapabilities>,
+    export_summaries: &mut BTreeMap<ExportId, CallableExportProof>,
+) {
     // A construction premise must hold in every analyzed chunk's census,
     // including the importer's.
     let intact_collections = inferred
@@ -1967,32 +2143,6 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
-    let mut imported_callables = solve_callable_import_projections(bindings, export_summaries);
-    for (module, calls) in structural_flows.take_importer_cell_reads(bindings) {
-        for (callee, cells) in calls {
-            imported_callables
-                .entry(module.clone())
-                .or_default()
-                .entry(callee)
-                .or_default()
-                .may_read_importer_cells
-                .extend(cells);
-        }
-    }
-    Ok(ResolvedCallableSummaries {
-        bundle_globals,
-        imported_callables,
-        native_integrity: Some(native_integrity),
-        value_inputs: resolved_value_inputs,
-        native_operation_inputs: resolved_native_operation_inputs,
-        imported_primitive_array_spread_inputs: BTreeMap::new(),
-        selected_imported_primitive_array_spread_inputs:
-            selected_imported_primitive_array_spread_inputs.clone(),
-        inferred_set_constructions,
-        argument_inputs: argument_inputs.clone(),
-        structural_flows,
-        known_original_external_writes,
-    })
 }
 
 #[cfg(test)]
