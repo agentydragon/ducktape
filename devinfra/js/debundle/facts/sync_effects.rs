@@ -10,8 +10,8 @@ mod effect_coverage;
 pub(crate) use effect_coverage::{
     BindingEffectAuthority, BindingEffectCoverage, SavedBindingEffectCoverage,
 };
-pub(crate) mod execution_index;
-pub(crate) mod interpreter;
+pub mod execution_index;
+pub mod interpreter;
 mod kernel;
 mod legacy;
 mod local_operations;

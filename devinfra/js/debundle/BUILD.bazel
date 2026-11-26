@@ -573,7 +573,6 @@ rust_library(
         "analysis_test_support.rs",
         "assignment_assembly.rs",
         "atomic_groups.rs",
-        "cross_module_purity.rs",
         "diagnostics.rs",
         "diagnostics/progress.rs",
         "execution_evidence.rs",
@@ -736,7 +735,6 @@ rust_library(
         "reports/saved.rs",
         "reports/schema.rs",
         "reports/spec_lint.rs",
-        "swc_parallel.rs",
     ],
     compile_data = [":standard_globals_json"],
     crate_root = "lib.rs",
@@ -783,6 +781,37 @@ rust_test(
         "@crates//:rmp-serde",
         "@crates//:swc_ecma_parser",
         "@crates//:tempfile",
+    ],
+)
+
+rust_library(
+    name = "cross_module_purity",
+    srcs = [
+        "cross_module_purity.rs",
+        "swc_parallel.rs",
+    ],
+    crate_root = "cross_module_purity.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":analysis_model",
+        ":binding_targets",
+        ":js_ast",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "cross_module_purity_test",
+    crate = ":cross_module_purity",
+    edition = "2024",
+    deps = [
+        "@crates//:swc_ecma_parser",
+        "@crates//:swc_ecma_visit",
     ],
 )
 

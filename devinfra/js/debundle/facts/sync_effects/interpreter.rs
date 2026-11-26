@@ -6,7 +6,7 @@ mod factory_results;
 mod local_construction;
 mod native_calls;
 mod read_only_callbacks;
-pub(crate) mod synchronous_calls;
+pub mod synchronous_calls;
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
 use super::allocation_transfer::MAX_EXACT_ARRAY_SPREAD_SLOTS;

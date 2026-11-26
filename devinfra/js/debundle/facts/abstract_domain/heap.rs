@@ -429,7 +429,7 @@ fn plain_array_source(expr: &Expr) -> Option<Option<String>> {
 /// receiver of another method. Without value flow each binding denotes only
 /// its own initializer, and aliasing one is an escape. So is handing it to an
 /// element callback that can see the array itself (`ArrayMethodScan`).
-pub(crate) fn plain_array_bindings(
+pub fn plain_array_bindings(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
 ) -> BTreeSet<String> {

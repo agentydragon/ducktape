@@ -871,13 +871,13 @@ pub struct StructuralStatementFacts {
     /// including nested lazy syntax. Retained to prove unique stable bindings
     /// without another AST census.
     pub(crate) var_declaration_counts: BTreeMap<Id, usize>,
-    pub(crate) var_initializer_counts: BTreeMap<Id, usize>,
+    pub var_initializer_counts: BTreeMap<Id, usize>,
     /// Direct top-level `var name = ...` candidates. Initializer type is
     /// checked later; this records only source shape and hygienic identity.
     pub(crate) top_level_var_initializer_candidates: BTreeSet<Id>,
     pub reads: PositionBucketed<BTreeSet<Id>>,
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
-    pub(crate) member_write_roots: BTreeSet<Id>,
+    pub member_write_roots: BTreeSet<Id>,
     pub(crate) argument_value_escapes: BTreeMap<Id, BTreeSet<usize>>,
     pub calls: PositionBucketed<BTreeSet<Id>>,
     pub(crate) constructor: Option<ConstructorFacts>,
@@ -1008,22 +1008,21 @@ pub(crate) struct ConstructorFacts {
 pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub(crate) imported_bindings: BTreeSet<Id>,
-    pub(crate) value_flow: std::sync::Arc<super::ChunkValueFlow>,
+    pub value_flow: std::sync::Arc<super::ChunkValueFlow>,
     pub(crate) dynamic_scope: super::DynamicScopeFact,
-    pub(crate) set_iterable_shapes: super::SetIterableShapes,
-    pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,
-    pub(crate) local_class_shapes: super::LocalClassConstructionShapes,
-    pub(crate) plain_data_bindings: Vec<String>,
+    pub set_iterable_shapes: super::SetIterableShapes,
+    pub stable_array_spread_shapes: super::StableArraySpreadShapes,
+    pub local_class_shapes: super::LocalClassConstructionShapes,
+    pub plain_data_bindings: Vec<String>,
     /// Top-level `var` binding IDs that pass the structural stability gates.
     /// Value inference admits only candidates with a proven Number initializer;
     /// at arbitrary module positions the resulting value class is Number or
     /// pre-initialization `undefined`, never exact Number.
     pub(crate) stable_var_number_candidates: BTreeSet<Id>,
-    pub(crate) plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
-    pub(crate) plain_data_inference_uses:
+    pub plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    pub plain_data_inference_uses:
         BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
-    pub(crate) source_semantic_facts:
-        Option<std::sync::Arc<super::semantic_inference::SemanticFacts>>,
+    pub source_semantic_facts: Option<std::sync::Arc<super::semantic_inference::SemanticFacts>>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,

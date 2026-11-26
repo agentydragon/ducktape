@@ -2,7 +2,7 @@
 //!
 //! This stage resolves each chunk's imports against the artifact, gathers
 //! source-resolved inputs, and calls the cross-module purity analysis
-//! (`analysis::cross_module_purity`). Its results feed each chunk's
+//! (`cross_module_purity`). Its results feed each chunk's
 //! `AnalysisInputs`, including `imported_purities` for imported calls.
 
 use analysis::diagnostics::{Diagnostics, ExportContract};
@@ -19,17 +19,17 @@ use analysis::analysis_inputs::{
     ResolvedInitializerCallEffectInput, ResolvedNativeOperationInput, ResolvedNoAccessorInstall,
     SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
-use analysis::cross_module_purity::{
-    CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedCallableSummaries,
-    resolve_export_primitives, resolve_imported_callable_summaries, resolve_imported_purities,
-    resolve_stable_imports,
-};
 use analysis::facts::abstract_domain::value::Value;
 use analysis::program_bindings::{ProgramBindings, ResolvedImport};
 use analysis::purity::Purity;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::reports::{ImportSpecifierKind, StaticModuleRequest, StaticModuleRequestMode};
 use artifact::{ArtifactIndexes, ChunkBundle};
+use cross_module_purity::{
+    CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedCallableSummaries,
+    resolve_export_primitives, resolve_imported_callable_summaries, resolve_imported_purities,
+    resolve_stable_imports,
+};
 use graph_provenance::{CurrentRoots, GraphProvenance, InputRoot};
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{

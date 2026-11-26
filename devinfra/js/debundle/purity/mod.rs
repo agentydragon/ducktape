@@ -71,7 +71,9 @@ pub(crate) use redundant_hints::*;
 pub(crate) use ts_enum_iife::*;
 
 // Public API: importable at `purity::<item>`.
-pub use code_graph::ChunkCodeGraph;
+pub use code_graph::{ChunkCodeGraph, PurityCallContext, PurityShapeInputs};
+pub use effect_inference::{PurityEffectRules, PurityMode};
+pub use order_dependent_reads::immutable_declarations;
 pub use purity_type::{Purity, PurityReason, PurityRule};
 pub use redundant_hints::{
     RedundantPureMemberHint, RedundantPureMemberReason, RedundantPurityHint,

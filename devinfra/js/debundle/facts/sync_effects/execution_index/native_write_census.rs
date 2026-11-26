@@ -349,7 +349,7 @@ pub(super) fn intrinsic_write_target(
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct NativeWriteCensus {
+pub struct NativeWriteCensus {
     pub(super) unconditional: IntrinsicRoots,
     /// Host claims a receiver discharge consumed.
     pub(super) host_behavior: BTreeSet<HostBehaviorKey>,
@@ -361,7 +361,7 @@ pub(crate) struct NativeWriteCensus {
 /// A premise-relative view used only to decide whether a selected Array-spread
 /// input is contradicted by a source-known iterator protocol write. Its root
 /// closure never feeds ordinary native-integrity inference.
-pub(crate) struct ArraySpreadProtocolIntegrity {
+pub struct ArraySpreadProtocolIntegrity {
     pub(super) mutated: IntrinsicRoots,
     pub(super) global_array_binding_mutated: bool,
     pub(super) premise_authorized_next_writes: BTreeSet<ArrayIteratorNextWriteId>,
@@ -439,7 +439,7 @@ impl IterativeRules for NativeIntegrityRootRules<'_> {
 /// affected families. Propagate invalidation to a fixed point, including writes
 /// in deferred bodies. This is a closed-write invariant, not self-certification
 /// from the absence of a fact produced by the same candidate.
-pub(crate) fn resolve_native_integrity<'a>(
+pub fn resolve_native_integrity<'a>(
     censuses: impl IntoIterator<Item = &'a NativeWriteCensus>,
 ) -> NativeIntegrity {
     let censuses: Vec<_> = censuses.into_iter().collect();
@@ -530,7 +530,7 @@ pub(crate) fn resolve_native_integrity<'a>(
 /// slots hold whatever the census witnesses, so they leave `mutated` and each
 /// witness reaching them joins the audit list. A witness writing such a family
 /// on its exact object refutes the premise; every such site is returned.
-pub(crate) fn apply_intrinsics_never_written(
+pub fn apply_intrinsics_never_written(
     integrity: &mut NativeIntegrity,
     families: &BTreeSet<NativeIntrinsic>,
 ) -> std::result::Result<(), Vec<String>> {
@@ -675,7 +675,7 @@ fn source_global_array_binding_write(censuses: &[&NativeWriteCensus]) -> bool {
     })
 }
 
-pub(crate) fn resolve_array_spread_protocol_integrity<'a>(
+pub fn resolve_array_spread_protocol_integrity<'a>(
     censuses: impl IntoIterator<Item = &'a NativeWriteCensus>,
 ) -> ArraySpreadProtocolIntegrity {
     let source_censuses: Vec<_> = censuses.into_iter().collect();

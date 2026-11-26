@@ -1,6 +1,6 @@
 //! Program-level cross-module function-purity oracle.
 //!
-//! The per-chunk purity classifier ([`crate::purity::ChunkCodeGraph`])
+//! The per-chunk purity classifier ([`analysis::purity::ChunkCodeGraph`])
 //! treats a call to an imported binding as `unknown_call` — it cannot see
 //! into the other module's body. On a real app bundle that is the dominant
 //! impurity (every `memo(fn)` / `forwardRef(fn)` factory wrap), and via the
@@ -21,7 +21,7 @@
 //!
 //! `Pure` here also means order-free for the importer: a body that reads its
 //! module's state, or an import a provider can rebind, gets an
-//! `OrderDependentRead` effect (`crate::purity::OrderDependentCells`),
+//! `OrderDependentRead` effect (`analysis::purity::OrderDependentCells`),
 //! because no importer's dependency graph orders that read against the
 //! state's writers.
 //!
@@ -30,7 +30,9 @@
 //! export, an unresolved re-export) simply gets no entry, so the call stays
 //! `unknown_call` exactly as before. Pinned assertions remain trusted axioms.
 
-use crate::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract, progress};
+mod swc_parallel;
+
+use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract, progress};
 use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -40,7 +42,7 @@ use js_ast::SourceLineIndex;
 use swc_common::{BytePos, Spanned};
 use swc_ecma_ast::{Decl, Expr, Lit, ModuleDecl, ModuleItem, Pat, Stmt};
 
-use crate::analysis_inputs::{
+use analysis::analysis_inputs::{
     BundleGlobalNames, CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments,
     DeferredRecordMember, DescriptorCopyFactorySummary, ForeignCallSummary,
     ImportedPrimitiveArrayOperandEvidence, ImportedPrimitiveArraySpreadInputEvidence,
@@ -50,18 +52,18 @@ use crate::analysis_inputs::{
     ResolvedNativeOperationInput, ReturnedRecordSummary, SelectedBindingValueInput,
     SelectedNativeOperationInput,
 };
-use crate::execution_evidence::SourceLocator;
+use analysis::execution_evidence::SourceLocator;
 
-use crate::facts::abstract_domain::value::Value;
-use crate::facts::sync_effects::execution_index::{
+use analysis::facts::abstract_domain::value::Value;
+use analysis::facts::sync_effects::execution_index::{
     InferredCallableCapabilities, PreparedCallableCapabilities,
 };
-use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::program_bindings::{
+use analysis::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
+use analysis::inference::{FactContext, IterativeInference, IterativeRules};
+use analysis::program_bindings::{
     BindingId, ExportId, ModuleBindings, ProgramBindings, ResolvedImport, SourceModuleKey,
 };
-use crate::purity::{ChunkCodeGraph, Purity, PurityEffectRules, PurityMode};
+use analysis::purity::{ChunkCodeGraph, Purity, PurityEffectRules, PurityMode};
 
 /// A stable export after its imports resolved: its own types and the exports
 /// it copies.
@@ -204,11 +206,12 @@ pub struct ModulePurityFacts<'a> {
 struct PreparedModulePurityFacts<'a> {
     views: Vec<TopLevelItemView<'a>>,
     shadowed: BTreeSet<&'static str>,
-    set_iterable_proof: crate::facts::SetIterableProof,
-    local_class_construction_proof: crate::facts::LocalClassConstructionProof,
+    set_iterable_proof: analysis::facts::SetIterableProof,
+    local_class_construction_proof: analysis::facts::LocalClassConstructionProof,
     plain_data_bindings: Vec<String>,
-    plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
-    plain_data_inference_uses: BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
+    plain_data_dependencies: BTreeMap<String, analysis::analysis_inputs::ProofDependencies>,
+    plain_data_inference_uses:
+        BTreeMap<String, BTreeSet<analysis::analysis_provenance::InferenceUse>>,
     plain_array_bindings: BTreeSet<String>,
     known_eager_rebindings: BTreeMap<swc_ecma_ast::Id, BTreeSet<u32>>,
     known_lazy_rebindings: BTreeSet<swc_ecma_ast::Id>,
@@ -235,7 +238,7 @@ fn var_decl_for_source_item(item: &ModuleItem) -> Option<&swc_ecma_ast::VarDecl>
 
 fn selected_array_declarator<'a>(
     module: &'a ModulePurityFacts<'_>,
-    declaration: &crate::analysis_inputs::SourceDeclaration,
+    declaration: &analysis::analysis_inputs::SourceDeclaration,
     request: &str,
 ) -> Result<(&'a swc_ecma_ast::VarDeclarator, swc_ecma_ast::Id)> {
     let item = module
@@ -306,7 +309,7 @@ fn resolve_imported_primitive_array_spread_inputs(
     prepared: &BTreeMap<SourceModuleKey, PreparedModulePurityFacts<'_>>,
     selected: &BTreeMap<
         SourceModuleKey,
-        Vec<crate::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+        Vec<analysis::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
     >,
 ) -> Result<BTreeMap<SourceModuleKey, Vec<ResolvedImportedPrimitiveArraySpreadInput>>> {
     let mut resolved = BTreeMap::new();
@@ -543,18 +546,18 @@ impl<'a> ModulePurityFacts<'a> {
     /// summary pass already solved it.
     fn prepare(
         &self,
-        inputs: &crate::analysis_inputs::AnalysisInputs,
+        inputs: &analysis::analysis_inputs::AnalysisInputs,
         structural_flow: Option<Arc<ChunkValueFlow>>,
         options: PreparationOptions,
     ) -> PreparedModulePurityFacts<'a> {
-        let source = crate::facts::collect_chunk_source_facts_from_items(self.body, None);
+        let source = analysis::facts::collect_chunk_source_facts_from_items(self.body, None);
         let structural = match structural_flow {
-            Some(flow) => crate::facts::complete_chunk_structural_with_flow(
+            Some(flow) => analysis::facts::complete_chunk_structural_with_flow(
                 source,
                 &inputs.assumptions.argument_inputs,
                 flow,
             ),
-            None => crate::facts::complete_chunk_structural_with_inputs(
+            None => analysis::facts::complete_chunk_structural_with_inputs(
                 source,
                 &inputs.assumptions.native_operation_inputs,
                 &inputs.inferred_set_constructions,
@@ -620,16 +623,16 @@ impl<'a> ModulePurityFacts<'a> {
                 (BTreeMap::new(), BTreeSet::new(), BTreeMap::new())
             };
         let plain_array_bindings =
-            crate::facts::abstract_domain::heap::plain_array_bindings(&views, &shadowed);
+            analysis::facts::abstract_domain::heap::plain_array_bindings(&views, &shadowed);
         let set_iterable_proof = structural.set_iterable_shapes;
         let local_class_construction_proof = structural.local_class_shapes;
         let prepared_sync_index =
-            crate::facts::sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index_with_source_facts(
+            analysis::facts::sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index_with_source_facts(
                 &views,
                 &value_flow,
                 inputs,
                 &plain_array_bindings,
-                crate::facts::sync_effects::interpreter::synchronous_calls::PreparedSyncShapeInputs {
+                analysis::facts::sync_effects::interpreter::synchronous_calls::PreparedSyncShapeInputs {
                     local_class_construction: &local_class_construction_proof,
                     set_iterable_shapes: set_iterable_proof,
                     stable_array_spread_shapes,
@@ -815,14 +818,14 @@ pub fn resolve_imported_purities(
             // receiver and imported-call facts that established the program census.
             // A native-integrity result alone cannot refine the provider's local
             // mutation census, which would otherwise reintroduce unknown aliases.
-            let inputs = crate::analysis_inputs::AnalysisInputs {
+            let inputs = analysis::analysis_inputs::AnalysisInputs {
                 native_integrity: callable_summaries.native_integrity.clone(),
                 inferred_set_constructions: callable_summaries
                     .inferred_set_constructions
                     .get(key)
                     .cloned()
                     .unwrap_or_default(),
-                assumptions: crate::analysis_inputs::AnalysisAssumptions {
+                assumptions: analysis::analysis_inputs::AnalysisAssumptions {
                     captured_value_inputs: callable_summaries
                         .value_inputs
                         .get(key)
@@ -910,7 +913,7 @@ pub fn resolve_imported_purities(
             .filter(|(_, target)| pinned.contains(&(target.module.clone(), target.export.clone())))
             .map(|(local, _)| (local.clone(), Arc::new(Purity::pure())))
             .collect();
-        let shape_inputs = crate::purity::PurityShapeInputs {
+        let shape_inputs = analysis::purity::PurityShapeInputs {
             shadowed: &prepared_facts.shadowed,
             declared_pure_new: &no_declared_pure,
             declared_pure_members: &no_declared_pure_members,
@@ -925,7 +928,7 @@ pub fn resolve_imported_purities(
             stable_var_number_candidates: &BTreeSet::new(),
             stable_imports: stable_imports.get(module).unwrap_or(&no_declared_pure),
         };
-        let call_context = crate::purity::PurityCallContext {
+        let call_context = analysis::purity::PurityCallContext {
             module,
             mode: PurityMode::Export,
             declared_pure: &no_declared_pure,
@@ -971,7 +974,7 @@ pub fn resolve_stable_imports(
         .map(|(module, facts)| {
             (
                 module,
-                crate::purity::immutable_declarations(facts.body, |_| true)
+                analysis::purity::immutable_declarations(facts.body, |_| true)
                     .into_iter()
                     .map(|(name, _)| name.to_string())
                     .collect(),
@@ -1061,22 +1064,24 @@ pub struct ResolvedCallableSummaries {
     pub native_operation_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedNativeOperationInput>>,
     pub imported_primitive_array_spread_inputs: BTreeMap<
         SourceModuleKey,
-        Vec<crate::analysis_inputs::ResolvedImportedPrimitiveArraySpreadInput>,
+        Vec<analysis::analysis_inputs::ResolvedImportedPrimitiveArraySpreadInput>,
     >,
     pub(crate) selected_imported_primitive_array_spread_inputs: BTreeMap<
         SourceModuleKey,
-        Vec<crate::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+        Vec<analysis::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
     >,
-    pub inferred_set_constructions:
-        BTreeMap<SourceModuleKey, BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>>,
+    pub inferred_set_constructions: BTreeMap<
+        SourceModuleKey,
+        BTreeMap<u32, analysis::analysis_inputs::InferredSetConstruction>,
+    >,
     pub argument_inputs:
-        BTreeMap<SourceModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
+        BTreeMap<SourceModuleKey, Vec<analysis::analysis_inputs::ResolvedArgumentInput>>,
     /// The whole-program bundle-owned globals the census used.
     pub bundle_globals: BundleGlobalNames,
     /// Structural value flows already solved while deriving summaries, which
     /// the purity oracle's census of the same body takes instead of solving
     /// again.
-    pub structural_flows: crate::facts::ProgramValueFlows,
+    pub structural_flows: analysis::facts::ProgramValueFlows,
     /// Negative facts from the already prepared original provider callables.
     /// Missing entries are unknown, not proof that a provider is effect free.
     known_original_external_writes: BTreeMap<SourceModuleKey, BTreeMap<String, String>>,
@@ -1217,13 +1222,13 @@ pub struct CallableSummaryInputs<'a> {
         &'a BTreeMap<SourceModuleKey, Vec<SelectedNativeOperationInput>>,
     pub selected_imported_primitive_array_spread_inputs: &'a BTreeMap<
         SourceModuleKey,
-        Vec<crate::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+        Vec<analysis::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
     >,
     pub argument_inputs:
-        &'a BTreeMap<SourceModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
+        &'a BTreeMap<SourceModuleKey, Vec<analysis::analysis_inputs::ResolvedArgumentInput>>,
     pub predefined_globals: spec::PredefinedGlobals,
     pub no_accessor_install_callables:
-        &'a BTreeMap<SourceModuleKey, Vec<crate::analysis_inputs::ResolvedNoAccessorInstall>>,
+        &'a BTreeMap<SourceModuleKey, Vec<analysis::analysis_inputs::ResolvedNoAccessorInstall>>,
     /// `program_premises.intrinsics_never_written` families.
     pub intrinsics_never_written: BTreeSet<NativeIntrinsic>,
 }
@@ -1279,7 +1284,7 @@ pub fn resolve_imported_callable_summaries(
                 .collect();
             let views = top_level_item_views(facts.body);
             let mut prepared_module =
-                crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
+                analysis::facts::sync_effects::execution_index::prepare_callable_capabilities(
                     &views,
                     locals,
                     selected_value_inputs
@@ -1342,7 +1347,7 @@ pub fn resolve_imported_callable_summaries(
         prepare(&BundleGlobalNames::default())?;
     let mut bundle_globals = BundleGlobalNames::default();
     if predefined_globals != spec::PredefinedGlobals::Unknown {
-        bundle_globals = crate::facts::sync_effects::execution_index::bundle_globals::resolve(
+        bundle_globals = analysis::facts::sync_effects::execution_index::bundle_globals::resolve(
             prepared.iter().map(|(module, facts)| {
                 (
                     facts,
@@ -1436,7 +1441,7 @@ pub fn resolve_imported_callable_summaries(
             if diagnostics.metrics().enabled() {
                 let owned = views
                     .iter()
-                    .filter(|view| matches!(view, crate::facts::TopLevelItemView::Owned { .. }))
+                    .filter(|view| matches!(view, analysis::facts::TopLevelItemView::Owned { .. }))
                     .count();
                 diagnostics.metrics().statement_views(views.len(), owned);
             }
@@ -1444,11 +1449,11 @@ pub fn resolve_imported_callable_summaries(
         })
         .collect();
     let empty_sets = BTreeMap::new();
-    let mut structural_flows = crate::facts::program_value_flows(
+    let mut structural_flows = analysis::facts::program_value_flows(
         bindings,
         flow_views
             .iter()
-            .map(|(module, views)| crate::facts::ProgramFlowModule {
+            .map(|(module, views)| analysis::facts::ProgramFlowModule {
                 module,
                 fresh_factory_imports: &fresh_factory_imports[*module],
                 fresh_factory_members: &fresh_factory_members[*module],
@@ -1484,11 +1489,11 @@ pub fn resolve_imported_callable_summaries(
         facts.locate_native_writes(module, modules[*module].locator());
     }
     let mut native_integrity =
-        crate::facts::sync_effects::execution_index::resolve_native_integrity(
+        analysis::facts::sync_effects::execution_index::resolve_native_integrity(
             prepared.values().map(|facts| facts.native_writes()),
         );
     if !intrinsics_never_written.is_empty() {
-        crate::facts::sync_effects::execution_index::apply_intrinsics_never_written(
+        analysis::facts::sync_effects::execution_index::apply_intrinsics_never_written(
             &mut native_integrity,
             &intrinsics_never_written,
         )
@@ -1523,7 +1528,7 @@ pub fn resolve_imported_callable_summaries(
                 .collect();
             (
                 module,
-                crate::facts::sync_effects::execution_index::infer_callable_capabilities(
+                analysis::facts::sync_effects::execution_index::infer_callable_capabilities(
                     views,
                     prepared,
                     &native_integrity,
@@ -1760,19 +1765,19 @@ fn reject_contradicted_native_operation_inputs(
 fn preflow_set_constructions(
     prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
     intrinsics_never_written: &BTreeSet<NativeIntrinsic>,
-) -> BTreeMap<SourceModuleKey, BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>> {
+) -> BTreeMap<SourceModuleKey, BTreeMap<u32, analysis::analysis_inputs::InferredSetConstruction>> {
     // Source inference must finish before any root can seed structural flow.
     // The completed raw census is conservative; later branch refinement may
     // not retroactively introduce a root into an already solved flow.
     let mut preflow_native_integrity =
-        crate::facts::sync_effects::execution_index::resolve_native_integrity(
+        analysis::facts::sync_effects::execution_index::resolve_native_integrity(
             prepared.values().map(|facts| facts.native_writes()),
         );
     // Validate the existing program premise against the conservative raw
     // census too. Failure only declines this early inference; the established
     // refined-census check below remains authoritative for the author input.
     let preflow_premises_hold = intrinsics_never_written.is_empty()
-        || crate::facts::sync_effects::execution_index::apply_intrinsics_never_written(
+        || analysis::facts::sync_effects::execution_index::apply_intrinsics_never_written(
             &mut preflow_native_integrity,
             intrinsics_never_written,
         )
@@ -1796,7 +1801,7 @@ fn add_inferred_wrapper_summaries(
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
     flow_views: &BTreeMap<&SourceModuleKey, Vec<TopLevelItemView<'_>>>,
-    structural_flows: &crate::facts::ProgramValueFlows,
+    structural_flows: &analysis::facts::ProgramValueFlows,
     export_summaries: &mut BTreeMap<ExportId, CallableExportProof>,
 ) {
     // Argument/entry coverage is structural and independent of the native
@@ -1905,7 +1910,7 @@ fn validate_descriptor_copy_assertions(
 fn reject_contradicted_array_spread_inputs(
     selected_imported_primitive_array_spread_inputs: &BTreeMap<
         SourceModuleKey,
-        Vec<crate::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+        Vec<analysis::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
     >,
     prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
 ) -> Result<()> {
@@ -1922,7 +1927,7 @@ fn reject_contradicted_array_spread_inputs(
         });
     if let Some(request) = array_spread_request {
         let protocol_integrity =
-            crate::facts::sync_effects::execution_index::resolve_array_spread_protocol_integrity(
+            analysis::facts::sync_effects::execution_index::resolve_array_spread_protocol_integrity(
                 prepared.values().map(|facts| facts.native_writes()),
             );
         if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
@@ -2148,7 +2153,7 @@ fn add_inferred_capability_summaries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis_inputs::{ProofDependencies, ValueInputRef};
+    use analysis::analysis_inputs::{ProofDependencies, ValueInputRef};
     use swc_common::{FileName, Span, sync::Lrc};
     use swc_ecma_ast::{Expr, Module, NewExpr};
     use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
@@ -2412,7 +2417,7 @@ mod tests {
         let module = parse(source);
         let facts = facts(&module, &[], &[("out", local)]);
         let prepared = facts.prepare(
-            &crate::analysis_inputs::AnalysisInputs::default(),
+            &analysis::analysis_inputs::AnalysisInputs::default(),
             None,
             PreparationOptions::default(),
         );
@@ -2458,10 +2463,10 @@ mod tests {
             local: "build".to_string(),
             source_location: None,
             members: Vec::new(),
-            inference: crate::analysis_provenance::InferenceUse {
-                conclusion: crate::analysis_provenance::InferenceRule::ReturnedRecord,
+            inference: analysis::analysis_provenance::InferenceUse {
+                conclusion: analysis::analysis_provenance::InferenceRule::ReturnedRecord,
                 derivation_rules: BTreeSet::from([
-                    crate::analysis_provenance::InferenceRule::ReturnedRecord,
+                    analysis::analysis_provenance::InferenceRule::ReturnedRecord,
                 ]),
                 value_input_refs: BTreeSet::from([reported_dependencies]),
                 descriptor_copy_author_refs: Default::default(),
@@ -2679,7 +2684,7 @@ mod tests {
             "const values = [1]; Set.prototype.add = function add(value) {}; new Set(values);",
         );
         let prepared = facts(&module, &[], &[]).prepare(
-            &crate::analysis_inputs::AnalysisInputs::default(),
+            &analysis::analysis_inputs::AnalysisInputs::default(),
             None,
             PreparationOptions::default(),
         );

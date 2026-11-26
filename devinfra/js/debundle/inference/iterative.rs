@@ -23,7 +23,7 @@ use context::*;
 
 /// Independent semantic and typed-evidence changes from one contribution.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct FactChange {
+pub struct FactChange {
     pub(crate) value: bool,
     pub(crate) proof: bool,
 }
@@ -31,7 +31,7 @@ pub(crate) struct FactChange {
 /// Typed access to facts during one producer evaluation. A family adapter can
 /// project this interface onto a shared program store without copying facts or
 /// hiding reads from the dependency worklist.
-pub(crate) trait FactContext<Key, Fact> {
+pub trait FactContext<Key, Fact> {
     fn read(&mut self, key: Key) -> Option<&Fact>;
     fn propose(&mut self, key: Key, contribution: Fact) -> FactChange;
     /// Deliver only atoms this activated edge has not delivered before. The
@@ -57,12 +57,12 @@ pub(crate) trait FactContext<Key, Fact> {
 
 /// Positive requirements over the same store used by growing facts.
 /// Requiring an absent fact must never allow a certificate to escape.
-pub(crate) trait CertificateContext<Key, Fact> {
+pub trait CertificateContext<Key, Fact> {
     fn require(&mut self, key: Key) -> Option<&Fact>;
     fn assume(&mut self, dependencies: &ProofDependencies);
 }
 
-pub(crate) struct GuardedContext<'a, Context> {
+pub struct GuardedContext<'a, Context> {
     inner: &'a mut Context,
     missing: bool,
 }
@@ -94,7 +94,7 @@ impl<Key, Fact, Context: FactContext<Key, Fact>> CertificateContext<Key, Fact>
     }
 }
 
-pub(crate) trait IterativeRules: Sized {
+pub trait IterativeRules: Sized {
     type Key: Clone + Ord + Hash;
     type Fact;
     type Rule: Clone + Ord + Hash;
@@ -202,7 +202,7 @@ pub(crate) trait IterativeRules: Sized {
     }
 }
 
-pub(crate) struct IterativeInference<'input, R: IterativeRules> {
+pub struct IterativeInference<'input, R: IterativeRules> {
     rules: R,
     sealed: Option<&'input SealedFacts<R::Key, R::Fact>>,
     facts: InferenceCells<R::Key, Judgment<R::Key, R::Fact>>,
@@ -225,7 +225,7 @@ struct InferenceWork {
 }
 
 impl<'input, R: IterativeRules> IterativeInference<'input, R> {
-    pub(crate) fn new(rules: R) -> Self {
+    pub fn new(rules: R) -> Self {
         Self {
             rules,
             sealed: None,
@@ -273,7 +273,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
     /// All producers must be supplied. Source-order rounds preserve clients
     /// whose conservative approximation depends on the initial source sweep.
     /// A rule reading its own output runs again in the next round when needed.
-    pub(crate) fn solve(
+    pub fn solve(
         self,
         producers: impl IntoIterator<Item = R::Rule>,
     ) -> IterativeFacts<R::Key, R::Fact> {
@@ -283,7 +283,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
     /// Complete the same closure when the caller consumes only values. Keep
     /// read watchers and typed dependencies, but do not build a direct-premise
     /// graph that would immediately be discarded by `into_values`.
-    pub(crate) fn solve_values(
+    pub fn solve_values(
         self,
         producers: impl IntoIterator<Item = R::Rule>,
     ) -> BTreeMap<R::Key, R::Fact> {
@@ -292,7 +292,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
 
     /// Keep values and typed dependencies without explanatory premises when
     /// downstream consumers still need the completed judgments.
-    pub(crate) fn solve_values_resumable(
+    pub fn solve_values_resumable(
         self,
         producers: impl IntoIterator<Item = R::Rule>,
     ) -> IterativeFacts<R::Key, R::Fact> {
@@ -335,7 +335,6 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
         // Live proof transfers are separate from value watchers. Each new edge
         // backfills existing atoms; later additions cross it without a rule run.
         let mut proof_edges = ProofTransfers::default();
-        #[cfg(test)]
         let mut evaluations = 0usize;
         #[cfg(test)]
         let mut delta_deliveries = 0usize;
@@ -374,9 +373,9 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                 Some(changed) => rules.evaluate_changed(&rule, &changed, &mut context),
                 None => rules.evaluate(&rule, &mut context),
             }
+            evaluations += 1;
             #[cfg(test)]
             {
-                evaluations += 1;
                 delta_deliveries += context.delta_deliveries;
                 work.reads += context.read_attempts;
                 work.proposals += context.proposals;
@@ -470,7 +469,6 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             facts,
             #[cfg(test)]
             work,
-            #[cfg(test)]
             evaluations,
             #[cfg(test)]
             proof_deliveries,
@@ -483,7 +481,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
 /// Shared read capability for one completed positive closure. Construction
 /// consumes the solved store; no API can resume or mutate these judgments.
 #[derive(Debug)]
-pub(crate) struct SealedFacts<Key, Fact>(IterativeFacts<Key, Fact>);
+pub struct SealedFacts<Key, Fact>(IterativeFacts<Key, Fact>);
 
 impl<Key: Ord + Hash, Fact> SealedFacts<Key, Fact> {
     pub(crate) fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
@@ -494,7 +492,7 @@ impl<Key: Ord + Hash, Fact> SealedFacts<Key, Fact> {
 /// A completed ordered result with exactly one consuming reader. There is no
 /// key to republish or index to retain after the payload moves to its consumer.
 #[must_use]
-pub(crate) struct CompletedTransfer<Fact> {
+pub struct CompletedTransfer<Fact> {
     value: Fact,
     dependencies: ProofDependencies,
 }
@@ -518,11 +516,10 @@ impl<Fact> CompletedTransfer<Fact> {
 
 /// Immutable results after every supplied producer and its dependents settle.
 #[derive(Debug, Clone)]
-pub(crate) struct IterativeFacts<Key, Fact> {
+pub struct IterativeFacts<Key, Fact> {
     facts: FxHashMap<Key, Judgment<Key, Fact>>,
     #[cfg(test)]
     work: InferenceWork,
-    #[cfg(test)]
     evaluations: usize,
     #[cfg(test)]
     proof_deliveries: usize,
@@ -535,12 +532,12 @@ impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
         SealedFacts(self)
     }
 
-    pub(crate) fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
+    pub fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
         self.facts.get(key)
     }
 
     /// In no particular order.
-    pub(crate) fn keys(&self) -> impl Iterator<Item = &Key> {
+    pub fn keys(&self) -> impl Iterator<Item = &Key> {
         self.facts.keys()
     }
 
@@ -551,8 +548,7 @@ impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
             .collect()
     }
 
-    #[cfg(test)]
-    pub(crate) fn evaluations(&self) -> usize {
+    pub fn evaluations(&self) -> usize {
         self.evaluations
     }
 

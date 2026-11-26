@@ -7,7 +7,7 @@ use super::*;
 use crate::program_bindings::{ProgramBindings, SourceModuleKey};
 use roaring::RoaringBitmap;
 
-pub(crate) struct ProgramFlowModule<'a> {
+pub struct ProgramFlowModule<'a> {
     pub module: &'a str,
     pub body: &'a [TopLevelItemView<'a>],
     pub fresh_factory_imports: &'a BTreeSet<String>,
@@ -28,13 +28,13 @@ pub struct ProgramValueFlows {
 }
 
 impl ProgramValueFlows {
-    pub(crate) fn get(&self, module: &str) -> Option<&Arc<ChunkValueFlow>> {
+    pub fn get(&self, module: &str) -> Option<&Arc<ChunkValueFlow>> {
         self.flows.get(module)
     }
 
     /// Positive obligations for the existing cyclic-export fallback. Returned
     /// and other deferred descendants remain possible, never observed effects.
-    pub(crate) fn take_importer_cell_reads(
+    pub fn take_importer_cell_reads(
         &mut self,
         bindings: &ProgramBindings,
     ) -> BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>> {
@@ -711,7 +711,7 @@ impl Rekey<'_> {
     }
 }
 
-pub(crate) fn program_value_flows<'a>(
+pub fn program_value_flows<'a>(
     bindings: &ProgramBindings,
     modules: impl IntoIterator<Item = ProgramFlowModule<'a>>,
     diagnostics: &crate::diagnostics::Diagnostics,

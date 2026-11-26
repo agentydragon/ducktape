@@ -22,20 +22,18 @@ pub mod analysis_provenance;
 mod analysis_test_support;
 pub mod assignment_assembly;
 pub mod atomic_groups;
-pub mod cross_module_purity;
 pub mod diagnostics;
 pub mod execution_evidence;
 pub mod facts;
 pub mod graph;
 pub mod ids;
-mod inference;
+pub mod inference;
 pub mod loader_closure;
 pub mod module_assignment;
 pub mod placement_projection;
 pub mod program_bindings;
 pub mod purity;
 pub mod reports;
-mod swc_parallel;
 
 pub use analysis_inputs::{
     AnalysisAssumptions, AnalysisInputs, CallableSummary, CallbackFactoryEvidence,

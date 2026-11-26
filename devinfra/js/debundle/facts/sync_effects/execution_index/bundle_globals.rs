@@ -660,7 +660,7 @@ impl IterativeRules for &Rules<'_> {
     }
 }
 
-pub(crate) fn resolve<'a>(
+pub fn resolve<'a>(
     modules: impl IntoIterator<
         Item = (
             &'a PreparedCallableCapabilities,

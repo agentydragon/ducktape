@@ -242,7 +242,7 @@ pub fn complete_chunk_structural_with_inputs<'a>(
 
 /// `complete_chunk_structural_with_inputs` reusing a flow that
 /// the program value flow already solved for the same body and inputs.
-pub(crate) fn complete_chunk_structural_with_flow<'a>(
+pub fn complete_chunk_structural_with_flow<'a>(
     source: StructuralChunkSourceFacts<'a>,
     argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
     value_flow: std::sync::Arc<ChunkValueFlow>,
