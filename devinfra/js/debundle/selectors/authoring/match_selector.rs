@@ -42,7 +42,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use crate::render::{
+use selector_render::{
     anything_expr, args_hole, class_member_hole, ident_node, object_props_pat_prop,
     object_props_prop, stmt_list_stmt,
 };
@@ -76,7 +76,7 @@ pub struct MatchSelectorReport {
     pub slack: Option<Vec<SlackRelaxation>>,
 }
 
-use crate::source_input::resolve_chunk_source_file;
+use source_input::resolve_chunk_source_file;
 
 pub fn run_match_selector(config: &MatchSelectorConfig) -> Result<MatchSelectorReport> {
     js_ast::with_swc_globals(|| run_match_selector_impl(config))
@@ -264,7 +264,7 @@ pub(crate) fn for_each_relaxation(
 /// exhausting every order of greedy edits.
 /// `max_probes` also bounds AST clones and resolver calls for a huge exact
 /// declaration; the original selector remains a proven witness throughout.
-pub(crate) fn relax_progressively(
+pub fn relax_progressively(
     mut selector: Module,
     target_binding: Option<&str>,
     max_probes: usize,

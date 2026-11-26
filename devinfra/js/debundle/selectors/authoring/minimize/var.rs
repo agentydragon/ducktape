@@ -11,13 +11,13 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use super::{anchor_quality, render_var_slots};
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
-use crate::render::{
-    AnchorSpan, declarator_hole, emit_selector, holes_present, ident_node, named_pat,
-    node_holds_anchor, span_key,
-};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
     prove_synthesized_selector,
+};
+use selector_render::{
+    AnchorSpan, declarator_hole, emit_selector, holes_present, ident_node, named_pat,
+    node_holds_anchor, span_key,
 };
 
 /// Find a single retained string literal underneath enough call wrappers that

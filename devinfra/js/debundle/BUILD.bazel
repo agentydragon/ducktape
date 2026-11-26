@@ -1109,9 +1109,73 @@ rust_test(
 )
 
 rust_library(
+    name = "source_input",
+    srcs = ["selectors/authoring/source_input.rs"],
+    crate_root = "selectors/authoring/source_input.rs",
+    edition = "2024",
+    deps = ["@crates//:anyhow"],
+)
+
+rust_library(
+    name = "synthesis_failure",
+    srcs = ["selectors/authoring/synthesis_failure.rs"],
+    crate_root = "selectors/authoring/synthesis_failure.rs",
+    edition = "2024",
+    deps = [
+        ":selector_outcome",
+        "@crates//:anyhow",
+        "@crates//:serde",
+    ],
+)
+
+rust_library(
+    name = "selector_render",
+    srcs = ["selectors/authoring/render.rs"],
+    crate_root = "selectors/authoring/render.rs",
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        ":source_match_holes",
+        "@crates//:anyhow",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "selector_render_test",
+    crate = ":selector_render",
+    edition = "2024",
+)
+
+# Read-only agent-facing selector query primitives (`debundle spec
+# match-selector`): resolve a candidate selector and report its holing slack.
+rust_library(
+    name = "match_selector",
+    srcs = ["selectors/authoring/match_selector.rs"],
+    crate_root = "selectors/authoring/match_selector.rs",
+    edition = "2024",
+    deps = [
+        ":binding_targets",
+        ":js_ast",
+        ":selector_outcome",
+        ":selector_render",
+        ":selector_resolve",
+        ":source_input",
+        ":source_match",
+        ":source_match_holes",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_library(
     name = "selector_codemod",
     srcs = [
-        "selectors/authoring/match_selector.rs",
         "selectors/authoring/minimize/class.rs",
         "selectors/authoring/minimize/function.rs",
         "selectors/authoring/minimize/group.rs",
@@ -1120,26 +1184,27 @@ rust_library(
         "selectors/authoring/minimize/use_site.rs",
         "selectors/authoring/minimize/var.rs",
         "selectors/authoring/regex_anchor.rs",
-        "selectors/authoring/render.rs",
         "selectors/authoring/selector_codemod.rs",
         "selectors/authoring/selector_minimizer_proptest.rs",
-        "selectors/authoring/source_input.rs",
-        "selectors/authoring/synthesis_failure.rs",
     ],
     crate_root = "selectors/authoring/selector_codemod.rs",
     edition = "2024",
     deps = [
         ":binding_targets",
         ":js_ast",
+        ":match_selector",
         ":readoff_render",
         ":selector_outcome",
+        ":selector_render",
         ":selector_resolve",
         ":shape_index",
         ":source_identity",
+        ":source_input",
         ":source_match",
         ":source_match_holes",
         ":spec",
         ":spec_modules",
+        ":synthesis_failure",
         ":yaml_edit",
         "@crates//:anyhow",
         "@crates//:regex",
@@ -1687,6 +1752,7 @@ rust_library(
         ":graph_provenance",
         ":js_ast",
         ":lowering",
+        ":match_selector",
         ":output_layout",
         ":ownership_subset",
         ":package_args",
@@ -1700,6 +1766,7 @@ rust_library(
         ":selector_outcome",
         ":selector_resolve",
         ":source_identity",
+        ":source_input",
         ":source_inspection",
         ":source_match",
         ":spec",
@@ -1707,6 +1774,7 @@ rust_library(
         ":spec_resolution",
         ":spec_stats",
         ":spec_tree",
+        ":synthesis_failure",
         ":transform_command",
         ":transform_inputs",
         ":yaml_edit",

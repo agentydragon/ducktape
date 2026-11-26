@@ -28,13 +28,13 @@ use command_output::write_report;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
 use peel::OutputFormat;
 use pipeline::{RunOutput, TransformRunOptions, run_transform};
-use selector_codemod::source_input::resolve_chunk_source_file;
 use selector_outcome::{
     Entity, InvalidSelectorError, InvalidSelectorReport, Outcome, Placement, SelectorKind,
     SelectorOutcome, SelectorOutcomeReport, SelectorValidationCounts, Severity,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use source_input::resolve_chunk_source_file;
 use source_match::source_match_claim_member_selectors;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec};
 use spec_modules::read_flat_transform_spec;

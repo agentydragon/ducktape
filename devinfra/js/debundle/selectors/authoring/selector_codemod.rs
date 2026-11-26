@@ -10,10 +10,6 @@
 //! declarator gaps for non-target siblings, then prove it with the selector
 //! resolve every command uses: the selector must resolve on its own selector.
 
-#[path = "synthesis_failure.rs"]
-pub mod synthesis_failure;
-use synthesis_failure::{ProofError, ProofFailure, SynthesisSkipReason};
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,6 +18,7 @@ use anyhow::{Context, Result, bail};
 use binding_targets::{DeclShape, decl_shape, declaration_name_strings};
 use js_ast::item_decl;
 use selector_outcome::{Outcome, ResolvedBy};
+use selector_render::holes_present;
 use selector_resolve::{EntityIndex, Member, MemberSelector, SpecModule};
 use serde::Serialize;
 use serde_yaml::Value;
@@ -35,29 +32,24 @@ use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file, 
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
+use synthesis_failure::{ProofError, ProofFailure, SynthesisSkipReason};
 
 // Hole keyword spellings come from `source_match_holes` so the minimizer
 // emits exactly the tokens the matcher resolves.
 use source_match_holes::STMT_LIST_HOLE_KEYWORD;
 
-// The selector minimizer is split by form: the AST-holing engine (`render`),
-// the regex-over-string-literal anchors (`regex_anchor`), and the per-form
-// minimizers (`minimize::{function,class,object,var,group}`).
+// The selector minimizer is split by form: the AST-holing engine (the
+// `selector_render` crate), the regex-over-string-literal anchors
+// (`regex_anchor`), and the per-form minimizers
+// (`minimize::{function,class,object,var,group}`).
 mod minimize;
 mod regex_anchor;
-mod render;
-
-// Read-only agent-facing selector query primitives (M1 of the
-// selector-authoring plan), sharing this crate's source loading + prove-gate.
-pub mod match_selector;
-pub mod source_input;
 
 use crate::minimize::{
     collapse_statement_hole_runs, exact_declaration_rejection, exact_declaration_source,
     minimize_class_selector_candidates, minimize_function_selector_candidates,
     minimize_var_group_selector_candidates, relax_exact_declaration,
 };
-use crate::render::holes_present;
 
 #[derive(Debug, Clone)]
 pub struct SelectorCodemodConfig {
@@ -671,7 +663,7 @@ struct ChunkSelectorIndex<'m> {
     call_use_sites: BTreeMap<String, Vec<usize>>,
     /// Quality overrides for tokens whose AST context changes their likely
     /// rebuild stability. Built once per chunk, not rediscovered per target.
-    anchor_quality: BTreeMap<crate::render::AnchorSpan, u8>,
+    anchor_quality: BTreeMap<selector_render::AnchorSpan, u8>,
     /// Layer-1 read-off shape index (W2). Built once per chunk; the migrated
     /// forms (single-target function and var) read their minimal anchor set off
     /// it instead of running the cover search. The resolve

@@ -10,7 +10,7 @@ use source_inspection::{PreparedSource, StatementRange, StatementRow};
 use source_match::{RangeExplanation, explain_range, template_free_identifiers};
 
 use crate::selector_input::{SelectedSelector, inline_selector, load_selectors};
-use selector_codemod::source_input::resolve_chunk_source_file;
+use source_input::resolve_chunk_source_file;
 
 pub(super) struct ExplanationConfig {
     pub source_file: Option<PathBuf>,

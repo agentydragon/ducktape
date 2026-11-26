@@ -12,10 +12,10 @@
 //! own contradiction and unused checks validate it.
 
 use analysis_model::DepKind;
-use selector_codemod::synthesis_failure::SynthesisSkipReason;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
+use synthesis_failure::SynthesisSkipReason;
 
 use ::gate::{BlockingSccEntry, CycleEdge};
 use analysis::graph::{CommutationOrder, EndpointView, assignment_endpoints};

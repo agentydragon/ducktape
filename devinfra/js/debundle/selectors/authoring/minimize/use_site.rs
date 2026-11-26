@@ -11,11 +11,11 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::finish_minimized_selector;
-use crate::render::{
-    anything_expr, args_hole, emit_selector, hole_object_padded, ident_node, named_pat,
-};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
+};
+use selector_render::{
+    anything_expr, args_hole, emit_selector, hole_object_padded, ident_node, named_pat,
 };
 
 use source_match_holes::ANYTHING_HOLE_KEYWORD;

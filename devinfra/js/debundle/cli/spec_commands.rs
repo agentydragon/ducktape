@@ -12,9 +12,7 @@ use peel::OutputFormat;
 use resolved_placement::{ResolvePlacementArgs, ResolvePlacementsArgs};
 use transform_command::{ProjectAnalysisArgs, ProjectApplyArgs};
 
-use selector_codemod::match_selector::{
-    MatchSelectorConfig, render_match_selector_text, run_match_selector,
-};
+use match_selector::{MatchSelectorConfig, render_match_selector_text, run_match_selector};
 use selector_codemod::{SelectorCodemodConfig, render_selector_codemod_text, run_selector_codemod};
 use selector_debt::{
     SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
@@ -448,7 +446,7 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs, output: &mut dyn std::io::Write
     if args.group_module_depth == Some(0) {
         bail!("--group-module-depth must be at least 1");
     }
-    let source_file = selector_codemod::source_input::optional_chunk_source_file(
+    let source_file = source_input::optional_chunk_source_file(
         args.source_file.as_deref(),
         args.source_root.as_deref(),
         args.chunk.as_deref(),
