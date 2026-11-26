@@ -192,9 +192,12 @@ Remaining:
    field. Settings reject unknown keys, so a field leaves the manifests before the code.
 2. Cleanup after the per-service contracts (#20306–#20314): delete the shared Kubernetes Identity
    readers no live caller uses (`reader.KubernetesIdentities`, `auth.KubernetesIdentityUIDs` and
-   kin), and consolidate the test PolicyService fakes the contracts added (Go: Notifications,
-   Action Service, Environments; Python: History, Session Dispatcher) into one Go and one Python
-   fake under a shared testing package.
+   kin). Replace the test PolicyService fakes the contracts added (Go: Notifications, Action
+   Service, Environments; Python: History, Session Dispatcher), and the older per-test ones where
+   they fit (`policy/reader`, `app/internal/server`, `app/test_environment_identity_browser.py`), with
+   the real Policy Controller service over the tests' envtest API server: a testing package exposing
+   `policy_controller/internal/rpc`, plus a small server binary for the Python harnesses that start
+   real Go services.
 3. [Verifier contract](../docs/workload_authentication.md) step 5 wording: Identity revocation follows the
    watch, with the grace bound while it is down. Lands with the first contract PR that removes a
    resolver's Kubernetes read.
