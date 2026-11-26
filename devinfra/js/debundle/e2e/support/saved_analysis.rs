@@ -813,14 +813,11 @@ pub fn native_member_fixture() -> FixtureOpts<'static> {
     )
     .with_native_operation_inputs(
         "static/app",
-        vec![NativeOperationInputContract {
-            selector: SourceUnitSelector::ResolvedMember(ResolvedMemberSelector {
-                module: "native".to_owned(),
-                name: "alias".to_owned(),
-            }),
-            operation: NativeOperationKind::Symbol,
-            audited_source_sha256: source_sha256(SOURCE),
-            note: Some("The selected Symbol call is audited.".to_owned()),
-        }],
+        vec![native_operation_input(
+            SOURCE,
+            member_source_unit("native", "alias"),
+            NativeOperationKind::Symbol,
+            "The selected Symbol call is audited.",
+        )],
     )
 }
