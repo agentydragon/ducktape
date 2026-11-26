@@ -235,7 +235,7 @@ js_test(
     data = _TEST_DATA,
     entry_point = "wide_table_reversal_test.mjs",
     env = _TEST_ENV,
-    shard_count = 3,
+    shard_count = 2,
 )
 
 js_test(
@@ -340,7 +340,7 @@ js_test(
         "LINKED_TABLE_FIELDS": "1410",
         "LINKED_TABLE_ROWS": "3",
     },
-    shard_count = 3,
+    shard_count = 2,
 )
 
 js_test(

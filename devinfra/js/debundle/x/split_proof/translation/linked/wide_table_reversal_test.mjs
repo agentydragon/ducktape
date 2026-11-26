@@ -102,8 +102,7 @@ const files = prepare(dir, { source: tableProgram(literal("ready")), provider: "
 const { sourceFile, specFile } = files;
 const out = path.join(dir, "out");
 const runCase = caseShard();
-const emit = runCase("certified emission and runtime");
-if (emit) {
+if (runCase("certified emission and runtime")) {
   const { verdict, log } = lower(sourceFile, specFile, out);
   assertCertified(verdict, log);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
@@ -128,12 +127,11 @@ if (emit) {
     assert.equal(namespace.marker, "ready");
     assert.equal(namespace.getMarker(), "ready");
   }
-}
 
-if (runCase("exact disk verification")) {
-  if (!emit) forcePreview(files, out);
-  const { verdict, log } = lower(sourceFile, specFile, out, ["--check-output"]);
-  assertCertified(verdict, log);
+  // Reuse this shard's certified output for the independent disk check.
+  console.log("Case exact disk verification");
+  const disk = lower(sourceFile, specFile, out, ["--check-output"]);
+  assertCertified(disk.verdict, disk.log);
 }
 
 if (runCase("reject changed schedule")) {
