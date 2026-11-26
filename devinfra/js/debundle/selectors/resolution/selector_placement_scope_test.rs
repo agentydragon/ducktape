@@ -8,7 +8,7 @@ use selector_resolve::{
 use source_identity::SourceUnitOrdinal;
 use source_match::{ParsedSourceMatchSelector, SelectorField};
 use spec::{
-    AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefTarget,
+    AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefSelector,
     MemberSelectorSpec, SourceMatchIdentifierMode,
 };
 
@@ -272,10 +272,12 @@ fn relational_overlay_uses_a_frozen_source_unit_anchor() {
             "new-owner",
             vec![Member {
                 export_name: "Consumer".to_string(),
-                selector: MemberSelector::Authored(MemberSelectorSpec::CrossRef(CrossRefTarget {
-                    anchor: "anchor".to_string(),
-                    kind: Some(BindingSourceKind::VariableDeclarator),
-                })),
+                selector: MemberSelector::Authored(MemberSelectorSpec::CrossRef(
+                    CrossRefSelector {
+                        references: "anchor".to_string(),
+                        kind: Some(BindingSourceKind::VariableDeclarator),
+                    },
+                )),
             }],
         )];
         let placement = chunk
@@ -340,10 +342,12 @@ fn import_anchor_rejects_relational_use_without_a_source_unit() {
             "new-owner",
             vec![Member {
                 export_name: "Consumer".to_string(),
-                selector: MemberSelector::Authored(MemberSelectorSpec::CrossRef(CrossRefTarget {
-                    anchor: "Anchor".to_string(),
-                    kind: Some(BindingSourceKind::VariableDeclarator),
-                })),
+                selector: MemberSelector::Authored(MemberSelectorSpec::CrossRef(
+                    CrossRefSelector {
+                        references: "Anchor".to_string(),
+                        kind: Some(BindingSourceKind::VariableDeclarator),
+                    },
+                )),
             }],
         )];
         assert!(
@@ -377,10 +381,12 @@ fn repeated_declaration_anchor_uses_the_resolvers_canonical_first_site() {
             "new-owner",
             vec![Member {
                 export_name: "Consumer".to_string(),
-                selector: MemberSelector::Authored(MemberSelectorSpec::CrossRef(CrossRefTarget {
-                    anchor: "Repeated".to_string(),
-                    kind: Some(BindingSourceKind::VariableDeclarator),
-                })),
+                selector: MemberSelector::Authored(MemberSelectorSpec::CrossRef(
+                    CrossRefSelector {
+                        references: "Repeated".to_string(),
+                        kind: Some(BindingSourceKind::VariableDeclarator),
+                    },
+                )),
             }],
         )];
         let placement = chunk
