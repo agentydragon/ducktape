@@ -12,8 +12,8 @@ which calls native gRPC directly. Sandbox calls present the Runner SVID through 
 listener and opaque proxy tunnel. The service verifies the certificate chain, explicit clientAuth EKU and
 validity, then checks that the leaf names the live Sandbox and its current accepted runner credential.
 It resolves the principal to the credential's exact live Identity name and UID; caller
-headers cannot select another Identity. Kubernetes bearer credentials are rejected, including when
-presented alongside a valid SVID. Exact service SVID grants admit only diagnostic readers and do not
+headers cannot select another Identity. The listener rejects bearer credentials and delegation metadata,
+including alongside a valid SVID. Exact service SVID grants admit only diagnostic readers and do not
 confer an Identity or inbox ownership. Subscription creation addresses a Session by `session_id`.
 The service reads its Dispatcher Session and compares the recorded execution Identity with the
 caller's exact Identity before source authorization. It does not require a Sandbox target or call
@@ -24,16 +24,11 @@ placement and check the sender's scoped grant against its exact Sandbox. Inbox a
 identify subsequent operations.
 The caller's inboxes and subscriptions must match the exact execution Identity name and UID recorded
 by the Dispatcher Session. Any admitted workload running as that Identity can manage the Session-keyed
-inbox across Sandbox incarnations; a same-name replacement Identity cannot inherit it. An inbox is
-keyed by its Session ID alone: the Session-derived Sandbox key and the Sandbox destination and
-owner columns are retired, so no request or view carries Sandbox addressing. The data migration
-rekeyed retained rows in place and the contract migration dropped those columns; it refuses to run
-only when a row has no Session ID, and rekeys from its Session ID a row a pre-cutover writer derived
-from its Sandbox again. The database requires a complete Identity owner; legacy ownerless and
-ServiceAccount-owned inboxes were deleted from staging. Operator diagnostic reads remain available
-for Identity-owned inboxes. Action sources require the request's exact `caller_identity`; missing or legacy
-ServiceAccount ownership refuses new subscriptions and source reads without discarding retained entries.
-Existing subscription, inbox and retained History data remain subject to their current retention rules.
+inbox across Sandbox incarnations. A replacement Identity with the same name needs its own Session
+and inbox. The Session ID alone keys the inbox, and the database requires a complete Identity owner.
+Operator diagnostic reads remain available for Identity-owned inboxes. Action sources require the
+request's exact `caller_identity`; an absent Identity refuses new subscriptions and source reads
+while preserving retained entries.
 Delivery checks the current Dispatcher Session's recorded Identity and placement, then submits by
 Session ID without an expected Sandbox UID. If the Identity differs or the Session is unplaced, the
 existing `OwnerMismatchError` outcome keeps the notice pending and unattempted for the five-second
@@ -48,7 +43,7 @@ delivery failure's retry deadline. The placement-free retry policy belongs to
   the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;
   GitHub starts after the latest committed webhook at creation.
   Resolving the Session records its exact Identity as owner; the inbox key is the Session ID and
-  does not depend on placement. Persisted subscriptions, inbox cursors and notices remain intact.
+  remains stable across placement changes.
 - `GET /v1/subscriptions[?after_id=…]`: ordered pages of 128; continue after the last ID.
 - `GET`, `PATCH`, `DELETE /v1/subscriptions/{id}`: inspect, renew with an expected version,
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
@@ -251,8 +246,9 @@ Webhook `payload` is a normalized event-specific projection, not the signed requ
 action, repository and subject/revision details, plus notification content such as original comment/review text,
 check and job identifiers, status/conclusion, steps, URLs and full SHAs. The projection is explicitly defined by
 the [GitHub notification guide](agents/github.md#follow-github-activity); arbitrary fields from the upstream body
-are omitted. The signed raw body is an optional archive with a separate retention setting and may already be absent.
-It is never read to match or render ordinary notifications.
+are omitted. The optional archive stores the authenticated webhook payload as JSONB with a separate retention
+window. Matching and rendering use the compact fact. Legacy receipts missing a fact are backfilled
+from the archived payload.
 
 PR, issue, exact branch and fixed-commit subjects use native GitHub event/action names. Default CI means completed
 `check_run` and `status`; `check_suite`, `workflow_run` and `workflow_job` require explicit selection. PR comments/reviews,
