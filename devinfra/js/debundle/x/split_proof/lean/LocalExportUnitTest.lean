@@ -17,9 +17,22 @@ private def request : Spec := {
   sequential := true
 }
 
+private def sharedLocal : LocalExportUnit := ⟨0, [("first", "x"), ("second", "x")]⟩
+private def deduplicated : Stmt := {
+  src := "", eager := ["x"], exports := [("first", some "x"), ("second", some "x")]
+}
+
+private theorem sharedLocalMatches : sharedLocal.FootprintMatches deduplicated := by
+  refine ⟨rfl, ?_⟩
+  intro pair member
+  simp only [sharedLocal, List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl <;> simp [deduplicated]
+
 def main : IO Unit := do
   have _sourceFacts := LocalExportUnit.local_use_and_public (B := bundle) (unit := exportUnit)
     (src := "") (publicName := "data0") (localName := "reader0") (by rfl) (by simp [exportUnit])
+  have _shared := LocalExportUnit.matched_local_use_and_public (B := [deduplicated]) (unit := sharedLocal)
+    (publicName := "second") (localName := "x") sharedLocalMatches (by simp [sharedLocal])
   let plan := mkPlan bundle request
   unless decide (Valid bundle request plan) do throw (IO.userError "plan invalid")
   let some entry := plan.find request.entry | throw (IO.userError "entry missing")
