@@ -57,3 +57,22 @@ def main : IO Unit := do
     (owner, selectors.map fun selector => match selector with | .stmt 0 => .name "data0" | _ => selector) }
   let .ok named := resolve source byName | throw (IO.userError "name selector refused")
   unless named.selected == selected.selected do throw (IO.userError "name selector changed the owner or ID")
+  let interior : TerminalSource := {
+    module := {
+      name := "original.mjs"
+      imports := []
+      body := [(0, .decl .const "seed" (.num 42)), (2, .decl .const "result" (.var "seed"))]
+      exports := [("exposed", "seed")]
+    }
+    exportOrdinal := 1
+  }
+  let interiorRequest : EsmSplit.Spec := {
+    entry := "entry.mjs"
+    modules := [("worker.mjs", [.stmt 0]), ("entry.mjs", [.stmt 1, .stmt 2])]
+    order := ["worker.mjs"]
+    sequential := true
+  }
+  match resolve interior interiorRequest with
+  | .ok _ => throw (IO.userError "interior export list was accepted as terminal")
+  | .error why => unless why == "export list is not after every executable source unit" do
+      throw (IO.userError s!"unexpected interior export refusal: {why}")
