@@ -190,13 +190,18 @@ Remaining:
 1. Per service, contract: require the block and drop the Kubernetes Identity reads; drop
    `policy_namespace`, the `identities` RBAC and API-server egress from the manifests; then drop the
    field. Settings reject unknown keys, so a field leaves the manifests before the code.
-2. [Verifier contract](../docs/workload_authentication.md) step 5 wording: Identity revocation follows the
+2. Cleanup after the per-service contracts (#20306–#20314): delete the shared Kubernetes Identity
+   readers no live caller uses (`reader.KubernetesIdentities`, `auth.KubernetesIdentityUIDs` and
+   kin), and consolidate the test PolicyService fakes the contracts added (Go: Notifications,
+   Action Service, Environments; Python: History, Session Dispatcher) into one Go and one Python
+   fake under a shared testing package.
+3. [Verifier contract](../docs/workload_authentication.md) step 5 wording: Identity revocation follows the
    watch, with the grace bound while it is down. Lands with the first contract PR that removes a
    resolver's Kubernetes read.
-3. Sandbox Controller reconciler (Identity watch, `readIdentity`, runtime credentials): needs whole
+4. Sandbox Controller reconciler (Identity watch, `readIdentity`, runtime credentials): needs whole
    objects and a change feed, which `identitycache` does not serve.
-4. `orchestration_v1` creates and deletes Identities through `CreateIdentity`/`DeleteIdentity`.
-5. Only the Policy Controller keeps `identities` RBAC.
+5. `orchestration_v1` creates and deletes Identities through `CreateIdentity`/`DeleteIdentity`.
+6. Only the Policy Controller keeps `identities` RBAC.
 
 Auth-path and RBAC steps follow [changes that can break staging](../AGENTS.md#changes-that-can-break-staging).
 `sandboxreader` reads a Sandbox's Identity from the policy namespace; staging uses one namespace for
