@@ -312,7 +312,7 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 	namespace, name, sandboxUID := sandbox.Namespace, sandbox.Name, sandbox.UID
 	written := writerColumns(writer)
 	var checkpoint Checkpoint
-	err := postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	err := postgres.NamedTransaction(ctx, s.db, sql.TxOptions{}, "history.bind_writer", func(tx *sql.Tx) error {
 		created := false
 		changed := false
 		var sandboxUIDValue any
@@ -455,7 +455,7 @@ func (s *Store) RecordedSessions(ctx context.Context, afterPosition uint64, limi
 // the new checkpoint commit together; on any error the entire batch rolls back. An empty batch is a checkpoint read, not an inferred writer high-water mark.
 func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*eventlogpb.EventEntry) (uint64, error) {
 	var lastCursor uint64
-	err := postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	err := postgres.NamedTransaction(ctx, s.db, sql.TxOptions{}, "history.append", func(tx *sql.Tx) error {
 		row, err := lockRow(ctx, tx, sessionID)
 		if err != nil {
 			return err
@@ -578,7 +578,7 @@ func isUnstored(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, cursor uin
 // it is, which also makes a repeat a no-op.
 func (s *Store) ReopenSealed(ctx context.Context, sessionID uuid.UUID, incarnationUID string, announcedCursor uint64) (Checkpoint, error) {
 	var checkpoint Checkpoint
-	err := postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	err := postgres.NamedTransaction(ctx, s.db, sql.TxOptions{}, "history.reopen_sealed", func(tx *sql.Tx) error {
 		row, err := lockRow(ctx, tx, sessionID)
 		if err != nil {
 			return err
@@ -615,7 +615,7 @@ func (s *Store) ReopenSealed(ctx context.Context, sessionID uuid.UUID, incarnati
 
 // RecordFeedState records only a covered writer snapshot; delayed copiers cannot rewind it or drop a seal.
 func (s *Store) RecordFeedState(ctx context.Context, sessionID uuid.UUID, feed *historypb.SessionFeedState) error {
-	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	return postgres.NamedTransaction(ctx, s.db, sql.TxOptions{}, "history.record_feed_state", func(tx *sql.Tx) error {
 		row, err := lockRow(ctx, tx, sessionID)
 		if err != nil {
 			return err

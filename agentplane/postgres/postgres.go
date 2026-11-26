@@ -5,6 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"log/slog"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -34,6 +37,38 @@ func Transaction(ctx context.Context, db *sql.DB, options sql.TxOptions, f func(
 		return err
 	}
 	return tx.Commit()
+}
+
+// NamedTransaction runs a transaction with a fixed operation name visible in
+// pg_stat_activity. It logs transactions lasting at least one second, including
+// commit or rollback time, so lock-wait logs can be joined by backend PID and time.
+// Use a short, static name without user data. Tagging costs one round trip.
+func NamedTransaction(ctx context.Context, db *sql.DB, options sql.TxOptions, operation string, f func(*sql.Tx) error) error {
+	var started time.Time
+	var pid int
+	err := Transaction(ctx, db, options, func(tx *sql.Tx) error {
+		started = time.Now()
+		if err := tx.QueryRowContext(
+			ctx,
+			`SELECT pg_backend_pid() FROM set_config('application_name', $1, true)`, operation,
+		).Scan(&pid); err != nil {
+			return fmt.Errorf("name PostgreSQL transaction: %w", err)
+		}
+		return f(tx)
+	})
+	ended := time.Now()
+	if pid != 0 && ended.Sub(started) >= time.Second {
+		slog.WarnContext(
+			ctx, "slow PostgreSQL transaction",
+			"operation", operation,
+			"pg_backend_pid", pid,
+			"started_at", started.UTC(),
+			"ended_at", ended.UTC(),
+			"duration_ms", ended.Sub(started).Milliseconds(),
+			"succeeded", err == nil,
+		)
+	}
+	return err
 }
 
 // ReadTransaction runs f in a read-only transaction and rolls it back after the read.

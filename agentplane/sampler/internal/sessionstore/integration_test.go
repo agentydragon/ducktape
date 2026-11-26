@@ -511,7 +511,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	conversation.ActiveContext = conversation.Context()
-	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error { return store.updateConversation(ctx, tx, conversation) }); err != nil {
+	if err := store.transaction(t.Context(), "sampler.test_fixture", func(ctx context.Context, tx *sql.Tx) error { return store.updateConversation(ctx, tx, conversation) }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1681,7 +1681,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	session := openSessionForStore(t, store, "")
 	admitInput(t, store, session.ID, "stored-command", "stored input")
 	owner := claim(t, store, session)
-	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
+	if err := store.transaction(t.Context(), "sampler.test_fixture", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err

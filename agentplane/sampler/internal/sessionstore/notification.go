@@ -28,7 +28,7 @@ func (s *Store) QueueNotification(ctx context.Context, owner Owner, callID, cell
 	if callID == "" {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.queue_notification", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -62,7 +62,7 @@ func (s *Store) DrainNotifications(ctx context.Context, owner Owner) (bool, erro
 		return false, err
 	}
 	drained := false
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.drain_notifications", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err

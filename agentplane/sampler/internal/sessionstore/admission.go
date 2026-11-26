@@ -42,7 +42,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 		return nil, err
 	}
 	var admission *eventlogpb.EventEntry
-	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err = s.transaction(ctx, "sampler.admit", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, session, err := lockSessionHeader(ctx, tx, id)
 		if err != nil {
 			return err

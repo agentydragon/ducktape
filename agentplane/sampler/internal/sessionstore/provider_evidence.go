@@ -21,7 +21,7 @@ func (e *ResponseEvidence) Record(ctx context.Context, payload protocol.Provider
 	if semanticProgress && e.ProgressLease <= 0 {
 		return protocol.ErrInvalid
 	}
-	return e.Store.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return e.Store.transaction(ctx, "sampler.record_provider_evidence", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, e.Owner)
 		if err != nil {
 			return err

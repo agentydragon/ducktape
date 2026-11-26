@@ -114,7 +114,7 @@ func (s *Store) LoadProviderRequest(ctx context.Context, sessionID, ownerKey, re
 		return nil, protocol.ErrMissing
 	}
 	var result *StoredProviderRequest
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.load_provider_request", func(ctx context.Context, tx *sql.Tx) error {
 		var raw []byte
 		if err := tx.QueryRowContext(ctx, `SELECT i.request FROM sampler_intent i JOIN sampler_session s ON s.conversation_id=i.conversation_id
             WHERE s.id=$1 AND COALESCE(s.service_spiffe_id,s.account_uid)=$2 AND i.id=$3`, sessionID, ownerKey, requestID).Scan(&raw); err != nil {

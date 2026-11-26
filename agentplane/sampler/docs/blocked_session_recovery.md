@@ -18,6 +18,14 @@ A wait record identifies the waiting backend and SQL statement. Its detail ident
 the holding backend or wait queue. Match the wait time and `connection_from` to the
 sampler pod's error. Search both database pods to cover a primary change during the incident.
 
+Sampler and History operations using `postgres.NamedTransaction` set a transaction-local
+`application_name` and log transactions lasting at least one second. Look for
+`slow PostgreSQL transaction` in the service logs. Match the holding backend PID to
+`pg_backend_pid` and the wait time to the interval from `started_at` to `ended_at`.
+The `operation` identifies the caller. Include the time interval in the match because a backend
+PID can serve several transactions. A chain of short transactions can exhaust a waiter's
+deadline without any one holder crossing the logging threshold.
+
 Query [Loki](../../../cluster/docs/troubleshooting.md#loki-log-retrieval--use-this-for-logs-of-pods-that-no-longer-exist)
 for the incident's time window if the pods have rolled.
 
@@ -46,9 +54,11 @@ transaction age, and whether it is itself waiting on a lock or I/O.
 
 ```sql
 SELECT waiter.pid AS waiter_pid,
+       waiter.application_name AS waiter_operation,
        waiter.wait_event AS waiter_event,
        waiter.query AS waiter_query,
        blocking.pid AS blocker_pid,
+       blocker.application_name AS blocker_operation,
        blocker.state AS blocker_state,
        clock_timestamp() - blocker.xact_start AS blocker_xact_age,
        blocker.wait_event_type AS blocker_wait_type,

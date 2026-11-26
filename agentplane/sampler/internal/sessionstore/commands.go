@@ -16,7 +16,7 @@ import (
 
 func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) (*Command, error) {
 	var next *Command
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.next_command", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -245,7 +245,7 @@ func (s *Store) HasSteeringInput(ctx context.Context, owner Owner, sessionID str
 // that would otherwise end sampling.
 func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID string) (bool, error) {
 	drained := false
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.drain_steering_input", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerWithContextRefs(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -358,7 +358,7 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 	if !result.finishesCommand() {
 		return fmt.Errorf("%w: turn result %q does not finish a command", protocol.ErrInvalid, result)
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.finish_command", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -522,7 +522,7 @@ func (s *Store) blockQueue(ctx context.Context, tx *sql.Tx, session *Session, re
 }
 
 func (s *Store) FailExecution(ctx context.Context, owner Owner, sessionID string, commandID *string, failure error) error {
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.fail_execution", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err

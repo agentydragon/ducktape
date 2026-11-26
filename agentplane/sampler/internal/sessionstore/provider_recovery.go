@@ -23,7 +23,7 @@ type ProviderFinishReadback struct {
 // Completed confirms the transaction committed. Other states remain unresolved to the caller.
 func (s *Store) ReadProviderFinish(ctx context.Context, owner Owner, intentID string) (ProviderFinishReadback, error) {
 	var state ProviderFinishReadback
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.read_provider_finish", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -67,7 +67,7 @@ func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, ses
 		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.begin_provider_after_host_loss", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockProviderResumption(ctx, tx, owner, kind, original)
 		if err != nil {
 			return err

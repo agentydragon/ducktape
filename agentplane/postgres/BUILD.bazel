@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -7,4 +7,13 @@ go_library(
     srcs = ["postgres.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/postgres",
     deps = ["@com_github_lib_pq//:pq"],
+)
+
+go_test(
+    name = "postgres_test",
+    size = "medium",
+    srcs = ["postgres_test.go"],
+    embed = [":postgres"],
+    tags = ["requires_docker"],
+    deps = ["//agentplane/testing/postgres"],
 )

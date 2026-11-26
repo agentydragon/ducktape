@@ -19,7 +19,7 @@ const BoundaryBytes = 1024 * 1024
 func (s *Store) ProtocolEvent(ctx context.Context, owner Owner, operationID string, kind eventpb.ExecutionProgress_Kind,
 	phase eventpb.ExecutionProgress_Phase, payload map[string]any,
 ) error {
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.protocol_event", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err

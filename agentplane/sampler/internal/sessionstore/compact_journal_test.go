@@ -20,7 +20,7 @@ import (
 func appendTestJournalThrough(t *testing.T, store *Store, id string, through, oversized uint64) {
 	t.Helper()
 	shareable := []byte(strings.Repeat("shared event evidence ", 256))
-	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
+	if err := store.transaction(t.Context(), "sampler.test_fixture", func(ctx context.Context, tx *sql.Tx) error {
 		_, session, err := lockSession(ctx, tx, id)
 		if err != nil {
 			return err

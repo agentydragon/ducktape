@@ -147,7 +147,7 @@ func (s *Store) compactJournalWindow(ctx context.Context, sessionID string, firs
 }
 
 func (s *Store) commitJournalBlocks(ctx context.Context, sessionID string, blocks []sealedJournalBlock) error {
-	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	return postgres.NamedTransaction(ctx, s.db, sql.TxOptions{}, "sampler.commit_journal_blocks", func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout='1s'`); err != nil {
 			return err
 		}

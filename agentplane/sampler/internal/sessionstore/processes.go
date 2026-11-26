@@ -19,7 +19,7 @@ func (s *Store) RegisterProcess(ctx context.Context, owner Owner, processID stri
 	if processID == "" {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.register_process", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
@@ -36,7 +36,7 @@ func (s *Store) RegisterModelProcess(ctx context.Context, owner Owner, processID
 	if processID == "" {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.register_model_process", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
@@ -48,7 +48,7 @@ func (s *Store) RegisterModelProcess(ctx context.Context, owner Owner, processID
 
 func (s *Store) Process(ctx context.Context, owner Owner, processID string) (*RemoteProcess, error) {
 	var process *RemoteProcess
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.process", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
@@ -66,7 +66,7 @@ func (s *Store) Process(ctx context.Context, owner Owner, processID string) (*Re
 // ProcessByModelSession resolves an unreleased model-facing session number.
 func (s *Store) ProcessByModelSession(ctx context.Context, owner Owner, sessionID int) (*RemoteProcess, error) {
 	var process *RemoteProcess
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.process_by_model_session", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
@@ -125,7 +125,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 	if !status.Valid() {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.process_result", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, process, err := lockOwnedProcess(ctx, tx, owner, processID)
 		if err != nil {
 			return err
@@ -169,7 +169,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 	if remoteOutcome != NestedUnknown && remoteOutcome != NestedNotDispatched {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.abandon_process", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, process, err := lockOwnedProcess(ctx, tx, owner, processID)
 		if err != nil {
 			return err
@@ -216,7 +216,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 }
 
 func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID string, afterSequence uint64, output []byte, exited bool, exitCode *int) error {
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.retain_process_output", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, process, err := lockOwnedProcess(ctx, tx, owner, processID)
 		if err != nil {
 			return err
@@ -256,7 +256,7 @@ func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, stat
 	if cellID == "" || !status.Valid() {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.cell_result", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -276,7 +276,7 @@ func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, stat
 
 func (s *Store) ExecutionState(ctx context.Context, owner Owner) (*ExecutionState, error) {
 	var state *ExecutionState
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.execution_state", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
@@ -341,7 +341,7 @@ func (w LiveWork) KeepsOwner(turnActive bool) bool {
 
 func (s *Store) LiveWork(ctx context.Context, owner Owner) (LiveWork, error) {
 	var work LiveWork
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.live_work", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -371,7 +371,7 @@ func (s *Store) CheckLiveCells(ctx context.Context, owner Owner, runtimeAvailabl
 
 func (s *Store) RequestInterrupt(ctx context.Context, conversationID string, generation int) (string, error) {
 	id := uuid.NewString()
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.request_interrupt", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := scanConversation(tx.QueryRowContext(ctx, `SELECT `+conversationColumns+` FROM sampler_conversation WHERE id=$1 FOR UPDATE`, conversationID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return protocol.ErrMissing
@@ -395,7 +395,7 @@ func (s *Store) RequestInterrupt(ctx context.Context, conversationID string, gen
 
 func (s *Store) PendingInterrupts(ctx context.Context, owner Owner) ([]string, error) {
 	var ids []string
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.pending_interrupts", func(ctx context.Context, tx *sql.Tx) error {
 		if err := fenceOwner(ctx, tx, owner); err != nil {
 			return err
 		}
@@ -421,7 +421,7 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 	if err != nil {
 		return err
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.acknowledge_interrupt", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -530,7 +530,7 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 }
 
 func (s *Store) AppendInput(ctx context.Context, owner Owner, prompt string) error {
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.append_input", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err

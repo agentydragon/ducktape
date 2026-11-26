@@ -131,7 +131,7 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixes(t *testing.T) {
 // Write the native notice and typed control an older sampler would have committed.
 func seedLegacyExecutionSnapshot(t *testing.T, store *Store, owner Owner, state *ExecutionState) *Conversation {
 	t.Helper()
-	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
+	if err := store.transaction(t.Context(), "sampler.test_fixture", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -320,7 +320,7 @@ func TestRecordOriginsDistinguishIdenticalRecordsAndPreserveUnknownKinds(t *test
 		t.Fatalf("fixture did not produce identical native messages: %s", records)
 	}
 	future := protocol.RecordOrigin{Kind: "future_origin", Projection: "future_projection"}
-	if err := store.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	if err := store.transaction(ctx, "sampler.test_fixture", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err

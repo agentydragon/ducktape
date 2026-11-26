@@ -20,7 +20,7 @@ func (s *Store) FailProviderCommand(ctx context.Context, owner Owner, sessionID,
 	if commandID == "" || intentID == "" || reason == "" || len(reason) > 4096 {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.fail_provider_command", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
