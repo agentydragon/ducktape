@@ -8,7 +8,6 @@ use super::super::noninvoking_initialization::{
     completed_root_initialization, completed_root_statement,
 };
 use super::super::runtime_inference::RuntimeQueries;
-use super::super::value_model::AbstractValue;
 use super::assignment::RootAssignment;
 use super::body::expected_root_calls;
 use super::operands::RootOperands;
@@ -17,6 +16,7 @@ use analysis::facts::binding_effect_coverage::BindingEffectCoverage;
 use analysis::facts::evaluation_effects::EvaluationEffects;
 use analysis::facts::statement_facts::SynchronousCalls;
 use analysis_vocabulary::value::{Kind, Value};
+use value_model::AbstractValue;
 
 pub(super) fn finalize(
     inputs: &ExecutionInputs<'_>,

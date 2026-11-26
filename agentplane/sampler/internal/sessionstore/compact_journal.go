@@ -21,11 +21,12 @@ import (
 )
 
 const (
-	journalRepackBatchEntries = eventblock.MaxEntries
-	journalRepackBatchBytes   = eventblock.MaxBytes
-	journalRepackStoredBytes  = eventblock.MaxBytes + (64 << 10)
-	journalLockWait           = 100 * time.Millisecond
-	journalLockHold           = 250 * time.Millisecond
+	DefaultJournalBlocksPerTxn = 4
+	journalRepackBatchEntries  = eventblock.MaxEntries
+	journalRepackBatchBytes    = eventblock.MaxBytes
+	journalRepackStoredBytes   = eventblock.MaxBytes + (64 << 10)
+	journalLockWait            = 100 * time.Millisecond
+	journalLockHold            = 250 * time.Millisecond
 )
 
 var (
@@ -35,6 +36,7 @@ var (
 
 // JournalCompactionOptions controls pacing and bounded maintenance runs.
 type JournalCompactionOptions struct {
+	MaxBlocksPerTxn   int // Zero selects DefaultJournalBlocksPerTxn.
 	BatchDelay        time.Duration
 	PauseFile         string
 	ContentionRetries int
@@ -114,7 +116,10 @@ func (s *Store) CompactJournal(ctx context.Context, sessionID string, apply bool
 // batch. Progress stays in memory; a later invocation safely scans from the start.
 func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string, apply bool, options JournalCompactionOptions) (JournalCompactionResult, error) {
 	var result JournalCompactionResult
-	if options.BatchDelay < 0 || options.BatchDelay > time.Minute ||
+	if options.MaxBlocksPerTxn == 0 {
+		options.MaxBlocksPerTxn = DefaultJournalBlocksPerTxn
+	}
+	if options.MaxBlocksPerTxn < 1 || options.MaxBlocksPerTxn > journalRepackBatchEntries || options.BatchDelay < 0 || options.BatchDelay > time.Minute ||
 		options.ContentionRetries < 0 || options.ContentionRetries > 10 || options.RetryDelay < 0 || options.RetryDelay > time.Minute {
 		return result, protocol.ErrInvalid
 	}
@@ -128,20 +133,29 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 	state := journalRepackState{opening: opening}
 	result.OpeningCursor = state.opening
 
+	var pending []repackPlan
 	lastProgress := time.Now()
 	for {
 		if err := waitForJournalPause(ctx, options.PauseFile); err != nil {
 			return result, err
 		}
 		for attempt := 0; ; attempt++ {
-			plan, err := s.prepareJournalRepack(ctx, sessionID, state)
-			if err != nil {
-				return result, err
+			if len(pending) == 0 {
+				page, err := s.prepareJournalRepack(ctx, sessionID, state)
+				if err != nil {
+					return result, err
+				}
+				pending, err = splitJournalPage(page, options.MaxBlocksPerTxn)
+				if err != nil {
+					return result, err
+				}
 			}
+			plan := pending[0]
 			if apply {
 				hold, err := s.applyJournalRepack(ctx, sessionID, state, plan)
 				addLockHold(&result, hold)
 				if errors.Is(err, ErrJournalBatchChanged) || errors.Is(err, ErrJournalBusy) {
+					pending = nil // Re-read from the last committed cursor.
 					if attempt < options.ContentionRetries {
 						if err := waitForJournalCompaction(ctx, options.RetryDelay); err != nil {
 							return result, err
@@ -154,6 +168,7 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 					return result, err
 				}
 			}
+			pending = pending[1:]
 			state = plan.state
 			result.Events += plan.result.Events
 			result.Blocks += plan.result.Blocks
@@ -162,7 +177,7 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 			result.Batches++
 			break
 		}
-		if state.through >= state.opening {
+		if len(pending) == 0 && state.through >= state.opening {
 			result.Completed = true
 			return result, nil
 		}
@@ -364,6 +379,72 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 		}
 	}
 	return plan, nil
+}
+
+// Keep packing decisions independent of the transaction size. An input block
+// that straddles a cut is replaced in full: its unwritten suffix becomes
+// standalone rows and is part of the next transaction's exact-source check.
+func splitJournalPage(page repackPlan, limit int) ([]repackPlan, error) {
+	if page.result.Blocks <= int64(limit) {
+		return []repackPlan{page}, nil
+	}
+	sources, outputs := page.sources, page.outputs
+	original := page.sources // Charge each original payload once, excluding temporary rows.
+	var batches []repackPlan
+	for len(outputs) > 0 {
+		end, blocks := 0, 0
+		for end < len(outputs) {
+			if outputs[end].block {
+				if blocks == limit {
+					break
+				}
+				blocks++
+			}
+			end++
+		}
+		final := outputs[:end]
+		last := final[end-1].last
+		take := 0
+		for take < len(sources) && sources[take].first <= last {
+			take++
+		}
+		batch := repackPlan{sources: sources[:take], outputs: final, state: page.state}
+		sources, outputs = sources[take:], outputs[end:]
+		if len(outputs) > 0 {
+			batch.state.through = min(last, page.state.opening)
+		}
+		for _, row := range final {
+			batch.result.Events += int64(row.last - row.first + 1)
+			if row.block {
+				batch.result.Blocks++
+				batch.result.PackedBytes += int64(len(row.payload))
+			}
+		}
+		for len(original) > 0 && original[0].first <= last {
+			batch.result.StoredBytes += int64(len(original[0].payload))
+			original = original[1:]
+		}
+		crossing := batch.sources[len(batch.sources)-1]
+		if crossing.last > last {
+			entries, err := decodeRepackSource(crossing)
+			if err != nil {
+				return nil, err
+			}
+			var suffix []repackStorage
+			for i, entry := range entries[last-crossing.first+1:] {
+				seq := last + 1 + uint64(i)
+				wire, err := standaloneJournalPayload(entry)
+				if err != nil {
+					return nil, err
+				}
+				suffix = append(suffix, repackStorage{first: seq, last: seq, payload: wire})
+			}
+			batch.outputs = append(slices.Clip(final), suffix...)
+			sources = append(suffix, sources...)
+		}
+		batches = append(batches, batch)
+	}
+	return batches, nil
 }
 
 func decodeRepackSource(source repackStorage) ([]repackEntry, error) {

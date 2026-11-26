@@ -9,7 +9,7 @@ Consumers use `client.py`; `testing/go_service.py` runs the built Go service ove
 Tests can inspect the fold's storage through `fold/models.py` and use the generated Thread entity
 messages for semantic reads.
 
-The required `rpc.auth` enables SPIFFE client trust; `policy_namespace` and
+The required `rpc.auth` enables SPIFFE client trust; `policy_service` and
 `ingress.writer_namespaces` are required for live workload credential checks.
 `reader_service_callers` grants named service SPIFFE IDs the backend-wide read scope. The independent
 `service_delegation` setting grants exact service actors read methods as a live effective Identity;
@@ -56,15 +56,16 @@ journal here, one call per Session. Sandbox Runtime opens end-to-end mTLS throug
 and central proxy's exact-authority CONNECT passthrough to `rpc.listen_address`.
 History presents `spiffe://agentplane/history-ingress`, verifies the client SVID against the
 Agentplane workload CA with an explicit clientAuth EKU, and resolves its Identity, WorkloadCredential,
-and Sandbox owner from live Kubernetes records. A deleted Sandbox, stale credential, changed Identity
+and Sandbox owner. The Identity comes from PolicyService (`policy_service`, mutual TLS as History: a
+`WatchIdentities` view with read-through `GetIdentity` on a miss); the WorkloadCredential and Sandbox come from live
+Kubernetes records. A deleted Sandbox, stale credential, changed Identity
 incarnation, or missing bound Pod is refused before the ingress handler. No header selects the caller
 and the proxy asserts none.
 
 `rpc` configures the shared native gRPC listener and server TLS files. History admits live workload SVIDs
 for Identity reads and runner `Push` calls, plus configured service SVIDs for component reads and
 sampler writes. The listener requires an SVID. A workload certificate cannot be combined with
-authorization metadata. For runner writes the WorkloadCredential must name an Identity in
-`policy_namespace` and belong to a Sandbox in `ingress.writer_namespaces`. See the
+authorization metadata. For runner writes the WorkloadCredential must name an Identity PolicyService serves and belong to a Sandbox in `ingress.writer_namespaces`. See the
 [Session writer binding](#session-writer-and-execution-sandbox) for announcement and reconnect checks.
 
 `Store.Append` accepts exact replays and refuses gaps and conflicting entries. Each acknowledgement
@@ -233,8 +234,9 @@ Apply holds the opening `recorded_position`, each Session cursor watermark, and 
 memory only. It enumerates `session_history` directly, including inactive Sessions, in pages of 100. Candidate decoding and compression happen outside the append lock. A short transaction then
 acquires the Session row with a 250 ms lock timeout and
 a 5 second transaction budget (`--batch-transaction-budget`), revalidates the exact source and
-settlement/removal state, and atomically replaces one bounded candidate (at most 256 frames and
-8 MiB decoded). PostgreSQL `transaction_timeout` and the transaction context enforce the budget;
+settlement/removal state, and atomically installs up to four output blocks (`--max-blocks-per-txn`). The whole
+packing transaction is bounded to 256 frames and 8 MiB of block input. Set the flag to 1
+to install a single block per commit. PostgreSQL `transaction_timeout` and the transaction context enforce the budget;
 an expired batch rolls back and retries the same candidate up to three times. Existing blocks are
 unpacked in bounded units before their frames are merged with ordinary rows and repacked, which
 handles sparse cursors, interleaved kinds, partial block boundaries and mixed formats without

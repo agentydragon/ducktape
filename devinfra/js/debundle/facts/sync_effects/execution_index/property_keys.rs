@@ -1,11 +1,11 @@
 //! Property-key expressions and the string domains they prove.
 
-use super::super::value_model::static_prop;
 use super::IntrinsicRoots;
 use analysis_vocabulary::inputs::NativeIntrinsic;
 use analysis_vocabulary::report_schema::NativePropertyKey;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::{AssignOp, BinaryOp, Callee, Expr, Id, Lit};
+use value_model::static_prop;
 
 /// Property-key facts affect only the native write census. They make no claim
 /// about evaluating the key, calling a factory, or consuming its return value.

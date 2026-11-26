@@ -2,8 +2,8 @@
 //! integrity slot unknown, from the saved graph and its program graph.
 
 use crate::emit_report;
-use analysis::facts::abstract_domain::integrity::{CensusExplanation, SlotName, SlotReach};
 use analysis::facts::standard_globals::is_standard_global;
+use analysis_domain::integrity::{CensusExplanation, SlotName, SlotReach};
 use analysis_vocabulary::execution_evidence::{
     ExecutionPrecisionLoss, ExecutionPrecisionLossReason, SourceLocation,
 };

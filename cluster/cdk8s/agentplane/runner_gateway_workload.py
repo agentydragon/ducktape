@@ -36,8 +36,10 @@ from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     GATEWAY_SESSIONS_URI,
     NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
+    PolicyServicePeer,
     ServiceSPIFFEID,
 )
 from agentplane.session_dispatcher.settings import CentralSamplerTarget, Settings
@@ -51,6 +53,7 @@ from cluster.cdk8s.agentplane import (
     egress,
     environment_service,
     notifications,
+    policy_controller,
     runner_gateway,
     sandbox_controller,
     workload_tls,
@@ -246,6 +249,10 @@ class RunnerGateway(Construct):
         sessions_settings = Settings(
             sandbox_namespace=namespace,
             policy_namespace=namespace,
+            policy_service=PolicyServicePeer(
+                target=policy_controller.tls_service(namespace).authority,
+                tls=client.client_tls(POLICY_CONTROLLER_URI, client_uri=GATEWAY_SESSIONS_URI),
+            ),
             kubernetes_client_qps=-1,
             rpc=serving_tls.spiffe_listener(endpoint.pod_port),
             gateway_tls=client.client_tls(SANDBOX_CONTROLLER_URI, client_uri=GATEWAY_SESSIONS_URI),
@@ -275,6 +282,7 @@ class RunnerGateway(Construct):
             cilium.dns_egress(),
             EgressRule.to_entities(Entity.KUBE_APISERVER),
             database.egress(namespace),
+            policy_controller.tls_service(namespace).egress(),
             environment_service.environments_service(namespace).egress(),
             *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
         ]

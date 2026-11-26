@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::StatementKind;
+use analysis_domain::item_views::StatementKind;
 use anyhow::Result;
 use selector_outcome::{
     Entity, EntityRef, InvalidSelectorError, MAX_CANDIDATES_PER_SELECTOR, Outcome, ProjectionError,

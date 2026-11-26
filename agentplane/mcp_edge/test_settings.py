@@ -10,10 +10,25 @@ from agentplane.mcp_edge.settings import Settings
 from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, POLICY_CONTROLLER_URI
 
 
+def _policy_service(**overrides: object) -> dict[str, object]:
+    return {
+        "target": "policy-controller:8443",
+        "tls": {
+            "ca_file": Path("/etc/agentplane/ca/ca.crt"),
+            "server_uri": POLICY_CONTROLLER_URI,
+            "cert_file": Path("/var/run/secrets/agentplane-mcp/tls.crt"),
+            "key_file": Path("/var/run/secrets/agentplane-mcp/tls.key"),
+            "client_uri": MCP_EDGE_URI,
+        },
+        **overrides,
+    }
+
+
 def _settings_source() -> dict[str, object]:
     return {
         "actions_target": "actions:8080",
         "policy_namespace": "test-policy",
+        "policy_service": _policy_service(),
         "rpc_tls": {
             "listen": "0.0.0.0:8443",
             "cert_file": Path("/etc/agentplane/tls/tls.crt"),
@@ -152,23 +167,11 @@ def test_oauth_file_also_requires_an_action_caller_credential() -> None:
         Settings.model_validate({**_settings_source(), "oauth_file": Path("/etc/agentplane-mcp/oauth.yaml")})
 
 
-def _policy_service(**overrides: object) -> dict[str, object]:
-    return {
-        "target": "policy-controller:8443",
-        "tls": {
-            "ca_file": Path("/etc/agentplane/ca/ca.crt"),
-            "server_uri": POLICY_CONTROLLER_URI,
-            "cert_file": Path("/var/run/secrets/agentplane-mcp/tls.crt"),
-            "key_file": Path("/var/run/secrets/agentplane-mcp/tls.key"),
-            "client_uri": MCP_EDGE_URI,
-        },
-        **overrides,
-    }
-
-
 def test_policy_service_is_an_exact_mutual_tls_caller_as_the_edge() -> None:
-    settings = Settings.model_validate({**_settings_source(), "policy_service": _policy_service()})
-    assert settings.policy_service is not None
+    source = _settings_source()
+    del source["policy_service"]
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
     tls = _policy_service()["tls"]
     assert isinstance(tls, dict)
     for invalid in (

@@ -7,8 +7,8 @@ use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use swc_atoms::Atom;
 
-use analysis::StatementKind;
 use analysis::ids::ModuleId;
+use analysis_domain::item_views::StatementKind;
 use analysis_vocabulary::execution_evidence::SourceLocation;
 use analysis_vocabulary::inputs::{
     CallbackFactoryEvidence, CommutingStatementsRef, ReturnedRecordSummary,

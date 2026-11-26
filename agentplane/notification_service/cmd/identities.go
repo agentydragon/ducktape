@@ -16,17 +16,9 @@ type identitySources struct {
 	rules reader.IdentitySource
 }
 
-// startIdentities follows Identities through PolicyService when configured, else reads the Identity resources of the
-// namespace from the API server; stop ends the PolicyService view.
-func startIdentities(ctx context.Context, c config, deps kubeDeps) (identitySources, func(), error) {
-	if c.PolicyService == nil {
-		uids, err := auth.KubernetesIdentityUIDs(deps.Sandboxes, c.Namespace)
-		if err != nil {
-			return identitySources{}, nil, err
-		}
-		return identitySources{uids: uids, rules: reader.KubernetesIdentities{}}, func() {}, nil
-	}
-	cache, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
+// startIdentities follows Identities through PolicyService; stop ends that view.
+func startIdentities(ctx context.Context, c config) (identitySources, func(), error) {
+	cache, stop, err := identitycache.Start(ctx, c.PolicyService, identitycache.StandardGrace)
 	if err != nil {
 		return identitySources{}, nil, err
 	}

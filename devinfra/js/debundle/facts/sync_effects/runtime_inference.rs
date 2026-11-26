@@ -1,19 +1,14 @@
 //! Position-specific execution facts. A later source prefix consumes the
 //! preceding prefix's settled state and never changes that earlier state.
 
-use super::allocation_transfer::AllocationJudgment;
-use super::effect_coverage::EffectCoverageFragment;
 use super::execution_index::Call;
 use super::interpreter::{
     ExecutionInputs, ExecutionState, Executor, Observations, Outcome, OwnPropertyQuery,
 };
-use super::kernel::frame::{CallableSelection, EvaluatedCallee};
 use super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
-use super::property_inference::OwnPropertyProof;
 use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
-use super::value_model::{CapturedContext, Context, ValueExpr, Values};
 use analysis::facts::evaluation_effects::EvaluationEffects;
 use analysis::facts::statement_facts::SynchronousCalls;
 use analysis::facts::{
@@ -24,9 +19,15 @@ use analysis_vocabulary::execution_evidence::OrderedCallAdmissionRefusal;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::report_schema::{NativeProgramPointKind, NativeProgramPointStep};
 use inference::{CompletedTransfer, FactContext, IterativeInference, IterativeRules};
+use kernel::frame::EvaluatedCallee;
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
 use swc_common::Span;
+use value_model::CallableSelection;
+use value_model::property_inference::OwnPropertyProof;
+use value_model::{CapturedContext, Context, ValueExpr, Values};
+use world::allocation_transfer::AllocationJudgment;
+use world::effect_coverage::EffectCoverageFragment;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeKey {
@@ -550,7 +551,7 @@ impl RuntimeRules<'_, '_> {
                 };
                 let covered_operation = operation_source
                     && !values.is_empty()
-                    && !values.contains(&super::value_model::AbstractValue::Value(
+                    && !values.contains(&value_model::AbstractValue::Value(
                         analysis_vocabulary::value::Value::Unavailable,
                     ))
                     && operation_coverage

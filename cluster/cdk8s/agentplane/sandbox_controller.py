@@ -32,7 +32,9 @@ from agentplane.net.peertls.config import (
     GATEWAY_SESSIONS_URI,
     MTLS,
     NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
     SANDBOX_CONTROLLER_URI,
+    PolicyServicePeer,
     ServiceSPIFFEID,
 )
 from agentplane.subjects import ServiceAccountRef
@@ -45,6 +47,7 @@ from cluster.cdk8s.agentplane import (
     environment_sandbox,
     environment_service,
     notifications,
+    policy_controller,
     runner_gateway,
     workload_tls,
 )
@@ -247,6 +250,10 @@ class SandboxController(Construct):
         )
         environments_settings = Settings(
             environment_service=serving,
+            policy_service=PolicyServicePeer(
+                target=policy_controller.tls_service(namespace).authority,
+                tls=client.client_tls(POLICY_CONTROLLER_URI, client_uri=SANDBOX_CONTROLLER_URI),
+            ),
             runner_gateway_tls=client.client_tls(SANDBOX_CONTROLLER_URI, client_uri=SANDBOX_CONTROLLER_URI),
             runner_security=MTLS(tls=client),
             namespace=namespace,
@@ -286,6 +293,7 @@ class SandboxController(Construct):
             cilium.dns_egress(),
             EgressRule.to_entities(Entity.KUBE_APISERVER),
             environments.egress(),
+            policy_controller.tls_service(namespace).egress(),
             EgressRule.to_endpoints(
                 environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
             ),

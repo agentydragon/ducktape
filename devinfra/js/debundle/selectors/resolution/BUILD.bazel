@@ -198,6 +198,7 @@ rust_library(
         ":selector_ir",
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/analysis_domain",
         "//devinfra/js/debundle/spec",
         "@crates//:thiserror",
     ],

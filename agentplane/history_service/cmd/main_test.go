@@ -23,6 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -383,7 +384,7 @@ func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
 	closed.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	if err := serve(ctx, c, closed); !errors.Is(err, net.ErrClosed) {
+	if err := serve(ctx, c, closed, testIdentities(t)); !errors.Is(err, net.ErrClosed) {
 		t.Errorf("serve returned %v, want the listener's error", err)
 	}
 }
@@ -441,6 +442,12 @@ func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 	c := svidConfig(t, ca)
 	c.RPC.ListenAddress = fmt.Sprintf("fd:%d", readerFD)
 	c.Kubeconfig = kubeconfig
+	// The PolicyService is never dialed successfully; the view only starts.
+	policyClient := ca.Issue(t, peertls.HistoryIngressURI)
+	c.PolicyService = identitycache.Peer{Target: "127.0.0.1:1", TLS: peertls.ClientTLS{
+		CAFile: policyClient.CAFile, ServerURI: peertls.PolicyControllerURI,
+		CertFile: policyClient.CertFile, KeyFile: policyClient.KeyFile, ClientURI: peertls.HistoryIngressURI,
+	}}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
 	go func() { served <- run(ctx, c) }()
@@ -494,6 +501,14 @@ func TestCompactHistoryAllContinuesPastLockedSession(t *testing.T) {
 		"    - mode: spiffe",
 		"      ca_file: /test/workload-ca.crt",
 		"policy_namespace: test-policies",
+		"policy_service:",
+		"  target: test-policy-controller:8443",
+		"  tls:",
+		"    ca_file: /test/workload-ca.crt",
+		"    server_uri: spiffe://agentplane/policy-controller",
+		"    cert_file: /test/history.crt",
+		"    key_file: /test/history.key",
+		"    client_uri: spiffe://agentplane/history-ingress",
 		"ingress:",
 		"  writer_namespaces: [test-agentplane]",
 	}, "\n")

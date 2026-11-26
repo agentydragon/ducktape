@@ -57,7 +57,7 @@ impl TestModule {
 fn run_program(modules: &[TestModule]) -> ProgramValueFlows {
     let bodies: Vec<_> = modules
         .iter()
-        .map(|module| crate::facts::top_level_item_views(&module.ast.body))
+        .map(|module| analysis_domain::item_views::top_level_item_views(&module.ast.body))
         .collect();
     let bindings = ProgramBindings::new(
         modules.iter().map(|module| ModuleBindings {
@@ -402,7 +402,7 @@ fn local_property_return_summaries_keep_module_slot_names() {
         callback.iter().all(|origin| shared_query.contains(&origin)),
         "the shared summary uses globally rekeyed property slots"
     );
-    let provider_views = crate::facts::top_level_item_views(&provider.ast.body);
+    let provider_views = analysis_domain::item_views::top_level_item_views(&provider.ast.body);
     let reference = ChunkValueFlow::analyze_reference(&provider_views);
     let local_query = reference.values_of_expr(result_expr);
     let callback_values: BTreeSet<_> = callback.iter().collect();

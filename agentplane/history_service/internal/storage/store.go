@@ -157,6 +157,7 @@ type Store struct {
 // Options controls writes and online History repacking. Every reader supports packed entries regardless of these flags.
 type Options struct {
 	EventPackers             map[historypb.EventKind]*eventblock.Packer
+	RepackBlocksPerTxn       int
 	RepackBatchBudget        time.Duration
 	SettleDeltas             bool
 	CompactDeltas            bool
@@ -164,6 +165,9 @@ type Options struct {
 }
 
 func NewStore(db *sql.DB, options Options) *Store {
+	if options.RepackBlocksPerTxn <= 0 {
+		options.RepackBlocksPerTxn = DefaultRepackBlocksPerTxn
+	}
 	if options.RepackBatchBudget <= 0 {
 		options.RepackBatchBudget = DefaultRepackBatchBudget
 	}

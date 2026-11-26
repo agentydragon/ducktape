@@ -11,26 +11,26 @@ use super::{
     Revision, World, WorldScope,
 };
 use crate::allocation_transfer::WritablePrefixState;
-use crate::property_inference::CapturedPropertyDescriptor;
-use crate::value_model::{AbstractValue, DenseArray, LexicalCellId, Values};
 use analysis_vocabulary::value::Value;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
+use value_model::property_inference::CapturedPropertyDescriptor;
+use value_model::{AbstractValue, DenseArray, LexicalCellId, Values};
 
 /// The result of joining a family of alternative worlds.
 #[must_use]
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Joined {
-    pub(crate) world: World,
+pub struct Joined {
+    pub world: World,
     /// Some alternative lost precision in the join.
-    pub(crate) widened: bool,
+    pub widened: bool,
     /// The joined world cannot resume the live control cursor; the caller
     /// runs one conservative remainder fallback instead.
-    pub(crate) refused: Option<JoinRefusal>,
+    pub refused: Option<JoinRefusal>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum JoinRefusal {
+pub enum JoinRefusal {
     EmptySet,
     DivergentActiveCells,
     DivergentScope,
@@ -52,7 +52,7 @@ impl World {
     /// Join every alternative into one world. Refusal is an outcome, never a
     /// panic: the returned world is the pointwise join of the remaining
     /// owners with `reachability.incomplete` set.
-    pub(crate) fn join(worlds: &[&World]) -> Joined {
+    pub fn join(worlds: &[&World]) -> Joined {
         let Some(first) = worlds.first().copied() else {
             // Nothing ran, so no scope is known; the caller never resumes
             // from this world.
@@ -739,17 +739,18 @@ fn intersect_ord_maps<K: Ord + Clone, V: Clone + PartialEq>(
 
 #[cfg(test)]
 mod tests {
+    use super::super::World;
     use super::super::cells::{CellInitialization, LexicalCell};
     use super::super::prefix_values::{PrefixValues, TopBindings};
-    use super::super::{World, WorldScope};
     use super::{JoinRefusal, Joined};
-    use crate::local_operations::LocalBinding;
-    use crate::value_model::{AbstractValue, DenseArray, Values};
     use analysis_vocabulary::value::{Kind, Value};
     use std::sync::Arc;
     use swc_atoms::Atom;
     use swc_common::SyntaxContext;
     use swc_ecma_ast::Id;
+    use value_model::WorldScope;
+    use value_model::local_operations::LocalBinding;
+    use value_model::{AbstractValue, DenseArray, Values};
 
     fn binding(name: &str) -> Id {
         (Atom::from(name), SyntaxContext::empty())

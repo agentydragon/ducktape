@@ -91,7 +91,8 @@ backend. An evaluation failure during compilation makes the MCP tool unavailable
 The shared TLS listener admits workload Identity SVIDs and exact service SPIFFE IDs. A workload
 certificate resolves to the live Identity incarnation named by its WorkloadCredential, and requires
 a live PolicyBinding. Owned workloads retain their existing incarnation checks; a standing workload
-requires no Sandbox or Pod. Service certificates supply no workload, ServiceAccount or Pod proof.
+requires no Sandbox or Pod. The service reads every Identity through PolicyService (required `policy_service`
+setting), apart from `orchestration_v1`, which still reads and writes Identities on the API server. Service certificates supply no workload, ServiceAccount or Pod proof.
 Kubernetes bearer tokens are refused, including valid tokens for the former audience. No TokenReview
 client is constructed for receiver admission. `reader_accounts` and `connection_delegation_actor` are
 not accepted receiver settings. The shared listener schema has one authentication mode, `spiffe`, and

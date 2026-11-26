@@ -7,7 +7,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::{EntryDestination, ModuleId, StatementKind};
+use analysis::{EntryDestination, ModuleId};
+
+use analysis_domain::item_views::StatementKind;
 use anyhow::{Context, Result, ensure};
 use gate::project_assignment_constraints;
 use graph::ModuleAssignment;

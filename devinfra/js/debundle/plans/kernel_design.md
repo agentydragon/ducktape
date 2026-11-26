@@ -103,7 +103,7 @@ approved in principle. Starting points:
   interval from the recognizer's premise (`dependencies_for_constructor`,
   `native_iterable_operand`). A kernel row needs
   `PrototypeProperty(Set, "add")` and the Array iterator slots, in the row
-  (`facts/abstract_domain/builtins.rs`, after <../docs/purity_soundness.md>) or
+  (`analysis_domain/builtins.rs`, after <../docs/purity_soundness.md>) or
   checked by the adapter.
 - **Open callee read.** The application adapter's `read_binding` gives the
   global `Set` open coverage and `construct()` admits only local classes, so

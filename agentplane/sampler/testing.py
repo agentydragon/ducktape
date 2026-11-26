@@ -22,7 +22,7 @@ from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, GATEWAY_SESSIONS_
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc, sampler_pb2
 from agentplane.sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
-from agentplane.testing.go_process import go_process
+from agentplane.testing.go_process import GrpcHealth, go_process
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 from util.net import listen_tcp
 
@@ -201,7 +201,7 @@ async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[Sampler
             binary,
             env={"AGENTPLANE_CENTRAL_SAMPLER_CONFIG": str(config_path)},
             stderr=directory / "sampler.log",
-            health_port=health_port,
+            readiness=GrpcHealth(port=health_port),
             grace_s=10,
             pass_fds=(fd, health_fd),
         ):

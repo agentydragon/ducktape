@@ -525,7 +525,7 @@ rebuilds, codegen cache), and materialize-stage performance work lives in
 
 The ignored `inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle`
 fixture is a deferred **RegExp admission feature**, not a contradictory classifier
-bug. The `RegExp` row in `facts/abstract_domain/builtins.rs` throws on pattern
+bug. The `RegExp` row in `analysis_domain/builtins.rs` throws on pattern
 values, so purity needs static ECMA-262 pattern validation before admitting
 literal `RegExp` construction; the active classifier test correctly expects
 Unknown today. Keep the future test ignored until that precondition is

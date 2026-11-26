@@ -1,0 +1,27 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "identityview",
+    testonly = True,
+    srcs = ["identityview.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/testing/identityview",
+    visibility = ["//agentplane/environments:__subpackages__"],
+    deps = [
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/identitycache",
+        "//agentplane/policy/v1:policy_service_go_proto",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/watch",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

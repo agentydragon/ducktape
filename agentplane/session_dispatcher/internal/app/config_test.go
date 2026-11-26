@@ -25,6 +25,14 @@ rpc:
   tls: {cert_file: /tmp/workload-cert, key_file: /tmp/workload-key}
   auth:
     - {mode: spiffe, ca_file: /tmp/workload-ca}
+policy_service:
+  target: policy-controller.test:8443
+  tls:
+    ca_file: /test/workload-ca
+    server_uri: spiffe://agentplane/policy-controller
+    cert_file: /test/sessions-client-cert
+    key_file: /test/sessions-client-key
+    client_uri: spiffe://agentplane/sessions
 `
 
 // required includes the explicit database Secret runtime input plus the static settings file.
@@ -361,7 +369,9 @@ func TestRuntimeProxyPeerAcceptsEachCutoverReceiver(t *testing.T) {
 	}
 }
 
-func TestPolicyServiceMustBeACompleteMutualTLSCallerAsSessions(t *testing.T) {
+func TestPolicyServiceIsRequiredAndMustBeACompleteMutualTLSCallerAsSessions(t *testing.T) {
+	policyService := requiredFile[strings.Index(requiredFile, "policy_service:"):]
+	base := strings.Replace(requiredFile, policyService, "", 1)
 	block := func(target, clientURI, serverURI string) string {
 		return fmt.Sprintf(`policy_service:
   target: %q
@@ -380,19 +390,20 @@ func TestPolicyServiceMustBeACompleteMutualTLSCallerAsSessions(t *testing.T) {
 		valid    bool
 	}{
 		{"complete", block("policy-controller.test:8443", sessions, policy), true},
+		{"missing", "", false},
 		{"no target", block("", sessions, policy), false},
 		{"another caller identity", block("policy-controller.test:8443", peertls.SessionDispatcherURI, policy), false},
 		{"another server", block("policy-controller.test:8443", sessions, peertls.ActionsURI), false},
 		{"no client SVID", "policy_service:\n  target: policy-controller.test:8443\n  tls:\n    ca_file: /test/workload-ca\n    server_uri: " + policy + "\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			path := configtest.WriteSettings(t, requiredFile+tc.settings)
+			path := configtest.WriteSettings(t, base+tc.settings)
 			c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "policy-controller.test:8443") {
 				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
 			}
 			if !tc.valid && err == nil {
-				t.Fatal("loadConfig accepted an incomplete policy_service")
+				t.Fatal("loadConfig accepted a missing or incomplete policy_service")
 			}
 		})
 	}

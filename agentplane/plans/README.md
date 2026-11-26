@@ -24,6 +24,8 @@ The operator listed the directions without ranking them. The DAG also tracks the
 - [Decoupling from Kubernetes](kubernetes_decoupling.md) — what ties Agentplane to Kubernetes, which
   tests need it, and four composable options (API-server-only test tier, seams behind service APIs,
   environments without Kubernetes, moving the record store); no direction chosen
+- [Identity ownership](identity_ownership.md) — how Sessions and Sandboxes bind to an Identity, where
+  its record lives, when it may be deleted, and the agent teardown order; no direction chosen
 - [History tags and History's Sandbox records](sandbox_tags.md) — older Sandbox-scoped History
   proposal; inbox tags ship, but grouping ownership, grants and lifetimes need review for independent
   Sessions before this is treated as an approved prerequisite
