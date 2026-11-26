@@ -524,13 +524,7 @@ fn collect_chunk_reports<T: DeserializeOwned>(
             collect_chunk_reports(root, &path, filename, reports)?;
         } else if path.file_name().and_then(|name| name.to_str()) == Some(filename) {
             let chunk = report_chunk_id(root, &path)?;
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("reading {}", path.display()))?;
-            reports.push((
-                chunk,
-                serde_json::from_str(&text)
-                    .with_context(|| format!("parsing {}", path.display()))?,
-            ));
+            reports.push((chunk, report_io::read_json(&path)?));
         }
     }
     Ok(())
