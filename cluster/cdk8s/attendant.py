@@ -19,17 +19,20 @@ from cdk8s_plus_34 import (
     Service,
     ServicePort,
     Volume,
+    k8s,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import namespaces, node_scheduling, piraeus_storage, pod_policy
+from cluster.cdk8s import gateway, namespaces, node_scheduling, piraeus_storage, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import image_automation, pull_credentials
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "attendant"
+HOST = "attendant.allegedly.works"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 
@@ -54,6 +57,11 @@ def chart(app: App) -> Chart:
         mint_bearer_secret(chart, f"{role}-token", target=token, immutable=True)
         env[f"ATTENDANT_{role.upper().replace('-', '_')}_TOKEN"] = token.env_value(chart, f"{role}-ref")
 
+    oidc = SecretRef(namespace=NAME, name="attendant-oidc")
+    for key in ("ISSUER", "CLIENT_ID", "CLIENT_SECRET", "SESSION_SECRET", "ALLOWED_SUBJECT"):
+        var = f"ATTENDANT_{key}"
+        env[var] = oidc.key(var).env_value(chart, f"oidc-{key.lower().replace('_', '-')}")
+
     metadata = ApiObjectMetadata(name=NAME, namespace=NAME)
     deployment = Deployment(
         chart,
@@ -67,12 +75,23 @@ def chart(app: App) -> Chart:
     deployment.scheduling.attract(
         Node.labeled(NodeLabelQuery.in_(node_scheduling.ZONE_LABEL, [node_scheduling.HIL_OVH_ZONE]))
     )
+    owner_pods = Pods(namespace=NAME, labels=(("attendant.allegedly.works/owner-auth", "oidc"),))
+    for key, value in owner_pods.labels:
+        deployment.pod_metadata.add_label(key, value)
     port = 8080
     health = Probe.from_http_get("/healthz", port=port)
     desktop = deployment.add_container(
         name=NAME,
         image=f"{image_automation.REGISTRY}/{NAME}:unset",
-        args=["--state-dir", "/data/attendant", "--host", "0.0.0.0"],
+        args=[
+            "--state-dir",
+            "/data/attendant",
+            "--host",
+            "0.0.0.0",
+            "--public-origin",
+            f"https://{HOST}",
+            "--owner-oidc",
+        ],
         env_variables=env,
         ports=[ContainerPort(name="http", number=port)],
         readiness=health,
@@ -87,6 +106,22 @@ def chart(app: App) -> Chart:
     desktop.mount("/tmp", Volume.from_empty_dir(chart, "tmp", "tmp"))
     pod_policy.harden(deployment)
     Service(chart, "service", metadata=metadata, selector=deployment, ports=[ServicePort(name="http", port=port)])
+    owner = ServiceRef(name="owner", pods=owner_pods, port=Port(name="http", number=port))
+    k8s.KubeService(
+        chart,
+        "owner-service",
+        metadata=k8s.ObjectMeta(name=owner.name, namespace=NAME),
+        spec=k8s.ServiceSpec(selector=owner.pods.selector, ports=[owner.port.k8s_service_port()]),
+    )
+    gateway.https_route(
+        chart,
+        "owner-route",
+        metadata=metadata,
+        hostnames=[HOST],
+        backend=owner,
+        paths=["/", "/main.js", "/main.css", "/auth/login", "/auth/callback", "/auth/logout", "/auth/signed-out"],
+        path_prefix="/owner",
+    )
     return chart
 
 
