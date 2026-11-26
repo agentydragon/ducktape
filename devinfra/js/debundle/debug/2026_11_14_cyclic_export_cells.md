@@ -59,10 +59,6 @@ There is also a `non_esm_chunk` static-closure blocker. The new fences therefore
 cannot be dismissed as impossible under the current source/spec assumptions.
 The frozen spec, host premises, budgets and gate were not changed.
 
-Hosted CI on the same head failed too (invocation
-`b1053465-c599-5773-9345-ae9d7f93599f`): 273 tests passed, five tests failed, and
-three targets failed to build. Pre-commit and Nix wheel/import checks passed.
-
 ## Partial source-derived repair
 
 The current `ForeignCallSummary` is a positive no-reentry/allocation capability,
