@@ -70,6 +70,17 @@ func prefixValidationError(prefix string, err error) error {
 }
 
 func (s Settings) Validate() error {
+	for name, entries := range map[string]int{
+		"history_export_page_entries": s.ExportPageEntries(),
+		"follow_events_page_entries":  s.FollowPageEntries(),
+	} {
+		if entries < 1 || entries > MaxJournalPageEntries {
+			return invalidSetting(name, fmt.Sprintf("must be between 1 and %d", MaxJournalPageEntries))
+		}
+	}
+	if s.ExportPagesPerTurn() < 1 {
+		return invalidSetting("history_export_pages_per_turn", "must be positive")
+	}
 	if err := s.PackingProfile().Validate(); err != nil {
 		return invalidSetting("event_block_profile", err.Error())
 	}

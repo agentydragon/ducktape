@@ -147,6 +147,55 @@ encoder or its existing eligibility rules. This probe packed all kinds and used 
 in both services; it did not price PostgreSQL tuples, indexes, seeks, or the cost of reading an
 actual filtered page. No family of unmeasured read frequencies is implicitly assigned a weight.
 
+## Sampler sequential read model
+
+Both the History exporter and admin `FollowEvents` read forward from a cursor. For a backlog,
+the journal store fetches and decodes each block intersecting each requested page. A block
+straddling two pages is decoded twice, even though only the requested events are returned.
+At the live tail a reader takes whatever is available, often from ordinary rows before they seal;
+a configured page size is a ceiling, not a reason to wait.
+
+Use the eight session-order windows above (4,096 events, 6,632,766 framed bytes). Let a sealed
+block contain `b` consecutive events and `d` framed bytes. For full pages of `p` events and a
+uniformly distributed starting phase relative to the blocks, each of its `b - 1` internal
+event boundaries has probability `1/p` of splitting a page. The block is decoded on average
+`1 + (b - 1)/p` times. Across a full scan the expected ratio of decoded bytes to journal bytes
+is `1 + (sum(b*d)/sum(d) - 1)/p`. The numerator is the existing point-read experiment's
+weighted byte total. For a known aligned cursor, count actual internal page boundaries instead:
+a 128-event block on 16-event page boundaries costs eight decodes rather than the phase average of 8.94.
+A reader that carries the last decoded block across pages consumes each block once, at any page size.
+
+| Target KiB / entries | Gzip bytes | Blocks | 16 events/page |    32 |    64 |   128 |   256 |
+| -------------------- | ---------: | -----: | -------------: | ----: | ----: | ----: | ----: |
+| 64 / 32              |  1,563,977 |    141 |          1.81× | 1.41× | 1.20× | 1.10× | 1.05× |
+| 64 / 128             |  1,509,740 |     56 |          3.01× | 2.01× | 1.50× | 1.25× | 1.13× |
+| 128 / 32             |  1,565,450 |    136 |          1.97× | 1.48× | 1.24× | 1.12× | 1.06× |
+| 128 / 128            |  1,507,258 |     45 |          3.60× | 2.30× | 1.65× | 1.33× | 1.16× |
+| 256 / 32             |  1,565,740 |    135 |          2.18× | 1.59× | 1.29× | 1.15× | 1.07× |
+| 256 / 128            |  1,505,980 |     39 |          5.10× | 3.05× | 2.03× | 1.51× | 1.26× |
+| 512 / 32             |  1,566,965 |    133 |          2.28× | 1.64× | 1.32× | 1.16× | 1.08× |
+| 512 / 128            |  1,506,644 |     37 |          5.25× | 3.13× | 2.06× | 1.53× | 1.27× |
+| 1024 / 32            |  1,567,033 |    130 |          2.60× | 1.80× | 1.40× | 1.20× | 1.10× |
+| 1024 / 128           |  1,507,019 |     35 |          6.23× | 3.62× | 2.31× | 1.65× | 1.33× |
+| 2048 / 32            |  1,568,220 |    128 |          2.94× | 1.97× | 1.48× | 1.24× | 1.12× |
+| 2048 / 128           |  1,505,422 |     32 |          8.94× | 4.97× | 2.98× | 1.99× | 1.50× |
+
+For the existing 64 KiB / 128-entry target, try 64 events per export page and four pages per
+worker turn: that keeps the 256-event scheduling quantum while cutting expected decode volume
+from 3.01× to 1.50× and full-page acknowledgement cycles from 16 to four. At that page size,
+reducing the block cap to 32 lowers decode volume further, to 1.20×, but uses 141 blocks
+instead of 56 and 3.6% more compressed bytes. Raising the byte target to 2 MiB at 128 entries
+uses only 0.29% fewer compressed bytes, while decode rises to 2.98×. Keep 64 KiB / 128 as the
+initial block profile for this trial. With a block-aware reader the decode penalty disappears;
+then the smaller number of database rows could favor a larger target.
+
+These are modeled bytes for a sealed catch-up scan, not measurements of latency, PostgreSQL
+I/O or peak heap. Compression sizes here use gzip-1; the deployed APB writer uses zstd-3.
+The sample favors already-blocked sessions. Before changing rollout defaults, compare 16 × 16
+and 64 × 4 on the same zstd backlog, measuring catch-up time, exporter peak memory, and the
+delay before another pending session gets a turn. Include a live follower separately. No
+production mix of catch-up, tailing, or resume offsets is assumed.
+
 ## Can generic blocks capture the large records without parsing the catalog?
 
 Yes. Reuse the two 12-session History samples above. For each session, collect the same 20
