@@ -21,6 +21,36 @@ import (
 type fakePolicy struct {
 	policypb.UnimplementedPolicyServiceServer
 	sessions chan chan *policypb.WatchIdentitiesResponse
+
+	mu sync.Mutex
+	// stored is what GetIdentity reads, standing in for the API server ahead of the watch.
+	stored map[string]*policypb.Identity
+	gets   int
+}
+
+func (f *fakePolicy) GetIdentity(_ context.Context, request *policypb.GetIdentityRequest) (*policypb.GetIdentityResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.gets++
+	identity, ok := f.stored[request.GetName()]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "fake Identity not found")
+	}
+	return &policypb.GetIdentityResponse{Identity: identity}, nil
+}
+
+func (f *fakePolicy) store(identities ...*policypb.Identity) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, identity := range identities {
+		f.stored[identity.GetIdentity().GetName()] = identity
+	}
+}
+
+func (f *fakePolicy) getCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.gets
 }
 
 func (f *fakePolicy) WatchIdentities(_ *policypb.WatchIdentitiesRequest, stream grpc.ServerStreamingServer[policypb.WatchIdentitiesResponse]) error {
@@ -56,7 +86,7 @@ func (c *clock) advance(by time.Duration) {
 
 func start(t *testing.T, grace time.Duration) (*Cache, *fakePolicy, *clock) {
 	t.Helper()
-	fake := &fakePolicy{sessions: make(chan chan *policypb.WatchIdentitiesResponse)}
+	fake := &fakePolicy{sessions: make(chan chan *policypb.WatchIdentitiesResponse), stored: map[string]*policypb.Identity{}}
 	server := grpc.NewServer()
 	policypb.RegisterPolicyServiceServer(server, fake)
 	conn := grpcserver.ConnectInMemory(t, server)
@@ -227,5 +257,36 @@ func TestChangedClosesOnEveryChangeOfTheViewAndWhenItTurnsStale(t *testing.T) {
 	waitFor(t, "the break to signal", changed)
 	if _, err := cache.List(); !errors.Is(err, ErrStale) {
 		t.Fatalf("after the break signalled: %v, want ErrStale", err)
+	}
+}
+
+func TestGetIdentityUIDReadsThroughOnlyWhenTheCurrentViewMisses(t *testing.T) {
+	cache, fake, fakeClock := start(t, 10*time.Second)
+	session := open(fake)
+	if _, _, err := cache.GetIdentityUID(context.Background(), "fake-agent"); !errors.Is(err, ErrStale) || fake.getCount() != 0 {
+		t.Fatalf("before the snapshot: %v after %d reads, want ErrStale without reading", err, fake.getCount())
+	}
+	send(session, snapshot(identity("cached-agent", "uid-cached"))...)
+	waitFor(t, "the snapshot", func() bool { _, ok, _ := cache.Lookup("cached-agent"); return ok })
+	if uid, ok, err := cache.GetIdentityUID(context.Background(), "cached-agent"); err != nil || !ok || uid != "uid-cached" || fake.getCount() != 0 {
+		t.Fatalf("hit: %q %v %v after %d reads, want uid-cached without reading", uid, ok, err, fake.getCount())
+	}
+	deleting := identity("deleting-agent", "uid-deleting")
+	deleting.DeletionTimestamp = timestamppb.New(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	fake.store(identity("just-created-agent", "uid-just-created"), deleting)
+	if uid, ok, err := cache.GetIdentityUID(context.Background(), "just-created-agent"); err != nil || !ok || uid != "uid-just-created" {
+		t.Fatalf("created ahead of the watch: %q %v %v, want uid-just-created", uid, ok, err)
+	}
+	for _, name := range []string{"deleting-agent", "absent-agent"} {
+		if _, ok, err := cache.GetIdentityUID(context.Background(), name); err != nil || ok {
+			t.Fatalf("%s: %v %v, want not found", name, ok, err)
+		}
+	}
+	close(session)
+	open(fake)
+	fakeClock.advance(10 * time.Second)
+	reads := fake.getCount()
+	if _, _, err := cache.GetIdentityUID(context.Background(), "just-created-agent"); !errors.Is(err, ErrStale) || fake.getCount() != reads {
+		t.Fatalf("after grace: %v, want ErrStale without reading", err)
 	}
 }

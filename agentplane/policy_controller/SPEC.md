@@ -203,10 +203,11 @@ not exist. It is checked once the subject resolves and holds even when applying 
 
 `PolicyService` serves the policy namespace on every controller replica. `WatchPolicyBindings`
 observes bindings for one ServiceAccount, one Identity name, or every Identity subject;
-`WatchPolicySets` observes PolicySets; `WatchIdentities` observes Identities; and
+`WatchPolicySets` observes PolicySets; `WatchIdentities` observes Identities; `GetIdentity` reads
+one Identity from the API server, for a reader whose view has not yet seen it; and
 `ListPolicySetNames` returns one sorted snapshot of the PolicySet names visible to the caller. A
 configured reader service may select any explicit ServiceAccount or Identity subject, see every
-set and watch Identities. A binding watch requires a selector: the service has no implicit account.
+set and watch or get Identities. A binding watch requires a selector: the service has no implicit account.
 The server revalidates the service certificate at admission, before each stream frame, and while
 idle; an expired or refused certificate ends the stream.
 

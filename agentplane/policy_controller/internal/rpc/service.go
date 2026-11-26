@@ -71,6 +71,7 @@ var (
 		policypb.PolicyService_WatchPolicySets_FullMethodName,
 		policypb.PolicyService_ListPolicySetNames_FullMethodName,
 		policypb.PolicyService_WatchIdentities_FullMethodName,
+		policypb.PolicyService_GetIdentity_FullMethodName,
 	}
 	writerServiceMethods = []string{
 		policypb.PolicyService_GrantSandboxPolicyBinding_FullMethodName,
