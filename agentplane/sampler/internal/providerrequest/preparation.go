@@ -68,6 +68,28 @@ type Preparation struct {
 	AnthropicCompactionRequest *anthropic.Request
 }
 
+// AnthropicParams selects the same effort and tool surface for sampling and compaction.
+// Per-message effort starts from the launch configuration and tracks later changes in messages.
+func (p Preparation) AnthropicParams(instructions *string) (anthropic.RequestParams, error) {
+	config := p.ModelConfig.AnthropicMessages
+	if config == nil {
+		return anthropic.RequestParams{}, protocol.ErrInvalid
+	}
+	effort := p.SessionEffort
+	if config.PerMessageEffort {
+		launch := &sessionconfig.Configuration{}
+		if err := proto.Unmarshal(p.SessionConfiguration, launch); err != nil {
+			return anthropic.RequestParams{}, err
+		}
+		effort = launch.GetSpec().GetReasoningEffort()
+	}
+	tools, err := toolcontract.ModelSurface(p.ModelConfig.ExecEncoding)
+	if err != nil {
+		return anthropic.RequestParams{}, err
+	}
+	return anthropic.RequestParams{Model: p.ModelConfig.ProviderModel, Effort: effort, Instructions: instructions, Tools: tools}, nil
+}
+
 func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe, error) {
 	if snapshot.API != preparation.ModelConfig.API {
 		return Recipe{}, protocol.ErrInvalid
@@ -146,27 +168,11 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 		return prepareResponses(store, snapshot, body, preparation.ModelConfig.Responses, preparation.ModelConfig.ExecEncoding, preparation.Compaction)
 
 	case protocol.APIStyleAnthropicMessages:
-		config := preparation.ModelConfig.AnthropicMessages
-		if config == nil {
-			return Recipe{}, protocol.ErrInvalid
-		}
-		effort := preparation.SessionEffort
-		if config.PerMessageEffort {
-			launch := &sessionconfig.Configuration{}
-			if err := proto.Unmarshal(preparation.SessionConfiguration, launch); err != nil {
-				return Recipe{}, err
-			}
-			effort = launch.GetSpec().GetReasoningEffort()
-		}
-		tools, err := toolcontract.ModelSurface(preparation.ModelConfig.ExecEncoding)
+		params, err := preparation.AnthropicParams(snapshot.Instructions)
 		if err != nil {
 			return Recipe{}, err
 		}
-		params := anthropic.RequestParams{
-			Model: preparation.ModelConfig.ProviderModel, Effort: effort,
-			Instructions: snapshot.Instructions, Tools: tools,
-		}
-		body, err := anthropic.BuildRequest(params, *config, snapshot.PreviousMessageID)
+		body, err := anthropic.BuildRequest(params, *preparation.ModelConfig.AnthropicMessages, snapshot.PreviousMessageID)
 		if err != nil {
 			return Recipe{}, err
 		}

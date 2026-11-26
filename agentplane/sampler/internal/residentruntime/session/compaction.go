@@ -38,11 +38,12 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, live *li
 	if err != nil {
 		return err
 	}
-	adapter, err := adapterFor(r.settings.Models[model])
+	config := r.settings.Models[model]
+	adapter, err := adapterFor(config)
 	if err != nil {
 		return err
 	}
-	if adapter.API() != conversation.API {
+	if config.API != conversation.API {
 		return protocol.ErrPrecondition
 	}
 	plan, err := adapter.PrepareCompaction(conversation, session, metadata)
@@ -54,8 +55,8 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, live *li
 		return err
 	}
 	original := conversation.Context()
-	request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentCompaction, connection, r.settings.Models[model])
-	policy := runtimeProviderAttemptPolicy(r.settings, r.settings.Models[model], frontier)
+	request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentCompaction, connection, config)
+	policy := runtimeProviderAttemptPolicy(r.settings, config, frontier)
 	var intentID string
 	var wire []byte
 	if frontier == nil {
