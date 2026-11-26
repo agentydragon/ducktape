@@ -1858,3 +1858,23 @@ lean_proof_test(
     ],
     deps = [":corejs_indexed_plan_cells"],
 )
+
+lean_library(
+    name = "corejs_interior_plan_exports",
+    srcs = ["EsmSplit/CoreJS/InteriorPlanExports.lean"],
+    deps = [
+        ":corejs_indexed_plan_cells",
+        ":corejs_interior_export_names",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_interior_plan_exports_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.InteriorPlanExports"],
+    required_theorems = [
+        "CoreJS.InteriorPlanExports.declaration_owner",
+        "CoreJS.InteriorPlanExports.row_scope_cells",
+    ],
+    deps = [":corejs_interior_plan_exports"],
+)
