@@ -1707,3 +1707,26 @@ lean_proof_test(
     ],
     deps = [":corejs_terminal_source"],
 )
+
+lean_library(
+    name = "metadata_imports",
+    srcs = ["EsmSplit/MetadataImports.lean"],
+    deps = [":planner"],
+)
+
+executable_test(
+    name = "metadata_imports_test",
+    src = "MetadataImportsTest.lean",
+    deps = [
+        ":metadata_imports",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "metadata_imports_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.MetadataImports"],
+    required_theorems = ["EsmSplit.MetadataImports.external_use_imported"],
+    deps = [":metadata_imports"],
+)
