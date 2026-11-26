@@ -1,14 +1,40 @@
 //! Locate upstream packages and validate package/subpath containment.
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-pub(super) fn read_installed_package_metadata(
-    package_name: &str,
-    package_roots: &std::collections::HashMap<String, PathBuf>,
-    packages_root: &Option<PathBuf>,
-) -> Result<Value> {
-    let package_root = resolve_package_root(package_name, package_roots, packages_root)?;
+pub(super) struct ResolveVendorPackage<'a> {
+    pub stage: &'a str,
+    pub chunk_path: &'a str,
+    pub package_roots: &'a HashMap<String, PathBuf>,
+    pub packages_root: &'a Option<PathBuf>,
+}
+
+impl ResolveVendorPackage<'_> {
+    pub fn resolve(&self, package_name: &str, version: &str, subpath: &str) -> Result<PathBuf> {
+        let metadata_context = || format!("reading metadata for package {package_name}");
+        let package_root =
+            resolve_package_root(package_name, self.package_roots, self.packages_root)
+                .with_context(metadata_context)?;
+        let installed = read_installed_package_metadata(package_name, &package_root)
+            .with_context(metadata_context)?;
+        let installed_version = installed
+            .get("version")
+            .and_then(Value::as_str)
+            .context("package metadata missing version")?;
+        if installed_version != version {
+            bail!(
+                "{} vendor entry {} version mismatch for {package_name}: spec={version}, installed={installed_version}",
+                self.stage,
+                self.chunk_path,
+            );
+        }
+        resolve_package_subpath(package_name, subpath, &package_root)
+    }
+}
+
+fn read_installed_package_metadata(package_name: &str, package_root: &Path) -> Result<Value> {
     let metadata_path = package_root.join("package.json");
     if !metadata_path.exists() {
         bail!(
@@ -23,7 +49,7 @@ pub(super) fn read_installed_package_metadata(
 
 fn resolve_package_root(
     package_name: &str,
-    package_roots: &std::collections::HashMap<String, PathBuf>,
+    package_roots: &HashMap<String, PathBuf>,
     packages_root: &Option<PathBuf>,
 ) -> Result<PathBuf> {
     if let Some(mapped) = package_roots.get(package_name) {
@@ -63,17 +89,15 @@ fn resolve_package_root(
     Ok(package_root)
 }
 
-pub(super) fn resolve_package_subpath(
+fn resolve_package_subpath(
     package_name: &str,
     subpath: &str,
-    package_roots: &std::collections::HashMap<String, PathBuf>,
-    packages_root: &Option<PathBuf>,
+    package_root: &Path,
 ) -> Result<PathBuf> {
-    let package_root = resolve_package_root(package_name, package_roots, packages_root)?;
     let file_path = absolutize(&package_root.join(subpath))?;
     assert_path_within_root(
         &file_path,
-        &package_root,
+        package_root,
         &format!("Package {package_name} subpath escapes package root: {subpath}"),
     )?;
     if !file_path.exists() {

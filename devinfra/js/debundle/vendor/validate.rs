@@ -6,11 +6,10 @@
 //! their phase context.
 
 use source_identity::ChunkId;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use serde_json::Value;
 
 use artifact::{ArtifactIndexes, ChunkBundle};
 use binding_targets::{imported_export_name, module_export_name};
@@ -22,7 +21,7 @@ use swc_ecma_ast::{
 
 use crate::manifests::PartialSwapSymbolResolution;
 use crate::output_imports::{MaterializedOutputChunkIndex, resolve_partial_swap_import_target};
-use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
+use crate::packages::ResolveVendorPackage;
 use crate::plan::VendorResolutionPlan;
 
 /// Parse the vendor map key `<chunk_name>.js` into the chunk name.
@@ -160,29 +159,19 @@ impl<'a> From<&'a BundledPartialSwapPackage> for PartialSwapPackageCoords<'a> {
     }
 }
 
-pub(crate) struct ResolvePartialSwapPackageOptions<'a> {
-    pub stage: &'a str,
-    pub chunk_path: &'a str,
-    pub package_roots: &'a HashMap<String, PathBuf>,
-    pub packages_root: &'a Option<PathBuf>,
-}
-
 /// Validate one partial-swap package against the installed tree:
 /// `namespace` present and identifier-valid when a symbol kind requires
 /// it (`namespace_requirer` names the requiring kinds for the
 /// diagnostic), installed version matches the spec, and the upstream
 /// subpath resolves. Returns the resolved upstream file path.
-pub(crate) fn resolve_partial_swap_package(
-    opts: &ResolvePartialSwapPackageOptions<'_>,
+pub(super) fn resolve_partial_swap_package(
+    opts: &ResolveVendorPackage<'_>,
     package_name: &str,
     package: PartialSwapPackageCoords<'_>,
     namespace_requirer: Option<&str>,
 ) -> Result<PathBuf> {
-    let ResolvePartialSwapPackageOptions {
-        stage,
-        chunk_path,
-        package_roots,
-        packages_root,
+    let ResolveVendorPackage {
+        stage, chunk_path, ..
     } = *opts;
     if let Some(requirer) = namespace_requirer {
         let namespace = package.namespace.with_context(|| format!(
@@ -194,19 +183,7 @@ pub(crate) fn resolve_partial_swap_package(
             );
         }
     }
-    let installed = read_installed_package_metadata(package_name, package_roots, packages_root)
-        .with_context(|| format!("reading metadata for package {package_name}"))?;
-    let installed_version = installed
-        .get("version")
-        .and_then(Value::as_str)
-        .context("package metadata missing version")?;
-    if installed_version != package.version {
-        bail!(
-            "{stage} vendor entry {chunk_path} version mismatch for {package_name}: spec={}, installed={installed_version}",
-            package.version,
-        );
-    }
-    resolve_package_subpath(package_name, package.subpath, package_roots, packages_root)
+    opts.resolve(package_name, package.version, package.subpath)
 }
 
 /// Build the wire-facing symbol resolutions (zero-initialized rewrite
