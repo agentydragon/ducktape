@@ -1597,3 +1597,33 @@ lean_proof_test(
     ],
     deps = [":terminal_reader_construction"],
 )
+
+lean_library(
+    name = "corejs_projected_order",
+    srcs = ["EsmSplit/CoreJS/ProjectedOrder.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+executable_test(
+    name = "corejs_projected_order_test",
+    src = "ProjectedOrderTest.lean",
+    deps = [
+        ":corejs_projected_order",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_projected_order_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.ProjectedOrder"],
+    required_theorems = [
+        "CoreJS.ProjectedOrder.full_order_incompatible",
+        "CoreJS.ProjectedOrder.holds_statements",
+        "CoreJS.ProjectedOrder.numbered_filter",
+        "CoreJS.ProjectedOrder.run_same",
+        "CoreJS.ProjectedOrder.split_regions",
+        "CoreJS.ProjectedOrder.split_tops",
+    ],
+    deps = [":corejs_projected_order"],
+)
