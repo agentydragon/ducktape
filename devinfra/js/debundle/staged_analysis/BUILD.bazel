@@ -12,6 +12,7 @@ rust_library(
         "//devinfra/js/debundle:analysis_codec",
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:analysis_projection",
+        "//devinfra/js/debundle:cross_module_purity",
         "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:js_ast",
         "//devinfra/js/debundle:prepare_chunks",

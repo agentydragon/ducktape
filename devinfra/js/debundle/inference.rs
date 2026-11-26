@@ -8,7 +8,7 @@ static EMPTY_PROOF_DEPENDENCIES: LazyLock<ProofDependencies> =
     LazyLock::new(ProofDependencies::default);
 
 mod iterative;
-pub(crate) use iterative::{
+pub use iterative::{
     CertificateContext, CompletedTransfer, FactChange, FactContext, GuardedContext, IterativeFacts,
     IterativeInference, IterativeRules, SealedFacts,
 };
@@ -19,7 +19,7 @@ pub(crate) use iterative::{
 /// shared proof graph compact; explanations can follow the keys through the
 /// completed fact store.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct Judgment<Key, Fact> {
+pub struct Judgment<Key, Fact> {
     value: Fact,
     // Source-derived facts have no author dependencies. Keep their empty
     // metadata shared rather than embedding every dependency set in each row.

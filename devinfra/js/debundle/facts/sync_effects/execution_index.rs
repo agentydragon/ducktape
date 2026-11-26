@@ -1,6 +1,6 @@
 //! AST collection for synchronous execution: callables, roots, writes, and source order.
 
-pub(crate) mod bundle_globals;
+pub mod bundle_globals;
 mod callback_arguments;
 mod input_validation;
 mod native_write_census;
@@ -13,7 +13,7 @@ use native_write_census::{
     array_spread_protocol_slot_overlap, intrinsic_write_target, native_write_slots,
     resolve_native_integrity_roots, source_slot_overlap,
 };
-pub(crate) use native_write_census::{
+pub use native_write_census::{
     ArraySpreadProtocolIntegrity, NativeWriteCensus, apply_intrinsics_never_written,
     resolve_array_spread_protocol_integrity, resolve_native_integrity,
 };
@@ -9808,18 +9808,18 @@ fn deferred_callback_closure(index: &ExecutionIndex, outer: u32, closure: &Range
 
 /// A derived foreign call's fresh record result, with each member's provider
 /// captures for the report.
-pub(crate) struct InferredReturnedRecord {
+pub struct InferredReturnedRecord {
     pub members: Vec<(String, u32, BTreeSet<String>)>,
     pub inference: crate::analysis_provenance::InferenceUse,
 }
 
-pub(crate) struct InferredNamespaceWrapper {
+pub struct InferredNamespaceWrapper {
     pub function_start: u32,
     pub inference: crate::analysis_provenance::InferenceUse,
     pub dependencies: ProofDependencies,
 }
 
-pub(crate) struct InferredCallableCapabilities {
+pub struct InferredCallableCapabilities {
     /// Exported local → derived call summary
     /// (`crate::facts::abstract_domain::foreign_call`).
     pub foreign_calls: BTreeMap<String, InferredForeignCall>,
@@ -9830,7 +9830,7 @@ pub(crate) struct InferredCallableCapabilities {
     pub namespace_wrappers: BTreeMap<String, InferredNamespaceWrapper>,
 }
 
-pub(crate) struct InferredForeignCall {
+pub struct InferredForeignCall {
     pub derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
     pub declaration: crate::facts::value_flow::CallableDeclaration,
@@ -9841,7 +9841,7 @@ pub(crate) struct InferredForeignCall {
 }
 
 impl InferredForeignCall {
-    pub(crate) fn permits_foreign_summary(&self) -> bool {
+    pub fn permits_foreign_summary(&self) -> bool {
         self.declaration.permits_foreign_summary(
             self.derived.retained_provider_captures.is_empty()
                 && self.derived.provider_cell_reads.is_empty(),
@@ -9851,7 +9851,7 @@ impl InferredForeignCall {
 
 /// Prepared once for callable inference and the whole-program native census.
 /// Value flow remains demand-driven even when every module contributes writes.
-pub(crate) struct PreparedCallableCapabilities {
+pub struct PreparedCallableCapabilities {
     pub(super) index: ExecutionIndex,
     exported_locals: BTreeSet<String>,
     flow: Option<ChunkValueFlow>,
@@ -9862,9 +9862,7 @@ impl PreparedCallableCapabilities {
     /// these exact canonical IDs. No value-flow or ordered execution fact is
     /// consumed. Callers must independently check canonical dynamic scope,
     /// provider stability/closure and each requested member contract.
-    pub(crate) fn source_private_namespace_family(
-        &self,
-    ) -> Option<&BTreeMap<Id, BTreeSet<String>>> {
+    pub fn source_private_namespace_family(&self) -> Option<&BTreeMap<Id, BTreeSet<String>>> {
         let privacy = &self.index.namespace_privacy;
         (!privacy.members.is_empty()
             && !privacy.invalid
@@ -9875,7 +9873,7 @@ impl PreparedCallableCapabilities {
     /// A negative check for an exact audited imported call. This reads the
     /// already prepared callable index; unresolved calls remain the author's
     /// responsibility rather than becoming inferred absence of effects.
-    pub(crate) fn known_external_write_for_local(&self, local: &str) -> Option<String> {
+    pub fn known_external_write_for_local(&self, local: &str) -> Option<String> {
         let index = &self.index;
         let binding = index
             .hoisted_bindings
@@ -9956,7 +9954,7 @@ impl PreparedCallableCapabilities {
 
     /// Called with the conservative completed all-source census before any
     /// structural flow. A later refined census cannot add roots retroactively.
-    pub(crate) fn inferred_set_constructions(
+    pub fn inferred_set_constructions(
         &self,
         integrity: &NativeIntegrity,
     ) -> BTreeMap<u32, InferredSetConstruction> {
@@ -10003,23 +10001,23 @@ impl PreparedCallableCapabilities {
         self.index.infer_set_constructions(&flags)
     }
 
-    pub(crate) fn value_input_errors(&self) -> &[String] {
+    pub fn value_input_errors(&self) -> &[String] {
         &self.index.value_input_errors
     }
 
-    pub(crate) fn resolved_value_inputs(&self) -> Vec<ResolvedBindingValueInput> {
+    pub fn resolved_value_inputs(&self) -> Vec<ResolvedBindingValueInput> {
         self.index.resolved_value_inputs.clone()
     }
 
-    pub(crate) fn native_operation_input_errors(&self) -> &[String] {
+    pub fn native_operation_input_errors(&self) -> &[String] {
         &self.index.native_operation_input_errors
     }
 
-    pub(crate) fn resolved_native_operation_inputs(&self) -> Vec<ResolvedNativeOperationInput> {
+    pub fn resolved_native_operation_inputs(&self) -> Vec<ResolvedNativeOperationInput> {
         self.index.resolved_native_operation_inputs.clone()
     }
 
-    pub(crate) fn known_global_native_operation_mutation_owner(
+    pub fn known_global_native_operation_mutation_owner(
         &self,
         operation: NativeInputKind,
     ) -> Option<SourceUnitOrdinal> {
@@ -10028,22 +10026,22 @@ impl PreparedCallableCapabilities {
             .map(|(_, owner)| owner)
     }
 
-    pub(crate) fn known_object_freeze_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
+    pub fn known_object_freeze_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
         self.index.known_object_freeze_mutation()
     }
 
-    pub(crate) fn known_descriptor_copy_mutation_owner(
+    pub fn known_descriptor_copy_mutation_owner(
         &self,
         assigned_keys: &BTreeSet<String>,
     ) -> Option<SourceUnitOrdinal> {
         self.index.known_descriptor_copy_mutation(assigned_keys)
     }
 
-    pub(crate) fn known_set_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
+    pub fn known_set_protocol_mutation_owner(&self) -> Option<SourceUnitOrdinal> {
         self.index.known_set_protocol_mutation()
     }
 
-    pub(crate) fn known_array_iterator_protocol_mutation_owner_in(
+    pub fn known_array_iterator_protocol_mutation_owner_in(
         &self,
         integrity: &ArraySpreadProtocolIntegrity,
     ) -> Option<SourceUnitOrdinal> {
@@ -10051,7 +10049,7 @@ impl PreparedCallableCapabilities {
             .known_array_iterator_protocol_mutation_with(integrity)
     }
 
-    pub(crate) fn locate_value_inputs(&mut self, source: Option<SourceLocator<'_>>) {
+    pub fn locate_value_inputs(&mut self, source: Option<SourceLocator<'_>>) {
         let locate = |span| source?.span(span);
         for input in &mut self.index.resolved_value_inputs {
             input.evidence.declaration_location = locate(input.declaration_span);
@@ -10077,7 +10075,7 @@ impl PreparedCallableCapabilities {
         }
     }
 
-    pub(crate) fn locate_native_operation_inputs(&mut self, source: Option<SourceLocator<'_>>) {
+    pub fn locate_native_operation_inputs(&mut self, source: Option<SourceLocator<'_>>) {
         let locate = |span| source?.span(span);
         for input in &mut self.index.resolved_native_operation_inputs {
             input.evidence.declaration_location = locate(input.declaration_span);
@@ -10088,11 +10086,7 @@ impl PreparedCallableCapabilities {
         }
     }
 
-    pub(crate) fn locate_native_writes(
-        &mut self,
-        chunk_id: &str,
-        source: Option<SourceLocator<'_>>,
-    ) {
+    pub fn locate_native_writes(&mut self, chunk_id: &str, source: Option<SourceLocator<'_>>) {
         self.index.source_chunk_id = Some(chunk_id.to_owned());
         let source_location = |span| source?.span(span);
         let locate = |witness: &mut NativeMutationWitness| {
@@ -10119,18 +10113,18 @@ impl PreparedCallableCapabilities {
         }
     }
 
-    pub(crate) fn native_writes(&self) -> &NativeWriteCensus {
+    pub fn native_writes(&self) -> &NativeWriteCensus {
         &self.index.native_write_census
     }
 
-    pub(crate) fn refine_native_branches(
+    pub fn refine_native_branches(
         &mut self,
         summaries: &BTreeMap<String, crate::analysis_inputs::CallableSummary>,
     ) {
         self.index.refine_native_branches(summaries);
     }
 
-    pub(crate) fn callback_object_arguments<'f>(
+    pub fn callback_object_arguments<'f>(
         &self,
         body: &[TopLevelItemView<'_>],
         structural_flow: impl FnOnce() -> &'f ChunkValueFlow,
@@ -10185,7 +10179,7 @@ fn direct_callable_binding(
     }
 }
 
-pub(crate) fn prepare_callable_capabilities(
+pub fn prepare_callable_capabilities(
     body: &[TopLevelItemView<'_>],
     exported_locals: BTreeSet<String>,
     selected_value_inputs: Vec<SelectedBindingValueInput>,
@@ -10219,7 +10213,7 @@ pub(crate) fn prepare_callable_capabilities(
 }
 
 /// Consume the same prepared facts after resolving all modules' native writes.
-pub(crate) fn infer_callable_capabilities<'f>(
+pub fn infer_callable_capabilities<'f>(
     body: &[TopLevelItemView<'_>],
     prepared: PreparedCallableCapabilities,
     integrity: &NativeIntegrity,

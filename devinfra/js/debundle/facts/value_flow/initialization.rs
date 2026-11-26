@@ -6,7 +6,7 @@ use super::*;
 /// read reached an initialized cell. Class declarations remain evaluation-time
 /// definitions; their TDZ obligations are enforced by ordered execution/gates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CallableDeclaration {
+pub enum CallableDeclaration {
     Function(u32),
     Class(u32),
     Initializer { start: u32, passive_provider: bool },

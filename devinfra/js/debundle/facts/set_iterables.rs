@@ -75,7 +75,7 @@ pub(crate) struct TopLevelNativeIterableOperandSite {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct SetIterableShapes {
+pub struct SetIterableShapes {
     pub(super) constructor_starts: BTreeSet<u32>,
 }
 
@@ -168,7 +168,7 @@ impl IterativeRules for AliasInvalidationRules {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct SetIterableProof {
+pub struct SetIterableProof {
     facts: Arc<SemanticFacts>,
     author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
     author_dependencies: BTreeMap<u32, ProofDependencies>,
@@ -312,7 +312,7 @@ impl SetIterableProof {
         self.stable_spreads.get(&span.lo.0)
     }
 
-    pub(crate) fn dependencies_for_constructor(&self, span: Span) -> Option<&ProofDependencies> {
+    pub fn dependencies_for_constructor(&self, span: Span) -> Option<&ProofDependencies> {
         self.author_dependencies
             .get(&span.lo.0)
             .or_else(|| {

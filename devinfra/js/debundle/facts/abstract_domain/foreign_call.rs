@@ -7,14 +7,14 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DerivedForeignCall {
-    pub(crate) invocation: ForeignInvocation,
-    pub(crate) returns: BTreeSet<ForeignReturn>,
-    pub(crate) retained_arguments: BTreeSet<usize>,
-    pub(crate) retained_provider_captures: BTreeSet<String>,
+pub struct DerivedForeignCall {
+    pub invocation: ForeignInvocation,
+    pub returns: BTreeSet<ForeignReturn>,
+    pub retained_arguments: BTreeSet<usize>,
+    pub retained_provider_captures: BTreeSet<String>,
     /// Every private provider var cell the body reads, retained or not.
-    pub(crate) provider_cell_reads: BTreeSet<String>,
-    pub(crate) native_constructions: BTreeSet<NativeIntrinsic>,
+    pub provider_cell_reads: BTreeSet<String>,
+    pub native_constructions: BTreeSet<NativeIntrinsic>,
     pub(crate) dependencies: ProofDependencies,
     /// Set for a parameterless call that always returns one fresh record.
     pub(crate) record: Option<Vec<RecordMember>>,

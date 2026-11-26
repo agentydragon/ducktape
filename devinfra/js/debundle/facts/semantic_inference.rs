@@ -450,7 +450,7 @@ impl IterativeRules for SemanticRules {
 
 /// Immutable facts from a single completed semantic context.
 #[derive(Debug)]
-pub(crate) struct SemanticFacts {
+pub struct SemanticFacts {
     inference: SealedFacts<SemanticKey, SemanticFact>,
     source: Option<Arc<SemanticFacts>>,
     consulted: BTreeMap<SemanticKey, BTreeSet<InferenceRule>>,

@@ -79,7 +79,7 @@ pub struct NamespaceWrapperSummary {
     pub inference: crate::analysis_provenance::InferenceUse,
     /// Trusted provider judgment; deliberately absent from report JSON.
     #[serde(skip)]
-    pub(crate) dependencies: ProofDependencies,
+    pub dependencies: ProofDependencies,
 }
 
 /// Source-only wrapper proof: direct callback uses receive these ordinary
@@ -159,7 +159,7 @@ pub struct ForeignCallSummary {
     pub replacement_package: Option<String>,
     /// Trusted provider judgment; deliberately absent from report JSON.
     #[serde(skip)]
-    pub(crate) dependencies: ProofDependencies,
+    pub dependencies: ProofDependencies,
 }
 
 /// Capabilities of one bare imported callable, keyed by the importer's local
@@ -1038,7 +1038,7 @@ pub struct AnalysisAssumptions {
     pub namespace_independent_members: BTreeMap<String, BTreeSet<String>>,
     /// Local binding names of this chunk that import an author-asserted
     /// fluent export (`chunk_export_purity.<chunk>.fluent_exports`,
-    /// projected by `crate::cross_module_purity` onto importer locals).
+    /// projected by `cross_module_purity` onto importer locals).
     /// The classifier treats them as deep-purity roots: member reads /
     /// calls on them AND on values derived from them are pure. See
     /// `ChunkCodeGraph::fluent_bindings`.
@@ -1081,12 +1081,12 @@ pub struct AnalysisInputs {
     pub local_effect_policy: LocalEffectPolicy,
     /// Cross-module purity verdicts for this chunk's imported function
     /// bindings, keyed by local binding name. Produced by the program-level
-    /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
+    /// oracle (`cross_module_purity`); empty in strictly per-chunk
     /// paths, where imported callees stay `unknown_call`.
     pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
     /// Named and default imports of this chunk, by local name, bound to a
     /// provider cell that is never rebound
-    /// (`crate::cross_module_purity::resolve_stable_imports`). A read of any
+    /// (`cross_module_purity::resolve_stable_imports`). A read of any
     /// other import is an order-dependent effect; empty in strictly per-chunk
     /// paths, where every import stays one.
     pub stable_imports: BTreeSet<String>,

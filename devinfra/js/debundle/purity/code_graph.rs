@@ -92,33 +92,32 @@ pub struct ChunkCodeGraph {
 /// Prepared static facts consumed while extracting canonical purity bodies.
 /// Grouping these inputs keeps local and program-wide extraction on the same
 /// gates for native, captured, and shape-based facts.
-pub(crate) struct PurityShapeInputs<'a> {
-    pub(crate) shadowed: &'a BTreeSet<&'static str>,
-    pub(crate) declared_pure_new: &'a BTreeSet<String>,
-    pub(crate) declared_pure_members: &'a BTreeMap<String, BTreeSet<String>>,
-    pub(crate) imported_purities: &'a BTreeMap<String, Arc<Purity>>,
-    pub(crate) fluent_bindings: &'a BTreeSet<String>,
-    pub(crate) set_iterable_proof: &'a SetIterableProof,
-    pub(crate) local_class_construction_proof: &'a LocalClassConstructionProof,
-    pub(crate) plain_data_bindings: &'a [String],
-    pub(crate) plain_data_dependencies:
-        &'a BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
-    pub(crate) plain_data_inference_uses:
+pub struct PurityShapeInputs<'a> {
+    pub shadowed: &'a BTreeSet<&'static str>,
+    pub declared_pure_new: &'a BTreeSet<String>,
+    pub declared_pure_members: &'a BTreeMap<String, BTreeSet<String>>,
+    pub imported_purities: &'a BTreeMap<String, Arc<Purity>>,
+    pub fluent_bindings: &'a BTreeSet<String>,
+    pub set_iterable_proof: &'a SetIterableProof,
+    pub local_class_construction_proof: &'a LocalClassConstructionProof,
+    pub plain_data_bindings: &'a [String],
+    pub plain_data_dependencies: &'a BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    pub plain_data_inference_uses:
         &'a BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
-    pub(crate) plain_array_bindings: &'a BTreeSet<String>,
-    pub(crate) stable_var_number_candidates: &'a BTreeSet<Id>,
+    pub plain_array_bindings: &'a BTreeSet<String>,
+    pub stable_var_number_candidates: &'a BTreeSet<Id>,
     /// Named and default imports bound to a provider cell that is never
     /// rebound (`AnalysisInputs::stable_imports`).
-    pub(crate) stable_imports: &'a BTreeSet<String>,
+    pub stable_imports: &'a BTreeSet<String>,
 }
 
 /// Source-module identity, policy, and inferred imported function targets for
 /// one batch of body transfers.
-pub(crate) struct PurityCallContext<'a> {
-    pub(crate) module: &'a str,
-    pub(crate) mode: PurityMode,
-    pub(crate) declared_pure: &'a BTreeSet<String>,
-    pub(crate) imported_targets: &'a BTreeMap<String, PurityFunctionKey>,
+pub struct PurityCallContext<'a> {
+    pub module: &'a str,
+    pub mode: PurityMode,
+    pub declared_pure: &'a BTreeSet<String>,
+    pub imported_targets: &'a BTreeMap<String, PurityFunctionKey>,
 }
 
 #[derive(Debug, Clone)]
@@ -261,7 +260,7 @@ impl ChunkCodeGraph {
     /// the canonical structural analysis. Callers without those candidates pass
     /// an empty set and remain conservative.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_full_with_prepared_plain_data(
+    pub fn build_full_with_prepared_plain_data(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
@@ -347,7 +346,7 @@ impl ChunkCodeGraph {
     /// Stable identities for every chunk-top function in source order. Export
     /// analysis uses these identities to flatten module boundaries into one
     /// effects closure.
-    pub(crate) fn inferred_function_keys(
+    pub fn inferred_function_keys(
         body: &[TopLevelItemView<'_>],
         module: &str,
         mode: PurityMode,
@@ -372,7 +371,7 @@ impl ChunkCodeGraph {
     /// local/imported function lookups with exact call obligations. All other
     /// precedence, shadowing, argument, native, and captured-input rules stay
     /// in the existing classifier.
-    pub(crate) fn effect_transfers(
+    pub fn effect_transfers(
         body: &[TopLevelItemView<'_>],
         shape_inputs: &PurityShapeInputs<'_>,
         call_context: &PurityCallContext<'_>,
@@ -499,7 +498,7 @@ impl ChunkCodeGraph {
     /// Purity of the chunk-local function bound to `name`, if any.
     /// Returns `None` for non-function bindings (imports, vars,
     /// classes) and for names not bound at chunk top.
-    pub(crate) fn function_purity(&self, name: &str) -> Option<&Arc<Purity>> {
+    pub fn function_purity(&self, name: &str) -> Option<&Arc<Purity>> {
         match self.bindings.get(name)? {
             ChunkBinding::Function { purity } => Some(purity),
             ChunkBinding::PlainData => None,

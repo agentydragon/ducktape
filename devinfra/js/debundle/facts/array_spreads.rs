@@ -14,7 +14,7 @@ pub(crate) struct StableArraySpreadShape {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct StableArraySpreadShapes {
+pub struct StableArraySpreadShapes {
     pub(crate) by_initializer: BTreeMap<u32, StableArraySpreadShape>,
     pub(crate) by_site: BTreeMap<u32, u32>,
     pub(crate) source_origins: BTreeMap<u32, u32>,

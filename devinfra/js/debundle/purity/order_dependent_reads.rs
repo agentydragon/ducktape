@@ -107,7 +107,7 @@ fn imported_bindings<'a>(body: &'a [TopLevelItemView<'_>]) -> impl Iterator<Item
 /// program: a function or class declaration, or a simple declarator with no
 /// initializer, a function or class expression, or a value `is_primitive`
 /// proves primitive, where the binding is declared once and never written.
-pub(crate) fn immutable_declarations<'a>(
+pub fn immutable_declarations<'a>(
     items: impl IntoIterator<Item = &'a ModuleItem>,
     is_primitive: impl Fn(&str) -> bool,
 ) -> BTreeSet<Id> {
