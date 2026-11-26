@@ -128,7 +128,7 @@ if (runCase("install-and-read-order")) {
   assertPublicEmissionRefused(good.manifest, good.out);
   assert.deepEqual(observe(good.sourceFile, "result"), { result: "ready" });
   await withSplitPreview({ manifest: good.manifest, expectedExit: 1 }, ({ directory, entryFile, log }) => {
-    assert.match(log, /FAIL  OrderOk/);
+    assert.match(log, /FAIL {2}OrderOk/);
     assert.deepEqual(moduleEvaluationOrder(directory, "entry.mjs"), [...ready, "entry.mjs"]);
     assert.deepEqual(observe(entryFile, "result"), { result: "ready" });
     assertMatchedModel(good, directory, [[["result"], "ready"]]);
