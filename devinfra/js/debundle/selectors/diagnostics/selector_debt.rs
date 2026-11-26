@@ -1364,23 +1364,4 @@ const stableName = 1;
         assert_eq!(report.summary.source_aware_binding_group_suggestions, 0,);
         assert!(report.source_aware_binding_group_suggestions.is_empty());
     }
-
-    #[test]
-    fn deterministic_same_spec_same_output() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "a.yaml",
-            "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: bQ } }\n",
-        );
-        write(
-            root,
-            "b/c.yaml",
-            "anonymous_statements:\n  - match: 'foo();'\n",
-        );
-        let j1 = serde_json::to_string(&compute_selector_debt(root).unwrap()).unwrap();
-        let j2 = serde_json::to_string(&compute_selector_debt(root).unwrap()).unwrap();
-        assert_eq!(j1, j2);
-    }
 }

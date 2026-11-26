@@ -2076,23 +2076,6 @@ pub struct CrossRefSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated cross-reference target (`RawMemberSelector::validate` resolves
-/// the required anchor into this).
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct CrossRefTarget {
-    pub anchor: String,
-    pub kind: Option<BindingSourceKind>,
-}
-
-impl CrossRefSelector {
-    fn target(&self) -> CrossRefTarget {
-        CrossRefTarget {
-            anchor: self.references.clone(),
-            kind: self.kind,
-        }
-    }
-}
-
 /// Pin a member by the **member it reads** off an object, instead of by this
 /// member's own (re-minify-fragile) minified name. The canonical shape is a TS
 /// codegen helper `function ls(c){ return c.uniqueId }` whose stable identity is
@@ -2117,25 +2100,6 @@ pub struct ReadsMemberSelector {
     /// the member (e.g. `function_declaration`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<BindingSourceKind>,
-}
-
-/// The validated `reads_member` target (`RawMemberSelector::validate` resolves the
-/// selector into this). `member` is always present; `object`/`kind` narrow it.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ReadsMemberTarget {
-    pub member: String,
-    pub object: Option<String>,
-    pub kind: Option<BindingSourceKind>,
-}
-
-impl ReadsMemberSelector {
-    fn target(&self) -> ReadsMemberTarget {
-        ReadsMemberTarget {
-            member: self.member.clone(),
-            object: self.object.clone(),
-            kind: self.kind,
-        }
-    }
 }
 
 /// Pin a member by **how it is consumed at a use site** — the export consumed as
@@ -2164,25 +2128,6 @@ pub struct MemberOfModuleSelector {
     /// cluster).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<BindingSourceKind>,
-}
-
-/// The validated `member_of_module` target (`RawMemberSelector::validate` resolves
-/// the selector into this). `module`/`member` are always present; `kind` narrows.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct MemberOfModuleTarget {
-    pub module: String,
-    pub member: String,
-    pub kind: Option<BindingSourceKind>,
-}
-
-impl MemberOfModuleSelector {
-    fn target(&self) -> MemberOfModuleTarget {
-        MemberOfModuleTarget {
-            module: self.module.clone(),
-            member: self.member.clone(),
-            kind: self.kind,
-        }
-    }
 }
 
 /// Pin a member by it being **passed as an argument** to a call of a known callee
@@ -2226,28 +2171,6 @@ pub struct PassedToCallSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated `passed_to_call` target (`RawMemberSelector::validate` resolves the
-/// selector into this). `callee_member` is always present; `object`/`arg_index`/
-/// `kind` narrow it.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct PassedToCallTarget {
-    pub callee_member: String,
-    pub object: Option<String>,
-    pub arg_index: Option<usize>,
-    pub kind: Option<BindingSourceKind>,
-}
-
-impl PassedToCallSelector {
-    fn target(&self) -> PassedToCallTarget {
-        PassedToCallTarget {
-            callee_member: self.callee_member.clone(),
-            object: self.object.clone(),
-            arg_index: self.arg_index,
-            kind: self.kind,
-        }
-    }
-}
-
 /// `makes_decorate_call` EDB: the unique declaring source_unit whose binding is the
 /// **callee** of an esbuild/TypeScript `__decorate`-style decorator application.
 /// The inverse direction of `passed_to_call` (the target *makes* the call rather
@@ -2275,25 +2198,6 @@ pub struct MakesDecorateCallSelector {
     /// spuriously shares the class anchor on a full bundle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<BindingSourceKind>,
-}
-
-/// The validated `makes_decorate_call` target (`RawMemberSelector::validate` resolves
-/// the selector into this). `class` is always present; `member`/`kind` narrow it.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct MakesDecorateCallTarget {
-    pub class: String,
-    pub member: Option<String>,
-    pub kind: Option<BindingSourceKind>,
-}
-
-impl MakesDecorateCallSelector {
-    fn target(&self) -> MakesDecorateCallTarget {
-        MakesDecorateCallTarget {
-            class: self.class.clone(),
-            member: self.member.clone(),
-            kind: self.kind,
-        }
-    }
 }
 
 /// Pin a member that is an **intrinsic-method alias off the unshadowed global
@@ -2325,23 +2229,6 @@ pub struct IntrinsicAliasSelector {
     pub referenced_by: String,
 }
 
-/// The validated `intrinsic_alias` target (`RawMemberSelector::validate` resolves the
-/// selector into this). Both fields are always present.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct IntrinsicAliasTarget {
-    pub property: String,
-    pub referenced_by: String,
-}
-
-impl IntrinsicAliasSelector {
-    fn target(&self) -> IntrinsicAliasTarget {
-        IntrinsicAliasTarget {
-            property: self.property.clone(),
-            referenced_by: self.referenced_by.clone(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct BindingSelector {
@@ -2370,22 +2257,22 @@ impl RawMemberSelector {
                 Ok(MemberSelectorSpec::Binding(binding.clone()))
             }
             (None, Some(cross_ref), None, None, None, None, None) => {
-                Ok(MemberSelectorSpec::CrossRef(cross_ref.target()))
+                Ok(MemberSelectorSpec::CrossRef(cross_ref.clone()))
             }
             (None, None, Some(reads_member), None, None, None, None) => {
-                Ok(MemberSelectorSpec::ReadsMember(reads_member.target()))
+                Ok(MemberSelectorSpec::ReadsMember(reads_member.clone()))
             }
-            (None, None, None, Some(member_of_module), None, None, None) => Ok(
-                MemberSelectorSpec::MemberOfModule(member_of_module.target()),
-            ),
+            (None, None, None, Some(member_of_module), None, None, None) => {
+                Ok(MemberSelectorSpec::MemberOfModule(member_of_module.clone()))
+            }
             (None, None, None, None, Some(passed_to_call), None, None) => {
-                Ok(MemberSelectorSpec::PassedToCall(passed_to_call.target()))
+                Ok(MemberSelectorSpec::PassedToCall(passed_to_call.clone()))
             }
             (None, None, None, None, None, Some(makes_decorate_call), None) => Ok(
-                MemberSelectorSpec::MakesDecorateCall(makes_decorate_call.target()),
+                MemberSelectorSpec::MakesDecorateCall(makes_decorate_call.clone()),
             ),
             (None, None, None, None, None, None, Some(intrinsic_alias)) => {
-                Ok(MemberSelectorSpec::IntrinsicAlias(intrinsic_alias.target()))
+                Ok(MemberSelectorSpec::IntrinsicAlias(intrinsic_alias.clone()))
             }
             (None, None, None, None, None, None, None) => Err(MemberSelectorError::MissingSelector),
             _ => Err(MemberSelectorError::MultipleSelectors),
@@ -2396,12 +2283,12 @@ impl RawMemberSelector {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum MemberSelectorSpec {
     Binding(BindingSelector),
-    CrossRef(CrossRefTarget),
-    ReadsMember(ReadsMemberTarget),
-    MemberOfModule(MemberOfModuleTarget),
-    PassedToCall(PassedToCallTarget),
-    MakesDecorateCall(MakesDecorateCallTarget),
-    IntrinsicAlias(IntrinsicAliasTarget),
+    CrossRef(CrossRefSelector),
+    ReadsMember(ReadsMemberSelector),
+    MemberOfModule(MemberOfModuleSelector),
+    PassedToCall(PassedToCallSelector),
+    MakesDecorateCall(MakesDecorateCallSelector),
+    IntrinsicAlias(IntrinsicAliasSelector),
 }
 
 #[derive(
