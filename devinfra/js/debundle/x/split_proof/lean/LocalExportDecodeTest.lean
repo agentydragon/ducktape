@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.TerminalConstructorInput
 
 open Lean (Json)
 open CoreJS
@@ -22,6 +23,19 @@ private def checkGraph (j : Json) : IO Unit := do
   require (row.ordinal == 32 && row.names == pairs) "lost #32 or its ordered reader exports"
   require (m.body.map Prod.fst == List.range 32) "lost original executable identities"
   require (m.exports == pairs) "module exports differ from the original export list"
+  let checked ← IO.ofExcept (TerminalConstructorInput.check (p, rows))
+  let _ := TerminalConstructorInput.all_const checked
+  let _ := TerminalConstructorInput.source_shape checked
+  let badImport : Program := { p with modules := [{ m with imports := [⟨"provider.mjs", []⟩] }] }
+  match TerminalConstructorInput.check (badImport, rows) with
+  | .error "terminal source must not import modules" => pure ()
+  | _ => throw (IO.userError "a directly supplied source with an import was not refused")
+  let badBody := m.body.map fun (id, stmt) =>
+    if id == 0 then (id, .decl .let_ "data0" (.str "value0")) else (id, stmt)
+  let badDeclaration : Program := { p with modules := [{ m with body := badBody }] }
+  match TerminalConstructorInput.check (badDeclaration, rows) with
+  | .error "expected unique const declarations with only primitive initializers or earlier reads" => pure ()
+  | _ => throw (IO.userError "a non-const original statement was not refused")
 
 private def checkSparse (j : Json) : IO Unit := do
   let (p, rows) ← decode j
@@ -30,6 +44,9 @@ private def checkSparse (j : Json) : IO Unit := do
   require (row.ordinal == 1 && row.names == [("exposed", "seed")]) "interior export or alias changed"
   require (m.body.map Prod.fst == [0, 2]) "interior export shifted executable identities"
   require (m.exports == [("exposed", "seed")]) "interior public binding changed"
+  match TerminalConstructorInput.check (p, rows) with
+  | .error "expected dense executable original IDs followed by one terminal metadata unit" => pure ()
+  | _ => throw (IO.userError "interior export was not refused by the terminal source guard")
 
 private def checkAliases (j : Json) : IO Unit := do
   let (p, rows) ← decode j
