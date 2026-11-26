@@ -38,7 +38,7 @@ Acceptance of the whole tree does not measure readable extraction coverage.
 Generated `reports/output.json` records named-module size fractions;
 `reports/tree/<chunk>/modules.json` records the actual claimed members. The
 [extraction investigation](../debug/excalidraw_extraction/README.md) records the
-November 13 checkpoint and boundary probes.
+open boundary probes and a dated November 13 coverage checkpoint.
 
 `test_debundle_tree` verifies complete accepted output and resolvable static
 chunk imports. `spec_output_test` checks the spec's emitted contracts through
