@@ -83,6 +83,76 @@ def parseSpec (j : Json) : Except String Spec := do
     | .error _ => pure false
   pure { entry, modules, order, sequential, privateEntryBody }
 
+/- The certification entry point accepts an authored spec, not the richer
+instance-generator control format. Check duplicates while parsing: `Json.parse`
+otherwise overwrites earlier object members, including escaped-equivalent keys. -/
+namespace AuthoredSpecJson
+
+open Std.Internal.Parsec Std.Internal.Parsec.String
+
+private partial def fields (value : String → Parser Json) (seen : Std.HashSet String)
+    (acc : List (String × Json)) : Parser Json := do
+  Lean.Json.Parser.lookahead (· == '"') "object key"
+  skip
+  let key ← Lean.Json.Parser.str
+  if seen.contains key then fail s!"duplicate authored spec key: {key}"
+  ws
+  Lean.Json.Parser.lookahead (· == ':') ":"
+  skip
+  ws
+  let item ← value key
+  let acc := (key, item) :: acc
+  let c ← any
+  if c == '}' then
+    ws
+    return Json.mkObj acc.reverse
+  else if c == ',' then
+    ws
+    fields value (seen.insert key) acc
+  else
+    fail "unexpected character in authored spec object"
+
+private def object (value : String → Parser Json) : Parser Json := do
+  skipString "{"
+  ws
+  if (← peek!) == '}' then
+    skip
+    ws
+    return Json.mkObj []
+  fields value {} []
+
+private def rootValue (key : String) : Parser Json := do
+  if key == "modules" && (← peek!) == '{' then
+    object fun _ => Lean.Json.Parser.anyCore
+  else
+    Lean.Json.Parser.anyCore
+
+def parse (text : String) : Except String Json :=
+  Parser.run (do
+    ws
+    let result ← object rootValue
+    eof
+    pure result) text
+
+end AuthoredSpecJson
+
+/-- Decode exactly the externally authored certification format. Internal
+instance-control JSON has additional metadata and continues to use `parseSpec`. -/
+def parseAuthoredSpec (text : String) : Except String Spec := do
+  let j ← AuthoredSpecJson.parse text
+  let fields ← j.getObj?
+  for (key, _) in fields.toList do
+    unless ["entry", "modules", "order", "sequential", "privateEntryBody"].contains key do
+      throw s!"unexpected authored spec field: {key}"
+  let sequential ← match j.getObjVal? "sequential" with
+    | .ok value => value.getBool?
+    | .error _ => pure false
+  let spec ← parseSpec j
+  return { spec with sequential }
+
+def loadAuthoredSpec (path : System.FilePath) : IO Spec := do
+  IO.ofExcept (parseAuthoredSpec (← IO.FS.readFile path))
+
 /-- Read a selector-only ownership export. Its import priority orders requests;
 the untrusted planner and the linked checker decide the actual evaluation order. -/
 def parseResolvedSpec (j : Json) (chunk entry : String) (unitCount : Nat) : Except String Spec := do

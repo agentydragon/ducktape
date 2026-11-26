@@ -436,6 +436,47 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "corejs_resolved_placement",
+    srcs = ["EsmSplit/CoreJS/ResolvedPlacement.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_linked_input",
+        ":planner",
+    ],
+)
+
+lean_binary(
+    name = "resolved_placement_test_runner",
+    testonly = True,
+    srcs = ["ResolvedPlacementTest.lean"],
+    entry = "ResolvedPlacementTest.lean",
+    deps = [
+        ":corejs_checked_split",
+        ":corejs_resolved_placement",
+    ],
+)
+
+sh_test(
+    name = "resolved_placement_test",
+    srcs = ["checked_split_test.sh"],
+    args = ["$(rlocationpath :resolved_placement_test_runner)"],
+    data = [":resolved_placement_test_runner"],
+    use_bash_launcher = True,
+)
+
+lean_axiom_test(
+    name = "resolved_placement_axioms_test",
+    imports = ["EsmSplit.CoreJS.ResolvedPlacement"],
+    theorems = [
+        "CoreJS.ResolvedPlacement.dense_compatible",
+        "CoreJS.ResolvedPlacement.dense_sound",
+        "CoreJS.ResolvedPlacement.resolve",
+        "CoreJS.ResolvedPlacement.resolve_sound",
+    ],
+    deps = [":corejs_resolved_placement"],
+)
+
 lean_binary(
     name = "checked_split_test_runner",
     testonly = True,
@@ -460,6 +501,41 @@ lean_axiom_test(
         "CoreJS.CheckedSplit.checkOutput_sound",
     ],
     deps = [":corejs_checked_split"],
+)
+
+lean_library(
+    name = "corejs_checked_move_split",
+    srcs = ["EsmSplit/CoreJS/CheckedMoveSplit.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_checked_split",
+    ],
+)
+
+lean_binary(
+    name = "checked_move_split_test_runner",
+    testonly = True,
+    srcs = ["CheckedMoveSplitTest.lean"],
+    entry = "CheckedMoveSplitTest.lean",
+    deps = [":corejs_checked_move_split"],
+)
+
+sh_test(
+    name = "checked_move_split_test",
+    srcs = ["checked_split_test.sh"],
+    args = ["$(rlocationpath :checked_move_split_test_runner)"],
+    data = [":checked_move_split_test_runner"],
+    use_bash_launcher = True,
+)
+
+lean_axiom_test(
+    name = "checked_move_split_axioms_test",
+    imports = ["EsmSplit.CoreJS.CheckedMoveSplit"],
+    theorems = [
+        "CoreJS.CheckedMoveSplit.checkedMoveSplit",
+        "CoreJS.CheckedMoveSplit.checkedMoveSplit_sound",
+    ],
+    deps = [":corejs_checked_move_split"],
 )
 
 lean_library(

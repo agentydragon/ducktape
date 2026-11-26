@@ -523,6 +523,7 @@ use_repo(
     "com_github_invopop_jsonschema",
     "com_github_josharian_intern",
     "com_github_k8snetworkplumbingwg_network_attachment_definition_client",
+    "com_github_klauspost_compress",
     "com_github_kubernetes_csi_external_snapshotter_client_v4",
     "com_github_lib_pq",
     "com_github_mailru_easyjson",
