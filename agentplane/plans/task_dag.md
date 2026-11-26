@@ -1725,8 +1725,14 @@ store ([D4](architecture_overview.md#four-directions), O4).
 
 **Decision.** Which payoff warrants investment: cheaper tests, environments outside Kubernetes,
 or owning the Identity lifecycle through an Agentplane API? The operator named Identity again on
-Nov 22 as a candidate if the track is selected, and on Nov 26 in the context of
-[agent teardown](#agent_teardown_design--a-teardown-sequence-for-an-agent). Today it is a Kubernetes CR. Start with a trace
+Nov 22 as a candidate if the track is selected. On Nov 26, working through
+[agent teardown](#agent_teardown_design--a-teardown-sequence-for-an-agent), the operator called
+Identity "a pretty clear case": its delete and Session-Sandbox invariants span Sessions, which
+must stay in a database. The operator's suggested test for other kinds: move one when an invariant
+spans it and database-held state; keep it in Kubernetes when it is mainly desired state for
+something Kubernetes runs. Sandboxes are unproven under that test; the trace should check whether
+a Sandbox's Identity binding can move while the rest of the CR stays. `docs/principles.md`'s
+"Kubernetes is a shared baseline" predates this and needs revisiting with the chosen direction. Today it is a Kubernetes CR. Start with a trace
 of one Identity from creation through delegation, same-name replacement, revocation and cleanup.
 Compare keeping the CR behind PolicyService with moving the authoritative record behind that API
 and reconciling Flux declarations. Price the gain and the authorization, outage and migration

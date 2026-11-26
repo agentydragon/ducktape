@@ -172,7 +172,11 @@ they share a database. Sandboxes and WorkloadCredentials stay CRs, so references
 Loses owner-reference GC of bindings, Flux authoring (needs a reconciler), CEL admission and the
 `policy/reader` informers. Teardown alone does not pay for it.
 
-Operator lean, 2026-11-26, low confidence: the authoritative record in Agentplane's database, with a
+Operator, 2026-11-26: Identity is "a pretty clear case" for moving. The deciding argument is the
+invariants above: they span Sessions, which must stay in a database, so only a database-held Identity
+puts them in one transaction. Portability away from Kubernetes is not the reason.
+
+Operator lean, 2026-11-26, low confidence on the details: the authoritative record in Agentplane's database, with a
 controller reconciling it against an optional Flux-managed Identity CR (git-declared Identities stay
 read-only in the app; deleting the CR requests deletion under the same reference rule). With the
 Session-Sandbox invariant this buys more than teardown: reference checks and new references in one
