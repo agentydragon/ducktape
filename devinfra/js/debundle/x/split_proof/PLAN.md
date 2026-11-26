@@ -618,9 +618,9 @@ Steps are independent PRs. Steps 2–5 touch different Lean files and can run in
 
 ### 1. Use Rust selector resolution in the corpus adapter
 
-The Excalidraw browser smoke already uses Rust's `spec resolve-placement` output to bind the source digest, requested owners and authored import priority to one input. Lean computes and checks the resulting schedule. The [corpus adapter](debundle_cases/run_cases.mjs) still matches binding selectors and hole-free templates itself. The saved baseline has 54 comparable entries in this group and 12 refusal tests.
+The [corpus adapter](debundle_cases/run_cases.mjs) invokes the Rust resolver for single-input cases. It checks the chunk ID, source SHA-256 and sequence of unit ordinals before using the returned owners and import priority. Lean checks the resulting plan; resolving a selector does not certify a split. The [routing test](debundle_cases/placement_routing_test.mjs) checks declarator ownership and import priority, and catches lost coverage when a binding selector stops matching.
 
-Reuse the resolver output for corpus entries with holes, alpha-renaming, ranges or dataflow selectors; keep the refusal tests distinct. Measure the cost of resolving one entry and check that the adapter maps resolved units to the same declarators before relying on the results. See the [selector semantics](../../docs/selector_resolution.md) and the remaining [production handoff work](TODO.md).
+The saved baseline predates this handoff. Use the [corpus runner](debundle_cases/README.md#run-it) to measure which requests now reach Lean and which still fail in the resolver or adapter. Keep expected resolver refusals distinct from Lean rejections. See the [selector semantics](../../docs/selector_resolution.md) and the remaining [production handoff work](TODO.md).
 
 ### 2. Declarator granularity in the adapter, and repeated `var` (6 comparable entries: 3 not run, 3 `strict-but-runs`; 2 more are refusal tests)
 
@@ -665,4 +665,4 @@ Guard anything added with the corpus' rejections that must stay rejected (`proxy
 
 The 36 `reject: stderr` entries (7 run, 29 not run) test debundle's diagnostics (ambiguous selector, unknown anchor, parse errors, `import_order` contract). They have no counterpart in a validity check.
 
-The 80 other entries that are not run today are covered by steps 1, 2, 6 and 7 (54 + 3 + 18 + 5). After those steps only the 36 are left, plus whatever new causes the unlocked entries show.
+The initial survey attributed 80 other unrun entries to steps 1, 2, 6 and 7 (54 + 3 + 18 + 5). These are historical counts; resolving a selector can expose another blocker.
