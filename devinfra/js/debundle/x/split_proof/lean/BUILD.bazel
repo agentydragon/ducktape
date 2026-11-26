@@ -572,6 +572,7 @@ executable_test(
         ":corejs_checked_split",
         ":corejs_resolved_placement",
         ":corejs_state_match",
+        ":corejs_structural",
     ],
 )
 
@@ -594,6 +595,7 @@ executable_test(
     deps = [
         ":corejs_checked_split",
         ":corejs_state_match",
+        ":corejs_structural",
     ],
 )
 

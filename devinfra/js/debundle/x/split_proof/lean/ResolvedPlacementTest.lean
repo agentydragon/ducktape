@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.ResolvedPlacement
 import EsmSplit.CoreJS.CheckedSplit
+import EsmSplit.CoreJS.LinkedPivotCheck
 import EsmSplit.CoreJS.StateMatch
 
 open CoreJS CoreJS.LinkedBehavior CoreJS.ResolvedPlacement
