@@ -937,6 +937,7 @@ lean_library(
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
+        ":literal_reorder_construct",
         ":lowersplit_input",
         ":lowersplit_support",
         ":named_declaration_split",

@@ -169,13 +169,22 @@ if (runCase("grouped-declarations-and-placement")) {
 
   const reordered = path.join(root, "reordered");
   prepare(source, placement3, [right, left]);
-  assert.match(check(reordered, all, "rejected").reason, /normal-completion/);
-  assert(!fs.existsSync(reordered));
-  const movedVerdict = check(reordered, normal, "certified");
-  assert.equal(movedVerdict.scope, "closed-declarations");
-  assert.equal(movedVerdict.guarantee, normal);
-  assert.deepEqual(check(reordered, normal, "certified", "--check-output"), movedVerdict);
-  assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["result", 1]]);
+  const movedVerdict = check(reordered, all, "certified");
+  assert.equal(movedVerdict.scope, "literal-reorder");
+  assert.equal(movedVerdict.strategy, "compiled-constructor");
+  assert.equal(movedVerdict.guarantee, all);
+  assert.deepEqual(check(reordered, all, "certified", "--check-output"), movedVerdict);
+  assert.equal(check(reordered, normal, "certified", "--check-output").guarantee, all);
+  const reorderedEntry = path.join(reordered, entry);
+  assert.deepEqual(await observe(pathToFileURL(reorderedEntry)), [["result", 1]]);
+
+  // The imported cell also holds 1, but it is a different public binding.
+  const movedCode = fs.readFileSync(reorderedEntry, "utf8");
+  const wrongCell = movedCode.replace(/export \{[^}]*\}/, "export { a as result }");
+  assert.notEqual(wrongCell, movedCode);
+  fs.writeFileSync(reorderedEntry, wrongCell);
+  check(reordered, all, "rejected", "--check-output");
+  assert.equal(fs.readFileSync(reorderedEntry, "utf8"), wrongCell);
 }
 
 if (runCase("browser-and-path-contracts")) {

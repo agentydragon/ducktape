@@ -3,6 +3,7 @@ import EsmSplit.CoreJS.Declaration.Artifacts
 import EsmSplit.CoreJS.JointStatic
 import EsmSplit.CoreJS.LinkedCertificate
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.LiteralReorderConstruct
 import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.NamedDeclarationSplit
 import EsmSplit.CoreJS.StructuralCertificate
@@ -317,6 +318,35 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
     | .error refusal => return some (← emitRefusal options.request.label refusal "named-declarations")
   catch e => return some (← emitVerdict options.request.label (.error e.toString) "named-declarations")
 
+/-- Print the proved literal move through the ordinary staging gate. The
+independently lowered files must reconstruct that exact CoreJS program. -/
+private def tryLiteralReorder (chunk : DeploymentChunk) (src : BundleInput)
+    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
+  unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural do return none
+  let .authored spec := chunk.placement | return none
+  unless spec.sequential && (spec.entry :: spec.modules.map Prod.fst).all (·.endsWith ".mjs") do return none
+  let .ok nodes := ESTreeUnits.checkedNodes src.program src.source | return none
+  let .ok source := CoreJS.LinkedInput.decodeSingletonSource src.program spec.entry | return none
+  let [original] := source.modules | return none
+  -- Every authored ordinal must denote a decoded unit. The lowered module can
+  -- also represent sources whose non-executable rows need a different rule.
+  unless original.body.length == nodes.size do return none
+  let .ok constructed := CoreJS.LiteralReorderConstruct.construct source spec | return none
+  let program := constructed.program
+  let scope := "literal-reorder"
+  try
+    let programs ← IO.ofExcept (ESTreeEmit.corePrograms program src.source)
+    let part : OutputPart := { programs, source := src.source, input := src.input, work }
+    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
+      pure <| match CoreJS.LinkedInput.checkConstructedOutput files program with
+        | .ok _ => .ok ()
+        | .error reason => .error { reason }
+    match checked with
+    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) scope
+        [("strategy", toJson "compiled-constructor")])
+    | .error refusal => return some (← emitRefusal options.request.label refusal scope)
+  catch e => return some (← emitVerdict options.request.label (.error e.toString) scope)
+
 /-- Preserve singleton declarations and executable linked certificates,
 with the original bundle at the virtual root for authored inputs. -/
 private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
@@ -329,6 +359,7 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
   let checkOnly := options.checkOnly
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
   if let some verdict ← tryNamedDeclarations chunk src out work options timings then return verdict
+  if let some verdict ← tryLiteralReorder chunk src out work options timings then return verdict
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
   let part ← prepare chunk src work profile "bundle.mjs" timings declarations
   let { original := program, bundle := B, spec := S, plan := P, output } := part
