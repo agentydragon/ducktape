@@ -4,7 +4,6 @@
 //! flattened lane, rewound, unless that execution seals the owner; so does
 //! an admitted root expression statement.
 
-use super::super::effect_coverage::RootInitializerIdentity;
 use super::super::execution_index::{Call, CallKind};
 use super::super::interpreter::{Executor, LocalActivation, Outcome};
 use super::super::kernel::frame::SelectedValue;
@@ -12,6 +11,7 @@ use super::super::local_operations::LocalBody;
 use super::super::value_model::{Context, ValueExpr, Values};
 use super::operands::RootOperands;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionOperation};
+use crate::facts::binding_effect_coverage::RootInitializerIdentity;
 use crate::facts::{OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptRewind};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;

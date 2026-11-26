@@ -247,9 +247,8 @@ pub(crate) struct FreshRecordFreezeHeapProof {
     sites: BTreeMap<(u32, u32), crate::analysis_inputs::NativeOperationInputEvidence>,
 }
 
-impl FreshRecordFreezeHeapProof {
-    /// The author input certifying `call`, if the proof covers it.
-    pub(crate) fn input_evidence(
+impl crate::facts::heap_contents::FreshFreezeInputs for FreshRecordFreezeHeapProof {
+    fn input_evidence(
         &self,
         call: &CallExpr,
     ) -> Option<&crate::analysis_inputs::NativeOperationInputEvidence> {
@@ -257,11 +256,22 @@ impl FreshRecordFreezeHeapProof {
     }
 }
 
-impl PreparedSynchronousCallIndex {
+impl crate::facts::heap_contents::NativeHeapReads for PreparedSynchronousCallIndex {
+    fn native_own_data_read(
+        &self,
+        span: Span,
+    ) -> Option<(
+        crate::analysis_provenance::InferenceUse,
+        Option<crate::analysis_inputs::NativeOperationInputEvidence>,
+        ProofDependencies,
+    )> {
+        PreparedSynchronousCallIndex::native_own_data_read(self, span)
+    }
+
     /// A direct native Map consumes only private, dense entry arrays here.
     /// The complete-program census must protect every native protocol step;
     /// ordinary purity of the constructor does not establish heap locality.
-    pub(crate) fn primitive_map_literal_heap_proof(
+    fn primitive_map_literal_heap_proof(
         &self,
         construction: &NewExpr,
         flow: &ChunkValueFlow,
@@ -323,7 +333,9 @@ impl PreparedSynchronousCallIndex {
             )
             .dependencies()
     }
+}
 
+impl PreparedSynchronousCallIndex {
     pub(crate) fn native_own_data_read_diagnostics(
         &self,
         owner: SourceUnitOrdinal,
@@ -466,6 +478,36 @@ impl PreparedSynchronousCallIndex {
             )
         };
         Some((premise.inference_use, evidence, premise.dependencies))
+    }
+}
+
+/// Shape-proof refinement for purity code graphs built outside full chunk
+/// analysis: prepares the synchronous call index under default inputs.
+pub(crate) struct SynchronousShapeRefinement;
+
+impl crate::purity::ShapeProofRefinement for SynchronousShapeRefinement {
+    fn refine(
+        &self,
+        body: &[TopLevelItemView<'_>],
+        value_flow: &ChunkValueFlow,
+        plain_array_bindings: &BTreeSet<String>,
+        local_class_construction: &LocalClassConstructionShapes,
+        set_iterable_shapes: SetIterableShapes,
+        shadowed: &BTreeSet<&'static str>,
+    ) -> (LocalClassConstructionProof, SetIterableProof) {
+        let prepared = prepare_synchronous_call_index(
+            body,
+            value_flow,
+            &AnalysisInputs::default(),
+            plain_array_bindings,
+            local_class_construction,
+            set_iterable_shapes,
+            shadowed,
+        );
+        (
+            prepared.local_class_construction_proof().clone(),
+            prepared.set_iterable_proof().clone(),
+        )
     }
 }
 

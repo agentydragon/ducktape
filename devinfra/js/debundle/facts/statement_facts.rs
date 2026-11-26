@@ -222,7 +222,7 @@ pub struct SynchronousCalls {
     pub initializer_external_effects: Option<crate::reports::schema::InitializerExternalEffectsUse>,
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
     pub(crate) completed_initialization:
-        Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>,
+        Option<super::initialization_effects::CompletedInitialization>,
     /// Report-only reason the original owner's whole-initialization proof was
     /// refused. This never changes the conservative effect projection.
     pub(crate) initialization_coverage_refusal:
@@ -262,7 +262,7 @@ pub struct SynchronousCalls {
     /// Its saved representation requires this field so a cache missing typed
     /// authority cannot regain `.complete` as legacy authority. Public report
     /// DTOs are separate diagnostics.
-    pub(crate) binding_effect_coverage: super::sync_effects::BindingEffectCoverage,
+    pub(crate) binding_effect_coverage: super::binding_effect_coverage::BindingEffectCoverage,
     /// For a statement with the `GlobalObjectAliasEscape` havoc: the
     /// top-level bindings it reads eagerly that may hold the global object
     /// where it starts (`None` when execution did not settle them).
@@ -323,7 +323,9 @@ impl SynchronousCalls {
         }
     }
 
-    pub fn binding_effect_authority(&self) -> super::sync_effects::BindingEffectAuthority {
+    pub fn binding_effect_authority(
+        &self,
+    ) -> super::binding_effect_coverage::BindingEffectAuthority {
         let author_source_only = matches!(
             self.initializer_binding_effects.as_deref(),
             Some(crate::reports::schema::InitializerBindingEffectsUse::Applied { .. })
@@ -957,7 +959,7 @@ impl StatementFacts {
     fn has_complete_operation_effects(&self) -> bool {
         self.synchronous_calls.as_ref().is_some_and(|calls| {
             calls.binding_effect_authority()
-                == super::sync_effects::BindingEffectAuthority::OperationReceipt
+                == super::binding_effect_coverage::BindingEffectAuthority::OperationReceipt
                 && calls
                     .completed_initialization
                     .as_ref()
@@ -1043,7 +1045,7 @@ pub struct StructuralChunkSourceFacts<'a> {
 #[cfg(test)]
 mod initializer_overlay_tests {
     use super::*;
-    use crate::facts::sync_effects::{BindingEffectAuthority, BindingEffectCoverage};
+    use crate::facts::binding_effect_coverage::{BindingEffectAuthority, BindingEffectCoverage};
     use raw_js_test_support::parse;
 
     #[test]

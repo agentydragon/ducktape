@@ -13,7 +13,7 @@ use super::statement_facts::{
     ConstructorFacts, FallbackOnlyEffects, HeapContentAccesses, HeapContentCells, SynchronousCalls,
 };
 use super::*;
-use crate::facts::sync_effects::SavedBindingEffectCoverage;
+use crate::facts::binding_effect_coverage::SavedBindingEffectCoverage;
 use crate::purity::saved::{PurityNodeId, PuritySnapshot, RestoredPurities};
 use crate::reports::saved::{
     SavedExecutionPrecisionLoss, SavedLocalRecordFactoryRejection, SavedLocalRecordFactoryUse,
@@ -482,7 +482,7 @@ struct SavedSynchronousCalls<'a> {
     initializer_external_effects:
         Cow<'a, Option<crate::reports::schema::InitializerExternalEffectsUse>>,
     completed_initialization:
-        Cow<'a, Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>>,
+        Cow<'a, Option<super::initialization_effects::CompletedInitialization>>,
     initialization_coverage_refusal:
         Cow<'a, Option<crate::facts::OwnerInitializationCoverageRefusalReason>>,
     root_attempt: Option<crate::facts::RootAttempt>,

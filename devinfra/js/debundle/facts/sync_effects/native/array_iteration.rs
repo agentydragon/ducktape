@@ -12,7 +12,7 @@
 use super::super::adapters::application::LocalExecutionContext;
 use super::super::allocation_transfer::AllocationValue;
 use super::super::array_transfer::{ArrayIterationSelection, iteration_snapshot};
-use super::super::effect_coverage::{EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt};
+use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
 use super::super::interpreter::MAX_SYNCHRONOUS_INVOCATIONS;
 use super::super::kernel::frame::{
@@ -28,6 +28,7 @@ use crate::execution_evidence::{
 use crate::facts::EffectCell;
 use crate::facts::abstract_domain::builtins::IterationResult;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
 use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 use swc_common::Span;

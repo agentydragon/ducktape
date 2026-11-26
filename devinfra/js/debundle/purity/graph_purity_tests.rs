@@ -56,7 +56,12 @@ impl TestGraph {
         let module = parse(src);
         let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
-        let graph = ChunkCodeGraph::build(&body, &shadowed, &declared_pure);
+        let graph = ChunkCodeGraph::build(
+            &body,
+            &shadowed,
+            &declared_pure,
+            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+        );
         Self { graph }
     }
 
@@ -102,7 +107,12 @@ fn enum_member_reads_need_plain_data_after_the_initializer() {
         let module = parse(&format!("{initializer}\n{suffix}"));
         let body = top_level_item_views(&module.body);
         let shadowed = compute_shadowed_globals(&body);
-        let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+        let graph = ChunkCodeGraph::build(
+            &body,
+            &shadowed,
+            &BTreeSet::new(),
+            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+        );
         assert_eq!(
             graph.is_plain_data("Flags"),
             admitted,
@@ -113,7 +123,12 @@ fn enum_member_reads_need_plain_data_after_the_initializer() {
         parse("var Flags = ((values) => ((values.FIRST = 1), values))(Flags || (Flags = {}));");
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+    let graph = ChunkCodeGraph::build(
+        &body,
+        &shadowed,
+        &BTreeSet::new(),
+        &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+    );
     assert!(
         graph.is_plain_data("Flags"),
         "the recognized initializer self-write must remain admitted"
@@ -168,7 +183,12 @@ fn fn_purity_call_inherits_chunk_local_function_purity() {
     let module = parse("function f() { return 42; } const x = f();");
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+    let graph = ChunkCodeGraph::build(
+        &body,
+        &shadowed,
+        &BTreeSet::new(),
+        &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+    );
     let var = match body[1].as_module_item() {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
         other => panic!("expected VarDecl, got {other:?}"),
@@ -1343,6 +1363,8 @@ fn body_shadowed_pure_member_binding_is_not_pure() {
         &declared_pure_members,
         &BTreeMap::new(),
         &BTreeSet::new(),
+        &BTreeSet::new(),
+        &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
     );
     assert_eq!(
         graph.function_purity("f").map(|p| rules_of(p)),

@@ -13,10 +13,7 @@ use super::allocation_transfer::MAX_EXACT_ARRAY_SPREAD_SLOTS;
 use super::alternatives::execution_state::{ExecutionPath, JoinedPath};
 use super::alternatives::{Family, Leaf, join_frames};
 use super::array_transfer::ArrayContext;
-use super::effect_coverage::{
-    BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
-    RootInitializerIdentity,
-};
+use super::effect_coverage::EffectCoverageFragment;
 use super::execution_index::{
     Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
     LocalConstructor, MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
@@ -79,6 +76,9 @@ use crate::facts::abstract_domain::effect::{CoerceOp, CoerceOperand};
 use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
 use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::binding_effect_coverage::{
+    BindingEffectCoverage, LocalBodyIdentity, LocalCallReceipt, RootInitializerIdentity,
+};
 use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::semantic_inference::{

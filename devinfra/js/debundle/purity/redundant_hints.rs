@@ -107,19 +107,20 @@ pub(crate) fn detect_redundant_purity_hints(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
+    refinement: &dyn ShapeProofRefinement,
 ) -> Vec<RedundantPurityHint> {
     let mut out = Vec::new();
     let mut hint_free = None;
     for name in declared_pure {
         let mut without = declared_pure.clone();
         without.remove(name);
-        let probe = ChunkCodeGraph::build(body, shadowed, &without);
+        let probe = ChunkCodeGraph::build(body, shadowed, &without, refinement);
         let reason = redundant_reason(&probe, name);
         if let Some(reason) = reason {
             let proof_basis = if without.is_empty()
                 || redundant_reason(
                     hint_free.get_or_insert_with(|| {
-                        ChunkCodeGraph::build(body, shadowed, &BTreeSet::new())
+                        ChunkCodeGraph::build(body, shadowed, &BTreeSet::new(), refinement)
                     }),
                     name,
                 )
