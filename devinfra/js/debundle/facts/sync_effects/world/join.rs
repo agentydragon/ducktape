@@ -739,11 +739,12 @@ fn intersect_ord_maps<K: Ord + Clone, V: Clone + PartialEq>(
 
 #[cfg(test)]
 mod tests {
+    use super::super::World;
     use super::super::cells::{CellInitialization, LexicalCell};
     use super::super::prefix_values::{PrefixValues, TopBindings};
-    use super::super::{World, WorldScope};
     use super::{JoinRefusal, Joined};
     use crate::local_operations::LocalBinding;
+    use crate::value_model::WorldScope;
     use crate::value_model::{AbstractValue, DenseArray, Values};
     use analysis_vocabulary::value::{Kind, Value};
     use std::sync::Arc;

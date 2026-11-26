@@ -10,6 +10,9 @@ pub mod synchronous_calls;
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
 use super::allocation_transfer::MAX_EXACT_ARRAY_SPREAD_SLOTS;
+use super::allocation_transfer::{
+    NativeIterableInput, NativeIterableReceipt, NativeIterableYields,
+};
 use super::alternatives::execution_state::{ExecutionPath, JoinedPath};
 use super::alternatives::{Family, Leaf, join_frames};
 use super::array_transfer::ArrayContext;
@@ -25,7 +28,7 @@ use super::kernel::context::ControlContext;
 use super::kernel::continuation::LocalContinuation;
 use super::kernel::driver;
 use super::kernel::frame::{
-    CallableSelection, LocalExecutionAttempt, LocalFrame, RemainderDisposition, SelectedValue,
+    LocalExecutionAttempt, LocalFrame, RemainderDisposition, SelectedValue,
 };
 use super::local_operations::{LocalBinding, LocalBody};
 use super::native::operation::{
@@ -40,18 +43,15 @@ use super::runtime_callbacks::{
     BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
     CallbackResult,
 };
-use super::runtime_heap::{
-    HeapOperation, HeapResult, NativeIterableInput, NativeIterableReceipt, NativeIterableUse,
-    NativeIterableYields,
-};
+use super::runtime_heap::{HeapOperation, HeapResult, NativeIterableUse};
 use super::runtime_inference::{
     CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
 };
 use super::value_model::{
-    AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
-    DenseArray, DenseArrayIterationTransfer, HeapAddress, InstanceOrigin, LexicalCaptures,
-    LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
-    canonical_array_index, ordered_values,
+    AbstractValue, ArrayIteration, CallSite, CallableSelection, CaptureInterner, Captured,
+    CapturedContext, Context, DenseArray, DenseArrayIterationTransfer, HeapAddress, InstanceOrigin,
+    LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr,
+    Values, canonical_array_index, ordered_values,
 };
 use super::world::World;
 use super::world::cells::{CellInitialization, CellTrace};

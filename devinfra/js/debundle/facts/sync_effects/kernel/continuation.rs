@@ -2,6 +2,7 @@
 //! a call yields after its callee and operands have run, and the driver
 //! resumes the same stack with the adapter's result.
 
+use super::super::allocation_transfer::NativeIterableReceipt;
 use super::super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, ArrayTransfer, LiteralHeap,
     LiteralLayout, RecordTransfer, SequenceTransfer,
@@ -12,10 +13,10 @@ use super::super::local_operations::{
     LocalExpression, LocalOperation, LogicalOperator,
 };
 use super::super::own_data_transfer::{self, OwnDataOwnership, OwnDataSlot};
-use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
+use super::super::runtime_heap::NativeIterableUse;
 use super::super::value_model::{
-    AbstractValue, CallSite, HeapAddress, LiteralPropertyKind, PropertyDefinition, ValueExpr,
-    Values,
+    AbstractValue, CallSite, CallableSelection, HeapAddress, LiteralPropertyKind,
+    PropertyDefinition, ValueExpr, Values,
 };
 use super::branch;
 use super::cells;
@@ -23,8 +24,8 @@ use super::closure;
 use super::construct;
 use super::context::{Disposition, KernelContext, Unproved};
 use super::frame::{
-    CallableSelection, EvaluatedCallee, Invocation, LocalCallRequest, LocalExecutionAttempt,
-    LocalFrame, LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
+    EvaluatedCallee, Invocation, LocalCallRequest, LocalExecutionAttempt, LocalFrame,
+    LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
 };
 use analysis::facts::EffectCell;
 use analysis_model::PrimKinds;

@@ -11,8 +11,8 @@ pub(super) mod object_surface;
 pub(super) mod prefix_values;
 
 use super::allocation_transfer::LiteralHeap;
-use super::kernel::frame::CallableSelection;
 use super::value_model::{CallSite, Captured, Context, DenseArray, LexicalCellId, Values};
+use super::value_model::{CallableSelection, WorldScope};
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::report_schema::FirstClassMembersPublication;
 use cells::{CellTrace, LexicalCells};
@@ -23,19 +23,6 @@ use prefix_values::PrefixValues;
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
-
-/// Who owns this world. The scope decides heap policy as a bundle: whether
-/// literal writability is followed and whether a body's heap cells reach a
-/// caller's effects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) enum WorldScope {
-    /// The chunk's own prefix: literal writability is tracked and heap cells
-    /// become the owner's effects.
-    Application,
-    /// A fresh heap for one provider query: no writability proof, and heap
-    /// cells stay private to the query.
-    IsolatedProvider,
-}
 
 /// The program prefix's values, heap facts, reachability and identity-bearing
 /// cells. One `World` serves both adapters with a different `scope`; the

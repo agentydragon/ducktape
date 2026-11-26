@@ -2,13 +2,14 @@
 //! operation order and semantics.
 
 use super::super::allocation_transfer::AllocationValue;
+use super::super::allocation_transfer::NativeIterableReceipt;
 use super::super::alternatives::PathState;
 use super::super::array_transfer::ArrayMethodSelection;
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
 use super::super::local_operations::DeferredCallableCreation;
 use super::super::own_data_transfer::OwnDataContext;
-use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
+use super::super::runtime_heap::NativeIterableUse;
 use super::super::value_model::{CallSite, CapturedContext, LexicalCaptures, ValueExpr, Values};
 use super::super::world::World;
 use super::closure::{CapturePolicy, ClosureAdmission};

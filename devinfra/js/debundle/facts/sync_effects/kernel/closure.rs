@@ -6,11 +6,12 @@ use super::super::allocation_transfer::{AllocationJudgment, AllocationValue};
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
 use super::super::local_operations::DeferredCallableCreation;
+use super::super::value_model::CallableSelection;
 use super::super::value_model::{
     AbstractValue, Context, HeapAddress, LexicalCaptures, LexicalCellId, Values,
 };
 use super::context::KernelContext;
-use super::frame::{CallableSelection, LocalFrame, LocalValueResult, RemainderDisposition};
+use super::frame::{LocalFrame, LocalValueResult, RemainderDisposition};
 use analysis_vocabulary::value::Value;
 use imbl::OrdMap;
 use rustc_hash::FxHashSet;

@@ -7,12 +7,13 @@ use super::execution_index::Call;
 use super::interpreter::{
     ExecutionInputs, ExecutionState, Executor, Observations, Outcome, OwnPropertyQuery,
 };
-use super::kernel::frame::{CallableSelection, EvaluatedCallee};
+use super::kernel::frame::EvaluatedCallee;
 use super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use super::property_inference::OwnPropertyProof;
 use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
+use super::value_model::CallableSelection;
 use super::value_model::{CapturedContext, Context, ValueExpr, Values};
 use analysis::facts::evaluation_effects::EvaluationEffects;
 use analysis::facts::statement_facts::SynchronousCalls;

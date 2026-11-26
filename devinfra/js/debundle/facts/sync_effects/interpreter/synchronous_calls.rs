@@ -3,11 +3,12 @@
 use super::super::execution_index::{
     Call, CallKind, ExecutionIndex, native_call_identity_key, native_own_data_read_slots,
 };
+use super::super::value_model::WorldScope;
 use super::super::value_model::{
     AbstractValue, CallSite, CaptureInterner, MemberKey, ValueExpr, Values,
 };
+use super::super::world::World;
 use super::super::world::prefix_values::{PrefixValues, TopBindings};
-use super::super::world::{World, WorldScope};
 use super::{
     CallbackFallbackSummary, ExecutionInputs, ExecutionState, ExportCallbackMemos, Outcome,
 };

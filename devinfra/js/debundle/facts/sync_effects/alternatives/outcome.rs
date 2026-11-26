@@ -4,7 +4,7 @@
 use super::super::allocation_transfer::AllocationJudgment;
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::interpreter::Outcome;
-use super::super::kernel::frame::CallableSelection;
+use super::super::value_model::CallableSelection;
 use analysis::facts::statement_facts::SynchronousCalls;
 use analysis_vocabulary::inputs::ProofDependencies;
 

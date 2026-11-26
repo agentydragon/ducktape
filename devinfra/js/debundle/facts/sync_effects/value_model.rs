@@ -1,9 +1,9 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
-use super::world::WorldScope;
 use analysis::facts::abstract_domain::builtins::IterationRow;
 use analysis::facts::value_flow::static_prop as static_string_prop;
 use analysis_model::PrimKinds;
+use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
 use inference::{FactContext, IterativeFacts, IterativeInference, IterativeRules};
@@ -2035,12 +2035,54 @@ pub(super) fn object_data_property_name(name: &PropName) -> Option<String> {
     }
 }
 
+/// Who owns this world. The scope decides heap policy as a bundle: whether
+/// literal writability is followed and whether a body's heap cells reach a
+/// caller's effects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum WorldScope {
+    /// The chunk's own prefix: literal writability is tracked and heap cells
+    /// become the owner's effects.
+    Application,
+    /// A fresh heap for one provider query: no writability proof, and heap
+    /// cells stay private to the query.
+    IsolatedProvider,
+}
+
+/// Nonterminal provenance of an actually selected abstract callable. This
+/// proves neither fresh allocation nor complete invocation effects.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct CallableSelection {
+    pub(crate) target: AbstractValue,
+    pub(crate) dependencies: Box<ProofDependencies>,
+}
+
+impl CallableSelection {
+    pub(crate) fn observed(values: &Values, dependencies: Box<ProofDependencies>) -> Option<Self> {
+        if values.len() != 1 {
+            return None;
+        }
+        let target = values.first()?.clone();
+        matches!(
+            &target,
+            AbstractValue::Closure(..) | AbstractValue::Value(Value::Alloc(Kind::Function, _))
+        )
+        .then_some(Self {
+            target,
+            dependencies,
+        })
+    }
+
+    pub(crate) fn matches(&self, values: &Values) -> bool {
+        values.len() == 1 && values.first() == Some(&self.target)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::WorldScope;
     use super::{
         AbstractValue, CaptureInterner, HeapAddress, InstanceOrigin, LexicalCaptures, Values,
     };
-    use crate::world::WorldScope;
     use imbl::OrdSet;
     use std::hash::{DefaultHasher, Hash, Hasher};
     use std::sync::Arc;

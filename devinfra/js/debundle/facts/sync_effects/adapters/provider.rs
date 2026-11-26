@@ -21,12 +21,13 @@ use super::super::kernel::frame::{
 };
 use super::super::local_operations::{DeferredCallableCreation, LocalBody};
 use super::super::own_data_transfer::OwnDataContext;
+use super::super::value_model::WorldScope;
 use super::super::value_model::{
     AbstractValue, CallSite, CaptureInterner, CapturedContext, Context, LexicalCaptures,
     OwnPropertyShape, ProviderInput, ProviderScopeId, SymbolicInputId, ValueExpr, Values,
 };
+use super::super::world::World;
 use super::super::world::join::Joined;
-use super::super::world::{World, WorldScope};
 use analysis::facts::abstract_domain::builtins::{self, Invocation};
 use analysis::facts::abstract_domain::integrity::Integrity;
 use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};

@@ -8,10 +8,11 @@
 //   fallbacks and the preparatory proofs of `roots::operands`) and
 //   `Executor::evaluate_initializer_transfer`.
 
+use super::super::allocation_transfer::NativeIterableReceipt;
 use super::super::allocation_transfer::{self, AllocationContext};
 use super::super::execution_index::CallKind;
 use super::super::interpreter::{Executor, from_flow, unknown};
-use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
+use super::super::runtime_heap::NativeIterableUse;
 use super::super::value_model::{
     AbstractValue, Context, HeapAddress, InstanceOrigin, RetainedResultKind, ValueExpr, Values,
 };

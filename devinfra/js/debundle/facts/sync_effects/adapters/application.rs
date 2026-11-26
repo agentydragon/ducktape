@@ -17,17 +17,18 @@ use super::super::kernel::context::{
 use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
 // Module-qualified: the builtin table's `Invocation` also has a
 // tagged-template form the kernel never requests.
+use super::super::allocation_transfer::NativeIterableReceipt;
 use super::super::kernel::frame::{
-    self as kernel_frame, CallableSelection, EvaluatedCallee, LocalCallRequest, LocalFrame,
-    LocalValueResult, RemainderDisposition,
+    self as kernel_frame, EvaluatedCallee, LocalCallRequest, LocalFrame, LocalValueResult,
+    RemainderDisposition,
 };
 use super::super::local_operations::{LocalBody, LocalExpression, LocalOperation};
 use super::super::own_data_transfer::OwnDataContext;
-use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
+use super::super::runtime_heap::NativeIterableUse;
 use super::super::runtime_inference::{CallOperands, CallTransfer, RuntimeOperation, RuntimeValue};
 use super::super::value_model::{
-    AbstractValue, CallSite, CapturedContext, LexicalCaptures, MemberKey, OwnPropertyShape,
-    ValueExpr, Values,
+    AbstractValue, CallSite, CallableSelection, CapturedContext, LexicalCaptures, MemberKey,
+    OwnPropertyShape, ValueExpr, Values,
 };
 use super::super::world::World;
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
