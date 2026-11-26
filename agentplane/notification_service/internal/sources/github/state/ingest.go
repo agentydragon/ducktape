@@ -8,6 +8,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/facts"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -35,7 +36,9 @@ type Ingest struct {
 	Digest []byte
 	// Payload is the raw body, a JSON object.
 	Payload json.RawMessage
-	Action  *string
+	// Fact is the event-specific notification projection; it never duplicates the entire body.
+	Fact   json.RawMessage
+	Action *string
 	// HeadSHA is the commit the event is about, if it is about one.
 	HeadSHA *string
 	// Subjects are the subjects the event refers to, all in Repository.
@@ -54,6 +57,16 @@ type Ingest struct {
 // IngestTx deduplicates and persists one delivery with its source facts under the shared GitHub lock.
 // The caller owns the transaction and any generic inbox publication that follows this write.
 func IngestTx(ctx context.Context, tx transaction.Tx, ingest Ingest, at time.Time) (bool, error) {
+	if len(ingest.Fact) == 0 {
+		fact, err := facts.Project(ingest.Event, ingest.Payload)
+		if err != nil {
+			return false, err
+		}
+		ingest.Fact = fact
+	}
+	if !json.Valid(ingest.Fact) {
+		return false, errors.New("GitHub delivery fact is not valid JSON")
+	}
 	if err := Lock(ctx, tx); err != nil {
 		return false, err
 	}
@@ -221,10 +234,10 @@ func storeDelivery(ctx context.Context, tx transaction.Tx, ingest Ingest, at tim
 	}
 	var position int64
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event, action, head_sha, digest, payload, commit_normalized, pr_normalized, pr_normalized_action)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12) RETURNING position`,
+		INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event, action, head_sha, digest, payload, fact, commit_normalized, pr_normalized, pr_normalized_action)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12, $13) RETURNING position`,
 		ingest.AppID, ingest.DeliveryID, ingest.InstallationID, repositoryID, ingest.Event, ingest.Action, ingest.HeadSHA,
-		ingest.Digest, string(ingest.Payload), commitNormalized, prNormalized, prNormalizedAction).Scan(&position); err != nil {
+		ingest.Digest, string(ingest.Payload), string(ingest.Fact), commitNormalized, prNormalized, prNormalizedAction).Scan(&position); err != nil {
 		return err
 	}
 	for _, key := range ingest.Subjects {

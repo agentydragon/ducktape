@@ -45,8 +45,8 @@ type Match struct {
 
 // Delivery is a stored delivery that matched, with the identity of its entry.
 type Delivery struct {
-	Event   sourceadapter.GitHubEvent
-	Payload json.RawMessage
+	Event sourceadapter.GitHubEvent
+	Fact  json.RawMessage
 }
 
 // argList collects query arguments and names each by its placeholder.
@@ -64,6 +64,9 @@ func (a *argList) add(value any) string {
 func (c *Coordinator) Deliveries(ctx context.Context, match Match) ([]Delivery, error) {
 	if len(match.Filters) == 0 || len(match.Fences) == 0 {
 		return nil, errors.New("a GitHub match needs filters and fences")
+	}
+	if err := c.BackfillFacts(ctx); err != nil {
+		return nil, err
 	}
 	var args argList
 	accessible := make([]string, len(match.Fences))
@@ -126,7 +129,7 @@ func (c *Coordinator) Deliveries(ctx context.Context, match Match) ([]Delivery, 
 	}
 	// The relational natural key matches this delivery; payload expiry does not affect identity.
 	rows, err := c.db.QueryContext(ctx, `
-		SELECT d.app_id, d.delivery_id, d.repository_id, d.event, d.action, d.payload
+		SELECT d.app_id, d.delivery_id, d.repository_id, d.event, d.action, d.fact
 		FROM github_delivery d
 		WHERE d.app_id = `+args.add(match.AppID)+`
 			AND (`+strings.Join(accessible, " OR ")+`)
@@ -160,7 +163,7 @@ func (c *Coordinator) Deliveries(ctx context.Context, match Match) ([]Delivery, 
 		if action.Valid {
 			delivery.Event.Action = &action.String
 		}
-		delivery.Payload = payload
+		delivery.Fact = payload
 		deliveries = append(deliveries, delivery)
 	}
 	return deliveries, rows.Err()
@@ -231,7 +234,7 @@ func (c *Coordinator) Record(ctx context.Context, claim inboxstore.Claim, record
 			return postgres.Notify(ctx, tx, wakeup.WorkChannel, "")
 		}
 		for _, delivery := range recording.Matched {
-			if err := c.append(ctx, tx, claim.ID, recording.SubscriptionID, delivery.Event, delivery.Payload); err != nil {
+			if err := c.append(ctx, tx, claim.ID, recording.SubscriptionID, delivery.Event, delivery.Fact); err != nil {
 				return err
 			}
 		}

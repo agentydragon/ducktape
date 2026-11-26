@@ -25,7 +25,7 @@ only the query/exec capability they need.
 adapter and subscription initialization participants. It does not import `internal/inbox`.
 GitHub state calls the wake adapter explicitly in its transaction.
 
-`internal/sources/github/publication/fanout.Coordinator` owns delivery matching,
+`internal/sources/github/publication/fanout.Coordinator` owns fact-based delivery matching,
 recording, ingestion, observation projection and retention. It holds the database,
 shared runner and `internal/inbox.Store`. Source-owned projectors build neutral append inputs in the
 same callback. `internal/inbox` provides generic claim fencing, scheduling and append

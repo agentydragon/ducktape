@@ -2,8 +2,11 @@ package fanout
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/facts"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
@@ -28,6 +31,66 @@ func (c *Coordinator) Ingest(ctx context.Context, ingest githubstate.Ingest) (bo
 		return (publication.Adapter{}).Publish(ctx, tx, ingest.AppID)
 	})
 	return created && err == nil, err
+}
+
+// BackfillFacts upgrades retained rows written by an older ingress version before a worker matches
+// them. The receipt identity and raw body remain unchanged; the write is serialized with ingress.
+func (c *Coordinator) BackfillFacts(ctx context.Context) error {
+	for {
+		projected := 0
+		err := c.runner.Run(ctx, func(tx transaction.Tx) error {
+			if err := githubstate.Lock(ctx, tx); err != nil {
+				return err
+			}
+			rows, err := tx.QueryContext(ctx, `
+				SELECT position, event, payload FROM github_delivery
+				WHERE fact IS NULL
+				ORDER BY position LIMIT 500
+				FOR UPDATE SKIP LOCKED`)
+			if err != nil {
+				return err
+			}
+			type legacyDelivery struct {
+				position int64
+				event    string
+				payload  []byte
+			}
+			var batch []legacyDelivery
+			for rows.Next() {
+				var item legacyDelivery
+				if err := rows.Scan(&item.position, &item.event, &item.payload); err != nil {
+					rows.Close()
+					return err
+				}
+				batch = append(batch, item)
+			}
+			if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+				return err
+			}
+			for _, item := range batch {
+				if len(item.payload) == 0 || !json.Valid(item.payload) {
+					return errors.New("legacy GitHub delivery has no valid body for fact backfill")
+				}
+				fact, err := facts.Project(item.event, item.payload)
+				if err != nil {
+					return err
+				}
+				if _, err := tx.ExecContext(ctx,
+					`UPDATE github_delivery SET fact = $2::jsonb WHERE position = $1 AND fact IS NULL`,
+					item.position, string(fact)); err != nil {
+					return err
+				}
+				projected++
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if projected < 500 {
+			return nil
+		}
+	}
 }
 
 // Cleanup deletes bounded batches of raw receipts, generated events and obsolete commit facts

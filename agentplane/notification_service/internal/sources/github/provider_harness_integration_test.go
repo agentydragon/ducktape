@@ -369,6 +369,16 @@ func comment(number int64) map[string]any {
 	}
 }
 
+// commentNotification is the compact issue-comment payload stored in an inbox.
+func commentNotification(number int64) map[string]any {
+	return map[string]any{
+		"action":     "created",
+		"repository": repositoryPayload(baseRepository, baseRepositoryName),
+		"issue":      map[string]any{"number": number, "pull_request": map[string]any{"url": "https://api.github.test/pulls/7"}},
+		"comment":    map[string]any{"body": "kept verbatim"},
+	}
+}
+
 // pullRequestPayload is a push to pull request 7, whose head repository is not named.
 func pullRequestPayload(sha string) map[string]any {
 	return map[string]any{
@@ -393,6 +403,15 @@ func checkInFork(sha string, installation int64) map[string]any {
 	payload["repository"] = repositoryPayload(forkRepository, "fork/repo")
 	payload["installation"] = map[string]any{"id": installation}
 	return payload
+}
+
+// checkNotification is the compact check-run payload stored in an inbox.
+func checkNotification(sha string, repository int64, fullName string) map[string]any {
+	return map[string]any{
+		"action":     "completed",
+		"repository": repositoryPayload(repository, fullName),
+		"check_run":  map[string]any{"head_sha": sha},
+	}
 }
 
 func installationEvent(action string) map[string]any {

@@ -1,6 +1,7 @@
 package fanout
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,6 +99,48 @@ func TestRedeliveryStoresNothingAndReusedIDIsRefused(t *testing.T) {
 	other.AppID++
 	if !g.ingest(t, other) {
 		t.Error("a delivery of another App was taken for a redelivery")
+	}
+}
+
+func TestLegacyReceiptIsBackfilledAsACompactFactBeforeMatching(t *testing.T) {
+	g := newGitHubFixture(t)
+	ingest := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("temporary"))
+	raw := []byte(fmt.Sprintf(
+		`{"action":"created","repository":{"id":%d,"full_name":%q,"private":true},"issue":{"number":7,"title":"Question","pull_request":{"url":"https://github.test/pr/7"}},"comment":{"id":99,"body":"original comment text","html_url":"https://github.test/comment/99","user":{"id":3,"login":"alice","email":"omit"}},"private_data":"omit"}`,
+		g.repository, testRepositoryName,
+	))
+	g.exec(t, `UPDATE github_delivery SET payload = $2::jsonb, fact = NULL WHERE app_id = $1 AND delivery_id = $3`,
+		g.app, string(raw), ingest.DeliveryID)
+	var originalPosition int64
+	var originalDigest []byte
+	if err := g.db.QueryRowContext(t.Context(), `SELECT position, digest FROM github_delivery WHERE app_id = $1 AND delivery_id = $2`,
+		g.app, ingest.DeliveryID).Scan(&originalPosition, &originalDigest); err != nil {
+		t.Fatal(err)
+	}
+	originalSubjects := g.count(t, `SELECT count(*) FROM github_delivery_subject WHERE delivery_position = $1`, originalPosition)
+
+	if err := g.coordinator.BackfillFacts(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var fact, retainedBody, digest []byte
+	var position int64
+	if err := g.db.QueryRowContext(t.Context(), `
+		SELECT position, fact, payload, digest FROM github_delivery WHERE app_id = $1 AND delivery_id = $2`,
+		g.app, ingest.DeliveryID).Scan(&position, &fact, &retainedBody, &digest); err != nil {
+		t.Fatal(err)
+	}
+	if position != originalPosition || !bytes.Equal(digest, originalDigest) || len(digest) == 0 {
+		t.Fatalf("backfill changed receipt identity: position=%d (before %d), digest=%x (before %x)",
+			position, originalPosition, digest, originalDigest)
+	}
+	if got := g.count(t, `SELECT count(*) FROM github_delivery_subject WHERE delivery_position = $1`, position); got != originalSubjects {
+		t.Fatalf("backfill changed subject links: got %d, want %d", got, originalSubjects)
+	}
+	sameJSON(t, retainedBody, raw)
+	if !strings.Contains(string(fact), "original comment text") || !strings.Contains(string(fact), "\"action\"") ||
+		!strings.Contains(string(fact), "created") ||
+		strings.Contains(string(fact), "private_data") || strings.Contains(string(fact), "\"email\"") {
+		t.Fatalf("backfilled fact = %s, want compact comment, action and repository data", fact)
 	}
 }
 

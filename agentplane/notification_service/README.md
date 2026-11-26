@@ -66,7 +66,8 @@ migrating with the previous image. Subsequent schema changes use new Goose versi
 
 The schema stores Action state, actor and timestamp; mergeability repository, refs, states,
 commit and nanosecond timestamp; and Message text and optional source Session in native columns.
-GitHub webhook and observation payloads remain JSONB. Subscription `creation_proto` and notice
+GitHub webhook receipts keep their signed raw body separately from a compact event-specific fact projection;
+generated observation payloads remain JSONB. Subscription `creation_proto` and notice
 `runner_entry` remain binary protobuf snapshots. Expired entries retain identity tombstones while
 their content stays cleared.
 
@@ -165,8 +166,7 @@ inbox's acknowledged cursor.
 ### GitHub event retention
 
 `github_delivery_retention_days` defaults to 7 and accepts whole days from 1 to 3650, or explicit YAML `null` for infinite retention.
-The distinction is preserved: an omitted key uses seven days, while `github_delivery_retention_days: null` disables cleanup of both raw deliveries and generated mergeability transitions; zero remains invalid. GitHub maintenance deletes up to 1000 expired raw deliveries per cleanup pass, once a minute,
-including their IDs, digests and subject links. This bounds source replay, late association
+The distinction is preserved: an omitted key uses seven days, while `github_delivery_retention_days: null` disables cleanup of delivery receipts (including their raw bodies, facts, IDs, digests and subject links) and generated mergeability transitions; zero remains invalid. GitHub maintenance deletes up to 1000 expired receipts per cleanup pass, once a minute. This bounds source replay, late association
 matching and delivery-ID deduplication, including for active subscriptions. Inbox payload copies
 keep their independent 30-day retention. The same setting also deletes up to 1000 expired generated
 pull-request mergeability transitions and 1000 generated CI transitions and 1000 generated review/lifecycle transitions per pass, including transitions not consumed by an inbox;
@@ -197,7 +197,7 @@ Targeted catch-up reads current facts for followed PR heads, not full event or a
 report completed check-run facts and all commit statuses; an explicitly unfiltered `check_run` filter reports
 all observed check-run states. Explicit action filters select actual webhook actions only; catch-up does not
 invent `created`, `in_progress` or `completed` actions. The subscription command and default filters are
-unchanged. Branch and fixed-commit CI notifications use raw webhook events. See the
+unchanged. Branch and fixed-commit CI notifications use receipt-backed webhook facts. See the
 [agent GitHub guide](docs/agents/github.md#follow-github-activity) for identity, payload and filter details.
 
 Current review refresh state and pull-request review/lifecycle observations use the same retention

@@ -51,7 +51,7 @@ func TestOverlappingSubscriptionsShareOneEntryAndStopWhenAccessIsRevoked(t *test
 		t.Fatalf("%d entries, want the one comment on pull request 7 after the subscriptions", len(page.Entries))
 	}
 	requireEqual(t, page.Entries[0].SubscriptionIDs, sortedIDs(first.ID, second.ID))
-	requireEqual(t, payloads(t, page.Entries), []any{asJSON(t, comment(7))})
+	requireEqual(t, payloads(t, page.Entries), []any{asJSON(t, commentNotification(7))})
 
 	h.ingest("issue_comment", comment(7))
 	h.world.update(func(w *world) { w.revoked = true })
@@ -111,7 +111,7 @@ func TestARateLimitIsASharedBackoffThatSurvivesIngressAndARestart(t *testing.T) 
 		t.Fatalf("subscription = %+v, want it recovered", view)
 	}
 	page := h.page(subscription.InboxID)
-	requireEqual(t, payloads(t, page.Entries), []any{asJSON(t, comment(7)), asJSON(t, comment(7))})
+	requireEqual(t, payloads(t, page.Entries), []any{asJSON(t, commentNotification(7)), asJSON(t, commentNotification(7))})
 }
 
 func TestSharedRefreshesAreMadeOnceAndSurviveARestart(t *testing.T) {
@@ -577,7 +577,10 @@ func TestAForkDeliveryIsOwedOnlyUnderTheForksCurrentInstallationAccess(t *testin
 	h.exec(`UPDATE github_subject SET last_success_at = now() - interval '1 hour'`)
 	h.ingest("issue_comment", comment(7))
 	h.reconcileAll(claim)
-	requireEqual(t, payloads(t, h.page(subscription.InboxID).Entries), []any{asJSON(t, inFork), asJSON(t, comment(7))})
+	requireEqual(t, payloads(t, h.page(subscription.InboxID).Entries), []any{
+		asJSON(t, checkNotification(nextSHA, forkRepository, "fork/repo")),
+		asJSON(t, commentNotification(7)),
+	})
 	if grants := h.count(`SELECT count(*) FROM github_repository_access WHERE repository_id = $1`, forkRepository); grants != 1 {
 		t.Errorf("%d grants on the fork, want 1", grants)
 	}
@@ -603,7 +606,10 @@ func TestAWebhookRacingTheBootstrapFencesTheReadAndKeepsBothRevisionAssociations
 	claim := h.claim()
 	fixture.AsError[*sources.ProviderDeferred](t, h.provider.Process(t.Context(), claim, h.next(claim)))
 	h.reconcileAll(claim)
-	requireEqual(t, payloads(t, h.page(subscription.InboxID).Entries), []any{asJSON(t, check(nextSHA)), asJSON(t, check(fixture.SHA))})
+	requireEqual(t, payloads(t, h.page(subscription.InboxID).Entries), []any{
+		asJSON(t, checkNotification(nextSHA, baseRepository, baseRepositoryName)),
+		asJSON(t, checkNotification(fixture.SHA, baseRepository, baseRepositoryName)),
+	})
 
 	// A delayed older observation cannot erase the newer one.
 	requests := h.fake.Count("/repos/owner/repo/pulls/7")

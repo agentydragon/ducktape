@@ -13,6 +13,7 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/facts"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 
 	"github.com/google/go-github/v88/github"
@@ -422,9 +423,9 @@ func refEvent(body object) (correlation, error) {
 	}
 }
 
-// ParseDelivery reads a webhook delivery, whose signature the caller has checked, into what is stored for it:
-// the commit it is about, the subjects it concerns and the revisions those are seen at. It fails with
-// ErrUnsupportedEvent, ErrMissingRepository or ErrInvalidPayload.
+// ParseDelivery reads a webhook delivery, whose signature the caller has checked, into the durable receipt,
+// normalized notification fact, subjects and revisions. The signed body is retained separately from the fact.
+// It fails with ErrUnsupportedEvent, ErrMissingRepository or ErrInvalidPayload.
 //
 // A body is a JSON object, and the fields read have exact types and names: an ID or a number must be a JSON
 // integer, and a timestamp RFC 3339.
@@ -451,6 +452,10 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 	if common.repository == nil && event != "installation" && event != "installation_repositories" {
 		return githubstate.Ingest{}, ErrMissingRepository
 	}
+	fact, err := facts.Project(event, raw)
+	if err != nil {
+		return githubstate.Ingest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
+	}
 	ingest := githubstate.Ingest{
 		AppID:          appID,
 		DeliveryID:     deliveryID,
@@ -458,6 +463,7 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 		Repository:     common.repository,
 		Event:          event,
 		Payload:        raw,
+		Fact:           fact,
 		Action:         common.action,
 		HeadSHA:        found.sha,
 	}

@@ -103,7 +103,11 @@ func inRepository(id int64, name string) deliveryOption {
 
 // labelled sets a payload that tells the delivery apart in an inbox.
 func labelled(label string) deliveryOption {
-	return func(i *githubstate.Ingest) { i.Payload = json.RawMessage(fmt.Sprintf(`{"label": %q}`, label)) }
+	return func(i *githubstate.Ingest) {
+		value := json.RawMessage(fmt.Sprintf(`{"label": %q}`, label))
+		i.Payload = value
+		i.Fact = value
+	}
 }
 
 func aboutSubject(kind, key string) deliveryOption {

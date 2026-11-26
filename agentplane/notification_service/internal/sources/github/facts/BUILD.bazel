@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "facts",
+    srcs = ["project.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/facts",
+    visibility = ["//agentplane/notification_service:__subpackages__"],
+)
+
+go_test(
+    name = "facts_test",
+    srcs = ["project_test.go"],
+    embed = [":facts"],
+)
