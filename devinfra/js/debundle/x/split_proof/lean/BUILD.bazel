@@ -529,6 +529,27 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "ordered_const_syntax",
+    srcs = ["EsmSplit/CoreJS/OrderedConstSyntax.lean"],
+    deps = [":ordered_region"],
+)
+
+lean_proof_test(
+    name = "ordered_const_syntax_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.OrderedConstSyntax"],
+    required_theorems = [
+        "CoreJS.OrderedConstSyntax.all_const",
+        "CoreJS.OrderedConstSyntax.checkBody",
+        "CoreJS.OrderedConstSyntax.checkEarlierReads",
+        "CoreJS.OrderedConstSyntax.checkRhs",
+        "CoreJS.OrderedConstSyntax.dense_runs",
+        "CoreJS.OrderedConstSyntax.rhs_free",
+    ],
+    deps = [":ordered_const_syntax"],
+)
+
 executable_test(
     name = "ordered_region_test",
     src = "OrderedRegionTest.lean",
