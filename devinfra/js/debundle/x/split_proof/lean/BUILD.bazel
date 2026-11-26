@@ -445,6 +445,45 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "corejs_sparse_checked_split",
+    srcs = ["EsmSplit/CoreJS/SparseCheckedSplit.lean"],
+    deps = [
+        ":corejs_checked_split",
+        ":corejs_resolved_placement",
+    ],
+)
+
+lean_binary(
+    name = "sparse_checked_split_test_runner",
+    testonly = True,
+    srcs = ["SparseCheckedSplitTest.lean"],
+    entry = "SparseCheckedSplitTest.lean",
+    deps = [
+        ":corejs_sparse_checked_split",
+        ":lowersplit_support",
+    ],
+)
+
+sh_test(
+    name = "sparse_checked_split_test",
+    srcs = ["checked_split_test.sh"],
+    args = ["$(rlocationpath :sparse_checked_split_test_runner)"],
+    data = [":sparse_checked_split_test_runner"],
+    use_bash_launcher = True,
+)
+
+lean_axiom_test(
+    name = "sparse_checked_split_axioms_test",
+    imports = ["EsmSplit.CoreJS.SparseCheckedSplit"],
+    theorems = [
+        "CoreJS.SparseCheckedSplit.checkOutput_sound",
+        "CoreJS.SparseCheckedSplit.construct",
+        "CoreJS.SparseCheckedSplit.construct_sound",
+    ],
+    deps = [":corejs_sparse_checked_split"],
+)
+
 lean_binary(
     name = "resolved_placement_test_runner",
     testonly = True,
@@ -547,6 +586,27 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "sparse_checked_artifact",
+    srcs = ["EsmSplit/LowerSplit/SparseArtifact.lean"],
+    deps = [
+        ":corejs_sparse_checked_split",
+        ":lowersplit_support",
+        ":lowersplit_workflows",
+    ],
+)
+
+lean_axiom_test(
+    name = "sparse_checked_artifact_axioms_test",
+    imports = ["EsmSplit.LowerSplit.SparseArtifact"],
+    theorems = [
+        "EsmSplit.LowerSplit.SparseArtifact.prepare",
+        "EsmSplit.LowerSplit.SparseArtifact.verify",
+        "EsmSplit.LowerSplit.SparseArtifact.verify_sound",
+    ],
+    deps = [":sparse_checked_artifact"],
+)
+
 lean_binary(
     name = "checked_artifact_test_runner",
     testonly = True,
@@ -557,6 +617,7 @@ lean_binary(
         ":checked_artifact",
         ":lowersplit_support",
         ":lowersplit_workflows",
+        ":sparse_checked_artifact",
     ],
 )
 
