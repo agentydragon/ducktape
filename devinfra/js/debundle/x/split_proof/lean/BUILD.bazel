@@ -1657,6 +1657,26 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "entry_export_cells",
+    srcs = ["EsmSplit/CoreJS/EntryExportCells.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "entry_export_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.EntryExportCells"],
+    required_theorems = [
+        "CoreJS.EntryExportCells.linked_alias_iff",
+        "CoreJS.EntryExportCells.linked_export_cells",
+        "CoreJS.EntryExportCells.linked_scope_cells",
+        "CoreJS.EntryExportCells.module_export_cells",
+        "CoreJS.EntryExportCells.module_scope_cells",
+    ],
+    deps = [":entry_export_cells"],
+)
+
+lean_library(
     name = "corejs_projected_order",
     srcs = ["EsmSplit/CoreJS/ProjectedOrder.lean"],
     deps = [
