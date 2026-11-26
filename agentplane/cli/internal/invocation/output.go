@@ -10,17 +10,20 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// show prints items: under --json each one's JSON, compacted but otherwise unmodified, one per line;
-// otherwise the text line of each.
-func (a *Invocation) Show(items []json.RawMessage, line func(json.RawMessage) (string, error)) error {
+// ShowProto buffers the whole result so an invalid item cannot leave a partial page on stdout.
+func ShowProto[T proto.Message](a *Invocation, messages []T, line func(T) (string, error), options protojson.MarshalOptions) error {
 	var out bytes.Buffer
-	for _, item := range items {
+	for _, message := range messages {
 		if a.asJSON {
-			if err := json.Compact(&out, item); err != nil {
+			raw, err := ProtoJSONWithOptions(message, options)
+			if err != nil {
+				return err
+			}
+			if err := json.Compact(&out, raw); err != nil {
 				return InvalidResponse("%v", err)
 			}
 		} else {
-			text, err := line(item)
+			text, err := line(message)
 			if err != nil {
 				return err
 			}
@@ -28,39 +31,26 @@ func (a *Invocation) Show(items []json.RawMessage, line func(json.RawMessage) (s
 		}
 		out.WriteByte('\n')
 	}
-	return a.write(&out)
+	return a.write(out.Bytes())
 }
 
-func ShowProto[T proto.Message](a *Invocation, messages []T, line func(T) (string, error), options protojson.MarshalOptions) error {
-	if a.asJSON {
-		items, err := ProtoJSONListWithOptions(messages, options)
-		if err != nil {
-			return err
-		}
-		return a.Show(items, nil)
+// ShowValue writes a non-protobuf value as one JSON line or its supplied text verbatim.
+func (a *Invocation) ShowValue(value any, text string) error {
+	if !a.asJSON {
+		return a.write([]byte(text))
 	}
-	var out bytes.Buffer
-	for _, message := range messages {
-		text, err := line(message)
-		if err != nil {
-			return err
-		}
-		out.WriteString(strings.TrimRight(text, "\n"))
-		out.WriteByte('\n')
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return InvalidResponse("%v", err)
 	}
-	return a.write(&out)
+	return a.write(append(raw, '\n'))
 }
 
-func (a *Invocation) write(out *bytes.Buffer) error {
-	if _, err := a.stdout.Write(out.Bytes()); err != nil {
+func (a *Invocation) write(data []byte) error {
+	if _, err := a.stdout.Write(data); err != nil {
 		return ClientFailure(ExitRefused, "INTERNAL", "write stdout: %v", err)
 	}
 	return nil
-}
-
-// showOne is show for a command that answers one value.
-func (a *Invocation) ShowOne(raw []byte, line func(json.RawMessage) (string, error)) error {
-	return a.Show([]json.RawMessage{raw}, line)
 }
 
 func (a *Invocation) AnnounceKey(key string) {

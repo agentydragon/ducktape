@@ -1,9 +1,7 @@
 package actions
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 
 	actiondocs "github.com/agentydragon/ducktape/agentplane/action_service/docs"
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
@@ -29,15 +27,7 @@ Omit NAME for the index. Otherwise use one of: session_delegation, action_lifecy
 			if err != nil {
 				return err
 			}
-			if a.JSON() {
-				encoded, err := json.Marshal(guide)
-				if err != nil {
-					return invocation.InvalidResponse("marshal Action guide: %v", err)
-				}
-				return a.ShowOne(encoded, func(_ json.RawMessage) (string, error) { return guide.Markdown, nil })
-			}
-			_, err = fmt.Fprint(a.Stdout(), guide.Markdown)
-			return err
+			return a.ShowValue(guide, guide.Markdown)
 		},
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -144,9 +143,7 @@ func (a *commands) getInboxCommand() *cobra.Command {
 				return invocation.GRPCFailure(ctx, err)
 			}
 			if response.GetInbox() == nil {
-				return a.ShowOne([]byte("null"), func(json.RawMessage) (string, error) {
-					return "no inbox for session " + args[0], nil
-				})
+				return a.ShowValue(nil, "no inbox for session "+args[0]+"\n")
 			}
 			return invocation.ShowProto(a.Invocation, []*notificationspb.Inbox{response.GetInbox()}, inboxLine, notificationJSONOptions)
 		}),
@@ -466,7 +463,7 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 
 func (a *commands) showSubscription(subscription *notificationspb.Subscription) error {
 	if subscription == nil && a.JSON() {
-		return a.ShowOne([]byte("null"), nil)
+		return a.ShowValue(nil, "")
 	}
 	return invocation.ShowProto(a.Invocation, []*notificationspb.Subscription{subscription}, subscriptionLine, notificationJSONOptions)
 }
@@ -656,7 +653,7 @@ account sent or a purged inbox; it never means the message was not delivered.`,
 
 func (a *commands) showMessage(message *notificationspb.Message) error {
 	if message == nil && a.JSON() {
-		return a.ShowOne([]byte("null"), nil)
+		return a.ShowValue(nil, "")
 	}
 	return invocation.ShowProto(a.Invocation, []*notificationspb.Message{message}, messageLine, notificationJSONOptions)
 }
