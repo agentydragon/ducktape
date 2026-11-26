@@ -2,11 +2,10 @@
 //! groups. These fixtures drive the real CLI with small synthetic JavaScript.
 
 use debundle_e2e_graph_support::GraphFixture;
-use debundle_e2e_support::saved_analysis::assert_ok;
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, find_outcome, logical_module,
     logical_module_with_binding_groups, outcomes, read_selector_outcomes,
-    run_dry_run_rejection_fixture, run_source_only_validate, validate_json,
+    run_dry_run_rejection_fixture, run_source_only_validate_json, validate_json,
 };
 use serde_json::{Value, json};
 
@@ -368,12 +367,7 @@ fn source_only_validate_preserves_the_serialized_witness() {
             ),
         ],
     );
-    let source_only =
-        run_source_only_validate(&tree.modules, &tree.source_path(), &["--format", "json"]);
-    assert_ok(&source_only, "source-only validate");
-    let source_report: Value = serde_json::from_str(&source_only.stdout).unwrap_or_else(|error| {
-        panic!("invalid source-only JSON ({error}): {}", source_only.stdout)
-    });
+    let source_report = run_source_only_validate_json(&tree.modules, &tree.source_path());
     let source_records = outcomes(&source_report)
         .iter()
         .map(without_chunk)

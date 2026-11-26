@@ -9,7 +9,8 @@ use debundle_e2e_support::process;
 use debundle_e2e_support::{
     CaseWorkspace, CommandResult, FixtureOpts, Member, debundler_path, find_outcome,
     logical_module, logical_module_with_anon, mixed_selector_failure_fixture, outcomes,
-    run_source_only_validate, run_spec_validate, write_text_file, write_validate_fixture_spec,
+    run_source_only_validate, run_source_only_validate_json, run_spec_validate, write_text_file,
+    write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -668,9 +669,7 @@ impl SourceOnlyValidateFixture {
     }
 
     fn json(&self) -> Value {
-        let out = self.run("json");
-        serde_json::from_str(&out.stdout)
-            .unwrap_or_else(|err| panic!("parse validate json: {err}\nstdout:\n{}", out.stdout))
+        run_source_only_validate_json(&self.modules_root, &self.source_file)
     }
 }
 
