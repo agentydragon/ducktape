@@ -944,7 +944,7 @@ async def test_connection_unlink_confirmation(view: VisualPage, app: AgentplaneF
     await row.get_by_role("button", name="Unlink", exact=True).click()
     confirm = row.get_by_role("button", name="Confirm unlink")
     await expect(confirm).to_be_visible()
-    await expect(row.get_by_text("Already claimed executions are not stopped", exact=False)).to_be_visible()
+    await expect(row.get_by_text("Work already claimed will continue", exact=False)).to_be_visible()
     await expect(row.get_by_role("button", name="Unlink", exact=True)).to_have_count(0)
     if page.viewport_size and page.viewport_size["width"] < 600:
         assert await page.locator(".mantine-Modal-content").evaluate("el => el.scrollWidth <= el.clientWidth")

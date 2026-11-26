@@ -75,7 +75,7 @@ function StorageSettings(): JSX.Element {
                 {snapshot.cache.bodies.toLocaleString()} message {snapshot.cache.bodies === 1 ? "body" : "bodies"}
               </Text>
               <Text c="dimmed" size="sm">
-                Content size before database overhead. Signing out clears saved history from this browser.
+                Cleared on sign-out.
               </Text>
             </div>
           )}
@@ -83,8 +83,8 @@ function StorageSettings(): JSX.Element {
             <Text fw={600}>Site storage</Text>
             <Text size="sm">
               {snapshot.site?.usage !== undefined && snapshot.site.quota !== undefined
-                ? `${bytes(snapshot.site.usage)} used of ${bytes(snapshot.site.quota)} estimated quota for this site.`
-                : "The browser did not provide a storage estimate."}
+                ? `${bytes(snapshot.site.usage)} of ${bytes(snapshot.site.quota)} used (estimated)`
+                : "Estimate unavailable."}
             </Text>
           </div>
         </>
@@ -106,7 +106,14 @@ export function Settings({
 }): JSX.Element {
   return (
     <Modal opened={opened} onClose={onClose} title="Settings" size="xl">
-      <Tabs value={tab} onChange={(value) => isSettingsTab(value) && onTabChange(value)}>
+      <Tabs
+        styles={{
+          list: { flexWrap: "nowrap", overflowX: "auto" },
+          tab: { paddingInline: "clamp(4px, 1.5vw, 16px)", flexShrink: 0 },
+        }}
+        value={tab}
+        onChange={(value) => isSettingsTab(value) && onTabChange(value)}
+      >
         <Tabs.List>
           <Tabs.Tab value="oauth-clients">OAuth clients</Tabs.Tab>
           <Tabs.Tab value="mcp-servers">MCP servers</Tabs.Tab>
