@@ -9743,8 +9743,6 @@ data:
     notice_debounce:
       quiet_seconds: 60
       max_wait_seconds: 120
-    github_delivery_retention_days: 7
-    github_delivery_payload_retention_days: 3
     unavailable_destination_retry_s: 30
     request_timeout_s: 15
     message_body_limit_bytes: 32768

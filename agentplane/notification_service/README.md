@@ -165,19 +165,23 @@ inbox's acknowledged cursor.
 
 ### GitHub event retention
 
-`github_delivery_retention_days` defaults to 7 and accepts whole days from 1 to 3650, or
+`github_delivery_retention_hours` defaults to 168 and accepts whole hours from 1 to 87600, or
 explicit YAML `null` for infinite fact retention. It bounds replay, late association matching and
 delivery-ID deduplication, including for active subscriptions.
 
-`github_delivery_payload_retention_days` defaults to 3 and accepts 0 to 3650 days, or explicit
+`github_delivery_payload_retention_hours` defaults to 72 and accepts 0 to 87600 hours, or explicit
 YAML `null` for infinite body retention. It cannot exceed fact retention, and null is valid only
 when fact retention is also infinite. Staging uses the three-day default. Zero stores no new raw
 body and begins expiring existing bodies on the next maintenance pass. Expiring a body preserves
 its receipt position, digest, identity, compact fact and subject links. Each pass expires up to 1000
 bodies after backfilling any legacy fact needed by matching. Receipt cleanup at the configured fact
-retention later deletes the whole receipt and its links; `github_delivery_retention_days: null`
+retention later deletes the whole receipt and its links; `github_delivery_retention_hours: null`
 disables that cleanup while the body setting still applies independently. Inbox payload copies keep
 their independent 30-day retention.
+
+For the staging upgrade, apply the configuration with both defaults omitted before updating
+the image. The old binary rejects hour keys and the new binary rejects day keys. For a custom
+window, convert days to hours (multiply by 24) when switching to the new image.
 
 The fact setting also deletes up to 1000 expired generated pull-request mergeability transitions,
 1000 generated CI transitions and 1000 generated review/lifecycle transitions per pass, including

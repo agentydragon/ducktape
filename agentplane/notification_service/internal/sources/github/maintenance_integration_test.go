@@ -12,17 +12,17 @@ import (
 
 func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.T) {
 	h := newHarness(t)
-	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Days: new(3), PayloadDays: new(3)}}
+	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Hours: new(3), PayloadHours: new(3)}}
 	repositoryID := seedMergeabilityHistory(t, h)
 	h.exec(`INSERT INTO github_delivery
 		(app_id, delivery_id, installation_id, event, digest, payload, received_at)
-		VALUES (42, '00000000-0000-0000-0000-000000000001', 42, 'issue_comment', 'digest', '{}', now() - interval '4 days'),
-		(42, '00000000-0000-0000-0000-000000000002', 42, 'issue_comment', 'digest', '{}', now() - interval '2 days')`)
+		VALUES (42, '00000000-0000-0000-0000-000000000001', 42, 'issue_comment', 'digest', '{}', now() - interval '4 hours'),
+		(42, '00000000-0000-0000-0000-000000000002', 42, 'issue_comment', 'digest', '{}', now() - interval '2 hours')`)
 	if err := maintenance.Cleanup(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if count := postgres.Count(t, h.db, `SELECT count(*) FROM github_delivery WHERE app_id = 42`); count != 1 {
-		t.Fatalf("retained %d receipts, want only the two-day-old receipt", count)
+		t.Fatalf("retained %d receipts, want only the two-hour-old receipt", count)
 	}
 	if count := postgres.Count(t, h.db, `SELECT count(*) FROM github_mergeability_event WHERE repository_id = $1`, repositoryID); count != 0 {
 		t.Fatalf("retained %d expired mergeability transitions, want none", count)
@@ -40,12 +40,12 @@ func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.
 func TestPayloadRetentionExpiresBodiesBeforeFactReceipts(t *testing.T) {
 	h := newHarness(t)
 	repositoryID := seedMergeabilityHistory(t, h)
-	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Days: new(7), PayloadDays: new(3)}}
+	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Hours: new(7), PayloadHours: new(3)}}
 	h.exec(`INSERT INTO github_delivery
 		(app_id, delivery_id, installation_id, repository_id, event, digest, payload, fact, received_at)
 		VALUES
-		(44, '00000000-0000-0000-0000-000000000041', 44, $1, 'issue_comment', 'old-digest', '{"comment":"archive"}', '{"action":"created"}', now() - interval '4 days'),
-		(44, '00000000-0000-0000-0000-000000000042', 44, $1, 'issue_comment', 'new-digest', '{"comment":"recent"}', '{"action":"created"}', now() - interval '2 days')`, repositoryID)
+		(44, '00000000-0000-0000-0000-000000000041', 44, $1, 'issue_comment', 'old-digest', '{"comment":"archive"}', '{"action":"created"}', now() - interval '4 hours'),
+		(44, '00000000-0000-0000-0000-000000000042', 44, $1, 'issue_comment', 'new-digest', '{"comment":"recent"}', '{"action":"created"}', now() - interval '2 hours')`, repositoryID)
 	if err := maintenance.Cleanup(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestPayloadRetentionExpiresBodiesBeforeFactReceipts(t *testing.T) {
 
 func TestInfiniteGitHubRetentionStillCleansUpInboxPayloads(t *testing.T) {
 	h := newHarness(t)
-	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Days: nil}}
+	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Hours: nil}}
 	repositoryID := seedMergeabilityHistory(t, h)
 	sub := h.follow(pullRequestSource(7), "retention")
 	h.exec(`INSERT INTO entry (
@@ -141,6 +141,6 @@ func seedMergeabilityHistory(t *testing.T, h *harness) int64 {
 	h.exec(`INSERT INTO github_mergeability_event
 		(app_id, installation_id, repository_id, pull_request_number, payload, created_at)
 		VALUES (42, 42, $1, 7, '{"previousMergeability":"UNKNOWN","mergeability":"CONFLICTING"}',
-			now() - interval '4 days')`, repositoryID)
+			now() - interval '4 hours')`, repositoryID)
 	return repositoryID
 }

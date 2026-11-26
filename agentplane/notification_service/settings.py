@@ -156,22 +156,24 @@ class Settings(BaseModel):
     )
     quotas: QuotaSettings = Field(default_factory=QuotaSettings)
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
-    github_delivery_retention_days: int | None = Field(
-        default=7,
+    github_delivery_retention_hours: int | None = Field(
+        default=168,
+        exclude_if=lambda value: value == 168,
         ge=1,
-        le=3650,
+        le=87600,
         description=(
-            "Days to retain GitHub delivery facts (including IDs, digests and subject links) and generated "
+            "Hours to retain GitHub delivery facts (including IDs, digests and subject links) and generated "
             "mergeability transitions; null retains both indefinitely. This bounds replay and deduplication. "
             "Raw webhook bodies and inbox payloads have separate lifetimes."
         ),
     )
-    github_delivery_payload_retention_days: int | None = Field(
-        default=3,
+    github_delivery_payload_retention_hours: int | None = Field(
+        default=72,
+        exclude_if=lambda value: value == 72,
         ge=0,
-        le=3650,
+        le=87600,
         description=(
-            "Days to retain raw GitHub webhook bodies; zero stores no new body and expires existing bodies on the next "
+            "Hours to retain raw GitHub webhook bodies; zero stores no new body and expires existing bodies on the next "
             "maintenance pass, while null retains bodies indefinitely. Finite retention cannot exceed fact retention."
         ),
     )
@@ -199,12 +201,12 @@ class Settings(BaseModel):
             raise ValueError("operator_reader_services must not contain duplicates")
         if not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth):
             raise ValueError("rpc requires SPIFFE client trust")
-        facts_days = self.github_delivery_retention_days
-        payload_days = self.github_delivery_payload_retention_days
-        if payload_days is None and facts_days is not None:
-            raise ValueError("infinite GitHub payload retention requires infinite github_delivery_retention_days")
-        if payload_days is not None and facts_days is not None and payload_days > facts_days:
-            raise ValueError("github_delivery_payload_retention_days cannot exceed github_delivery_retention_days")
+        facts_hours = self.github_delivery_retention_hours
+        payload_hours = self.github_delivery_payload_retention_hours
+        if payload_hours is None and facts_hours is not None:
+            raise ValueError("infinite GitHub payload retention requires infinite github_delivery_retention_hours")
+        if payload_hours is not None and facts_hours is not None and payload_hours > facts_hours:
+            raise ValueError("github_delivery_payload_retention_hours cannot exceed github_delivery_retention_hours")
         return self
 
     github: GitHubSettings | None = Field(

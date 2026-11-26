@@ -47,7 +47,7 @@ type Handler struct {
 	appID        int64
 	secret       []byte
 	maxBodyBytes int64
-	payloadDays  *int
+	payloadHours *int
 	slots        chan struct{}
 	database     *fanout.Coordinator
 	// bound is ingressBound; a test shortens it.
@@ -60,7 +60,7 @@ func New(appSettings settings.Settings, retention settings.Retention, database *
 		appID:        appSettings.AppID,
 		secret:       []byte(appSettings.WebhookSecret),
 		maxBodyBytes: int64(appSettings.MaxBodyBytes),
-		payloadDays:  retention.PayloadDays,
+		payloadHours: retention.PayloadHours,
 		slots:        make(chan struct{}, appSettings.WebhookConcurrency),
 		database:     database,
 		bound:        ingressBound,
@@ -145,7 +145,7 @@ func (h *Handler) receive(ctx context.Context, header http.Header, raw []byte) (
 		slog.ErrorContext(ctx, "GitHub webhook payload unreadable", "error", err)
 		return http.StatusInternalServerError, refusal{Detail: internalFault}
 	}
-	if h.payloadDays != nil && *h.payloadDays == 0 {
+	if h.payloadHours != nil && *h.payloadHours == 0 {
 		ingest.Payload = nil
 	}
 	created, err := h.database.Ingest(ctx, ingest)

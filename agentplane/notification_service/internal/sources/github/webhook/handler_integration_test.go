@@ -286,7 +286,7 @@ func TestAcceptedDeliveryIsStoredOnceAndRedeliveredAsDuplicate(t *testing.T) {
 }
 
 func TestZeroPayloadRetentionStoresOnlyTheFactAndStillDeduplicates(t *testing.T) {
-	r := newRouteWithRetention(t, settings.Retention{Days: new(7), PayloadDays: new(0)}, nil)
+	r := newRouteWithRetention(t, settings.Retention{Hours: new(7), PayloadHours: new(0)}, nil)
 	d := signedDelivery("issue_comment", issueComment(7, "comment content"))
 	d.post(t, r.URL).expect(t, http.StatusAccepted, receipt{Accepted: true})
 

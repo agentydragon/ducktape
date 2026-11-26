@@ -20,14 +20,14 @@ type Maintenance struct {
 // Cleanup deletes one bounded page of expired GitHub state and expires optional bodies independently.
 func (m Maintenance) Cleanup(ctx context.Context) error {
 	now := time.Now()
-	if m.Retention.PayloadDays != nil {
-		cutoff := now.Add(-time.Duration(*m.Retention.PayloadDays) * 24 * time.Hour)
+	if m.Retention.PayloadHours != nil {
+		cutoff := now.Add(-time.Duration(*m.Retention.PayloadHours) * time.Hour)
 		if err := m.Fanout.CleanupPayloads(ctx, cutoff); err != nil {
 			return err
 		}
 	}
-	if m.Retention.Days != nil {
-		return m.Fanout.Cleanup(ctx, now.Add(-time.Duration(*m.Retention.Days)*24*time.Hour))
+	if m.Retention.Hours != nil {
+		return m.Fanout.Cleanup(ctx, now.Add(-time.Duration(*m.Retention.Hours)*time.Hour))
 	}
 	return nil
 }

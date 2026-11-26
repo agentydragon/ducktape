@@ -54,8 +54,8 @@ def test_settings_are_typed_and_include_nested_defaults() -> None:
     assert settings.unavailable_destination_retry_s == 30
     assert settings.request_timeout_s == 15
     assert settings.message_body_limit_bytes == 32 * 1024
-    assert settings.github_delivery_retention_days == 7
-    assert settings.github_delivery_payload_retention_days == 3
+    assert settings.github_delivery_retention_hours == 168
+    assert settings.github_delivery_payload_retention_hours == 72
     assert "operator_reader_services" not in settings.model_dump()
 
 
@@ -166,17 +166,17 @@ def test_generic_environment_does_not_override_static_values(monkeypatch: pytest
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_DATABASE_URL", "postgresql://not-a-setting")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__INBOXES_PER_ACCOUNT", "18")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_ACTIONS__URL", "http://override.invalid")
-    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB_DELIVERY_RETENTION_DAYS", "3")
-    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB_DELIVERY_PAYLOAD_RETENTION_DAYS", "0")
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB_DELIVERY_RETENTION_HOURS", "3")
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB_DELIVERY_PAYLOAD_RETENTION_HOURS", "0")
     values = static_values()
     values["quotas"] = {"inboxes_per_account": 12}
-    values["github_delivery_retention_days"] = 14
+    values["github_delivery_retention_hours"] = 85
 
     settings = Settings.model_validate(values)
     assert settings.quotas.inboxes_per_account == 12
     assert str(settings.actions.url) == "http://actions/"
-    assert settings.github_delivery_retention_days == 14
-    assert settings.github_delivery_payload_retention_days == 3
+    assert settings.github_delivery_retention_hours == 85
+    assert settings.github_delivery_payload_retention_hours == 72
     assert not hasattr(settings, "database_url")
 
 
@@ -220,27 +220,27 @@ def test_github_settings_are_static_and_credentials_are_outside_the_schema() -> 
 
 
 def test_explicit_null_retention_differs_from_omission() -> None:
-    assert Settings.model_validate(static_values()).github_delivery_retention_days == 7
-    assert Settings.model_validate(static_values()).github_delivery_payload_retention_days == 3
+    assert Settings.model_validate(static_values()).github_delivery_retention_hours == 168
+    assert Settings.model_validate(static_values()).github_delivery_payload_retention_hours == 72
     assert (
         Settings.model_validate(
-            {**static_values(), "github_delivery_retention_days": None}
-        ).github_delivery_retention_days
+            {**static_values(), "github_delivery_retention_hours": None}
+        ).github_delivery_retention_hours
         is None
     )
 
 
 @pytest.mark.parametrize(
-    ("facts_days", "payload_days", "valid"),
+    ("facts_hours", "payload_hours", "valid"),
     [(7, 0, True), (7, 3, True), (1, 2, False), (7, None, False), (None, 3, True), (None, None, True)],
 )
 def test_payload_retention_is_independent_but_never_outlives_facts(
-    facts_days: int | None, payload_days: int | None, valid: bool
+    facts_hours: int | None, payload_hours: int | None, valid: bool
 ) -> None:
     values = {
         **static_values(),
-        "github_delivery_retention_days": facts_days,
-        "github_delivery_payload_retention_days": payload_days,
+        "github_delivery_retention_hours": facts_hours,
+        "github_delivery_payload_retention_hours": payload_hours,
     }
     if valid:
         Settings.model_validate(values)

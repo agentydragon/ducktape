@@ -144,11 +144,11 @@ func loadConfig() (config, error) {
 	}
 
 	// Preserve absent (default seven days) versus explicit YAML null (retain indefinitely).
-	if value, exists := raw["github_delivery_retention_days"]; exists && value == nil {
-		c.GitHubRetention.Days = nil
+	if value, exists := raw["github_delivery_retention_hours"]; exists && value == nil {
+		c.GitHubRetention.Hours = nil
 	}
-	if value, exists := raw["github_delivery_payload_retention_days"]; exists && value == nil {
-		c.GitHubRetention.PayloadDays = nil
+	if value, exists := raw["github_delivery_payload_retention_hours"]; exists && value == nil {
+		c.GitHubRetention.PayloadHours = nil
 	}
 	// Only these runtime credentials are read from environment variables; static settings never consult the process environment.
 	c.DatabaseURL = os.Getenv(settingPrefix + "DATABASE_URL")
