@@ -1999,3 +1999,26 @@ lean_proof_test(
     ],
     deps = [":terminal_export_placement"],
 )
+
+lean_library(
+    name = "corejs_terminal_plan_selection",
+    srcs = ["EsmSplit/CoreJS/TerminalPlanSelection.lean"],
+    deps = [
+        ":corejs_terminal_plan_ownership",
+        ":terminal_export_placement",
+    ],
+)
+
+executable_test(
+    name = "corejs_terminal_plan_selection_test",
+    src = "TerminalPlanSelectionTest.lean",
+    deps = [":corejs_terminal_plan_selection"],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_plan_selection_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalPlanSelection"],
+    required_theorems = ["CoreJS.TerminalPlanSelection.selected_owners"],
+    deps = [":corejs_terminal_plan_selection"],
+)
