@@ -310,6 +310,7 @@ async function finishOlderReadAfterWatch(newer: ActionRequest): Promise<{ contai
     return response.promise;
   });
   const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
+  await send([]);
   await act(async () => {
     TestNdjsonWatch.current!.sendUpsertFrames([actionRequestUpsertProtoJson(newer)]);
   });

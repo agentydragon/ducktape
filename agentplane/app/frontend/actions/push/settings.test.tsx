@@ -173,3 +173,45 @@ it("explains pending settings and a failed load without claiming the server is u
   expect(container.textContent).not.toContain("Loading notification settings");
   expect(container.textContent).not.toContain("not configured on this server");
 });
+
+it("keeps the last device list through a reconnect's replay and fails an upsert sent before it completes", async () => {
+  const kept = {
+    endpoint: "https://push.example/kept",
+    userAgent: "Test kept browser",
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+  const early = {
+    endpoint: "https://push.example/early",
+    userAgent: "Test early browser",
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+  const streams: ServedWatch[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, options?: RequestInit) => {
+      if (url.endsWith(":watch")) {
+        const stream =
+          streams.length === 0 ? watch(url, options, [kept]) : new ServedWatch(url, options?.signal ?? undefined);
+        streams.push(stream);
+        return stream.response;
+      }
+      return Response.json(url === `${PUSH_PATH}/config` ? {} : { pushSubscriptions: [kept] });
+    })
+  );
+  const container = await mountPushSettings();
+  await act(async () => {
+    streams[0].send({ reconnectRequired: {} });
+    streams[0].end();
+    await vi.waitFor(() => expect(streams[0].signal?.aborted).toBe(true));
+    // Skip the reconnect backoff.
+    window.dispatchEvent(new Event("online"));
+    await vi.waitFor(() => expect(streams).toHaveLength(2));
+  });
+  await act(async () => {
+    streams[1].send({ snapshot: { pushSubscriptions: [kept] } });
+    streams[1].send({ upsert: early });
+  });
+  await vi.waitFor(() => expect(streams[1].signal?.aborted).toBe(true));
+  expect(container.textContent).toContain("Test kept browser");
+  expect(container.textContent).not.toContain("Test early browser");
+});

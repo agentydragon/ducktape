@@ -11,11 +11,13 @@ export function useCredentialMetadata(): ReadonlyMap<string, Credential> | null 
   const [credentials, setCredentials] = useState<ReadonlyMap<string, Credential> | null>(null);
   useEffect(() => {
     let active = true;
-    const collection = new WatchCollection<Credential, Pick<Credential, "name" | "uid">>(
-      "Credential",
-      (credential) => credential,
-      (identity) => identity.name
-    );
+    const credentialKey = (identity: Pick<Credential, "name" | "uid">): string | undefined =>
+      identity.uid ? identity.name : undefined;
+    const collection = new WatchCollection<Credential, Pick<Credential, "name" | "uid">>({
+      kind: "Credential",
+      key: credentialKey,
+      removal: { key: credentialKey, matches: (held, identity) => held.uid === identity.uid },
+    });
     const clear = (): void => {
       collection.beginSnapshot();
       if (active) setCredentials(null);

@@ -1,8 +1,13 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import { type Dispatch, type JSX, type ReactNode, type SetStateAction, useEffect, useState } from "react";
+import { type JSX, type ReactNode, useState } from "react";
 import { toJson } from "@bufbuild/protobuf";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
-import { type StreamConnection } from "../../transport/stream_reader";
+import {
+  useWatchCollection,
+  type CollectionConfig,
+  type CollectionFrame,
+  type CollectionWatchHandlers,
+} from "../../transport/watch_collection";
 
 import { displayableError } from "../../transport/client";
 import {
@@ -11,11 +16,13 @@ import {
   McpLifecycle,
   McpUnavailableReason,
   type ActionGroup,
+  type ActionGroupChunk,
 } from "../../../../action_service/api/contracts/action_service_pb";
 import {
   McpLinkageStatus,
   McpRefreshAction,
   type McpServerLinkage,
+  type McpServerLinkageChunk,
 } from "../../../../action_service/api/contracts/operator_action_service_pb";
 import { followActionGroups } from "../client";
 import { mcpLifecycleLabel, mcpUnavailableReasonLabel } from "../presentation";
@@ -45,100 +52,28 @@ function SchemaWarnings({ group }: { group: ActionGroup }): JSX.Element | null {
 type Row =
   { kind: "oauth"; linkage: McpServerLinkage; group: ActionGroup | null } | { kind: "health-only"; group: ActionGroup };
 
-function useMcpLinkages(): {
-  snapshot: McpServerLinkage[] | null;
-  setSnapshot: Dispatch<SetStateAction<McpServerLinkage[] | null>>;
-  connection: StreamConnection;
-} {
-  const [snapshot, setSnapshot] = useState<McpServerLinkage[] | null>(null);
-  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
+const LINKAGES: CollectionConfig<McpServerLinkage, never> = {
+  kind: "MCP linkage",
+  key: (linkage) => linkage.serverId,
+};
 
-  useEffect(() => {
-    let pendingSnapshot: Map<string, McpServerLinkage> | null = new Map();
-    const stop = followMcpLinkages({
-      onOpen: () => {
-        // Keep the last complete snapshot visible during reconnect; replace it after the new
-        // stream's full snapshot arrives.
-        pendingSnapshot = new Map();
-      },
-      onFrame: (message) => {
-        const frame = message.frame;
-        switch (frame.case) {
-          case "snapshot":
-            if (pendingSnapshot === null) throw new Error("MCP linkage snapshot arrived after completion.");
-            for (const linkage of frame.value.linkages) pendingSnapshot.set(linkage.serverId, linkage);
-            break;
-          case "snapshotComplete":
-            if (pendingSnapshot === null) throw new Error("MCP linkage snapshot completed more than once.");
-            setSnapshot([...pendingSnapshot.values()]);
-            pendingSnapshot = null;
-            break;
-          case "upsert":
-            if (pendingSnapshot !== null) {
-              pendingSnapshot.set(frame.value.serverId, frame.value);
-              break;
-            }
-            setSnapshot((current) => {
-              if (current === null) return current;
-              const exists = current.some((linkage) => linkage.serverId === frame.value.serverId);
-              return exists
-                ? current.map((linkage) => (linkage.serverId === frame.value.serverId ? frame.value : linkage))
-                : [...current, frame.value];
-            });
-            break;
-          case "reconnectRequired":
-            // The server ends this stream after the frame; followWatch opens a fresh snapshot.
-            break;
-        }
-      },
-      onConnection: setConnection,
-    });
-    return stop;
-  }, []);
-
-  return { snapshot, setSnapshot, connection };
+function followLinkages(
+  handlers: CollectionWatchHandlers<CollectionFrame<McpServerLinkage, McpServerLinkageChunk, never>>
+): () => void {
+  return followMcpLinkages({ ...handlers, onFrame: ({ frame }) => handlers.onFrame(frame) });
 }
 
-function useActionGroupHealth(): {
-  snapshot: ActionGroup[] | null;
-  connection: StreamConnection;
-} {
-  const [snapshot, setSnapshot] = useState<ActionGroup[] | null>(null);
-  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
-  useEffect(() => {
-    let replay: ActionGroup[] = [];
-    return followActionGroups({
-      onOpen: () => {
-        replay = [];
-      },
-      onFrame: (message) => {
-        const frame = message.frame;
-        switch (frame.case) {
-          case "snapshot":
-            replay.push(...frame.value.actionGroups);
-            break;
-          case "snapshotComplete":
-            setSnapshot(replay);
-            replay = [];
-            break;
-          case "upsert":
-            setSnapshot((current) => {
-              if (current === null) return [frame.value];
-              const exists = current.some(({ key }) => key === frame.value.key);
-              return exists
-                ? current.map((group) => (group.key === frame.value.key ? frame.value : group))
-                : [...current, frame.value].sort((left, right) => left.key.localeCompare(right.key));
-            });
-            break;
-          case "reconnectRequired":
-            break;
-        }
-      },
-      onConnection: setConnection,
-    });
-  }, []);
-  return { snapshot, connection };
+const linkageChunk = (chunk: McpServerLinkageChunk): McpServerLinkage[] => chunk.linkages;
+
+const GROUPS: CollectionConfig<ActionGroup, never> = { kind: "ActionGroup", key: (group) => group.key };
+
+function followGroups(
+  handlers: CollectionWatchHandlers<CollectionFrame<ActionGroup, ActionGroupChunk, never>>
+): () => void {
+  return followActionGroups({ ...handlers, onFrame: ({ frame }) => handlers.onFrame(frame) });
 }
+
+const groupChunk = (chunk: ActionGroupChunk): ActionGroup[] => chunk.actionGroups;
 
 // /action-groups returns every configured group, sandbox-kind included; this page only cares
 // about mcp-kind ones. Go catalog config validation requires every mcp-kind group whose config
@@ -277,8 +212,8 @@ function HealthDetail({ health }: { health: McpHealth }): JSX.Element | null {
 }
 
 export function McpServers(): JSX.Element {
-  const linkages = useMcpLinkages();
-  const health = useActionGroupHealth();
+  const linkages = useWatchCollection(LINKAGES, followLinkages, linkageChunk);
+  const health = useWatchCollection(GROUPS, followGroups, groupChunk);
   const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -299,9 +234,7 @@ export function McpServers(): JSX.Element {
     setError(null);
     try {
       const updated = await disconnectMcpLinkage(linkage.serverId);
-      linkages.setSnapshot(
-        (current) => current?.map((item) => (item.serverId === updated.serverId ? updated : item)) ?? null
-      );
+      linkages.replace(updated);
     } catch (failure) {
       setError(displayableError(failure));
     } finally {
@@ -309,8 +242,11 @@ export function McpServers(): JSX.Element {
     }
   }
 
-  const loading = linkages.snapshot === null || health.snapshot === null;
-  const rows = mergeRows(health.snapshot ?? [], linkages.snapshot ?? []);
+  const loading = linkages.items === null || health.items === null;
+  const rows = mergeRows(
+    [...(health.items ?? [])].sort((left, right) => left.key.localeCompare(right.key)),
+    linkages.items ?? []
+  );
 
   return (
     <Stack>
