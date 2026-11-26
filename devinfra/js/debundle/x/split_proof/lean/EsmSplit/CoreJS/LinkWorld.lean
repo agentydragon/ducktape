@@ -182,4 +182,34 @@ theorem link_from_probe {p : Program} (concrete : CheckedLink p World.probe) (w 
   rw [wi_link w p _, concrete.equation]
   rfl
 
+def CheckedLink.forWorld {p : Program} (checked : CheckedLink p World.probe) (w : World) :
+    CheckedLink p w :=
+  ⟨checked.linked, linkState w checked.ready, link_from_probe checked w⟩
+
+def checkLink (p : Program) : Except String (CheckedLink p World.probe) :=
+  match h : link p (initialState World.probe p.regions) with
+  | .ok linked ready => .ok ⟨linked, ready, h⟩
+  | .unknown reason _ => .error reason
+  | .throw _ _ => .error "the module graph threw during linking"
+  | .fuel => .error "linking exhausted fuel"
+
+/-- Checked links for two programs in the same probe world. -/
+structure CheckedProbePair (source candidate : Program) where
+  before : CheckedLink source World.probe
+  after : CheckedLink candidate World.probe
+
+def checkProbePair (source candidate : Program) : Except String (CheckedProbePair source candidate) := do
+  let before ← (checkLink source).mapError ("original linker: " ++ ·)
+  let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
+  return ⟨before, after⟩
+
+theorem CheckedProbePair.sameExports {source candidate : Program} (pair : CheckedProbePair source candidate)
+    (exportsMatched : exportsMatchFrom pair.before pair.after = true) : SameExports source candidate := by
+  apply sameExports_of_match
+  intro w
+  rw [exportsMatch_from_checked (pair.before.forWorld w) (pair.after.forWorld w)]
+  exact exportsMatched
+
+#print axioms CheckedProbePair.sameExports
+
 end CoreJS.LinkedBehavior
