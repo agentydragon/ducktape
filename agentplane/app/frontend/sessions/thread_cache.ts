@@ -15,8 +15,17 @@ interface Entry {
 const DATABASE = "agentplane-history-v1";
 let opening: Promise<IDBDatabase> | undefined;
 
-function database(): Promise<IDBDatabase> {
-  return (opening ??= new Promise<IDBDatabase>((resolve, reject) => {
+// Explicit logout removes this bucket via Clear-Site-Data. Never fall back to the
+// default bucket, which also holds data unrelated to conversation history.
+async function openHistoryDatabase(): Promise<IDBDatabase> {
+  const buckets = (
+    navigator as Navigator & {
+      storageBuckets?: { open(name: string): Promise<{ indexedDB: IDBFactory }> };
+    }
+  ).storageBuckets;
+  if (!buckets) throw new Error("Named storage buckets unavailable");
+  const { indexedDB } = await buckets.open("agentplane-history");
+  return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DATABASE, 1);
     request.onupgradeneeded = () => {
       request.result.createObjectStore("entries", { keyPath: "id" });
@@ -32,7 +41,11 @@ function database(): Promise<IDBDatabase> {
       };
       resolve(db);
     };
-  }).catch((error: unknown) => {
+  });
+}
+
+function database(): Promise<IDBDatabase> {
+  return (opening ??= openHistoryDatabase().catch((error: unknown) => {
     opening = undefined;
     throw error;
   }));

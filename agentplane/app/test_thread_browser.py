@@ -353,6 +353,8 @@ async def test_disk_cache_resumes_rows_and_reads_only_the_missing_body(page: Pag
     # Wait for the first checkpoint and the 90 complete bodies. Opening a second document below
     # discards all in-memory thread windows.
     await page.wait_for_function("""async () => {
+      if (!(await navigator.storageBuckets.keys()).includes("agentplane-history")) return false;
+      const {indexedDB} = await navigator.storageBuckets.open("agentplane-history");
       if (!(await indexedDB.databases()).some(db => db.name === "agentplane-history-v1")) return false;
       const db = await new Promise(resolve => {
         const r = indexedDB.open("agentplane-history-v1"); r.onsuccess = () => resolve(r.result);
@@ -366,6 +368,7 @@ async def test_disk_cache_resumes_rows_and_reads_only_the_missing_body(page: Pag
     }""")
     # Drop one complete revision while leaving its row in the saved window.
     await page.evaluate("""async () => {
+      const {indexedDB} = await navigator.storageBuckets.open("agentplane-history");
       const db = await new Promise(resolve => {
         const r = indexedDB.open("agentplane-history-v1"); r.onsuccess = () => resolve(r.result);
       });
@@ -404,6 +407,19 @@ async def test_disk_cache_resumes_rows_and_reads_only_the_missing_body(page: Pag
         assert _bodies_read(requests) == 1
     finally:
         release.set()
+
+    # Sign out from another tab while the restored window still has an open database.
+    logout = await page.context.new_page()
+    await logout.goto(f"{ingress.url}/auth/me")
+    await logout.evaluate("""async () => {
+      localStorage.setItem("test-pending-input", "draft");
+      await fetch("/auth/logout", {method: "POST", redirect: "manual"});
+    }""")
+    await logout.wait_for_function(
+        "async () => !(await navigator.storageBuckets.keys()).includes('agentplane-history')"
+    )
+    assert await logout.evaluate("localStorage.getItem('test-pending-input')") == "draft"
+    await logout.close()
 
 
 async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away(

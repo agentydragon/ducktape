@@ -252,11 +252,7 @@ async def open_without_saved_history(page: Page) -> None:
     url = page.url
     # Leave the app before deleting its checkpoint so a pending write cannot recreate it.
     await page.goto(urlsplit(url)._replace(path="/auth/me", query="", fragment="").geturl())
-    await page.evaluate("""() => new Promise((resolve, reject) => {
-      const req = indexedDB.deleteDatabase("agentplane-history-v1");
-      req.onsuccess = resolve;
-      req.onerror = () => reject(req.error);
-    })""")
+    await page.evaluate("navigator.storageBuckets.delete('agentplane-history')")
     await page.goto(url)
 
 

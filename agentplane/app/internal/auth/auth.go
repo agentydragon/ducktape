@@ -326,6 +326,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, requestSess
 			}
 		}
 		a.forgetCookie(w)
+		w.Header().Set("Clear-Site-Data", `"storage:agentplane-history"`)
 	} else if requestSession.replace != nil {
 		absolute := time.Now().UTC().Add(time.Duration(a.cfg.OIDC.SessionMaxSeconds) * time.Second)
 		var pending session.ID
