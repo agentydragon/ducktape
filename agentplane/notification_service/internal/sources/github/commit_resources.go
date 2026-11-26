@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -14,45 +13,24 @@ import (
 // Each commit resource has its own deadline and error state. Pending mergeability retries do not accelerate
 // either read, and a classified failure in one resource does not stop the other's observations or raw activity.
 func (p *Provider) refreshCommitResource(ctx context.Context, key githubstate.CommitRefreshKey, fences []githubstate.AccessFence) (*time.Time, error) {
-	lease, err := p.state.Acquire(ctx, key)
-	var deferred *githubstate.RefreshDeferredError
-	if errors.As(err, &deferred) {
-		return &deferred.Until, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if lease != nil {
+	return p.refreshResource(ctx, key, func(lease githubstate.RefreshLease) error {
 		switch key.Event {
 		case githubmodel.EventCheckRun:
-			runs, readErr := p.readCheckRuns(ctx, key.Subject, fences)
-			if readErr != nil {
-				err = p.refreshFailed(ctx, *lease, readErr)
-			} else {
-				err = p.state.CompleteCheckRuns(ctx, *lease, fences, runs)
+			runs, err := p.readCheckRuns(ctx, key.Subject, fences)
+			if err != nil {
+				return p.refreshFailed(ctx, lease, err)
 			}
+			return p.state.CompleteCheckRuns(ctx, lease, fences, runs)
 		case githubmodel.EventStatus:
-			statuses, readErr := p.readCommitStatuses(ctx, key.Subject, fences)
-			if readErr != nil {
-				err = p.refreshFailed(ctx, *lease, readErr)
-			} else {
-				err = p.state.CompleteCommitStatuses(ctx, *lease, fences, statuses)
+			statuses, err := p.readCommitStatuses(ctx, key.Subject, fences)
+			if err != nil {
+				return p.refreshFailed(ctx, lease, err)
 			}
+			return p.state.CompleteCommitStatuses(ctx, lease, fences, statuses)
 		default:
-			return nil, fmt.Errorf("unsupported commit resource %q", key.Event)
+			return fmt.Errorf("unsupported commit resource %q", key.Event)
 		}
-		if errors.As(err, &deferred) {
-			return &deferred.Until, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-	state, err := p.state.ResourceStatus(ctx, key)
-	if err != nil || state == nil {
-		return nil, err
-	}
-	return state.RetryAt, nil
+	})
 }
 
 type commitTarget struct {

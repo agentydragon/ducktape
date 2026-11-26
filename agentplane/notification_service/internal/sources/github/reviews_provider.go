@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"strconv"
 	"time"
@@ -24,39 +23,19 @@ func reviewsSelected(source githubmodel.Source) bool {
 // Review API failures have their own durable deadline and do not stop ordinary webhook or lifecycle delivery.
 func (p *Provider) refreshReviews(ctx context.Context, subject githubstate.SubjectKey, fence githubstate.AccessFence) (*time.Time, error) {
 	key := githubstate.ReviewRefreshKey{AppID: p.appID, InstallationID: fence.Key.InstallationID, Subject: subject}
-	lease, err := p.state.Acquire(ctx, key)
-	var deferred *githubstate.RefreshDeferredError
-	if errors.As(err, &deferred) {
-		return &deferred.Until, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if lease != nil {
+	return p.refreshResource(ctx, key, func(lease githubstate.RefreshLease) error {
 		name, err := p.state.RepositoryName(ctx, subject.RepositoryID)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		number, err := strconv.ParseInt(subject.Key, 10, 64)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		reviews, err := p.client.PullRequestReviews(ctx, name, int(number), fence.Key.InstallationID)
 		if err != nil {
-			err = p.refreshFailed(ctx, *lease, err)
-		} else {
-			err = p.state.CompleteReviews(ctx, *lease, []githubstate.AccessFence{fence}, reviews)
+			return p.refreshFailed(ctx, lease, err)
 		}
-		if errors.As(err, &deferred) {
-			return &deferred.Until, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-	state, err := p.state.ResourceStatus(ctx, key)
-	if err != nil || state == nil {
-		return nil, err
-	}
-	return state.RetryAt, nil
+		return p.state.CompleteReviews(ctx, lease, []githubstate.AccessFence{fence}, reviews)
+	})
 }
