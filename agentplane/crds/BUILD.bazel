@@ -27,7 +27,7 @@ filegroup(
 
 copy_to_directory(
     name = "crds_tree",
-    srcs = glob(["manifests/crd-*.yaml"]),
+    srcs = [":crds"],
     out = "crds_tree",
     root_paths = [package_name() + "/manifests"],
     visibility = ["//agentplane/testing/kubeapiserver:__pkg__"],
@@ -53,14 +53,19 @@ py_library(
     ],
 )
 
-py_binary(
-    name = "generate_bin",
-    data = [
+filegroup(
+    name = "controller_gen_outputs",
+    srcs = [
         "//agentplane/egress/api/v1alpha1:generated_crds",
         "//agentplane/identity/credentials/api/v1alpha1:generated_crds",
         "//agentplane/policy/api/v1alpha1:generated_crds",
         "//agentplane/sandboxes/api:generated_crds",
     ],
+)
+
+py_binary(
+    name = "generate_bin",
+    data = [":controller_gen_outputs"],
     main_module = "agentplane.crds.generate",
     deps = [":generate"],
 )
@@ -69,11 +74,8 @@ py_test(
     name = "test_generate",
     srcs = ["test_generate.py"],
     data = [
+        ":controller_gen_outputs",
         ":crds",
-        "//agentplane/egress/api/v1alpha1:generated_crds",
-        "//agentplane/identity/credentials/api/v1alpha1:generated_crds",
-        "//agentplane/policy/api/v1alpha1:generated_crds",
-        "//agentplane/sandboxes/api:generated_crds",
     ],
     deps = [
         ":generate",
@@ -87,7 +89,6 @@ py_test(
 py_test(
     name = "test_sandbox_admission",
     srcs = ["test_sandbox_admission.py"],
-    data = [":crds"],
     deps = [
         "//:conftest",
         "//agentplane/testing:crd_admission",
@@ -98,7 +99,6 @@ py_test(
 py_test(
     name = "test_policyset_admission",
     srcs = ["test_policyset_admission.py"],
-    data = [":crds"],
     deps = [
         "//:conftest",
         "//agentplane/testing:crd_admission",
@@ -182,7 +182,6 @@ cdk8s_import(
 py_test(
     name = "test_identity_admission",
     srcs = ["test_identity_admission.py"],
-    data = [":crds"],
     deps = [
         "//:conftest",
         "//agentplane:crd_group",
@@ -194,7 +193,6 @@ py_test(
 py_test(
     name = "test_workloadcredential_admission",
     srcs = ["test_workloadcredential_admission.py"],
-    data = [":crds"],
     deps = [
         "//:conftest",
         "//agentplane/testing:crd_admission",
