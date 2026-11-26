@@ -217,23 +217,23 @@ type (
 )
 
 type RequestSession struct {
-	pendingLogins map[string]loginAttempt
-	Login         *OperatorSession
+	pendingLogins map[string]session.Attempt
+	Login         *session.Login
 	Row           *SessionRow
-	replace       *OperatorSession
+	replace       *session.Login
 	logout        bool
 }
 
 // LogIn replaces this pending login's session with a fresh, logged-in row.
-func (s *RequestSession) LogIn(login OperatorSession) {
-	s.pendingLogins = map[string]loginAttempt{}
+func (s *RequestSession) LogIn(login session.Login) {
+	s.pendingLogins = map[string]session.Attempt{}
 	s.replace = &login
 	s.logout = false
 }
 
 // End clears the browser session at response commit.
 func (s *RequestSession) End() {
-	s.pendingLogins = map[string]loginAttempt{}
+	s.pendingLogins = map[string]session.Attempt{}
 	s.replace = nil
 	s.logout = true
 }
@@ -294,8 +294,8 @@ func (w *sessionResponseWriter) Flush() {
 	}
 }
 
-func (a *Auth) loadSession(r *http.Request) (*RequestSession, *http.Cookie, *session.Record, map[string]loginAttempt, error) {
-	initial := map[string]loginAttempt{}
+func (a *Auth) loadSession(r *http.Request) (*RequestSession, *http.Cookie, *session.Record, map[string]session.Attempt, error) {
+	initial := map[string]session.Attempt{}
 	var cookie *http.Cookie
 	var row *session.Record
 	if parsed, err := r.Cookie(a.cfg.OIDC.CookieName()); err == nil {
@@ -308,17 +308,17 @@ func (a *Auth) loadSession(r *http.Request) (*RequestSession, *http.Cookie, *ses
 		}
 	}
 	if row != nil {
-		initial = operatorAttempts(row.PendingLogins)
+		initial = row.PendingLogins
 	}
-	session := &RequestSession{pendingLogins: maps.Clone(initial)}
+	requestSession := &RequestSession{pendingLogins: maps.Clone(initial)}
 	if row != nil {
-		session.Login = operatorSession(row.Login)
-		session.Row = &SessionRow{store: a.store, id: row.ID}
+		requestSession.Login = row.Login
+		requestSession.Row = &SessionRow{store: a.store, id: row.ID}
 	}
-	return session, cookie, row, initial, nil
+	return requestSession, cookie, row, initial, nil
 }
 
-func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, requestSession *RequestSession, cookie *http.Cookie, row *session.Record, initial map[string]loginAttempt) error {
+func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, requestSession *RequestSession, cookie *http.Cookie, row *session.Record, initial map[string]session.Attempt) error {
 	if requestSession.logout {
 		if row != nil {
 			if err := a.store.Terminate(r.Context(), row.ID); err != nil {
@@ -333,7 +333,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, requestSess
 		if row != nil {
 			pending = row.ID
 		}
-		handle, inserted, err := a.store.CompleteLogin(r.Context(), pending, persistedAttempts(requestSession.pendingLogins), *persistedLogin(requestSession.replace), absolute)
+		handle, inserted, err := a.store.CompleteLogin(r.Context(), pending, requestSession.pendingLogins, *requestSession.replace, absolute)
 		if err != nil {
 			return err
 		}
@@ -352,7 +352,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, requestSess
 				pendingTTL = maxAge
 			}
 			absolute := time.Now().UTC().Add(pendingTTL)
-			handle, err := a.store.Create(r.Context(), persistedAttempts(requestSession.pendingLogins), absolute)
+			handle, err := a.store.Create(r.Context(), requestSession.pendingLogins, absolute)
 			if err != nil {
 				return err
 			}
@@ -360,7 +360,7 @@ func (a *Auth) commitSession(r *http.Request, w http.ResponseWriter, requestSess
 				return err
 			}
 		} else {
-			saved, err := a.store.SavePending(r.Context(), row.ID, persistedAttempts(initial), persistedAttempts(requestSession.pendingLogins))
+			saved, err := a.store.SavePending(r.Context(), row.ID, initial, requestSession.pendingLogins)
 			if err != nil {
 				return err
 			}
@@ -396,7 +396,7 @@ func (a *Auth) forgetCookie(w http.ResponseWriter) {
 
 func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
 	traceAuth(r, "login_started")
-	session, ok := SessionFromContext(r.Context())
+	requestSession, ok := SessionFromContext(r.Context())
 	if !ok {
 		httpresponse.WriteDetailError(w, http.StatusInternalServerError, "session middleware is required")
 		return
@@ -421,7 +421,7 @@ func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
 	verifier := oauth2.GenerateVerifier()
 	challenge := oauth2.S256ChallengeFromVerifier(verifier)
 	url := provider.oauth.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("code_challenge", challenge), oauth2.SetAuthURLParam("code_challenge_method", "S256"), oauth2.SetAuthURLParam("nonce", nonce))
-	session.pendingLogins[state] = loginAttempt{
+	requestSession.pendingLogins[state] = session.Attempt{
 		Nonce: nonce, CodeVerifier: verifier, ExpiresAt: time.Now().UTC().Add(pendingLoginTTL),
 	}
 	http.Redirect(w, r, url, http.StatusFound)
@@ -434,12 +434,12 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := r.URL.Query().Get("state")
-	session, ok := SessionFromContext(r.Context())
+	requestSession, ok := SessionFromContext(r.Context())
 	if !ok || state == "" {
 		httpresponse.WriteDetailError(w, http.StatusUnauthorized, "OIDC state is missing")
 		return
 	}
-	data, exists := session.pendingLogins[state]
+	data, exists := requestSession.pendingLogins[state]
 	if !exists || data.Nonce == "" || data.CodeVerifier == "" || !data.ExpiresAt.After(time.Now()) {
 		httpresponse.WriteDetailError(w, http.StatusUnauthorized, "OIDC state is invalid or expired")
 		return
@@ -454,7 +454,7 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "identity provider unavailable")
 		return
 	}
-	delete(session.pendingLogins, state)
+	delete(requestSession.pendingLogins, state)
 	ctx := r.Context()
 	if a.cfg.HTTPClient != nil {
 		ctx = oidc.ClientContext(ctx, a.cfg.HTTPClient)
@@ -486,17 +486,17 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.cfg.StoreFederationTokens && token.AccessToken != "" && !token.Expiry.IsZero() && token.Expiry.After(time.Now()) {
-		login.Tokens = &LoginTokens{AccessToken: token.AccessToken, ExpiresAt: token.Expiry}
+		login.Tokens = &session.Tokens{AccessToken: token.AccessToken, ExpiresAt: token.Expiry}
 		if refresh, ok := token.Extra("refresh_token").(string); ok {
 			login.Tokens.RefreshToken = refresh
 		}
 	}
-	session.LogIn(login)
+	requestSession.LogIn(login)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // operatorIdentity applies the app's checks beyond go-oidc's to a verified ID token.
-func (a *Auth) operatorIdentity(idToken *oidc.IDToken) (OperatorSession, bool) {
+func (a *Auth) operatorIdentity(idToken *oidc.IDToken) (session.Login, bool) {
 	claims := struct {
 		Issuer          string          `json:"iss"`
 		Subject         string          `json:"sub"`
@@ -505,12 +505,12 @@ func (a *Auth) operatorIdentity(idToken *oidc.IDToken) (OperatorSession, bool) {
 		Audience        json.RawMessage `json:"aud"`
 	}{}
 	if err := idToken.Claims(&claims); err != nil {
-		return OperatorSession{}, false
+		return session.Login{}, false
 	}
 	if claims.Issuer != a.cfg.OIDC.Issuer || claims.Subject == "" || claims.Username == "" || (claims.AuthorizedParty != "" && claims.AuthorizedParty != a.cfg.OIDC.ClientID) || !audienceIsExact(claims.Audience, a.cfg.OIDC.ClientID) || !idToken.Expiry.After(time.Now()) {
-		return OperatorSession{}, false
+		return session.Login{}, false
 	}
-	return OperatorSession{Issuer: claims.Issuer, Subject: claims.Subject, Username: claims.Username}, true
+	return session.Login{Issuer: claims.Issuer, Subject: claims.Subject, Username: claims.Username}, true
 }
 
 func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
@@ -588,13 +588,6 @@ func unverifiedIssuer(token string) string {
 		return ""
 	}
 	return claims.Issuer
-}
-
-// loginAttempt is the app's server-side state for one authorization-code flow.
-type loginAttempt struct {
-	Nonce        string    `json:"nonce"`
-	CodeVerifier string    `json:"code_verifier"`
-	ExpiresAt    time.Time `json:"expires_at"`
 }
 
 func audienceIsExact(raw json.RawMessage, clientID string) bool {

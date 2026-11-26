@@ -1,13 +1,8 @@
 //! Callable-capability inference over the prepared execution index.
 
-use super::super::strict_provider;
 use super::native_write_census::{ArraySpreadProtocolIntegrity, NativeWriteCensus};
 use super::{CallKind, ExecutionIndex, SemanticShapeInputs};
-use analysis::facts::callable_inference::{
-    CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
-};
-use analysis::facts::semantic_inference::{SemanticFact, SemanticKey};
-use analysis::facts::{LocalClassConstructionShapes, SetIterableShapes, StableArraySpreadShapes};
+use crate::strict_provider;
 use analysis_domain::integrity::{IntegrityFlags, IntrinsicSlot, PrototypeWrites};
 use analysis_domain::item_views::TopLevelItemView;
 use analysis_vocabulary::execution_evidence::SourceLocator;
@@ -19,6 +14,11 @@ use analysis_vocabulary::inputs::{
 };
 use analysis_vocabulary::report_schema::NativeMutationWitness;
 use analysis_vocabulary::value::{Kind, Value};
+use purity::callable_inference::{
+    CallableInferenceInputs, FunctionBindingFacts, NamespaceWrapperCandidateFacts,
+};
+use purity::semantic_inference::{SemanticFact, SemanticKey};
+use purity::{LocalClassConstructionShapes, SetIterableShapes, StableArraySpreadShapes};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -150,7 +150,7 @@ pub struct InferredCallableCapabilities {
 pub struct InferredForeignCall {
     pub derived: crate::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
-    pub declaration: value_flow::CallableDeclaration,
+    pub(crate) declaration: value_flow::CallableDeclaration,
     pub dependencies: ProofDependencies,
     pub record: Option<InferredReturnedRecord>,
     /// The returned closure defers its first argument (`deferred_callback_closure`).
@@ -169,7 +169,7 @@ impl InferredForeignCall {
 /// Prepared once for callable inference and the whole-program native census.
 /// Value flow remains demand-driven even when every module contributes writes.
 pub struct PreparedCallableCapabilities {
-    pub(in super::super) index: ExecutionIndex,
+    pub(crate) index: ExecutionIndex,
     pub(super) exported_locals: BTreeSet<String>,
     pub(super) flow: Option<ChunkValueFlow>,
 }

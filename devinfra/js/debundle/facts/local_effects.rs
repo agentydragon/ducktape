@@ -8,9 +8,9 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::{ChunkValueFlow, StructuralStatementFacts, metadata_decorate_call};
-use crate::purity::{ChunkCodeGraph, classify_expr_purity};
 use analysis_domain::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use analysis_vocabulary::inputs::{KnownEffect, LocalEffectPolicy};
+use purity::{ChunkCodeGraph, classify_expr_purity};
 
 #[derive(Debug, Default)]
 pub struct LocalEffectContext {

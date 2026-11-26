@@ -86,10 +86,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker"}, &identity); err != nil {
 		t.Fatal(err)
 	}
-	var grant policyapi.PolicyBinding
-	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.identity"}, &grant); err != nil {
-		t.Fatal(err)
-	}
+	grant := f.identityGrant(t, &identity)
 	if grant.Spec.Subject.Identity == nil || grant.Spec.Subject.Identity.Name != "test-worker" ||
 		!slices.Equal(grant.Spec.PolicySets, []string{testExtraPolicy}) ||
 		len(grant.OwnerReferences) != 1 || grant.OwnerReferences[0].UID != identity.UID {
@@ -268,11 +265,7 @@ func TestRefusedChangedLaunchPreservesItsAdoptedIdentity(t *testing.T) {
 	if err := kube.Get(t.Context(), key, &identity); err != nil || identity.UID != uid {
 		t.Fatalf("refused changed launch removed or replaced the adopted Identity: %v", err)
 	}
-	var binding policyapi.PolicyBinding
-	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.identity"}, &binding); err != nil {
-		t.Fatal(err)
-	}
-	if len(binding.OwnerReferences) != 1 || binding.OwnerReferences[0].UID != uid {
+	if binding := f.identityGrant(t, &identity); len(binding.OwnerReferences) != 1 || binding.OwnerReferences[0].UID != uid {
 		t.Fatalf("Identity binding owners = %v, want the original Identity", binding.OwnerReferences)
 	}
 	var sandbox sandboxapi.Sandbox
@@ -505,7 +498,7 @@ func TestAnExecutorRefusesAPresetThatCannotFillItsActions(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			binding := catalog.OrchestrationBinding{Description: "d", Namespace: "test", Presets: json.RawMessage(presets)}
-			if _, err := NewExecutor(testGroup, binding, kube, nil, nil, nil, 30*time.Second); err == nil {
+			if _, err := NewExecutor(testGroup, binding, kube, nil, nil, nil, nil, 30*time.Second); err == nil {
 				t.Error("NewExecutor() accepted the presets")
 			}
 		})

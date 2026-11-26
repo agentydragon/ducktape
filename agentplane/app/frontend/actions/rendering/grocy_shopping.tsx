@@ -2,6 +2,7 @@ import { Stack } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
+import { Line } from "../../ui/line";
 import type { GrocyReferenceSummary } from "../../../../action_service/api/contracts/operator_action_service_pb";
 import { defineCallPreview, defineReceiptPreview, useCompactPane } from "./entry";
 import {
@@ -9,7 +10,6 @@ import {
   batchOutcome,
   displayRef,
   grocyRequest,
-  Line,
   objectLink,
   reference,
   useGrocyRequestReferences,

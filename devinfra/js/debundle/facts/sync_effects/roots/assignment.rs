@@ -2,11 +2,11 @@
 //! source order, then its exported values are published.
 
 use super::super::interpreter::{Executor, Outcome};
-use super::super::noninvoking_initialization::EvaluatedInitializer;
 use super::super::runtime_inference::{RuntimeOperation, RuntimeValue};
 use super::body::RootBody;
 use super::operands::RootOperands;
 use analysis_vocabulary::value::Value;
+use execution_index::noninvoking_initialization::EvaluatedInitializer;
 use value_model::AbstractValue;
 
 pub(super) struct RootAssignment {

@@ -14,6 +14,7 @@ rust_library(
         "//devinfra/js/debundle/analysis_domain",
         "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/inference",
+        "//devinfra/js/debundle/purity",
         "//devinfra/js/debundle/value_flow",
         "@crates//:imbl",
         "@crates//:swc_common",

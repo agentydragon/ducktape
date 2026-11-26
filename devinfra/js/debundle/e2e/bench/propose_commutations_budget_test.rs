@@ -5,7 +5,7 @@
 
 use debundle_e2e_support::*;
 use serde_json::Value;
-use spec::{BindingSelector, Member as SpecMember, RawMemberSelector};
+use spec::member_selectors::{BindingSelector, Member as SpecMember, RawMemberSelector};
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 

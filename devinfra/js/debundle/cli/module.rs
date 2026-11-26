@@ -29,7 +29,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
-use spec::{LogicalModule, MemberSelectorSpec};
+use spec::LogicalModule;
+use spec::member_selectors::MemberSelectorSpec;
 use spec_modules::{
     coalesce_source_match_claims, collect_module_files, is_module_yaml, module_path_from_file,
     read_module_file as read_module,

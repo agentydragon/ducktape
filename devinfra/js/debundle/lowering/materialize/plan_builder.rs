@@ -32,7 +32,7 @@ use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
 use source_identity::ChunkId;
 use source_identity::StatementId;
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
-use spec::MemberSelectorSpec;
+use spec::member_selectors::MemberSelectorSpec;
 use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;

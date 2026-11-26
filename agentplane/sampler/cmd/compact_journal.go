@@ -74,6 +74,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 			"profile_target_bytes", profile.TargetBytes, "profile_target_entries", profile.TargetEntries, "profile_level", profile.Level,
 			"opening_cursor", result.OpeningCursor, "completed", result.Completed, "batches", result.Batches, "max_blocks_per_txn", *maxBlocks,
 			"events", result.Events, "blocks", result.Blocks, "stored_bytes", result.StoredBytes,
+			"output_bytes", result.OutputBytes, "retained_legacy_blocks", result.RetainedLegacyBlocks,
 			"packed_bytes", result.PackedBytes, "lock_hold_total_ms", result.LockHoldTotal.Milliseconds(),
 			"lock_hold_max_ms", result.LockHoldMax.Milliseconds(), "error_type", safeErrorType(err))
 		if err != nil {

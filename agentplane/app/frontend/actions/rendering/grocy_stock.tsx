@@ -2,8 +2,9 @@ import { Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
+import { Line } from "../../ui/line";
 import { definePreview, defineReceiptPreview } from "./entry";
-import { batchError, batchOutcome, displayRef, grocyRequest, Line, objectLink, reference } from "./grocy_shared";
+import { batchError, batchOutcome, displayRef, grocyRequest, objectLink, reference } from "./grocy_shared";
 import type { ActionPresentation } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 

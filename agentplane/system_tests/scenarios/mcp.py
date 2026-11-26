@@ -491,8 +491,15 @@ async def launcher_drives_only_the_sandbox_it_launched(
             }
         ]
 
-        identity_binding = json.loads(
-            await cluster.kubectl("get", POLICY_BINDINGS_PLURAL, f"{name}.identity", "-o", "json")
+        # PolicyService names the launch's grant after its idempotency key; find it by its owner.
+        launched_identity = json.loads(await cluster.kubectl("get", "identity", name, "-o", "json"))
+        identity_binding = one(
+            binding
+            for binding in json.loads(await cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))["items"]
+            if any(
+                owner["kind"] == "Identity" and owner["uid"] == launched_identity["metadata"]["uid"]
+                for owner in binding["metadata"].get("ownerReferences", [])
+            )
         )
         assert identity_binding["spec"]["subject"] == {"identity": {"name": name}}
         assert identity_binding["spec"]["policySets"] == sorted(LAUNCH_DEFAULT_POLICY_SETS)

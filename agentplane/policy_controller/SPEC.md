@@ -69,8 +69,10 @@ are refused. A service certificate proves only its listed service
 identity; it does not prove a Kubernetes account, UID, or Pod. Grant requires the exact live Sandbox
 UID, its controller-owned ServiceAccount, and existing unique PolicySet names. It stores the Sandbox
 UID in a non-controller owner reference. Revoke requires the caller's Sandbox UID and observed
-PolicyBinding UID, refuses Flux and Sandbox-controller ownership, and deletes with both Kubernetes
-UID and resourceVersion preconditions.
+PolicyBinding UID, deletes only a binding carrying that non-controller owner reference to this
+Sandbox incarnation (an Identity-owned or ownerless binding is refused), refuses Flux and
+Sandbox-controller ownership, and deletes with both Kubernetes UID and resourceVersion
+preconditions.
 
 `PolicyService.CreateIdentity`, behind the same writer allowlist, creates an Identity of the
 requested name and description in the policy namespace, with no owner: its creator deletes it.

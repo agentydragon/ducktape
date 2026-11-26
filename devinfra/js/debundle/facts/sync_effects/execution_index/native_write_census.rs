@@ -11,7 +11,6 @@ use analysis_vocabulary::report_schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativeReceiverPath, NativeWriteSlot,
 };
-use binding_targets;
 use inference::{FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
@@ -248,7 +247,7 @@ pub(super) fn source_slot_overlap<'a>(
 }
 
 #[derive(Debug)]
-pub(crate) struct IntrinsicWriteTarget {
+pub struct IntrinsicWriteTarget {
     pub(super) owner: SourceUnitOrdinal,
     pub(super) activation_callable: Option<u32>,
     /// The constructor whose `this` a direct member operation writes.
@@ -256,7 +255,7 @@ pub(crate) struct IntrinsicWriteTarget {
     pub(super) constructor_this: Option<u32>,
     pub(super) span: Span,
     pub(super) operation: NativeMutationOperation,
-    pub(crate) receiver: ValueExpr,
+    pub receiver: ValueExpr,
     pub(super) key: Option<PropertyKeyExpr>,
     pub(super) additional_keys: Vec<PropertyKeyExpr>,
     /// The value an assignment stores; `None` for every other operation.
@@ -267,15 +266,15 @@ pub(crate) struct IntrinsicWriteTarget {
 /// This deliberately has no within-body ordering: all of a body's writes
 /// precede its first modeled native guard.
 #[derive(Clone, Default)]
-pub(crate) struct NativePointEffects {
-    pub(crate) roots: IntrinsicRoots,
+pub struct NativePointEffects {
+    pub roots: IntrinsicRoots,
     prototype_site_count: usize,
     prototype_any_key: usize,
     prototype_known_keys: BTreeMap<String, usize>,
 }
 
 impl NativePointEffects {
-    pub(crate) fn extend(&mut self, other: &Self) {
+    pub fn extend(&mut self, other: &Self) {
         self.roots.extend(&other.roots);
         self.prototype_site_count += other.prototype_site_count;
         self.prototype_any_key += other.prototype_any_key;
@@ -301,7 +300,7 @@ impl NativePointEffects {
         }
     }
 
-    pub(crate) fn blocking_prototype_mutations(&self, property: Option<&str>) -> usize {
+    pub fn blocking_prototype_mutations(&self, property: Option<&str>) -> usize {
         match property {
             Some(property) => {
                 self.prototype_any_key
