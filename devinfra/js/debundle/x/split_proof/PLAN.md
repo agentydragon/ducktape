@@ -170,6 +170,8 @@ The planner may use unproved heuristics to propose operations. The compiled spli
 
 For example, if the spec says to move function `F` to module `M`, check that its free references still resolve to the right live bindings. If a required check fails, the target CLI exits with status 1, identifies the requested move and the unproved condition, and leaves any existing output untouched. It must not silently omit the move or substitute a weaker guarantee. Refusal means the splitter could not certify this request; it need not prove that the requested move changes behavior.
 
+The request chooses the required guarantee, the observation contract and the permitted host profile. Success reports the premises used from that profile. These premises describe the host independently of the proposed move; the splitter cannot assume that the move is safe or invent a premise to make it so. Under exact observations, changed function source is harmless only if the proof shows the difference is unobservable, including through other code that receives the function. An unmodeled read is not evidence of unobservability. Under the separately requested shared-stack-string contract, evaluate each supported intrinsic Error stack read with the same arbitrary string on both sides. Its use in a branch, write or host call remains observable.
+
 Moves are compared only on runs that end normally. Without that restriction the statement is false: in `const o = { a: undefined }; console.log("printed"); const w = o.a.b;` the throwing read can move ahead of the log ([`experiments/README.md`](experiments/README.md) § 14). The comparison holds in both directions, so one program ends normally exactly when the other does. A program that prints and then runs forever is not compared, because the model keeps no output from an unfinished run.
 
 ### Trusted and tested
@@ -207,6 +209,15 @@ The Node comparison suites ([`model/README.md`](model/README.md)) exercise the s
 ## Convergence
 
 The code reaches the [target](#target) through the steps below. Until they land, new work does not add a lowering, a proof mode or an uncertified output.
+
+The first end-to-end milestone is one requested function placement that the prebuilt splitter can prove, emit and check from disk without a Lean compiler at runtime. Track these deliverables here:
+
+1. Expose a pure constructor from CoreJS and a resolved spec. Start with the order-kept rule in [Split.lean](lean/EsmSplit/CoreJS/Split.lean). Return the output graph together with evidence for its requested placement, live exports, premises and guarantee. The proof must cover the constructed graph itself.
+2. Connect that result to the ordinary CLI. Test a valid move, an unsupported move that leaves the output untouched, and a re-read file whose import was changed to the wrong cell. Keep the premise list and guarantee identical at emission and on disk.
+3. Package the constructor and file check in a prebuilt executable. Run the preceding controls in an environment without the Lean compiler. Keep compiler-assisted runs labeled separately until their replacements preserve the supported guarantees.
+4. Expand using measured refusals. Each new operation supplies its own guard and preservation lemma; compose it with the existing operations at the actual intermediate state. Compare accepted, refused and compiler-assisted cases on the public corpus, with the requested guarantees and host premises recorded. Do not interpret a changed strategy label as an increase in sound coverage.
+
+Keep the [user guide](README.md#what-is-proved) aligned with shipped behavior: commands, guarantee, refusals and trusted JavaScript boundary. Keep [SUPPORT.md](SUPPORT.md) and the [model coverage inventory](model/README.md) aligned with operations and observations actually covered by proofs, tests or explicit assumptions. A parser test or browser smoke test alone does not promote a feature to proved.
 
 [Check the printed files](#check-the-printed-files) and [no unchecked output](#no-unchecked-output) are small and independent. [One lowering](#one-lowering-in-lean) comes before [one proven checker](#one-proven-checker), because the theorem is stated over that lowering's output. [One guarantee](#one-guarantee) can remove the mode flags before the proven checker exists by picking a strategy automatically. [One of each test tool](#one-of-each-test-tool) follows these steps, replacing the tests each one makes redundant.
 
