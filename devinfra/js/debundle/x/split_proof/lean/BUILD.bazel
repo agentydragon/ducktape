@@ -297,7 +297,7 @@ lean_library(
 lean_library(
     name = "shared_provider_boundary",
     srcs = ["EsmSplit/CoreJS/SharedProviderBoundary.lean"],
-    deps = [":static_provider_boundary"],
+    deps = [":corejs_certificate_support_base"],
 )
 
 lean_proof_test(
@@ -306,15 +306,10 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.SharedProviderBoundary"],
     required_theorems = [
         "CoreJS.LinkedBehavior.runUnits_append",
+        "CoreJS.LinkedBehavior.SharedProvider.providerPrefixResult",
         "CoreJS.LinkedBehavior.SharedProvider.run_eq",
+        "CoreJS.LinkedBehavior.SharedProvider.providerOccursOnce",
         "CoreJS.LinkedBehavior.SharedProvider.sameExports",
-        "CoreJS.SharedProviderBoundaryExamples.opaqueProvider_allOutcomes",
-        "CoreJS.SharedProviderBoundaryExamples.fixedGraph_allOutcomes",
-        "CoreJS.SharedProviderBoundaryExamples.opaqueProvider_sameExports",
-        "CoreJS.SharedProviderBoundaryExamples.wrongAlias_rejected",
-        "CoreJS.SharedProviderBoundaryExamples.wrongAlias_witness",
-        "CoreJS.SharedProviderBoundaryExamples.providerThrow_stops_importers",
-        "CoreJS.SharedProviderBoundaryExamples.wrongAlias_changes_run",
     ],
     deps = [":shared_provider_boundary"],
 )

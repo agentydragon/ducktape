@@ -22,8 +22,8 @@ rust_test(
 # construct-by-construct.
 rust_library(
     name = "chunk_facts",
-    srcs = ["chunk_facts.rs"],
-    crate_root = "chunk_facts.rs",
+    srcs = glob(["chunk_facts/*.rs"]),
+    crate_root = "chunk_facts/mod.rs",
     edition = "2024",
     deps = [
         "//devinfra/js/debundle:binding_targets",
