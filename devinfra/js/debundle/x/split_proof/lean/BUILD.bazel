@@ -824,6 +824,7 @@ lean_library(
         ":corejs_structural",
         ":lowersplit_input",
         ":lowersplit_support",
+        ":named_declaration_split",
         ":planner",
     ],
 )

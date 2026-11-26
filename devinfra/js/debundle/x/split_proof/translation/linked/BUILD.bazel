@@ -146,6 +146,7 @@ _UNSHARDED_TESTS = [
     "member_test",
     "module_graph_test",
     "module_metadata_test",
+    "named_constructor_cli_test",
     "numeric_prefix_test",
     "object_elements_test",
     "object_spread_test",
