@@ -1,6 +1,6 @@
 /** Read-only, Session-addressed inbox diagnostics. Payloads and acknowledgement remain private. */
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
-import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
+import { fromJson, toJson } from "@bufbuild/protobuf";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 import { useEffect, useState, type JSX } from "react";
 import { ActionState } from "../../../action_service/api/contracts/action_service_pb";
@@ -8,7 +8,6 @@ import {
   GitHubEventName,
   NoticeWaitReason,
   SourceFailureKind,
-  WatchInboxResponseSchema,
   WatchInboxEntriesResponseSchema,
   WatchSubscriptionsResponseSchema,
   type GitHubAccessStatus,
@@ -21,8 +20,7 @@ import {
   type Subscription,
 } from "../../../notification_service/api/notifications/notifications_pb";
 import { clockTime, isoTime, timeAgo } from "../ui/format_time";
-import { followWatch } from "../transport/watch_stream";
-import { inboxWatchUrl } from "./thread_notices";
+import { followInbox, followNotificationWatch } from "./inbox_watch";
 
 type SubscriptionFilter = "not-cancelled" | "active" | "expired" | "cancelled" | "all";
 
@@ -139,7 +137,6 @@ function InboxDetails({
     setMore(false);
     setLive(new Set());
     setReconnecting(false);
-    const base = `/upstream/notifications/v1/sessions/${encodeURIComponent(sessionId)}`;
     function connection(which: string) {
       return (status: { phase: string }): void => {
         if (status.phase === "reconnecting") setReconnecting(true);
@@ -151,37 +148,16 @@ function InboxDetails({
         });
       };
     }
-    let inboxReady = false,
-      entriesReady = false,
-      subscriptionsReady = false;
-    const inboxStop = followWatch(inboxWatchUrl(sessionId), {
-      initialFrameTimeoutMs: 5000,
-      idleTimeoutMs: 45000,
-      onOpen: () => {
-        inboxReady = false;
-      },
-      onConnection: connection("inbox"),
-      onFrame: (json) => {
-        const response = fromJson(WatchInboxResponseSchema, json as JsonValue);
-        if (response.state.case === "heartbeat") {
-          if (!inboxReady) throw new Error("Heartbeat before inbox state");
-          return;
-        }
-        if (response.state.case === "inbox") setInbox(response.state.value);
-        else if (response.state.case === "noInbox") setInbox(null);
-        else throw new Error("Missing inbox state");
-        inboxReady = true;
-      },
-    });
-    const entriesStop = followWatch(`${base}/inbox/entries:watch`, {
-      initialFrameTimeoutMs: 5000,
-      idleTimeoutMs: 45000,
+    let entriesReady = false;
+    let subscriptionsReady = false;
+    const inboxStop = followInbox(sessionId, setInbox, connection("inbox"));
+    const entriesStop = followNotificationWatch(sessionId, "inbox/entries", {
       onOpen: () => {
         entriesReady = false;
       },
       onConnection: connection("entries"),
       onFrame: (json) => {
-        const response = fromJson(WatchInboxEntriesResponseSchema, json as JsonValue);
+        const response = fromJson(WatchInboxEntriesResponseSchema, json);
         if (response.frame.case === "heartbeat") {
           if (!entriesReady) throw new Error("Heartbeat before entries snapshot");
           return;
@@ -202,15 +178,13 @@ function InboxDetails({
         } else throw new Error("Invalid inbox entries frame");
       },
     });
-    const subscriptionsStop = followWatch(`${base}/subscriptions:watch`, {
-      initialFrameTimeoutMs: 5000,
-      idleTimeoutMs: 45000,
+    const subscriptionsStop = followNotificationWatch(sessionId, "subscriptions", {
       onOpen: () => {
         subscriptionsReady = false;
       },
       onConnection: connection("subscriptions"),
       onFrame: (json) => {
-        const response = fromJson(WatchSubscriptionsResponseSchema, json as JsonValue);
+        const response = fromJson(WatchSubscriptionsResponseSchema, json);
         if (response.frame.case === "heartbeat") {
           if (!subscriptionsReady) throw new Error("Heartbeat before subscription snapshot");
           return;

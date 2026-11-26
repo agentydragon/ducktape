@@ -55,8 +55,7 @@ function followCollection<T extends { identity?: PolicyResourceIdentity }, S>(
       }
     },
     onFrame: (json) => {
-      const items = collection.apply(decode(json), snapshotItems);
-      if (items !== null) onChange({ items, error: null });
+      if (collection.apply(decode(json), snapshotItems)) onChange({ items: collection.snapshotValues(), error: null });
     },
   });
 }

@@ -37,10 +37,14 @@ it("replaces snapshots and removes stale details on disconnect", async () => {
     handlers.onFrame({ snapshot: { credentials: [{ name: "github", uid: "old", description: "first" }] } })
   );
   expect(container.textContent).toBe("unavailable");
+  expect(() => handlers.onFrame({ snapshot: { credentials: [{ name: "github", uid: "duplicate" }] } })).toThrow(
+    "Duplicate Credential snapshot key github"
+  );
   await act(async () => handlers.onFrame({ snapshotComplete: {} }));
   expect(container.textContent).toBe("github:first");
   await act(async () => handlers.onFrame({ upsert: { name: "github", uid: "new", description: "updated" } }));
   expect(container.textContent).toBe("github:updated");
+  expect(() => handlers.onFrame({ removed: { name: "github" } })).toThrow("Credential removal missing identity");
   await act(async () => handlers.onFrame({ removed: { name: "github", uid: "old" } }));
   expect(container.textContent).toBe("github:updated");
   await act(async () => handlers.onFrame({ removed: { name: "github", uid: "new" } }));

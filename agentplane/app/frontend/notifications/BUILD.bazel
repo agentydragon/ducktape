@@ -16,19 +16,28 @@ filegroup(
 )
 
 ts_library(
+    name = "inbox_watch",
+    srcs = ["inbox_watch.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app/frontend/transport:watch_stream",
+        "//agentplane/notification_service/api/notifications:notifications_pb",
+    ],
+)
+
+ts_library(
     name = "notification_status",
     srcs = ["notification_status.tsx"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [
-        ":thread_notices",
+        ":inbox_watch",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/transport:watch_stream",
         "//agentplane/app/frontend/ui:format_time",
-        "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/notification_service/api/notifications:notifications_pb",
     ],
 )
@@ -38,11 +47,11 @@ ts_library(
     srcs = ["thread_notices.tsx"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [
+        ":inbox_watch",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend/transport:watch_stream",
         "//agentplane/app/frontend/ui:format_time",
         "//agentplane/notification_service/api/notifications:notifications_pb",
     ],

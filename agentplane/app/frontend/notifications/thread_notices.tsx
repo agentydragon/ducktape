@@ -1,20 +1,16 @@
 /** Live per-Session inbox state; reading it never acknowledges an entry. */
 import { Badge, Tooltip } from "@mantine/core";
-import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
+import { toJson } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 import { useEffect, useState, type JSX } from "react";
 
 import { clockTime } from "../ui/format_time";
-import { followWatch } from "../transport/watch_stream";
-import { WatchInboxResponseSchema, type Inbox } from "../../../notification_service/api/notifications/notifications_pb";
+import { followInbox } from "./inbox_watch";
+import { type Inbox } from "../../../notification_service/api/notifications/notifications_pb";
 
 export interface ThreadNotices {
   bySession: Map<string, Inbox>;
   live: Set<string>;
-}
-
-export function inboxWatchUrl(sessionId: string): string {
-  return `/upstream/notifications/v1/sessions/${encodeURIComponent(sessionId)}/inbox:watch`;
 }
 
 export function useThreadNotices(threadIds: readonly string[]): ThreadNotices {
@@ -23,39 +19,25 @@ export function useThreadNotices(threadIds: readonly string[]): ThreadNotices {
   useEffect(() => {
     const ids = key === "" ? [] : key.split("\n");
     setState({ bySession: new Map(), live: new Set() });
-    const stops = ids.map((id) => {
-      let receivedSnapshot = false;
-      return followWatch(inboxWatchUrl(id), {
-        initialFrameTimeoutMs: 5000,
-        idleTimeoutMs: 45000,
-        onOpen: () => {
-          receivedSnapshot = false;
-        },
-        onFrame: (json) => {
-          const response = fromJson(WatchInboxResponseSchema, json as JsonValue);
-          if (response.state.case === "heartbeat") {
-            if (!receivedSnapshot) throw new Error("Inbox heartbeat before initial state");
-            return;
-          }
-          if (response.state.case !== "inbox" && response.state.case !== "noInbox")
-            throw new Error("Inbox watch returned no state");
-          receivedSnapshot = true;
+    const stops = ids.map((id) =>
+      followInbox(
+        id,
+        (inbox) =>
           setState((old) => {
             const bySession = new Map(old.bySession);
-            if (response.state.case === "inbox") bySession.set(id, response.state.value);
+            if (inbox) bySession.set(id, inbox);
             else bySession.delete(id);
             return { ...old, bySession };
-          });
-        },
-        onConnection: (connection) =>
+          }),
+        (connection) =>
           setState((old) => {
             const live = new Set(old.live);
             if (connection.phase === "live") live.add(id);
             else live.delete(id);
             return { ...old, live };
-          }),
-      });
-    });
+          })
+      )
+    );
     return () => {
       for (const stop of stops) stop();
     };
