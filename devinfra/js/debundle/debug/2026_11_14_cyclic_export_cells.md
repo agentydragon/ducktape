@@ -33,7 +33,7 @@ prefix. That is appropriate for callable availability, but a cyclic importer can
 read an exported cell before it contains any callable. No such cell observation
 is promoted at unknown execution. Existing graph handling can preserve the
 required order once it receives the read: `promote_top_effects` records
-`uninitialized_reads`, and `graph/build.rs::promote_at_init_calls` pairs the read
+`uninitialized_reads`, and `graph/build/at_init.rs::promote_at_init_calls` pairs the read
 with the reverse initialization order.
 
 ## Candidate result and downstream conflict

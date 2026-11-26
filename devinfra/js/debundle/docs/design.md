@@ -252,7 +252,7 @@ predicate every gate, quotient, linker-order and atomic-group consumer reads,
 so no walker special-cases the premise) and keeping the edges in the graph
 with their premise as provenance. The decision reads each `Sequenced` edge's
 retained `SequencedCause` plus the endpoints' composed premise effect summaries
-(`graph/build.rs::premise_verdict`): a cell relation, a shared `var`, a shared
+(`graph/build/commuting.rs::premise_verdict`): a cell relation, a shared `var`, a shared
 written cell, or a binding timeline, shared-`var` access or uninitialized
 observation between two observed effects contradicts the premise and fails the
 build; a pair with no inertable edge after preservation is unused and fails the build. Each
@@ -817,7 +817,7 @@ order as well.
 
 #### Emission modes
 
-`S` is materialised at source-unit level (`emit_s_chain` in `graph/build.rs`) and
+`S` is materialised at source-unit level (`emit_s_chain` in `graph/build/cell_order.rs`) and
 the chunk spec picks one of two modes via
 `chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain`:
 
@@ -1491,7 +1491,7 @@ first-order closure above.
 dynamic member calls, IIFEs, optional-chain calls, tagged templates,
 conditional or externally supplied function values, and calls into
 resolvable functions whose own first-order bodies contain such calls — take a
-conservative fallback (in `graph/build.rs`). The
+conservative fallback (in `graph/build/at_init.rs`). The
 fallback's premise: whatever function value the call invokes must
 have reached the call site through a binding the call expression
 mentions (callee root, arguments, computed keys) or through an
@@ -3412,7 +3412,8 @@ this remains separate from the prepared/completed publication boundary.
 | Module             | Owns                                                                                                                                                                                                                                                                                                  |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `kernel/`          | Crate. The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ; `Family`, the leaves of a forked body (`alternatives`). Reads the execution index only through `context::IndexReads`. |
-| `world/`           | `World`, the per-prefix execution state, and `World::join`.                                                                                                                                                                                                                                           |
+| `value_model/`     | Crate below `world/`. `AbstractValue`, `ValueExpr`, local operations, own-data transfer and own-property projections.                                                                                                                                                                                 |
+| `world/`           | Crate. `World`, the per-prefix execution state, and `World::join`; the completion and effect-coverage types and the allocation and array transfers its stores use.                                                                                                                                    |
 | `alternatives/`    | The join of a family's path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                                                                                                                                                                                       |
 | `execution_index/` | Crate. `ExecutionIndex` and its build, including the provider adapter (`provider.rs`), which runs every provider body, and `strict_provider.rs`, which projects a sealed body onto its summary.                                                                                                       |
 | `adapters/`        | The application adapter (`application.rs`).                                                                                                                                                                                                                                                           |

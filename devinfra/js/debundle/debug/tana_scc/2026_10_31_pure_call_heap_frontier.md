@@ -20,7 +20,7 @@ Both causes came from `facts/heap_contents.rs` (then
 callee has no local function body, so `visit_call_expr` recorded
 `record_opaque_call` (now `record_opaque`; `array_content_effects`) and
 `record_call_target` added the import to `calls.eager`. Then
-`graph/build.rs::emit_heap_content_order` could not resolve that name to a
+`graph/build/cell_order.rs::emit_heap_content_order` could not resolve that name to a
 source unit (`unresolved_callee`). #13374 removed `record_call_target` and the
 `unresolved_callee` cause.
 
