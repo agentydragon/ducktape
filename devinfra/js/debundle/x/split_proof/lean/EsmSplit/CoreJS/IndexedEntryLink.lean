@@ -157,10 +157,65 @@ theorem import_free_entry_scopes {program : Program} {entryModule : Module}
   simp [Program.scopes, Program.imported, noImports]
   rfl
 
+/-- The actual import-free source allocates the original rows in their
+original identity order. The ordering premise is on the source AST body. -/
+theorem import_free_source_tops {program : Program} {source : Module}
+    (found : program.find program.entry = some source) (noImports : source.imports = [])
+    (ordered : source.body.Pairwise (fun a b => a.1 ≤ b.1)) : program.tops = source.body := by
+  rw [Program.tops, import_free_entry_loaded found noImports]
+  simp only [List.flatMap_cons, List.flatMap_nil, List.append_nil]
+  exact List.mergeSort_of_pairwise (ordered.imp fun h => by simpa using h)
+
+/-- A singleton source program's initial region count is determined by its
+original executable identities, including gaps for metadata. -/
+theorem singleton_source_regions {program : Program} {source : Module}
+    (singleton : program.modules = [source]) :
+    program.regions = (source.body.map fun row => row.1 + 1).foldl max 0 := by
+  simp [Program.regions, singleton]
+
+#print axioms import_free_source_tops
+#print axioms singleton_source_regions
 #print axioms import_free_entry_loaded
 #print axioms import_free_entry_scopes
 #print axioms entry_in_evalOrder
 #print axioms loaded_entry_find
+
+/-- An import-free source with const-only body has no link-time function
+hoists in its actual singleton scope list. -/
+theorem source_const_init {source : Module} {frames : List (Nat × List (Name × Addr))}
+    (sourceConsts : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init) :
+    (initFunctions ((unitsOf [(source, { vars := source.scope frames, this := .undef })]).mergeSort
+      fun a b => decide (a.id ≤ b.id)) : M W Unit) = pure () := by
+  apply sorted_initFunctions_consts
+  intro unit member
+  obtain ⟨pair, pairIn, inBody, _⟩ := mem_unitsOf member
+  have pairEq : pair = (source, { vars := source.scope frames, this := .undef }) := by simpa using pairIn
+  subst pair
+  exact sourceConsts (unit.1, unit.2.1) inBody
+
+#print axioms source_const_init
+
+/-- The actual linker returns the constructed scope list in the post-allocation
+state when identity checking succeeds and the const-unit hoist phase is inert.
+All premises describe one program and its allocation, not a compared pair. -/
+theorem link_after_const_allocation {program : Program} {body : List (Nat × Stmt)}
+    {start ready : State W} {frames : List (Nat × List (Name × Addr))} {linked : List (Module × Env)}
+    (tops : program.tops = body) (unique : (body.map Prod.fst).Nodup)
+    (allocated : declareTops body start = .ok frames ready)
+    (scopes : program.scopes frames program.loaded = .ok linked)
+    (init : (initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.id ≤ b.id)) : M W Unit) = pure ()) :
+    link program start = .ok linked ready := by
+  have checked : (checkIdentities body : M W Unit) start = .ok () start := by
+    simp [checkIdentities, unique, pure]
+  unfold link linkUsingScopes
+  rw [tops]
+  simp only [M.bind_apply, checked, allocated, scopes, lift, pure]
+  change ((initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => pure linked) : M W _)
+    ready = .ok linked ready
+  rw [init]
+  rfl
+
+#print axioms link_after_const_allocation
 
 /-- Selecting an entry from the actual list returned by `Program.scopes`
 selects the same first named module as the loaded-module list and pairs it
@@ -327,6 +382,56 @@ theorem row_resolved_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle}
     ownerIn rowWithin authored unitsUnique glue onlyRow sourceDefs
     (import_free_entry_scopes sourceFind sourceImports frames) (loaded_entry_find sourceFind) (loaded_entry_find targetFind)
 
+/-- Under structural equality of the candidate's top-level identities and
+region count, a successful source allocation produces actual source and split
+links with the same ready state and the same ordered entry export table. This
+step admits const-only executable source rows; allocation failure and execution
+outcomes require separate composition. -/
+theorem row_actual_links_from_allocation {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
+    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (ordered : body.Pairwise (fun a b => a.1 ≤ b.1))
+    (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init)
+    (candidateTops : (splitProgramIndexed body B P).tops = body)
+    (candidateRegions : (splitProgramIndexed body B P).regions = sourceProgram.regions)
+    {ready : State W} {frames : List (Nat × List (Name × Addr))}
+    (allocated : declareTops body (initialState W sourceProgram.regions) = .ok frames ready)
+    {row : EsmSplit.LocalExportUnit} (sourceRow : InteriorExportNames.SourceRow source row)
+    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
+    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods) (rowWithin : row.ordinal < B.length)
+    (planEntry : P.find P.entry = some owner)
+    (authored : S.claimants B row.ordinal = [owner.name]) (unitsUnique : owner.stmts.Nodup)
+    (glue : owner.exports = [])
+    (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
+    (sourceDefs : ∀ pair ∈ row.names, ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    ∃ targetLinked table,
+      link sourceProgram (initialState W sourceProgram.regions) =
+        .ok [(source, { vars := source.scope frames, this := .undef })] ready ∧
+      link (splitProgramIndexed body B P) (initialState W (splitProgramIndexed body B P).regions) =
+        .ok targetLinked ready ∧ row.ordinal ∈ owner.stmts ∧
+      EntryExports.resolve sourceProgram.entry [(source, { vars := source.scope frames, this := .undef })] = .ok table ∧
+      EntryExports.resolve (splitProgramIndexed body B P).entry targetLinked = .ok table ∧
+      ∀ pair ∈ row.names, ∃ a b, (source.scope frames).lookup pair.2 = some a ∧ ready.cellAt a = some b := by
+  have sourceOrdered : source.body.Pairwise (fun a b => a.1 ≤ b.1) := by rw [sourceBody]; exact ordered
+  have sourceTops : sourceProgram.tops = body := (import_free_source_tops sourceFind sourceImports sourceOrdered).trans sourceBody
+  have sourceShape : ∀ p ∈ source.body, ∃ name init, p.2 = .decl .const name init := by
+    rw [sourceBody]
+    exact sourceConsts
+  have sourceLink := link_after_const_allocation sourceTops footprints.uniqueIds allocated
+    (import_free_entry_scopes sourceFind sourceImports frames) (source_const_init sourceShape)
+  obtain ⟨targetLinked, table, targetScopes, owned, before, after, present⟩ :=
+    row_resolved_from_plan valid footprints complete allocated sourceBody sourceImports sourceFind sourceRow
+      rowFootprint ownerIn rowWithin planEntry authored unitsUnique glue onlyRow sourceDefs
+  have targetAllocation : declareTops body (initialState W (splitProgramIndexed body B P).regions) = .ok frames ready := by
+    rw [candidateRegions]
+    exact allocated
+  have targetInit := indexed_initFunctions_consts (W := W) targetScopes sourceConsts
+  have targetLink := link_after_const_allocation candidateTops footprints.uniqueIds targetAllocation targetScopes targetInit
+  exact ⟨targetLinked, table, sourceLink, targetLink, owned, before, after, present⟩
+
+#print axioms row_actual_links_from_allocation
 #print axioms row_resolved_from_plan
 #print axioms row_resolved_entries
 #print axioms export_pairs_equal
