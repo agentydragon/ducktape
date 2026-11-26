@@ -39,6 +39,10 @@ func (a *commands) actionsCommand() *cobra.Command {
 		a.waitCommand(), a.requestsCommand(), a.eventsCommand(), a.cancelCommand())
 }
 
+func (a *commands) actionCommand(run func(context.Context, action_servicepb.ActionServiceClient, []string) error) func(*cobra.Command, []string) error {
+	return invocation.GRPCCommand(a.Invocation, "ACTIONS", action_servicepb.NewActionServiceClient, run)
+}
+
 func catalog(ctx context.Context, client action_servicepb.ActionServiceClient) ([]*action_servicepb.ActionGroup, error) {
 	response, err := client.ListActionGroups(ctx, &action_servicepb.ListActionGroupsRequest{})
 	if err != nil {

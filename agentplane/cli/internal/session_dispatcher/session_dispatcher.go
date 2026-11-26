@@ -20,25 +20,14 @@ const dispatcherHelp = `Calls the SessionDispatcher gRPC API (AGENTPLANE_SESSION
 These commands operate on existing Environments and use the Dispatcher's caller authorization.
 For combined Dispatcher and History reads, use agentplane actions guide session_delegation.`
 
-type sessionCall func(context.Context, dispatcherpb.SessionDispatcherClient, []string) error
-
 func (a *commands) dispatcherCommand() *cobra.Command {
 	return invocation.Group("session-dispatcher", "Call the Session Dispatcher", dispatcherHelp,
 		a.createSessionCommand(), a.listSessionsCommand(), a.submitInputCommand(), a.getDispatchCommand(),
 		a.cancelInputCommand(), a.interruptTurnCommand())
 }
 
-func (a *commands) sessionCommand(fn sessionCall) func(*cobra.Command, []string) error {
-	return func(_ *cobra.Command, args []string) error {
-		connection, err := a.ConnectGRPC("SESSIONS")
-		if err != nil {
-			return err
-		}
-		defer connection.Close()
-		ctx, cancel := a.Deadline()
-		defer cancel()
-		return fn(ctx, dispatcherpb.NewSessionDispatcherClient(connection), args)
-	}
+func (a *commands) sessionCommand(run func(context.Context, dispatcherpb.SessionDispatcherClient, []string) error) func(*cobra.Command, []string) error {
+	return invocation.GRPCCommand(a.Invocation, "SESSIONS", dispatcherpb.NewSessionDispatcherClient, run)
 }
 
 func (a *commands) createSessionCommand() *cobra.Command {

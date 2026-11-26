@@ -2,6 +2,8 @@
 package history
 
 import (
+	"context"
+
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/spf13/cobra"
@@ -27,18 +29,15 @@ func display[T proto.Message](a *commands, message T) error {
 	}, protojson.MarshalOptions{})
 }
 
+func (a *commands) historyCommand(run func(context.Context, historypb.HistoryServiceClient, []string) error) func(*cobra.Command, []string) error {
+	return invocation.GRPCCommand(a.Invocation, "HISTORY", historypb.NewHistoryServiceClient, run)
+}
+
 func (a *commands) summaryCommand() *cobra.Command {
 	return &cobra.Command{
 		Use: "get-session-summary SESSION_ID", Short: "Read a retained Session summary", Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			connection, err := a.ConnectGRPC("HISTORY")
-			if err != nil {
-				return err
-			}
-			defer connection.Close()
-			ctx, cancel := a.Deadline()
-			defer cancel()
-			response, err := historypb.NewHistoryServiceClient(connection).GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: args[0]})
+		RunE: a.historyCommand(func(ctx context.Context, client historypb.HistoryServiceClient, args []string) error {
+			response, err := client.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: args[0]})
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
@@ -46,7 +45,7 @@ func (a *commands) summaryCommand() *cobra.Command {
 				return invocation.InvalidResponse("GetSessionSummary returned no response")
 			}
 			return display(a, response)
-		},
+		}),
 	}
 }
 
@@ -56,15 +55,8 @@ func (a *commands) eventsCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use: "read-session-events SESSION_ID [--after CURSOR] [--limit N]", Short: "Read one page of retained Session events", Args: cobra.ExactArgs(1),
 		Long: "Calls HistoryService.ReadSessionEvents. Output includes the backend's entries, removed ranges, settlements, and last cursor.",
-		RunE: func(_ *cobra.Command, args []string) error {
-			connection, err := a.ConnectGRPC("HISTORY")
-			if err != nil {
-				return err
-			}
-			defer connection.Close()
-			ctx, cancel := a.Deadline()
-			defer cancel()
-			response, err := historypb.NewHistoryServiceClient(connection).ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: args[0], AfterCursor: after, Limit: limit})
+		RunE: a.historyCommand(func(ctx context.Context, client historypb.HistoryServiceClient, args []string) error {
+			response, err := client.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: args[0], AfterCursor: after, Limit: limit})
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
@@ -72,7 +64,7 @@ func (a *commands) eventsCommand() *cobra.Command {
 				return invocation.InvalidResponse("ReadSessionEvents returned no response")
 			}
 			return display(a, response)
-		},
+		}),
 	}
 	command.Flags().Uint64Var(&after, "after", 0, "exclusive History cursor")
 	command.Flags().Uint32Var(&limit, "limit", 100, "maximum events in this page")
