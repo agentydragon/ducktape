@@ -58,6 +58,13 @@ js_library(
     deps = [":deployment_manifest"],
 )
 
+js_library(
+    name = "split_preview",
+    srcs = ["split_preview.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
+    deps = [":deployment_manifest"],
+)
+
 js_binary(
     name = "split_cli",
     data = [
