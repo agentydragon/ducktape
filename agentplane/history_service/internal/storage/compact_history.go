@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -24,13 +25,19 @@ import (
 var (
 	// ErrCompactionSessionBusy marks a short lock timeout while acquiring the Session writer lock.
 	ErrCompactionSessionBusy = errors.New("history repack Session is busy")
+	// ErrCompactionBatchBudget marks a repack transaction that exceeded its configured time budget.
+	ErrCompactionBatchBudget = errors.New("history repack batch transaction budget exceeded")
 	errStaleRepackCandidate  = errors.New("history repack candidate changed")
 )
 
 const (
-	repackUnpackPhase int16 = 0
-	repackPackPhase   int16 = 1
-	repackSessionPage       = 100
+	// DefaultRepackBatchBudget bounds each append-lock transaction, including row-lock wait.
+	DefaultRepackBatchBudget       = 5 * time.Second
+	repackLockWaitTimeout          = 250 * time.Millisecond
+	repackBatchMaxAttempts         = 3
+	repackUnpackPhase        int16 = 0
+	repackPackPhase          int16 = 1
+	repackSessionPage              = 100
 )
 
 // CompactionResult reports logical work and stored payload bytes, excluding table and index pages.
@@ -186,6 +193,7 @@ func (s *Store) RepackAll(ctx context.Context, apply bool, before RepackBeforeBa
 		return CompactionResult{}, err
 	}
 	var total CompactionResult
+	var batchBudgetExceeded bool
 	for position := run.AfterPosition; position < run.OpeningPosition; {
 		sessions, err := s.RecordedSessions(ctx, position, repackSessionPage)
 		if err != nil {
@@ -199,16 +207,22 @@ func (s *Store) RepackAll(ctx context.Context, apply bool, before RepackBeforeBa
 				break
 			}
 			position = session.Position
-			checkpoint, err := s.openRepackCheckpoint(ctx, hash, session.SessionID, kinds)
-			if err != nil {
+			if err := s.advanceRepackRun(ctx, hash, position); err != nil {
 				return total, err
 			}
-			if err := s.advanceRepackRun(ctx, hash, position); err != nil {
+			checkpoint, err := s.openRepackCheckpoint(ctx, hash, session.SessionID, kinds)
+			if errors.Is(err, ErrCompactionSessionBusy) || errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
 				return total, err
 			}
 			result, err := s.runRepackSession(ctx, hash, checkpoint, kinds, before)
 			addCompactionResult(&total, result)
-			if errors.Is(err, ErrCompactionSessionBusy) {
+			if errors.Is(err, ErrCompactionBatchBudget) {
+				batchBudgetExceeded = true
+			}
+			if errors.Is(err, ErrCompactionSessionBusy) || errors.Is(err, ErrCompactionBatchBudget) {
 				continue
 			}
 			if err != nil {
@@ -231,12 +245,21 @@ func (s *Store) RepackAll(ctx context.Context, apply bool, before RepackBeforeBa
 		}
 		for _, session := range pending {
 			checkpoint, err := s.loadRepackCheckpoint(ctx, hash, session.SessionID)
+			if errors.Is(err, sql.ErrNoRows) {
+				checkpoint, err = s.openRepackCheckpoint(ctx, hash, session.SessionID, kinds)
+				if errors.Is(err, ErrCompactionSessionBusy) || errors.Is(err, sql.ErrNoRows) {
+					continue
+				}
+			}
 			if err != nil {
 				return total, err
 			}
 			result, err := s.runRepackSession(ctx, hash, checkpoint, kinds, before)
 			addCompactionResult(&total, result)
-			if err != nil && !errors.Is(err, ErrCompactionSessionBusy) {
+			if errors.Is(err, ErrCompactionBatchBudget) {
+				batchBudgetExceeded = true
+			}
+			if err != nil && !errors.Is(err, ErrCompactionSessionBusy) && !errors.Is(err, ErrCompactionBatchBudget) {
 				return total, fmt.Errorf("retrying repack for Session %s: %w", session.SessionID, err)
 			}
 		}
@@ -255,6 +278,9 @@ func (s *Store) RepackAll(ctx context.Context, apply bool, before RepackBeforeBa
 		return total, err
 	}
 	if len(pending) > 0 {
+		if batchBudgetExceeded {
+			return total, fmt.Errorf("%w: %d Sessions remain checkpointed for retry", ErrCompactionBatchBudget, len(pending))
+		}
 		return total, fmt.Errorf("%w: %d Sessions remain checkpointed for retry", ErrCompactionSessionBusy, len(pending))
 	}
 	return total, s.finishRepackRun(ctx, hash)
@@ -323,8 +349,10 @@ func (s *Store) finishRepackRun(ctx context.Context, hash [32]byte) error {
 }
 
 func (s *Store) incompleteRepackSessions(ctx context.Context, hash [32]byte, opening uint64) ([]RecordedSession, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT session_id,recorded_position FROM history_event_repack_checkpoint
-		WHERE profile_hash=$1 AND recorded_position<=$2 AND NOT complete ORDER BY recorded_position LIMIT $3`,
+	rows, err := s.db.QueryContext(ctx, `SELECT h.id,h.recorded_position FROM session_history h
+		LEFT JOIN history_event_repack_checkpoint c ON c.session_id=h.id AND c.profile_hash=$1
+		WHERE h.recorded_position<=$2 AND (c.session_id IS NULL OR NOT c.complete)
+		ORDER BY h.recorded_position LIMIT $3`,
 		hash[:], opening, repackSessionPage)
 	if err != nil {
 		return nil, err
@@ -346,6 +374,9 @@ func (s *Store) openRepackCheckpoint(ctx context.Context, hash [32]byte, session
 	checkpoint.SessionID = sessionID
 	var lastCursor uint64
 	err := postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `SELECT set_config('lock_timeout',$1,true)`, repackLockWaitTimeout.String()); err != nil {
+			return err
+		}
 		if err := tx.QueryRowContext(ctx, `SELECT recorded_position,last_cursor FROM session_history WHERE id=$1`, sessionID).
 			Scan(&checkpoint.RecordedPosition, &lastCursor); err != nil {
 			return err
@@ -377,6 +408,10 @@ func (s *Store) openRepackCheckpoint(ctx context.Context, hash [32]byte, session
 		}
 		return nil
 	})
+	var pgErr *pq.Error
+	if errors.As(err, &pgErr) && pgErr.Code == "55P03" {
+		return checkpoint, fmt.Errorf("%w: opening checkpoint for Session %s: %w", ErrCompactionSessionBusy, sessionID, err)
+	}
 	return checkpoint, err
 }
 
@@ -565,55 +600,125 @@ func (s *Store) advanceRepackKind(ctx context.Context, hash [32]byte, checkpoint
 	return checkpoint, err
 }
 
-func (s *Store) unpackRepackBlock(ctx context.Context, hash [32]byte, checkpoint repackCheckpoint, block repackBlock) error {
-	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout='250ms'`); err != nil {
+func (s *Store) retryRepackBatch(ctx context.Context, sessionID uuid.UUID, operation string, run func() error) error {
+	for attempt := 1; ; attempt++ {
+		err := run()
+		if !errors.Is(err, ErrCompactionBatchBudget) || attempt == repackBatchMaxAttempts {
 			return err
 		}
-		if _, err := lockRow(ctx, tx, checkpoint.SessionID); err != nil {
+		slog.WarnContext(ctx, "History repack batch retry after transaction budget",
+			"session_id", sessionID, "operation", operation, "attempt", attempt,
+			"budget", s.options.RepackBatchBudget)
+		timer := time.NewTimer(time.Duration(attempt) * 50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (s *Store) runRepackBatchTransaction(ctx context.Context, sessionID uuid.UUID, operation string, work func(context.Context, *sql.Tx) error) error {
+	budget := s.options.RepackBatchBudget
+	contextBudget := budget * 9 / 10
+	if contextBudget <= 0 {
+		contextBudget = budget
+	}
+	batchCtx, cancel := context.WithTimeout(ctx, contextBudget)
+	defer cancel()
+	var lockWait, lockHold time.Duration
+	var lockAcquiredAt time.Time
+	err := postgres.Transaction(batchCtx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(batchCtx, `SELECT set_config('lock_timeout',$1,true),set_config('transaction_timeout',$2,true)`,
+			repackLockWaitTimeout.String(), budget.String()); err != nil {
+			return err
+		}
+		waitStarted := time.Now()
+		if _, err := lockRow(batchCtx, tx, sessionID); err != nil {
+			lockWait = time.Since(waitStarted)
 			var pgErr *pq.Error
 			if errors.As(err, &pgErr) && pgErr.Code == "55P03" {
 				return fmt.Errorf("%w: %w", ErrCompactionSessionBusy, err)
 			}
 			return err
 		}
-		current, err := scanStoredBlock(tx.QueryRowContext(ctx, `SELECT first_cursor,last_cursor,kind,cursors,sizes,payload,pg_column_size(payload)
-			FROM session_event_block WHERE session_id=$1 AND first_cursor=$2`, checkpoint.SessionID, block.first))
-		if errors.Is(err, sql.ErrNoRows) || err == nil && !sameStoredBlock(current, block.storedBlock) {
-			return errStaleRepackCandidate
-		}
-		if err != nil {
-			return err
-		}
-		cursors := make([]int64, len(block.frames))
-		for i, frame := range block.frames {
-			cursors[i] = int64(frame.cursor)
-		}
-		var removed bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
-			SELECT FROM session_event_removed_range r WHERE r.session_id=$1 AND EXISTS
-				(SELECT FROM unnest($2::bigint[]) c WHERE c BETWEEN r.first_cursor AND r.last_cursor)
-			UNION ALL
-			SELECT FROM session_event_settled_range r WHERE r.session_id=$1 AND EXISTS
-				(SELECT FROM unnest($2::bigint[]) c WHERE c BETWEEN r.first_cursor AND r.last_cursor))`,
-			checkpoint.SessionID, pq.Array(cursors)).Scan(&removed); err != nil {
-			return err
-		}
-		if removed {
-			return fmt.Errorf("event block %d still contains a removed or settled cursor", block.first)
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM session_event_block WHERE session_id=$1 AND first_cursor=$2`, checkpoint.SessionID, block.first); err != nil {
-			return err
-		}
-		for _, frame := range block.frames {
-			if err := insertRawFrame(ctx, tx, checkpoint.SessionID, frame); err != nil {
+		lockWait = time.Since(waitStarted)
+		lockAcquiredAt = time.Now()
+		return work(batchCtx, tx)
+	})
+	if !lockAcquiredAt.IsZero() {
+		lockHold = time.Since(lockAcquiredAt)
+	}
+	if err != nil && errors.Is(batchCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+		err = fmt.Errorf("%w: %s transaction exceeded %s and rolled back: %v", ErrCompactionBatchBudget, operation, budget, err)
+	}
+	outcome := "committed"
+	switch {
+	case errors.Is(err, ErrCompactionBatchBudget):
+		outcome = "budget_exceeded"
+	case errors.Is(err, ErrCompactionSessionBusy):
+		outcome = "lock_timeout"
+	case errors.Is(err, errStaleRepackCandidate):
+		outcome = "stale_candidate"
+	case err != nil:
+		outcome = "rolled_back"
+	}
+	slog.InfoContext(ctx, "History repack batch transaction",
+		"session_id", sessionID, "operation", operation,
+		"lock_wait", lockWait, "lock_wait_budget", repackLockWaitTimeout,
+		"lock_hold", lockHold, "context_budget", contextBudget, "budget", budget, "outcome", outcome)
+	return err
+}
+
+func (s *Store) unpackRepackBlock(ctx context.Context, hash [32]byte, checkpoint repackCheckpoint, block repackBlock) error {
+	return s.retryRepackBatch(ctx, checkpoint.SessionID, "unpack", func() error {
+		return s.runRepackBatchTransaction(ctx, checkpoint.SessionID, "unpack", func(txCtx context.Context, tx *sql.Tx) error {
+			var current storedBlock
+			var cursors, sizes pq.Int64Array
+			err := tx.QueryRowContext(txCtx, `SELECT first_cursor,last_cursor,kind,cursors,sizes,payload
+				FROM session_event_block WHERE session_id=$1 AND first_cursor=$2`, checkpoint.SessionID, block.first).
+				Scan(&current.first, &current.last, &current.kind, &cursors, &sizes, &current.payload)
+			if errors.Is(err, sql.ErrNoRows) {
+				return errStaleRepackCandidate
+			}
+			if err != nil {
 				return err
 			}
-		}
-		_, err = tx.ExecContext(ctx, `UPDATE history_event_repack_checkpoint SET unpack_after=GREATEST(unpack_after,$3),
-			pack_after=LEAST(pack_after,$4),updated_at=now() WHERE profile_hash=$1 AND session_id=$2`,
-			hash[:], checkpoint.SessionID, block.last, block.first-1)
-		return err
+			current.cursors, current.sizes = slices.Clone(cursors), slices.Clone(sizes)
+			if !sameStoredBlock(current, block.storedBlock) {
+				return errStaleRepackCandidate
+			}
+			cursors = make(pq.Int64Array, len(block.frames))
+			for i, frame := range block.frames {
+				cursors[i] = int64(frame.cursor)
+			}
+			var removed bool
+			if err := tx.QueryRowContext(txCtx, `SELECT EXISTS(
+				SELECT FROM session_event_removed_range r WHERE r.session_id=$1 AND EXISTS
+					(SELECT FROM unnest($2::bigint[]) c WHERE c BETWEEN r.first_cursor AND r.last_cursor)
+				UNION ALL
+				SELECT FROM session_event_settled_range r WHERE r.session_id=$1 AND EXISTS
+					(SELECT FROM unnest($2::bigint[]) c WHERE c BETWEEN r.first_cursor AND r.last_cursor))`,
+				checkpoint.SessionID, cursors).Scan(&removed); err != nil {
+				return err
+			}
+			if removed {
+				return fmt.Errorf("event block %d still contains a removed or settled cursor", block.first)
+			}
+			if _, err := tx.ExecContext(txCtx, `DELETE FROM session_event_block WHERE session_id=$1 AND first_cursor=$2`, checkpoint.SessionID, block.first); err != nil {
+				return err
+			}
+			for _, frame := range block.frames {
+				if err := insertRawFrame(txCtx, tx, checkpoint.SessionID, frame); err != nil {
+					return err
+				}
+			}
+			_, err = tx.ExecContext(txCtx, `UPDATE history_event_repack_checkpoint SET unpack_after=GREATEST(unpack_after,$3),
+				pack_after=LEAST(pack_after,$4),updated_at=now() WHERE profile_hash=$1 AND session_id=$2`,
+				hash[:], checkpoint.SessionID, block.last, block.first-1)
+			return err
+		})
 	})
 }
 
@@ -749,85 +854,77 @@ func buildRepackPlan(packer *eventblock.Packer, frames []repackRawFrame, cut eve
 }
 
 func (s *Store) applyRepackPlan(ctx context.Context, hash [32]byte, checkpoint repackCheckpoint, plan repackPlan, through uint64) error {
-	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout='250ms'`); err != nil {
-			return err
-		}
-		if _, err := lockRow(ctx, tx, checkpoint.SessionID); err != nil {
-			var pgErr *pq.Error
-			if errors.As(err, &pgErr) && pgErr.Code == "55P03" {
-				return fmt.Errorf("%w: %w", ErrCompactionSessionBusy, err)
+	return s.retryRepackBatch(ctx, checkpoint.SessionID, "pack", func() error {
+		return s.runRepackBatchTransaction(ctx, checkpoint.SessionID, "pack", func(txCtx context.Context, tx *sql.Tx) error {
+			cursors := make([]int64, len(plan.frames))
+			for i, frame := range plan.frames {
+				cursors[i] = int64(frame.meta.cursor)
 			}
-			return err
-		}
-		cursors := make([]int64, len(plan.frames))
-		for i, frame := range plan.frames {
-			cursors[i] = int64(frame.meta.cursor)
-		}
-		rows, err := tx.QueryContext(ctx, `SELECT cursor,kind,payload FROM session_event
+			rows, err := tx.QueryContext(txCtx, `SELECT cursor,kind,payload FROM session_event
 			WHERE session_id=$1 AND cursor=ANY($2) ORDER BY cursor`, checkpoint.SessionID, pq.Array(cursors))
-		if err != nil {
-			return err
-		}
-		index := 0
-		for rows.Next() {
-			var cursor uint64
-			var kind historypb.EventKind
-			var payload []byte
-			if err := rows.Scan(&cursor, &kind, &payload); err != nil {
+			if err != nil {
+				return err
+			}
+			index := 0
+			for rows.Next() {
+				var cursor uint64
+				var kind historypb.EventKind
+				var payload []byte
+				if err := rows.Scan(&cursor, &kind, &payload); err != nil {
+					rows.Close()
+					return err
+				}
+				if index >= len(plan.frames) || cursor != plan.frames[index].meta.cursor || kind != checkpoint.Kind ||
+					len(payload) != plan.frames[index].meta.size || plan.frames[index].payload != nil && !bytes.Equal(payload, plan.frames[index].payload) {
+					rows.Close()
+					return errStaleRepackCandidate
+				}
+				index++
+			}
+			if err := rows.Err(); err != nil {
 				rows.Close()
 				return err
 			}
-			if index >= len(plan.frames) || cursor != plan.frames[index].meta.cursor || kind != checkpoint.Kind ||
-				len(payload) != plan.frames[index].meta.size || plan.frames[index].payload != nil && !bytes.Equal(payload, plan.frames[index].payload) {
-				rows.Close()
+			if err := rows.Close(); err != nil {
+				return err
+			}
+			if index != len(plan.frames) {
 				return errStaleRepackCandidate
 			}
-			index++
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		if err := rows.Close(); err != nil {
-			return err
-		}
-		if index != len(plan.frames) {
-			return errStaleRepackCandidate
-		}
-		var removed bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+			var removed bool
+			if err := tx.QueryRowContext(txCtx, `SELECT EXISTS(
 			SELECT FROM session_event_removed_range r WHERE r.session_id=$1 AND EXISTS
 				(SELECT FROM unnest($2::bigint[]) c WHERE c BETWEEN r.first_cursor AND r.last_cursor)
 			UNION ALL
 			SELECT FROM session_event_settled_range r WHERE r.session_id=$1 AND EXISTS
 				(SELECT FROM unnest($2::bigint[]) c WHERE c BETWEEN r.first_cursor AND r.last_cursor))`,
-			checkpoint.SessionID, pq.Array(cursors)).Scan(&removed); err != nil {
-			return err
-		}
-		if removed {
-			return errStaleRepackCandidate
-		}
-		if plan.pack {
-			values, sizes := make([]int64, len(plan.frames)), make([]int64, len(plan.frames))
-			for i, frame := range plan.frames {
-				values[i], sizes[i] = int64(frame.meta.cursor), int64(frame.meta.indexSize)
+				checkpoint.SessionID, pq.Array(cursors)).Scan(&removed); err != nil {
+				return err
 			}
-			first, last := values[0], values[len(values)-1]
-			if _, err := tx.ExecContext(ctx, `INSERT INTO session_event_block
+			if removed {
+				return errStaleRepackCandidate
+			}
+			if plan.pack {
+				values, sizes := make([]int64, len(plan.frames)), make([]int64, len(plan.frames))
+				for i, frame := range plan.frames {
+					values[i], sizes[i] = int64(frame.meta.cursor), int64(frame.meta.indexSize)
+				}
+				first, last := values[0], values[len(values)-1]
+				if _, err := tx.ExecContext(txCtx, `INSERT INTO session_event_block
 				(session_id,first_cursor,last_cursor,kind,cursors,sizes,payload) VALUES($1,$2,$3,$4,$5,$6,$7)`,
-				checkpoint.SessionID, first, last, checkpoint.Kind, pq.Array(values), pq.Array(sizes), plan.encoded); err != nil {
+					checkpoint.SessionID, first, last, checkpoint.Kind, pq.Array(values), pq.Array(sizes), plan.encoded); err != nil {
+					return err
+				}
+				if _, err := tx.ExecContext(txCtx, `DELETE FROM session_event WHERE session_id=$1 AND cursor=ANY($2)`, checkpoint.SessionID, pq.Array(cursors)); err != nil {
+					return err
+				}
+			} else if _, err := tx.ExecContext(txCtx, `UPDATE session_event SET compactable=false WHERE session_id=$1 AND cursor=ANY($2)`,
+				checkpoint.SessionID, pq.Array(cursors)); err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, `DELETE FROM session_event WHERE session_id=$1 AND cursor=ANY($2)`, checkpoint.SessionID, pq.Array(cursors)); err != nil {
-				return err
-			}
-		} else if _, err := tx.ExecContext(ctx, `UPDATE session_event SET compactable=false WHERE session_id=$1 AND cursor=ANY($2)`,
-			checkpoint.SessionID, pq.Array(cursors)); err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `UPDATE history_event_repack_checkpoint SET pack_after=GREATEST(pack_after,$3),updated_at=now()
+			_, err = tx.ExecContext(txCtx, `UPDATE history_event_repack_checkpoint SET pack_after=GREATEST(pack_after,$3),updated_at=now()
 			WHERE profile_hash=$1 AND session_id=$2`, hash[:], checkpoint.SessionID, through)
-		return err
+			return err
+		})
 	})
 }

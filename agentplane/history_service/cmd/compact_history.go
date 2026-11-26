@@ -131,12 +131,12 @@ func runCompactHistory(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("configure History repack profile: %w", err)
 	}
-	db, err := openDatabase(ctx, c.DatabaseURL, 2)
+	db, err := openDatabaseWithApplicationName(ctx, c.DatabaseURL, 2, "history-repack")
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	history := storage.NewStore(db, storage.Options{EventPackers: packers})
+	history := storage.NewStore(db, storage.Options{EventPackers: packers, RepackBatchBudget: options.batchBudget})
 	controller := newRepackController(options)
 	var result storage.CompactionResult
 	if options.all {
@@ -145,7 +145,8 @@ func runCompactHistory(ctx context.Context, args []string) error {
 		result, err = history.RepackSession(ctx, options.session, options.apply, controller.beforeBatch)
 	}
 	slog.InfoContext(ctx, "History online repack finished", "session_id", options.session,
-		"all_sessions", options.all, "apply", options.apply, "entries", result.Entries,
+		"all_sessions", options.all, "apply", options.apply, "batch_transaction_budget", options.batchBudget,
+		"entries", result.Entries,
 		"new_versioned_blocks", result.Blocks, "source_blocks", result.SourceBlocks,
 		"legacy_source_blocks", result.LegacyBlocks, "versioned_source_blocks", result.VersionedSourceBlocks,
 		"uncompressed_bytes", result.UncompressedBytes, "packed_bytes", result.PackedBytes,

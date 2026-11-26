@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -153,15 +154,19 @@ type Store struct {
 	readScope *ReadScope
 }
 
-// Options controls writes only. Every reader supports packed entries regardless of these flags.
+// Options controls writes and online History repacking. Every reader supports packed entries regardless of these flags.
 type Options struct {
 	EventPackers             map[historypb.EventKind]*eventblock.Packer
+	RepackBatchBudget        time.Duration
 	SettleDeltas             bool
 	CompactDeltas            bool
 	CompactExecutionEvidence bool
 }
 
 func NewStore(db *sql.DB, options Options) *Store {
+	if options.RepackBatchBudget <= 0 {
+		options.RepackBatchBudget = DefaultRepackBatchBudget
+	}
 	return &Store{db: db, options: options}
 }
 

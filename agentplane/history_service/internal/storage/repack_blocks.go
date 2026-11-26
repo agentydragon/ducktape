@@ -142,13 +142,6 @@ func decodeStoredBlock(payload []byte) ([]rawFrame, error) {
 }
 
 func insertRawFrame(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, frame rawFrame) error {
-	entry := new(eventlogpb.EventEntry)
-	if err := proto.Unmarshal(frame.payload, entry); err != nil {
-		return fmt.Errorf("decode event cursor %d: %w", frame.cursor, err)
-	}
-	if entry.GetCursor() != frame.cursor || historypb.EventKind(observationNumber(entry)) != frame.kind || entry.GetEvent() == nil {
-		return fmt.Errorf("event cursor %d changed while unpacking", frame.cursor)
-	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO session_event(session_id,cursor,kind,payload,compactable)
 		VALUES($1,$2,$3,$4,false)`, sessionID, int64(frame.cursor), frame.kind, frame.payload)
 	return err

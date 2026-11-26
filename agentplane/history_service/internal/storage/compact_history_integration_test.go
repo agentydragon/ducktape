@@ -5,7 +5,9 @@ import (
 	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -487,6 +489,185 @@ func TestOnlineRepackResumesAfterCancellationAndAllowsConcurrentAppendAndReaders
 	}
 	assertLogicalFrames(t, logicalFrames(t, writer.db, liveID), wantFrames)
 	assertEntries(t, readPage(t, liveCompactor, liveID, 0, 1000).Entries, wantEntries...)
+}
+
+func TestOnlineRepackUnpackBatchBudgetRollsBackAndResumes(t *testing.T) {
+	writer := testStore(t)
+	id := opened(t, writer)
+	original := make([]*eventlogpb.EventEntry, 4)
+	for index := range original {
+		original[index] = nativeEntry(uint64(index+1), strings.Repeat("budget-rollback-frame-", 80))
+	}
+	appendEntries(t, writer, id, original...)
+	seedBlockFromRows(t, writer.db, id, int64s(1, 4), false)
+	before := logicalFrames(t, writer.db, id)
+	if _, err := writer.db.ExecContext(t.Context(), `CREATE FUNCTION history_test_repack_budget() RETURNS trigger
+		LANGUAGE plpgsql AS $$ BEGIN IF NEW.cursor=1 THEN PERFORM pg_sleep(1.0); END IF; RETURN NEW; END $$`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.db.ExecContext(t.Context(), `CREATE TRIGGER history_test_repack_budget BEFORE INSERT ON session_event
+		FOR EACH ROW EXECUTE FUNCTION history_test_repack_budget()`); err != nil {
+		t.Fatal(err)
+	}
+	budget := 350 * time.Millisecond
+	compactor := NewStore(writer.db, Options{EventPackers: repackTestPackers(t), RepackBatchBudget: budget})
+	if _, err := compactor.RepackSession(t.Context(), id, true, nil); !errors.Is(err, ErrCompactionBatchBudget) {
+		t.Fatalf("stalled unpack should exhaust its bounded retries: %v", err)
+	}
+	if blocks := testpostgres.Count(t, writer.db, "SELECT count(*) FROM session_event_block WHERE session_id=$1", id); blocks != 1 {
+		t.Fatalf("timed-out unpack removed its source block: %d blocks remain", blocks)
+	}
+	if rows := testpostgres.Count(t, writer.db, "SELECT count(*) FROM session_event WHERE session_id=$1", id); rows != 0 {
+		t.Fatalf("timed-out unpack left partial ordinary rows: %d remain", rows)
+	}
+	assertLogicalFrames(t, logicalFrames(t, writer.db, id), before)
+	if _, err := writer.db.ExecContext(t.Context(), `DROP TRIGGER history_test_repack_budget ON session_event`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.db.ExecContext(t.Context(), `DROP FUNCTION history_test_repack_budget()`); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := compactor.RepackSession(t.Context(), id, true, nil)
+	if err != nil || resumed.SourceBlocks != 1 || resumed.Entries != int64(len(original)) {
+		t.Fatalf("resume after rolled-back unpack: %+v, %v", resumed, err)
+	}
+	assertLogicalFrames(t, logicalFrames(t, writer.db, id), before)
+}
+
+func TestOnlineRepackAppendWaitIsMeasuredDuringStalledUnpack(t *testing.T) {
+	writer := testStore(t)
+	id := opened(t, writer)
+	original := make([]*eventlogpb.EventEntry, 4)
+	for index := range original {
+		original[index] = nativeEntry(uint64(index+1), strings.Repeat("stalled-repack-frame-", 80))
+	}
+	appendEntries(t, writer, id, original...)
+	seedBlockFromRows(t, writer.db, id, int64s(1, 4), false)
+	before := logicalFrames(t, writer.db, id)
+	if _, err := writer.db.ExecContext(t.Context(), `CREATE FUNCTION history_test_repack_stall() RETURNS trigger
+		LANGUAGE plpgsql AS $$ BEGIN IF NEW.cursor=1 THEN
+		PERFORM set_config('application_name','history-repack-stall-test',true); PERFORM pg_sleep(0.75);
+		END IF; RETURN NEW; END $$`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.db.ExecContext(t.Context(), `CREATE TRIGGER history_test_repack_stall BEFORE INSERT ON session_event
+		FOR EACH ROW EXECUTE FUNCTION history_test_repack_stall()`); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = writer.db.ExecContext(context.Background(), `DROP TRIGGER IF EXISTS history_test_repack_stall ON session_event`)
+		_, _ = writer.db.ExecContext(context.Background(), `DROP FUNCTION IF EXISTS history_test_repack_stall()`)
+	}()
+
+	budget, stalledFor := 2*time.Second, 750*time.Millisecond
+	compactor := NewStore(writer.db, Options{EventPackers: repackTestPackers(t), RepackBatchBudget: budget})
+	var logOutput bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logOutput, nil)))
+	defer slog.SetDefault(previousLogger)
+	type repackOutcome struct {
+		result CompactionResult
+		err    error
+	}
+	repacked := make(chan repackOutcome, 1)
+	go func() {
+		result, err := compactor.RepackSession(t.Context(), id, true, nil)
+		repacked <- repackOutcome{result: result, err: err}
+	}()
+
+	waitCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	lockerPID := waitForBackendPID(t, waitCtx, writer.db, `SELECT pid FROM pg_stat_activity
+		WHERE application_name='history-repack-stall-test' AND wait_event='PgSleep' ORDER BY pid DESC LIMIT 1`)
+	appendStarted := time.Now()
+	appended := make(chan error, 1)
+	tail := nativeEntry(5, "append waiting behind the stalled repack")
+	go func() {
+		_, err := writer.Append(waitCtx, id, []*eventlogpb.EventEntry{tail})
+		appended <- err
+	}()
+	blockedPID := waitForBackendPID(t, waitCtx, writer.db, `SELECT pid FROM pg_stat_activity
+		WHERE wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid)) ORDER BY pid DESC LIMIT 1`, lockerPID)
+	testpostgres.WaitForBlocker(t, waitCtx, writer.db, blockedPID, lockerPID)
+
+	var outcome repackOutcome
+	select {
+	case outcome = <-repacked:
+	case <-waitCtx.Done():
+		t.Fatal("stalled History repack did not finish within the test deadline")
+	}
+	if outcome.err != nil || outcome.result.SourceBlocks != 1 {
+		t.Fatalf("stalled repack: %+v, %v", outcome.result, outcome.err)
+	}
+	select {
+	case err := <-appended:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-waitCtx.Done():
+		t.Fatal("append remained blocked after the repack transaction committed")
+	}
+	appendWait := time.Since(appendStarted)
+	if appendWait < stalledFor/2 || appendWait > budget+time.Second {
+		t.Fatalf("append wait %s does not reflect the %s repack stall under %s budget", appendWait, stalledFor, budget)
+	}
+
+	type batchLog struct {
+		Message   string `json:"msg"`
+		Operation string `json:"operation"`
+		LockWait  int64  `json:"lock_wait"`
+		LockHold  int64  `json:"lock_hold"`
+		Budget    int64  `json:"budget"`
+		Outcome   string `json:"outcome"`
+	}
+	var measured *batchLog
+	for _, line := range strings.Split(logOutput.String(), "\n") {
+		var record batchLog
+		if err := json.Unmarshal([]byte(line), &record); err != nil || record.Message != "History repack batch transaction" ||
+			record.Operation != "unpack" || record.Outcome != "committed" {
+			continue
+		}
+		measured = &record
+		break
+	}
+	if measured == nil || measured.Budget != int64(budget) || measured.LockHold < int64(stalledFor/2) ||
+		measured.LockHold >= int64(budget) || measured.LockWait < 0 {
+		t.Fatalf("missing or invalid separate lock wait/hold measurement (budget %s): %s", budget, logOutput.String())
+	}
+	t.Logf("synthetic canary batch budget=%s repack_lock_wait=%s repack_lock_hold=%s blocked_append_wait=%s",
+		budget, time.Duration(measured.LockWait), time.Duration(measured.LockHold), appendWait)
+
+	want := make(map[uint64][]byte, len(before)+1)
+	for cursor, frame := range before {
+		want[cursor] = bytes.Clone(frame)
+	}
+	tailWire, err := proto.Marshal(tail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want[tail.Cursor] = tailWire
+	assertLogicalFrames(t, logicalFrames(t, writer.db, id), want)
+}
+
+func waitForBackendPID(t *testing.T, ctx context.Context, db *sql.DB, query string, args ...any) int {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var pid int
+		err := db.QueryRowContext(ctx, query, args...).Scan(&pid)
+		if err == nil {
+			return pid
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatalf("query for PostgreSQL backend PID: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("waiting for PostgreSQL backend PID: %v", ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
 
 func TestEventBlockInventoryCountsInvalidSeparately(t *testing.T) {

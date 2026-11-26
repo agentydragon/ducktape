@@ -28,6 +28,9 @@ func execute(t *testing.T, db *sql.DB, query string, args ...any) {
 // rollbackServiceWriterMigration restores the version-18 schema for tests that exercise its baseline adoption.
 func rollbackServiceWriterMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
+	execute(t, db, `DROP TABLE history_event_repack_checkpoint`)
+	execute(t, db, `DROP TABLE history_event_repack_run`)
+	execute(t, db, `DELETE FROM history_service_goose_version WHERE version_id=20`)
 	if postgres.Count(t, db, `SELECT count(*) FROM session_history WHERE writer_service_uri IS NOT NULL`) != 0 {
 		t.Fatal("cannot roll back service-writer migration with service-owned Sessions")
 	}

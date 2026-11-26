@@ -230,11 +230,21 @@ logical event bytes and estimated packed bytes.
 Apply captures an opening `recorded_position` for all-session enumeration and a cursor watermark
 when each Session first enters its profile checkpoint. It enumerates `session_history` directly,
 including inactive Sessions, in pages of 100. Candidate decoding and compression happen outside
-the append lock. A short transaction then acquires the Session row with a 250 ms lock timeout,
-revalidates the exact source and settlement/removal state, and atomically replaces one bounded
-candidate (at most 256 frames and 8 MiB decoded). Existing blocks are unpacked in bounded units
-before their frames are merged with ordinary rows and repacked, which handles sparse cursors,
-interleaved kinds, partial block boundaries and mixed formats without nested block spans.
+the append lock. A short transaction then acquires the Session row with a 250 ms lock timeout and
+a 5 second transaction budget (`--batch-transaction-budget`), revalidates the exact source and
+settlement/removal state, and atomically replaces one bounded candidate (at most 256 frames and
+8 MiB decoded). PostgreSQL `transaction_timeout` and the transaction context enforce the budget;
+an expired batch rolls back and retries the same candidate up to three times. Existing blocks are
+unpacked in bounded units before their frames are merged with ordinary rows and repacked, which
+handles sparse cursors, interleaved kinds, partial block boundaries and mixed formats without
+nested block spans. The unpack transaction compares raw block metadata and bytes to its prepared
+candidate and inserts already-validated raw frames without decoding the source payload under lock.
+
+Each batch logs `lock_wait`, `lock_wait_budget`, `lock_hold`, `budget` and `outcome` separately.
+Repacker database connections use `application_name=history-repack` for canary observation. A
+synthetic integration canary stalls one unpack transaction for 750 ms with a 2 second budget and
+verifies that a concurrent append waits only for that transaction. It records the measured wait,
+hold and append wait in the test output; this PR did not run a live apply canary.
 
 Checkpoints are durable per writer profile and Session. A crash or cancellation leaves committed
 batches intact; rerun with the same profile to resume. A completed checkpoint also notices a later
@@ -269,6 +279,22 @@ Use [the manual Job template](ops/compact-history-job.yaml) and the
 [inventory Job template](ops/inventory-history-job.yaml) with the deployed image. Watch database
 free space, WAL archiving and replication lag throughout. Ordinary vacuum makes freed space
 reusable; repacking does not shrink relation files.
+
+For a one-Session canary on PostgreSQL 18.1, sample the repacker backends while the command keeps
+its connections open:
+
+```sql
+SELECT pid, (pg_stat_get_backend_wal(pid)).wal_bytes AS wal_bytes
+FROM pg_stat_activity
+WHERE application_name = 'history-repack'
+ORDER BY pid;
+```
+
+Record the initial and final `wal_bytes` for every repacker PID, allow backend statistics to flush,
+and capture the final sample before those connections close. Sum per-PID deltas for committed work.
+If a PID appears after the initial sample or disappears before the final sample, mark WAL attribution
+incomplete rather than substituting a cluster LSN delta. Cluster WAL and replica lag remain pressure
+signals. Agentplane does not need to be quiesced for this one-Session measurement.
 
 ### Live ingress packing probe
 

@@ -19,6 +19,7 @@ type historyMaintenanceOptions struct {
 	all                bool
 	apply              bool
 	bytesPerSecond     int64
+	batchBudget        time.Duration
 	pauseFile          string
 	guardFile          string
 	maxReplicaLagBytes int64
@@ -33,10 +34,13 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 	apply := flags.Bool("apply", false, "commit changes")
 	dryRun := flags.Bool("dry-run", false, "preview without writes")
 	var bytesPerSecond, maxReplicaLagBytes, minFreeBytes int64
+	var batchBudget time.Duration
 	var pauseFile, guardFile string
 	var guardMaxAge time.Duration
 	if command == "compact-history" {
 		flags.Int64Var(&bytesPerSecond, "bytes-per-second", 1<<20, "maximum source bytes processed per second")
+		flags.DurationVar(&batchBudget, "batch-transaction-budget", storage.DefaultRepackBatchBudget,
+			"maximum elapsed time for one append-lock transaction")
 		flags.StringVar(&pauseFile, "pause-file", "", "pause while this file exists")
 		flags.StringVar(&guardFile, "guard-file", "", "JSON control file with updated_at, replica_lag_bytes, and free_bytes")
 		flags.Int64Var(&maxReplicaLagBytes, "max-replica-lag-bytes", 0, "pause above this replica replay lag (requires --guard-file)")
@@ -51,12 +55,13 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 		return historyMaintenanceOptions{}, errors.New("use exactly one of --session UUID / --all and --dry-run / --apply")
 	}
 	options := historyMaintenanceOptions{
-		all: *all, apply: *apply, bytesPerSecond: bytesPerSecond, pauseFile: pauseFile, guardFile: guardFile,
+		all: *all, apply: *apply, bytesPerSecond: bytesPerSecond, batchBudget: batchBudget, pauseFile: pauseFile, guardFile: guardFile,
 		maxReplicaLagBytes: maxReplicaLagBytes, minFreeBytes: minFreeBytes, guardMaxAge: guardMaxAge,
 	}
 	if command == "compact-history" {
-		if options.bytesPerSecond <= 0 || options.maxReplicaLagBytes < 0 || options.minFreeBytes < 0 || options.guardMaxAge <= 0 {
-			return historyMaintenanceOptions{}, errors.New("invalid repack rate or guard threshold")
+		if options.bytesPerSecond <= 0 || options.batchBudget <= 0 || options.maxReplicaLagBytes < 0 ||
+			options.minFreeBytes < 0 || options.guardMaxAge <= 0 {
+			return historyMaintenanceOptions{}, errors.New("invalid repack rate, transaction budget, or guard threshold")
 		}
 		if (options.maxReplicaLagBytes > 0 || options.minFreeBytes > 0) && options.guardFile == "" {
 			return historyMaintenanceOptions{}, errors.New("--max-replica-lag-bytes and --min-free-bytes require --guard-file")

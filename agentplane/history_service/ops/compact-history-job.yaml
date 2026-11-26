@@ -37,6 +37,8 @@ spec:
             - --dry-run
             - --bytes-per-second
             - "1048576"
+            - --batch-transaction-budget
+            - 5s
             - --pause-file
             - /var/run/history-repack/pause
           env:

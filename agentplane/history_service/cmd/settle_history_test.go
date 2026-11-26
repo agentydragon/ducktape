@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
+)
 
 func TestHistoryMaintenanceRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
 	const session = "00000000-0000-4000-8000-000000000001"
@@ -24,7 +29,8 @@ func TestHistoryMaintenanceRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
 			mode = "--apply"
 		}
 		one, err := parseHistoryMaintenanceOptions("compact-history", []string{"--session", session, mode})
-		if err != nil || one.all || one.session.String() != session || one.apply != apply || one.bytesPerSecond != 1<<20 {
+		if err != nil || one.all || one.session.String() != session || one.apply != apply || one.bytesPerSecond != 1<<20 ||
+			one.batchBudget != storage.DefaultRepackBatchBudget {
 			t.Fatalf("one Session: %+v %v", one, err)
 		}
 		all, err := parseHistoryMaintenanceOptions("compact-history", []string{"--all", mode})
@@ -37,6 +43,7 @@ func TestHistoryMaintenanceRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"--all", "--apply", "--bytes-per-second", "0"},
+		{"--all", "--apply", "--batch-transaction-budget", "0s"},
 		{"--all", "--apply", "--max-replica-lag-bytes", "1"},
 		{"--all", "--apply", "--min-free-bytes", "1"},
 		{"--all", "--apply", "--guard-file", "/tmp/history-guard.json", "--guard-max-age", "0s"},
@@ -48,9 +55,10 @@ func TestHistoryMaintenanceRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
 	guarded, err := parseHistoryMaintenanceOptions("compact-history", []string{
 		"--all", "--apply", "--guard-file", "/tmp/history-guard.json", "--max-replica-lag-bytes", "4096",
 		"--min-free-bytes", "8192", "--pause-file", "/tmp/pause", "--bytes-per-second", "1024",
+		"--batch-transaction-budget", "3s",
 	})
 	if err != nil || guarded.maxReplicaLagBytes != 4096 || guarded.minFreeBytes != 8192 ||
-		guarded.pauseFile != "/tmp/pause" || guarded.bytesPerSecond != 1024 {
+		guarded.pauseFile != "/tmp/pause" || guarded.bytesPerSecond != 1024 || guarded.batchBudget != 3*time.Second {
 		t.Fatalf("guarded options: %+v %v", guarded, err)
 	}
 }
