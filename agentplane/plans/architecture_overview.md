@@ -479,6 +479,25 @@ to cut the knot might be" deleting history with the Sandbox CR and archiving as 
 operation that keeps the CR alive" (09:50), and "I guess I could treat a 'collection' as just
 something like a tag" (09:58).
 
+**2026-11-26, a tentative hunch toward D4, explicitly not a goal.** The operator "might" see it as
+the "platonically most correct" direction but is "not confident it is the good path", and does not
+want it stated as a target yet. The shape:
+
+- Core services (Session Dispatcher, app, History) run without an apiserver.
+- Agentplane reaches into Kubernetes only to: let Flux author Agentplane objects (e.g. an Identity
+  CR reconciled into Agentplane's record); realize Sandboxes as Pods or KubeVirt VMs (in principle
+  another backend, e.g. a local binary pointed at `EnvironmentService`, though building one is not
+  proposed); and treat Kubernetes accounts as an external system the Policy Controller realizes,
+  like an agent's account in a corporate CRM.
+- Sandbox records may belong in the database, so an environment needs no apiserver, which could also
+  let e2e tests skip k3s.
+
+Reasons given: no apiserver load from Agentplane's traffic, indexing and queries over records, and
+no hard Kubernetes dependency. The operator's bar: move first where today's straddling ownership is
+"obviously wrong", suspecting Identity, WorkloadCredentials and Sandboxes; Identity they called "a
+pretty clear case" ([agent teardown](agent_teardown.md)). `docs/principles.md` ("Kubernetes is a
+shared baseline") predates this and stays until a direction is chosen.
+
 ## Assumed by a lane and never confirmed
 
 | Assumption                                         | Where it lives         | What the operator said                                |
