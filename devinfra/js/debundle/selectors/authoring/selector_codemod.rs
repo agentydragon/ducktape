@@ -19,7 +19,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use binding_targets::binding_name_strings;
+use binding_targets::{DeclShape, decl_shape, declaration_name_strings};
 use js_ast::item_decl;
 use selector_outcome::{Outcome, ResolvedBy};
 use selector_resolve::{EntityIndex, Member, MemberSelector, SpecModule};
@@ -682,21 +682,7 @@ struct ChunkSelectorIndex<'m> {
 #[derive(Debug)]
 struct IndexedDeclaration {
     body_idx: usize,
-    kind: IndexedDeclarationKind,
-    declared_bindings: Vec<IndexedBinding>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum IndexedDeclarationKind {
-    Function,
-    Class,
-    Var,
-    Other,
-}
-
-#[derive(Debug)]
-struct IndexedBinding {
-    name: String,
+    kind: DeclShape,
 }
 
 fn rewrite_name_bindings_to_source_match(
@@ -1222,18 +1208,21 @@ impl<'m> ChunkSelectorIndex<'m> {
             for binding in minimize::call_use_bindings(item) {
                 call_use_sites.entry(binding).or_default().push(body_idx);
             }
-            let indexed = IndexedDeclaration::from_item(body_idx, item);
-            if indexed.declared_bindings.is_empty() {
+            let Some(decl) = item_decl(item) else {
+                continue;
+            };
+            let Some(kind) = decl_shape(decl) else {
+                continue;
+            };
+            let names = declaration_name_strings(decl);
+            if names.is_empty() {
                 continue;
             }
             let decl_idx = decls.len();
-            for binding in &indexed.declared_bindings {
-                binding_to_decl
-                    .entry(binding.name.clone())
-                    .or_default()
-                    .push(decl_idx);
+            for name in names {
+                binding_to_decl.entry(name).or_default().push(decl_idx);
             }
-            decls.push(indexed);
+            decls.push(IndexedDeclaration { body_idx, kind });
         }
         let shape_index = ShapeIndex::new(module);
         let anchor_quality = minimize::anchor_quality_overrides(module);
@@ -1246,42 +1235,6 @@ impl<'m> ChunkSelectorIndex<'m> {
             call_use_sites,
             anchor_quality,
             shape_index,
-        }
-    }
-}
-
-impl IndexedDeclaration {
-    fn from_item(body_idx: usize, item: &ModuleItem) -> Self {
-        let (kind, declared_bindings) = match item_decl(item) {
-            Some(Decl::Fn(function)) => (
-                IndexedDeclarationKind::Function,
-                vec![IndexedBinding {
-                    name: function.ident.sym.to_string(),
-                }],
-            ),
-            Some(Decl::Class(class)) => (
-                IndexedDeclarationKind::Class,
-                vec![IndexedBinding {
-                    name: class.ident.sym.to_string(),
-                }],
-            ),
-            Some(Decl::Var(var)) => (
-                IndexedDeclarationKind::Var,
-                var.decls
-                    .iter()
-                    .flat_map(|declarator| {
-                        binding_name_strings(&declarator.name)
-                            .into_iter()
-                            .map(move |name| IndexedBinding { name })
-                    })
-                    .collect(),
-            ),
-            _ => (IndexedDeclarationKind::Other, Vec::new()),
-        };
-        Self {
-            body_idx,
-            kind,
-            declared_bindings,
         }
     }
 }
@@ -1371,8 +1324,7 @@ fn synthesize_requested_declaration_groups(
             let previous = run.last().expect("run contains its first item");
             let previous_decl = &index.decls[previous.group.decl_idx];
             let next_decl = &index.decls[next.group.decl_idx];
-            if previous_decl.kind == IndexedDeclarationKind::Other
-                || previous_decl.kind != next_decl.kind
+            if previous_decl.kind != next_decl.kind
                 || previous_decl.body_idx + 1 != next_decl.body_idx
                 || previous.shape.is_none()
                 || previous.shape != next.shape
@@ -1592,18 +1544,15 @@ fn same_shape_run_extends(
 /// the group covers multiple members (a multi-declarator var group, already
 /// grouped by its shared declaration) or its declaration index is unknown. A
 /// run only merges declarations of one kind so the concatenated selector stays a
-/// homogeneous sibling run. `Other`-kind declarations are excluded: their
-/// selector is an unmodeled verbatim statement, not a holed shape, so a
-/// shape-signature match would be coincidental rather than a true co-occurrence.
+/// homogeneous sibling run.
 fn single_target_decl_kind(
     index: &ChunkSelectorIndex<'_>,
     group: &SynthesizedDeclGroup,
-) -> Option<IndexedDeclarationKind> {
+) -> Option<DeclShape> {
     if group.members.len() != 1 {
         return None;
     }
-    let kind = index.decls.get(group.decl_idx)?.kind;
-    (kind != IndexedDeclarationKind::Other).then_some(kind)
+    Some(index.decls.get(group.decl_idx)?.kind)
 }
 
 /// Build one run-based grouped source_match from `run`: the selector is the run's
