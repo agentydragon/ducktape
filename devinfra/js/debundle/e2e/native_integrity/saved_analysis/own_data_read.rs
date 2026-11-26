@@ -72,11 +72,7 @@ fn project_analysis(opts: FixtureOpts<'_>) -> CommandResult {
             .arg(fixture.spec_path.with_extension("analysis.projection")),
     )
     .expect("spawn debundle spec project-analysis");
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    }
+    CommandResult::from(output)
 }
 
 fn assert_project_analysis_rejected(opts: FixtureOpts<'_>, tokens: &[&str]) {
