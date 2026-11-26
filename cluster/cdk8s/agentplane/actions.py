@@ -38,12 +38,14 @@ from agentplane.net.peertls.config import (
     HISTORY_SERVICE_URI,
     MCP_EDGE_URI,
     NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
+    PolicyServicePeer,
 )
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import central_sampler, database, notifications, workload_tls
+from cluster.cdk8s.agentplane import central_sampler, database, notifications, policy_controller, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps, SessionDelegationProps
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -350,6 +352,10 @@ class Actions(Construct):
                     operator_services=[APP_URI],
                     connection_delegation_service=MCP_EDGE_URI,
                     policy_namespace=env.namespace,
+                    policy_service=PolicyServicePeer(
+                        target=policy_controller.tls_service(env.namespace).authority,
+                        tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=ACTIONS_URI),
+                    ),
                     caller_service_account_namespaces=props.caller_service_account_namespaces,
                     session_delegation_service=CENTRAL_SAMPLER_URI if props.central_sampler_session_delegation else "",
                     operator_oidc=props.operator_oidc,
@@ -634,6 +640,7 @@ class Actions(Construct):
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
+                policy_controller.tls_service(namespace).egress(),
                 *(
                     [self.dispatcher.egress(), self.history.egress()]
                     if self.env.actions.orchestration_v1 is not None or self.env.actions.session_delegation is not None
