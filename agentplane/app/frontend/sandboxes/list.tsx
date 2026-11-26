@@ -9,6 +9,8 @@ import {
   ActionIcon,
   Button,
   Checkbox,
+  Fieldset,
+  Autocomplete,
   Group,
   Menu,
   MultiSelect,
@@ -38,7 +40,15 @@ import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
 import { TopbarTitle } from "../shell/topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
-import { launchEnvironment, listEnvironmentTemplates, resumeSandbox, suspendEnvironment } from "./client";
+import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
+import { useIdentities } from "../policy/watch";
+import {
+  createEnvironment,
+  launchEnvironment,
+  listEnvironmentTemplates,
+  resumeSandbox,
+  suspendEnvironment,
+} from "./client";
 
 type NewSandboxForm = {
   name: string;
@@ -84,6 +94,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandboxForm>(EMPTY_FORM);
+  const { identities, error: identityError } = useIdentities();
+  const [identityOverride, setIdentityOverride] = useState<string | null>(null);
   const [defaults, setDefaults] = useState<DefaultFields>({
     wake_on_send: false,
     idle_suspend_after_seconds: null,
@@ -106,6 +118,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     selectedPreset ?? "sandbox",
     new Set(rows.map((row) => row.target!.name))
   );
+  const suggestedIdentity = form.name || placeholderName;
+  const identityInput = identityOverride ?? suggestedIdentity;
+  const identityName = identityInput || suggestedIdentity;
+  const names = (identities ?? []).flatMap((item) => (item.identity ? [item.identity.name] : []));
+  const existing = names.includes(identityName);
   const nameError = sandboxNameError(form.name || placeholderName);
 
   /** Fill the Sandbox creation fields from a preset; session defaults remain app configuration. */
@@ -174,6 +191,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   async function create(): Promise<void> {
     const request = createProto(CreateEnvironmentRequestSchema, {
       name: form.name || placeholderName,
+      identity: identityName,
       template: form.template,
       inboxTags: form.inbox_tags,
       bootstrap: form.bootstrap,
@@ -185,7 +203,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       preset: selectedPreset ?? undefined,
     });
     try {
-      const data = await launchEnvironment(request, form.policy_sets);
+      const data = existing ? await createEnvironment(request) : await launchEnvironment(request, form.policy_sets);
+      setIdentityOverride(null);
       setForm({ ...EMPTY_FORM, ...defaults });
       setSelectedPreset(null);
       const params = new URLSearchParams(searchParams);
@@ -214,82 +233,117 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         />
       )}
       {error && <Text c="red">{error}</Text>}
-      <Group align="flex-end">
-        <Select
-          clearable
-          label="Launch preset"
-          description="Fills the runtime template, policy sets, inbox tags, and bootstrap below; session defaults stay in app configuration"
-          data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
-          value={selectedPreset}
-          onChange={(name) => {
-            const preset = presets.find((candidate) => candidate.name === name) ?? null;
-            pickPreset(preset);
-            const params = new URLSearchParams(searchParams);
-            if (preset) params.set(PRESET_PARAM, preset.name);
-            else params.delete(PRESET_PARAM);
-            setSearchParams(params, { replace: true });
-          }}
-          style={{ flex: "1 1 12rem" }}
-        />
-        <TextInput
-          label="Name"
-          value={form.name}
-          placeholder={placeholderName}
-          error={form.name ? nameError : null}
-          onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
-          style={{ flex: "1 1 10rem" }}
-        />
-        <Select
-          label="Runtime template"
-          description="The Pod or VM shape this Sandbox runs on"
-          searchable
-          clearable
-          data={templates}
-          value={form.template || null}
-          onChange={(template) => setForm({ ...form, template: template ?? "" })}
-          placeholder={templates.length > 0 ? "Choose a template" : "Loading templates…"}
-          style={{ flex: "1 1 14rem" }}
-        />
-      </Group>
-      <MultiSelect
-        label="Policy sets"
-        description="What this sandbox may reach and do"
-        hidePickedOptions
-        data={policySets}
-        value={form.policy_sets ?? []}
-        onChange={(picked) => setForm({ ...form, policy_sets: picked })}
-        w="100%"
+      <Select
+        clearable
+        label="Launch preset"
+        description="Fills the runtime template, policy sets, inbox tags, and bootstrap below; session defaults stay in app configuration"
+        data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
+        value={selectedPreset}
+        onChange={(name) => {
+          const preset = presets.find((candidate) => candidate.name === name) ?? null;
+          pickPreset(preset);
+          const params = new URLSearchParams(searchParams);
+          if (preset) params.set(PRESET_PARAM, preset.name);
+          else params.delete(PRESET_PARAM);
+          setSearchParams(params, { replace: true });
+        }}
+        maw={420}
       />
-      <TagsInput
-        label="Inbox tags"
-        description="Groups a send grant can name this sandbox by"
-        value={form.inbox_tags ?? []}
-        onChange={(tags) => setForm({ ...form, inbox_tags: tags })}
-        maxLength={63}
-        w="100%"
-      />
-      <Group align="flex-end" gap="sm">
-        <Checkbox
-          label="Wake on message"
-          checked={form.wake_on_send ?? false}
-          onChange={(event) => setForm({ ...form, wake_on_send: event.currentTarget.checked })}
-        />
-        <IdleSuspendField
-          seconds={form.idle_suspend_after_seconds}
-          onChange={(seconds) => setForm({ ...form, idle_suspend_after_seconds: seconds })}
-        />
-        <Button onClick={() => void create()} disabled={nameError !== null || !form.template}>
+      <Fieldset legend="Sandbox">
+        <Stack>
+          <Group align="flex-end">
+            <TextInput
+              label="Name"
+              value={form.name}
+              placeholder={placeholderName}
+              error={form.name ? nameError : null}
+              onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
+              style={{ flex: "1 1 10rem" }}
+            />
+            <Select
+              label="Runtime template"
+              description="The Pod or VM shape this Sandbox runs on"
+              searchable
+              clearable
+              data={templates}
+              value={form.template || null}
+              onChange={(template) => setForm({ ...form, template: template ?? "" })}
+              placeholder={templates.length > 0 ? "Choose a template" : "Loading templates…"}
+              style={{ flex: "1 1 14rem" }}
+            />
+          </Group>
+          <TagsInput
+            label="Inbox tags"
+            description="Groups a send grant can name this sandbox by"
+            value={form.inbox_tags ?? []}
+            onChange={(tags) => setForm({ ...form, inbox_tags: tags })}
+            maxLength={63}
+            w="100%"
+          />
+          <Group align="flex-end" gap="sm">
+            <Checkbox
+              label="Wake on message"
+              checked={form.wake_on_send ?? false}
+              onChange={(event) => setForm({ ...form, wake_on_send: event.currentTarget.checked })}
+            />
+            <IdleSuspendField
+              seconds={form.idle_suspend_after_seconds}
+              onChange={(seconds) => setForm({ ...form, idle_suspend_after_seconds: seconds })}
+            />
+          </Group>
+          <Disclosure summary="Bootstrap script" keepMounted>
+            <DisclosureBody>
+              {" "}
+              <Textarea
+                aria-label="Bootstrap script"
+                description="Runs once before this Sandbox's first session"
+                autosize
+                minRows={2}
+                value={form.bootstrap}
+                onChange={(event) => setForm({ ...form, bootstrap: event.currentTarget.value })}
+              />
+            </DisclosureBody>
+          </Disclosure>
+        </Stack>
+      </Fieldset>
+      <Fieldset legend="Identity">
+        <Stack>
+          <Autocomplete
+            label="Identity name"
+            data={names}
+            value={identityInput}
+            placeholder={suggestedIdentity}
+            onChange={setIdentityOverride}
+            error={identityError}
+            description={
+              identities === null
+                ? "Checking identities…"
+                : existing
+                  ? "Uses this existing identity and its current grants."
+                  : `Creates a new identity: ${identityName}`
+            }
+          />
+          {identities !== null && !existing && (
+            <MultiSelect
+              label="Policy sets"
+              description="Grants for the new identity"
+              hidePickedOptions
+              data={policySets}
+              value={form.policy_sets ?? []}
+              onChange={(picked) => setForm({ ...form, policy_sets: picked })}
+              w="100%"
+            />
+          )}
+        </Stack>
+      </Fieldset>
+      <Group>
+        <Button
+          onClick={() => void create()}
+          disabled={nameError !== null || !form.template || identities === null || identityError !== null}
+        >
           New sandbox
         </Button>
       </Group>
-      <Textarea
-        label="Bootstrap script"
-        description="Runs once before this Sandbox's first session"
-        autosize
-        minRows={2}
-        value={form.bootstrap}
-        onChange={(event) => setForm({ ...form, bootstrap: event.currentTarget.value })}
-      />
       <Table>
         <Table.Thead>
           <Table.Tr>
