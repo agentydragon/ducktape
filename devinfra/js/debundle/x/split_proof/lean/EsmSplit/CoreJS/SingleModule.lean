@@ -59,7 +59,7 @@ theorem runProgram_singleModuleMetadata (body : List (Nat × CoreJS.Stmt))
 
 #print axioms runProgram_singleModuleMetadata
 
-private theorem declareConstTops_ok {W : World} (tops : List (Nat × Stmt))
+theorem declareConstTops_ok {W : World} (tops : List (Nat × Stmt))
     (consts : ∀ p ∈ tops, ∃ name value, p.2 = .decl .const name value) (s : State W)
     (regions : ∀ p ∈ tops, p.1 + 1 < s.cells.size) :
     ∃ frames ready, declareTops tops s = .ok frames ready ∧ ready.cells.size = s.cells.size := by
@@ -152,6 +152,7 @@ theorem link_singleModuleConst (name : Name) (exports : List (Name × Name))
     rw [scopes, lift, M.pure_bind, sorted_units sorted, hoists, M.pure_bind] <;> rfl
   exact ⟨frames, ⟨[(m, env)], ready, equation⟩, allocated, declareTops_names _ allocated, rfl⟩
 
+#print axioms declareConstTops_ok
 #print axioms link_singleModuleConst
 
 end CoreJS
