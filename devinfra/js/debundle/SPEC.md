@@ -403,38 +403,18 @@ source/spec checks, even when an analysis artifact can be reused. The standalone
 CLI remains one binary.
 
 Default Bazel apply consumes a typed canonical spec projection. YAML comments,
-whitespace, and module-level `note` do not affect this projection. Emitted
-`comment` fields, report-relevant notes, annotation-conflict inputs, and semantic
-map entries remain inputs. The internal Bazel `spec project-apply` and `run --apply-projection` interface
-treats the projection as authoritative. Bazel dependencies enforce its freshness;
-context flags retain original authored paths for report locations only; `--projection-root` allows
-paths under that root to move between execution roots. The consumer still checks
-native analysis compatibility. For tree specs, the projection records generated
-output paths relative to a placeholder and binds them to the consumer's
-`--out-root`. This lets targets with the same authored tree share canonical
-projection bytes while keeping spec and source-path compatibility checks.
-Flat specs retain their authored output paths. Projected input cannot export full graphs: graph
-export continues to read exact authored files and capture their membership and
-bytes for replay validation.
-
-The shared projection action reads source and package inputs needed by analysis,
-so changing either may rerun both projection outputs even if the canonical apply
-bytes remain the same. `DebundleAnalyze` reads only its analysis projection and
-source/package inputs. Each apply action reads its selected apply projection,
-saved analysis, and its own source/package inputs; native compatibility checks
-still reject stale or mismatched facts.
-
-The analysis and apply projection files use typed proto3 messages. Their generated
-Rust types are built by Bazel. Stored projections have no cross-version
-compatibility guarantee and must be regenerated with the consuming engine.
-Saved analysis uses a compressed MessagePack container with a typed protobuf
-purity table. Saved facts refer to its verdicts by index; shared cause references
-must point to earlier table entries. Other saved-analysis facts retain MessagePack.
-
-The analysis projection omits only fields explicitly declared as author-note
-provenance. Semantic map entries remain data even when a chunk, export, or
-property name is literally `note`. Graph-only commuting-statement notes remain
-authored report provenance and do not affect analysis identity.
+whitespace, and module-level `note` do not affect it; emitted `comment` fields,
+report-relevant notes, annotation-conflict inputs, and semantic map entries
+remain inputs. The analysis projection omits only fields explicitly declared as
+author-note provenance: semantic map entries remain data even when a chunk,
+export, or property name is literally `note`, and graph-only commuting-statement
+notes remain report provenance without affecting analysis identity. Stored
+projections have no cross-version compatibility guarantee and must be
+regenerated with the consuming engine. The hidden `spec project-apply` and
+`run --apply-projection` commands are an internal Bazel action interface, and
+projected input cannot export full graphs. Action inputs, path binding and
+sharing: [Bazel integration](docs/bazel_integration.md#explicit-analysis-and-apply-stages);
+saved formats: [design § Pipeline split](docs/design.md#pipeline-split-frontend-elaboration--chunk-analysis--materialization).
 
 ### Reading-only output on gate rejection
 
