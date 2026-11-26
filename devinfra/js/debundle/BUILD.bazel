@@ -351,6 +351,13 @@ genrule(
 )
 
 rust_library(
+    name = "progress",
+    srcs = ["progress.rs"],
+    edition = "2024",
+    deps = ["@crates//:strum"],
+)
+
+rust_library(
     name = "work_metrics",
     srcs = ["work_metrics.rs"],
     edition = "2024",
@@ -375,7 +382,6 @@ rust_library(
     name = "analysis",
     srcs = [
         "diagnostics.rs",
-        "diagnostics/progress.rs",
         "facts/abstract_domain.rs",
         "facts/abstract_domain/heap.rs",
         "facts/analyze.rs",
@@ -386,6 +392,7 @@ rust_library(
         "facts/cell_overlap.rs",
         "facts/collector.rs",
         "facts/evaluation_effects.rs",
+        "facts/flow_calls.rs",
         "facts/global_object.rs",
         "facts/heap_contents.rs",
         "facts/initialization_effects.rs",
@@ -442,6 +449,7 @@ rust_library(
         ":binding_targets",
         ":graph_provenance",
         ":js_ast",
+        ":progress",
         ":saved_purity_rust_proto",
         ":source_identity",
         ":work_metrics",
@@ -493,6 +501,7 @@ rust_library(
         ":analysis_model",
         ":binding_targets",
         ":js_ast",
+        ":progress",
         "//devinfra/js/debundle/analysis_domain",
         "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/facts/sync_effects",
@@ -741,6 +750,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":progress",
         ":telemetry",
         "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:anyhow",

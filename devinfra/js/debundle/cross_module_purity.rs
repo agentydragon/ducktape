@@ -32,7 +32,7 @@
 
 mod swc_parallel;
 
-use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract, progress};
+use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract};
 use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -1469,7 +1469,8 @@ pub fn resolve_imported_callable_summaries(
                     .get(*module)
                     .unwrap_or(&empty_sets),
             }),
-        diagnostics,
+        diagnostics.metrics(),
+        diagnostics.progress_observer(),
     );
     diagnostics.progress("*", progress::Phase::ProgramValueFlow, progress::State::End);
     add_inferred_wrapper_summaries(

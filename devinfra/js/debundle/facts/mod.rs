@@ -59,6 +59,7 @@ pub mod callable_inference;
 mod cell_overlap;
 pub mod collector;
 pub mod evaluation_effects;
+pub mod flow_calls;
 pub mod global_object;
 pub mod heap_contents;
 pub mod initialization_effects;
