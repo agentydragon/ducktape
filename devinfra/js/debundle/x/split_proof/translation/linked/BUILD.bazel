@@ -81,6 +81,22 @@ js_test(
 )
 
 js_test(
+    name = "sparse_checked_artifact_test",
+    size = "medium",
+    data = [
+        ":harness",
+        "//devinfra/js/debundle/x/split_proof/lean:checked_artifact_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    ],
+    entry_point = "sparse_checked_artifact_test.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:checked_artifact_test_runner)",
+        "SPLIT_PROOF_MODULE_IO": "$(rootpath //devinfra/js/debundle/x/split_proof/translation:module_io)",
+        "SPLIT_PROOF_TEST_SPARSE": "1",
+    },
+)
+
+js_test(
     name = "joint_static_test",
     size = "medium",
     data = _TEST_DATA + [

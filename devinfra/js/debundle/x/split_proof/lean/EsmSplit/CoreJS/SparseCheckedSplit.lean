@@ -43,13 +43,14 @@ private theorem forRequest {source output : Program}
     rw [runs w n]
 
 /-- Construct using the existing splitter and accept only actual linked,
-order-preserved all-outcomes evidence. Only the two explicitly supported
-sparse layouts are admitted; omitted source metadata is not modeled here. -/
+order-preserved all-outcomes evidence. The source has two increasing unit IDs,
+the first zero and the second separated by a gap. Omitted source metadata is
+not modeled here. -/
 def construct {source request} (placement : Placement source request) (requested : Guarantee) :
     Except String { output : Program // ResolvedPlacement.Sound placement requested output } := do
-  let ids := placement.module.body.map Prod.fst
-  unless ids == [0, 2] || ids == [0, 3] do
-    throw "sparse construction supports only unit IDs 0,2 or 0,3"
+  let [0, second] := placement.module.body.map Prod.fst |
+    throw "sparse construction requires two units with first ID 0"
+  unless second > 1 do throw "sparse construction requires a gap after the first unit"
   unless decide ((placement.module.exports.map Prod.fst).Nodup) do
     throw "source public export names are duplicated"
   let template ← CheckedSplit.checkedSplit (compactSource placement) placement.normalized .allOutcomes

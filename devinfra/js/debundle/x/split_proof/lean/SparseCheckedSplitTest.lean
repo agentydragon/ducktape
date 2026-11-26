@@ -77,15 +77,21 @@ private def checkEmitterBoundary : IO Unit := do
 def test : IO Unit := do
   checkCase 2 42 names
   checkCase 3 7 (ordinals 3)
+  checkCase 4 9 (ordinals 4)
   let original := source 2 (.num 42)
   let reordered := { names with modules := [("worker.mjs", [.name "result"]), ("entry.mjs", [.name "seed"])] }
   let reorderedPlacement ← IO.ofExcept (resolved original reordered)
   expectError "requested placement changes the source unit order" (construct reorderedPlacement .allOutcomes)
   let invalid := { names with modules := [("worker.mjs", [.stmt 1]), ("entry.mjs", [.name "result"])] }
   expectError "source position 1 has no executable unit" (resolved original invalid)
-  let unsupported := source 4 (.num 42)
-  let unsupportedPlacement ← IO.ofExcept (resolved unsupported names)
-  expectError "sparse construction supports only unit IDs 0,2 or 0,3" (construct unsupportedPlacement .allOutcomes)
+  let noGap := source 1 (.num 42)
+  let noGapPlacement ← IO.ofExcept (resolved noGap names)
+  expectError "sparse construction requires a gap after the first unit" (construct noGapPlacement .allOutcomes)
+  let descending : Program := ⟨"entry.mjs", [⟨"entry.mjs", [],
+    [(2, .decl .const "seed" (.num 42)), (0, .decl .const "result" (.var "seed"))],
+    [("seed", "seed")]⟩]⟩
+  let descendingPlacement ← IO.ofExcept (resolved descending names)
+  expectError "sparse construction requires two units with first ID 0" (construct descendingPlacement .allOutcomes)
   let duplicateExports : Program := ⟨"entry.mjs", [⟨"entry.mjs", [],
     [(0, .decl .const "seed" (.num 42)), (2, .decl .const "result" (.var "seed"))],
     [("seed", "seed"), ("seed", "seed")]⟩]⟩

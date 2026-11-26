@@ -586,6 +586,27 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "sparse_checked_artifact",
+    srcs = ["EsmSplit/LowerSplit/SparseArtifact.lean"],
+    deps = [
+        ":corejs_sparse_checked_split",
+        ":lowersplit_support",
+        ":lowersplit_workflows",
+    ],
+)
+
+lean_axiom_test(
+    name = "sparse_checked_artifact_axioms_test",
+    imports = ["EsmSplit.LowerSplit.SparseArtifact"],
+    theorems = [
+        "EsmSplit.LowerSplit.SparseArtifact.prepare",
+        "EsmSplit.LowerSplit.SparseArtifact.verify",
+        "EsmSplit.LowerSplit.SparseArtifact.verify_sound",
+    ],
+    deps = [":sparse_checked_artifact"],
+)
+
 lean_binary(
     name = "checked_artifact_test_runner",
     testonly = True,
@@ -596,6 +617,7 @@ lean_binary(
         ":checked_artifact",
         ":lowersplit_support",
         ":lowersplit_workflows",
+        ":sparse_checked_artifact",
     ],
 )
 

@@ -1,6 +1,7 @@
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.CheckedArtifact
 import EsmSplit.LowerSplit.Input
+import EsmSplit.LowerSplit.SparseArtifact
 
 /-! Test-only entry point for the checked construction and real file staging. -/
 
@@ -21,16 +22,29 @@ private def run (manifestPath out : System.FilePath) (requested : Guarantee) (ch
     let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes input.program input.source)
     let source ← timePhase timings "source_lowering" fun _ =>
       IO.ofExcept (CoreJS.LinkedInput.decodeSingletonSource input.program spec.entry)
-    let built ← timePhase timings "checked_construction" fun _ =>
-      IO.ofExcept (CoreJS.CheckedSplit.checkedSplit source spec requested)
-    let programs ← timePhase timings "output_ast" fun _ =>
-      IO.ofExcept (ESTreeEmit.programs nodes built.bundle built.plan input.source)
-    let part : OutputPart := { programs, source := input.source, input := input.input, work }
-    let verified ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work checkOnly timings fun files =>
-      timePhase timings "checked_correspondence" fun _ =>
+    let sparse := (← IO.getEnv "SPLIT_PROOF_TEST_SPARSE") == some "1"
+    let (programs, check) : Json × (Json → IO (Except CertificationRefusal Unit)) ← if sparse then do
+      let placement ← timePhase timings "checked_placement" fun _ =>
+        IO.ofExcept (CoreJS.ResolvedPlacement.resolve source spec (CoreJS.CheckedSplit.requestedPlacement source))
+      let built ← timePhase timings "checked_construction" fun _ =>
+        IO.ofExcept (CoreJS.SparseCheckedSplit.construct placement requested)
+      let prepared ← timePhase timings "output_ast" fun _ =>
+        IO.ofExcept (SparseArtifact.prepare input.program input.source placement)
+      pure (prepared.programs, fun files => timePhase timings "checked_correspondence" fun _ =>
+        match SparseArtifact.verify input.program files built prepared.plan with
+        | .ok _ => pure (.ok ())
+        | .error reason => pure (.error { reason }))
+    else do
+      let built ← timePhase timings "checked_construction" fun _ =>
+        IO.ofExcept (CoreJS.CheckedSplit.checkedSplit source spec requested)
+      let programs ← timePhase timings "output_ast" fun _ =>
+        IO.ofExcept (ESTreeEmit.programs nodes built.bundle built.plan input.source)
+      pure (programs, fun files => timePhase timings "checked_correspondence" fun _ =>
         match CheckedArtifact.verify input.program files built with
         | .ok _ => pure (.ok ())
-        | .error reason => pure (.error { reason })
+        | .error reason => pure (.error { reason }))
+    let part : OutputPart := { programs, source := input.source, input := input.input, work }
+    let verified ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work checkOnly timings check
     IO.ofExcept (verified.mapError (·.reason))
 
 def main (args : List String) : IO UInt32 := do
