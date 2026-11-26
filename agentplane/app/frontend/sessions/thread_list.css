@@ -49,15 +49,40 @@
   align-items: baseline;
 }
 .agentplane-thread-group-links > .agentplane-thread-list-group-label {
-  flex: 1;
+  flex: 1 0 max-content;
   min-width: 0;
+  max-width: 100%;
+}
+.agentplane-thread-group-links:has(.agentplane-thread-identity-link) > .agentplane-thread-list-group-label {
+  max-width: calc(100% - 24px); /* Keep the 16px fingerprint and its padding available. */
 }
 .agentplane-thread-identity-link {
   display: inline-flex;
   align-self: stretch;
   align-items: center;
+  min-width: 24px;
   padding: 4px;
+  font-size: var(--mantine-font-size-xs);
+  text-decoration: none;
   color: var(--mantine-color-anchor);
+}
+
+/* The name is one unbreakable flex item. When it would wrap below the
+   fingerprint, clip that second line, keeping the icon visible on the first. */
+.agentplane-thread-identity-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: flex-end;
+  column-gap: 4px;
+  height: 16px;
+  line-height: 16px;
+  min-width: 0;
+  overflow: hidden;
+}
+.agentplane-thread-identity-content > * {
+  flex: none;
+  white-space: nowrap;
 }
 
 .agentplane-thread-list-group-count {

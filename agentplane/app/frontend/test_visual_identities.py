@@ -19,6 +19,16 @@ async def _open_identity(view: VisualPage, app: AgentplaneFixture, name: str) ->
 
 
 @DESKTOP_AND_MOBILE
+async def test_sandbox_heading_identity_labels(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.bind_sandbox_identity("ready-sandbox", "docs")
+    await app.bind_sandbox_identity("pending-sandbox", "documentation-and-release-automation-service-account")
+    await app.bind_sandbox_identity("suspended-sandbox", "suspended-sandbox")
+    await app.mount_app("/")
+    await expect(view.page.get_by_role("link", name="Identity: docs", exact=True).last).to_be_visible()
+    await view.capture()
+
+
+@DESKTOP_AND_MOBILE
 async def test_two_sandboxes_using_one_identity(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.bind_sandbox_identity("suspended-sandbox", "referenced-identity")
     await _open_identity(view, app, "referenced-identity")

@@ -206,7 +206,10 @@ function ThreadGroupSection({
             aria-label={`Identity: ${group.sandbox.identityName}`}
             onClick={onNavigate}
           >
-            <IconFingerprint size={16} />
+            <span className="agentplane-thread-identity-content">
+              <IconFingerprint size={16} />
+              {group.sandbox.identityName !== group.sandboxName && <span>{group.sandbox.identityName}</span>}
+            </span>
           </Link>
         )}
       </div>
