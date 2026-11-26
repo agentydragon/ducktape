@@ -11,8 +11,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use analysis::SequencedCause;
 use debundle_e2e_support::*;
+use graph::SequencedCause;
 use serde::Deserialize;
 use serde_json::Value;
 

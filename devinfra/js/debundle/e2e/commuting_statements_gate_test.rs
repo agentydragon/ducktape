@@ -15,13 +15,13 @@
 //!   run emits exactly what it emits without the entry.
 
 use analysis::analysis_inputs::CommutingStatementsRef;
-use analysis::graph::UnusedPremiseReason;
-use analysis::{CommutingStatementsDiagnostic, DependencyGraphReport, SequencedCause};
+use analysis::reports::spec_lint::UnusedPremiseReason;
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{
     FixtureGraphExt, commuting_statements_diagnostics, source_unit_for_binding,
 };
 use debundle_e2e_support::*;
+use graph::{CommutingStatementsDiagnostic, DependencyGraphReport, SequencedCause};
 
 const ENTRY: &str = "commuting_statements[0]";
 const CONTRADICTION: &str = "contradicts a source fact";
@@ -155,7 +155,7 @@ fn expect_unused_is_a_warning(
 fn inerted_edges<'a>(
     graph: &'a DependencyGraphReport,
     premise: &CommutingStatementsRef,
-) -> Vec<&'a analysis::DependencyEdgeReport> {
+) -> Vec<&'a graph::DependencyEdgeReport> {
     let entry = graph
         .commuting_statements
         .iter()

@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use super::*;
 use analysis::*;
 use analysis_model::DepKind;
+use graph::*;
 use raw_js_test_support::parse;
 use source_identity::ChunkId;
 use swc_common::SyntaxContext;
@@ -455,8 +456,8 @@ fn quotient_report_keeps_scc_ids_in_graph_traversal_order() {
     assert_eq!(
         first.modules,
         [
-            reports::module_key(ModuleId(2)),
-            reports::module_key(ModuleId(3))
+            report::module_key(ModuleId(2)),
+            report::module_key(ModuleId(3))
         ]
     );
     assert_eq!(first.module_edge_ids, ["module_edge:2", "module_edge:3"]);
@@ -464,8 +465,8 @@ fn quotient_report_keeps_scc_ids_in_graph_traversal_order() {
     assert_eq!(
         second.modules,
         [
-            reports::module_key(ModuleId(0)),
-            reports::module_key(ModuleId(1))
+            report::module_key(ModuleId(0)),
+            report::module_key(ModuleId(1))
         ]
     );
     assert_eq!(second.module_edge_ids, ["module_edge:0", "module_edge:1"]);

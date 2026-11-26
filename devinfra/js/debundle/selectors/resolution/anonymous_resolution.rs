@@ -9,8 +9,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use analysis::{DependencyGraphReport, SourceUnitClass};
 use anyhow::{Context, Result, bail};
+use graph::{DependencyGraphReport, SourceUnitClass};
 use graph_provenance::VerifiedGraphSourceContext;
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
 pub use selector_resolve::ModuleNeutralReferenceMeaning;

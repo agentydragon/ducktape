@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::analysis_test_support::{
+use crate::test_support::{
     analyze_facts, analyze_facts_with_hints, build_dependency_graph, hints_with_decorate_helper,
     test_id,
 };
 use crate::*;
+use analysis::*;
 use analysis_model::DepKind;
 use raw_js_test_support::parse;
 use source_identity::{SourceUnitId, SourceUnitOrdinal};

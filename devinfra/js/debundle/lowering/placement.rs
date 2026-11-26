@@ -3,9 +3,10 @@
 use source_identity::StatementId;
 use std::collections::{BTreeMap, HashMap};
 
-use analysis::{ModuleId, PlacementProjection, PlacementProjectionViolation};
+use analysis::ModuleId;
 use anyhow::{Context, Result, ensure};
 use gate::AssignmentAnalysis;
+use graph::{PlacementProjection, PlacementProjectionViolation};
 use swc_ecma_ast::Id;
 
 /// Immutable placement instructions tied to the exact assignment the shared

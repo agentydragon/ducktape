@@ -262,8 +262,8 @@ pub(super) fn apply_commuting_statements(
         }
         unused.push(CommutingStatementsUnused {
             spec_location: premise.spec_location.clone(),
-            a: UnusedCommutingEndpoint::new(nodes, &premise.a),
-            b: UnusedCommutingEndpoint::new(nodes, &premise.b),
+            a: unused_commuting_endpoint(nodes, &premise.a),
+            b: unused_commuting_endpoint(nodes, &premise.b),
             reason: if summarized {
                 UnusedPremiseReason::SummarizedEndpoints
             } else {
@@ -280,7 +280,7 @@ pub(super) fn preserve_commuting_order(
     edges: &mut Vec<DependencyEdge>,
     applied: &mut [AppliedCommutingPremise],
 ) {
-    use crate::graph::CommutationOrder;
+    use crate::CommutationOrder;
     use std::ops::ControlFlow;
 
     let pairs: Vec<_> = applied

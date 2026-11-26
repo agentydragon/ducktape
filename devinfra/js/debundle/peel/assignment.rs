@@ -2,13 +2,14 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use analysis::assignment_assembly::detect_atomic_group_conflict;
-use analysis::{
-    AtomicGroup, DependencyGraphInput, EntryDestination, ModuleAssignment, ModuleDestinationKind,
-    ModuleId, StatementKind, compute_atomic_groups,
-};
+use analysis::{EntryDestination, ModuleId, StatementKind};
 use anyhow::{Context, Result, ensure};
 use gate::{AssignmentValidation, EsmImportSchedule};
+use graph::assignment_assembly::detect_atomic_group_conflict;
+use graph::{
+    AtomicGroup, DependencyGraphInput, ModuleAssignment, ModuleDestinationKind,
+    compute_atomic_groups,
+};
 use serde::{Deserialize, Serialize};
 use spec::{ModulePath, is_residual_namespace_path};
 

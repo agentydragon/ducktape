@@ -1,8 +1,8 @@
-use analysis::ProgramGraphReport;
 use analysis::analysis_inputs::NativeIntegrity;
 use analysis::reports::author_inputs::AuthorInputLocations;
 use anyhow::{Result, bail};
 use artifact::paths::{path_from_module_path, relative_module_path};
+use graph::ProgramGraphReport;
 use graph_provenance::GraphProvenance;
 use output_layout::{DEPENDENCY_GRAPH_REPORT, PROGRAM_GRAPH_REPORT};
 use serde::Serialize;

@@ -14,10 +14,10 @@
 //! not re-verify; soundness shifts to the spec author. See
 //! <docs/purity_soundness.md> "Declared purity".
 
-use analysis::EdgeRoleReport;
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+use graph::EdgeRoleReport;
 use spec::ChunkRenames;
 
 const VENDOR_FILE: &[(&str, &str)] = &[(

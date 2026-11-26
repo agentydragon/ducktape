@@ -1,8 +1,8 @@
 //! A local array content mutation must stay ordered before a separate reader.
-use analysis::DependencyGraphReport;
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_ordinal};
 use debundle_e2e_support::*;
+use graph::DependencyGraphReport;
 use spec::{IntrinsicFamilies, IntrinsicFamily, IntrinsicsNeverWritten};
 
 fn assert_sequenced_edge(graph: &DependencyGraphReport, later: usize, earlier: usize) {

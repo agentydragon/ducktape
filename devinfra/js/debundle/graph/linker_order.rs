@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::graphmap::DiGraphMap;
 
-use crate::ModuleId;
 use crate::module_assignment::ModuleAssignment;
+use analysis::ModuleId;
 
 use super::dependency_graph::DependencyGraph;
 use super::edge::DependencyEdgeId;

@@ -26,7 +26,7 @@ pub enum ChunkDiagnostic {
     },
     RedundantAdmissionOverride(AdmissionCheck),
     Selector(Box<selector_outcome::SelectorOutcome>),
-    UnusedCommutingStatements(Box<crate::CommutingStatementsUnused>),
+    UnusedCommutingStatements(Box<crate::reports::spec_lint::CommutingStatementsUnused>),
     DanglingExportContract {
         contract: ExportContract,
         export: String,

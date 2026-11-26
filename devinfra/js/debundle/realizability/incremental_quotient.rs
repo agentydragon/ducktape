@@ -5,13 +5,13 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::graph::{
+use analysis::ids::ModuleId;
+use graph::module_assignment::ModuleAssignment;
+use graph::report::SccCore;
+use graph::{
     ChunkConstrainingEdgeSet, DependencyEdge, DependencyEdgeId, DependencyGraph, EndpointView,
     project_endpoints,
 };
-use analysis::ids::ModuleId;
-use analysis::module_assignment::ModuleAssignment;
-use analysis::reports::SccCore;
 use rustc_hash::FxHashSet;
 use source_identity::SourceUnitId;
 
@@ -616,7 +616,7 @@ impl IncrementalQuotient {
 
     pub(super) fn add_current_edge(
         &mut self,
-        edge: &analysis::graph::DependencyEdge,
+        edge: &graph::DependencyEdge,
         assignment: &ModuleAssignment,
     ) {
         debug_assert_eq!(

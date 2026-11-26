@@ -10,19 +10,22 @@ use crate::exports::PublicExportSurface;
 use crate::imports::{ArtifactSourceImportResolutionCache, resolve_imported_binding};
 use crate::plans::ModulePlan;
 use crate::util::target_file_for_request;
-use analysis::assignment_assembly::assemble_assignment_with_source_unit_claims;
 use analysis::{
-    BindingCatalogue, BindingKind, DependencyGraphAndAtomicGroups, DestructuringDeclaratorGroup,
-    DestructuringGroupOwnerClassification, EntryDestination, ImportedSourceTarget, ModuleId,
-    ModuleRole, NestedVarDestinationClassification, NestedVarStatement, SourceUnitClass,
-    SourceUnitLayout, chunk_constraining_module_edges, classify_destructuring_group_owners,
-    classify_nested_var_placement, top_level_id,
+    BindingCatalogue, BindingKind, EntryDestination, ImportedSourceTarget, ModuleId, ModuleRole,
+    top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
 use frontend_elaboration::MemberClaimProjection;
 use frontend_elaboration::chunk_ast::{SourceExportIdentity, TopLevelDecl, binding_declaration};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::{EsmImportOrder, EsmImportSchedule};
+use graph::assignment_assembly::assemble_assignment_with_source_unit_claims;
+use graph::{
+    DependencyGraphAndAtomicGroups, DestructuringDeclaratorGroup,
+    DestructuringGroupOwnerClassification, NestedVarDestinationClassification, NestedVarStatement,
+    SourceUnitClass, SourceUnitLayout, chunk_constraining_module_edges,
+    classify_destructuring_group_owners, classify_nested_var_placement,
+};
 use ownership_subset::SelectedModule;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
@@ -81,7 +84,7 @@ struct CoarseResidualBucket {
 
 /// Borrow the graph and its layout after checking that every node has a syntax location.
 struct PlacementSourceUnits<'a> {
-    graph: &'a analysis::DependencyGraph,
+    graph: &'a graph::DependencyGraph,
     layout: &'a SourceUnitLayout,
 }
 

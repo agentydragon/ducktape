@@ -3,9 +3,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use analysis::{DependencyGraphReport, ModuleDestinationKind, StatementKind};
+use analysis::StatementKind;
 use anonymous_resolution::resolve_source_file;
 use anyhow::{Context, Result, anyhow, bail};
+use graph::{DependencyGraphReport, ModuleDestinationKind};
 use peel::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
 use spec::{LogicalModule, ModulePath, is_residual_namespace_path};
 use spec_modules::{coalesce_source_match_claims, module_path_from_file};
@@ -133,7 +134,7 @@ pub fn run_source_unit_apply(
     stderr: &mut (dyn std::io::Write + Send),
     modules_root: &Path,
     dependency_graph_path: &Path,
-    graph_input: analysis::DependencyGraphInput,
+    graph_input: graph::DependencyGraphInput,
     source_root: &Path,
     source_context: Option<&graph_provenance::VerifiedGraphSourceContext>,
     options: SourceUnitApplyOptions<'_>,

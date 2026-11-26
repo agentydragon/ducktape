@@ -1,7 +1,7 @@
 use source_identity::SourceUnitId;
 
-use crate::ModuleId;
 use crate::module_assignment::ModuleAssignment;
+use analysis::ModuleId;
 
 use super::edge::{DependencyEdge, EdgeRole};
 

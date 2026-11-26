@@ -83,7 +83,7 @@ fn close_scc_lazy_effects(
 /// The SCC summaries preserve the closure used by graph at-init fallback;
 /// the synchronous source unit adjacency also supports incremental traversal for callback analyses
 /// without materializing a transitive closure for every possible root.
-pub(crate) struct SourceUnitReadClosure {
+pub struct SourceUnitReadClosure {
     binding_source_unit: BTreeMap<Id, SourceUnitOrdinal>,
     expanded_lazy_reads: Vec<BTreeSet<Id>>,
     expanded_lazy_rebinds: Vec<BTreeSet<Id>>,
@@ -162,7 +162,7 @@ impl SourceUnitReadClosure {
     /// whole lazy effects. Both traversal and effects must use this view:
     /// retaining only the latter still follows a post-await read to its
     /// declaration and can promote that declaration's lazy bodies.
-    pub(crate) fn new_synchronous(facts: &[StatementFacts]) -> Self {
+    pub fn new_synchronous(facts: &[StatementFacts]) -> Self {
         Self::build(facts, true)
     }
 
@@ -347,7 +347,7 @@ impl SourceUnitReadClosure {
 
     /// Return the transitive lazy reads and rebinds for one source unit, retaining
     /// the original graph-builder semantics for unresolved-call promotion.
-    pub(crate) fn lazy_effects_for_source_unit(
+    pub fn lazy_effects_for_source_unit(
         &self,
         source_unit: SourceUnitOrdinal,
     ) -> (&BTreeSet<Id>, &BTreeSet<Id>) {

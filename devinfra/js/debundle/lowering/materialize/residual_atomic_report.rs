@@ -2,10 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::reports::{atomic_group_key, source_unit_key};
 use analysis::{BindingId, ModuleId, ModuleRole, SourceLocation, StatementKind};
 use analysis_model::DepKind;
 use gate::AssignmentAnalysis;
+use graph::{report::atomic_group_key, report::source_unit_key};
 use serde::Serialize;
 
 use ownership_subset::SelectedModule;
@@ -87,7 +87,7 @@ fn destination(assignment: &AssignmentAnalysis, id: ModuleId) -> Destination {
 fn add_edge(
     summaries: &mut BTreeMap<DepKind, EdgeSummary>,
     assignment: &AssignmentAnalysis,
-    edge: &analysis::DependencyEdge,
+    edge: &graph::DependencyEdge,
     other_group: usize,
     other_unit: source_identity::SourceUnitId,
 ) {

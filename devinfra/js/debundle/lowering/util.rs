@@ -1,8 +1,8 @@
-use analysis::AtomicGroupConflict;
 use analysis_model::DepKind;
 use anyhow::Result;
 use artifact::paths::{join_module_path, normalize_module_path};
 use binding_targets::{binding_names, declaration_ids};
+use graph::AtomicGroupConflict;
 use std::collections::{BTreeSet, HashMap};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;

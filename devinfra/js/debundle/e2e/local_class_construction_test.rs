@@ -4,11 +4,13 @@
 use analysis::Purity;
 use analysis::analysis_inputs::{ProofDependencies, ValueInputRef};
 use analysis::analysis_provenance::InferenceRule;
-use analysis::reports::schema::{
-    InferenceUseReport, NativeIntegrityGuard, NativeIntegrityUse, SourceUnitReport,
+use analysis::{
+    reports::schema::InferenceUseReport, reports::schema::NativeIntegrityGuard,
+    reports::schema::NativeIntegrityUse,
 };
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
+use graph::report::SourceUnitReport;
 use std::collections::BTreeSet;
 
 const REGISTRY_SOURCE: &str = r#"globalThis.events = [];

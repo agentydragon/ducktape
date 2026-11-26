@@ -8,16 +8,17 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, btree_map};
 use std::ops::Bound::{Excluded, Unbounded};
 
-use analysis::DependencyGraph;
 use analysis::analysis_inputs::{CommutingStatementsRef, ProofDependencies};
 use analysis::facts::{
     CellOverlap, CellOverlapIndex, InitializationEffectEvidence, InitializationEffects,
     OwnerInitializationCoverageRefusal, OwnerInitializationCoverageRefusalReason, RootAttempt,
     RootAttemptCounts, StatementFacts, UnknownEffectCoverage,
 };
-use analysis::graph::{AppliedCommutingPremise, CellOverlapReport, EffectCellReport};
 use analysis::ids::ModuleId;
-use analysis::module_assignment::ModuleAssignment;
+use analysis::reports::schema::EffectCellReport;
+use graph::DependencyGraph;
+use graph::module_assignment::ModuleAssignment;
+use graph::{AppliedCommutingPremise, CellOverlapReport};
 use serde::{Serialize, Serializer, ser::SerializeSeq};
 use source_identity::SourceUnitId;
 use source_identity::SourceUnitOrdinal;

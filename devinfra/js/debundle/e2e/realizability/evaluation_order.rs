@@ -13,12 +13,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use analysis::AnalysisInputs;
 use analysis::facts::analyze_chunk;
-use analysis::graph::build_dependency_graph_with;
 use analysis::ids::ModuleId;
-use analysis::{AnalysisInputs, DependencyGraph, ModuleAssignment};
 use debundle_e2e_support::*;
 use gate::check_realizability_with_priority;
+use graph::build_dependency_graph_with;
+use graph::{DependencyGraph, ModuleAssignment};
 
 struct SweepCase {
     name: &'static str,

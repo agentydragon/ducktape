@@ -356,18 +356,18 @@ pub(super) fn promote_at_init_calls(
                 ));
             }
             match synchronous.binding_effect_authority() {
-                crate::facts::sync_effects::BindingEffectAuthority::Unclassified => {}
-                crate::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
+                analysis::facts::sync_effects::BindingEffectAuthority::Unclassified => {}
+                analysis::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
                     complete: true,
                 }
-                | crate::facts::sync_effects::BindingEffectAuthority::AuthorSourceOnly
-                | crate::facts::sync_effects::BindingEffectAuthority::OperationReceipt => {
+                | analysis::facts::sync_effects::BindingEffectAuthority::AuthorSourceOnly
+                | analysis::facts::sync_effects::BindingEffectAuthority::OperationReceipt => {
                     continue;
                 }
-                crate::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
+                analysis::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
                     complete: false,
                 }
-                | crate::facts::sync_effects::BindingEffectAuthority::OrderedRootInitializerUncovered => {}
+                | analysis::facts::sync_effects::BindingEffectAuthority::OrderedRootInitializerUncovered => {}
             }
         }
         if stmt.calls.eager.is_empty()

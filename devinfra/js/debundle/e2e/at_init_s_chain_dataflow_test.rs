@@ -10,10 +10,10 @@
 //! cross-module inits of a local class whose constructor only touches
 //! `this`.
 
-use analysis::DependencyGraphReport;
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+use graph::DependencyGraphReport;
 
 fn trusted_dataflow_opts<'a>(
     source: &'a str,
@@ -28,7 +28,7 @@ fn sequenced_edges_between<'a>(
     graph: &'a DependencyGraphReport,
     a: &str,
     b: &str,
-) -> Vec<&'a analysis::DependencyEdgeReport> {
+) -> Vec<&'a graph::DependencyEdgeReport> {
     graph
         .edges
         .iter()

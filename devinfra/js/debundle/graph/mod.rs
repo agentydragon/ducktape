@@ -1,8 +1,9 @@
-//! Dependency-graph IR: the fine-grained per-statement dependency graph
-//! built from chunk facts, its module-level quotient, and the
-//! canonical ESM linker/source-import orderings derived from it.
+//! Dependency-graph crate, above `analysis`: the fine-grained per-statement
+//! dependency graph built from chunk facts, its module-level quotient, the
+//! canonical ESM linker/source-import orderings, atomic groups, assignment
+//! assembly and the graph wire reports.
 //!
-//! Submodules:
+//! Modules:
 //! - [`edge`] — edge types ([`EdgeRole`], [`EdgeReason`],
 //!   [`DependencyEdge`], [`DependencyEdgeId`]).
 //! - [`dependency_graph`] — the [`DependencyGraph`] IR and [`SourceUnit`] rows;
@@ -15,24 +16,36 @@
 //! - [`linker_order`] — the canonical ESM I-graph
 //!   ([`ChunkConstrainingEdgeSet`], [`chunk_constraining_module_edges`])
 //!   and its linker / source-import orderings.
+//! - [`atomic_groups`], [`assignment_assembly`], [`module_assignment`],
+//!   [`placement_projection`] — co-location groups and the spec assignment.
+//! - [`report`] — serde wire reports of the graph, quotient and atomic groups.
 
+pub mod assignment_assembly;
+pub mod atomic_groups;
 mod build;
 mod commutation_order;
 mod dependency_graph;
 mod edge;
 mod input;
 mod linker_order;
+pub mod module_assignment;
+pub mod placement_projection;
 mod quotient;
+pub mod report;
 
 #[cfg(test)]
 mod analysis_tests;
 #[cfg(test)]
+mod test_support;
+#[cfg(test)]
 mod tests;
 
+pub use assignment_assembly::{
+    AssemblyOutcome, AtomicGroupConflict, ConflictingClaim, assemble_assignment,
+};
 pub use build::{
-    CommutingStatementsDiagnostic, CommutingStatementsUnused, DependencyGraphBuildError,
-    DuplicateTopLevelDeclaration, GraphOptions, KnownConflict, PremiseVerdict,
-    UnusedCommutingEndpoint, UnusedPremiseReason, build_dependency_graph_with,
+    CommutingStatementsDiagnostic, DependencyGraphBuildError, DuplicateTopLevelDeclaration,
+    GraphOptions, KnownConflict, PremiseVerdict, build_dependency_graph_with,
 };
 pub use commutation_order::{CommutationOrder, PreservedOrder};
 pub use dependency_graph::{
@@ -40,7 +53,7 @@ pub use dependency_graph::{
 };
 pub use edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport, DependencyEdge,
-    DependencyEdgeId, EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
+    DependencyEdgeId, EdgeReason, EdgeRole, HeapBarrierCause, SequencedCause,
 };
 pub use input::DependencyGraphInput;
 pub use linker_order::{
@@ -48,3 +61,31 @@ pub use linker_order::{
     chunk_source_import_order_from_adjacency, position_lookup,
 };
 pub use quotient::{EndpointView, assignment_endpoints, project_endpoints};
+
+pub use atomic_groups::{
+    AtomicGroup, AtomicGroupPathOrientation, AtomicGroupPathProjection,
+    DependencyGraphAndAtomicGroups, compute_atomic_groups,
+    compute_dependency_graph_and_atomic_groups_with,
+};
+
+pub use module_assignment::ModuleAssignment;
+
+pub use placement_projection::{
+    DestructuringDeclaratorGroup, DestructuringGroupDestinationCheck,
+    DestructuringGroupOwnerClassification, NestedVarDestinationClassification,
+    NestedVarPlacementCheck, NestedVarStatement, PlacementEmissionMaps, PlacementProjection,
+    PlacementProjectionAssessment, PlacementProjectionInput, PlacementProjectionOutcome,
+    PlacementProjectionViolation, SourceUnitLayout, SourceUnitLayoutIssue, SourceUnitLocation,
+    SourceUnitSyntaxLocation, StructuralPlacementCheck, classify_destructuring_group_owners,
+    classify_nested_var_placement, project_placement,
+};
+pub use report::{
+    AtomicGraphReport, AtomicGroupConflictReport, AtomicGroupConflictWitness,
+    AtomicGroupEdgeReport, AtomicGroupReport, AtomicGroupWitnessClaim, AtomicGroupWitnessPath,
+    AtomicGroupWitnessStep, BindingReport, CallbackFactoryBarrierReport,
+    CallbackFactoryCallArgumentWitnessReport, CallbackFactoryContractReport,
+    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, ConflictingClaimReport,
+    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
+    ModuleEntry, ModuleKey, ModuleQuotientReport, ProgramGraphReport, PurityCauseReport,
+    QuotientEdgeReport, QuotientSccReport, SequencedSourceUnitCause, SourceUnitReport,
+};

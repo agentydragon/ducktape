@@ -8,10 +8,10 @@ mod outcome_sink;
 mod plan_builder;
 mod residual_atomic_report;
 
-use analysis::assignment_assembly::assemble_assignment;
 use analysis::diagnostics::progress::{Phase, State};
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use frontend_elaboration::ResolvedMemberSite;
+use graph::assignment_assembly::assemble_assignment;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 use source_identity::{ChunkId, StatementId};
 use staged_analysis::chunk_facts::{
@@ -38,12 +38,10 @@ use crate::{
     GraphReportSelection, ReportEmission, RequestedLogicalModule,
 };
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
-use analysis::reports::source_unit_key;
 use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, LoaderKeyUses, PurityHintOwner};
 use analysis::{
-    BindingCatalogue, BindingId, BindingKind, CommutingStatementsDiagnostic, EntryDestination,
-    ImportedSourceTarget, ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule,
-    SourceUnitLayout, top_level_id,
+    BindingCatalogue, BindingId, BindingKind, EntryDestination, ImportedSourceTarget, ModuleId,
+    ModuleRole, PlannedModule, top_level_id,
 };
 use analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use anyhow::{Context, Result, bail, ensure};
@@ -57,6 +55,8 @@ use gate::{
     AssignmentAnalysis, ChunkGateRejection, GateVerdict, RejectedAssignment, SccRejection,
     ValidatedAssignment, render_atomic_group_conflict_summary, render_cycle_summary,
 };
+use graph::report::source_unit_key;
+use graph::{CommutingStatementsDiagnostic, PlacementProjectionInput, SourceUnitLayout};
 use graph_provenance::GraphProvenance;
 use js_ast::{ParsedJsModule, format_comment_block_lines};
 use output_layout::{
@@ -360,7 +360,7 @@ pub(super) struct SelectedAssignmentBuildInput<'a, 'p, 's> {
     placement_anchors: Option<selector_resolve::PlacementAnchors>,
     placement_source: Option<selector_resolve::Chunk<'p>>,
     placement_modules: BTreeMap<String, spec::LogicalModule>,
-    precomputed: analysis::DependencyGraphAndAtomicGroups,
+    precomputed: graph::DependencyGraphAndAtomicGroups,
     projection: &'p AnalysisProjection<'s>,
 }
 
@@ -641,7 +641,7 @@ struct AssignmentSettlement<'a> {
 /// coarse residual synthesis until none remain.
 fn settle_assignment(
     settlement: &AssignmentSettlement<'_>,
-    precomputed: analysis::DependencyGraphAndAtomicGroups,
+    precomputed: graph::DependencyGraphAndAtomicGroups,
     bindings_catalogue: BindingCatalogue,
     module_plans: &mut Vec<ModulePlan>,
     whole_statement_assignment: &mut BTreeMap<StatementId, usize>,
@@ -767,7 +767,7 @@ fn settle_assignment(
 /// topology comes from a source-bound saved graph rather than semantic facts.
 pub(super) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
     claimed: LogicalChunkPlan<'a>,
-    graph: analysis::DependencyGraphInput,
+    graph: graph::DependencyGraphInput,
     projection: &'p AnalysisProjection<'s>,
 ) -> Result<FinalizedLogicalAssignment<'a>> {
     let LogicalChunkPlan {
@@ -799,8 +799,8 @@ pub(super) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
     });
     let graph = graph.with_source_declarations(&structural_analysis.per_statement)?;
     let dependency_graph = graph.graph().clone();
-    let precomputed = analysis::DependencyGraphAndAtomicGroups {
-        atomic_groups: analysis::compute_atomic_groups(&dependency_graph),
+    let precomputed = graph::DependencyGraphAndAtomicGroups {
+        atomic_groups: graph::compute_atomic_groups(&dependency_graph),
         dependency_graph,
         unused_commuting_statements: Vec::new(),
     };
@@ -988,7 +988,7 @@ pub(super) fn finish_logical_chunk(
     let local_bindings = assignment_analysis
         .inputs()
         .local_bindings(chunk_id_interned)?;
-    let placement_projection = analysis::project_placement(PlacementProjectionInput {
+    let placement_projection = graph::project_placement(PlacementProjectionInput {
         graph,
         assignment,
         local_bindings,
@@ -1122,10 +1122,10 @@ pub(super) fn finish_logical_chunk(
 fn build_chunk_graph_or_report_contradiction(
     context: ChunkContext<'_>,
     facts: &ChunkFactAnalysis,
-    graph_options: analysis::GraphOptions,
+    graph_options: graph::GraphOptions,
     commuting_statements: &[analysis::analysis_inputs::ResolvedCommutingStatements],
     builder: &ChunkPlanBuilder,
-) -> Result<analysis::DependencyGraphAndAtomicGroups> {
+) -> Result<graph::DependencyGraphAndAtomicGroups> {
     let ChunkContext {
         chunk_id,
         report_emission,
@@ -1139,8 +1139,8 @@ fn build_chunk_graph_or_report_contradiction(
             // with the selector outcomes gathered so far, where `spec
             // validate` collects the chunk's reports; the chunk still fails.
             if let Some(contradiction) = error
-                .downcast_ref::<analysis::DependencyGraphBuildError>()
-                .and_then(analysis::DependencyGraphBuildError::commuting_statements_contradiction)
+                .downcast_ref::<graph::DependencyGraphBuildError>()
+                .and_then(graph::DependencyGraphBuildError::commuting_statements_contradiction)
                 && let Some(report_out_dir) = report_emission.rejection_dir()
             {
                 write_selector_diagnostics(builder, report_out_dir, chunk_id)?;
@@ -1160,7 +1160,7 @@ fn build_chunk_graph_or_report_contradiction(
 
 fn record_unused_commuting_statements(
     context: ChunkContext<'_>,
-    unused_commuting_statements: &[analysis::CommutingStatementsUnused],
+    unused_commuting_statements: &[analysis::reports::spec_lint::CommutingStatementsUnused],
 ) -> Result<()> {
     let ChunkContext {
         chunk_id,
@@ -1194,7 +1194,7 @@ fn record_unused_commuting_statements(
 
 fn write_spec_lint_report(
     context: ChunkContext<'_>,
-    unused_commuting_statements: &[analysis::CommutingStatementsUnused],
+    unused_commuting_statements: &[analysis::reports::spec_lint::CommutingStatementsUnused],
     redundant_admission_overrides: &[spec::AdmissionCheck],
     facts: &ChunkFactAnalysis,
     resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
@@ -1640,7 +1640,7 @@ enum GateOutcome<'a> {
 /// classifier infers without the hint.
 fn spec_lint_findings(
     chunk_id: &str,
-    unused_commuting_statements: &[analysis::CommutingStatementsUnused],
+    unused_commuting_statements: &[analysis::reports::spec_lint::CommutingStatementsUnused],
     redundant_admission_overrides: &[spec::AdmissionCheck],
     redundant_purity_hints: &[analysis::RedundantPurityHint],
     unconsulted_purity_hints: &BTreeSet<String>,
@@ -2000,12 +2000,12 @@ fn emit_reports_and_resolve_gate<'a>(
             // modules as canonical `ModulePath` — the same entity
             // keys `dependency_graph.json.gz` uses, so the file joins
             // against the dependency graph without string surgery.
-            let wire = ::analysis::AtomicGroupConflictReport::from_conflicts(
+            let wire = ::graph::AtomicGroupConflictReport::from_conflicts(
                 &assignment_report.atomic_group_conflicts,
                 &|id| assignment_analysis.module_path(id),
                 assignment_analysis.inputs().dependency_graph(),
                 &|id| {
-                    ::analysis::DependencyEdgeReport::from_edge(
+                    ::graph::DependencyEdgeReport::from_edge(
                         assignment_analysis.inputs().dependency_graph().edge(id),
                     )
                 },

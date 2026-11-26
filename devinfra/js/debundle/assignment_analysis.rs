@@ -7,13 +7,11 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::report_builders::build_dependency_graph_report;
-use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
-use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
-use analysis::module_assignment::ModuleAssignment;
-use analysis::{
-    BindingCatalogue, BindingScopeError, DependencyGraphReport, EntryDestination, ModuleId,
-    PlannedModule, StructuralPlacementCheck,
-};
+use analysis::{BindingCatalogue, BindingScopeError, EntryDestination, ModuleId, PlannedModule};
+use graph::module_assignment::ModuleAssignment;
+use graph::{DependencyGraphReport, StructuralPlacementCheck};
+use graph::{assignment_assembly::AtomicGroupConflict, assignment_assembly::assemble_assignment};
+use graph::{atomic_groups::AtomicGroup, atomic_groups::DependencyGraphAndAtomicGroups};
 use source_identity::SourceUnitId;
 
 use crate::AssignmentInputs;
@@ -138,7 +136,7 @@ impl<'a> CandidatePreflight<'a> {
     /// The projection must be for this immutable assignment.
     pub fn prepare(
         assignment_analysis: &'a AssignmentAnalysis,
-        projection: &analysis::PlacementProjection<'_>,
+        projection: &graph::PlacementProjection<'_>,
     ) -> Self {
         assert!(
             std::ptr::eq(&assignment_analysis.assignment, projection.assignment()),
@@ -349,7 +347,7 @@ pub struct StructuralPlacementAssessment {
     /// uses; diagnostic counts do not reconstruct the emitter's decision.
     pub emission_mappable: bool,
     pub coverage: StructuralPlacementCoverage,
-    pub projection_violations: Vec<analysis::PlacementProjectionViolation>,
+    pub projection_violations: Vec<graph::PlacementProjectionViolation>,
     pub cross_destination_rebinds: Vec<CrossDestinationRebindObligation>,
     pub atomic_group_obligations: Vec<AtomicGroupPlacementObligation>,
     pub semantic_order_sccs: Vec<SemanticOrderSccObligation>,
@@ -437,9 +435,9 @@ fn has_legacy_gate_ordering_veto(placement: &StructuralPlacementAssessment) -> b
 }
 
 fn structural_placement_assessment(
-    graph: &analysis::DependencyGraph,
+    graph: &graph::DependencyGraph,
     validation: &AssignmentValidation,
-    projection: &analysis::PlacementProjection<'_>,
+    projection: &graph::PlacementProjection<'_>,
 ) -> StructuralPlacementAssessment {
     let cross_destination_rebinds: Vec<CrossDestinationRebindObligation> = validation
         .verdict

@@ -2634,7 +2634,7 @@ required.
 ### Assignment assembly inside `debundle run`
 
 The spec's explicit claims are resolved against the dependency graph in
-`assignment_assembly.rs`. The rules are deliberately strict:
+`graph/assignment_assembly.rs`. The rules are deliberately strict:
 
 - Two different logical modules may not claim source units from the same
   atomic group.
@@ -2846,7 +2846,7 @@ The detailed output is machine-readable, typed, and debundler-owned:
 per chunk, the source-unit vertices and dependency edges, quotient projections for the
 current assignment, and the `atomic_graph`. The field-level shape is
 the serde schema (`DependencyGraphReport` and siblings in
-<../reports/schema.rs>), with synchronous-execution evidence owned by
+<../graph/report.rs>), with synchronous-execution evidence owned by
 <../execution_evidence.rs>; this doc does not mirror it. New fields can
 be added without changing the underlying graph transform. Do not add
 top-level `kind` or `schema_version` fields just to mimic an external
@@ -4057,10 +4057,11 @@ contract is in <../SPEC.md>
   collects synchronous execution facts with the adjacent value model and
   interpreter. [`facts/abstract_domain/builtins.rs`](../facts/abstract_domain/builtins.rs)
   models native operations.
-- [`graph/`](../graph/) builds dependency graphs and module quotients.
-  [`atomic_groups.rs`](../atomic_groups.rs) computes source-unit colocation
-  groups. [`peel/`](../peel/) searches residual placements.
-- [`assignment_assembly.rs`](../assignment_assembly.rs) assembles claims.
+- [`graph/`](../graph/) (its own crate above `analysis`) builds dependency
+  graphs, module quotients and their wire reports.
+  [`graph/atomic_groups.rs`](../graph/atomic_groups.rs) computes source-unit
+  colocation groups. [`peel/`](../peel/) searches residual placements.
+- [`graph/assignment_assembly.rs`](../graph/assignment_assembly.rs) assembles claims.
   [`realizability/mod.rs`](../realizability/mod.rs) checks realizability and
   [`validation.rs`](../validation.rs) reports assignment verdicts.
 - [`lowering/`](../lowering/) splits accepted assignments. [`vendor/`](../vendor/)

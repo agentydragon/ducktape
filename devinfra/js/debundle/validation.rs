@@ -8,17 +8,15 @@ use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 
 use crate::realizability::{RealizabilityVerdict, SccDiagnosis, SccRejection};
-use analysis::assignment_assembly::AtomicGroupConflict;
-use analysis::graph::{DependencyEdgeId, EndpointView, assignment_endpoints};
-use analysis::module_assignment::ModuleAssignment;
+use graph::assignment_assembly::AtomicGroupConflict;
+use graph::module_assignment::ModuleAssignment;
+use graph::{DependencyEdgeId, EndpointView, assignment_endpoints};
 use spec::ModulePath;
 use swc_atoms::Atom;
 
 use analysis::analysis_inputs::CommutingStatementsRef;
-use analysis::{
-    DependencyEdge, DependencyGraph, EdgeRole, ModuleId, Purity, PurityReason, SequencedCause,
-    SequencedSourceUnitCause,
-};
+use analysis::{ModuleId, Purity, PurityReason};
+use graph::{DependencyEdge, DependencyGraph, EdgeRole, SequencedCause, SequencedSourceUnitCause};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -58,7 +56,7 @@ pub struct AssignmentValidation {
 
 /// Validator's rendered projection of one unrealizable SCC. The shared
 /// "modules in the SCC + edges in the SCC" core is
-/// [`analysis::reports::SccCore`]; the in-memory primitive that carries
+/// [`graph::report::SccCore`]; the in-memory primitive that carries
 /// it is [`crate::realizability::SccDiagnosis`]. This shape stringifies
 /// the module names and decorates the diagnosis with the `cut` /
 /// `lazy_closure` rows the bail-message renderer consumes.
@@ -359,7 +357,7 @@ fn explain_edge(
                 }
                 EdgeRole::PromotedAtInit { callee_source_unit } => {
                     AtInitReadPosition::PromotedAtInit {
-                        callee_source_unit: analysis::reports::source_unit_key(callee_source_unit),
+                        callee_source_unit: graph::report::source_unit_key(callee_source_unit),
                         callee_binding: dependency_graph
                             .node(callee_source_unit)
                             .and_then(|node| node.declared.iter().next())
@@ -371,11 +369,8 @@ fn explain_edge(
         }
         DepKind::Sequenced => Some(CutEdgeExplanation::Sequenced {
             cause: edge.reason.sequenced_cause()?.clone(),
-            target_source_unit: analysis::reports::schema::impure_source_unit_cause(
-                dependency_graph,
-                edge.to,
-            )
-            .map(Box::new),
+            target_source_unit: graph::report::impure_source_unit_cause(dependency_graph, edge.to)
+                .map(Box::new),
         }),
         _ => None,
     }
@@ -1097,18 +1092,15 @@ fn cycle_edge_for(
     CycleEdge {
         from: module_path(from),
         to: module_path(to),
-        from_source_unit_id: analysis::reports::source_unit_key(edge.from),
-        to_source_unit_id: analysis::reports::source_unit_key(edge.to),
+        from_source_unit_id: graph::report::source_unit_key(edge.from),
+        to_source_unit_id: graph::report::source_unit_key(edge.to),
         statement_ordinal: edge.reason.statement_ordinal,
         binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
         from_binding: from_binding_by_ordinal
             .get(&edge.reason.statement_ordinal)
             .cloned(),
         kind: edge.reason.kind,
-        sequenced_source_unit: analysis::reports::schema::sequenced_edge_cause(
-            dependency_graph,
-            edge,
-        ),
+        sequenced_source_unit: graph::report::sequenced_edge_cause(dependency_graph, edge),
         explanation: explain_edge(dependency_graph, edge),
         commuting_premise: edge.reason.commuting_premise().cloned(),
     }
@@ -1199,7 +1191,7 @@ pub fn render_atomic_group_conflict_summary(
             .members
             .iter()
             .copied()
-            .map(analysis::reports::source_unit_key)
+            .map(graph::report::source_unit_key)
             .collect();
         member_ids.sort();
         let mut conflicting_modules: Vec<String> = c
@@ -1234,7 +1226,7 @@ pub fn render_atomic_group_conflict_summary(
             };
             out.push_str(&format!(
                 "    - {}{} → {}\n",
-                analysis::reports::source_unit_key(claim.source_unit),
+                graph::report::source_unit_key(claim.source_unit),
                 names,
                 module_path(claim.module),
             ));
@@ -1246,8 +1238,7 @@ pub fn render_atomic_group_conflict_summary(
                 c.claims.len(),
             ));
         }
-        let causes =
-            analysis::reports::schema::sequenced_source_unit_causes(dependency_graph, &c.members);
+        let causes = graph::report::sequenced_source_unit_causes(dependency_graph, &c.members);
         render_sequenced_source_unit_causes_with_limit(
             &causes,
             &mut out,

@@ -251,7 +251,7 @@ fn run_modules_check(
     stderr: &mut (dyn std::io::Write + Send),
     source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<()> {
-    let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
+    let input = graph::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let (mut changes, import_order) = read_assignment_request(
         &args.common.dependency_graph_path,
         args.plan.as_deref(),
@@ -406,7 +406,7 @@ fn run_assignment_search(
 struct ConstructedProposal {
     chunk_id: String,
     graph: PathBuf,
-    input: Option<analysis::DependencyGraphInput>,
+    input: Option<graph::DependencyGraphInput>,
     search: peel::search::SearchReport,
 }
 
@@ -414,7 +414,7 @@ fn construct_one_graph(
     args: &ProposeArgs,
     graph_path: &std::path::Path,
 ) -> Result<ConstructedProposal> {
-    let input = analysis::DependencyGraphInput::read(graph_path)?;
+    let input = graph::DependencyGraphInput::read(graph_path)?;
     let chunk_id = input.report().chunk_id.clone();
     let problem = AssignmentProblem::new(&input)?;
     let into = args

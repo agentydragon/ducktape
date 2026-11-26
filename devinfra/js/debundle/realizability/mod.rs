@@ -20,12 +20,12 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use rustc_hash::FxHashMap;
 
-use analysis::graph::{
+use analysis::ids::ModuleId;
+use graph::module_assignment::ModuleAssignment;
+use graph::report::SccCore;
+use graph::{
     ChunkConstrainingEdgeSet, DependencyEdgeId, DependencyGraph, chunk_constraining_module_edges,
 };
-use analysis::ids::ModuleId;
-use analysis::module_assignment::ModuleAssignment;
-use analysis::reports::SccCore;
 #[cfg(test)]
 use source_identity::SourceUnitId;
 
@@ -86,7 +86,7 @@ pub use translation_validation::{
 ///
 /// [`SccCore`] documents the rendered/wire projections of the same
 /// shape ([`crate::validation::CycleReport`],
-/// [`analysis::reports::schema::QuotientSccReport`]).
+/// [`graph::report::QuotientSccReport`]).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SccDiagnosis {
     pub core: SccCore,
@@ -353,11 +353,9 @@ fn canonical_assignment_constraints(
         if !edge.reason.is_rebind() {
             continue;
         }
-        let Some((from, to)) = analysis::graph::assignment_endpoints(
-            edge,
-            assignment,
-            analysis::graph::EndpointView::Gate,
-        ) else {
+        let Some((from, to)) =
+            graph::assignment_endpoints(edge, assignment, graph::EndpointView::Gate)
+        else {
             continue;
         };
         cross_rebinds.push(CrossRebindEdge {

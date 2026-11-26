@@ -16,10 +16,11 @@ use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
 use serde::Serialize;
 
-use analysis::{
+use analysis::SourceLocation;
+use graph::{
     AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DependencyEdgeReport,
     DependencyGraphInput, DependencyGraphReport, ProgramGraphReport, QuotientEdgeReport,
-    SourceLocation, SourceUnitReport,
+    SourceUnitReport,
 };
 use graph_provenance::VerifiedGraphSourceContext;
 use spec_modules::{
@@ -758,7 +759,7 @@ fn explain_from_graph(
         .cloned()
         .collect();
 
-    let selected_destinations: BTreeSet<analysis::ModuleKey> = source_units
+    let selected_destinations: BTreeSet<graph::ModuleKey> = source_units
         .iter()
         .map(|source_unit| source_unit.destination.clone())
         .collect();
@@ -967,7 +968,7 @@ fn edge_census_rows(edges: &[DependencyEdgeReport]) -> Vec<EdgeCensusRow> {
     let mut counts = BTreeMap::new();
     for edge in edges {
         let role = match &edge.role {
-            Some(analysis::EdgeRoleReport::PromotedAtInit { .. }) => EdgeCensusRole::PromotedAtInit,
+            Some(graph::EdgeRoleReport::PromotedAtInit { .. }) => EdgeCensusRole::PromotedAtInit,
             None => EdgeCensusRole::Direct,
         };
         *counts.entry((edge.edge_kind, role)).or_insert(0) += 1;
