@@ -1,29 +1,9 @@
 use super::*;
 
-/// Single-pass collector producing every per-statement fact set the
-/// analyzer needs. Walks the statement's AST exactly once and buckets
-/// reads, rebind writes, calls, and effect-summary cells by the
-/// syntactic context the cursor is in (`lazy_depth`, `past_await`).
-/// Replaces the earlier five-pass design — one per fact set — which
-/// each re-implemented the same `LazyBoundary` boilerplate and walked
-/// the same AST.
-///
-/// Bucketing rules (see [`PositionBucketed::record`]):
-///
-/// - `lazy_depth == 0` (eager, top of the statement): reads, rebind
-///   writes, and direct `f(...)` callees land in the respective
-///   `eager` buckets; static-key `globalThis.<prop>` accesses
-///   contribute to `global_writes`/`global_reads`; bail-out shapes
-///   flip `dataflow_summarizable` to `false`.
-/// - `lazy_depth >= 1` (inside a function/arrow/method/getter/setter
-///   body, constructor body, or instance class-field initializer):
-///   reads/writes/calls land in the `lazy` buckets. The subset whose
-///   sites sit at `lazy_depth == 1 && !past_await` also lands in
-///   `first_order_lazy` — used by at-init call promotion, which
-///   only inherits effects from a callee's immediate pre-await body.
-/// - Bail-out shapes nested inside lazy scopes are deliberately not
-///   recorded: at-init call promotion handles transitive effects via
-///   the call graph, not via per-statement syntactic checks.
+/// Collect reads, rebinds and calls by syntactic position in one AST pass
+/// (see [`PositionBucketed::record`]). Record global reads, writes and
+/// barriers to a dataflow summary only at depth zero. The call graph
+/// propagates effects from invoked function bodies to their callers.
 #[derive(Default)]
 pub(crate) struct StatementFactsCollector {
     pub(crate) binding_idents: BTreeSet<Id>,
@@ -56,9 +36,7 @@ pub(crate) struct StatementFactsCollector {
     global_object_names: BTreeSet<&'static str>,
     async_direct_function_bindings: BTreeSet<Id>,
     promise_global_unshadowed: bool,
-    lazy_depth: u32,
-    past_await: bool,
-    may_skip_await_depth: u32,
+    position: LazyPosition,
     active_argument_parameters: Option<(Id, BTreeMap<Id, usize>, u32)>,
 }
 
@@ -93,15 +71,15 @@ impl StatementFactsCollector {
     }
 
     fn record_read(&mut self, id: &Id) {
-        self.reads.record(id, self.lazy_depth, self.past_await);
+        self.reads.record(id, self.position);
     }
 
     fn record_write(&mut self, id: &Id) {
-        self.rebinds.record(id, self.lazy_depth, self.past_await);
+        self.rebinds.record(id, self.position);
     }
 
     fn record_call(&mut self, id: &Id) {
-        self.calls.record(id, self.lazy_depth, self.past_await);
+        self.calls.record(id, self.position);
     }
 
     /// A call whose callee promotion can never resolve syntactically
@@ -117,14 +95,13 @@ impl StatementFactsCollector {
     where
         N: VisitWith<UnresolvedCallSourceCollector> + VisitWith<SyncInlineEffectCollector>,
     {
-        if self.lazy_depth > 1 || (self.lazy_depth == 1 && self.past_await) {
+        if !self.position.can_run_at_init() {
             return;
         }
         let mut sources = UnresolvedCallSourceCollector::default();
         node.visit_with(&mut sources);
-        let needs_owner_inline_fallback = if sources.inline_fn && self.lazy_depth > 0 {
-            let mut inline_effects =
-                SyncInlineEffectCollector::new(self.lazy_depth, self.past_await);
+        let needs_owner_inline_fallback = if sources.inline_fn && self.position.depth > 0 {
+            let mut inline_effects = SyncInlineEffectCollector::new(self.position);
             node.visit_with(&mut inline_effects);
             let needs_owner_fallback = inline_effects.needs_owner_fallback;
             self.merge_sync_inline_effects(inline_effects.effects);
@@ -132,7 +109,7 @@ impl StatementFactsCollector {
         } else {
             sources.inline_fn
         };
-        if self.lazy_depth == 0 {
+        if self.position.depth == 0 {
             self.at_init_unresolved_sources.extend(sources.idents);
             self.at_init_unresolved_inline_fn |= needs_owner_inline_fallback;
         } else {
@@ -449,52 +426,40 @@ struct SyncInlineEffects {
 /// callback body's pre-await effects happen at that same position.
 pub(crate) struct SyncInlineEffectCollector {
     effects: SyncInlineEffects,
-    outer_lazy_depth: u32,
-    outer_past_await: bool,
-    inline_depth: u32,
-    past_await: bool,
-    may_skip_await_depth: u32,
+    outer: LazyPosition,
+    position: LazyPosition,
     needs_owner_fallback: bool,
 }
 
 impl SyncInlineEffectCollector {
-    fn new(outer_lazy_depth: u32, outer_past_await: bool) -> Self {
+    fn new(outer: LazyPosition) -> Self {
         Self {
             effects: SyncInlineEffects::default(),
-            outer_lazy_depth,
-            outer_past_await,
-            inline_depth: 0,
-            past_await: false,
-            may_skip_await_depth: 0,
+            outer,
+            position: LazyPosition::default(),
             needs_owner_fallback: false,
         }
     }
 
     fn active(&self) -> bool {
-        self.inline_depth > 0 && !self.outer_past_await && !self.past_await
+        self.position.depth > 0 && !self.outer.past_await && !self.position.past_await
     }
 
     fn record_read(&mut self, id: &Id) {
         if self.active() {
-            self.effects
-                .reads
-                .record(id, self.outer_lazy_depth, self.outer_past_await);
+            self.effects.reads.record(id, self.outer);
         }
     }
 
     fn record_write(&mut self, id: &Id) {
         if self.active() {
-            self.effects
-                .rebinds
-                .record(id, self.outer_lazy_depth, self.outer_past_await);
+            self.effects.rebinds.record(id, self.outer);
         }
     }
 
     fn record_call(&mut self, id: &Id) {
         if self.active() {
-            self.effects
-                .calls
-                .record(id, self.outer_lazy_depth, self.outer_past_await);
+            self.effects.calls.record(id, self.outer);
         }
     }
 
@@ -505,24 +470,19 @@ impl SyncInlineEffectCollector {
         let mut sources = UnresolvedCallSourceCollector::default();
         node.visit_with(&mut sources);
         for id in sources.idents {
-            self.effects.unresolved_sources.record(
-                &id,
-                self.outer_lazy_depth,
-                self.outer_past_await,
-            );
+            self.effects.unresolved_sources.record(&id, self.outer);
         }
     }
 
     fn visit_inline_function_body(&mut self, visit_body: impl FnOnce(&mut Self)) {
-        if self.outer_past_await || self.past_await {
+        if self.outer.past_await || self.position.past_await {
             return;
         }
-        let saved_past_await = self.past_await;
-        self.past_await = false;
-        self.inline_depth += 1;
+        // The inline call executes in the enclosing optional path.
+        self.position.depth += 1;
         visit_body(self);
-        self.inline_depth -= 1;
-        self.past_await = saved_past_await;
+        self.position.depth -= 1;
+        self.position.past_await = false;
     }
 }
 
@@ -535,14 +495,8 @@ impl TargetAccessRecorder for SyncInlineEffectCollector {
 }
 
 impl LazyBoundary for SyncInlineEffectCollector {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.inline_depth
-    }
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
-    }
-    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
-        Some(&mut self.may_skip_await_depth)
+    fn position(&mut self) -> &mut LazyPosition {
+        &mut self.position
     }
 }
 
@@ -581,8 +535,8 @@ impl Visit for SyncInlineEffectCollector {
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {
         node.arg.visit_with(self);
-        if self.inline_depth > 0 && self.may_skip_await_depth == 0 {
-            self.past_await = true;
+        if self.position.depth > 0 && self.position.may_skip_await_depth == 0 {
+            self.position.past_await = true;
         }
     }
 
@@ -619,7 +573,7 @@ impl Visit for SyncInlineEffectCollector {
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        let before_assignment = self.past_await;
+        let before_assignment = self.position.past_await;
         if self.active() {
             record_assign_target(&node.left, self);
         }
@@ -628,7 +582,7 @@ impl Visit for SyncInlineEffectCollector {
             node.op,
             AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
         ) {
-            self.past_await = before_assignment;
+            self.position.past_await = before_assignment;
         }
     }
 
@@ -640,7 +594,7 @@ impl Visit for SyncInlineEffectCollector {
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        let before_loop = self.past_await;
+        let before_loop = self.position.past_await;
         if self.active()
             && let ForHead::Pat(pattern) = &node.left
         {
@@ -649,11 +603,11 @@ impl Visit for SyncInlineEffectCollector {
         node.left.visit_with(self);
         node.right.visit_with(self);
         node.body.visit_with(self);
-        self.past_await = before_loop;
+        self.position.past_await = before_loop;
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        let before_loop = self.past_await;
+        let before_loop = self.position.past_await;
         if self.active()
             && let ForHead::Pat(pattern) = &node.left
         {
@@ -662,19 +616,13 @@ impl Visit for SyncInlineEffectCollector {
         node.left.visit_with(self);
         node.right.visit_with(self);
         node.body.visit_with(self);
-        self.past_await = before_loop;
+        self.position.past_await = before_loop;
     }
 }
 
 impl LazyBoundary for StatementFactsCollector {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.lazy_depth
-    }
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
-    }
-    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
-        Some(&mut self.may_skip_await_depth)
+    fn position(&mut self) -> &mut LazyPosition {
+        &mut self.position
     }
 }
 
@@ -691,7 +639,7 @@ impl TargetAccessRecorder for StatementFactsCollector {
         // Global-object roots are handled precisely (static key) or
         // bailed (dynamic key / deep chain) at the assign/update
         // visitors.
-        if self.lazy_depth == 0 && !self.global_object_names.contains(id.0.as_ref()) {
+        if self.position.depth == 0 && !self.global_object_names.contains(id.0.as_ref()) {
             self.bail_summarizable();
         }
     }
@@ -708,7 +656,7 @@ impl Visit for StatementFactsCollector {
                     if decl.init.is_some() {
                         *self.var_initializer_counts.entry(id.clone()).or_default() += 1;
                     }
-                    if self.lazy_depth == 0 {
+                    if self.position.depth == 0 {
                         self.var_declared.insert(id.clone());
                         if decl.init.is_some() {
                             self.var_initializers.insert(id);
@@ -723,7 +671,7 @@ impl Visit for StatementFactsCollector {
     fn visit_ident(&mut self, node: &Ident) {
         self.record_read(&node.to_id());
         if let Some((binding, parameters, depth)) = &self.active_argument_parameters
-            && self.lazy_depth > *depth
+            && self.position.depth > *depth
             && let Some(index) = parameters.get(&node.to_id())
         {
             self.argument_value_escapes
@@ -824,14 +772,14 @@ impl Visit for StatementFactsCollector {
         // flip `past_await` only after, so the pre-await reads/writes
         // still count as first-order.
         node.visit_children_with(self);
-        if self.may_skip_await_depth == 0 {
-            self.past_await = true;
+        if self.position.may_skip_await_depth == 0 {
+            self.position.past_await = true;
         }
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         self.mark_parameter_value_escape(&node.right);
-        let before_assignment = self.past_await;
+        let before_assignment = self.position.past_await;
         record_assign_target(&node.left, self);
         let simple_target = binding_targets::simple_write_target(&node.left);
         if let Some(binding_targets::SimpleWriteTarget::Member(member)) = simple_target.as_ref()
@@ -839,7 +787,7 @@ impl Visit for StatementFactsCollector {
         {
             self.member_write_roots.insert(root.to_id());
         }
-        if self.lazy_depth == 0 {
+        if self.position.depth == 0 {
             match simple_target.as_ref() {
                 Some(binding_targets::SimpleWriteTarget::Member(member)) => {
                     if self.is_global_object_expr(&member.obj) {
@@ -873,7 +821,7 @@ impl Visit for StatementFactsCollector {
             node.op,
             AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
         ) {
-            self.past_await = before_assignment;
+            self.position.past_await = before_assignment;
         }
     }
 
@@ -885,7 +833,7 @@ impl Visit for StatementFactsCollector {
         {
             self.member_write_roots.insert(root.to_id());
         }
-        if self.lazy_depth == 0 {
+        if self.position.depth == 0 {
             match simple_target.as_ref() {
                 Some(binding_targets::SimpleWriteTarget::Binding(_)) => {}
                 Some(binding_targets::SimpleWriteTarget::Member(member))
@@ -912,7 +860,7 @@ impl Visit for StatementFactsCollector {
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        let before_loop = self.past_await;
+        let before_loop = self.position.past_await;
         match &node.left {
             ForHead::Pat(pattern) => record_pat_write(pattern, self),
             ForHead::VarDecl(var) => {
@@ -925,11 +873,11 @@ impl Visit for StatementFactsCollector {
         node.left.visit_with(self);
         node.right.visit_with(self);
         node.body.visit_with(self);
-        self.past_await = before_loop;
+        self.position.past_await = before_loop;
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        let before_loop = self.past_await;
+        let before_loop = self.position.past_await;
         match &node.left {
             ForHead::Pat(pattern) => record_pat_write(pattern, self),
             ForHead::VarDecl(var) => {
@@ -942,7 +890,7 @@ impl Visit for StatementFactsCollector {
         node.left.visit_with(self);
         node.right.visit_with(self);
         node.body.visit_with(self);
-        self.past_await = before_loop;
+        self.position.past_await = before_loop;
     }
 
     // The S-chain's dataflow-summarizability of calls/news is
@@ -995,7 +943,7 @@ impl Visit for StatementFactsCollector {
             // `super(...)` can't appear at chunk top level.
             Callee::Import(_) | Callee::Super(_) => {}
         }
-        if self.lazy_depth == 0 {
+        if self.position.depth == 0 {
             if let Callee::Expr(expr) = &node.callee
                 && let Expr::Ident(ident) = callee_base_expr(expr)
                 && matches!(ident.sym.as_ref(), "eval" | "Function")
@@ -1033,7 +981,7 @@ impl Visit for StatementFactsCollector {
         if let Expr::Ident(ident) = node.callee.unwrap_parens() {
             self.record_call(&ident.to_id());
         }
-        if self.lazy_depth == 0
+        if self.position.depth == 0
             && let Expr::Ident(ident) = node.callee.unwrap_parens()
         {
             match ident.sym.as_ref() {
@@ -1073,14 +1021,14 @@ impl Visit for StatementFactsCollector {
     }
 
     fn visit_member_expr(&mut self, node: &MemberExpr) {
-        if self.lazy_depth == 0 {
+        if self.position.depth == 0 {
             self.record_global_prop(node, /*is_write=*/ false);
         }
         node.visit_children_with(self);
     }
 
     fn visit_with_stmt(&mut self, node: &WithStmt) {
-        if self.lazy_depth == 0 {
+        if self.position.depth == 0 {
             self.bail_cell_writes();
         }
         node.visit_children_with(self);
@@ -1089,7 +1037,7 @@ impl Visit for StatementFactsCollector {
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         // The name is a declaration, not an evaluation-time read. Visit the
         // function normally so recursive references in its body stay lazy.
-        if self.lazy_depth == 0 {
+        if self.position.depth == 0 {
             let parameters = node
                 .function
                 .params
@@ -1101,7 +1049,7 @@ impl Visit for StatementFactsCollector {
                 })
                 .collect();
             self.active_argument_parameters =
-                Some((node.ident.to_id(), parameters, self.lazy_depth + 1));
+                Some((node.ident.to_id(), parameters, self.position.depth + 1));
             node.function.visit_with(self);
             self.active_argument_parameters = None;
         } else {
