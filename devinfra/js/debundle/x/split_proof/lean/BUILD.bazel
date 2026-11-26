@@ -1817,6 +1817,44 @@ lean_proof_test(
     name = "corejs_terminal_entry_cells_axioms_test",
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.TerminalEntryCells"],
-    required_theorems = ["CoreJS.TerminalEntryCells.entry_cells"],
+    required_theorems = [
+        "CoreJS.TerminalEntryCells.declared_rows_of_source",
+        "CoreJS.TerminalEntryCells.entry_cells",
+    ],
     deps = [":corejs_terminal_entry_cells"],
+)
+
+lean_library(
+    name = "corejs_linked_entry_find",
+    srcs = ["EsmSplit/CoreJS/LinkedEntryFind.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "corejs_linked_entry_find_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LinkedEntryFind"],
+    required_theorems = [
+        "CoreJS.LinkedEntryFind.loaded_find",
+        "CoreJS.LinkedEntryFind.scopes_find",
+    ],
+    deps = [":corejs_linked_entry_find"],
+)
+
+lean_library(
+    name = "corejs_terminal_linked_exports",
+    srcs = ["EsmSplit/CoreJS/TerminalLinkedExports.lean"],
+    deps = [
+        ":corejs_linked_entry_find",
+        ":corejs_terminal_entry_cells",
+        ":corejs_terminal_entry_table",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_linked_exports_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalLinkedExports"],
+    required_theorems = ["CoreJS.TerminalLinkedExports.linked_table"],
+    deps = [":corejs_terminal_linked_exports"],
 )

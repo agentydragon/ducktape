@@ -26,13 +26,13 @@ theorem exact_exports {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
 /-- If two actual linked entry environments resolve each local to the same
 present address, the complete ordered public table resolves to exactly the
 same addresses on both sides. Aliases are retained by the list traversal. -/
-theorem resolve_table {entry : String} {left right : List (Module × Env)}
+theorem resolve_table {leftEntry rightEntry : String} {left right : List (Module × Env)}
     {lm rm : Module} {le re : Env} {pairs : List (Name × Name)}
-    (lfind : left.find? (fun (m, _) => m.name == entry) = some (lm, le))
-    (rfind : right.find? (fun (m, _) => m.name == entry) = some (rm, re))
+    (lfind : left.find? (fun (m, _) => m.name == leftEntry) = some (lm, le))
+    (rfind : right.find? (fun (m, _) => m.name == rightEntry) = some (rm, re))
     (lrows : lm.exports = pairs) (rrows : rm.exports = pairs)
     (cells : ∀ pair ∈ pairs, ∃ a, le.vars.lookup pair.2 = some a ∧ re.vars.lookup pair.2 = some a) :
-    ∃ table, EntryExports.resolve entry left = .ok table ∧ EntryExports.resolve entry right = .ok table := by
+    ∃ table, EntryExports.resolve leftEntry left = .ok table ∧ EntryExports.resolve rightEntry right = .ok table := by
   have loop : ∀ (xs : List (Name × Name)),
       (∀ pair ∈ xs, ∃ a, le.vars.lookup pair.2 = some a ∧ re.vars.lookup pair.2 = some a) →
       ∃ table,

@@ -14,6 +14,26 @@ def DeclaredRows (ss : List Stmt) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
   ∀ pair ∈ row.names, ∃ owner ∈ P.mods, ∃ j ∈ owner.stmts,
     j < ss.length ∧ pair.2 ∈ (B.stmt j).defs
 
+/-- Executable source declarations have owners in any valid full plan. This
+requires only the source declaration search, not a second owner search. -/
+theorem declared_rows_of_source {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (valid : EsmSplit.Valid B S P) (footprints : MetadataCells.Footprints ss B)
+    {row : EsmSplit.LocalExportUnit}
+    (sourceDefs : ∀ pair ∈ row.names, ∃ j, j < ss.length ∧ pair.2 ∈ (B.stmt j).defs) :
+    DeclaredRows ss B P row := by
+  intro pair member
+  obtain ⟨j, within, declared⟩ := sourceDefs pair member
+  have jBundle : j < B.length := Nat.lt_of_lt_of_le within footprints.withinBundle
+  obtain ⟨-, -, -, -, -, -, -, ⟨-, -, all⟩, -⟩ := valid
+  have planned : j ∈ P.execOrder := all j (List.mem_range.2 jBundle)
+  simp only [EsmSplit.Plan.execOrder, List.mem_flatMap] at planned
+  obtain ⟨name, _, hasUnit⟩ := planned
+  cases found : P.find name with
+  | none => simp [found] at hasUnit
+  | some owner =>
+    simp only [found, Option.map_some, Option.getD_some] at hasUnit
+    exact ⟨owner, List.mem_of_find?_eq_some found, j, hasUnit, within, declared⟩
+
 /-- The actual import construction succeeds, and every original export local
 resolves in the constructed entry scope to the same present source address. -/
 theorem entry_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
@@ -37,6 +57,7 @@ theorem entry_cells {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {
     · exact Or.inr (List.mem_flatMap.mpr ⟨edge, edgeIn, inEdge⟩)
   exact ⟨a, sourceCell, (agree pair.2 admission).trans sourceCell⟩
 
+#print axioms declared_rows_of_source
 #print axioms entry_cells
 
 end CoreJS.TerminalEntryCells
