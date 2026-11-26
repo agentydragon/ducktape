@@ -762,6 +762,11 @@ debundle_e2e_test(name = "unknown_call_intermediate_availability_test")
 
 debundle_graph_e2e_test(
     name = "imported_callback_timing_test",
+    srcs = glob(
+        ["imported_callback_timing/*.rs"],
+        exclude = ["imported_callback_timing/mod.rs"],
+    ),
+    source = "imported_callback_timing/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle/analysis_vocabulary",
