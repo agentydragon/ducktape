@@ -910,7 +910,7 @@ impl ChunkPlanBuilder {
         }
         plan.binding_claim_origins
             .insert(binding.to_string(), member.claim_origin.clone());
-        if let Some(comment) = &member.comment {
+        if let Some(comment) = &member.annotation.comment {
             plan.binding_comments
                 .insert(binding.to_string(), comment.clone());
         }

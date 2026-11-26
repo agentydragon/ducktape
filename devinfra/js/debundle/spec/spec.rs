@@ -1693,6 +1693,20 @@ pub struct BindingAnnotation {
     pub note: Option<String>,
 }
 
+impl BindingAnnotation {
+    /// Whether the analyzer needs a resolved binding to apply this annotation.
+    pub fn has_semantic_annotations(&self) -> bool {
+        self.purity != MemberPurity::Default
+            || self.initializer_purity != InitializerPurity::Default
+            || self.initializer_binding_effects.is_some()
+            || self.initializer_external_effects.is_some()
+            || self.retained_record_factory
+            || self.effect != MemberEffect::Default
+            || !self.pure_members.is_empty()
+            || !self.no_sync_callback_members.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SourceMatchClaim {

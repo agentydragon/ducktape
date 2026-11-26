@@ -1371,7 +1371,7 @@ fn collect_binding_contracts(
     };
     for (request_index, request) in requests.iter().enumerate() {
         for (member_index, member) in request.members.iter().enumerate() {
-            if !member.has_semantic_annotations() {
+            if !member.annotation.has_semantic_annotations() {
                 continue;
             }
             let binding = if member.binding.is_empty() {
@@ -1383,40 +1383,15 @@ fn collect_binding_contracts(
                 Some(member.binding.clone())
             };
             if let Some(binding) = binding {
-                if member.initializer_purity == spec::InitializerPurity::Pure {
-                    validate_initializer_target(
-                        &mut initializer_targets,
-                        &binding,
-                        "initializer_purity",
-                    )?;
-                }
-                if member.initializer_binding_effects
-                    == Some(spec::InitializerBindingEffects::SourceOnly)
-                {
-                    validate_initializer_target(
-                        &mut initializer_targets,
-                        &binding,
-                        "initializer_binding_effects",
-                    )?;
-                    source_only_initializer_bindings.insert(binding.clone());
-                }
-                if let Some(effects) = member.initializer_external_effects {
-                    validate_initializer_target(
-                        &mut initializer_targets,
-                        &binding,
-                        "initializer_external_effects",
-                    )?;
-                    if let Some(previous) =
-                        external_initializer_contracts.insert(binding.clone(), effects)
-                    {
-                        anyhow::ensure!(
-                            previous == effects,
-                            "conflicting initializer_external_effects for `{binding}`: {previous} and {effects}"
-                        );
-                    }
-                }
-                member.collect_assumptions_for_binding(&mut assumptions, &binding);
-            } else if fail_fast && member.has_semantic_annotations() {
+                collect_binding_annotation_contracts(
+                    &mut assumptions,
+                    &mut source_only_initializer_bindings,
+                    &mut external_initializer_contracts,
+                    &binding,
+                    &member.annotation,
+                    &mut initializer_targets,
+                )?;
+            } else if fail_fast {
                 bail!(
                     "logical_module {}: semantic annotations on selector member `{}` could not be applied because selector resolution did not produce a concrete binding",
                     request.id,

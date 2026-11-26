@@ -1,21 +1,17 @@
 //! Compile spec claims into request types and resolve those requests against source chunks.
 
+use analysis::KnownEffect;
 use analysis::facts::StructuralChunkSourceFacts;
-use analysis::{AnalysisAssumptions, KnownEffect};
 use anyhow::{Result, bail};
 use selector_outcome::{
-    AnnotationField, BindingClaimant, ClaimOperation, ClaimValidationError, DuplicateBinding,
-    SelectorKind,
+    BindingClaimant, ClaimOperation, ClaimValidationError, DuplicateBinding, SelectorKind,
 };
 use selector_resolve::{
     AnonymousStatement, Chunk, FrozenImportAnchor, Member, MemberSelector, PlacementAnchors,
     Projection, Resolution, SpecModule,
 };
 use source_match::ParsedSourceMatchSelector;
-use spec::{
-    InitializerBindingEffects, InitializerExternalEffects, InitializerPurity, LogicalModule,
-    MemberEffect, MemberPurity, UnassignedMode,
-};
+use spec::{BindingAnnotation, LogicalModule, MemberEffect, UnassignedMode};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -57,45 +53,8 @@ pub struct MemberRequest {
     /// How the member names its declaration. Every selector but an import
     /// specifier name pin resolves through the global selector solver.
     pub selector: MemberSelector,
-    /// Spec-level purity annotation. `Pure` asserts that calls to the
-    /// bound function have no observable side effects — the validator
-    /// trusts the annotation and drops S edges for `<binding>(...)`
-    /// call sites. `Default` means "not annotated, fall back to
-    /// inferred classification". An author-trust contract; see
-    /// <docs/purity_soundness.md> "Declared purity" and docs/design.md A9.
-    pub purity: MemberPurity,
-    /// Trust annotation for this binding's variable initializer only; it does
-    /// not affect later uses of the resulting value.
-    pub initializer_purity: InitializerPurity,
-    /// Lexical-effect contract for this binding's variable initializer only.
-    /// It does not constrain heap, global, host, or future callback effects.
-    pub initializer_binding_effects: Option<InitializerBindingEffects>,
-    pub initializer_external_effects: Option<InitializerExternalEffects>,
-    /// Author prototype premises for the source-checked local factory proof.
-    pub retained_record_factory: bool,
-    /// Spec-level local-effect annotation. `TypescriptDecorateHelper`
-    /// asserts that recognized calls to the bound helper mutate only
-    /// their target class/prototype, so the analyzer can model a local
-    /// effect edge instead of a global side-effect-order edge.
-    pub effect: MemberEffect,
-    /// Property names on the bound value whose member calls
-    /// (`<binding>.<prop>(args)` / `<binding>?.<prop>(args)`) the author
-    /// asserts have no observable side effects beyond evaluating their
-    /// arguments. Same author-trust contract as `purity: pure` — see
-    /// <docs/purity_soundness.md> "Declared purity". Empty when the spec doesn't carry a
-    /// `pure_members` entry for this member.
-    pub pure_members: Vec<String>,
-    /// Property names on the bound value whose calls do not
-    /// synchronously invoke callback arguments. The call may still be
-    /// impure; this only narrows callback-body at-init promotion.
-    pub no_sync_callback_members: Vec<String>,
-    /// Per-binding human-readable comment from `annotations:`. Emitted as a
-    /// `// ...` block above the binding's owner statement in the generated
-    /// module body.
-    pub comment: Option<String>,
-    /// YAML-only note carried through request expansion for conflict checks
-    /// and diagnostics. It never emits into generated JS.
-    pub note: Option<String>,
+    /// Module annotation selected by this claim's readable export name.
+    pub annotation: BindingAnnotation,
     /// Short spec-facing description of how this member claim was authored.
     /// Used only in diagnostics after source-match selectors have resolved to
     /// concrete source bindings.
@@ -110,65 +69,6 @@ impl MemberRequest {
     /// duplicate diagnostics, but ownership is read back from the solver.
     pub fn resolves_after_chunk_analysis(&self) -> bool {
         !self.selector.is_import_specifier()
-    }
-
-    pub fn has_semantic_annotations(&self) -> bool {
-        self.purity != MemberPurity::Default
-            || self.initializer_purity != InitializerPurity::Default
-            || self.initializer_binding_effects.is_some()
-            || self.initializer_external_effects.is_some()
-            || self.retained_record_factory
-            || self.effect != MemberEffect::Default
-            || !self.pure_members.is_empty()
-            || !self.no_sync_callback_members.is_empty()
-    }
-
-    /// Extend `assumptions` with this member's spec-level trust assertions
-    /// (purity, pure_members, effect). Spec annotations carried on any
-    /// member form (logical-module member, chunk_renames member)
-    /// propagate the same way — they are semantic trust assertions,
-    /// not ownership claims; binding patches routed through
-    /// chunk_renames still do not force module co-location.
-    pub fn collect_assumptions_for_binding(
-        &self,
-        assumptions: &mut AnalysisAssumptions,
-        binding: &str,
-    ) {
-        if self.retained_record_factory {
-            assumptions
-                .retained_record_factories
-                .insert(binding.to_string());
-        }
-        if self.initializer_purity == InitializerPurity::Pure {
-            assumptions
-                .declared_pure_initializers
-                .insert(binding.to_string());
-        }
-        if self.purity == MemberPurity::Pure {
-            assumptions.declared_pure.insert(binding.to_string());
-        }
-        if self.purity == MemberPurity::PureNew {
-            assumptions.declared_pure_new.insert(binding.to_string());
-        }
-        if !self.pure_members.is_empty() {
-            assumptions
-                .declared_pure_members
-                .entry(binding.to_string())
-                .or_default()
-                .extend(self.pure_members.iter().cloned());
-        }
-        if !self.no_sync_callback_members.is_empty() {
-            assumptions
-                .no_sync_callback_members
-                .entry(binding.to_string())
-                .or_default()
-                .extend(self.no_sync_callback_members.iter().cloned());
-        }
-        if let Some(effect) = known_effect_from_member_effect(self.effect) {
-            assumptions
-                .known_effects
-                .insert(binding.to_string(), effect);
-        }
     }
 }
 
@@ -281,16 +181,7 @@ pub fn build_members(
                 export_name,
                 explicit_export_name: m.name.is_some(),
                 selector,
-                purity: MemberPurity::Default,
-                initializer_purity: InitializerPurity::Default,
-                initializer_binding_effects: None,
-                initializer_external_effects: None,
-                retained_record_factory: false,
-                effect: MemberEffect::Default,
-                pure_members: Vec::new(),
-                no_sync_callback_members: Vec::new(),
-                comment: None,
-                note: None,
+                annotation: BindingAnnotation::default(),
                 claim_origin,
             })
         })
@@ -306,22 +197,12 @@ pub fn build_members(
                 Some(target) => format!("source_matches[].bindings[`{target}`]"),
                 None => "source_matches[]".to_string(),
             };
-            let selector = member_from_source_match(export_name.clone(), parsed_selector).selector;
             requests.push(MemberRequest {
                 binding: String::new(),
                 export_name,
                 explicit_export_name: true,
-                selector,
-                purity: MemberPurity::Default,
-                initializer_purity: InitializerPurity::Default,
-                initializer_binding_effects: None,
-                initializer_external_effects: None,
-                retained_record_factory: false,
-                effect: MemberEffect::Default,
-                pure_members: Vec::new(),
-                no_sync_callback_members: Vec::new(),
-                comment: None,
-                note: None,
+                selector: MemberSelector::SourceMatch(parsed_selector),
+                annotation: BindingAnnotation::default(),
                 claim_origin,
             });
         }
@@ -360,127 +241,9 @@ fn apply_binding_annotations(
             }
             .into());
         }
-        merge_binding_annotation(
-            request_id,
-            export_name,
-            &mut requests[indices[0]],
-            annotation,
-        )?;
+        requests[indices[0]].annotation = annotation.clone();
     }
     Ok(())
-}
-
-fn merge_binding_annotation(
-    request_id: &str,
-    export_name: &str,
-    request: &mut MemberRequest,
-    annotation: &spec::BindingAnnotation,
-) -> Result<()> {
-    if annotation.purity != MemberPurity::Default {
-        if request.purity != MemberPurity::Default && request.purity != annotation.purity {
-            bail_annotation_conflict(request_id, export_name, AnnotationField::Purity)?;
-        }
-        request.purity = annotation.purity;
-    }
-
-    request.retained_record_factory |= annotation.retained_record_factory;
-
-    if annotation.initializer_purity != InitializerPurity::Default {
-        if request.initializer_purity != InitializerPurity::Default
-            && request.initializer_purity != annotation.initializer_purity
-        {
-            bail_annotation_conflict(request_id, export_name, AnnotationField::InitializerPurity)?;
-        }
-        request.initializer_purity = annotation.initializer_purity;
-    }
-
-    if let Some(effects) = annotation.initializer_binding_effects {
-        if request
-            .initializer_binding_effects
-            .is_some_and(|existing| existing != effects)
-        {
-            bail_annotation_conflict(
-                request_id,
-                export_name,
-                AnnotationField::InitializerBindingEffects,
-            )?;
-        }
-        request.initializer_binding_effects = Some(effects);
-    }
-
-    if let Some(effects) = annotation.initializer_external_effects {
-        if request
-            .initializer_external_effects
-            .is_some_and(|existing| existing != effects)
-        {
-            bail_annotation_conflict(
-                request_id,
-                export_name,
-                AnnotationField::InitializerExternalEffects,
-            )?;
-        }
-        request.initializer_external_effects = Some(effects);
-    }
-
-    if annotation.effect != MemberEffect::Default {
-        if request.effect != MemberEffect::Default && request.effect != annotation.effect {
-            bail_annotation_conflict(request_id, export_name, AnnotationField::Effect)?;
-        }
-        request.effect = annotation.effect;
-    }
-
-    if !annotation.pure_members.is_empty() {
-        if !request.pure_members.is_empty() && request.pure_members != annotation.pure_members {
-            bail_annotation_conflict(request_id, export_name, AnnotationField::PureMembers)?;
-        }
-        request.pure_members = annotation.pure_members.clone();
-    }
-
-    if !annotation.no_sync_callback_members.is_empty() {
-        if !request.no_sync_callback_members.is_empty()
-            && request.no_sync_callback_members != annotation.no_sync_callback_members
-        {
-            bail_annotation_conflict(
-                request_id,
-                export_name,
-                AnnotationField::NoSyncCallbackMembers,
-            )?;
-        }
-        request.no_sync_callback_members = annotation.no_sync_callback_members.clone();
-    }
-
-    if let Some(comment) = &annotation.comment {
-        if let Some(existing) = &request.comment
-            && existing != comment
-        {
-            bail_annotation_conflict(request_id, export_name, AnnotationField::Comment)?;
-        }
-        request.comment = Some(comment.clone());
-    }
-
-    if let Some(note) = &annotation.note {
-        if let Some(existing) = &request.note
-            && existing != note
-        {
-            bail_annotation_conflict(request_id, export_name, AnnotationField::Note)?;
-        }
-        request.note = Some(note.clone());
-    }
-
-    Ok(())
-}
-
-fn bail_annotation_conflict(
-    request_id: &str,
-    export_name: &str,
-    field: AnnotationField,
-) -> Result<()> {
-    Err(ClaimValidationError::AnnotationConflict {
-        logical_module: request_id.to_string(),
-        export_name: export_name.to_string(),
-        field,
-    }
-    .into())
 }
 
 pub fn known_effect_from_member_effect(effect: MemberEffect) -> Option<KnownEffect> {
