@@ -21,22 +21,14 @@ func (c *Client) CheckRuns(ctx context.Context, repository, sha string, installa
 	}
 
 	runs := make([]githubmodel.CheckRun, 0)
-	for page := 1; ; {
-		result, err := callAsCheckRunsInstallation(ctx, c, installationID, func(ctx context.Context, client *github.Client) (resourcePage[*github.ListCheckRunsResults], *github.Response, error) {
-			value, response, err := client.Checks.ListCheckRunsForRef(ctx, owner, name, sha, &github.ListCheckRunsOptions{
-				Filter: github.Ptr("latest"),
-				ListOptions: github.ListOptions{
-					PerPage: pageSize,
-					Page:    page,
-				},
-			})
-			return resourcePage[*github.ListCheckRunsResults]{value: value, response: response}, response, err
-		})
+	pages := installationPages(ctx, c, installationID, checkRunsRead, "check runs", func(ctx context.Context, client *github.Client, opts github.ListOptions) (*github.ListCheckRunsResults, *github.Response, error) {
+		return client.Checks.ListCheckRunsForRef(ctx, owner, name, sha, &github.ListCheckRunsOptions{Filter: github.Ptr("latest"), ListOptions: opts})
+	})
+	for results, err := range pages {
 		if err != nil {
 			return nil, err
 		}
-		results, response := result.value, result.response
-		if results == nil || response == nil {
+		if results == nil {
 			return nil, &InvalidResponseError{Reason: "check runs response is missing"}
 		}
 		for _, checkRun := range results.CheckRuns {
@@ -46,15 +38,9 @@ func (c *Client) CheckRuns(ctx context.Context, repository, sha string, installa
 			}
 			runs = append(runs, run)
 		}
-		if response.NextPage == 0 {
-			sort.SliceStable(runs, func(i, j int) bool { return runs[i].ID < runs[j].ID })
-			return runs, nil
-		}
-		if response.NextPage <= page {
-			return nil, &InvalidResponseError{Reason: "check runs pagination did not advance"}
-		}
-		page = response.NextPage
 	}
+	sort.SliceStable(runs, func(i, j int) bool { return runs[i].ID < runs[j].ID })
+	return runs, nil
 }
 
 func CheckRunObservation(checkRun *github.CheckRun, sha string) (githubmodel.CheckRun, error) {
@@ -73,8 +59,8 @@ func CheckRunObservation(checkRun *github.CheckRun, sha string) (githubmodel.Che
 	if checkRun.GetName() == "" {
 		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run name is missing"}
 	}
-	status, ok := checkRunStatus(checkRun.GetStatus())
-	if !ok {
+	status := githubmodel.CheckRunStatus(checkRun.GetStatus())
+	if !status.Valid() {
 		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run status is invalid"}
 	}
 	if checkRun.Conclusion != nil && !githubmodel.IsCheckConclusion(*checkRun.Conclusion) {
@@ -104,14 +90,4 @@ func CheckRunObservation(checkRun *github.CheckRun, sha string) (githubmodel.Che
 		StartedAt:   timestampTime(checkRun.StartedAt),
 		CompletedAt: timestampTime(checkRun.CompletedAt),
 	}, nil
-}
-
-func checkRunStatus(status string) (githubmodel.CheckRunStatus, bool) {
-	switch status {
-	case string(githubmodel.CheckRunQueued), string(githubmodel.CheckRunWaiting), string(githubmodel.CheckRunPending),
-		string(githubmodel.CheckRunRequested), string(githubmodel.CheckRunInProgress), string(githubmodel.CheckRunCompleted):
-		return githubmodel.CheckRunStatus(status), true
-	default:
-		return "", false
-	}
 }
