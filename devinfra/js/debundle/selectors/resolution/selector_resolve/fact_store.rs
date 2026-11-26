@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use analysis::facts::StructuralChunkSourceFacts;
 use chunk_facts::{RelationalFactNeeds, extract_relational_facts};
 use selector_ir::{SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram};
 use source_identity::SourceUnitId;
@@ -15,22 +16,18 @@ pub(crate) fn selector_fact_store(
     program: &SelectorProgram,
     chunk: &Chunk<'_>,
 ) -> SelectorFactStore {
-    let structural = &chunk.structural;
     let mut store = SelectorFactStore::default();
-    // A repeated `var` is one selector binding with several syntactic
-    // declaration sites. Use its first source-order source unit for binding lookup,
-    // matching the dependency graph's representative after CoDeclaration edges
-    // have made the sites inseparable. Relational facts below remain attached
-    // to their actual statement source units, because different bindings declared
-    // in one statement can have different repeated-site histories.
-    let mut binding_source_unit = HashMap::<swc_ecma_ast::Id, SourceUnitId>::new();
-    for statement in &structural.per_statement {
-        for binding in &statement.declared {
-            binding_source_unit
-                .entry(binding.clone())
-                .or_insert(SourceUnitId(statement.ordinal.0));
-        }
-    }
+    push_statement_facts(&mut store, &chunk.structural);
+    push_reference_facts(&mut store, &chunk.structural);
+    push_relational_facts(&mut store, program, chunk);
+    store
+}
+
+/// Every statement's source unit and kind, and the bindings it declares.
+fn push_statement_facts(
+    store: &mut SelectorFactStore,
+    structural: &StructuralChunkSourceFacts<'_>,
+) {
     for statement in &structural.per_statement {
         let source_unit = SourceUnitId(statement.ordinal.0);
         store.push(SelectorFact::SourceUnit {
@@ -45,7 +42,27 @@ pub(crate) fn selector_fact_store(
             });
         }
     }
+}
 
+/// Every statement's references to bindings another statement declares.
+fn push_reference_facts(
+    store: &mut SelectorFactStore,
+    structural: &StructuralChunkSourceFacts<'_>,
+) {
+    // A repeated `var` is one selector binding with several syntactic
+    // declaration sites. Use its first source-order source unit for binding lookup,
+    // matching the dependency graph's representative after CoDeclaration edges
+    // have made the sites inseparable. Relational facts remain attached
+    // to their actual statement source units, because different bindings declared
+    // in one statement can have different repeated-site histories.
+    let mut binding_source_unit = HashMap::<swc_ecma_ast::Id, SourceUnitId>::new();
+    for statement in &structural.per_statement {
+        for binding in &statement.declared {
+            binding_source_unit
+                .entry(binding.clone())
+                .or_insert(SourceUnitId(statement.ordinal.0));
+        }
+    }
     for statement in &structural.per_statement {
         let source_unit = SourceUnitId(statement.ordinal.0);
         let references = statement
@@ -74,7 +91,14 @@ pub(crate) fn selector_fact_store(
             }
         }
     }
+}
 
+/// The relation facts the relational selectors in `program` read, and only those.
+fn push_relational_facts(
+    store: &mut SelectorFactStore,
+    program: &SelectorProgram,
+    chunk: &Chunk<'_>,
+) {
     let mut reads_member = false;
     let mut consumes_module_member = false;
     let mut needs = RelationalFactNeeds::default();
@@ -132,5 +156,4 @@ pub(crate) fn selector_fact_store(
             property: alias.property,
         });
     }
-    store
 }

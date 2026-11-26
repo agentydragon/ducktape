@@ -142,68 +142,11 @@ impl Projection {
             }) {
                 continue;
             }
-            let mut witness = None;
-            // Use exactly the IR's exclusivity classes. In particular, do not
-            // turn the members of one binding group into competing claims.
-            for distinct in &self.program.all_different {
-                let targets = distinct
-                    .iter()
-                    .filter(|target| group.contains(target) && original.contains_key(target))
-                    .copied()
-                    .collect::<Vec<_>>();
-                // Unknown relational domains are omitted. Proving a known
-                // subset contradictory is sound; guessing their domains is not.
-                let domains = targets
-                    .iter()
-                    .map(|target| {
-                        original[target]
-                            .keys()
-                            .map(|source_unit| source_unit.0)
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
-                let Some(deficient) = selector_conflict::deficient_set(&domains) else {
-                    continue;
-                };
-                let selectors = deficient
-                    .iter()
-                    .map(|index| target_entity_ref(&self.program.targets[targets[*index].0]))
-                    .collect();
-                let mut source_units = BTreeMap::<SourceUnitId, BTreeSet<String>>::new();
-                for index in deficient {
-                    for (source_unit, bindings) in original[&targets[index]] {
-                        source_units
-                            .entry(*source_unit)
-                            .or_default()
-                            .extend(bindings.iter().cloned());
-                    }
-                }
-                let source_units = source_units
-                    .into_iter()
-                    .map(|(source_unit, bindings)| {
-                        Ok(ConflictSourceUnit {
-                            source_unit: source_unit.0,
-                            body_index: statement_for_source_unit_ordinal(
-                                &module.body,
-                                SourceUnitOrdinal(source_unit.0),
-                            )
-                            .context("conflict source unit has no source statement")?
-                            .0,
-                            bindings: bindings.into_iter().collect(),
-                        })
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                witness = Some(OwnershipConflict {
-                    selectors,
-                    source_units,
-                });
-                break;
-            }
             let diagnostic = Outcome::Unsatisfiable {
                 group: target_entity_ref(
                     &self.program.targets[group.first().expect("nonempty group").0],
                 ),
-                witness,
+                witness: self.ownership_witness(module, &group, &original)?,
             };
             for target in group {
                 if matches!(
@@ -215,6 +158,72 @@ impl Projection {
             }
         }
         Ok(outcomes)
+    }
+
+    /// The first `all_different` class whose known domains within `group`
+    /// leave fewer source units than claims, as an ownership contradiction.
+    fn ownership_witness(
+        &self,
+        module: &Module,
+        group: &BTreeSet<SelectorTargetId>,
+        original: &BTreeMap<SelectorTargetId, &BTreeMap<SourceUnitId, BTreeSet<String>>>,
+    ) -> Result<Option<OwnershipConflict>> {
+        // Use exactly the IR's exclusivity classes. In particular, do not
+        // turn the members of one binding group into competing claims.
+        for distinct in &self.program.all_different {
+            let targets = distinct
+                .iter()
+                .filter(|target| group.contains(target) && original.contains_key(target))
+                .copied()
+                .collect::<Vec<_>>();
+            // Unknown relational domains are omitted. Proving a known
+            // subset contradictory is sound; guessing their domains is not.
+            let domains = targets
+                .iter()
+                .map(|target| {
+                    original[target]
+                        .keys()
+                        .map(|source_unit| source_unit.0)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let Some(deficient) = selector_conflict::deficient_set(&domains) else {
+                continue;
+            };
+            let selectors = deficient
+                .iter()
+                .map(|index| target_entity_ref(&self.program.targets[targets[*index].0]))
+                .collect();
+            let mut source_units = BTreeMap::<SourceUnitId, BTreeSet<String>>::new();
+            for index in deficient {
+                for (source_unit, bindings) in original[&targets[index]] {
+                    source_units
+                        .entry(*source_unit)
+                        .or_default()
+                        .extend(bindings.iter().cloned());
+                }
+            }
+            let source_units = source_units
+                .into_iter()
+                .map(|(source_unit, bindings)| {
+                    Ok(ConflictSourceUnit {
+                        source_unit: source_unit.0,
+                        body_index: statement_for_source_unit_ordinal(
+                            &module.body,
+                            SourceUnitOrdinal(source_unit.0),
+                        )
+                        .context("conflict source unit has no source statement")?
+                        .0,
+                        bindings: bindings.into_iter().collect(),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            return Ok(Some(OwnershipConflict {
+                selectors,
+                source_units,
+            }));
+        }
+        Ok(None)
     }
 
     /// How each resolved projected target was made unique, where not by its
