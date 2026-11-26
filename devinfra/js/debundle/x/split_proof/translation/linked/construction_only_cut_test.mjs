@@ -97,7 +97,9 @@ function observeAbrupt(file) {
   const provider = "nested/provider.mjs";
   const lazy = "nested/lazy.mjs";
   const worker = "renderer.mjs";
-  const files = prepare(path.join(root, "construction-cut-former-deployment"), {
+  const dir = path.join(root, "construction-cut-former-deployment");
+  mkdirSync(path.join(dir, "nested"), { recursive: true });
+  const files = prepare(dir, {
     sourceName: entry,
     source: `import { load, meta, update } from "./${provider}";
       var first = 0; var render = () => 42; var entryMeta = () => import.meta;
