@@ -603,11 +603,7 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
                 let Some(readable) = readable_exports.get(local.sym.as_ref()) else {
                     continue;
                 };
-                let public = named
-                    .exported
-                    .as_ref()
-                    .map(binding_targets::module_export_name)
-                    .unwrap_or_else(|| local.sym.to_string());
+                let public = binding_targets::public_export_name(named);
                 cross_chunk_import_aliases.push((public, readable.clone()));
             }
         }

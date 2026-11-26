@@ -20,7 +20,8 @@ use artifact::reports::{
 };
 use binding_targets::{
     DeclShape, TargetAccessRecorder, binding_names, decl_shape, declaration_name_strings,
-    module_export_name, record_assign_target, record_pat_write, record_update_target,
+    imported_export_name, module_export_name, public_export_name, record_assign_target,
+    record_pat_write, record_update_target,
 };
 use js_ast::{
     ParsedGlobalUses, ParsedJsModule, SourceLineIndex, is_dotted_import_meta_property,
@@ -360,9 +361,7 @@ fn collect_primitive_export_candidates(
                         if specifier.is_type_only {
                             continue;
                         }
-                        let name = module_export_name(
-                            specifier.exported.as_ref().unwrap_or(&specifier.orig),
-                        );
+                        let name = public_export_name(specifier);
                         let source = if let Some(source) = &named.src {
                             named
                                 .with
@@ -683,12 +682,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
             for specifier in &named.specifiers {
                 if let ExportSpecifier::Named(named_specifier) = specifier {
                     export_aliases.push(ExportAliasRecord {
-                        exported: module_export_name(
-                            named_specifier
-                                .exported
-                                .as_ref()
-                                .unwrap_or(&named_specifier.orig),
-                        ),
+                        exported: public_export_name(named_specifier),
                         line: line_index.line_for_span(named.span),
                         local: Some(module_export_name(&named_specifier.orig)),
                     });
@@ -846,13 +840,7 @@ fn describe_import(line_index: &SourceLineIndex, decl: &ImportDecl) -> ImportRec
                 },
                 ImportSpecifier::Named(named) => ImportSpecifierRecord {
                     kind: ImportSpecifierKind::Named,
-                    imported: Some(
-                        named
-                            .imported
-                            .as_ref()
-                            .map(module_export_name)
-                            .unwrap_or_else(|| named.local.sym.to_string()),
-                    ),
+                    imported: Some(imported_export_name(named)),
                     local: named.local.sym.to_string(),
                 },
             })
