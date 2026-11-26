@@ -9,7 +9,8 @@ use std::{cell::RefCell, rc::Rc};
 use anyhow::{Context, Result, bail};
 use artifact::ChunkBundle;
 use artifact::paths::{
-    chunk_id_for_js_path, module_path_from_path, normalize_module_path, path_from_module_path,
+    chunk_id_for_js_path, is_path_specifier, module_path_from_path, normalize_module_path,
+    path_from_module_path,
 };
 use artifact::runtime_resources::{
     RuntimeResourceDestination, RuntimeResourceKind, RuntimeResourceResolution,
@@ -157,8 +158,8 @@ fn runtime_js_href(artifact: &ChunkBundle, js_path: &str, app_root: &Path) -> Re
         .join(path_from_module_path(chunk_name))
         .join(path_from_module_path(entry_file));
     Ok(artifact::paths::relative_module_specifier(
-        app_root,
-        &entry_path,
+        &module_path_from_path(app_root),
+        &module_path_from_path(&entry_path),
     ))
 }
 
@@ -497,9 +498,7 @@ fn resolve_runtime_resources(
                                         }
                                     })
                                 }
-                                None if specifier.starts_with('.')
-                                    || specifier.starts_with('/') =>
-                                {
+                                None if is_path_specifier(specifier) => {
                                     RuntimeResourceDestination::Unresolved {
                                         reason: UnresolvedResourceReason::InvalidLocalPath,
                                     }

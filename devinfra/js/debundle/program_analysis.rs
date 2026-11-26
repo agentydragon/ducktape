@@ -1,3 +1,4 @@
+use artifact::paths::is_path_specifier;
 use artifact::runtime_resources::{RuntimeResourceKind, RuntimeResourceUse};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
@@ -25,67 +26,22 @@ use binding_targets::{
 };
 use js_ast::{
     ParsedGlobalUses, ParsedJsModule, SourceLineIndex, is_dotted_import_meta_property,
-    is_worker_constructor, str_value, worker_literal_source,
+    is_worker_constructor, str_value,
 };
 
 mod loader_phase;
 mod loader_reach;
 
-/// True when a specifier string is a relative module path that the
-/// pass-through emission rewriter could canonicalize (any `.` / `/`
-/// prefix). Kept in sync with the gate in
-/// `vendor::passthrough`'s `SourceCanonicalizer::rewrite_source`.
-fn is_relative_specifier(source: &str) -> bool {
-    source.starts_with('.') || source.starts_with('/')
+fn is_path_literal(value: &Str) -> bool {
+    is_path_specifier(&value.value.to_string_lossy())
 }
 
-/// If `node` is `import("literal")` and the literal is a relative
-/// module path, return it; otherwise `None`.
-fn dynamic_import_relative_specifier(node: &CallExpr) -> Option<String> {
-    if !matches!(node.callee, Callee::Import(_)) {
-        return None;
-    }
-    let first = node.args.first()?;
-    if first.spread.is_some() {
-        return None;
-    }
-    let Expr::Lit(Lit::Str(s)) = &*first.expr else {
-        return None;
-    };
-    let v = str_value(s);
-    is_relative_specifier(&v).then_some(v)
-}
-
-/// If `node` is a direct literal `import.meta.require("relative")`
-/// request, return its source. This mirrors the pass-through
-/// canonicalizer's loader-call shape so chunks keep their AST until the
-/// entry request has been rewritten against the output artifact.
-fn import_meta_require_relative_specifier(node: &CallExpr) -> Option<String> {
-    let Callee::Expr(callee) = &node.callee else {
-        return None;
-    };
-    let Expr::Member(member) = callee.unwrap_parens() else {
-        return None;
-    };
-    if !is_import_meta_require_member(member) {
-        return None;
-    }
-    let first = node.args.first()?;
-    if first.spread.is_some() {
-        return None;
-    }
-    let Expr::Lit(Lit::Str(source)) = &*first.expr else {
-        return None;
-    };
-    let source = str_value(source);
-    is_relative_specifier(&source).then_some(source)
-}
-
-/// If `node` is `new Worker("literal")` / `new SharedWorker("literal")`
-/// and the literal is a relative module path, return it; otherwise `None`.
-fn worker_relative_specifier(node: &NewExpr) -> Option<String> {
-    let source = str_value(worker_literal_source(node)?);
-    is_relative_specifier(&source).then_some(source)
+/// The passthrough rewriter accepts an unspread string literal in the first argument.
+fn has_path_argument(call: &CallExpr) -> bool {
+    call.args.first().is_some_and(|arg| {
+        arg.spread.is_none()
+            && matches!(&*arg.expr, Expr::Lit(Lit::Str(value)) if is_path_literal(value))
+    })
 }
 
 fn member_is_named(member: &MemberExpr, name: &str) -> bool {
@@ -992,6 +948,8 @@ impl Visit for ModuleScanVisitor {
             && let Expr::Member(member) = callee.unwrap_parens()
             && is_import_meta_require_member(member)
         {
+            self.has_rewritable_specifier =
+                self.has_rewritable_specifier || has_path_argument(node);
             self.direct_call_members.insert(member.span.lo.0);
             let literal = match node.args.as_slice() {
                 [arg] if arg.spread.is_none() => match arg.expr.unwrap_parens() {
@@ -1007,10 +965,6 @@ impl Visit for ModuleScanVisitor {
             };
             self.interop_uses
                 .push((self.item_index, node.span, kind, literal));
-        }
-        if !self.has_rewritable_specifier && import_meta_require_relative_specifier(node).is_some()
-        {
-            self.has_rewritable_specifier = true;
         }
         if let Callee::Expr(callee) = &node.callee
             && let Expr::Call(inner) = callee.unwrap_parens()
@@ -1070,9 +1024,8 @@ impl Visit for ModuleScanVisitor {
                 InteropUseKind::DynamicImport,
                 literal,
             ));
-            if !self.has_rewritable_specifier && dynamic_import_relative_specifier(node).is_some() {
-                self.has_rewritable_specifier = true;
-            }
+            self.has_rewritable_specifier =
+                self.has_rewritable_specifier || has_path_argument(node);
         }
         node.visit_children_with(self);
     }
@@ -1095,10 +1048,12 @@ impl Visit for ModuleScanVisitor {
                 Expr::Lit(Lit::Str(value)) if arg.spread.is_none() => Some(str_value(value)),
                 _ => None,
             });
+            if kind == RuntimeResourceKind::Worker
+                && specifier.as_deref().is_some_and(is_path_specifier)
+            {
+                self.has_rewritable_specifier = true;
+            }
             self.resources.push(RuntimeResourceUse { kind, specifier });
-        }
-        if !self.has_rewritable_specifier && worker_relative_specifier(node).is_some() {
-            self.has_rewritable_specifier = true;
         }
         node.visit_children_with(self);
     }
@@ -1168,7 +1123,7 @@ impl Visit for ModuleScanVisitor {
     }
 
     fn visit_import_decl(&mut self, node: &ImportDecl) {
-        if !self.has_rewritable_specifier && is_relative_specifier(&str_value(&node.src)) {
+        if !self.has_rewritable_specifier && is_path_literal(&node.src) {
             self.has_rewritable_specifier = true;
         }
         // Import specifiers only name the provider interface and establish
@@ -1178,7 +1133,7 @@ impl Visit for ModuleScanVisitor {
     fn visit_named_export(&mut self, node: &NamedExport) {
         if !self.has_rewritable_specifier
             && let Some(src) = &node.src
-            && is_relative_specifier(&str_value(src))
+            && is_path_literal(src)
         {
             self.has_rewritable_specifier = true;
         }
@@ -1196,7 +1151,7 @@ impl Visit for ModuleScanVisitor {
     }
 
     fn visit_export_all(&mut self, node: &ExportAll) {
-        if !self.has_rewritable_specifier && is_relative_specifier(&str_value(&node.src)) {
+        if !self.has_rewritable_specifier && is_path_literal(&node.src) {
             self.has_rewritable_specifier = true;
         }
     }
