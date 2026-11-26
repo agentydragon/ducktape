@@ -5,9 +5,9 @@
 //! projected as a purity certificate. The final projection happens only after
 //! the shared worklist reaches closure.
 
-use super::{Purity, PurityReason, PurityRule};
-use crate::analysis_inputs::ProofDependencies;
-use crate::inference::{FactChange, FactContext, IterativeInference, IterativeRules};
+use analysis_vocabulary::inputs::ProofDependencies;
+use analysis_vocabulary::purity::{Purity, PurityReason, PurityRule};
+use inference::{FactChange, FactContext, IterativeInference, IterativeRules};
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 use std::cmp::Reverse;
@@ -65,7 +65,7 @@ pub(crate) struct PurityCallObligation {
     pub(crate) callee: PurityFunctionKey,
     pub(crate) name: String,
     pub(crate) span: Span,
-    pub(crate) source_location: Option<crate::execution_evidence::SourceLocation>,
+    pub(crate) source_location: Option<analysis_vocabulary::execution_evidence::SourceLocation>,
 }
 
 impl PurityBodyTransfer {
@@ -600,7 +600,7 @@ pub(crate) fn call_reason(name: &str, span: Span) -> PurityReason {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis_inputs::ValueInputRef;
+    use analysis_vocabulary::inputs::ValueInputRef;
     use swc_common::{BytePos, DUMMY_SP};
 
     fn function(module: &str, binding: &str, source_key: u32) -> PurityFunctionKey {

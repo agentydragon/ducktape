@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::analysis_inputs::{
+use crate::inputs::{
     ArgumentInputRef, DescriptorCopyAuthorRef, NativeOperationInputRef, ValueInputRef,
 };
 
@@ -56,5 +56,5 @@ pub struct InferenceUse {
     /// Exact author lifetime assertions for imported primitive-array spreads.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub imported_primitive_array_spread_input_refs:
-        BTreeSet<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputRef>,
+        BTreeSet<crate::inputs::ImportedPrimitiveArraySpreadInputRef>,
 }

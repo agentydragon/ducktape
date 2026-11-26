@@ -5,14 +5,14 @@
 //! their own surrounding purity/effect checks.
 
 use super::*;
-use crate::analysis_inputs::{
+use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
+use analysis_vocabulary::inputs::{
     AnalysisInputs, ImportedPrimitiveArrayOperandEvidence, InferredSetConstruction,
     InferredSetOperation, NativeOperationInputEvidence, ProofDependencies,
     ResolvedImportedPrimitiveArraySpreadInput,
 };
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use analysis_vocabulary::value::{Kind, Value};
+use inference::{FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use std::sync::Arc;
 
@@ -369,7 +369,7 @@ impl SetIterableProof {
     pub fn inference_use_for_constructor(
         &self,
         span: Span,
-    ) -> Option<crate::analysis_provenance::InferenceUse> {
+    ) -> Option<analysis_vocabulary::provenance::InferenceUse> {
         self.source_constructions
             .get(&span.lo.0)
             .map(|proof| proof.inference.clone())
@@ -392,7 +392,7 @@ impl SetIterableProof {
     pub fn stable_array_spread_inference_use(
         &self,
         token: Span,
-    ) -> Option<crate::analysis_provenance::InferenceUse> {
+    ) -> Option<analysis_vocabulary::provenance::InferenceUse> {
         let initializer = self.array_spreads.by_site.get(&token.lo.0)?;
         self.facts
             .inference_use(&SemanticKey::StablePrimitiveArraySpread(*initializer))

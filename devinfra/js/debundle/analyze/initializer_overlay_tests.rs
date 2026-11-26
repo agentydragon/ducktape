@@ -1,7 +1,7 @@
 use crate::analyze_chunk;
 use analysis::facts::binding_effect_coverage::{BindingEffectAuthority, BindingEffectCoverage};
 use analysis::facts::*;
-use analysis::*;
+use analysis_vocabulary::inputs::AnalysisInputs;
 use raw_js_test_support::parse;
 use std::collections::BTreeSet;
 

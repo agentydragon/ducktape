@@ -2847,7 +2847,7 @@ per chunk, the source-unit vertices and dependency edges, quotient projections f
 current assignment, and the `atomic_graph`. The field-level shape is
 the serde schema (`DependencyGraphReport` and siblings in
 <../graph/report.rs>), with synchronous-execution evidence owned by
-<../execution_evidence.rs>; this doc does not mirror it. New fields can
+<../analysis_vocabulary/execution_evidence.rs>; this doc does not mirror it. New fields can
 be added without changing the underlying graph transform. Do not add
 top-level `kind` or `schema_version` fields just to mimic an external
 compatibility scheme.

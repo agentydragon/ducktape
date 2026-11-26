@@ -11,7 +11,7 @@ use super::super::value_model::{
 };
 use super::context::KernelContext;
 use super::frame::{CallableSelection, LocalFrame, LocalValueResult, RemainderDisposition};
-use analysis::facts::abstract_domain::value::Value;
+use analysis_vocabulary::value::Value;
 use imbl::OrdMap;
 use rustc_hash::FxHashSet;
 use std::collections::BTreeSet;

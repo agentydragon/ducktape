@@ -1,6 +1,6 @@
 //! Shared proof judgments and iterative inference over finite fact domains.
 
-use crate::analysis_inputs::ProofDependencies;
+use analysis_vocabulary::inputs::ProofDependencies;
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 

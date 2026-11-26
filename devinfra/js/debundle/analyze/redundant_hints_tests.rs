@@ -1,6 +1,6 @@
 use crate::analyze_chunk;
-use analysis::AnalysisInputs;
-use analysis::analysis_inputs::AnalysisAssumptions;
+use analysis_vocabulary::inputs::AnalysisAssumptions;
+use analysis_vocabulary::inputs::AnalysisInputs;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Module;
 

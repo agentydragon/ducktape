@@ -5,8 +5,9 @@ use std::fmt;
 use swc_atoms::Atom;
 
 use crate::execution_evidence::{ConstructionRejection, ExecutionPrecisionLoss, SourceLocation};
-use crate::facts::EffectCell;
 use crate::purity::Purity;
+
+pub mod saved;
 
 /// One census witness `program_premises.intrinsics_never_written` overrides.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -17,7 +18,7 @@ pub struct NeverWrittenOverride {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     /// The named families whose slots this witness would reach.
-    pub families: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    pub families: BTreeSet<crate::inputs::NativeIntrinsic>,
     /// Why it reaches them.
     pub reach: NeverWrittenReach,
 }
@@ -72,7 +73,7 @@ pub struct ReturnedRecordUseReport {
     /// Author-conditioned native-integrity inputs used by the defining
     /// returned-record certificate.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub native_integrity_value_inputs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
+    pub native_integrity_value_inputs: BTreeSet<crate::inputs::ValueInputRef>,
 }
 
 /// A conservative source write census entry, including writes in deferred bodies.
@@ -83,29 +84,29 @@ pub struct NativeMutationWitness {
     pub source_location: Option<SourceLocation>,
     pub operation: NativeMutationOperation,
     /// Identity before unknown-global descendants widen to GlobalObject.
-    pub receiver_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    pub receiver_roots: BTreeSet<crate::inputs::NativeIntrinsic>,
     pub through_local_alias: bool,
     /// The global-object property the receiver is read from, by spelling:
     /// `location` for `window.location.href = url`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub receiver_global: Option<String>,
-    pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    pub affected_roots: BTreeSet<crate::inputs::NativeIntrinsic>,
     /// Target paths and keys retained before family-wide integrity widening.
     /// Unknown paths/keys remain visible but are not source-known slot writes.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub target_slots: BTreeSet<NativeWriteSlot>,
     /// Native identities needed before a computed key can be trusted as exact.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    pub key_dependencies: BTreeSet<crate::inputs::NativeIntrinsic>,
     /// Native premises invalidating the property-key refinement, if any.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub invalidated_key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    pub invalidated_key_dependencies: BTreeSet<crate::inputs::NativeIntrinsic>,
     /// Author-conditioned captured-value facts consumed by this receiver
     /// refinement, including refinements whose resulting affected roots are empty.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
+    pub value_input_refs: BTreeSet<crate::inputs::ValueInputRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub value_input_evidence: Vec<crate::analysis_inputs::ValueInputEvidence>,
+    pub value_input_evidence: Vec<crate::inputs::ValueInputEvidence>,
     /// The original write remains visible when source argument evidence proves
     /// its containing branch unreachable in every covered activation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -121,9 +122,9 @@ pub struct NativeMutationWitness {
 #[serde(rename_all = "snake_case")]
 pub enum NativeReceiverPath {
     GlobalObject,
-    Constructor(crate::analysis_inputs::NativeIntrinsic),
-    Prototype(crate::analysis_inputs::NativeIntrinsic),
-    Descendant(crate::analysis_inputs::NativeIntrinsic),
+    Constructor(crate::inputs::NativeIntrinsic),
+    Prototype(crate::inputs::NativeIntrinsic),
+    Descendant(crate::inputs::NativeIntrinsic),
     ArrayIteratorPrototype,
     SetIteratorPrototype,
     Unknown,
@@ -167,7 +168,7 @@ pub struct NativeWriteSlot {
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NativeUnreachableBranch {
-    pub arguments: crate::analysis_inputs::CallbackObjectArguments,
+    pub arguments: crate::inputs::CallbackObjectArguments,
     pub imported_local: String,
     pub wrapper_call_location: Option<SourceLocation>,
     pub callback_location: Option<SourceLocation>,
@@ -216,7 +217,7 @@ pub struct NativeIntegrityCheck {
     #[serde(default)]
     pub slots: BTreeSet<String>,
     /// References to the affected roots in `program_graph.json.gz`'s native_integrity_witnesses.
-    pub affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    pub affected_roots: BTreeSet<crate::inputs::NativeIntrinsic>,
 }
 
 /// A source operation that can affect properties of the intrinsic Object prototype.
@@ -229,7 +230,7 @@ pub struct NativePrototypeMutation {
     /// None denotes any property; an empty set denotes only Symbol keys.
     pub properties: Option<BTreeSet<String>>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    pub key_dependencies: BTreeSet<crate::inputs::NativeIntrinsic>,
     #[serde(skip)]
     pub span: swc_common::Span,
 }
@@ -280,7 +281,7 @@ pub struct NativePrefixObservation {
     pub program_point_path: Vec<NativeProgramPointStep>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub property: Option<String>,
-    pub prior_affected_roots: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+    pub prior_affected_roots: BTreeSet<crate::inputs::NativeIntrinsic>,
     pub prior_blocking_prototype_mutations: usize,
     pub uncertain_execution: bool,
 }
@@ -290,11 +291,11 @@ pub struct NativePrefixObservation {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct NativeIntegrityUse {
     pub guard: NativeIntegrityGuard,
-    pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
+    pub value_input_refs: BTreeSet<crate::inputs::ValueInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub no_accessor_install_refs: BTreeSet<crate::analysis_inputs::NoAccessorInstallRef>,
+    pub no_accessor_install_refs: BTreeSet<crate::inputs::NoAccessorInstallRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub program_premises: BTreeSet<crate::analysis_inputs::ProgramPremiseKey>,
+    pub program_premises: BTreeSet<crate::inputs::ProgramPremiseKey>,
 }
 
 /// Human-readable projection of inference provenance for report output.
@@ -303,23 +304,23 @@ pub struct NativeIntegrityUse {
 /// rendered author-input locations while preserving the stable report shape.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct InferenceUseReport {
-    pub conclusion: crate::analysis_provenance::InferenceRule,
-    pub derivation_rules: BTreeSet<crate::analysis_provenance::InferenceRule>,
-    pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
+    pub conclusion: crate::provenance::InferenceRule,
+    pub derivation_rules: BTreeSet<crate::provenance::InferenceRule>,
+    pub value_input_refs: BTreeSet<crate::inputs::ValueInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub descriptor_copy_author_refs: BTreeSet<crate::analysis_inputs::DescriptorCopyAuthorRef>,
-    pub argument_input_refs: BTreeSet<crate::analysis_inputs::ArgumentInputRef>,
+    pub descriptor_copy_author_refs: BTreeSet<crate::inputs::DescriptorCopyAuthorRef>,
+    pub argument_input_refs: BTreeSet<crate::inputs::ArgumentInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub argument_input_spec_locations: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub native_operation_input_refs: BTreeSet<crate::analysis_inputs::NativeOperationInputRef>,
+    pub native_operation_input_refs: BTreeSet<crate::inputs::NativeOperationInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub imported_primitive_array_spread_input_refs:
-        BTreeSet<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputRef>,
+        BTreeSet<crate::inputs::ImportedPrimitiveArraySpreadInputRef>,
 }
 
-impl From<&crate::analysis_provenance::InferenceUse> for InferenceUseReport {
-    fn from(inference: &crate::analysis_provenance::InferenceUse) -> Self {
+impl From<&crate::provenance::InferenceUse> for InferenceUseReport {
+    fn from(inference: &crate::provenance::InferenceUse) -> Self {
         Self {
             conclusion: inference.conclusion,
             derivation_rules: inference.derivation_rules.clone(),
@@ -455,7 +456,7 @@ pub struct SynchronousExecutionReport {
     /// beside independently source-resolved import/export and literal facts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imported_primitive_array_spread_input_uses:
-        Vec<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse>,
+        Vec<crate::inputs::ImportedPrimitiveArraySpreadInputUse>,
     pub complete: bool,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -499,8 +500,8 @@ pub struct LexicalBindingEffectReceipt {
     pub owner: SourceUnitOrdinal,
     pub binding: String,
     pub initializer_span: Option<swc_common::Span>,
-    pub read_dependencies: crate::analysis_inputs::ProofDependencies,
-    pub rebind_dependencies: crate::analysis_inputs::ProofDependencies,
+    pub read_dependencies: crate::inputs::ProofDependencies,
+    pub rebind_dependencies: crate::inputs::ProofDependencies,
     /// Flat exact call edges retain each consuming call-site, caller body,
     /// resolved target body, and merged prerequisites, including memo-reused
     /// invocations. The analyzer checks connectivity from the root body.
@@ -524,7 +525,7 @@ pub enum LexicalBindingEffectBody {
         owner: SourceUnitOrdinal,
     },
     Native {
-        intrinsic: crate::analysis_inputs::NativeIntrinsic,
+        intrinsic: crate::inputs::NativeIntrinsic,
         property: Option<String>,
     },
     /// An imported callable replaced by its derived foreign call summary.
@@ -539,7 +540,7 @@ pub struct LexicalBindingEffectCall {
     pub caller: LexicalBindingEffectBody,
     pub call_span: swc_common::Span,
     pub target: LexicalBindingEffectBody,
-    pub dependencies: crate::analysis_inputs::ProofDependencies,
+    pub dependencies: crate::inputs::ProofDependencies,
 }
 
 /// An exact initializer's author-supplied lexical effect bound. The enclosing
@@ -570,7 +571,7 @@ pub struct InitializerExternalEffectsUse {
 /// One exact call site that consumed a native-operation author premise.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NativeOperationInputUse {
-    pub evidence: crate::analysis_inputs::NativeOperationInputEvidence,
+    pub evidence: crate::inputs::NativeOperationInputEvidence,
     pub source_location: Option<SourceLocation>,
     #[serde(skip)]
     pub span: swc_common::Span,
@@ -824,7 +825,7 @@ pub struct ReentryFreeOperationUse {
     pub span: swc_common::Span,
 }
 
-/// Serializable projection of [`EffectCell`]: binding cells carry the
+/// Serializable projection of `facts::EffectCell`: binding cells carry the
 /// name only (the hygiene context is dropped, as everywhere on the
 /// wire; see docs/wire_format.md).
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display)]
@@ -842,22 +843,4 @@ pub enum EffectCellReport {
     ObjectShape { origin: u32 },
     #[strum(to_string = "own property `{property}` of allocation #{origin}")]
     OwnProperty { origin: u32, property: String },
-}
-
-impl From<&EffectCell> for EffectCellReport {
-    fn from(cell: &EffectCell) -> Self {
-        match cell {
-            EffectCell::Binding(id) => Self::Binding {
-                binding: id.0.clone(),
-            },
-            EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
-            EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
-            EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
-            EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
-            EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
-                origin: *origin,
-                property: property.clone(),
-            },
-        }
-    }
 }

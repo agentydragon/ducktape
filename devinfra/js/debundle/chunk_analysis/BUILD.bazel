@@ -13,6 +13,7 @@ rust_library(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/analyze",
         "//devinfra/js/debundle/graph",
         "//devinfra/js/debundle/spec",

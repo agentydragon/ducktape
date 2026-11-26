@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::execution_evidence::SourceLocation;
-use crate::purity::{Purity, PurityReason, PurityRule};
+use analysis_vocabulary::execution_evidence::SourceLocation;
+use analysis_vocabulary::purity::{Purity, PurityReason, PurityRule};
 use anyhow::{Context, Result, ensure};
 use prost::Message;
 use saved_purity_proto::debundle::saved_purity as proto;
@@ -164,7 +164,7 @@ impl RestoredPurities {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis_inputs::{
+    use analysis_vocabulary::inputs::{
         ArgumentInputRef, DescriptorCopyAuthorRef, HostBehaviorKey,
         ImportedPrimitiveArraySpreadInputRef, InitializerCallEffectInputRef,
         NativeOperationInputRef, NoAccessorInstallRef, ProgramPremiseKey, ProofDependencies,

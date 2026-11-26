@@ -8,18 +8,18 @@
 
 use super::abstract_domain::builtins::Row;
 use super::abstract_domain::integrity::{Integrity, IntegrityFlags, IntrinsicSlot};
-use super::abstract_domain::value::{Kind, Value};
 use super::callable_inference::{CallableInferenceInputs, FunctionBindingFacts};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use super::statement_facts::StructuralStatementFacts;
 use super::value_flow::ChunkValueFlow;
-use crate::analysis_inputs::{
+use analysis_vocabulary::inputs::{
     ArgumentInputRef, DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeIntrinsic,
     ProofDependencies, ResolvedArgumentInput,
 };
-use crate::analysis_provenance::{InferenceRule, InferenceUse};
-use crate::inference::{
+use analysis_vocabulary::provenance::{InferenceRule, InferenceUse};
+use analysis_vocabulary::value::{Kind, Value};
+use inference::{
     CertificateContext, FactContext, GuardedContext, IterativeInference, IterativeRules, Judgment,
     SealedFacts,
 };

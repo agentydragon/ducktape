@@ -3,8 +3,8 @@
 
 use std::collections::BTreeSet;
 
-use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
 use analysis::facts::ExportReentryPolicy;
+use analysis_vocabulary::inputs::{HostBehaviorKey, ProgramPremiseKey};
 use serde::Serialize;
 
 use staged_analysis::loader_surface::{

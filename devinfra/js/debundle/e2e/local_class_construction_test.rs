@@ -1,12 +1,11 @@
 //! A checked implicit constructor can be reordered without executing its
 //! deferred methods or field callbacks during module initialization.
 
-use analysis::Purity;
-use analysis::analysis_inputs::{ProofDependencies, ValueInputRef};
-use analysis::analysis_provenance::InferenceRule;
-use analysis::{
-    reports::schema::InferenceUseReport, reports::schema::NativeIntegrityGuard,
-    reports::schema::NativeIntegrityUse,
+use analysis_vocabulary::inputs::{ProofDependencies, ValueInputRef};
+use analysis_vocabulary::provenance::InferenceRule;
+use analysis_vocabulary::purity::Purity;
+use analysis_vocabulary::report_schema::{
+    InferenceUseReport, NativeIntegrityGuard, NativeIntegrityUse,
 };
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
@@ -804,7 +803,7 @@ fn composed_proof_rejects_rebound_class_bindings() {
     assert!(
         reasons
             .iter()
-            .any(|reason| reason.rule == analysis::PurityRule::UnknownNew)
+            .any(|reason| reason.rule == analysis_vocabulary::purity::PurityRule::UnknownNew)
     );
 }
 

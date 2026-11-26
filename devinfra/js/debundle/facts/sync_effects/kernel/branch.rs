@@ -4,8 +4,8 @@
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::value_model::{AbstractValue, Values};
 use super::frame::LocalFrame;
-use analysis::facts::abstract_domain::value::Value;
 use analysis_model::PrimKinds;
+use analysis_vocabulary::value::Value;
 
 /// `ToBoolean` and the nullish test read no property and run no user code.
 /// The operand supplied its own receipt when it ran.
@@ -100,8 +100,8 @@ fn is_object(value: &AbstractValue) -> bool {
 mod tests {
     use super::{split_nullish, split_truthiness};
     use crate::value_model::{AbstractValue, Values};
-    use analysis::facts::abstract_domain::value::{Kind, Value};
     use analysis_model::PrimKinds;
+    use analysis_vocabulary::value::{Kind, Value};
 
     fn prim(kinds: PrimKinds) -> AbstractValue {
         AbstractValue::Value(Value::Prim(kinds))

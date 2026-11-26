@@ -116,8 +116,8 @@ debundle_e2e_test(
 debundle_graph_e2e_test(
     name = "ordered_own_data_field_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:serde_json",
     ],
 )
@@ -366,6 +366,7 @@ debundle_graph_e2e_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:serde_json",
     ],
 )
@@ -533,8 +534,8 @@ debundle_e2e_test(
 debundle_graph_e2e_test(
     name = "imported_primitive_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_vocabulary",
     ],
 )
 
@@ -543,8 +544,8 @@ debundle_e2e_test(name = "soundness_at_init_value_flow_test")
 debundle_graph_e2e_test(
     name = "unknown_call_export_reachability_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_vocabulary",
     ],
 )
 
@@ -560,8 +561,8 @@ debundle_graph_e2e_test(
     ),
     source = "callbacks/mod.rs",
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_vocabulary",
     ],
 )
 
@@ -588,8 +589,8 @@ debundle_graph_e2e_test(
     ),
     source = "collections/mod.rs",
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
     ],
@@ -616,7 +617,7 @@ debundle_graph_e2e_test(
     ),
     source = "native_integrity/mod.rs",
     deps = [
-        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:serde_json",
     ],
 )
@@ -630,7 +631,7 @@ debundle_graph_e2e_test(
     saved_analysis_tools = True,
     source = "native_integrity/saved_analysis/mod.rs",
     deps = [
-        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
@@ -639,8 +640,8 @@ debundle_graph_e2e_test(
 debundle_graph_e2e_test(
     name = "global_membership_reentry_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_vocabulary",
     ],
 )
 
@@ -679,6 +680,7 @@ debundle_e2e_test(
     source = "loader_reentry/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
@@ -705,7 +707,7 @@ debundle_graph_e2e_test(
 debundle_graph_e2e_test(
     name = "foreign_call_summary_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:serde_json",
     ],
 )
@@ -713,7 +715,7 @@ debundle_graph_e2e_test(
 debundle_graph_e2e_test(
     name = "initializer_call_effect_input_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
@@ -732,15 +734,15 @@ debundle_graph_e2e_test(
 debundle_graph_e2e_test(
     name = "local_record_factory_contract_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_vocabulary",
     ],
 )
 
 debundle_graph_e2e_test(
     name = "retained_instance_class_publication_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:serde_json",
     ],
 )
@@ -757,8 +759,8 @@ debundle_e2e_test(name = "unknown_call_intermediate_availability_test")
 debundle_graph_e2e_test(
     name = "imported_callback_timing_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:serde_json",
     ],
 )
@@ -768,7 +770,7 @@ debundle_e2e_test(name = "own_data_object_spread_test")
 debundle_graph_e2e_test(
     name = "namespace_wrapper_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/analysis_vocabulary",
     ],
 )
 
@@ -784,7 +786,7 @@ debundle_graph_e2e_test(
 debundle_graph_e2e_test(
     name = "impure_call_reason_growth_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:serde_json",
     ],
 )
@@ -837,8 +839,8 @@ debundle_e2e_test(name = "purity_test")
 debundle_graph_e2e_test(
     name = "local_class_construction_test",
     deps = [
-        "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "@crates//:serde_json",
     ],
 )
@@ -958,6 +960,7 @@ debundle_graph_e2e_test(
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:gate",
         "//devinfra/js/debundle:raw_js_test_support",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/analyze",
         "@crates//:serde_json",
     ],

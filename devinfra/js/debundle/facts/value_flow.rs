@@ -46,9 +46,9 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use super::abstract_domain::primitive::{NoBindings, evaluate};
-use super::abstract_domain::value::{Kind, Value};
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis_model::PrimKinds;
+use analysis_vocabulary::value::{Kind, Value};
+use inference::{FactContext, IterativeInference, IterativeRules};
 
 use super::{
     LazyBoundary, LazyPosition, PositionBucketed, StatementFacts, TopLevelItemView,
@@ -58,15 +58,15 @@ use super::{
 };
 
 pub(crate) fn native_set_allocation_roots(
-    inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
-    inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
-) -> BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation> {
+    inputs: &[analysis_vocabulary::inputs::ResolvedNativeOperationInput],
+    inferred: &BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
+) -> BTreeMap<u32, analysis_vocabulary::inputs::ProvenSetAllocation> {
     let mut allocations: BTreeMap<_, _> = inferred
         .iter()
         .map(|(site, proof)| {
             (
                 *site,
-                crate::analysis_inputs::ProvenSetAllocation::Inferred(Box::new(proof.clone())),
+                analysis_vocabulary::inputs::ProvenSetAllocation::Inferred(Box::new(proof.clone())),
             )
         })
         .collect();
@@ -75,14 +75,14 @@ pub(crate) fn native_set_allocation_roots(
             .iter()
             .filter(|input| {
                 input.evidence.operation
-                    == crate::analysis_inputs::NativeInputKind::Operation(
+                    == analysis_vocabulary::inputs::NativeInputKind::Operation(
                         spec::NativeOperationKind::SetFromPrimitiveArray,
                     )
             })
             .map(|input| {
                 (
                     input.call_span.lo.0,
-                    crate::analysis_inputs::ProvenSetAllocation::AuthorInput(
+                    analysis_vocabulary::inputs::ProvenSetAllocation::AuthorInput(
                         input.evidence.reference.clone(),
                     ),
                 )
@@ -819,7 +819,7 @@ pub struct ChunkValueFlow {
     pub callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
     /// Native Set construction sites backed by a validated author input or
     /// checked pre-flow source proof. Other constructor results stay unknown.
-    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
+    native_set_allocations: BTreeMap<u32, analysis_vocabulary::inputs::ProvenSetAllocation>,
 }
 
 impl ChunkValueFlow {
@@ -1096,15 +1096,15 @@ impl ChunkValueFlow {
 
     pub(crate) fn analyze_structural(
         body: &[TopLevelItemView<'_>],
-        inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
-        inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
+        inputs: &[analysis_vocabulary::inputs::ResolvedNativeOperationInput],
+        inferred: &BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
     ) -> Self {
         FlowProgram::structural(body, inputs, inferred).solve().0
     }
 
     pub(crate) fn native_set_allocations(
         &self,
-    ) -> &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation> {
+    ) -> &BTreeMap<u32, analysis_vocabulary::inputs::ProvenSetAllocation> {
         &self.native_set_allocations
     }
 
@@ -2360,7 +2360,7 @@ struct FlowProgram {
     candidate_objects: Vec<Value>,
     canonical: BTreeMap<Value, Id>,
     callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
-    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
+    native_set_allocations: BTreeMap<u32, analysis_vocabulary::inputs::ProvenSetAllocation>,
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
     return_summaries: BTreeMap<u32, ReturnSummary>,
 }
@@ -2368,16 +2368,16 @@ struct FlowProgram {
 impl FlowProgram {
     fn structural(
         body: &[TopLevelItemView<'_>],
-        inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
-        inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
+        inputs: &[analysis_vocabulary::inputs::ResolvedNativeOperationInput],
+        inferred: &BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
     ) -> Self {
         Self::structural_with_factory_imports(body, inputs, inferred, Arc::default())
     }
 
     fn structural_with_factory_imports(
         body: &[TopLevelItemView<'_>],
-        inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
-        inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
+        inputs: &[analysis_vocabulary::inputs::ResolvedNativeOperationInput],
+        inferred: &BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
         fresh_factory_imports: Arc<FreshFactoryImports>,
     ) -> Self {
         let mut candidates = super::abstract_domain::heap::tracked_allocation_roots(body);
@@ -2408,7 +2408,7 @@ impl FlowProgram {
     fn collect_with_native_set_allocations(
         body: &[TopLevelItemView<'_>],
         candidate_objects: &BTreeSet<Value>,
-        native_set_allocations: &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
+        native_set_allocations: &BTreeMap<u32, analysis_vocabulary::inputs::ProvenSetAllocation>,
         fresh_factory_imports: Arc<FreshFactoryImports>,
     ) -> Self {
         let member_read_certificates = Arc::new(MemberReadCertificates::collect(body));
@@ -2768,7 +2768,7 @@ struct FlowProgramCollector {
     collect_effect_calls: bool,
     canonical: BTreeMap<Value, Id>,
     callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
-    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
+    native_set_allocations: BTreeMap<u32, analysis_vocabulary::inputs::ProvenSetAllocation>,
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
     return_summaries: BTreeMap<u32, ReturnSummary>,
     return_candidates: BTreeMap<u32, return_summary::Candidate>,

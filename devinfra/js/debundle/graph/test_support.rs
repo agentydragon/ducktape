@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use swc_common::SyntaxContext;
 use swc_ecma_ast::{Id, Module};
 
-use analysis::{AnalysisAssumptions, AnalysisInputs, KnownEffect, StatementFacts};
+use analysis::StatementFacts;
+use analysis_vocabulary::inputs::{AnalysisAssumptions, AnalysisInputs, KnownEffect};
 
 /// Construct a test binding ID using the empty syntax context. The shared parser
 /// does not run SWC's resolver; production chunks use their top-level mark instead.

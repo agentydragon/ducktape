@@ -27,11 +27,11 @@ use chunk_admission::{enforce_chunk_admission, enforce_split_admission};
 use anyhow::{Context, Result, bail};
 use swc_ecma_ast::Module;
 
-use analysis::AnalysisInputs;
-use analysis::analysis_inputs::ResolvedCommutingStatements;
 use analysis::diagnostics::{ChunkDiagnostic, Diagnostics};
-use analysis::execution_evidence::SourceLocator;
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis};
+use analysis_vocabulary::execution_evidence::SourceLocator;
+use analysis_vocabulary::inputs::AnalysisInputs;
+use analysis_vocabulary::inputs::ResolvedCommutingStatements;
 use analyze::analyze_chunk_with_policy;
 use graph::GraphOptions;
 use graph::{

@@ -2,15 +2,15 @@
 
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, Values};
-use analysis::analysis_inputs::ProofDependencies;
-use analysis::execution_evidence::OrderedCallAdmissionRefusal;
 use analysis::facts::EffectCell;
 use analysis::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ITERATION_ROWS, IterationResult, IterationRow,
 };
 use analysis::facts::abstract_domain::integrity::IntrinsicSlot;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
+use analysis_vocabulary::execution_evidence::OrderedCallAdmissionRefusal;
+use analysis_vocabulary::inputs::ProofDependencies;
+use analysis_vocabulary::value::{Kind, Value};
 
 pub(super) trait ArrayContext {
     /// Exact length, writable own length, extensibility, original prototype,

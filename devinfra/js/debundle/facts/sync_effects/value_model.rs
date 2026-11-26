@@ -2,11 +2,11 @@
 
 use super::world::WorldScope;
 use analysis::facts::abstract_domain::builtins::IterationRow;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis::facts::value_flow::static_prop as static_string_prop;
-use analysis::inference::{FactContext, IterativeFacts, IterativeInference, IterativeRules};
 use analysis_model::PrimKinds;
+use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
+use inference::{FactContext, IterativeFacts, IterativeInference, IterativeRules};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -1801,7 +1801,7 @@ pub(super) fn infer_namespace_aliases(
     assignments: &[&(Id, ValueExpr)],
     facts: &NamespaceValueFacts,
 ) -> BTreeSet<Id> {
-    use analysis::inference::{FactContext, IterativeInference, IterativeRules};
+    use inference::{FactContext, IterativeInference, IterativeRules};
     struct AliasRules<'a> {
         namespace: &'a Id,
         assignments: &'a [&'a (Id, ValueExpr)],

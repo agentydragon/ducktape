@@ -2,7 +2,7 @@
 
 The synchronous interpreter reports `HavocReach`, but the report is not yet an
 authority for graph construction. `HavocReach` is documented as diagnostic-only
-in `reports/schema.rs`; the conservative graph fallback still promotes the
+in `analysis_vocabulary/report_schema.rs`; the conservative graph fallback still promotes the
 read closure for incomplete at-init calls.
 
 Binding effects have a separate authority path. An exact ordered root

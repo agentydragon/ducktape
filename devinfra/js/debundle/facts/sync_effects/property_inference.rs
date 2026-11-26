@@ -8,12 +8,12 @@ use super::value_model::{
     AbstractValue, HeapAddress, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
     ordered_own_property_names,
 };
-use analysis::analysis_inputs::ProofDependencies;
-use analysis::analysis_provenance::{InferenceRule, InferenceUse};
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis::facts::semantic_inference::{
     NativePremise, SemanticFact, SemanticFacts, SemanticKey,
 };
+use analysis_vocabulary::inputs::ProofDependencies;
+use analysis_vocabulary::provenance::{InferenceRule, InferenceUse};
+use analysis_vocabulary::value::{Kind, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -279,13 +279,13 @@ mod tests {
         AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
         ordered_own_property_names,
     };
-    use analysis::analysis_inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
-    use analysis::analysis_provenance::InferenceRule;
     use analysis::facts::abstract_domain::integrity::{
         IntegrityFlags, IntrinsicSlot, PrototypeWrites,
     };
-    use analysis::facts::abstract_domain::value::{Kind, Value};
     use analysis::facts::semantic_inference::{SemanticFacts, native_premise};
+    use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
+    use analysis_vocabulary::provenance::InferenceRule;
+    use analysis_vocabulary::value::{Kind, Value};
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]

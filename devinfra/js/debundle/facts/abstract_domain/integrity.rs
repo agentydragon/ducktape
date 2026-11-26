@@ -6,11 +6,11 @@
 //! back to its opaque behavior. Rules and builtin rows name slots; nothing but
 //! this module reads the census for them.
 
-use crate::analysis_inputs::{NativeIntrinsic, NativeOperationInputRef, ProofDependencies};
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::reports::schema::{
+use analysis_vocabulary::inputs::{NativeIntrinsic, NativeOperationInputRef, ProofDependencies};
+use analysis_vocabulary::report_schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativeReceiverPath,
 };
+use inference::{FactContext, IterativeInference, IterativeRules};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -1063,7 +1063,7 @@ mod tests {
             through_local_alias: false,
             receiver_global: None,
             affected_roots: BTreeSet::from([root]),
-            target_slots: BTreeSet::from([crate::reports::schema::NativeWriteSlot {
+            target_slots: BTreeSet::from([analysis_vocabulary::report_schema::NativeWriteSlot {
                 receiver,
                 key,
             }]),

@@ -26,8 +26,8 @@ use spec::{
     SynchronousLoadRunsAppCallbacks,
 };
 
-use crate::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey, ProofDependencies};
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use analysis_vocabulary::inputs::{HostBehaviorKey, ProgramPremiseKey, ProofDependencies};
+use inference::{FactContext, IterativeInference, IterativeRules};
 use source_identity::ChunkId;
 
 /// Why a target is not loader-closed. A report keeps the first witness and the

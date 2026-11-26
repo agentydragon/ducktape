@@ -14,16 +14,16 @@ use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
 use super::value_model::{CapturedContext, Context, ValueExpr, Values};
-use analysis::analysis_inputs::ProofDependencies;
-use analysis::execution_evidence::OrderedCallAdmissionRefusal;
 use analysis::facts::evaluation_effects::EvaluationEffects;
 use analysis::facts::statement_facts::SynchronousCalls;
 use analysis::facts::{
     CompletedPurity, LocalRecordFactoryPurityCertificate, OwnerInitializationCoverageRefusalReason,
     PreparedPurity,
 };
-use analysis::inference::{CompletedTransfer, FactContext, IterativeInference, IterativeRules};
-use analysis::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
+use analysis_vocabulary::execution_evidence::OrderedCallAdmissionRefusal;
+use analysis_vocabulary::inputs::ProofDependencies;
+use analysis_vocabulary::report_schema::{NativeProgramPointKind, NativeProgramPointStep};
+use inference::{CompletedTransfer, FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
 use swc_common::Span;
@@ -267,7 +267,7 @@ impl RuntimeQueries<'_, '_> {
         certificate: Option<&LocalRecordFactoryPurityCertificate>,
         private_own_field_reads: &[Span],
         read_dependencies: &ProofDependencies,
-    ) -> Option<analysis::reports::schema::PurityCompletionDisagreement> {
+    ) -> Option<analysis_vocabulary::report_schema::PurityCompletionDisagreement> {
         assert_eq!(owner, self.point.owner);
         let mut context = self.context.borrow_mut();
         let Some(RuntimeFact::PreparedPurity(prepared)) =
@@ -551,7 +551,7 @@ impl RuntimeRules<'_, '_> {
                 let covered_operation = operation_source
                     && !values.is_empty()
                     && !values.contains(&super::value_model::AbstractValue::Value(
-                        analysis::facts::abstract_domain::value::Value::Unavailable,
+                        analysis_vocabulary::value::Value::Unavailable,
                     ))
                     && operation_coverage
                         .as_ref()

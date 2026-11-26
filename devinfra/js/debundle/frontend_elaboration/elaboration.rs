@@ -6,14 +6,14 @@
 
 use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast, binding_declaration};
 use crate::source_ast::RuntimeImportKind;
-use analysis::AnalysisAssumptions;
-use analysis::analysis_inputs::{NativeOperationSelectorProvenance, SourceDeclaration};
-use analysis::execution_evidence::SourceLocator;
 use analysis::facts::StructuralChunkSourceFacts;
 use analysis_projection::{
     self, AnalysisNativeOperationInput, AnalysisProjection, AnalysisSourceSites, AnalysisSpec,
     ChunkGraphInputs, ProjectedChunkOptions,
 };
+use analysis_vocabulary::execution_evidence::SourceLocator;
+use analysis_vocabulary::inputs::AnalysisAssumptions;
+use analysis_vocabulary::inputs::{NativeOperationSelectorProvenance, SourceDeclaration};
 use anyhow::{Context, Result, bail, ensure};
 use artifact::{
     ArtifactIndexes, ChunkBundle, JsFile, chunk_runtime_entry, export_policies,

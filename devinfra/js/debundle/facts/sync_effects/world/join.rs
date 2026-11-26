@@ -13,7 +13,7 @@ use super::{
 use crate::allocation_transfer::WritablePrefixState;
 use crate::property_inference::CapturedPropertyDescriptor;
 use crate::value_model::{AbstractValue, DenseArray, LexicalCellId, Values};
-use analysis::facts::abstract_domain::value::Value;
+use analysis_vocabulary::value::Value;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -123,7 +123,7 @@ impl World {
             reachability,
             // A joined prefix holds only under every alternative's conditions.
             prerequisites: worlds.iter().fold(
-                analysis::analysis_inputs::ProofDependencies::default(),
+                analysis_vocabulary::inputs::ProofDependencies::default(),
                 |mut prerequisites, world| {
                     prerequisites.extend(&world.prerequisites);
                     prerequisites
@@ -745,7 +745,7 @@ mod tests {
     use super::{JoinRefusal, Joined};
     use crate::local_operations::LocalBinding;
     use crate::value_model::{AbstractValue, DenseArray, Values};
-    use analysis::facts::abstract_domain::value::{Kind, Value};
+    use analysis_vocabulary::value::{Kind, Value};
     use std::sync::Arc;
     use swc_atoms::Atom;
     use swc_common::SyntaxContext;

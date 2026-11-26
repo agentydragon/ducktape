@@ -1,7 +1,7 @@
 use super::*;
-use crate::analysis_inputs::ProofDependencies;
-use crate::facts::abstract_domain::effect::{Effect, HavocCause, InvokeSite};
-use crate::purity::Effects;
+use analysis_vocabulary::effect::{Effect, HavocCause, InvokeSite};
+use analysis_vocabulary::inputs::ProofDependencies;
+use analysis_vocabulary::purity::Effects;
 use source_identity::SourceUnitOrdinal;
 
 /// Everything a statement's purity transfer reads besides the statement's own
@@ -120,7 +120,7 @@ impl PreparedPurity {
         read_dependencies: &ProofDependencies,
     ) -> (
         CompletedPurity,
-        Option<crate::reports::schema::PurityCompletionDisagreement>,
+        Option<analysis_vocabulary::report_schema::PurityCompletionDisagreement>,
     ) {
         let certificate = certificate.filter(|certificate| !certificate.checked_owners.is_empty());
         if certificate.is_none() && private_own_field_reads.is_empty() {
@@ -139,7 +139,7 @@ impl PreparedPurity {
         let dependencies = effects.proof_dependencies();
         let completed = effects.project();
         let disagreement = prepared.filter(|_| !completed.is_pure()).map(|prepared| {
-            crate::reports::schema::PurityCompletionDisagreement {
+            analysis_vocabulary::report_schema::PurityCompletionDisagreement {
                 prepared,
                 completed: completed.clone(),
             }
@@ -224,7 +224,7 @@ pub(crate) fn item_purity(
         StatementKind::VarDecl => {
             if let Some(input) = native_pure_initializer(item, proofs.native_operations) {
                 return Effects::none().with_dependencies(
-                    &crate::analysis_inputs::ProofDependencies {
+                    &analysis_vocabulary::inputs::ProofDependencies {
                         native_operation_inputs: BTreeSet::from([input.evidence.reference.clone()]),
                         ..Default::default()
                     },
@@ -274,7 +274,7 @@ pub(crate) fn item_purity(
 fn native_pure_initializer<'a>(
     item: &ModuleItem,
     native_facts: &'a ValidatedNativeOperationFacts,
-) -> Option<&'a crate::analysis_inputs::ResolvedNativeOperationInput> {
+) -> Option<&'a analysis_vocabulary::inputs::ResolvedNativeOperationInput> {
     let var = var_decl_of_item(item)?;
     let [decl] = var.decls.as_slice() else {
         return None;

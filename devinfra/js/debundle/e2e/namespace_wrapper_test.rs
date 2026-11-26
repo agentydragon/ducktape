@@ -1,6 +1,6 @@
 //! Neutral real-CLI reproducer for imported namespace wrapping.
 
-use analysis::analysis_provenance::InferenceRule;
+use analysis_vocabulary::provenance::InferenceRule;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use std::collections::BTreeSet;

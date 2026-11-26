@@ -1,6 +1,7 @@
 # Shared inference
 
-`inference.rs` defines `Judgment`; `inference/iterative.rs` provides the
+The `inference` crate defines `Judgment` (`inference/lib.rs`);
+`inference/iterative.rs` provides the
 dependency worklist (`IterativeInference`) for finite growing facts and
 positive certificates. `facts/semantic_inference.rs` composes native,
 construction, and callable rules in that store. Structural analysis supplies

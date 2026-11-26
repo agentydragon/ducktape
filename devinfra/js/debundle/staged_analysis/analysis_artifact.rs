@@ -132,7 +132,7 @@ pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArti
 mod tests {
     use super::*;
     use crate::test_support::{collect_test_program_summary, test_bundle_parsed_in};
-    use analysis::AnalysisInputs;
+    use analysis_vocabulary::inputs::AnalysisInputs;
     use artifact::{ChunkBundle, JsFile};
     use std::process::Command;
     use swc_common::{GLOBALS, Globals};
@@ -226,7 +226,7 @@ mod tests {
                 .iter()
                 .find(|fact| fact.declared.iter().any(|binding| binding.0 == name))
                 .expect("fixture statement");
-            let analysis::purity::Purity::NotPure { reasons } = &fact.purity else {
+            let analysis_vocabulary::purity::Purity::NotPure { reasons } = &fact.purity else {
                 panic!("effect call must be impure");
             };
             assert!(

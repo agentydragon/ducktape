@@ -11,8 +11,10 @@ use source_identity::SourceUnitOrdinal;
 
 use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};
 use super::{DataflowOpacityCause, EffectCell, ExportLinkage, StatementFacts, StatementKind};
-use crate::analysis_inputs::ProofDependencies;
-use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss, SourceLocation};
+use analysis_vocabulary::execution_evidence::{
+    AssumedEffectReason, ExecutionPrecisionLoss, SourceLocation,
+};
+use analysis_vocabulary::inputs::ProofDependencies;
 
 /// Terminal evidence that the synchronous interpreter sealed this source
 /// owner's initialization. Never composed through a child ledger, generic

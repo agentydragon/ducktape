@@ -11,9 +11,9 @@ use std::fmt;
 
 use spec::{AdmissionCheck, ReentryFreeOperation, ResolvedMemberSelector};
 
-use crate::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
-use crate::execution_evidence::SourceLocation;
 use crate::purity::{RedundantPurityHint, RedundantPurityProofBasis, RedundantPurityReason};
+use analysis_vocabulary::execution_evidence::SourceLocation;
+use analysis_vocabulary::inputs::{HostBehaviorKey, ProgramPremiseKey};
 
 /// A lint rule. Every finding is a warning; no rule fails a spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

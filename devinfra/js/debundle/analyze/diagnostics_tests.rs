@@ -1,9 +1,10 @@
 use crate::analyze_chunk;
 use analysis::diagnostics::*;
-use analysis::purity::{Purity, PurityReason, PurityRule};
-use analysis::reports::schema::PurityCompletionDisagreement;
-use analysis::*;
-use analysis::{AnalysisInputs, execution_evidence::SourceLocator};
+use analysis_vocabulary::execution_evidence::SourceLocation;
+use analysis_vocabulary::execution_evidence::SourceLocator;
+use analysis_vocabulary::inputs::AnalysisInputs;
+use analysis_vocabulary::purity::{Purity, PurityReason, PurityRule};
+use analysis_vocabulary::report_schema::PurityCompletionDisagreement;
 use source_identity::SourceUnitOrdinal;
 
 #[test]

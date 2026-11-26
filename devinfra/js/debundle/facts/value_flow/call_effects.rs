@@ -3,7 +3,7 @@
 //! absence of effects, completion, purity or initialization availability.
 
 use super::*;
-use crate::inference::IterativeFacts;
+use inference::IterativeFacts;
 use petgraph::{
     algo::kosaraju_scc,
     graph::{DiGraph, NodeIndex},

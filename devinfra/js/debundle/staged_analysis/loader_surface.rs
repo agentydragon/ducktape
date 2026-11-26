@@ -5,11 +5,11 @@ use source_identity::ChunkId;
 use spec::NodeBuiltinModuleExt;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
 use analysis::loader_closure::{
     ChunkLoaderSurface, LoaderClosure, LoaderClosureFailureKind, LoaderClosureWitness,
     LoaderRequest, LoaderRequestTarget, SitePlacement,
 };
+use analysis_vocabulary::inputs::{HostBehaviorKey, ProgramPremiseKey};
 use anyhow::Result;
 use artifact::reports::{
     ChunkRuntimeFacts, ImportSpecifierKind, InteropUseKind, LoaderBinding, LoaderBindingUse,

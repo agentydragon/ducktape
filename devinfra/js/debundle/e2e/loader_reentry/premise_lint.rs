@@ -4,10 +4,10 @@
 //! a consumed one is `inconclusive` until `--probe-analysis` reruns without it.
 
 use super::fixture::*;
-use analysis::analysis_inputs::HostBehaviorKey;
 use analysis::reports::spec_lint::{
     InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintedAnnotation,
 };
+use analysis_vocabulary::inputs::HostBehaviorKey;
 use debundle_e2e_support::*;
 
 /// The two keys the closure needs, plus two it never reads here: the program

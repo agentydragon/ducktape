@@ -4,9 +4,9 @@
 use super::adapters::provider::{ProviderContext, SealedProviderBody};
 use super::execution_index::ExecutionIndex;
 use super::value_model::{AbstractValue, ProviderInput, ProviderScopeId};
-use analysis::analysis_inputs::{ForeignInvocation, ForeignReturn};
 use analysis::facts::abstract_domain::foreign_call::DerivedForeignCall;
-use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis_vocabulary::inputs::{ForeignInvocation, ForeignReturn};
+use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeSet;
 use swc_ecma_ast::Id;
 

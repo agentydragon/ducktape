@@ -15,6 +15,8 @@ rust_library(
         "//devinfra/js/debundle:js_ast",
         "//devinfra/js/debundle:source_identity",
         "//devinfra/js/debundle:work_metrics",
+        "//devinfra/js/debundle/analysis_vocabulary",
+        "//devinfra/js/debundle/inference",
         "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
         "@crates//:imbl",
