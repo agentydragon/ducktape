@@ -178,24 +178,6 @@ try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, code);
     }
-  } else if (mode === "--print-units") {
-    const [input, sourceFile, output] = args;
-    const { printProgram } = await import("./print.mjs");
-    const source = fs.readFileSync(sourceFile, "utf8");
-    const units = readJson(input);
-    const seenStarts = new Set();
-    const splitStarts = new Set();
-    for (const { start } of units) {
-      // Every declarator split out of the same statement keeps that statement's range.
-      if (seenStarts.has(start)) splitStarts.add(start);
-      seenStarts.add(start);
-    }
-    const text = units.map((unit) =>
-      splitStarts.has(unit.start)
-        ? printProgram({ type: "Program", sourceType: "module", body: [unit] }, source).trimEnd()
-        : source.slice(unit.start, unit.end)
-    );
-    writeJson(output, text);
   } else if (mode === "--parse-sha256") {
     const [digest, input, output] = args;
     writeJson(output, readProgram(input, linkedProgram, digest));

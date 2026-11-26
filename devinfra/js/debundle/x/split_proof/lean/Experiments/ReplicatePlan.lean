@@ -23,7 +23,7 @@ def main (args : List String) : IO UInt32 := do
   let read ← reportElapsed "read + parse JSON" start
   let (fps, _) ← analyzeFootprints asts (Effects.footprintUnits asts) {} false
   let _ ← reportElapsed "footprints (Lean analysis)" read
-  let bundle := replicateBundle copies (bundleOfFootprints asts fps #[])
+  let bundle := replicateBundle copies (bundleOfFootprints asts fps)
   let placement ← loadSpec spec
   let planning ← IO.monoMsNow
   let plan ← planSplit bundle placement false

@@ -17,19 +17,18 @@ The main tables are in [`README.md` § 5](README.md#5-how-far-does-the-check-sca
 
 ## Building and running
 
-These measurements predate the removal of the `check` executable and verbatim-output workflow. The current 12-statement example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
+These measurements predate the removal of the `check` executable and verbatim-output workflow.
 
-| What                                                                                                          | Time                               |
-| ------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| fetch Lean 4.35 from the Nix cache (first time)                                                               | 38 s                               |
-| clean `lake build` (default targets: core library and `render`)                                               | 18.6 s                             |
-| then `lake build Experiments check lower lowersplit evalorder`                                                | 14.7 s                             |
-| `./run.sh --controls --fuzz --experiments --lowering --es-order --splits` from a fresh copy in the repository | 302 s                              |
-| kernel check of the real 12-statement example (`lake env lean EsmSplit/Generated.lean`, with process start)   | 1.5 s (0.6 s in the first version) |
-| fuzzer, 600 requests (510 unique splits), each rendered and run in Node                                       | 47–53 s                            |
-| mutation test, 6 mutants × 400 splits                                                                         | 247 s                              |
-| `splits/run_all.sh`: 2,740 splits of six real bundles, each checked and run in Node, 4 jobs                   | 154 s                              |
-| `es_order/check.mjs 500 1`: 500 random import graphs, Node against the model                                  | 52 s                               |
+| What                                                                                                          | Time    |
+| ------------------------------------------------------------------------------------------------------------- | ------- |
+| fetch Lean 4.35 from the Nix cache (first time)                                                               | 38 s    |
+| clean `lake build` (default targets: core library and `render`)                                               | 18.6 s  |
+| then `lake build Experiments check lower lowersplit evalorder`                                                | 14.7 s  |
+| `./run.sh --controls --fuzz --experiments --lowering --es-order --splits` from a fresh copy in the repository | 302 s   |
+| fuzzer, 600 requests (510 unique splits), each rendered and run in Node                                       | 47–53 s |
+| mutation test, 6 mutants × 400 splits                                                                         | 247 s   |
+| `splits/run_all.sh`: 2,740 splits of six real bundles, each checked and run in Node, 4 jobs                   | 154 s   |
+| `es_order/check.mjs 500 1`: 500 random import graphs, Node against the model                                  | 52 s    |
 
 ## The check on the example, compiled
 
@@ -74,15 +73,14 @@ At 21,440 statements: 252 s after stage 4 (`Faithful` 242 s of it), 10.5 s after
 
 ## Kernel
 
-Synthetic bundles, one `lake env lean` process each, names as strings and as numbers, with peak memory:
-[`README.md` § 5](README.md#5-how-far-does-the-check-scale), script [`scaling/nat_names.sh`](scaling/nat_names.sh).
+The kernel runs used one Lean process per synthetic bundle with string or numeric names.
 The first version took 0.7 s (12 statements), 5.0 s (48), 19.7 s (96) and 51 s (144), and was killed after 88 s at 192.
 `decide +kernel` on the lodash split (670 statements) was killed at the 12 GB limit after 61.7 s.
 Elaborating the data takes 0.4–0.6 s of each run. In Lean's interpreter, 192 statements of the first version had not finished after 10 minutes.
 
 ## Proof strategies on real splits
 
-[`README.md` § 8](README.md#8-how-a-proof-is-produced); raw output in [`records/ladder_semver.txt`](records/ladder_semver.txt), [`ladder_lodash.txt`](records/ladder_lodash.txt) and [`ladder_acorn_min_rejected.txt`](records/ladder_acorn_min_rejected.txt).
+Archived output is in [`records/ladder_semver.txt`](records/ladder_semver.txt), [`ladder_lodash.txt`](records/ladder_lodash.txt) and [`ladder_acorn_min_rejected.txt`](records/ladder_acorn_min_rejected.txt).
 
 | Split                                                  | Strategy         | Result                                     | Time   |
 | ------------------------------------------------------ | ---------------- | ------------------------------------------ | ------ |

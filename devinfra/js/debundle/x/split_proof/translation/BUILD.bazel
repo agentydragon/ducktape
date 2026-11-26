@@ -161,7 +161,6 @@ js_test(
         "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
         "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
     entry_point = "identity_emission_test.mjs",
     env = {

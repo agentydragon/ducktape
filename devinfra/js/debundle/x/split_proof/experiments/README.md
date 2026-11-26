@@ -14,10 +14,6 @@ An earlier verbatim-output checker exposed a callback/TDZ bug in the extractor: 
 read as lazy even when the callback ran during initialization. The regression now checks the extractor's
 eager read and the translation validator's verdict, and runs the unsafe output in Node.
 
-## 2. A generated reordering in CoreJS
-
-The [three-declaration fixture](../proof_fixture/README.md) checks the source statements, footprints, execution order and rendered files of a generated plan. Its CoreJS proof relates successful executions at every fuel. Node runs the emitted modules and observes the temporal dead zone in the forced unsafe split.
-
 ## 3. Custom proofs for pairs the syntax check refuses
 
 [`CustomMoveExample.lean`](../lean/CustomMoveExample.lean) starts with two expression statements that evaluate boolean literals. `movesOk` refuses to swap them. The example proves the two steps commute in either order and passes that relation to the production `moves_preserve_run_of_sound` theorem.
@@ -112,26 +108,6 @@ The historical minified rows count each declarator list as one statement. The cu
   That is one lookup per read instead of one per pair. The proof must show that this implies the `Pairwise` condition `exec_reorder` consumes.
 - **`Faithful`** still compares every selector with every statement (5 s at 42,880); an index from names to declaring statements would remove that.
 
-**Kernel.** The kernel is a different cost model, and these changes help it much less. Synthetic bundles ([`scaling/gen.py`](scaling/gen.py)),
-`decide +kernel`, one process each ([`scaling/nat_names.sh`](scaling/nat_names.sh), [`scaling/peak.py`](scaling/peak.py)):
-
-| Statements | Before the indexed checks | Names as strings                                  | Names as numbers                                  |
-| ---------- | ------------------------- | ------------------------------------------------- | ------------------------------------------------- |
-| 12         | 0.7 s                     | 1.2 s, peak 650 MB                                | 0.8 s, peak 612 MB                                |
-| 24         | 1.4 s                     | 2.9 s, peak 866 MB                                | 1.9 s, peak 746 MB                                |
-| 48         | 5.0 s                     | 7.4 s, peak 1459 MB                               | 4.4 s, peak 1117 MB                               |
-| 96         | 19.7 s                    | 22.7 s, peak 3416 MB                              | 12.8 s, peak 2400 MB                              |
-| 144        | 51 s                      | 44.9 s, peak 6158 MB                              | 26.8 s, peak 4267 MB                              |
-| 192        | killed after 88 s         | 69.2 s, peak 9464 MB                              | 41.6 s, peak 6557 MB                              |
-| 288        | –                         | 66.6 s, peak 12031 MB, killed at the memory limit | 63.6 s, peak 12027 MB, killed at the memory limit |
-
-- **Memory, not time, is the limit.** The kernel keeps what it evaluates. 144 statements need 6 GB, and 192 need 9 GB. At 288 the 12 GB limit I set killed it.
-  `decide +kernel` on the lodash split (670 statements) reached the 12 GB limit after 62 s and was killed ([`records/`](records)).
-- **Numeric names help 1.6–1.8×, not 10×.** `Name := Nat` makes comparisons cheap in the kernel (it has big-number support; it has none for strings).
-  I had guessed it was most of the cost. It is not. [`nat_names.sh`](scaling/nat_names.sh) builds a scratch copy of the core Lean files with `Name := Nat` and times the same bundles.
-- **For a big split, use `native_decide`** (2.3 s for lodash; trusts Lean's compiler, § 8), or a kernel certificate that carries the derived tables as data and lets the kernel
-  _check_ them (closed, and least by derivation order) instead of computing them. That is how CompCert's validators work (§ 9). I have not built it.
-
 The semantic theorem does not depend on bundle size.
 
 ## 6. Lower the AST into Lean
@@ -189,21 +165,13 @@ One mutant, forgetting a catch parameter is local, is on the safe side and is co
 
 The bundles also contain statements that assign to a top-level name (lodash 1, acorn 2, zod 7), which the model cannot place in another module.
 
-**End to end in one program.** [`LowerSplit.lean`](../lean/EsmSplit/LowerSplit.lean) (198 lines) takes the JSON and a spec, computes footprints in Lean,
-plans, checks, and writes the modules. The old `--diagnostic --lean` combination has been replaced by the separate `--generate-instance` command, which writes Lean proof source without rendering modules. On the example the modules are identical to the first prototype’s output
-except the order of names inside two `export { … }` lists (Lean's JSON parser sorts object keys, so the spec's file order is lost).
-The generated certificate is accepted by the kernel; its axioms are `propext`, `Classical.choice` and `Quot.sound`. Whole run, compiled: 2 ms.
-
 **What lowering does not buy.**
 
 - The parser. acorn is still trusted.
 - A proof about the analysis. `Lower.lean` is `partial` over untyped JSON, so the kernel cannot run it and Lean cannot prove things about it.
   The principled endpoint is a typed ESTree with structural recursion: then `decide` can run the analysis inside the kernel and the certificate covers parse output → footprints → plan.
-  That is a bigger build; section 2 is the template.
 - A semantics. The frame assumption is unchanged. Only its _footprint side_ moved into Lean.
 - Imports from outside modules, top-level reassignment, and `import.meta`: rejected or guarded, not modeled. `lowersplit` keeps a bundle's `import` statements in the entry and writes them first; that this keeps the order of evaluation is argued in the [README](../README.md#what-is-not-proved), not proved.
-
-The Bazel `lean:lowered_example_certificate_test` builds a certificate from the example’s ESTree dump and checks it in Lean.
 
 ### Public bundle inputs
 
@@ -268,71 +236,6 @@ One JSON line per split is in [split results](../integration/library_splits/resu
 - **Putting the entry in the wrong half loses the API.** The `export { … }` statement is a statement like any other; I had not checked that it stays in the entry module.
   `lowersplit` now rejects it (`ExportOutsideEntry`). Before this experiment the checker would have accepted a split with the exports in a non-entry module.
 - **The checker is conservative in 5 of 722 rejections** (0.7%): 3 reassignments that are not on the executed path and 2 random placements.
-
-## 8. How a proof is produced
-
-**The shape.** `lowersplit --generate-instance <deployment.json> <Generated.lean>` writes a Lean file with bundle data and a proof about the plan based on the supplied footprints, without writing module previews. The example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
-
-```lean
-def bundle : Bundle := [
-  { src := "const PI = 3.14159;", defs := ["PI"] },
-  { src := "const area = (r) => PI * square(r);", defs := ["area"], lazy := ["PI", "square"] }, …
-]
-def spec : Spec := { entry := "main.mjs", modules := [("utils.mjs", [.name "PI", …]), …] }
-def plan : Plan := mkPlan bundle spec
-
-theorem plan_valid : Valid bundle spec plan := by decide +kernel
-theorem plan_correct : Correct bundle plan := split_correct plan_valid
-```
-
-No proof term is searched for. `Valid` is decidable (§ 5), so `decide +kernel` makes the kernel _evaluate_ the decision procedure and check that it returns `true`.
-`split_correct` was proved once, for every bundle, spec and plan ([`Correct.lean`](../lean/EsmSplit/Correct.lean)). Lean's reply is "accepted" or an error.
-For a bad split `decide` says the proposition is false. `¬ OrderOk …` is itself a kernel-checked theorem ([`Controls.lean`](../lean/EsmSplit/Controls.lean)),
-and the compiled report (`lowersplit`) names the failing check.
-
-**Strategies.** A strategy says how Lean runs that computation.
-
-| Strategy         | Runs it in     | Trusts                                  | Seen here                                                      |
-| ---------------- | -------------- | --------------------------------------- | -------------------------------------------------------------- |
-| `decide`         | the elaborator | the kernel                              | `maximum recursion depth` at 59 statements (5.5 s)             |
-| `decide +kernel` | the kernel     | the kernel                              | 17 s at 59 statements; 23 s at 96 synthetic ones; 12 GB at 670 |
-| `native_decide`  | compiled code  | the kernel, Lean's compiler and runtime | 2.3 s at 670                                                   |
-
-`native_decide` adds one axiom per proof, `plan_valid._native.native_decide.ax_1_1`: "the compiled evaluation returned `true`".
-(The [Lean reference](https://lean-lang.org/doc/reference/4.27.0-rc1/ValidatingProofs/) lists the trust each one adds. A [February 2026 Zulip post](<https://leanprover-community.github.io/archive/stream/270676-lean4/topic/Heads.20up.3A.20changes.20to.20native_decide.20(and.20bv_decide).html>)
-announces that the axiom machinery behind `native_decide` is being restructured, so the names printed by `#print axioms` may change.)
-
-[`Ladder.lean`](../lean/Experiments/Ladder.lean) writes the ladder inside Lean:
-
-```lean
-macro "decide_split" : tactic => `(tactic| first | decide | decide +kernel | native_decide)
-theorem ladder_valid : Valid bundle spec plan := by decide_split
-```
-
-[`proof_search/prove.mjs`](proof_search/prove.mjs) does it from outside for a generated file, with a time limit per strategy. It rewrites the tactic after `by`, runs
-`lake env lean --json`, and stops at the first strategy Lean accepts:
-
-```text
-$ node prove.mjs Semver.lean --ladder "decide;decide +kernel;native_decide"   # 59 statements, 4 modules
-decide             failed: maximum recursion depth has been reached         5.5 s
-decide +kernel     proved                                                  16.6 s  [propext, Classical.choice, Quot.sound]
-
-$ node prove.mjs Lodash.lean --ladder "decide;native_decide"                # 670 statements, 6 modules
-decide             failed: maximum recursion depth has been reached         1.8 s
-native_decide      proved                                                   2.3 s  [propext, Classical.choice, Quot.sound, plan_valid._native.native_decide.ax_1_1]
-
-$ node prove.mjs AcornMin.lean --ladder "native_decide"                     # a split that OrderOk rejects
-native_decide      failed: Tactic `native_decide` evaluated that the proposition … is false   1.4 s
-no strategy proved it
-```
-
-(`decide +kernel` is left out of the lodash ladder: it reaches 12 GB in 62 s, § 5. Raw output: [`records/ladder_*.txt`](records).)
-
-For a worked example of a pair-specific proof, see § 3.
-
-**What this is not.** It is not proof search. The strategy space is small enough to enumerate, so the ladder does.
-For a statement that is not decidable, the loop is the usual one: write a tactic script, run `lake env lean --json`, read the goals and errors, try `simp`, `omega`, `grind`, `exact?`.
-§ 4 did that by hand. I did not build an automatic loop.
 
 ## 9. What already exists, and what I would reuse
 

@@ -319,7 +319,7 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
       for line in Effects.premiseLines options.prem analysis do IO.println line
       pure fps
   let t2 ← reportElapsed "footprints (Lean analysis)" t1
-  let B := bundleOfFootprints asts fps #[]
+  let B := bundleOfFootprints asts fps
   let S ← IO.ofExcept (chunk.spec asts.size)
   let t3 ← reportElapsed "load spec" t2
   IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"

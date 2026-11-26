@@ -1,33 +1,11 @@
-# Experiments and fuzz scripts have hand-maintained Bazel targets.
 # gazelle:exclude experiments
-# gazelle:exclude fuzz
 
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_library")
 
 npm_link_all_packages(name = "node_modules")
-
-exports_files(
-    [
-        "example/input/bundle.mjs",
-        "proof_fixture/bad.json",
-        "proof_fixture/bundle.mjs",
-        "proof_fixture/spec.json",
-        "example/spec.json",
-        "example/variants/cycle.json",
-        "example/controls/claimed_twice.json",
-        "example/controls/cycle_tdz.json",
-        "example/controls/effect_order.json",
-    ],
-    visibility = [
-        "//devinfra/js/debundle/x/split_proof/fuzz:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/lean:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
-    ],
-)
 
 js_library(
     name = "seeded_random",
@@ -44,52 +22,13 @@ js_library(
     ],
 )
 
-js_library(
-    name = "lint_sources",
-    testonly = True,
-    srcs = glob(["experiments/**/*.mjs"]),
-)
-
 eslint_test(
     name = "eslint_test",
     srcs = [
-        ":lint_sources",
         ":reporting",
         ":seeded_random",
         "//devinfra/js/debundle/x/split_proof/lowering:lint_sources",
     ],
-)
-
-js_run_binary(
-    name = "example_ast",
-    srcs = ["example/input/bundle.mjs"],
-    args = ["example/input/bundle.mjs"],
-    chdir = package_name(),
-    stdout = "generated/example.json",
-    tool = "//devinfra/js/debundle/x/split_proof/translation:dump_ast",
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
-)
-
-js_test(
-    name = "certified_fixture_census_test",
-    size = "large",
-    timeout = "long",
-    args = [
-        "$(rootpath :example_ast)",
-        "$(rootpath example/spec.json)",
-        "$(rootpath proof_fixture/bundle.mjs)",
-        "$(rootpath proof_fixture/spec.json)",
-    ],
-    data = [
-        "example/spec.json",
-        "proof_fixture/bundle.mjs",
-        "proof_fixture/spec.json",
-        ":example_ast",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
-    entry_point = "strategy_census_fixtures_test.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
-    tags = ["manual"],
 )
 
 py_library(

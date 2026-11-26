@@ -17,28 +17,16 @@ bbr test "$p/..." --config=ci
 
 Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused checks and longer experiments, use the following commands with the same `p` (`out` is an absolute output path):
 
-| Task                                                         | Command                                                                               |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| Compare the rendered example and rejected controls with Node | `bbr test "$p/lean:example_test"`                                                     |
-| Render the verified example                                  | `bb run "$p/lean:render" -- "$out"`                                                   |
-| Audit axioms and check the lowered example certificate       | `bbr test "$p/lean:axioms_test" "$p/lean:lowered_example_certificate_test"`           |
-| Compile the extra Lean proofs                                | `bbr test "$p/lean:experiments_test"`                                                 |
-| Compare module evaluation order across 500 graphs            | `bbr test "$p/es_order:es_order_sweep_test"`                                          |
-| Fuzz the example renderer                                    | `bb run "$p/fuzz:render_fuzz" -- 600 1`                                               |
-| Check translation fixtures and effect cases                  | `bbr test "$p/translation:fixtures_test" "$p/effects:effects_cases_test"`             |
-| Run a larger translation fuzz sample                         | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
-| Run the extended CoreJS comparison                           | `bbr test "$p/model:corejs_differential_sweep_test"`                                  |
-| Run the debundle case corpus                                 | [Corpus commands](debundle_cases/README.md#run-it)                                    |
-| Lower public library bundles and check their splits          | [Bundle commands](experiments/README.md#6-lower-the-ast-into-lean)                    |
-
-To refresh the checked-in example instance after changing the inputs:
-
-```sh
-dir=devinfra/js/debundle/x/split_proof
-bbr build "//$dir/lean/generated:generate_instance" --remote_build_event_upload=all --remote_download_outputs=toplevel
-cp "bb-out/bazel-out/k8-fastbuild/bin/$dir/lean/generated/EsmSplit/Instance.lean" "$dir/lean/EsmSplit/Instance.lean"
-bbr test "//$dir/lean:instance_freshness_test"
-```
+| Task                                                | Command                                                                               |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Audit the shared proofs                             | `bbr test "$p/lean:axioms_test" "$p/lean:corejs_axioms_test"`                         |
+| Compile the extra Lean proofs                       | `bbr test "$p/lean:experiments_test"`                                                 |
+| Compare module evaluation order across 500 graphs   | `bbr test "$p/es_order:es_order_sweep_test"`                                          |
+| Check translation fixtures and effect cases         | `bbr test "$p/translation:fixtures_test" "$p/effects:effects_cases_test"`             |
+| Run a larger translation fuzz sample                | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
+| Run the extended CoreJS comparison                  | `bbr test "$p/model:corejs_differential_sweep_test"`                                  |
+| Run the debundle case corpus                        | [Corpus commands](debundle_cases/README.md#run-it)                                    |
+| Lower public library bundles and check their splits | [Bundle commands](experiments/README.md#6-lower-the-ast-into-lean)                    |
 
 Acorn supplies an unsplit module AST and eslint-scope annotates its binding occurrences. Lean enumerates source ordinals from the module body. It gives each declarator of a top-level `var`, `let` or `const` its own ordinal, including under a named export, and keeps each destructuring pattern together. Lean assembles an ESTree `Program` for each output file, including the imports and exports that connect the modules. Astring prints these trees as JavaScript. Functions, classes and methods retain their original source spelling because JavaScript exposes it through `Function.prototype.toString`. Unversioned input dumps are upgraded by reparsing the included source and checking its annotations.
 
@@ -341,100 +329,6 @@ Compare the same fixture, proof mode and runner across revisions. Record peak me
 
 `lowersplit --diagnostic deployment.json output` runs the structural checks and prints model diagnostics. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
 
-## The example
-
-Input, [`example/input/bundle.mjs`](example/input/bundle.mjs). It has 12 top-level statements, numbered 0–11:
-
-```js
-const PI = 3.14159; // 0
-function square(x) {
-  return x * x;
-} // 1
-const area = (r) => PI * square(r); // 2
-function isEven(n) {
-  return n === 0 || isOdd(n - 1);
-} // 3
-function isOdd(n) {
-  return n !== 0 && isEven(n - 1);
-} // 4
-const registry = []; // 5
-function register(name, fn) {
-  registry.push(name);
-  return fn;
-} // 6
-register("area", area); // 7
-const label = (s) => "<" + s + ">"; // 8
-register("label", label); // 9
-console.log(label("circle"), area(2), isEven(10)); // 10
-console.log(registry.join(",")); // 11
-```
-
-Spec, [`example/spec.json`](example/spec.json). A selector is a declared name, or `#n` for a statement that declares nothing:
-
-```json
-{
-  "entry": "main.mjs",
-  "modules": {
-    "utils.mjs": ["PI", "square", "area", "isEven", "isOdd", "label"],
-    "registry.mjs": ["registry", "register"],
-    "plugins.mjs": ["#7", "#9"],
-    "main.mjs": ["#10", "#11"]
-  }
-}
-```
-
-Two optional keys set the order the modules run in. `"order": ["a.mjs", …]` is an import priority: the entry imports every module in that order. That does not fix the order of evaluation, because a module runs after the modules it imports. `"sequential": true` does: the modules run in exactly `order` (or, without `order`, in the order of their first statements), the entry last. The planner then makes a module that an earlier one mentions import that earlier module first, and every module between ([`Split.lean`](lean/EsmSplit/Split.lean), `nest`). `Valid` checks the resulting plan like any other.
-
-For certification, the authored spec has a closed set of keys: `entry`, `modules`, `order`, `sequential`, and `privateEntryBody`. Unknown keys, duplicate keys, and values of the wrong type are refused. Resolved placements use their own format.
-
-The `render` target writes these files to the output directory you pass it. Statements are copied verbatim.
-
-```js
-// main.mjs
-import { label, area, isEven } from "./utils.mjs";
-import { registry } from "./registry.mjs";
-import "./plugins.mjs";
-
-console.log(label("circle"), area(2), isEven(10));
-console.log(registry.join(","));
-
-// plugins.mjs
-import { area, label } from "./utils.mjs";
-import { register } from "./registry.mjs";
-
-register("area", area);
-register("label", label);
-
-// registry.mjs
-const registry = [];
-function register(name, fn) {
-  registry.push(name);
-  return fn;
-}
-
-export { register, registry };
-
-// utils.mjs
-const PI = 3.14159;
-function square(x) {
-  return x * x;
-}
-const area = (r) => PI * square(r);
-function isEven(n) {
-  return n === 0 || isOdd(n - 1);
-}
-function isOdd(n) {
-  return n !== 0 && isEven(n - 1);
-}
-const label = (s) => "<" + s + ">";
-
-export { area, label, isEven };
-```
-
-The bundle runs statements in order `0 1 2 … 11`. The split runs `0 1 2 3 4 8 5 6 7 9 10 11`.
-`label` (8) now runs before `registry`, `register` and the first registration. The proof says why that is fine.
-Both programs print `<circle> 12.56636 true` and `area,label`.
-
 ## What is proved
 
 The abstract theorem below applies to a plan and its stated footprints. No verdict states it
@@ -484,8 +378,7 @@ That last rule cuts import cycles.
 
 [`Semantics.lean`](lean/EsmSplit/Semantics.lean) proves pairwise commutation of
 nonconflicting statements (`step_comm`) and lifts it to the plan's execution
-order (`exec_reorder`). The generated [example certificate](lean/EsmSplit/Instance.lean)
-uses `decide +kernel` for `Valid` and applies `split_correct`.
+order (`exec_reorder`).
 `lean:axioms_test` checks axiom dependencies;
 `leanchecker` replays the declarations.
 
@@ -495,7 +388,6 @@ The abstract theorem assumes footprint soundness for the supplied program.
 [`Lower.lean`](lean/EsmSplit/Lower.lean) scans declarations, eager and deferred
 names, and assignment sites. [The Effects analysis](effects/README.md) supplies
 writes, indirect reads and world effects under its printed premises.
-`lowersplit --generate-instance` uses both to write the checked-in example's Lean source without rendering JavaScript modules.
 
 `Meaning` models one flat environment. Using that theorem for JavaScript assumes
 that `Hygienic` justifies flattening and that `Plan.visit` agrees with module
@@ -512,45 +404,6 @@ states the parser, binding annotation, lowering, printer, model and compiler pre
 lists the Effects summaries already covered by separate CoreJS certificates.
 For validation of a separately authored tree, see the
 [translation validator's renaming premise](translation/README.md#trusted).
-
-## Controls
-
-Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`, checked by the kernel) and a real failure in Node.
-`lean:example_test` checks the Node behavior.
-
-| Control                                                                                                      | Failing check | Node, when written anyway                                          |
-| ------------------------------------------------------------------------------------------------------------ | ------------- | ------------------------------------------------------------------ |
-| [`effect_order`](example/controls/effect_order.json): last `console.log` moved into `registry.mjs`           | `OrderOk`     | prints `"\n<circle> 12.56636 true\n"`                              |
-| [`cycle_tdz`](example/controls/cycle_tdz.json): `label` in `main.mjs`, which `plugins.mjs` needs and imports | `OrderOk`     | `ReferenceError: Cannot access 'label' before initialization`      |
-| [`claimed_twice`](example/controls/claimed_twice.json): two modules pick `label`                             | `Faithful`    | `SyntaxError: Identifier 'label' has already been declared`        |
-| `missing_import` (a buggy splitter forgets one import)                                                       | `Hygienic`    | `ReferenceError: registry is not defined`                          |
-| `dropped_module` (nobody imports `plugins.mjs`)                                                              | `Permutes`    | prints `"<circle> 12.56636 true\n\n"`; the registrations never run |
-
-[`example/variants/cycle.json`](example/variants/cycle.json) must pass: `isEven` and `isOdd` in separate modules form a real import cycle, which is fine because function declarations exist before any module runs.
-`cycle_tdz` is the same cycle with a `const` in it, and fails.
-
-[`Controls.lean`](lean/EsmSplit/Controls.lean) also runs a concrete `Meaning` in the kernel. The accepted splits end in the bundle's state. The two order-violating controls end in a different one.
-
-## Checking the trusted parts
-
-These are tests, not proofs. The Bazel target `fuzz:render_fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
-510 random placements of the 12 statements, each rendered and run in Node.
-
-- 157 accepted. All 157 print what the bundle prints. 95 of them run statements in a different order than the bundle.
-- 353 rejected. 325 really break in Node. 28 are harmless: the checker is conservative.
-
-[`fuzz/mutate.py`](fuzz/mutate.py) weakens the trusted logic and reruns the fuzzer (400 placements per mutant):
-
-| Mutant                                                     | Result                                                                                                |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| drop the effect-order conflict                             | caught (18 wrong accepts)                                                                             |
-| drop the read-after-declare conflict                       | caught (87)                                                                                           |
-| run imports in reverse order                               | caught (4)                                                                                            |
-| drop the declare-after-read conflict                       | survives: this bundle reads nothing before its declaration. It matters for `var`.                     |
-| no transitive reads (the read set is just the eager names) | caught by a proof: the build fails, because `reads_closed` no longer holds for the changed definition |
-| un-mark a module after it runs                             | survives, still sound: `Permutes` rejects the double run                                              |
-
-Running `example/output/` in Node also found a bug in the first printer (no `export` lines). The proof does not cover the printer.
 
 ## Further reading
 
