@@ -148,7 +148,11 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	if err != nil {
 		return err
 	}
-	sandboxes, err := sandboxreader.New(c.Namespace, deps.Sandboxes)
+	identities, err := auth.KubernetesIdentityUIDs(deps.Sandboxes, c.Namespace)
+	if err != nil {
+		return err
+	}
+	sandboxes, err := sandboxreader.New(c.Namespace, deps.Sandboxes, identities)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/sandboxinventory",
     visibility = ["//agentplane/session_dispatcher/internal/app:__pkg__"],
     deps = [
+        "//agentplane/identity/auth",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/sandboxreader",

@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -31,17 +31,19 @@ type View struct {
 // ServiceAccountIdentity is the controller-owned execution account for one Sandbox incarnation.
 type ServiceAccountIdentity = identitypb.ServiceAccountIdentity
 
-// Reader reads the Sandboxes of one namespace.
+// Reader reads the Sandboxes of one namespace from Kubernetes, and the Identities they name from
+// identities.
 type Reader struct {
-	namespace string
-	objects   client.Reader
+	namespace  string
+	objects    client.Reader
+	identities auth.IdentityUIDReader
 }
 
-func New(namespace string, objects client.Reader) (*Reader, error) {
-	if namespace == "" || objects == nil {
-		return nil, fmt.Errorf("Sandbox namespace and Kubernetes client are required")
+func New(namespace string, objects client.Reader, identities auth.IdentityUIDReader) (*Reader, error) {
+	if namespace == "" || objects == nil || identities == nil {
+		return nil, fmt.Errorf("Sandbox namespace, Kubernetes client and Identity reader are required")
 	}
-	return &Reader{namespace: namespace, objects: objects}, nil
+	return &Reader{namespace: namespace, objects: objects, identities: identities}, nil
 }
 
 // Get reads the named Sandbox: `NotFound` when there is none, `Unavailable` when what is stored has no usable identity.
@@ -109,7 +111,8 @@ func (r *Reader) ExecutionAccount(ctx context.Context, sandbox *Identity) (*Serv
 // ExecutionIdentity reads the Identity an exact live Sandbox incarnation names in `spec.identity`,
 // with the UID of the Identity's current incarnation. It returns nil and found=true when the Sandbox
 // names none; found=false when the Sandbox incarnation is gone or deleting or the Identity it names
-// is absent or deleting. Like ExecutionAccount, Reader must read the API server directly.
+// is absent or deleting, as the Identity reader reports. Like ExecutionAccount, Reader must read
+// Sandboxes from the API server directly.
 func (r *Reader) ExecutionIdentity(ctx context.Context, sandbox *Identity) (*identitypb.Identity, bool, error) {
 	if sandbox == nil || sandbox.Namespace != r.namespace || sandbox.Name == "" || sandbox.Uid == "" {
 		return nil, false, fmt.Errorf("exact Sandbox identity in namespace %q is required", r.namespace)
@@ -126,22 +129,22 @@ func (r *Reader) ExecutionIdentity(ctx context.Context, sandbox *Identity) (*ide
 	if current.Spec.Identity == nil {
 		return nil, true, nil
 	}
-	// spec.identity names an Identity in the Sandbox's namespace, while SVID verifiers read Identities
-	// in the policy namespace. Assumption: the two are the same namespace, as staging renders them
-	// (cluster/cdk8s/agentplane: both are the environment namespace); name and UID still match exactly.
-	var named policyapi.Identity
-	if err := r.objects.Get(ctx, types.NamespacedName{Namespace: current.Namespace, Name: current.Spec.Identity.Name}, &named); apierrors.IsNotFound(err) {
-		return nil, false, nil
-	} else if err != nil {
+	// spec.identity names an Identity in the Sandbox's namespace, while r.identities serves whichever
+	// policy namespace its caller configured, the one SVID verifiers read. Assumption: the two are the
+	// same namespace, as staging renders them (cluster/cdk8s/agentplane: both are the environment
+	// namespace); name and UID still match exactly.
+	name := current.Spec.Identity.Name
+	uid, found, err := r.identities.GetIdentityUID(ctx, name)
+	if err != nil {
 		return nil, false, fmt.Errorf("read Sandbox Identity: %w", err)
 	}
-	if named.DeletionTimestamp != nil {
+	if !found {
 		return nil, false, nil
 	}
-	if named.UID == "" {
-		return nil, false, fmt.Errorf("Identity %q has no UID", named.Name)
+	if uid == "" {
+		return nil, false, fmt.Errorf("Identity %q has no UID", name)
 	}
-	return &identitypb.Identity{Name: named.Name, Uid: string(named.UID)}, true, nil
+	return &identitypb.Identity{Name: name, Uid: uid}, true, nil
 }
 
 func (r *Reader) ownedExecutionAccount(ctx context.Context, current *sandboxapi.Sandbox) (*ServiceAccountIdentity, bool, error) {

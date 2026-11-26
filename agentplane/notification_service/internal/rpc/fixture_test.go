@@ -382,7 +382,11 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	otherWorkload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, otherSandboxName, testNamespace)
 	testOtherWorkload = &otherWorkload
 	sandboxUID, otherSandboxUID, successorUID = string(identityWorkload.Sandbox.UID), string(otherWorkload.Sandbox.UID), ""
-	sandboxes, err := sandboxreader.New(testNamespace, kubeClient)
+	identities, err := auth.KubernetesIdentityUIDs(kubeClient, testNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sandboxes, err := sandboxreader.New(testNamespace, kubeClient, identities)
 	if err != nil {
 		t.Fatal(err)
 	}

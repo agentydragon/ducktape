@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -39,7 +40,11 @@ func NewKubernetesSandboxes(inventory cache.Cache, objects client.Client, namesp
 	if err != nil {
 		return nil, err
 	}
-	reader, err := sandboxreader.New(namespace, objects)
+	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := sandboxreader.New(namespace, objects, identities)
 	if err != nil {
 		return nil, err
 	}
