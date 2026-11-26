@@ -5,8 +5,8 @@
 //! the ledger's heap cells out of any caller's effects.
 
 use super::super::alternatives::outcome::join_allocation_judgments;
-use super::super::alternatives::{Family, Leaf, PathState, join_worlds};
 use super::super::execution_index::ExecutionIndex;
+use super::super::kernel::alternatives::{Family, Leaf, PathState, join_worlds};
 use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
 use super::super::kernel::context::{
     BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,

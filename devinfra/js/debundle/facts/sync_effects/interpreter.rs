@@ -10,12 +10,12 @@ pub mod synchronous_calls;
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
 use super::alternatives::execution_state::{ExecutionPath, JoinedPath};
-use super::alternatives::{Family, Leaf, join_frames};
 use super::execution_index::{
     Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
     LocalConstructor, MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
     native_own_data_read_slots, pattern_source,
 };
+use super::kernel::alternatives::{Family, Leaf, join_frames};
 use super::kernel::closure::{CapturePolicy, lexical_captures};
 use super::kernel::construct;
 use super::kernel::context::{ControlContext, IndexReads};
@@ -1715,7 +1715,7 @@ impl Executor<'_, '_> {
         } = checkpoint;
         let attempted = self.state.world.clone();
         let (allocation_judgment, _) = self.state.enter(path);
-        super::alternatives::separate_from_abandoned(&attempted, self.state.world_mut());
+        super::kernel::alternatives::separate_from_abandoned(&attempted, self.state.world_mut());
         self.allocation_judgment = allocation_judgment;
         let state = &mut *self.state;
         state.prior_reachability_roots = prior_reachability_roots;

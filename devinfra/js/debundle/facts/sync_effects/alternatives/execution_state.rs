@@ -10,8 +10,8 @@
 //! operation on the same path reads back as a fact is forked here and joined.
 
 use super::super::interpreter::{CallbackFallbackSummary, Outcome};
+use super::super::kernel::alternatives::{PathState, join_worlds};
 use super::outcome::join_allocation_judgments;
-use super::{PathState, join_worlds};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;

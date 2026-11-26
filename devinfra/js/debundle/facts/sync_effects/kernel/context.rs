@@ -1,7 +1,7 @@
 //! The five narrow adapter traits. An adapter supplies policy; the kernel owns
 //! operation order and semantics.
 
-use super::super::alternatives::PathState;
+use super::alternatives::PathState;
 use super::closure::{CaptureCensus, CapturePolicy, ClosureAdmission};
 use super::frame::{LocalCallRequest, LocalFrame, LocalValueResult, RemainderDisposition};
 use analysis_vocabulary::execution_evidence::OrderedFieldReadRefusal;

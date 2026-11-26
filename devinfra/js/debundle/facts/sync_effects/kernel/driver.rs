@@ -1,6 +1,6 @@
 //! The one loop that runs a continuation to completion.
 
-use super::super::alternatives::{self, Family, Leaf};
+use super::alternatives::{self, Family, Leaf};
 use super::context::{ForkPolicy, KernelContext};
 use super::continuation::{LocalContinuation, LocalSuspension};
 use value_model::local_operations::LocalBody;

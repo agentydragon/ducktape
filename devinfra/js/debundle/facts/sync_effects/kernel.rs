@@ -8,6 +8,7 @@
 //! base-class construction, path selection at conditional and logical
 //! operators, completion accounting) lives here.
 
+pub(super) mod alternatives;
 pub(super) mod branch;
 pub(super) mod cells;
 pub(super) mod closure;
