@@ -150,8 +150,14 @@ func TestCompactJournalTranscodesLegacyAndCurrentBlocks(t *testing.T) {
 		t.Fatalf("verified repack did not prove zero legacy blocks: %v", err)
 	}
 	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, 300), want)
-	if repeated, err := store.CompactJournal(t.Context(), session.ID, true); err != nil || !repeated.Completed ||
-		repeated.Events != 0 || repeated.Blocks != 0 || repeated.Batches != 0 || repeated.StoredBytes != 0 || repeated.PackedBytes != 0 {
+	// A second pass scans every frame but must leave matching rows and blocks in place.
+	migrationExec(t, store.DB(), `CREATE FUNCTION reject_journal_rewrite() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN RAISE EXCEPTION 'second repack changed a row in %', TG_TABLE_NAME; END; $$`)
+	migrationExec(t, store.DB(), `CREATE TRIGGER reject_event_rewrite BEFORE INSERT OR UPDATE OR DELETE ON sampler_event
+		FOR EACH ROW EXECUTE FUNCTION reject_journal_rewrite()`)
+	migrationExec(t, store.DB(), `CREATE TRIGGER reject_block_rewrite BEFORE INSERT OR UPDATE OR DELETE ON sampler_event_block
+		FOR EACH ROW EXECUTE FUNCTION reject_journal_rewrite()`)
+	if repeated, err := store.CompactJournal(t.Context(), session.ID, true); err != nil || !repeated.Completed || repeated.Events != int64(len(want)) {
 		t.Fatalf("idempotent apply result=%+v err=%v", repeated, err)
 	}
 	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM information_schema.tables
