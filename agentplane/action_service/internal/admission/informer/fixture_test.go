@@ -77,7 +77,7 @@ func (f *fixture) start() {
 	f.index = NewIndex()
 	base := rest.CopyConfig(server.Config)
 	base.Wrap(f.faults.wrap)
-	informer, err := New(base, f.index, f.policy)
+	informer, err := New(base, f.index, f.policy, reader.KubernetesIdentities{})
 	if err != nil {
 		f.t.Fatal(err)
 	}

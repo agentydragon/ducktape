@@ -5,7 +5,13 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.action_service.settings import EnvironmentServicePeer, ServicePeer, Settings
-from agentplane.net.peertls.config import ACTIONS_URI, CENTRAL_SAMPLER_URI, SANDBOX_CONTROLLER_URI
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    CENTRAL_SAMPLER_URI,
+    MCP_EDGE_URI,
+    POLICY_CONTROLLER_URI,
+    SANDBOX_CONTROLLER_URI,
+)
 
 
 def _settings_source() -> dict[str, object]:
@@ -136,6 +142,43 @@ def test_environment_service_peer_is_optional_and_pins_controller_svid() -> None
     ):
         with pytest.raises(ValidationError):
             EnvironmentServicePeer.model_validate(invalid)
+
+
+def _policy_service(*, target: str = "test-policy-controller:8443", client_uri: str = ACTIONS_URI) -> dict[str, object]:
+    return {
+        "target": target,
+        "tls": {
+            "ca_file": "/etc/actions/ca",
+            "server_uri": POLICY_CONTROLLER_URI,
+            "cert_file": "/etc/actions/cert",
+            "key_file": "/etc/actions/key",
+            "client_uri": client_uri,
+        },
+    }
+
+
+def test_policy_service_is_optional_and_calls_as_actions() -> None:
+    source = _settings_source()
+    assert "policy_service" not in Settings.model_validate(source).model_dump(mode="json")
+    settings = Settings.model_validate(source | {"policy_service": _policy_service()})
+    assert settings.model_dump(mode="json")["policy_service"]["target"] == "test-policy-controller:8443"
+
+
+@pytest.mark.parametrize(
+    "peer",
+    [
+        _policy_service(target=""),
+        _policy_service(client_uri=MCP_EDGE_URI),
+        {**_policy_service(), "tls": {"ca_file": "/etc/actions/ca", "server_uri": ACTIONS_URI}},
+        {
+            "target": "test-policy-controller:8443",
+            "tls": {"ca_file": "/etc/actions/ca", "server_uri": POLICY_CONTROLLER_URI},
+        },
+    ],
+)
+def test_policy_service_rejects_incomplete_or_wrong_peers(peer: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        Settings.model_validate(_settings_source() | {"policy_service": peer})
 
 
 if __name__ == "__main__":

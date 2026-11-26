@@ -84,10 +84,11 @@ func (i *Index) ResolveBindings(caller reader.Subject) []policies.Binding {
 // Informer fills an Index from the API server and keeps ActionsReady on the policy namespace's bindings.
 type Informer struct{ watches *reader.Watches }
 
-// New returns an Informer of the Index that is idle until Run. policyNamespace holds the PolicySets and PolicyBindings.
-func New(base *rest.Config, index *Index, policyNamespace string) (*Informer, error) {
+// New returns an Informer of the Index that is idle until Run. policyNamespace holds the PolicySets and PolicyBindings;
+// identities is where the Index follows their subjects' Identities.
+func New(base *rest.Config, index *Index, policyNamespace string, identities reader.IdentitySource) (*Informer, error) {
 	watches := reader.NewWatches(base, index.Health)
-	if err := reader.WatchRules(watches, index.Rules, policyNamespace, ActionsReady, reader.KubernetesIdentities{}); err != nil {
+	if err := reader.WatchRules(watches, index.Rules, policyNamespace, ActionsReady, identities); err != nil {
 		return nil, err
 	}
 	return &Informer{watches: watches}, nil

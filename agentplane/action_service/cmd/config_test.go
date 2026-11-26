@@ -537,3 +537,32 @@ func TestActionsPeersAcceptOwnSVIDInsteadOfToken(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPolicyServiceMustBeACompleteMutualTLSCallerAsActions(t *testing.T) {
+	block := func(target, clientURI, serverURI string) string {
+		return "policy_service:\n  target: \"" + target + "\"\n  tls:\n    ca_file: /test/workload-ca.crt\n    server_uri: " + serverURI +
+			"\n    cert_file: /test/actions.crt\n    key_file: /test/actions.key\n    client_uri: " + clientURI + "\n"
+	}
+	actions, policy := peertls.ActionsURI, peertls.PolicyControllerURI
+	for _, tc := range []struct {
+		name     string
+		settings string
+		valid    bool
+	}{
+		{"complete", block("test-policy-controller:8443", actions, policy), true},
+		{"no target", block("", actions, policy), false},
+		{"another caller identity", block("test-policy-controller:8443", peertls.MCPEdgeURI, policy), false},
+		{"another server", block("test-policy-controller:8443", actions, peertls.ActionsURI), false},
+		{"no client SVID", "policy_service:\n  target: test-policy-controller:8443\n  tls:\n    ca_file: /test/workload-ca.crt\n    server_uri: " + policy + "\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := loadTestConfig(t, requiredFile+tc.settings)
+			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "test-policy-controller:8443") {
+				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
+			}
+			if !tc.valid && err == nil {
+				t.Fatal("loadConfig accepted an incomplete policy_service")
+			}
+		})
+	}
+}

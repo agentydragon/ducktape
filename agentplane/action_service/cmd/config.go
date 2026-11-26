@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,6 +42,11 @@ type config struct {
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on
 	// those bindings.
 	PolicyNamespace string `mapstructure:"policy_namespace"`
+	// PolicyService, when set, is the one source of every Identity this service reads; unset, it reads them from the
+	// API server in PolicyNamespace.
+	// CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
+	//   (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+	PolicyService *identitycache.Peer `mapstructure:"policy_service"`
 	// WebPush is on when any of its settings is set; off, no push is sent and no subscription is accepted.
 	WebPush push.Settings `mapstructure:"web_push"`
 	// ActionGroups is read from the file alone; see settingsFile.
@@ -152,6 +158,11 @@ func (c *config) validate() error {
 			return fmt.Errorf("session_delegation_service must be %s", peertls.CentralSamplerURI)
 		}
 		if err := auth.ValidateServiceCallers([]string{c.SessionDelegationService}); err != nil {
+			return err
+		}
+	}
+	if c.PolicyService != nil {
+		if err := c.PolicyService.Validate(peertls.ActionsURI); err != nil {
 			return err
 		}
 	}

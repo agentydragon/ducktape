@@ -28,6 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/operator/testissuer"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
@@ -144,7 +145,7 @@ func newPolicyNamespace(t *testing.T) policyNamespace {
 func (n policyNamespace) watch(t *testing.T) *informer.Index {
 	t.Helper()
 	index := informer.NewIndex()
-	policyInformer, err := informer.New(kube.Config, index, string(n))
+	policyInformer, err := informer.New(kube.Config, index, string(n), reader.KubernetesIdentities{})
 	if err != nil {
 		t.Fatal(err)
 	}
