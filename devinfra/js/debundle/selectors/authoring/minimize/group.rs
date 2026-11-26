@@ -387,21 +387,6 @@ pub(crate) fn minimize_var_group_selector_candidates(
         .collect())
 }
 
-/// The default pick is exactly the first candidate, so dispatch cannot drift
-/// between ordinary synthesis and the interactive candidate menu.
-pub(crate) fn minimize_var_group_selector(
-    index: &ChunkSelectorIndex<'_>,
-    var: &VarDecl,
-    decl: &IndexedDeclaration,
-    targets: &[SynthesizedTargetBinding],
-) -> Result<Option<SpecializedSelector>> {
-    Ok(
-        minimize_var_group_selector_candidates(index, var, decl, targets, 1)?
-            .into_iter()
-            .next(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;

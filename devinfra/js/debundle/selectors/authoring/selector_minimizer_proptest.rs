@@ -7,11 +7,11 @@
 //!
 //! - same-arity function declarations (exercises `minimize_function_selector_candidates`);
 //! - single `const` declarations with call / object / literal initializers
-//!   (the one-declarator case of `minimize_var_group_selector`);
+//!   (the one-declarator case of `minimize_var_group_selector_candidates`);
 //! - class declarations whose methods contain calls / literals (exercises
 //!   `minimize_class_selector_candidates`);
 //! - multi-declarator `const`s, where 2+ declarators in one statement are
-//!   selected as a binding group (`minimize_var_group_selector` via
+//!   selected as a binding group (`minimize_var_group_selector_candidates` via
 //!   `synthesize_simplest_selector_for_group` with multiple `NameBindingMember`s).
 //!
 //! The chunk is serialized with swc's own codegen and fed into the minimizer —
@@ -264,7 +264,7 @@ fn stmt_strategy() -> impl Strategy<Value = Stmt> {
 }
 
 /// Initializer for a top-level single/grouped `const` binding: a call, an
-/// object literal, or a bare literal — the shapes `minimize_var_group_selector`
+/// object literal, or a bare literal — the shapes `minimize_var_group_selector_candidates`
 /// peels anchors out of.
 fn var_init_strategy() -> impl Strategy<Value = Expr> {
     prop_oneof![

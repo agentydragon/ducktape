@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use binding_targets::binding_name_strings;
-use js_ast::{item_decl, item_var_decl};
+use js_ast::item_decl;
 use selector_outcome::{Outcome, ResolvedBy};
 use selector_resolve::{EntityIndex, Member, MemberSelector, SpecModule};
 use serde::Serialize;
@@ -55,7 +55,7 @@ pub mod source_input;
 use crate::minimize::{
     collapse_statement_hole_runs, exact_declaration_rejection, exact_declaration_source,
     minimize_class_selector_candidates, minimize_function_selector_candidates,
-    minimize_var_group_selector, minimize_var_group_selector_candidates, relax_exact_declaration,
+    minimize_var_group_selector_candidates, relax_exact_declaration,
 };
 use crate::render::holes_present;
 
@@ -1441,19 +1441,23 @@ fn synthesize_simplest_selector_for_group(
     let mut targets = synthesis_targets(members);
     // Try readable selector locals first. The var renderer rewrites uses of
     // selected bindings inside sibling initializers to the same local names.
-    let mut specialized = match synthesize_specialized_selector(index, item, decl, &targets)? {
-        Some(selector) => Some(selector),
-        None => relax_exact_declaration(index, item, decl, &targets)?,
-    };
+    let primary =
+        |targets: &[SynthesizedTargetBinding]| match synthesize_specialized_selector_candidates(
+            index, item, decl, targets, 1,
+        )?
+        .into_iter()
+        .next()
+        {
+            Some(selector) => Ok(Some(selector)),
+            None => relax_exact_declaration(index, item, decl, targets),
+        };
+    let mut specialized = primary(&targets)?;
     // The old source spelling remains a fallback for name-only codemods.
     if specialized.is_none() && targets.len() > 1 {
         for target in &mut targets {
             target.selector_local = target.runtime_binding.clone();
         }
-        specialized = match synthesize_specialized_selector(index, item, decl, &targets)? {
-            Some(selector) => Some(selector),
-            None => relax_exact_declaration(index, item, decl, &targets)?,
-        };
+        specialized = primary(&targets)?;
     }
     let Some(specialized) = specialized else {
         return Ok(GroupSelectorOutcome::Skipped(exact_declaration_rejection(
@@ -1807,28 +1811,6 @@ struct SpecializedSelector {
     rewritten_holes: BTreeSet<String>,
 }
 
-fn synthesize_specialized_selector(
-    index: &ChunkSelectorIndex<'_>,
-    item: &ModuleItem,
-    decl: &IndexedDeclaration,
-    targets: &[SynthesizedTargetBinding],
-) -> Result<Option<SpecializedSelector>> {
-    match decl.kind {
-        // Function and class single-pick is the candidates read-off at limit 1
-        // (`read_off_candidates` stops at the first proving selector). The
-        // caller tries exact-declaration relaxation on an empty result.
-        IndexedDeclarationKind::Function | IndexedDeclarationKind::Class => Ok(
-            synthesize_specialized_selector_candidates(index, item, decl, targets, 1)?
-                .into_iter()
-                .next(),
-        ),
-        IndexedDeclarationKind::Var => {
-            synthesize_specialized_var_selector(index, item, decl, targets)
-        }
-        IndexedDeclarationKind::Other => Ok(None),
-    }
-}
-
 /// Up to `limit` ranked candidate selectors for the item — the
 /// `synthesize-selectors --candidates N` menu.
 fn synthesize_specialized_selector_candidates(
@@ -1838,49 +1820,18 @@ fn synthesize_specialized_selector_candidates(
     targets: &[SynthesizedTargetBinding],
     limit: usize,
 ) -> Result<Vec<SpecializedSelector>> {
-    match decl.kind {
-        IndexedDeclarationKind::Function => {
-            let [target] = targets else {
-                return Ok(Vec::new());
-            };
-            let Some(Decl::Fn(function)) = item_decl(item) else {
-                return Ok(Vec::new());
-            };
+    match (item_decl(item), targets) {
+        (Some(Decl::Fn(function)), [target]) => {
             minimize_function_selector_candidates(index, &function.function, decl, target, limit)
         }
-        IndexedDeclarationKind::Class => {
-            let [target] = targets else {
-                return Ok(Vec::new());
-            };
-            let Some(Decl::Class(class_decl)) = item_decl(item) else {
-                return Ok(Vec::new());
-            };
-            minimize_class_selector_candidates(index, &class_decl.class, decl, target, limit)
+        (Some(Decl::Class(class)), [target]) => {
+            minimize_class_selector_candidates(index, &class.class, decl, target, limit)
         }
-        IndexedDeclarationKind::Var => {
-            let var =
-                item_var_decl(item).context("indexed var declaration no longer has var AST")?;
+        (Some(Decl::Var(var)), _) => {
             minimize_var_group_selector_candidates(index, var, decl, targets, limit)
         }
-        IndexedDeclarationKind::Other => {
-            Ok(synthesize_specialized_selector(index, item, decl, targets)?
-                .into_iter()
-                .collect())
-        }
+        _ => Ok(Vec::new()),
     }
-}
-
-fn synthesize_specialized_var_selector(
-    index: &ChunkSelectorIndex<'_>,
-    item: &ModuleItem,
-    decl: &IndexedDeclaration,
-    targets: &[SynthesizedTargetBinding],
-) -> Result<Option<SpecializedSelector>> {
-    let var = item_var_decl(item).context("indexed var declaration no longer has var AST")?;
-    // Single-target and multi-target vars both route through the AST-prune group
-    // path (the single case is the N=1 group). On `None`, the caller tries
-    // exact-declaration relaxation.
-    minimize_var_group_selector(index, var, decl, targets)
 }
 
 /// Distinct body indices the selector resolves to (slot alignments within one
