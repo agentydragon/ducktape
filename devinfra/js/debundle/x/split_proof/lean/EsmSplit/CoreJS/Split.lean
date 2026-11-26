@@ -203,7 +203,7 @@ row is metadata (or an unsupported source unit) and contributes no CoreJS
 statement. Unlike `moduleOf`, this does not treat a compact row index as an
 original source identity. -/
 def indexedNumbered (source : List (Nat × Stmt)) (id : Nat) : Option (Nat × Stmt) :=
-  (source.find? fun row => row.1 == id).map fun row => (id, row.2)
+  (source.lookup id).map fun stmt => (id, stmt)
 
 /-- Construct a plan module from statements carrying their original IDs. The
 plan still retains selectors for non-executable metadata, so its exports and
