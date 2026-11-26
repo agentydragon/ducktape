@@ -5,17 +5,9 @@ use debundle_e2e_graph_support::effect_validation::*;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
-fn assert_commuting_relocation(fixture: &Fixture, case: &str) {
-    let report = fixture.effect_translation_validation();
+fn assert_single_commuting_relocation(fixture: &Fixture, case: &str) {
+    let report = assert_commuting_relocation(fixture, case);
     assert_eq!(report["swapped_pairs"], 1, "{case}: {report:#}");
-    assert_eq!(
-        report["decision"]["status"], "accepted",
-        "{case}: {report:#}"
-    );
-    assert_eq!(
-        report["decision"]["scope"], "statement_order_commutation",
-        "{case}: {report:#}"
-    );
 }
 
 #[test]
@@ -51,7 +43,7 @@ fn callable_array_spreads_keep_receipts_across_an_independent_inversion() {
         );
         assert_preserved_entry_output(&fixture, expected);
         assert_inline_operation_receipt(&fixture, "result", 1, body);
-        assert_commuting_relocation(&fixture, body);
+        assert_single_commuting_relocation(&fixture, body);
     }
 }
 
@@ -70,7 +62,7 @@ fn root_array_spread_of_module_arrays_keeps_its_receipt_across_an_inversion() {
     );
     assert_preserved_entry_output(&fixture, "7 base,a,b\n");
     assert_inline_operation_receipt(&fixture, "scopes", 0, "root spread");
-    assert_commuting_relocation(&fixture, "root spread");
+    assert_single_commuting_relocation(&fixture, "root spread");
 }
 
 #[test]
@@ -113,7 +105,7 @@ fn array_hole_and_spread_mix_keeps_its_receipt() {
     );
     assert_preserved_entry_output(&fixture, "7 3 a c\n");
     assert_inline_operation_receipt(&fixture, "result", 1, "hole and spread");
-    assert_commuting_relocation(&fixture, "hole and spread");
+    assert_single_commuting_relocation(&fixture, "hole and spread");
 }
 
 /// A pushed primitive array is still primitive-only, but the prefix records

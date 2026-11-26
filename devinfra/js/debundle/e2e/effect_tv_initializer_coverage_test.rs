@@ -218,11 +218,7 @@ console.log(marker);\n";
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");
     assert_eq!(report["counts"]["havoc_pairs"], 0, "{report:#}");
-    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
-    assert_eq!(
-        report["decision"]["scope"], "statement_order_commutation",
-        "the verdict covers the exact closed candidate inversion: {report:#}"
-    );
+    assert_commutation_accepted(&report, "the exact closed candidate inversion");
     assert_eq!(report["relocation_dependencies"], serde_json::json!({}));
     assert_unknown_effect_coverage(&report, 1, "");
 }

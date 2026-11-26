@@ -618,13 +618,9 @@ console.log(written, read);\n",
     let empty_report = empty_crossing.effect_translation_validation();
     assert_eq!(empty_report["swapped_pairs"], 1, "{empty_report:#}");
     assert_eq!(empty_report["counts"]["pairs"], 0, "{empty_report:#}");
-    assert_eq!(
-        empty_report["decision"]["status"], "accepted",
-        "{empty_report:#}"
-    );
-    assert_eq!(
-        empty_report["decision"]["scope"], "statement_order_commutation",
-        "the no-evaluation function declaration crosses an open console call: {empty_report:#}"
+    assert_commutation_accepted(
+        &empty_report,
+        "the no-evaluation function declaration crosses an open console call",
     );
     assert_eq!(
         empty_report["relocation_dependencies"],

@@ -236,11 +236,7 @@ fn scalar_call_receipt_accepts_independent_statement_inversion() {
     assert_inline_operation_receipt(&fixture, "result", 1, "scalar inversion");
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");
-    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
-    assert_eq!(
-        report["decision"]["scope"], "statement_order_commutation",
-        "{report:#}"
-    );
+    assert_commutation_accepted(&report, "scalar inversion");
 }
 
 #[test]
@@ -270,14 +266,7 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
         assert_inline_operation_receipt(&fixture, "result", 1, body);
         let report = fixture.effect_translation_validation();
         assert_eq!(report["swapped_pairs"], 1, "{body}: {report:#}");
-        assert_eq!(
-            report["decision"]["status"], "accepted",
-            "{body}: {report:#}"
-        );
-        assert_eq!(
-            report["decision"]["scope"], "statement_order_commutation",
-            "{body}: {report:#}"
-        );
+        assert_commutation_accepted(&report, body);
     }
 }
 
@@ -294,11 +283,7 @@ fn numeric_parameter_update_store_keeps_receipt_across_an_independent_inversion(
     assert_inline_operation_receipt(&fixture, "result", 2, "parameter update");
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");
-    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
-    assert_eq!(
-        report["decision"]["scope"], "statement_order_commutation",
-        "{report:#}"
-    );
+    assert_commutation_accepted(&report, "parameter update");
 }
 
 #[test]
