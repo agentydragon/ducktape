@@ -9,6 +9,10 @@ import { IdentitySchema, PolicyBindingSchema, type Identity } from "../../../pol
 import { IdentityPage } from "./identity_page";
 
 const mocks = vi.hoisted(() => ({ identities: vi.fn(), resources: vi.fn(), remove: vi.fn() }));
+vi.mock("../sandboxes/live", () => ({
+  useRequiredSandboxesLive: () => ({ snapshot: [] }),
+  sandboxInventoryFresh: () => true,
+}));
 vi.mock("../policy/watch", () => ({ useIdentities: mocks.identities, usePolicyResources: mocks.resources }));
 vi.mock("../egress/credential_watch", () => ({ useCredentialMetadata: () => new Map() }));
 vi.mock("./client", () => ({ deleteIdentity: mocks.remove }));

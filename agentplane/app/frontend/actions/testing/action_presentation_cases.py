@@ -448,6 +448,11 @@ class ActionPresentationCases:
             raw_result = receipt.get_by_test_id("action-execution-outcome")
             if example.name == "threads_get":
                 await raw_result.get_by_role("button", name="Show more", exact=True).click()
+                await expect(raw_result.get_by_role("button", name="Payload", exact=True)).to_have_attribute(
+                    "aria-expanded", "true"
+                )
+                # The editor renders lines near the viewport. Scroll the expanded result into view.
+                await raw_result.evaluate("element => element.scrollIntoView({block: 'end'})")
             await expect(raw_result).to_contain_text('"Label_19"')
             await expect(raw_result).to_contain_text('"Label_99"')
 
