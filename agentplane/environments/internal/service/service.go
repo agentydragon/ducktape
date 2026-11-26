@@ -61,7 +61,11 @@ func New(
 	if namespace == "" || objects == nil || lifecycleManager == nil {
 		return nil, errors.New("Sandbox namespace, uncached Kubernetes watch client, and lifecycle manager are required")
 	}
-	sandboxes, err := sandboxreader.New(namespace, objects)
+	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+	if err != nil {
+		return nil, err
+	}
+	sandboxes, err := sandboxreader.New(namespace, objects, identities)
 	if err != nil {
 		return nil, err
 	}
