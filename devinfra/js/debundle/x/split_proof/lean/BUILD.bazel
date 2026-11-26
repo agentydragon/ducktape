@@ -1933,3 +1933,24 @@ lean_proof_test(
     ],
     deps = [":corejs_terminal_footprints"],
 )
+
+lean_library(
+    name = "corejs_terminal_plan_family",
+    srcs = ["EsmSplit/CoreJS/TerminalPlanFamily.lean"],
+    deps = [
+        ":corejs_terminal_linked_exports",
+        ":corejs_terminal_plan_scope",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_plan_family_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalPlanFamily"],
+    required_theorems = [
+        "CoreJS.TerminalPlanFamily.entry_in_order",
+        "CoreJS.TerminalPlanFamily.family",
+        "CoreJS.TerminalPlanFamily.world_result",
+    ],
+    deps = [":corejs_terminal_plan_family"],
+)
