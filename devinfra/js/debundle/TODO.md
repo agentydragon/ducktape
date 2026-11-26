@@ -188,26 +188,19 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   falls back at depth, expansion and pool limits. Reduce repeated cross-product
   exploration with proved callee/reach summaries and shared effect composition;
   keep global/unknown behavior explicit. Also distinguish a callback's
-  primitive argument from its collection receiver: for a fresh dense array
-  with an own data index, a callback that only passes and returns that primitive
-  must not taint the array merely because the primitive reaches opaque code.
-  Retain the later own-index fact only with an interpreter proof, across every
-  reachable callback execution, that the receiver does not escape, is not
-  written, and has no descriptor or prototype change. With that proof, a later
-  read of the same index must remain an ordinary own-data read without the
-  possible-getter/callback fallback; if any proof obligation is incomplete,
-  keep the current conservative taint and fallback. The algorithm and bounded
-  summary structure are owned by <plans/analysis_consolidation.md>; capability and
-  effect-authority work also follows <plans/abstract_interpreter.md> and
-  <plans/synchronous_execution_fallback.md>.
-  Close with a neutral positive CLI case for that shape and adversarial negatives
-  for receiver escape, receiver writes, changed descriptors or prototype,
-  replaced callback-producing methods, getters or proxies, recursion, dynamic
-  scope and truncated execution. Each negative must retain conservative
-  behavior; the positive must pass the ordinary realizability gate and
-  original/emitted translation validation. Also retain controls around the
-  current limits, callback order and reentry, plus a real profiler comparison
-  on identical inputs. Exhaustion must retain conservative effects, dependencies
+  primitive argument from its collection receiver
+  (`e2e/callbacks/iteration_receiver.rs`): the receiver-preservation proof, its
+  consumers and acceptance criteria are in
+  <plans/analysis_consolidation.md#next-bounded-callback-slice> and
+  <debug/2026_11_17_receiver_confinement.md>. Capability and effect-authority
+  work also follows <plans/abstract_interpreter.md> and
+  <plans/synchronous_execution_fallback.md>. Close with that slice's positive
+  CLI case and adversarial negatives (receiver escape or writes, changed
+  descriptors or prototype, replaced callback-producing methods, getters or
+  proxies, recursion, dynamic scope,
+  truncated execution), each keeping conservative behavior. Also retain
+  controls around the current limits, callback order and reentry, plus a real
+  profiler comparison on identical inputs. Exhaustion must retain conservative effects, dependencies
   and precision-loss evidence. Increasing limits alone is not a resolution; the
   rejected global-prefix fixpoint in <docs/design.md> needs new evidence before
   reconsideration.
@@ -409,7 +402,7 @@ closure`, conflating unresolved host requests, missing captured chunks,
   Retain an explicit diagnostic discriminator through graph/report and gate
   explanations while preserving the current ordering and projection rules.
 
-- **F4 — Explain callback-fallback read provenance.** A pool-limit report names
+- **F7 — Explain callback-fallback read provenance.** A pool-limit report names
   the pool size and promoted read without a path from an actual callback seed
   through the static source-owner closure. Add a bounded predecessor witness
   with callable creation/initialization availability and the first cache
@@ -618,8 +611,7 @@ paths and source-unit IDs belong in the consuming repo.
   a whole-spec assignment replay. Reuse the source-only validation mode where
   it supplies that context; close any missing tree/global-context support.
   Include a deleted-anchor example caught before full analysis. Use bounded
-  `describe` output first; the concise explain mode below covers missing compact
-  diagnostics.
+  `describe` output first.
 - **W4 — Avoid unrelated rebuilds and unnecessary full graphs.** Investigate
   chunk-scoped selector/projection reuse and runtime-fixture invalidation so an
   ownership edit does not regenerate independent whole-program fixtures.
