@@ -22,7 +22,8 @@ theorem world_result {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     (ordered : ProjectedOrder.Kept ss (EsmSplit.mkPlan B S)) (name : Name)
     (row : EsmSplit.LocalExportUnit) (entry : EsmSplit.Module)
     (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry)
-    (units : entry.stmts = [row.ordinal]) (glue : entry.exports = [])
+    {prior : List Nat} (units : entry.stmts = prior ++ [row.ordinal])
+    (unpublished : ∀ i ∈ prior, (B.stmt i).exports = []) (glue : entry.exports = [])
     (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
     (sourceDefs : ∀ pair ∈ row.names, ∃ j, j < ss.length ∧ pair.2 ∈ (B.stmt j).defs)
     (w : World) :
@@ -35,7 +36,7 @@ theorem world_result {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     TerminalPlanScope.const_planned_links consts valid footprints ordered name row.names w
   have declared := TerminalEntryCells.declared_rows_of_source valid footprints sourceDefs
   obtain ⟨table, sourceTable, candidateTable⟩ := TerminalLinkedExports.linked_table
-    valid footprints names found (entry_in_order (EsmSplit.mkPlan B S)) units glue rowFootprint declared scopes name
+    valid footprints names found (entry_in_order (EsmSplit.mkPlan B S)) units unpublished glue rowFootprint declared scopes name
   refine ⟨table, ?_, ?_, outcomes⟩
   · unfold LinkedBehavior.exports
     rw [before.equation]
@@ -56,7 +57,8 @@ theorem family {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     (ordered : ProjectedOrder.Kept ss (EsmSplit.mkPlan B S)) (name : Name)
     (row : EsmSplit.LocalExportUnit) (entry : EsmSplit.Module)
     (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry)
-    (units : entry.stmts = [row.ordinal]) (glue : entry.exports = [])
+    {prior : List Nat} (units : entry.stmts = prior ++ [row.ordinal])
+    (unpublished : ∀ i ∈ prior, (B.stmt i).exports = []) (glue : entry.exports = [])
     (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
     (sourceDefs : ∀ pair ∈ row.names, ∃ j, j < ss.length ∧ pair.2 ∈ (B.stmt j).defs) :
     LinkedBehavior.SameExports (TerminalPlanLink.source name row.names ss) (splitProgram ss B (EsmSplit.mkPlan B S)) ∧
@@ -64,11 +66,11 @@ theorem family {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
         runProgram w fuel (splitProgram ss B (EsmSplit.mkPlan B S)) := by
   constructor
   · intro w
-    obtain ⟨table, before, after, _⟩ := world_result consts valid footprints ordered name row entry found units glue
+    obtain ⟨table, before, after, _⟩ := world_result consts valid footprints ordered name row entry found units unpublished glue
       rowFootprint sourceDefs w
     exact ⟨table, table, before, after, List.Perm.refl _⟩
   · intro w fuel
-    exact (world_result consts valid footprints ordered name row entry found units glue rowFootprint sourceDefs w).choose_spec.2.2 fuel
+    exact (world_result consts valid footprints ordered name row entry found units unpublished glue rowFootprint sourceDefs w).choose_spec.2.2 fuel
 
 #print axioms entry_in_order
 #print axioms world_result

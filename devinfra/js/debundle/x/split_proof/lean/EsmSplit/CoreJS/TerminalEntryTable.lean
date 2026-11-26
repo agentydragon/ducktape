@@ -1,22 +1,37 @@
 import EsmSplit.CoreJS.TerminalEntryNames
 import EsmSplit.CoreJS.LinkedBehavior
 
-/-! Ordered entry export tables for the metadata-only entry case. Cell
+/-! Ordered entry export tables for a terminal metadata row. Cell
 existence and equality must be proved from the source and actual split scopes;
 this module does not perform an output comparison or assume linking succeeded. -/
 
 namespace CoreJS.TerminalEntryTable
 
-/-- A metadata-only entry with no glue exports publishes exactly the original
-row, in the same order and with every public/local alias retained. -/
+/-- A terminal row and earlier unpublished units expose exactly the original
+public names and aliases. Generated glue is independently required to be empty. -/
 theorem exact_exports {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
-    {md : EsmSplit.Module} {row : EsmSplit.LocalExportUnit}
-    (units : md.stmts = [row.ordinal]) (glue : md.exports = [])
+    {md : EsmSplit.Module} {row : EsmSplit.LocalExportUnit} {prior : List Nat}
+    (units : md.stmts = prior ++ [row.ordinal])
+    (unpublished : ∀ i ∈ prior, (B.stmt i).exports = []) (glue : md.exports = [])
     (footprint : row.FootprintMatches (B.stmt row.ordinal)) :
     (moduleOf ss B P md).exports = row.names := by
+  have empty : ∀ ids : List Nat, (∀ i ∈ ids, (B.stmt i).exports = []) →
+      ids.flatMap (fun i => (B.stmt i).exports) = [] := by
+    intro ids
+    induction ids with
+    | nil => simp
+    | cons i rest ih =>
+      intro h
+      simp only [List.flatMap_cons]
+      rw [h i (by simp)]
+      simp only [List.nil_append]
+      apply ih
+      intro j hj
+      exact h j (by simp [hj])
   change md.namedExports B = row.names
   simp only [EsmSplit.Module.namedExports, EsmSplit.Module.namedExportsFrom, glue, List.nil_append,
-    EsmSplit.Module.publishedFrom, units, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+    EsmSplit.Module.publishedFrom, units, List.flatMap_append, empty prior unpublished,
+    List.nil_append, List.flatMap_cons, List.flatMap_nil, List.append_nil,
     EsmSplit.Bundle.toArray_getD, footprint.exports, EsmSplit.localExports, List.filterMap_map]
   generalize row.names = names
   induction names with
