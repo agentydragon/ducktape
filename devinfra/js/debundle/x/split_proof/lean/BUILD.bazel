@@ -1601,7 +1601,10 @@ lean_proof_test(
 lean_library(
     name = "corejs_projected_order",
     srcs = ["EsmSplit/CoreJS/ProjectedOrder.lean"],
-    deps = [":corejs_certificate_support_base"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":planner",
+    ],
 )
 
 executable_test(
@@ -1618,7 +1621,16 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.ProjectedOrder"],
     required_theorems = [
+        "CoreJS.ProjectedOrder.authored_executable_owner",
+        "CoreJS.ProjectedOrder.checkTerminalOnly",
         "CoreJS.ProjectedOrder.full_order_incompatible",
+        "CoreJS.ProjectedOrder.linked_ids",
+        "CoreJS.ProjectedOrder.loaded_ids",
+        "CoreJS.ProjectedOrder.numbered_ids",
+        "CoreJS.ProjectedOrder.scopes_modules",
+        "CoreJS.ProjectedOrder.terminal_body",
+        "CoreJS.ProjectedOrder.terminal_linked_ids",
+        "CoreJS.ProjectedOrder.terminal_loaded_ids",
         "CoreJS.ProjectedOrder.holds_statements",
         "CoreJS.ProjectedOrder.numbered_filter",
         "CoreJS.ProjectedOrder.run_same",
