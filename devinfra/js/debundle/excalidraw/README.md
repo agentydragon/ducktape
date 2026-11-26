@@ -76,7 +76,7 @@ Measured at `@excalidraw/excalidraw` 0.18.1 (2026-11-10):
   `admission_overrides`.
 - `DebundleAnalyze` on RBE: 39.5–43.6 s wall / 59.5–64.9 s CPU / 927–988 MiB
   peak RSS, and 48.6 s / 50.2 s / 808 MiB with `analysis_threads = 1`. With roughjs inlined
-  in the editor chunk it took about 305 s (<../perf/excalidraw_roughjs_analyze.md>).
+  in the editor chunk it took about 305 s (<../perf/analysis_serial_phases.md#workloads>).
   `DebundlePipeline` 10.9–24.5 s.
 
 That is cheap enough to run on every pull request whose affected set includes
