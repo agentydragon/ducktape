@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
@@ -97,6 +99,42 @@ ingress:
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadTestConfig(t, file); err == nil {
 				t.Fatal("accepted invalid service trust")
+			}
+		})
+	}
+}
+
+func TestPolicyServiceMustBeACompleteMutualTLSCallerAsHistory(t *testing.T) {
+	block := func(target, clientURI, serverURI string) string {
+		return fmt.Sprintf(`policy_service:
+  target: %q
+  tls:
+    ca_file: /test/workload-ca.crt
+    server_uri: %s
+    cert_file: /test/history.crt
+    key_file: /test/history.key
+    client_uri: %s
+`, target, serverURI, clientURI)
+	}
+	history, policy := peertls.HistoryIngressURI, peertls.PolicyControllerURI
+	for _, tc := range []struct {
+		name     string
+		settings string
+		valid    bool
+	}{
+		{"complete", block("test-policy-controller:8443", history, policy), true},
+		{"no target", block("", history, policy), false},
+		{"another caller identity", block("test-policy-controller:8443", peertls.AppURI, policy), false},
+		{"another server", block("test-policy-controller:8443", history, peertls.ActionsURI), false},
+		{"no client SVID", "policy_service:\n  target: test-policy-controller:8443\n  tls:\n    ca_file: /test/workload-ca.crt\n    server_uri: " + policy + "\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := loadTestConfig(t, requiredFile+tc.settings)
+			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "test-policy-controller:8443") {
+				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
+			}
+			if !tc.valid && err == nil {
+				t.Fatal("loadConfig accepted an incomplete policy_service")
 			}
 		})
 	}
