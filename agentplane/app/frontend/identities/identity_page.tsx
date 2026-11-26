@@ -1,4 +1,4 @@
-import { Anchor, Alert, Button, Group, List, Modal, Stack, Text, Title, Tooltip } from "@mantine/core";
+import { Anchor, Alert, Button, Group, Stack, Text, Title, Tooltip } from "@mantine/core";
 import { type JSX, useState } from "react";
 
 import type { Identity } from "../../../policy/v1/policy_service_pb";
@@ -10,42 +10,10 @@ import { IconArrowLeft } from "../ui/icons";
 import { useIdentities, usePolicyResources } from "../policy/watch";
 import { TopbarTitle } from "../shell/topbar";
 import { kubernetesAccounts } from "./accounts";
-import { deleteIdentity, type DeleteOutcome, type Reference } from "./client";
+import { ConfirmIdentityDelete, DeleteBlockerDetail, deleteBlocker } from "./delete";
 import { identityOrigin } from "./origin";
 import { identityBindings, type IdentityBindings } from "./references";
 import { AccountsReached, OriginBadge } from "./summary";
-
-/** Why delete is unavailable, or null when the Policy Controller would accept it. */
-function deleteBlocker(identity: Identity, split: IdentityBindings): JSX.Element | null {
-  if (identityOrigin(identity) === "git")
-    return (
-      <Text size="sm">Flux applies this identity from git and would recreate it: remove it in the repository.</Text>
-    );
-  if (split.referencing.length === 0) return null;
-  return (
-    <References
-      references={split.referencing.map((binding) => ({ kind: "PolicyBinding", name: binding.identity?.name ?? "" }))}
-    />
-  );
-}
-
-function References({ references }: { references: Reference[] }): JSX.Element {
-  return (
-    <Stack gap={4}>
-      <Text size="sm">
-        A binding naming this identity without being its own would grant a later identity of the same name; a workload
-        credential naming it acts as it. Delete these first:
-      </Text>
-      <List size="sm" aria-label="References to this identity">
-        {references.map(({ kind, name }) => (
-          <List.Item key={`${kind} ${name}`}>
-            {kind} {name}
-          </List.Item>
-        ))}
-      </List>
-    </Stack>
-  );
-}
 
 function DeleteIdentity({
   identity,
@@ -57,24 +25,14 @@ function DeleteIdentity({
   onDeleted: () => void;
 }): JSX.Element {
   const [confirming, setConfirming] = useState(false);
-  const [outcome, setOutcome] = useState<DeleteOutcome | null>(null);
-  const [pending, setPending] = useState(false);
   const name = identity.identity?.name ?? "";
   const blocker = deleteBlocker(identity, split);
-  async function remove(): Promise<void> {
-    setConfirming(false);
-    setPending(true);
-    const result = await deleteIdentity(identity);
-    setPending(false);
-    if (result.case === "deleted") onDeleted();
-    else setOutcome(result);
-  }
   return (
     <Stack component="section" aria-label="Delete identity" gap="xs">
       <Title order={5}>Delete</Title>
       {blocker ? (
         <Alert color="gray" title="This identity cannot be deleted here">
-          {blocker}
+          <DeleteBlockerDetail blocker={blocker} />
         </Alert>
       ) : (
         <Text size="sm" c="dimmed">
@@ -84,42 +42,17 @@ function DeleteIdentity({
       )}
       <Group>
         <Tooltip label={blocker ? "Unavailable: see above" : `Delete ${name}`} withArrow>
-          <Button
-            color="red"
-            variant="light"
-            disabled={blocker !== null}
-            loading={pending}
-            onClick={() => setConfirming(true)}
-          >
+          <Button color="red" variant="light" disabled={blocker !== null} onClick={() => setConfirming(true)}>
             Delete identity
           </Button>
         </Tooltip>
       </Group>
-      {outcome?.case === "referenced" && (
-        <Alert color="red" role="alert" title="The Policy Controller refused the delete">
-          <References references={outcome.references} />
-        </Alert>
-      )}
-      {outcome?.case === "failed" && (
-        <Alert color="red" role="alert" title="Could not delete the identity">
-          {outcome.error}
-        </Alert>
-      )}
-      <Modal opened={confirming} onClose={() => setConfirming(false)} title={`Delete ${name}?`}>
-        <Stack>
-          <Text size="sm">
-            Its own bindings go with it. A Sandbox still naming it cannot start a workload until it names another.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-            <Button color="red" onClick={() => void remove()}>
-              Delete
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <ConfirmIdentityDelete
+        identity={identity}
+        opened={confirming}
+        onClose={() => setConfirming(false)}
+        onDeleted={onDeleted}
+      />
     </Stack>
   );
 }

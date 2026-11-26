@@ -55,7 +55,8 @@ function deleteButton(): HTMLButtonElement {
   return found;
 }
 function referencing(): string[] {
-  return [...container.querySelectorAll("[aria-label='References to this identity'] li")].map(
+  // The confirm modal renders its refusal in a portal outside the page container.
+  return [...document.querySelectorAll("[aria-label='References to this identity'] li")].map(
     (item) => item.textContent ?? ""
   );
 }
