@@ -15,6 +15,37 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
+func TestEventBlockProfileDefaultsAndBounds(t *testing.T) {
+	settings := fixtureSettings()
+	profile := settings.EventBlockProfile()
+	if profile.TargetBytes != 64<<10 || profile.TargetEntries != 128 || profile.Level != 3 {
+		t.Fatalf("stock event block profile=%+v", profile)
+	}
+	settings.EventBlockTargetBytes = 32 << 10
+	settings.EventBlockTargetEntries = 96
+	settings.EventBlockLevel = 2
+	profile = settings.EventBlockProfile()
+	if profile.TargetBytes != 32<<10 || profile.TargetEntries != 96 || profile.Level != 2 {
+		t.Fatalf("configured event block profile=%+v", profile)
+	}
+	for _, tc := range []struct {
+		name string
+		set  func(*Settings)
+	}{
+		{"bytes", func(s *Settings) { s.EventBlockTargetBytes = (8 << 20) + 1 }},
+		{"entries", func(s *Settings) { s.EventBlockTargetEntries = 257 }},
+		{"level", func(s *Settings) { s.EventBlockLevel = 5 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			invalid := fixtureSettings()
+			tc.set(&invalid)
+			if err := invalid.Validate(); err == nil {
+				t.Fatalf("accepted invalid event block %s", tc.name)
+			}
+		})
+	}
+}
+
 func TestSettingsPlatformGuidanceAcceptsOldConfigurationAndRejectsEmptyGuide(t *testing.T) {
 	encoded, err := json.Marshal(fixtureSettings())
 	if err != nil {

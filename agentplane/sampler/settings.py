@@ -313,6 +313,16 @@ class Settings(BaseModel):
         exclude_if=lambda value: not value,
         description="Pack completed sampler journal windows in the background.",
     )
+    event_block_v2_writes: bool = Field(
+        default=False,
+        exclude_if=lambda value: not value,
+        description="Write APB v1 zstd blocks after all replicas can read them.",
+    )
+    event_block_target_bytes: int = Field(
+        default=64 * 1024, ge=1, le=8 * 1024 * 1024, exclude_if=lambda value: value == 64 * 1024
+    )
+    event_block_target_entries: int = Field(default=128, ge=1, le=256, exclude_if=lambda value: value == 128)
+    event_block_level: int = Field(default=3, ge=1, le=4, exclude_if=lambda value: value == 3)
     provider_response_header_timeout_seconds: int | None = Field(
         default=None,
         gt=0,

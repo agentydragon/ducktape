@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:private"])
 go_library(
     name = "settings",
     srcs = [
+        "event_block.go",
         "model.go",
         "settings.go",
         "validation.go",
@@ -12,6 +13,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings",
     visibility = ["//agentplane/sampler:__subpackages__"],
     deps = [
+        "//agentplane/eventblock",
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/sampler/protocol",

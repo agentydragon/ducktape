@@ -1,6 +1,6 @@
 # Storing and repacking Sampler and History events in PostgreSQL
 
-**Decision status: History writes versioned blocks in staging; Sampler rollout pending.** Keep each service's journal in
+**Decision status: History writes versioned blocks in staging; Sampler APB rollout pending.** Keep each service's journal in
 its own PostgreSQL database. Use PostgreSQL rows and B-tree indexes as the baseline. Where
 cross-event compression pays, group original frames without interpreting their contents. The
 first candidate for History boundary evidence is **same session + kind, 2 MiB or 32 entries,
@@ -17,11 +17,12 @@ History's mixed reader and new writer are deployed, and the staging writer is en
 942 of 2,048 sampled History blocks on the standby had the APB v1 prefix. That confirms new
 blocks replicated; the sample is not an estimate of legacy blocks remaining.
 
-Sampler's existing packing switch still selects the legacy writer. Deploy its mixed reader
-everywhere before enabling APB writes. Neither service has started its historical APB repack.
-For each service independently, the next step after deploying its updated maintenance command
-is an inventory and dry run, then a bounded trial on an active session with a replay comparison.
-See the [writer rollout checks](../eventblock/rollout.md).
+Sampler's existing packing switch still selects the legacy background writer. The mixed APB v1
+reader, separate default-off live writer gate, and repack/verification commands are implemented,
+but none has been enabled or run in staging. Deploy the mixed reader everywhere before enabling
+APB writes. Neither service has started its historical APB repack. For each service independently,
+the next rollout step is an inventory and dry run, then a bounded trial on an active session with a
+replay comparison. See the [writer rollout checks](../eventblock/rollout.md).
 
 ## Capacity comes before the rewrite
 
@@ -86,9 +87,9 @@ can commit before a block fills. Prefer a background sealer on immutable prefixe
 inside append delays the session lock. Enumerating kinds saves little if recovery immediately
 needs every kind. Test a split by kind as a challenger, with its required cursor locator and
 merge cost included. The [current reader](../sampler/internal/sessionstore/event_journal.go)
-uses the 32-entry bound for its backwards seek and interprets a one-entry span as an ordinary
-row. A larger count cap or compressed singleton needs explicit storage tags and a predecessor
-lookup (or a reader bound valid for **all** stored versions) before enabling the writer.
+recognizes APB v1 by its versioned prefix, keeps legacy gzip blocks and standalone rows readable,
+and bounds backward lookup by the maximum 256-entry span. Migration 23 permits that span and APB
+singletons before the separate default-off writer gate can be enabled.
 
 **History.** Make all 29 concrete journal event kinds eligible, grouped by session and kind.
 The [existing packer](../history_service/internal/storage/blocks.go) supports only six.

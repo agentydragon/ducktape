@@ -191,6 +191,7 @@ func removeServiceOwnerMigration(t *testing.T, db *sql.DB) {
 	// Fixtures replay from before version 18. Undo any later schema changes as
 	// well so Goose sees a contiguous predecessor history.
 	migrationExec(t, db, `ALTER TABLE sampler_session DROP COLUMN journal_compacted_through`)
+	migrationExec(t, db, `DROP TABLE sampler_event_block_checkpoint`)
 	migrationExec(t, db, `DROP TABLE sampler_event_block`)
 	migrationExec(t, db, `DROP FUNCTION notify_sampler_turn() CASCADE`)
 	migrationExec(t, db, `ALTER TABLE sampler_conversation DROP CONSTRAINT sampler_conversation_api_check,

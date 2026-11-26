@@ -67,6 +67,10 @@ class CentralSamplerProps:
     actions: settings.ActionsConfig | None = None
     context_source_writes: bool = False
     event_block_writes: bool = False
+    event_block_v2_writes: bool = False
+    event_block_target_bytes: int = 64 * 1024
+    event_block_target_entries: int = 128
+    event_block_level: int = 3
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
@@ -67,7 +68,7 @@ func readJournalRange(ctx context.Context, q journalQueryer, sessionID string, f
 func journalFrames(ctx context.Context, q journalQueryer, sessionID string, first, last uint64) ([]journalFrame, error) {
 	// One MVCC snapshot sees either a sealed block or all its former standalone rows.
 	// The maximum span lets both parts of the union use their session/sequence index.
-	oldestBlock := max(first, eventcodec.MaxBlockEntries) - eventcodec.MaxBlockEntries + 1
+	oldestBlock := max(first, eventblock.MaxEntries) - eventblock.MaxEntries + 1
 	rows, err := q.QueryContext(ctx, `
 		SELECT sequence,sequence,entry FROM sampler_event
 		WHERE session_id=$1 AND sequence BETWEEN $2 AND $3
@@ -91,6 +92,19 @@ func journalFrames(ctx context.Context, q journalQueryer, sessionID string, firs
 			return nil, fmt.Errorf("overlapping journal storage at cursor %d", start)
 		}
 		previous = end
+		if eventblock.IsBlock(wire) {
+			block, err := eventblock.Decode(wire)
+			if err != nil {
+				return nil, fmt.Errorf("decode event block %d–%d: %w", start, end, err)
+			}
+			if uint64(len(block)) != end-start+1 {
+				return nil, fmt.Errorf("event block %d–%d contains %d frames", start, end, len(block))
+			}
+			for cursor := max(first, start); cursor <= min(last, end); cursor++ {
+				frames = append(frames, journalFrame{sequence: cursor, wire: block[cursor-start]})
+			}
+			continue
+		}
 		if start == end {
 			frames = append(frames, journalFrame{sequence: start, wire: wire})
 			continue
@@ -112,6 +126,8 @@ type sealedJournalBlock struct {
 	storedBytes int
 	versions    []string
 }
+
+const insertJournalBlock = `INSERT INTO sampler_event_block(session_id,first_sequence,last_sequence,payload) VALUES($1,$2,$3,$4)`
 
 func prepareJournalBlocks(ctx context.Context, q journalQueryer, sessionID string, first, last uint64) ([]sealedJournalBlock, error) {
 	rows, err := q.QueryContext(ctx, `

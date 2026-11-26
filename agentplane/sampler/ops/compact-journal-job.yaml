@@ -20,6 +20,9 @@ spec:
         topology.kubernetes.io/zone: hil-ovh
       imagePullSecrets:
         - name: forgejo-images-creds
+      volumes:
+        - name: tmp
+          emptyDir: {}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -39,6 +42,9 @@ spec:
                 secretKeyRef:
                   name: postgres-central-sampler
                   key: uri
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: 100m
