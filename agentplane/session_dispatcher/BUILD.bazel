@@ -172,7 +172,7 @@ py_test(
         "//agentplane/env/runtime/execution:executor_pb2",
         "//agentplane/env/runtime/execution:executor_pb2_grpc",
         "//agentplane/env/runtime/execution/testing:executor_companion",
-        "//agentplane/environments/testing:process",
+        "//agentplane/environments/testing:environment_service_process",
         "//agentplane/grpc:calls",
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/history_service/testing:go_service",

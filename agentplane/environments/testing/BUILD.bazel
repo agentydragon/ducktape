@@ -6,8 +6,8 @@ package(
 )
 
 py_library(
-    name = "process",
-    srcs = ["process.py"],
+    name = "environment_service_process",
+    srcs = ["environment_service_process.py"],
     data = ["//agentplane/environments/testing/serving_fixture"],
     deps = [
         "//agentplane/grpc:calls",

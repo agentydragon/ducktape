@@ -1,6 +1,6 @@
-// Package exportfixture gives History integration tests a narrow, TESTONLY view of the real
+// Package exporttest gives History integration tests a narrow, TESTONLY view of the real
 // sessionstore outbox without making the Store package importable from History.
-package exportfixture
+package exporttest
 
 import (
 	"context"

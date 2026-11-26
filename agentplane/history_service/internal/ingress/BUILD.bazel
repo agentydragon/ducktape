@@ -58,7 +58,7 @@ go_test(
         "//agentplane/sampler/providers/anthropic",
         "//agentplane/sampler/providers/chatcompletions",
         "//agentplane/sampler/providers/responses",
-        "//agentplane/sampler/testing/exportfixture",
+        "//agentplane/sampler/testing/exporttest",
         "//agentplane/sandboxes/api",
         "//agentplane/testing/grpcserver",
         "//agentplane/testing/kubeapiserver",

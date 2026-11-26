@@ -1,5 +1,5 @@
-// Package servicefixture composes production EnvironmentService handlers for consumer tests.
-package servicefixture
+// Package servicetest composes production EnvironmentService handlers for consumer tests.
+package servicetest
 
 import (
 	"testing"

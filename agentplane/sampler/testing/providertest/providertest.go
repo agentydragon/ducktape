@@ -1,6 +1,6 @@
-// Package providerfixture holds the streaming-server, evidence and content-store fakes that the
+// Package providertest holds the streaming-server, evidence and content-store fakes that the
 // provider packages' tests share.
-package providerfixture
+package providertest
 
 import (
 	"bytes"

@@ -2,9 +2,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "process",
+    name = "notification_process",
     testonly = True,
-    srcs = ["process.py"],
+    srcs = ["notification_process.py"],
     visibility = ["//agentplane/notification_service:__subpackages__"],
     deps = [
         "//agentplane/net/peertls:config",
@@ -63,16 +63,16 @@ go_test(
 )
 
 py_test(
-    name = "test_process",
+    name = "test_notification_process",
     size = "medium",
-    srcs = ["test_process.py"],
+    srcs = ["test_notification_process.py"],
     data = [
         ":process_contract_test",
         "//agentplane/notification_service/cmd:notification-service",
     ],
     requires_docker = True,
     deps = [
-        ":process",
+        ":notification_process",
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane/notification_service/api/notifications:notifications_pb2",
