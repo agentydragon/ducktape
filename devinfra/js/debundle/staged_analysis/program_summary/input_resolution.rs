@@ -12,7 +12,7 @@ use analysis_vocabulary::inputs::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use artifact::ChunkBundle;
-use cross_module_purity::ModulePurityFacts;
+use cross_module_purity::module_facts::ModulePurityFacts;
 use graph_provenance::{CurrentRoots, GraphProvenance, InputRoot};
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
