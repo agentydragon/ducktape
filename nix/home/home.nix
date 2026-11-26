@@ -252,7 +252,9 @@ in
 
   programs.git = {
     enable = true;
-    package = (pkgs.git.override { withLibsecret = true; }).overrideAttrs {
+    # Git 2.54 drops the maintenance lock when auto-maintenance detaches;
+    # use the fixed version until stable nixpkgs has Git 2.55 or newer.
+    package = (pkgsUnstable.git.override { withLibsecret = true; }).overrideAttrs {
       doCheck = false;
       doInstallCheck = false;
     };
