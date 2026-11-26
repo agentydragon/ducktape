@@ -686,8 +686,7 @@ fn explain_from_graph(
         },
         diagnostics,
     )?;
-    let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
-    let mut source_units = source_units_for_ids(report, &source_unit_set);
+    let mut source_units = source_units_for_ids(report, &source_unit_ids);
 
     let mut incoming_edges = Vec::<DependencyEdgeReport>::new();
     let mut outgoing_edges = Vec::<DependencyEdgeReport>::new();
@@ -720,7 +719,7 @@ fn explain_from_graph(
             }
         }
     }
-    let selected_atomic_group_ids = atomic_group_ids_for_source_unit_set(report, &source_unit_set);
+    let selected_atomic_group_ids = atomic_group_ids_for_source_unit_set(report, &source_unit_ids);
     let mut atomic_groups: Vec<AtomicGroupReport> = report
         .atomic_graph
         .nodes
@@ -805,12 +804,12 @@ fn explain_from_graph(
 
     let mut neighbor_ids = BTreeSet::new();
     for edge in &incoming_edges {
-        if !source_unit_set.contains(&edge.source) {
+        if !source_unit_ids.contains(&edge.source) {
             neighbor_ids.insert(edge.source.clone());
         }
     }
     for edge in &outgoing_edges {
-        if !source_unit_set.contains(&edge.target) {
+        if !source_unit_ids.contains(&edge.target) {
             neighbor_ids.insert(edge.target.clone());
         }
     }
@@ -865,8 +864,7 @@ fn explain_from_graph(
     }
 
     source_units.sort_by_key(|source_unit| !preferred_source_unit_ids.contains(&source_unit.id));
-    let mut limited_source_unit_ids = source_unit_ids;
-    limited_source_unit_ids.sort();
+    let mut limited_source_unit_ids: Vec<_> = source_unit_ids.into_iter().collect();
     limited_source_unit_ids.sort_by_key(|id| !preferred_source_unit_ids.contains(id));
 
     let checked_properties: BTreeSet<_> = source_units
@@ -1012,8 +1010,7 @@ pub fn run_source_selection_report(
         },
         diagnostics,
     )?;
-    let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
-    let source_units = source_units_for_ids(graph, &source_unit_set);
+    let source_units = source_units_for_ids(graph, &source_unit_ids);
     let mut selected = Vec::new();
     let mut resolved_paths: BTreeMap<String, String> = BTreeMap::new();
     for source_unit in source_units {
@@ -1055,7 +1052,7 @@ pub fn run_source_selection_report(
     });
     Ok(SourceSelectionReport {
         query,
-        source_unit_ids,
+        source_unit_ids: source_unit_ids.into_iter().collect(),
         unknown_binding_ids,
         source_units: selected,
     })
@@ -1388,7 +1385,7 @@ pub fn resolve_binding_source_units<'a>(
 /// whose YAML claims bindings the dependency graph does not declare.
 #[derive(Debug, Clone)]
 struct ResolvedSelection {
-    source_unit_ids: Vec<String>,
+    source_unit_ids: BTreeSet<String>,
     unknown_binding_ids: Vec<String>,
 }
 
@@ -1413,10 +1410,10 @@ fn resolve_source_unit_ids(
 ) -> Result<ResolvedSelection> {
     let graph = input.report();
     let mut unknown_binding_ids: Vec<String> = Vec::new();
-    let mut source_unit_ids: Vec<String> = match selection {
+    let source_unit_ids: BTreeSet<String> = match selection {
         SelectionKind::SourceUnit(source_unit_id) => {
             if graph.nodes.iter().any(|node| node.id == *source_unit_id) {
-                vec![source_unit_id.clone()]
+                BTreeSet::from([source_unit_id.clone()])
             } else {
                 return Err(SourceUnitNotFound {
                     source_unit_id: source_unit_id.clone(),
@@ -1438,7 +1435,7 @@ fn resolve_source_unit_ids(
             resolved
         }
         SelectionKind::Module(module_id) => {
-            let source_unit_ids: Vec<String> = graph
+            let source_unit_ids: BTreeSet<String> = graph
                 .nodes
                 .iter()
                 .filter(|node| node.destination.as_str() == *module_id)
@@ -1464,11 +1461,10 @@ fn resolve_source_unit_ids(
             .nodes
             .iter()
             .find(|atomic_group| atomic_group.id == *atomic_group_id)
-            .map(|atomic_group| atomic_group.source_unit_ids.clone())
-            .unwrap_or_default(),
+            .into_iter()
+            .flat_map(|group| group.source_unit_ids.iter().cloned())
+            .collect(),
     };
-    source_unit_ids.sort();
-    source_unit_ids.dedup();
     if source_unit_ids.is_empty() {
         bail!("selection did not resolve to any source-unit IDs");
     }
@@ -1490,7 +1486,7 @@ fn resolve_module_path_source_unit_ids(
     module_path: &str,
     module_files: &[PathBuf],
     diagnostics: &analysis::diagnostics::Diagnostics,
-) -> Result<(Vec<String>, Vec<String>)> {
+) -> Result<(BTreeSet<String>, Vec<String>)> {
     // The module's claims resolve jointly with every other module's, as in
     // `run`.
     let all_claims = module_files
@@ -1551,7 +1547,7 @@ fn resolve_module_path_source_unit_ids(
             unknown_binding_ids.join(", ")
         );
     }
-    Ok((source_unit_ids.into_iter().collect(), unknown_binding_ids))
+    Ok((source_unit_ids, unknown_binding_ids))
 }
 
 fn binding_homes(modules_root: &Path, module_files: &[PathBuf]) -> Result<Vec<BindingHomeReport>> {
