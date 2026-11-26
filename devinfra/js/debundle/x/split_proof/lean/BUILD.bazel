@@ -708,6 +708,43 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "terminal_export_artifact",
+    srcs = ["EsmSplit/LowerSplit/TerminalExportArtifact.lean"],
+    deps = [":sparse_checked_artifact"],
+)
+
+lean_proof_test(
+    name = "terminal_export_artifact_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.LowerSplit.TerminalExportArtifact"],
+    required_theorems = [
+        "EsmSplit.LowerSplit.TerminalExportArtifact.prepare",
+        "EsmSplit.LowerSplit.TerminalExportArtifact.verify",
+        "EsmSplit.LowerSplit.TerminalExportArtifact.verify_sound",
+    ],
+    deps = [":terminal_export_artifact"],
+)
+
+lean_library(
+    name = "terminal_export_artifact_test_runner_modules",
+    testonly = True,
+    srcs = ["TerminalExportArtifactMain.lean"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":lowersplit_support",
+        ":lowersplit_workflows",
+        ":terminal_export_artifact",
+    ],
+)
+
+lean_binary(
+    name = "terminal_export_artifact_test_runner",
+    testonly = True,
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [":terminal_export_artifact_test_runner_modules"],
+)
+
+lean_library(
     name = "checked_artifact_test_runner_modules",
     testonly = True,
     srcs = ["CheckedSplitArtifactMain.lean"],
