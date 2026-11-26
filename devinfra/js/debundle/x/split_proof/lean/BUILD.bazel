@@ -85,19 +85,15 @@ lean_binary(
     deps = [":analysis_inventory_modules"],
 )
 
-lean_library(
-    name = "axioms_test_modules",
-    testonly = True,
-    srcs = ["EsmSplit.lean"],
-    visibility = ["//visibility:private"],
-    deps = [":planner"],
-)
-
-# Import-only audit modules may be empty; the patched gate requires named declarations.
 lean_proof_test(
     name = "axioms_test",
-    allow_empty = True,
-    modules = ["EsmSplit"],
+    modules = [
+        "EsmSplit.Bundle",
+        "EsmSplit.Correct",
+        "EsmSplit.Fast",
+        "EsmSplit.Plan",
+        "EsmSplit.Semantics",
+    ],
     required_theorems = [
         "EsmSplit.Bundle.conflict_symm",
         "EsmSplit.faithfulB_iff",
@@ -106,7 +102,7 @@ lean_proof_test(
         "EsmSplit.split_correct",
         "EsmSplit.sound_correct",
     ],
-    deps = [":axioms_test_modules"],
+    deps = [":planner"],
 )
 
 lean_library(
