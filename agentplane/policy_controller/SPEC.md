@@ -65,12 +65,13 @@ boundary. `writer_services` lists the exact service SPIFFE IDs allowed to write;
 an empty list denies writes. `reader_services` independently lists the exact service SPIFFE IDs
 for the policy read methods. Neither role implies the other, and both require the gRPC listener to
 verify clients with `grpc_tls.client_ca_file`. Bearers, workload SVIDs and delegation envelopes
-are refused. A service certificate proves only its listed service
-identity; it does not prove a Kubernetes account, UID, or Pod. Grant requires the exact live Sandbox
-UID, its controller-owned ServiceAccount, and existing unique PolicySet names. It stores the Sandbox
-UID in a non-controller owner reference. Revoke requires the caller's Sandbox UID and observed
-PolicyBinding UID, refuses Flux and Sandbox-controller ownership, and deletes with both Kubernetes
-UID and resourceVersion preconditions.
+are refused. Grant resolves the exact live Sandbox UID and its current `spec.identity` in the
+policy namespace. It requires a live Identity and existing, unique PolicySet names. The binding
+names that Identity as its subject and the Sandbox UID as its sole, non-controller owner. Other
+workloads acting as that Identity share the grant. Deleting the Sandbox garbage-collects this
+binding. Revoke requires the Sandbox UID, its current Identity and the observed binding UID. It
+refuses Flux-managed bindings, Sandbox controller ownership and owners from another Sandbox
+incarnation. The delete uses both UID and resourceVersion preconditions.
 
 `PolicyService.CreateIdentity`, behind the same writer allowlist, creates an Identity of the
 requested name and description in the policy namespace, with no owner: its creator deletes it.
@@ -112,12 +113,10 @@ That refusal is `FAILED_PRECONDITION` with a `PreconditionFailure` violation per
 `namespace/name`). The check is advisory; a reference created between the read and the delete is
 not fenced.
 
-Kubernetes does not transact a Sandbox read with a PolicyBinding create. Grant checks the exact
-Sandbox and ServiceAccount before and after creation, and attempts UID/resourceVersion-guarded
-cleanup if either identity changed. A replacement between those checks can still see a transient
-name-based ServiceAccount grant before cleanup or owner-reference garbage collection; the owner UID
-prevents that binding from belonging to a later Sandbox incarnation. Revoke's resourceVersion
-precondition prevents deleting a binding edited or replaced after its read.
+The Sandbox and Identity reads and the binding write are separate Kubernetes operations. Grant
+rechecks both after creation and attempts UID/resourceVersion-guarded cleanup if the Sandbox was
+replaced, rebound or its Identity changed. This detects a race after the write. The Sandbox owner
+reference governs cleanup, while the binding subject names the Identity without pinning its UID.
 
 ## ServiceAccount grants
 

@@ -1,14 +1,10 @@
-# Policy sets: reusable grants for ServiceAccounts
+# Policy sets and bindings
 
-A `PolicySet` is a named, subject-free list of typed rules. A `PolicyBinding` attaches sets to
-one ServiceAccount. Egress, Action, Session inbox and Kubernetes rules share these two kinds
-(`agentplane/crds/manifests/crd-policy{sets,bindings}.yaml`), so one binding grants all of them
-and one set can carry rules for several services. Each reader enforces only its own rule types and
-reports in its own condition (`KubernetesReady`, `ActionsReady`, `EgressReady`,
-`SessionInboxAccessReady`) under its own field manager; egress and the Notification service read
-through the shared `policy/reader` package. `EgressCredential` stays a separate kind. The Kubernetes reader is the
-[Policy Controller](../policy_controller/SPEC.md); the Sandbox Controller writes each Sandbox's
-binding ([SPEC](../environments/SPEC.md#identity)).
+A `PolicySet` is a named, subject-free list of typed rules. A `PolicyBinding` assigns sets to
+one Identity or namespaced ServiceAccount. Egress, Action, Session inbox and Kubernetes readers
+each enforce the rule types they understand. Native Kubernetes RBAC binds ServiceAccounts.
+The [Policy Controller contract](../policy_controller/SPEC.md#grants) covers subjects, grants
+and reconciliation.
 
 A person picks a set such as `shared-diagnostics` for a preset or a launch, instead of hundreds of
 per-namespace RoleBindings. Kubernetes still needs one RoleBinding per role and namespace, which the
@@ -29,18 +25,18 @@ Policy Controller keeps. Deployed scope and the static grants around it:
 - **Namespaces are explicit lists.** cdk8s renders them from `namespace_access`. A selector would
   let whoever can label a namespace acquire grant authority.
 - **Authority.** Writing a set or a binding is equivalent to granting RBAC, so no agent is
-  granted write access to either on staging. Flux writes sets and the bindings of static accounts. The
-  Sandbox Controller writes a Sandbox's binding, and the app writes the operator's runtime
-  grants as bindings owned by the Sandbox. The Action Service writes `orchestration_v1` launcher grants, which an
-  admission policy limits to inbox and Action rules on the one Sandbox that owns them
-  ([contract](../action_service/orchestration_v1/README.md#the-contract)). The controller writes bindings, never Roles. Its `bind`
+  granted those writes through an ordinary workload grant on staging. Flux manages declarative
+  grants. The app calls PolicyService to grant sets to a new Identity at launch or through a
+  Sandbox after launch. The Action Service creates the separately constrained
+  [orchestration launcher grants](../action_service/orchestration_v1/README.md#the-contract).
+  The Policy Controller materializes native bindings to existing roles. Its `bind`
   permission is a `resourceNames` list for exactly the roles the Flux-rendered sets reference,
   generated from the same source as the sets (`cluster/cdk8s/agentplane/policy_controller.py`);
   a wildcard `bind` or a broad ClusterRoleBinding in place of namespaced RoleBindings is not
   acceptable. Granting `bind` for a new role is a separate RBAC review.
-- **Ownership.** A Sandbox owns its binding. The Policy Controller has no finalizer: its pass
-  deletes every labeled native binding that no live binding grants, so deleting a binding while the
-  controller is down is reconciled on start.
+- **Ownership.** A runtime binding can belong to an Identity or Sandbox. Subject determines who
+  receives the grant, and owner references govern garbage collection. The Policy Controller uses
+  reconciliation to prune labeled native grants, including after a controller outage.
 - **SA identity.** RBAC matches a subject by namespace and name, not UID, so a recreated
   ServiceAccount would inherit an uncleaned binding. Native bindings carry the account's UID and
   are deleted when the account is missing or its UID differs.
@@ -48,12 +44,8 @@ Policy Controller keeps. Deployed scope and the static grants around it:
   carries an instance label. Overlapping grants combine additively; revoking one never removes
   what another grants. Names and annotations identify the controller's objects, so it never adopts
   or deletes on name alone. A `roleRef` cannot be patched, so a changed role replaces the binding.
-- **Subjects** are ServiceAccounts only.
-- **Expiry.** The controller deletes the `PolicyBinding` at `expiresAt`, for every rule type, and
-  is the only deleter. Amended 2026-11-09 (operator): the one shared reader
-  (`agentplane/policy/reader`) also treats a binding past its `expiresAt` as absent, so a
-  controller outage does not extend a grant; individual services still carry no expiry logic. A
-  binding a GitOps tool owns never sets it.
+- **Expiry.** The shared reader stops applying an expired binding at read time. Native Kubernetes
+  grants end when the controller removes the native bindings. [Revocation timing](../policy_controller/SPEC.md#revocation-timing)
 
 ## Rejected alternatives
 

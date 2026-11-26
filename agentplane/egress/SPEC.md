@@ -67,13 +67,11 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
 
 - A subject's egress rules come from `PolicyBinding`s. A `PolicyBinding` names one subject -- a
   namespaced ServiceAccount, or `identity: {name}` -- and `PolicySet` names, and grants the sets'
-  `egress` rules by existing: creating one is the whole act of allowing, deleting it the whole act of
-  taking that back, and the Policy Controller deletes it at its `expiresAt`
-  (`agentplane/policy_controller/SPEC.md`). A set that is missing takes nothing from the binding's
-  other sets. The same name in two namespaces is two subjects, and an Identity is never the
-  ServiceAccount of its name. A ServiceAccount subject is every Pod running as that account, so bind
-  only an account dedicated to one workload; the integration app gives each sandbox an account of its
-  own, owned by it, so deleting the sandbox collects the account and the bindings naming it alike. An
+  `egress` rules while the binding is live. A missing set leaves other sets on the binding
+  effective. The shared policy reader checks expiry even while the Policy Controller is down.
+  [Binding expiry](../policy_controller/SPEC.md#expiry)
+  The forward listener resolves a Sandbox workload to its Identity. Sandboxes that share an
+  Identity share its egress grants. A namespaced ServiceAccount is a distinct policy subject. An
   Identity binding answers only while the live Identity of its name is the one the caller's record
   names: a record naming the Identity's UID binds that incarnation, so a credential of a deleted
   Identity gains nothing from a same-named successor, while a record naming no UID (a standing
@@ -145,8 +143,9 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   widens what it may reach; it never takes a credential away from a call that asks for one.
 - Where several matching rules would decide alike — two naming the same credential, two naming
   none — the first in walk order is the one recorded: bindings by name, their
-  egress policies as listed, their rules in order. Which one that is changes neither the verdict nor what
-  is forwarded, and shows only in the decision log.
+  egress policies as listed, their rules in order. The proxy uses the deciding rule's
+  `clusterInternal` flag for address pinning. Among matches with the same routing and credential
+  behavior, order determines which rule the decision log names.
 - Hosts match exactly (case-insensitive) or by `*.` suffix, which never matches the apex. Path
   globs match the path without its query: `*` stays within one segment, `**` crosses segments.
 - Substitution rebuilds each presented value around the real credential, through the same parse
