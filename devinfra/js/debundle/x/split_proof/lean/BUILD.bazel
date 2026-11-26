@@ -521,6 +521,49 @@ lean_library(
 )
 
 lean_library(
+    name = "closed_helper_boundary",
+    srcs = ["EsmSplit/CoreJS/ClosedHelperBoundary.lean"],
+    deps = [
+        ":corejs_runtime",
+        ":planner",
+    ],
+)
+
+lean_library(
+    name = "closed_helper_boundary_test_runner_modules",
+    testonly = True,
+    srcs = ["ClosedHelperBoundaryTest.lean"],
+    visibility = ["//visibility:private"],
+    deps = [":closed_helper_boundary"],
+)
+
+lean_binary(
+    name = "closed_helper_boundary_test_runner",
+    testonly = True,
+    deps = [":closed_helper_boundary_test_runner_modules"],
+)
+
+sh_test(
+    name = "closed_helper_boundary_test",
+    srcs = ["checked_split_test.sh"],
+    args = ["$(rlocationpath :closed_helper_boundary_test_runner)"],
+    data = [":closed_helper_boundary_test_runner"],
+    use_bash_launcher = True,
+)
+
+lean_proof_test(
+    name = "closed_helper_boundary_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.ClosedHelperBoundary"],
+    required_theorems = [
+        "CoreJS.ClosedHelperBoundary.check",
+        "CoreJS.ClosedHelperBoundary.helper_closed",
+        "CoreJS.ClosedHelperBoundary.helper_not_exported",
+    ],
+    deps = [":closed_helper_boundary"],
+)
+
+lean_library(
     name = "corejs_resolved_placement",
     srcs = ["EsmSplit/CoreJS/ResolvedPlacement.lean"],
     deps = [
