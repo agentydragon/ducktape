@@ -22,7 +22,9 @@ def lean_binary(name, srcs, deps = [], **kwargs):
     )
     _lean_binary(name = name, deps = [":" + lib], **kwargs)
 
-def lean_test(name, srcs, deps = [], **kwargs):
+def lean_test(name, srcs, entry, deps = [], **kwargs):
+    if entry not in srcs:
+        fail("lean_test %s is missing its entry %s" % (name, entry))
     lib = name + "_modules"
     _lean_library(
         name = lib,

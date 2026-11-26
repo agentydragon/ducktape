@@ -1233,6 +1233,7 @@ lean_test(
         "EsmSplit/CoreJS/Number.lean",
         "EsmSplit/CoreJS/Uint8Examples.lean",
     ],
+    entry = "EsmSplit/CoreJS/Uint8Examples.lean",
 )
 
 lean_binary(
@@ -1250,6 +1251,7 @@ lean_test(
         "Experiments/Ladder.lean",
         "Experiments.lean",
     ],
+    entry = "Experiments.lean",
     tags = ["manual"],
     deps = [":example_proof"],
 )
@@ -1257,6 +1259,7 @@ lean_test(
 lean_test(
     name = "lowered_example_certificate_test",
     srcs = [":generated_lowered_example_source"],
+    entry = ":generated_lowered_example_source",
     deps = [":planner"],
 )
 
