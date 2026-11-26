@@ -79,21 +79,9 @@ Examples of conventions an architect may infer, not global policy:
 - Command metadata may belong with a command handler unless it has an
   independent registry or policy role.
 
-Record the scope and exceptions for every inferred convention.
-
-## Convention Induction
-
-Architects should promote understanding through this ladder:
-
-1. Evidence: graph/source facts.
-2. Hypothesis: likely convention with scope and counterexamples.
-3. Recommendation: concrete worker-ready reorg task.
-4. Durable convention: project-local docs updated so future agents and humans
-   do not re-litigate it.
-
-Current-state notes should be rewritten in place. "Current-state" means the
-best current inference about the decompiled app's internal architecture, not
-the current spec's names, paths, or module assignments. Git is the history.
+Record the scope and exceptions for every inferred convention. The
+[architecture review](../../docs/architecture_review.md#4-record-evidence-as-scoped-conventions)
+promotes evidence to conventions.
 
 ## Directory Shape
 
