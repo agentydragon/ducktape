@@ -54,6 +54,10 @@ def _pipeline_report_flags_test_impl(ctx):
     for action in actions.values():
         asserts.true(env, "BAZEL_BINDIR" in action.env)
         asserts.false(env, "RAYON_NUM_THREADS" in action.env)
+        files = action.inputs.to_list()
+        asserts.true(env, any([file.basename == "debundle" for file in files]))
+        asserts.false(env, any([file.basename == "debundle_analyze" for file in files]))
+        asserts.false(env, any([file.basename == "debundle_project_analysis" for file in files]))
     for mnemonic in sorted(actions):
         actual = actions[mnemonic]
         original = baseline[mnemonic]
@@ -74,11 +78,6 @@ def _pipeline_report_flags_test_impl(ctx):
             _normalize([file.path for file in actual.outputs.to_list()], target.label.name),
         )
     command = actions["DebundleApply"].argv[-1]
-    for mnemonic in [name for name in expected_actions if name in ["DebundleApply", "DebundleExportGraphs"]]:
-        files = actions[mnemonic].inputs.to_list()
-        asserts.true(env, any([file.basename == "debundle" for file in files]))
-        asserts.false(env, any([file.basename == "debundle_analyze" for file in files]))
-        asserts.false(env, any([file.basename == "debundle_project_analysis" for file in files]))
     asserts.false(env, "--effect-conflicts" in baseline["DebundleApply"].argv[-1])
     asserts.false(env, "--full-report" in baseline["DebundleApply"].argv[-1])
     asserts.equals(env, ctx.attr.readable, '[ "$status" -eq 3 ] && [ -f ' in command)
@@ -102,12 +101,12 @@ def _pipeline_report_flags_test_impl(ctx):
     analyzed = [file for file in groups.analysis.to_list() if file.extension == "analysis"][0]
     native_inputs = groups.native_inputs.to_list()
     projected = groups.apply_projection.to_list()[0]
+    pipeline_inputs = actions["DebundleApply"].inputs.to_list()
     apply_source_inputs = [
         file
-        for file in actions["DebundleApply"].inputs.to_list()
+        for file in pipeline_inputs
         if file not in [analyzed, projected] and file.basename not in ["debundle", "debundle.runfiles"]
     ]
-    pipeline_inputs = actions["DebundleApply"].inputs.to_list()
     asserts.false(env, any([file.extension in ["yaml", "yml"] for file in pipeline_inputs]))
     asserts.true(env, projected in pipeline_inputs)
     asserts.true(env, any([file.extension in ["yaml", "yml"] for file in native_inputs]))
@@ -120,8 +119,7 @@ def _pipeline_report_flags_test_impl(ctx):
         asserts.true(env, "--graphs --reports-only" in export.argv[-1])
         asserts.false(env, "--effect-conflicts" in export.argv[-1])
         asserts.false(env, "--full-report" in export.argv[-1])
-        analyzed = [file for file in groups.analysis.to_list() if file.extension == "analysis"][0]
-        asserts.true(env, analyzed in actions["DebundleApply"].inputs.to_list())
+        asserts.true(env, analyzed in pipeline_inputs)
         asserts.true(env, analyzed in export.inputs.to_list())
         asserts.equals(env, [target.label.name + ".dependency_graphs"], [file.basename for file in export.outputs.to_list()])
         asserts.equals(
@@ -149,6 +147,23 @@ pipeline_report_flags_test = analysistest.make(
         "readable": attr.bool(),
     },
 )
+
+def fixture_report_test(name, target, expected_flags, readable = False, **apply_flags):
+    """Pair a report fixture with its independently written shell and action expectations."""
+    fixture_apply(
+        name = target,
+        analysis = ":analysis",
+        emit_on_rejection = readable,
+        split_dependency_graphs = readable,
+        **apply_flags
+    )
+    pipeline_report_flags_test(
+        name = name,
+        baseline = ":jsonl_readable_default" if readable else ":jsonl_default",
+        expected_flags = expected_flags,
+        readable = readable,
+        target_under_test = ":" + target,
+    )
 
 def _ownership_subset_split_graphs_test_impl(ctx):
     env = analysistest.begin(ctx)
