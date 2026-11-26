@@ -6,12 +6,13 @@
 //! each submodule only needs `use super::*;`:
 //!
 //! - `statement_facts` — the public fact types ([`StatementFacts`],
-//!   [`PositionBucketed`], [`EffectCell`], [`ChunkFactAnalysis`],
-//!   [`StatementKind`]) and the internal structural-layer types.
+//!   [`EffectCell`], [`ChunkFactAnalysis`]) and the internal
+//!   structural-layer types.
 //! - `analyze` — the `analyze_chunk{,_structural,_with_policy}` entry
 //!   points, top-level-await scan, and per-statement fact assembly.
 //! - `item_views` — top-level item views, multi-declarator split,
-//!   declaration/classification helpers, shadowed-global computation.
+//!   declaration/classification helpers ([`StatementKind`]),
+//!   shadowed-global computation.
 //! - `global_object` — global-object alias detection and escape taint.
 //! - `purity_classification` — per-statement purity classification.
 //! - `local_effect_targets` — recognized local-effect target detection
@@ -21,8 +22,11 @@
 //!   `no_sync_callback_members` and builtin member-row exemptions).
 //! - `collector` — the single-pass [`StatementFactsCollector`] and the
 //!   inline-effect collector it delegates to.
-//! - `lazy_boundary` — the [`LazyBoundary`] trait and the shared
-//!   lazy/eager AST descent helpers.
+//! - `lazy_boundary` — the [`LazyBoundary`] trait, [`PositionBucketed`],
+//!   the shared lazy/eager AST descent helpers and the `impl_lazy_*`
+//!   visitor macros.
+//! - `allocation_roots` — candidate allocation roots value flow registers
+//!   before its solve, and the plain-data initializer syntax check.
 
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
@@ -39,76 +43,17 @@ pub(crate) use crate::purity::{
     ChunkCodeGraph, RedundantPureMemberHint, RedundantPurityHint, classify_class_static_purity,
     classify_expr_purity, classify_var_decl_purity,
 };
+pub(crate) use crate::{
+    impl_lazy_callable_visits, impl_lazy_class_visits, impl_lazy_optional_path_visits,
+};
 pub(crate) use analysis_vocabulary::execution_evidence::{SourceLocation, SourceLocator};
 pub(crate) use analysis_vocabulary::inputs::{
     AnalysisInputs, KnownEffect, LocalEffectPolicy, ValidatedNativeOperationFacts,
 };
 pub(crate) use analysis_vocabulary::purity::Purity;
 
-macro_rules! impl_lazy_callable_visits {
-    () => {
-        fn visit_function(&mut self, node: &Function) {
-            lazy_visit_function(self, node);
-        }
-        fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-            lazy_visit_arrow_expr(self, node);
-        }
-        fn visit_method_prop(&mut self, node: &MethodProp) {
-            lazy_visit_method_prop(self, node);
-        }
-        fn visit_getter_prop(&mut self, node: &GetterProp) {
-            lazy_visit_getter_prop(self, node);
-        }
-        fn visit_setter_prop(&mut self, node: &SetterProp) {
-            lazy_visit_setter_prop(self, node);
-        }
-    };
-}
-
-macro_rules! impl_lazy_class_visits {
-    () => {
-        fn visit_class(&mut self, node: &Class) {
-            lazy_visit_class(self, node);
-        }
-        fn visit_class_member(&mut self, member: &ClassMember) {
-            lazy_visit_class_member(self, member);
-        }
-    };
-}
-
-macro_rules! impl_lazy_optional_path_visits {
-    () => {
-        fn visit_if_stmt(&mut self, node: &IfStmt) {
-            lazy_visit_if_stmt(self, node);
-        }
-        fn visit_cond_expr(&mut self, node: &CondExpr) {
-            lazy_visit_cond_expr(self, node);
-        }
-        fn visit_bin_expr(&mut self, node: &BinExpr) {
-            lazy_visit_bin_expr(self, node);
-        }
-        fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
-            lazy_visit_may_skip(self, node);
-        }
-        fn visit_while_stmt(&mut self, node: &WhileStmt) {
-            lazy_visit_may_skip(self, node);
-        }
-        fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
-            lazy_visit_may_skip(self, node);
-        }
-        fn visit_for_stmt(&mut self, node: &ForStmt) {
-            lazy_visit_may_skip(self, node);
-        }
-        fn visit_try_stmt(&mut self, node: &TryStmt) {
-            lazy_visit_may_skip(self, node);
-        }
-        fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
-            lazy_visit_may_skip(self, node);
-        }
-    };
-}
-
 pub mod abstract_domain;
+pub mod allocation_roots;
 pub mod analyze;
 mod array_spreads;
 pub mod at_init_fallback;
@@ -191,10 +136,10 @@ pub use initialization_effects::{
     OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptCounts, RootAttemptRewind,
     UnknownEffectCoverage,
 };
-pub use item_views::{TopLevelItemView, top_level_item_views};
+pub use item_views::{StatementKind, TopLevelItemView, top_level_item_views};
+pub use lazy_boundary::PositionBucketed;
 pub use local_effects::local_namespace_iife_target;
 pub use statement_facts::{
-    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, PositionBucketed, StatementEffectSummary,
-    StatementFacts, StatementKind, StructuralChunkAnalysis, StructuralChunkSourceFacts,
-    StructuralStatementFacts,
+    ChunkFactAnalysis, DataflowOpacityCause, EffectCell, StatementEffectSummary, StatementFacts,
+    StructuralChunkAnalysis, StructuralChunkSourceFacts, StructuralStatementFacts,
 };

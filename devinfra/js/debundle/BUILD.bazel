@@ -381,6 +381,7 @@ rust_library(
         "facts/abstract_domain/heap.rs",
         "facts/abstract_domain/integrity.rs",
         "facts/abstract_domain/primitive.rs",
+        "facts/allocation_roots.rs",
         "facts/analyze.rs",
         "facts/array_spreads.rs",
         "facts/at_init_fallback.rs",

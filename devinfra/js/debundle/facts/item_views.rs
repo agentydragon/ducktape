@@ -326,3 +326,25 @@ fn async_var_function_binding(var: &VarDecl) -> Option<Id> {
     };
     is_async.then(|| binding.id.to_id())
 }
+
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::IntoStaticStr, strum::Display,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum StatementKind {
+    /// `var X = ...`, `let X = ...`, `const X = ...`. RHS reads at-init.
+    VarDecl,
+    /// `function X() { ... }`. Hoisted; no at-init reads from body.
+    FnDecl,
+    /// `class X { ... }`. Extends, decorators, computed keys, and
+    /// static blocks read at-init.
+    ClassDecl,
+    /// `export { ... }`, `export X`, etc. Lazy reads (re-exports).
+    Export,
+    /// `import { ... } from ...`. Linked, no at-init body code.
+    Import,
+    /// Bare expression / control-flow / etc. that doesn't declare a
+    /// top-level binding.
+    SideEffect,
+}

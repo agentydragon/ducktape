@@ -215,7 +215,7 @@ impl ChunkCodeGraph {
         let stable_imports = BTreeSet::new();
         let value_flow = crate::facts::ChunkValueFlow::analyze_with_candidates(
             body,
-            &heap::tracked_allocation_roots(body),
+            &crate::facts::allocation_roots::tracked_allocation_roots(body),
         );
         let plain_data_bindings = heap::ChunkHeap::analyze(body, shadowed, &value_flow, None)
             .plain_data_bindings()

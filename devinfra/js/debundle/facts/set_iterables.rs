@@ -675,7 +675,7 @@ mod tests {
         let shadowed = compute_shadowed_globals(&body);
         let flow = ChunkValueFlow::analyze_with_candidates(
             &body,
-            &crate::facts::abstract_domain::heap::tracked_allocation_roots(&body),
+            &crate::facts::allocation_roots::tracked_allocation_roots(&body),
         );
         let plain_data =
             crate::facts::abstract_domain::heap::ChunkHeap::analyze(&body, &shadowed, &flow, None)

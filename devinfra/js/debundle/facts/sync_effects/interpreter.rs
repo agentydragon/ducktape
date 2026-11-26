@@ -30,22 +30,23 @@ use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{
     CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
 };
+use analysis::facts::abstract_domain::builtins::Mutation;
 use analysis::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
 };
-use analysis::facts::abstract_domain::heap::Mutation;
 use analysis::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
 use analysis::facts::binding_effect_coverage::{
     BindingEffectCoverage, LocalBodyIdentity, LocalCallReceipt, RootInitializerIdentity,
 };
 use analysis::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
+use analysis::facts::item_views::StatementKind;
 use analysis::facts::local_effect_targets::MetadataDecorateCall;
 use analysis::facts::semantic_inference::{
     NativePremise, SemanticKey, names_intrinsic, native_premise,
 };
 use analysis::facts::source_unit_read_closure::SourceUnitReadClosure;
 use analysis::facts::statement_facts::{
-    CallbackFactoryUseFact, HeapContentCells, ReturnedRecordUseFact, StatementFacts, StatementKind,
+    CallbackFactoryUseFact, HeapContentCells, ReturnedRecordUseFact, StatementFacts,
     SynchronousCalls,
 };
 use analysis::facts::value_flow::{ChunkValueFlow, Values as FlowValues};

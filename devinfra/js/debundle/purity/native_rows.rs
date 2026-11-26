@@ -9,8 +9,9 @@
 
 use super::*;
 use crate::facts::TopLevelNativeIterableOperandProjection;
+use crate::facts::abstract_domain::builtins::Mutation;
 use crate::facts::abstract_domain::builtins::{self, ArgSel, Invocation, Row, Throws};
-use crate::facts::abstract_domain::heap::{Mutation, is_plain_data_prop};
+use crate::facts::allocation_roots::is_plain_data_prop;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::effect::{CoerceCheck, CoerceOp};
 

@@ -11,8 +11,9 @@ use super::super::interpreter::{
 use super::super::native::array_iteration::{admitted_callback, supported_row};
 use super::super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
+use analysis::facts::item_views::StatementKind;
 use analysis::facts::local_effect_targets::MetadataDecorateCall;
-use analysis::facts::statement_facts::{StatementFacts, StatementKind};
+use analysis::facts::statement_facts::StatementFacts;
 use analysis_vocabulary::execution_evidence::ConstructionRejection;
 use analysis_vocabulary::report_schema::{
     LocalRecordFactoryRejection, RecordFactoryRejectionReason,

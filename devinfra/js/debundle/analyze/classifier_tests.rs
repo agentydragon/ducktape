@@ -13,9 +13,8 @@ use swc_ecma_ast::Module;
 use swc_ecma_ast::ModuleItem;
 use swc_ecma_ast::Stmt;
 
-use analysis::facts::abstract_domain::heap::{
-    ChunkHeap, plain_array_bindings, tracked_allocation_roots,
-};
+use analysis::facts::abstract_domain::heap::{ChunkHeap, plain_array_bindings};
+use analysis::facts::allocation_roots::tracked_allocation_roots;
 use analysis::facts::{
     ChunkValueFlow, DynamicScopeFact, LocalClassConstructionProof, SetIterableProof,
     StructuralChunkAnalysis, analyze_chunk_structural, compute_shadowed_globals,

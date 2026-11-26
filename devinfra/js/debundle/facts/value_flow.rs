@@ -52,9 +52,8 @@ use inference::{FactContext, IterativeInference, IterativeRules};
 
 use super::{
     LazyBoundary, LazyPosition, PositionBucketed, StatementFacts, TopLevelItemView,
-    lazy_visit_arrow_expr, lazy_visit_bin_expr, lazy_visit_class, lazy_visit_class_member,
-    lazy_visit_cond_expr, lazy_visit_function, lazy_visit_getter_prop, lazy_visit_if_stmt,
-    lazy_visit_may_skip, lazy_visit_method_prop, lazy_visit_setter_prop,
+    impl_lazy_callable_visits, impl_lazy_class_visits, impl_lazy_optional_path_visits,
+    lazy_visit_may_skip,
 };
 
 pub(crate) fn native_set_allocation_roots(
@@ -2380,8 +2379,8 @@ impl FlowProgram {
         inferred: &BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
         fresh_factory_imports: Arc<FreshFactoryImports>,
     ) -> Self {
-        let mut candidates = super::abstract_domain::heap::tracked_allocation_roots(body);
-        candidates.extend(super::heap_contents::array_candidate_roots(body));
+        let mut candidates = super::allocation_roots::tracked_allocation_roots(body);
+        candidates.extend(super::allocation_roots::array_candidate_roots(body));
         let allocations = native_set_allocation_roots(inputs, inferred);
         candidates.extend(
             allocations
