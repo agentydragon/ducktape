@@ -396,14 +396,14 @@ The counts are category presence, not disjoint buckets: the proof increments nee
 
 ### Check the printed files
 
-**Now.** Before publishing, [`SplitFiles.lean`](lean/EsmSplit/SplitFiles.lean) reparses the staged files and compares their normalized ASTs with the generated trees. The proof checks the candidate lowered from the reparsed ASTs. `--check-output` runs the same verification on an existing directory.
+**Now.** The public splitter refuses all requests and rejects `--check-output`; it does not verify or publish an existing output tree. The former [`SplitFiles.lean`](lean/EsmSplit/SplitFiles.lean) staging and disk checks are historical paths, not current public certification.
 
-**Target.** Before publishing, reparse the staged files and lower them with the one lowering. The result must equal `Y`. The emitter and printer leave the trusted parts. `--check-output` runs the same check on an existing directory.
+**Target.** Before a supported publication, reparse the staged files and lower them with the one lowering. The result must equal the constructed `Y`. The emitter and printer leave the trusted parts. A future disk-recheck interface requires its own reviewed contract and proof; the retired `--check-output` flag does not supply one.
 
 **How.**
 
 1. Expose the common lowering and its CoreJS result at the unified checker interface.
-2. Compare that result with `Y` on both emission and `--check-output`.
+2. Compare the staged output's lowering with `Y` before publication.
 
 **Done when.** A printer change that drops required parentheses is refused at emission.
 
@@ -423,15 +423,15 @@ The later migration can replace these slice-specific assertions in `model/differ
 
 The moves slice packages a `MoveScheduleEvidence` theorem. `linkedLayoutBundle` records assignment targets for placement but leaves semantic writes empty, so the binding slice locally adds those declared assignment targets to the conflict footprint and rechecks footprints and validity. The split program depends on exports, not that write list, so the result still states the guarantee for the input bundle. The static `certifiedMayMove` relation is the only producer today; a future prefix-sensitive relation can build the same evidence by checking adjacent swaps against their actual prefixes and applying its invariant plus two-way `CommuteOn` theorem. That extension changes the relation evidence producer.
 
-**Target.** `lowersplit` has no diagnostic mode. The slice theorems are strategies of the certified checker.
+**Target.** `lowersplit` has no diagnostic mode and publishes only a constructed graph with strict all-outcomes evidence. Slice theorems that establish only normal completion remain model research.
 
 **How.**
 
 1. Bridge the slices to decoded programs. Either state the slice theorems for named modules with exports, or prove that the module name and exports of a single module do not change a run. Then check that the decoded source is the single program of `ss` and the decoded emitted files are `splitProgram ss B P`, with `ss` from the linked lowering.
-2. Add the remaining slice checks to the certified checker as strategies, ahead of the per-split linked proof. The structural checker already proves `all-outcomes` when the reparsed output links to the original initial state and ordered units.
-3. Move the remaining split checks of the Node comparison suites and the other diagnostic tests to the certified path. A refused plan is counted as a refusal; its program still runs unsplit through the model.
-4. Move the remaining integration scripts to the certified command.
-5. Remove the remaining test-only preview emission as its caller tests migrate.
+2. Prove constructor rules that preserve the strict observations and every modeled ending. Retired replay and structural checks are not publishing strategies.
+3. Keep Node and model comparisons in the test-only tools. Move a case to public certification only when a constructed rule covers it; a refusal is not a successful split.
+4. Move integration scripts to the certified command only when their requested placements have the required proof.
+5. Keep test-only preview emission separate from publication while model comparisons need it.
 
 **Done when.** Tests use the certified splitter for published-output observations.
 
