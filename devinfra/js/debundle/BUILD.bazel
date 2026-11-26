@@ -2235,8 +2235,8 @@ rust_test(
 # Operates over the AST-facts EDB, not by re-walking ASTs.
 rust_library(
     name = "selector_match",
-    srcs = ["selectors/matching/selector_match.rs"],
-    crate_root = "selectors/matching/selector_match.rs",
+    srcs = glob(["selectors/matching/selector_match/*.rs"]),
+    crate_root = "selectors/matching/selector_match/mod.rs",
     edition = "2024",
     deps = [
         ":chunk_facts",
