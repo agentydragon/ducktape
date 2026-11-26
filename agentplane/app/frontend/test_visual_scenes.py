@@ -250,10 +250,20 @@ async def test_actions(view: VisualPage, app: AgentplaneFixture) -> None:
 
 @DESKTOP_AND_MOBILE
 async def test_action_request_audit_details(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.set_flag(Flag.PENDING_ACTIONS)
-    await app.mount_app("/actions/70000000-0000-4000-8000-000000000001")
+    await app.show_action_preview(
+        "github",
+        "create_pull_request",
+        {
+            "owner": "example",
+            "repo": "docs",
+            "title": "Document sandbox launch",
+            "head": "sandbox-guide",
+            "base": "devel",
+        },
+    )
+    await app.mount_app("/actions/70000000-0000-4000-8000-000000000009")
     page = view.page
-    audit_toggle = page.get_by_role("button", name="Identity visual-test-identity ·", exact=False)
+    audit_toggle = page.get_by_role("button", name="ready-sandbox ·", exact=False)
     await expect(audit_toggle).to_have_count(1)
     await expect(audit_toggle.locator("time")).to_be_visible()
     await expect(audit_toggle).to_have_attribute("aria-expanded", "false")
@@ -263,10 +273,8 @@ async def test_action_request_audit_details(view: VisualPage, app: AgentplaneFix
     await audit_toggle.click()
     audit_item = page.locator(".ui-disclosure-item").filter(has=audit_toggle).first
     audit_body = audit_item.locator(".ui-disclosure-body")
-    await expect(
-        audit_body.get_by_text("Requested by Identity visual-test-identity · UID visual-test-identity-uid", exact=True)
-    ).to_be_visible()
-    await expect(audit_body.get_by_text("70000000-0000-4000-8000-000000000001", exact=True)).to_be_visible()
+    await expect(audit_body.get_by_text("Requested by agentplane-visual/ready-sandbox", exact=True)).to_be_visible()
+    await expect(audit_body.get_by_text("70000000-0000-4000-8000-000000000009", exact=True)).to_be_visible()
     await _focus(page, audit_body)
     await page.mouse.move(0, 0)
     await view.capture(target=page.locator("#app"))
