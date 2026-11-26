@@ -177,7 +177,7 @@ do not transform its body. The two cohorts can overlap. Sizes below are encoded 
 | 26   | js       |         110 (110) |       2048 |        27,862,732 | 16,059,173 |  6,148,496 |              41 (5) |                  2.25 |
 | 26   | js       |         110 (110) |       8192 |        27,862,732 | 16,037,863 |  2,517,819 |              15 (0) |                  6.32 |
 
-**Production candidate for cold History boundary evidence: same session and kind, 2 MiB soft
+**Production candidate for History boundary evidence: same session and kind, 2 MiB soft
 target, 32 entries, Zstandard level 3.** Against current stored datums it saved 72–73% on all
 boundary records in these selected windows. An 8 MiB target increased that to 86–89%, but a
 uniform point fetch would inflate about 7 MiB instead of 2.2 MiB. Reserve the larger target for

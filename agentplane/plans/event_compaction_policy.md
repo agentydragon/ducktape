@@ -3,7 +3,7 @@
 **Decision status: proposed; no writer-default change yet.** Keep each service's journal in
 its own PostgreSQL database. Use PostgreSQL rows and B-tree indexes as the baseline. Where
 cross-event compression pays, group original frames without interpreting their contents. The
-first candidate for cold History boundary evidence is **same session + kind, 2 MiB or 32 entries,
+first candidate for History boundary evidence is **same session + kind, 2 MiB or 32 entries,
 Zstandard level 3**: it saved 72–73% against the current stored datums on two large-boundary
 samples without extracting a single field. Keep a smaller read unit for other History streams.
 Prefer a database-managed layout if it meets the same read, space and operations requirements.
@@ -118,7 +118,7 @@ to 56 compared with the 2 MiB / 32 control while keeping mean point decode withi
 The History profile trades a 4.0% encoded size premium over the smallest same-kind arm for
 about one ninth of its mean point decode. Test 64 KiB / 256 if the extra index rows or scans
 dominate real History read costs. Treat these as recommendations for the physical storage trial;
-a block-size floor was not established. For cold History boundary records, use the separate
+a block-size floor was not established. For History boundary records, use the separate
 [large-event experiment](../debug/2026_11_25_postgres_event_compaction.md#can-generic-blocks-capture-the-large-records-without-parsing-the-catalog):
 2 MiB / 32 zstd-3 admits large singletons and brings repeated bytes within codec reach. Test 8 MiB
 for scans, but its roughly 7 MiB average point decode is a material cost.
@@ -148,7 +148,16 @@ same builder; given the same stream, profile and flush boundaries they produce t
 | -------------------------------- | -------------------------------------------------- | ------------------------------------------------ |
 | Sampler                          | Contiguous sequence in one session; flush at a gap | 64 KiB / 128 / zstd-3                            |
 | History: ordinary packable kinds | Ascending cursor in one session and kind           | 64 KiB / 32 / zstd-3                             |
-| History: cold boundary evidence  | Same session and boundary kind                     | 2 MiB / 32 / zstd-3                              |
+| History: boundary evidence       | Same session and boundary kind                     | 2 MiB / 32 / zstd-3                              |
+
+Select the profile at first packing and use the same rule on explicit repack. Neither service
+promotes events to a different profile by age. The larger History target is a candidate for
+boundary records because the sampled stream contains large repeated bytes. The sample was
+selected by size and kind; it does not establish how reads vary with age. For Sampler the
+ordered-window screen used gzip, and did not isolate similarly large boundary-heavy sessions
+under zstd. If a matched zstd trial finds a benefit there, reevaluate the Sampler profile too.
+An age tier would additionally need read traces by age and enough incremental savings to pay
+for a second write, its WAL and the larger point reads.
 
 Keep the profile values in each service's existing typed settings. Sampler owns the dense
 sequence-range index. History owns kind selection, sparse cursor and size indexes, and the
