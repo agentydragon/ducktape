@@ -250,6 +250,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "inventory-history" {
+		if err := runInventoryHistory(ctx, os.Args[2:]); err != nil {
+			slog.Error("History event block inventory failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "settle-history" {
 		if err := runSettleHistory(ctx, os.Args[2:]); err != nil {
 			slog.Error("History settlement backfill stopped", "error", err)
