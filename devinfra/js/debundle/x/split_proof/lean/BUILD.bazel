@@ -846,6 +846,18 @@ lean_binary(
 )
 
 test_runner(
+    name = "linked_model_check_runner",
+    src = "LinkedModelCheckMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [
+        ":corejs_certificate_probe",
+        ":corejs_linked_input",
+        ":corejs_runtime",
+        ":lowersplit_input",
+    ],
+)
+
+test_runner(
     name = "provider_input_boundary_test_runner",
     src = "ProviderInputBoundaryTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],

@@ -47,6 +47,13 @@ js_library(
 )
 
 js_library(
+    name = "linked_model_probe",
+    srcs = ["linked_model_probe.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = ["//devinfra/js/debundle/x/split_proof/translation:parser"],
+)
+
+js_library(
     name = "lint_sources",
     srcs = glob(["**/*.mjs"]),
 )

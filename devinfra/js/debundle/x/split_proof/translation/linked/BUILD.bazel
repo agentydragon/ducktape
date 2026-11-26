@@ -297,3 +297,18 @@ eslint_test(
     name = "eslint_test",
     srcs = [":lint_sources"],
 )
+
+js_test(
+    name = "wide_record_probe_test",
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
+        "//devinfra/js/debundle/x/split_proof/lean:split_preview",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_model_probe",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
+    ],
+    entry_point = "wide_record_probe_test.mjs",
+    env = {
+        "LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)",
+        "SPLIT_PREVIEW": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:split_preview)",
+    },
+)
