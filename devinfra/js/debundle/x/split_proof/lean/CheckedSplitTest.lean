@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.CheckedSplit
+import EsmSplit.CoreJS.StateMatch
 
 open CoreJS CoreJS.CheckedSplit
 

@@ -478,7 +478,10 @@ lean_library(
 executable_test(
     name = "named_declaration_split_test",
     src = "NamedDeclarationSplitTest.lean",
-    deps = [":named_declaration_split"],
+    deps = [
+        ":corejs_state_match",
+        ":named_declaration_split",
+    ],
 )
 
 lean_proof_test(
@@ -568,6 +571,7 @@ executable_test(
     deps = [
         ":corejs_checked_split",
         ":corejs_resolved_placement",
+        ":corejs_state_match",
     ],
 )
 
@@ -587,7 +591,10 @@ lean_proof_test(
 executable_test(
     name = "checked_split_test",
     src = "CheckedSplitTest.lean",
-    deps = [":corejs_checked_split"],
+    deps = [
+        ":corejs_checked_split",
+        ":corejs_state_match",
+    ],
 )
 
 lean_proof_test(
