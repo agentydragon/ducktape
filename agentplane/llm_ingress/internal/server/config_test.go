@@ -7,13 +7,13 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
 const testLiteLLMKey = "test-provider-secret"
 
-const validSettings = `allowed_service_account_namespaces: [yaml-namespace]
-policy_namespace: test-policy
+const settingsWithoutPolicyService = `allowed_service_account_namespaces: [yaml-namespace]
 litellm_url: http://127.0.0.1:8100/prefix
 log_llm_requests: true
 rpc: {listen_address: "127.0.0.1:6060", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: spiffe, ca_file: /tls/ca}]}
@@ -24,6 +24,20 @@ models:
   - model: test/model
     total_context_budget_tokens: 8192
 `
+
+func policyServiceSettings(target, clientURI, serverURI string) string {
+	return fmt.Sprintf(`policy_service:
+  target: %q
+  tls:
+    ca_file: /tls/ca
+    server_uri: %s
+    cert_file: /tls/cert
+    key_file: /tls/key
+    client_uri: %s
+`, target, serverURI, clientURI)
+}
+
+var validSettings = settingsWithoutPolicyService + policyServiceSettings("policy-controller:8443", peertls.LLMIngressURI, peertls.PolicyControllerURI)
 
 func loadSettings(t *testing.T, contents string, extra ...string) (config, error) {
 	t.Helper()
@@ -76,19 +90,6 @@ func TestProviderKeyIsNotDecodedFromTheSettingsFile(t *testing.T) {
 	settings := strings.Replace(validSettings, "log_llm_requests: true\n", "litellm_key: file-secret\nlog_llm_requests: true\n", 1)
 	if _, err := loadSettings(t, settings); err == nil {
 		t.Fatal("accepted the provider credential from the settings file")
-	}
-}
-
-func TestPolicyNamespaceIsRequired(t *testing.T) {
-	for name, contents := range map[string]string{
-		"missing": strings.Replace(validSettings, "policy_namespace: test-policy\n", "", 1),
-		"empty":   strings.Replace(validSettings, "policy_namespace: test-policy", `policy_namespace: ""`, 1),
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := loadSettings(t, contents); err == nil {
-				t.Fatal("accepted a missing policy_namespace")
-			}
-		})
 	}
 }
 
@@ -163,7 +164,7 @@ func TestLoadConfigRejectsInvalidModelBudgetsAndUnknownKeys(t *testing.T) {
 func TestSharedListenerRequiresTLS(t *testing.T) {
 	c := config{
 		AllowedServiceAccountNamespaces: []string{"test-namespace"},
-		PolicyNamespace:                 "test-policy",
+		PolicyService:                   identitycache.Peer{Target: "policy-controller:8443", TLS: peertls.ClientTLS{CAFile: "/tls/ca", ServerURI: peertls.PolicyControllerURI, CertFile: "/tls/cert", KeyFile: "/tls/key", ClientURI: peertls.LLMIngressURI}},
 		LiteLLMURL:                      "http://127.0.0.1:8100",
 		LiteLLMKey:                      testLiteLLMKey,
 		Attribution:                     defaultAttribution(),
@@ -185,17 +186,7 @@ func TestSamplerIdentityDelegationRequiresServiceActors(t *testing.T) {
 }
 
 func TestPolicyServiceMustBeACompleteMutualTLSCallerAsTheIngress(t *testing.T) {
-	block := func(target, clientURI, serverURI string) string {
-		return fmt.Sprintf(`policy_service:
-  target: %q
-  tls:
-    ca_file: /tls/ca
-    server_uri: %s
-    cert_file: /tls/cert
-    key_file: /tls/key
-    client_uri: %s
-`, target, serverURI, clientURI)
-	}
+	block := policyServiceSettings
 	ingress, policy := peertls.LLMIngressURI, peertls.PolicyControllerURI
 	for _, tc := range []struct {
 		name     string
@@ -206,12 +197,13 @@ func TestPolicyServiceMustBeACompleteMutualTLSCallerAsTheIngress(t *testing.T) {
 		{"no target", block("", ingress, policy), false},
 		{"another caller identity", block("policy-controller:8443", peertls.MCPEdgeURI, policy), false},
 		{"another server", block("policy-controller:8443", ingress, peertls.ActionsURI), false},
+		{"missing", "", false},
 		{"no client SVID", "policy_service:\n  target: policy-controller:8443\n  tls:\n    ca_file: /tls/ca\n    server_uri: " + policy + "\n", false},
 		{"unknown key", block("policy-controller:8443", ingress, policy) + "  surprise: true\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := loadSettings(t, validSettings+tc.settings)
-			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "policy-controller:8443") {
+			c, err := loadSettings(t, settingsWithoutPolicyService+tc.settings)
+			if tc.valid && (err != nil || c.PolicyService.Target != "policy-controller:8443") {
 				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
 			}
 			if !tc.valid && err == nil {

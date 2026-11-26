@@ -34,6 +34,9 @@ import (
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/google/uuid"
@@ -42,6 +45,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 )
@@ -887,8 +891,18 @@ func TestRealBinaryStartsWithSettingsFileAndExplicitSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings := filepath.Join(directory, "settings.yaml")
+	ca := transporttesting.NewCA(t)
+	serverFiles := ca.Issue(t, peertls.LLMIngressURI)
+	policyCredentials, err := ca.Issue(t, peertls.PolicyControllerURI).ServerCredentials(peertls.LLMIngressURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policyServer := grpc.NewServer(grpc.Creds(policyCredentials))
+	policypb.RegisterPolicyServiceServer(policyServer, &fakePolicy{identity: caller.Identity})
+	policyAddress := grpcserver.Serve(t, policyServer)
 	settingsYAML := "allowed_service_account_namespaces: [" + testNamespace + "]\n" +
-		"policy_namespace: " + testPolicyNamespace + "\n" +
+		fmt.Sprintf("policy_service: {target: %q, tls: {ca_file: %q, server_uri: %s, cert_file: %q, key_file: %q, client_uri: %s}}\n",
+			policyAddress, ca.RootFile, peertls.PolicyControllerURI, serverFiles.CertFile, serverFiles.KeyFile, peertls.LLMIngressURI) +
 		"litellm_url: " + backendServer.URL + "\n" +
 		"kubeconfig: " + kubeconfig + "\n" +
 		"models:\n  - model: configured/model\n    total_context_budget_tokens: 8192\n" +
@@ -903,8 +917,6 @@ func TestRealBinaryStartsWithSettingsFileAndExplicitSecret(t *testing.T) {
 	port := listener.Addr().(*net.TCPAddr).Port
 	address := listener.Addr().String()
 	_ = listener.Close()
-	ca := transporttesting.NewCA(t)
-	serverFiles := ca.Issue(t, peertls.LLMIngressURI)
 	rpcYAML := fmt.Sprintf("rpc: {listen_address: %q, tls: {cert_file: %q, key_file: %q}, auth: [{mode: spiffe, ca_file: %q}]}\n", address, serverFiles.CertFile, serverFiles.KeyFile, ca.RootFile)
 	if err := os.WriteFile(settings, []byte(settingsYAML+rpcYAML), 0o600); err != nil {
 		t.Fatal(err)
@@ -1202,4 +1214,24 @@ func TestCredentialReadOutageIsSanitizedBeforeBackend(t *testing.T) {
 	if response.StatusCode != http.StatusInternalServerError || len(backend.snapshotRequests()) != 0 || bytes.Contains(body, []byte(testBackendKey)) || bytes.Contains(body, []byte("127.0.0.1")) {
 		t.Fatalf("unsafe credential-read failure: status=%d body=%s backend requests=%d", response.StatusCode, body, len(backend.snapshotRequests()))
 	}
+}
+
+// fakePolicy serves one Identity through PolicyService.WatchIdentities, standing in for the Policy Controller.
+type fakePolicy struct {
+	policypb.UnimplementedPolicyServiceServer
+	identity *policyapi.Identity
+}
+
+func (f *fakePolicy) WatchIdentities(_ *policypb.WatchIdentitiesRequest, stream grpc.ServerStreamingServer[policypb.WatchIdentitiesResponse]) error {
+	resource := &policypb.Identity{Identity: &policypb.PolicyResourceIdentity{Namespace: f.identity.Namespace, Name: f.identity.Name, Uid: string(f.identity.UID)}}
+	for _, frame := range []*policypb.WatchIdentitiesResponse{
+		{Frame: &policypb.WatchIdentitiesResponse_Snapshot{Snapshot: &policypb.IdentityChunk{Identities: []*policypb.Identity{resource}}}},
+		{Frame: &policypb.WatchIdentitiesResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}},
+	} {
+		if err := stream.Send(frame); err != nil {
+			return err
+		}
+	}
+	<-stream.Context().Done()
+	return stream.Context().Err()
 }
