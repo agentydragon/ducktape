@@ -98,7 +98,7 @@ async def _managed_service_accounts(accounts: CrdAdmission, identity: dict[str, 
     await accounts.create("test-standing-extra", {})
 
 
-async def _binding_subjects(bindings: CrdAdmission) -> None:
+async def _policy_bindings(bindings: CrdAdmission) -> None:
     service_account: dict[str, Any] = {"namespace": NAMESPACE, "name": "test-workload"}
     identity: dict[str, Any] = {"identity": {"name": "test-agent"}}
     for name, subject in (("test-service-account", service_account), ("test-identity", identity)):
@@ -111,9 +111,16 @@ async def _binding_subjects(bindings: CrdAdmission) -> None:
         {},
         {"namespace": NAMESPACE},
         {"name": "test-workload"},
+        {**service_account, "name": ""},
+        {**service_account, "namespace": ""},
         {"identity": {"name": ""}},
     ):
         await bindings.rejects_create({"subject": subject, "policySets": ["basic"]})
+
+    for spec in ({"policySets": ["basic"]}, {"subject": service_account}):
+        await bindings.rejects_create(spec)
+    for policy_sets in ([], [""]):
+        await bindings.rejects_create({"subject": service_account, "policySets": policy_sets})
 
 
 async def test_identity_and_kubernetes_account_admission() -> None:
@@ -122,7 +129,7 @@ async def test_identity_and_kubernetes_account_admission() -> None:
         await _role_sets(namespace.kind("kubernetesrolesets", "KubernetesRoleSet"))
         await _grants(namespace.kind("serviceaccountgrants", "ServiceAccountGrant"))
         await _managed_service_accounts(namespace.kind("managedserviceaccounts", "ManagedServiceAccount"), identity)
-        await _binding_subjects(namespace.kind("policybindings", "PolicyBinding"))
+        await _policy_bindings(namespace.kind("policybindings", "PolicyBinding"))
 
 
 if __name__ == "__main__":
