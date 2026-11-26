@@ -411,3 +411,8 @@ migration path before a new-only binary opens them.
 
 Then remove legacy block readers, writers, fallback dispatch, tests specific to the obsolete
 format and rollout-only flags in a cleanup PR. Keep strict rejection of unknown formats.
+
+TODO after the rollout: consider storing the block encoding and format version in a PostgreSQL
+column on the History and Sampler block tables. The column could select the decoder directly,
+so payloads would no longer need a custom APB prefix to identify their format. Account for
+existing blocks and the decoded-size check currently carried by the header when weighing the change.
