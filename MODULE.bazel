@@ -28,7 +28,10 @@ http_archive(
     name = "lean_native_rules",
     patch_args = ["-p1"],
     # Resolve its toolchain type within that repository when both rulesets coexist.
-    patches = ["//patches:martianoff_rules_lean_repo_name.patch"],
+    patches = [
+        "//patches:martianoff_rules_lean_repo_name.patch",
+        "//patches:martianoff_rules_lean_forbid_sorry.patch",
+    ],
     sha256 = "44ea374683a33ecc5989b8d819636a0275844068a53cdcc453dd45ec22efb250",
     strip_prefix = "rules_lean-44fc4e4b299a32fd278865a45df24e0d05eb96a8",
     urls = ["https://github.com/martianoff/rules_lean/archive/44fc4e4b299a32fd278865a45df24e0d05eb96a8.tar.gz"],

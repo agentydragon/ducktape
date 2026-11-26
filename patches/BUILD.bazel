@@ -3,6 +3,7 @@ exports_files(
         "aspect_rules_py_image_layer_tags.patch",
         "rules_lean_4_35.patch",
         "martianoff_rules_lean_repo_name.patch",
+        "martianoff_rules_lean_forbid_sorry.patch",
         "rules_tf_check_terraform_mirror.patch",
         "rules_tf_check_tofu_mirror.patch",
         "aspect_rules_lint_no_external_touch.patch",

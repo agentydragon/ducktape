@@ -1,0 +1,31 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_binary(
+    name = "guard_runner",
+    srcs = ["guard.py"],
+    main = "guard.py",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "guard",
+    srcs = ["guard.py"],
+)
+
+sh_test(
+    name = "sorry_test",
+    srcs = ["sorry_test.sh"],
+    args = [
+        "$(rlocationpath :guard_runner)",
+        "$(rlocationpath @lean_dist//:lean_bin)",
+        "$(rlocationpath :Sorry.lean)",
+    ],
+    data = [
+        ":Sorry.lean",
+        ":guard_runner",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    use_bash_launcher = True,
+)
