@@ -14,6 +14,7 @@ rust_library(
         "//devinfra/js/debundle/analysis_domain",
         "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/facts/sync_effects",
+        "//devinfra/js/debundle/value_flow",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",

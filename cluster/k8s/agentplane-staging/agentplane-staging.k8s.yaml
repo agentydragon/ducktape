@@ -12295,6 +12295,7 @@ data:
       - spiffe://agentplane/sandbox-controller
       - spiffe://agentplane/sessions
     writer_services:
+      - spiffe://agentplane/actions
       - spiffe://agentplane/app
     workload_issuer: agentplane-workload
     workload_namespaces:

@@ -1,8 +1,9 @@
 use std::{collections::BTreeSet, sync::Arc};
 
-use super::value_flow::{OriginTable, Values};
-use super::{ArrowExpr, ChunkValueFlow, Decl, ModuleItem, Stmt, Visit, VisitWith};
+use crate::{ChunkValueFlow, OriginTable, Values};
 use analysis_vocabulary::value::{Kind, Value};
+use swc_ecma_ast::{ArrowExpr, Decl, ModuleItem, Stmt};
+use swc_ecma_visit::{Visit, VisitWith};
 
 const DOMAIN: [Value; 10] = [
     Value::Alloc(Kind::Function, 0),

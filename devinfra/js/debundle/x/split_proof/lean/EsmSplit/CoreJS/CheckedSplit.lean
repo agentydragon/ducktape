@@ -4,7 +4,7 @@ import EsmSplit.CoreJS.SingleModule
 import EsmSplit.CoreJS.SyntaxMatch
 import EsmSplit.Split
 
-/-! Construct a CoreJS split for an order-preserving placement of read-only
+/-! Construct a CoreJS split for an order-preserving placement of simple
 declarations. The caller supplies the original program and authored spec. -/
 
 namespace CoreJS.CheckedSplit
@@ -15,10 +15,15 @@ private def simpleValue : Expr → Bool
   | .undef | .null | .bool _ | .num _ | .str _ | .var _ => true
   | _ => false
 
+private def initializedValue : Expr → Bool
+  | .undef => false
+  | _ => true
+
 private def supportedUnit : Stmt → Bool
   | .funDecl (.mk _ .normal false [] [.ret value]) => simpleValue value
   | .decl .const _ (.call (.var _) []) => true
   | .decl .const _ value => simpleValue value
+  | .decl .let_ _ value => simpleValue value && initializedValue value
   | _ => false
 
 private def summarize (source : Program) : EsmSplit.Bundle :=
@@ -86,11 +91,12 @@ def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarante
   if spec.sequential then
     unless m.body.all (fun (_, stmt) => match stmt with
         | .decl .const _ value => simpleValue value
+        | .decl .let_ _ value => simpleValue value && initializedValue value
         | _ => false) do
-      throw "explicit sequential placement supports only simple const declarations"
+      throw "explicit sequential placement supports only simple const or initialized let declarations"
   for (id, stmt) in m.body do
     unless supportedUnit stmt do
-      throw s!"unsupported unit {id}: expected a simple const or a zero-argument function returning a value"
+      throw s!"unsupported unit {id}: expected a simple declaration or a zero-argument function returning a value"
   let bundle := summarize source
   let plan := EsmSplit.mkPlan bundle spec
   if spec.sequential then

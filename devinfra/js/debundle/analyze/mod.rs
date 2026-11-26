@@ -244,7 +244,7 @@ fn analyze_chunk_with_policy_and_sync(
             }
         }
     }
-    value_flow.augment_calls(&body, &mut facts);
+    analysis::facts::flow_calls::augment_calls(&value_flow, &body, &mut facts);
     let local_class_heap_proof = prepared_sync_index.local_class_heap_proof();
     let fresh_freeze_heap_proof = prepared_sync_index.fresh_record_freeze_heap_proof();
     let heap_contents = analysis::facts::heap_contents::annotate_heap_contents(

@@ -3,9 +3,10 @@
 //! Background: see <docs/design.md>. This crate holds the structural layer
 //! of per-chunk analysis: top-level source-unit facts (declarations, at-init
 //! reads/writes, lazy reads/writes, side effects, imports, source locations,
-//! top-level await), value flow, purity rules and the fact-level evidence
-//! reports (`facts`, `purity`, `reports`). The types these passes consume
-//! and report live below it in the `analysis_vocabulary` crate.
+//! top-level await), purity rules and the fact-level evidence reports
+//! (`facts`, `purity`, `reports`). The types these passes consume and report
+//! live below it in the `analysis_vocabulary` crate; value flow and program
+//! bindings live in the `value_flow` crate (`value_flow/`).
 //!
 //! The `sync_effects` crate (`facts/sync_effects/`) runs the synchronous
 //! interpreter over this layer; the `analyze` crate (`analyze/`) combines both
@@ -18,7 +19,6 @@ pub mod diagnostics;
 pub mod facts;
 pub mod ids;
 pub mod loader_closure;
-pub mod program_bindings;
 pub mod purity;
 pub mod reports;
 
