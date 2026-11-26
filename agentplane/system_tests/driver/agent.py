@@ -196,7 +196,7 @@ async def scripted_turn_with_admission_and_history(
         shell_call_id=shell_call_id,
         response=response,
     )
-    entries = await _history(client, agent.thread_id, completed_turns=history_turns)
+    entries = await history_through_turn(client, agent.thread_id, completed_turns=history_turns)
     assert any(
         entry.event.HasField("command_admitted") and entry.event.command_admitted.command.command_id == command_id
         for entry in entries
@@ -217,20 +217,17 @@ async def scripted_turn_with_admission_and_history(
     return turn, entries, request
 
 
-async def _history(client: Client, thread_id: UUID, *, completed_turns: int) -> list[event_log_pb2.EventEntry]:
-    reader = SessionEventReader(client, thread_id, after_cursor=0)
+async def history_through_turn(
+    client: Client, thread_id: UUID, *, completed_turns: int
+) -> list[event_log_pb2.EventEntry]:
+    """Read the corrected history prefix ending at the requested turn's terminal event."""
+    reader = SessionEventReader(client, thread_id)
     observed_turns = 0
-    terminal_cursor: int | None = None
     async with asyncio.timeout(TURN_SECONDS):
-        while terminal_cursor is None:
-            entries = await reader.read_page()
-            for entry in entries:
+        while True:
+            for entry in await reader.read_page():
                 if entry.event.HasField("turn_completed"):
                     observed_turns += 1
                     if observed_turns == completed_turns:
-                        terminal_cursor = entry.cursor
-                        break
-            if terminal_cursor is None:
-                await reader.wait_for_next_page()
-    assert observed_turns == completed_turns, f"History ended after {observed_turns} completed turns"
-    return [entry for entry in reader.entries if entry.cursor <= terminal_cursor]
+                        return [row for row in reader.entries if row.cursor <= entry.cursor]
+            await reader.wait_for_next_page()

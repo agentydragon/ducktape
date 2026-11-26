@@ -31,6 +31,7 @@ from agentplane.system_tests.driver.agent import (
     Agent,
     Turn,
     environment_runtime_startup_retries,
+    history_through_turn,
 )
 from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
@@ -78,32 +79,14 @@ def _storage_volumes(cluster: Cluster, sandbox_uid: str) -> dict[str, tuple[str,
     return {claim["metadata"]["name"]: (claim["metadata"]["uid"], claim["spec"]["volumeName"]) for claim in claims}
 
 
-async def _history(client: Client, thread_id: UUID, *, completed_turns: int | None) -> list[event_log_pb2.EventEntry]:
-    reader = SessionEventReader(client, thread_id, after_cursor=0)
-    turns = 0
-    terminal_cursor: int | None = None
-    watermark = 0
-    if completed_turns is None:
-        watermark = (await client.session_summary(thread_id)).committed_cursor
+async def _committed_history(client: Client, thread_id: UUID) -> list[event_log_pb2.EventEntry]:
+    watermark = (await client.session_summary(thread_id)).committed_cursor
+    reader = SessionEventReader(client, thread_id)
     async with asyncio.timeout(TURN_SECONDS):
-        while (completed_turns is not None and terminal_cursor is None) or (
-            completed_turns is None and reader.cursor < watermark
-        ):
-            entries = await reader.read_page()
-            for entry in entries:
-                if entry.event.HasField("turn_completed"):
-                    turns += 1
-                    if completed_turns is not None and turns == completed_turns:
-                        terminal_cursor = entry.cursor
-                        break
-            if (completed_turns is not None and terminal_cursor is None) or (
-                completed_turns is None and reader.cursor < watermark
-            ):
+        while reader.cursor < watermark:
+            await reader.read_page()
+            if reader.cursor < watermark:
                 await reader.wait_for_next_page()
-    if completed_turns is not None:
-        assert turns == completed_turns, f"history ended after {turns} completed turns"
-        assert terminal_cursor is not None
-        return [entry for entry in reader.entries if entry.cursor <= terminal_cursor]
     return [entry for entry in reader.entries if entry.cursor <= watermark]
 
 
@@ -263,7 +246,7 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     else:
         raise AssertionError("the scripted upstream errors did not fail the original command")
 
-    failed_history = await _history(client, agent.thread_id, completed_turns=3)
+    failed_history = await history_through_turn(client, agent.thread_id, completed_turns=3)
     failed_entry = [entry for entry in failed_history if entry.event.HasField("command_admitted")][-1]
     failed_command_id = failed_entry.event.command_admitted.command.command_id
     (failed_turn_entry,) = [
@@ -292,7 +275,7 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     assert fresh_turn.resumed
     assert any("EXPLICIT_RESUME_EXEC_OK" in output for output in fresh_turn.tool_outputs), fresh_turn.transcript
 
-    resumed_history = await _history(client, agent.thread_id, completed_turns=4)
+    resumed_history = await history_through_turn(client, agent.thread_id, completed_turns=4)
     _assert_prefix(failed_history, resumed_history)
     admitted = [
         entry.event.command_admitted.command.command_id
@@ -510,7 +493,7 @@ class _ResumeRun:
         """Check the seed turn and the native session it started."""
         assert seed.input_confirmed, f"{session_pb2.Harness.Name(harness)} did not confirm the seed input"
         agent = self.agents[harness]
-        self.seeded_history[harness] = await _history(self.client, agent.thread_id, completed_turns=1)
+        self.seeded_history[harness] = await history_through_turn(self.client, agent.thread_id, completed_turns=1)
         snapshot = await self.client.runtime_diagnostics(self.view.target)
         ready = next(row for row in await self._host_sessions() if row.session_id == str(agent.thread_id))
         assert ready.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_ATTACHED
@@ -529,7 +512,7 @@ class _ResumeRun:
             await _wait_until_suspended_without_pod(self.client, self.view.target)
             assert _storage_volumes(self.cluster, self.view.target.uid) == self.storage_volumes
             for harness, agent in self.agents.items():
-                self.suspended_history[harness] = await _history(self.client, agent.thread_id, completed_turns=None)
+                self.suspended_history[harness] = await _committed_history(self.client, agent.thread_id)
                 _assert_prefix(self.seeded_history[harness], self.suspended_history[harness])
                 # Dispatcher returns its durable receipt without contacting the suspended runner.
                 (seed,) = [entry for entry in self.seeded_history[harness] if entry.event.HasField("command_admitted")]
@@ -589,7 +572,7 @@ class _ResumeRun:
         assert turn.resumed, f"{harness_name} did not report native session resume"
         assert turn.input_confirmed, f"{harness_name} did not confirm the resumed input"
         agent = self.agents[harness]
-        history = await _history(self.client, agent.thread_id, completed_turns=2)
+        history = await history_through_turn(self.client, agent.thread_id, completed_turns=2)
         before = self.suspended_history[harness]
         _assert_prefix(before, history)
         # History may settle streamed deltas; retained entries must still be ordered and unique.
