@@ -18,7 +18,7 @@ fn test_id(name: &str) -> Id {
 }
 
 fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
-    analysis::facts::analyze_chunk(module, &AnalysisInputs::default(), None).facts
+    analyze::analyze_chunk(module, &AnalysisInputs::default(), None).facts
 }
 
 #[derive(Debug, Clone, Copy)]

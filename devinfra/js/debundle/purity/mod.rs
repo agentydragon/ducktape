@@ -45,29 +45,30 @@ pub(crate) use crate::facts::abstract_domain::effect::{
 };
 pub(crate) use crate::facts::abstract_domain::primitive::{binary_throws, evaluate};
 
-mod classifier;
-mod code_graph;
+pub mod classifier;
+pub mod code_graph;
 mod effect_inference;
 mod fluent;
 mod fresh_record;
 mod native_rows;
 mod order_dependent_reads;
-mod purity_type;
-mod redundant_hints;
+pub mod purity_type;
+pub mod redundant_hints;
 pub mod saved;
 mod ts_enum_iife;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
 pub(crate) use classifier::*;
+pub use code_graph::ShapeProofRefinement;
 pub(crate) use code_graph::*;
 pub(crate) use effect_inference::*;
 pub(crate) use fluent::*;
+pub use fresh_record::FreshRecordDestructuringContext;
 pub(crate) use fresh_record::*;
 pub(crate) use native_rows::*;
 pub(crate) use order_dependent_reads::*;
-pub(crate) use purity_type::Effects;
-pub(crate) use redundant_hints::*;
+pub use purity_type::Effects;
 pub(crate) use ts_enum_iife::*;
 
 // Public API: importable at `purity::<item>`.
@@ -79,12 +80,3 @@ pub use redundant_hints::{
     RedundantPureMemberHint, RedundantPureMemberReason, RedundantPurityHint,
     RedundantPurityProofBasis, RedundantPurityReason,
 };
-
-#[cfg(test)]
-mod classifier_tests;
-
-#[cfg(test)]
-mod graph_purity_tests;
-
-#[cfg(test)]
-mod redundant_hints_tests;

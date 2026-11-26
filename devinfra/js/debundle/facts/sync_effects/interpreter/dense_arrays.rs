@@ -73,10 +73,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    pub(in crate::facts::sync_effects) fn dense_array_push_receiver(
-        &mut self,
-        receiver: &Values,
-    ) -> Option<u32> {
+    pub(crate) fn dense_array_push_receiver(&mut self, receiver: &Values) -> Option<u32> {
         let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
             receiver.iter().collect::<Vec<_>>().as_slice()
         else {
@@ -140,9 +137,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.literal_heap().dense_array(object, slots);
     }
 
-    pub(in crate::facts::sync_effects) fn literal_heap(
-        &mut self,
-    ) -> super::super::allocation_transfer::LiteralHeap<'_> {
+    pub(crate) fn literal_heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
         self.state.world_mut().literal_heap()
     }
 
@@ -151,7 +146,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     //   (`native/array_iteration.rs`) replaces it for kernel-run bodies; this
     //   path stays while the legacy gate reads its `Outcome` for flattened
     //   owners, the flat `invoke_with_cells` lane and refused remainders.
-    pub(in crate::facts::sync_effects) fn array_iteration_plan(
+    pub(crate) fn array_iteration_plan(
         &mut self,
         span: CallSite,
         env: &Context,
@@ -225,7 +220,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// The value an admitted iteration call evaluates to. A fresh array
     /// result is its allocation, whose slots the transfer retains; the
     /// accumulator is what the transfer last stored.
-    pub(in crate::facts::sync_effects) fn array_iteration_result(
+    pub(crate) fn array_iteration_result(
         &mut self,
         proof: &ArrayIteration,
         dense: &DenseArray,
@@ -303,10 +298,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Whether a callback result can be stored in a fresh result array, or
     /// spread into one, without running user code when the result is later
     /// read, iterated or spread.
-    pub(in crate::facts::sync_effects) fn retainable_iteration_value(
-        &self,
-        value: &AbstractValue,
-    ) -> bool {
+    pub(crate) fn retainable_iteration_value(&self, value: &AbstractValue) -> bool {
         match value {
             AbstractValue::Value(Value::Prim(_))
             | AbstractValue::Value(Value::Alloc(Kind::Function, _))
@@ -352,7 +344,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     //   (`native/array_iteration.rs`) replaces it for kernel-run bodies; this
     //   path stays while the legacy gate reads its `Outcome` for flattened
     //   owners, the flat `invoke_with_cells` lane and refused remainders.
-    pub(in crate::facts::sync_effects) fn execute_array_iteration_transfer(
+    pub(crate) fn execute_array_iteration_transfer(
         &mut self,
         span: CallSite,
         env: &Context,
@@ -661,7 +653,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if self.inputs.index.map_entry_arrays.contains(span))
     }
 
-    pub(in crate::facts::sync_effects) fn proven_from_entries_callbacks(
+    pub(crate) fn proven_from_entries_callbacks(
         &mut self,
         call_site: CallSite,
         env: &Context,

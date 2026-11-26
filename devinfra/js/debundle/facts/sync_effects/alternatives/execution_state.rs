@@ -23,15 +23,15 @@ use swc_ecma_ast::Id;
 /// The path-owned part of `ExecutionState`, with the running outcome of the
 /// activation that forked and the executor's allocation judgment.
 #[derive(Clone)]
-pub(in crate::facts::sync_effects) struct ExecutionPath {
-    pub(in crate::facts::sync_effects) world: Arc<World>,
-    pub(in crate::facts::sync_effects) callback_fallback: CallbackFallbackSummary,
-    pub(in crate::facts::sync_effects) fallback_callback_sizes: Option<(usize, usize)>,
-    pub(in crate::facts::sync_effects) fallback_outcome: Outcome,
-    pub(in crate::facts::sync_effects) fallback_local_owners: BTreeSet<SourceUnitOrdinal>,
-    pub(in crate::facts::sync_effects) fallback_local_deferred: BTreeMap<Id, SourceUnitOrdinal>,
-    pub(in crate::facts::sync_effects) allocation_judgment: AllocationJudgment,
-    pub(in crate::facts::sync_effects) outcome: Outcome,
+pub(crate) struct ExecutionPath {
+    pub(crate) world: Arc<World>,
+    pub(crate) callback_fallback: CallbackFallbackSummary,
+    pub(crate) fallback_callback_sizes: Option<(usize, usize)>,
+    pub(crate) fallback_outcome: Outcome,
+    pub(crate) fallback_local_owners: BTreeSet<SourceUnitOrdinal>,
+    pub(crate) fallback_local_deferred: BTreeMap<Id, SourceUnitOrdinal>,
+    pub(crate) allocation_judgment: AllocationJudgment,
+    pub(crate) outcome: Outcome,
 }
 
 impl PathState for ExecutionPath {
@@ -41,15 +41,15 @@ impl PathState for ExecutionPath {
 }
 
 /// The path state after a body that ran exactly one of a family's leaves.
-pub(in crate::facts::sync_effects) struct JoinedPath {
-    pub(in crate::facts::sync_effects) path: ExecutionPath,
+pub(crate) struct JoinedPath {
+    pub(crate) path: ExecutionPath,
     /// The joined world cannot resume the body's caller; the adapter
     /// summarizes the remainder from `path`.
-    pub(in crate::facts::sync_effects) refused: Option<JoinRefusal>,
+    pub(crate) refused: Option<JoinRefusal>,
 }
 
 impl ExecutionPath {
-    pub(in crate::facts::sync_effects) fn join(leaves: Vec<Self>) -> JoinedPath {
+    pub(crate) fn join(leaves: Vec<Self>) -> JoinedPath {
         let Joined {
             world,
             widened: _,

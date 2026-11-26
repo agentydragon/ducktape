@@ -14,15 +14,15 @@ use swc_ecma_ast::Id;
 /// Exact identity for the one root initializer whose ordered execution may
 /// seal lexical binding-effect coverage.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct RootInitializerIdentity {
-    pub(super) owner: SourceUnitOrdinal,
-    pub(super) binding: Id,
-    pub(super) initializer_span: Option<Span>,
+pub struct RootInitializerIdentity {
+    pub owner: SourceUnitOrdinal,
+    pub binding: Id,
+    pub initializer_span: Option<Span>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum LocalBodyIdentity {
+pub enum LocalBodyIdentity {
     RootInitializer {
         owner: SourceUnitOrdinal,
         initializer_span: Span,
@@ -53,24 +53,24 @@ pub(super) enum LocalBodyIdentity {
 /// every root-to-leaf path; each edge retains prerequisites merged from every
 /// invocation context that selected it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct LocalCallReceipt {
-    pub(super) caller: LocalBodyIdentity,
-    pub(super) call_span: Span,
-    pub(super) target: LocalBodyIdentity,
-    pub(super) dependencies: Box<ProofDependencies>,
+pub struct LocalCallReceipt {
+    pub caller: LocalBodyIdentity,
+    pub call_span: Span,
+    pub target: LocalBodyIdentity,
+    pub dependencies: Box<ProofDependencies>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct LexicalBindingEffectReceipt {
-    pub(super) identity: RootInitializerIdentity,
-    pub(super) read_dependencies: ProofDependencies,
-    pub(super) rebind_dependencies: ProofDependencies,
-    pub(super) calls: Vec<LocalCallReceipt>,
+pub struct LexicalBindingEffectReceipt {
+    pub identity: RootInitializerIdentity,
+    pub read_dependencies: ProofDependencies,
+    pub rebind_dependencies: ProofDependencies,
+    pub calls: Vec<LocalCallReceipt>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum BindingEffectCoverage {
+pub enum BindingEffectCoverage {
     #[default]
     Unclassified,
     LegacyExecution,
@@ -112,11 +112,7 @@ impl BindingEffectCoverage {
         })
     }
 
-    pub(crate) fn authority(
-        &self,
-        complete: bool,
-        author_source_only: bool,
-    ) -> BindingEffectAuthority {
+    pub fn authority(&self, complete: bool, author_source_only: bool) -> BindingEffectAuthority {
         if author_source_only {
             return BindingEffectAuthority::AuthorSourceOnly;
         }

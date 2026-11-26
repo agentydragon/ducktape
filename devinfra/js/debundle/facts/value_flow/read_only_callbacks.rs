@@ -4,9 +4,9 @@
 use super::*;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct ReadOnlyCallback<Binding: Ord> {
-    pub(crate) reads: BTreeSet<Binding>,
-    pub(crate) returned: BTreeSet<Binding>,
+pub struct ReadOnlyCallback<Binding: Ord> {
+    pub reads: BTreeSet<Binding>,
+    pub returned: BTreeSet<Binding>,
 }
 
 impl<Binding: Ord> ReadOnlyCallback<Binding> {

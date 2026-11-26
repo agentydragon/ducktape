@@ -4,7 +4,7 @@
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::value_model::{AbstractValue, Values};
 use super::frame::LocalFrame;
-use crate::facts::abstract_domain::value::Value;
+use analysis::facts::abstract_domain::value::Value;
 use analysis_model::PrimKinds;
 
 /// `ToBoolean` and the nullish test read no property and run no user code.
@@ -99,8 +99,8 @@ fn is_object(value: &AbstractValue) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{split_nullish, split_truthiness};
-    use crate::facts::abstract_domain::value::{Kind, Value};
-    use crate::facts::sync_effects::value_model::{AbstractValue, Values};
+    use crate::value_model::{AbstractValue, Values};
+    use analysis::facts::abstract_domain::value::{Kind, Value};
     use analysis_model::PrimKinds;
 
     fn prim(kinds: PrimKinds) -> AbstractValue {

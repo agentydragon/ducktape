@@ -17,8 +17,8 @@ pub enum TopLevelItemView<'a> {
 /// against its exact original declarator without rediscovering it by name.
 #[derive(Clone)]
 pub struct SplitDeclaratorProvenance<'a> {
-    pub(crate) parent_item: &'a ModuleItem,
-    pub(crate) declarator_index: usize,
+    pub parent_item: &'a ModuleItem,
+    pub declarator_index: usize,
 }
 
 impl TopLevelItemView<'_> {
@@ -104,7 +104,7 @@ pub fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
 /// make `Math.PI` an Unknown read, and `const Map = class { … }`
 /// makes `new Map()` an Unknown construction, not the built-in.
 /// See docs/design.md A8.
-pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
+pub fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
     let mut shadowed = BTreeSet::new();
     let try_shadow = |name: &str, into: &mut BTreeSet<&'static str>| {
         if let Some(global) = builtins::GLOBALS.get(name) {
@@ -125,7 +125,7 @@ pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSe
     shadowed
 }
 
-pub(crate) fn var_decl_of_item(item: &ModuleItem) -> Option<&VarDecl> {
+pub fn var_decl_of_item(item: &ModuleItem) -> Option<&VarDecl> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
@@ -227,7 +227,7 @@ pub(crate) fn classify_item(item: &ModuleItem) -> StatementKind {
     }
 }
 
-pub(crate) fn collect_declared_names(item: &ModuleItem) -> BTreeSet<Id> {
+pub fn collect_declared_names(item: &ModuleItem) -> BTreeSet<Id> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_names(decl),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => declaration_names(&decl.decl),

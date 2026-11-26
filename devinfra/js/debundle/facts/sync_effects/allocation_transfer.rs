@@ -10,13 +10,13 @@ use super::value_model::{
     ValueExpr, Values,
 };
 use super::world::object_surface::ObjectSurfaceStore;
-use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
-use crate::facts::abstract_domain::builtins::{
+use analysis::analysis_inputs::{NativeIntrinsic, ProofDependencies};
+use analysis::facts::abstract_domain::builtins::{
     ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
 };
-use crate::facts::abstract_domain::integrity::IntrinsicSlot;
-use crate::facts::abstract_domain::primitive;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::abstract_domain::integrity::IntrinsicSlot;
+use analysis::facts::abstract_domain::primitive;
+use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};

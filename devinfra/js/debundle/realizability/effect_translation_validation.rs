@@ -1012,7 +1012,8 @@ mod observed_access_tests {
     use super::*;
 
     use analysis::AnalysisInputs;
-    use analysis::facts::{CellOverlapLaw, analyze_chunk};
+    use analysis::facts::CellOverlapLaw;
+    use analyze::analyze_chunk;
     use source_identity::SourceUnitId;
 
     fn access_map<'a>(

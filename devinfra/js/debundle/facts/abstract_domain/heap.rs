@@ -115,7 +115,7 @@ enum HeapEffect {
 }
 
 /// Heap state of a chunk's tracked object and array literal initializers.
-pub(crate) struct ChunkHeap {
+pub struct ChunkHeap {
     states: BTreeMap<Value, ObjectState>,
     /// Bindings whose every chunk-top initializer is a plain-data shape, and
     /// the allocations each denotes.
@@ -128,8 +128,8 @@ pub(crate) struct ChunkHeap {
 
 /// The `PlainData` projection: admitted bindings with the author inputs each
 /// depends on.
-pub(crate) struct PlainDataBindings {
-    pub(crate) bindings: Vec<String>,
+pub struct PlainDataBindings {
+    pub bindings: Vec<String>,
     pub(crate) dependencies: BTreeMap<String, ProofDependencies>,
     pub(crate) inference_uses: BTreeMap<String, BTreeSet<InferenceUse>>,
 }
@@ -193,7 +193,7 @@ fn literal_roots(
 
 /// Allocations value flow must register as candidate roots before its single
 /// solve, so the heap scan can query what reaches them.
-pub(crate) fn tracked_allocation_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value> {
+pub fn tracked_allocation_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value> {
     let inits_by_name = init_groups(body);
     literal_roots(&inits_by_name, &tracked_bindings(&inits_by_name))
 }
@@ -202,7 +202,7 @@ impl ChunkHeap {
     /// Solve escape and taint for every tracked object initializer.
     /// `arguments` holds author-proven non-escaping call arguments; a binding
     /// kept private through one carries its proof dependencies.
-    pub(crate) fn analyze(
+    pub fn analyze(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         value_flow: &ChunkValueFlow,
@@ -360,7 +360,7 @@ impl ChunkHeap {
 
     /// `PlainData`: tracked bindings never rebound whose every allocation is
     /// `Private` and `Clean`.
-    pub(crate) fn plain_data_bindings(&self) -> PlainDataBindings {
+    pub fn plain_data_bindings(&self) -> PlainDataBindings {
         let bindings: Vec<String> = self
             .bindings
             .iter()

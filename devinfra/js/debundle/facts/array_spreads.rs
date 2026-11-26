@@ -8,14 +8,14 @@ use super::*;
 use source_identity::SourceUnitOrdinal;
 
 #[derive(Debug, Clone)]
-pub(crate) struct StableArraySpreadShape {
+pub struct StableArraySpreadShape {
     pub(crate) consumer: SourceUnitOrdinal,
     pub(crate) producers: BTreeSet<SourceUnitOrdinal>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct StableArraySpreadShapes {
-    pub(crate) by_initializer: BTreeMap<u32, StableArraySpreadShape>,
+    pub by_initializer: BTreeMap<u32, StableArraySpreadShape>,
     pub(crate) by_site: BTreeMap<u32, u32>,
     pub(crate) source_origins: BTreeMap<u32, u32>,
 }

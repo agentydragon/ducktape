@@ -10,27 +10,27 @@ use super::{
     ClassState, DenseArrays, ModuleBindings, NativeRetained, Publication, ReachabilityState,
     Revision, World, WorldScope,
 };
-use crate::facts::abstract_domain::value::Value;
-use crate::facts::sync_effects::allocation_transfer::WritablePrefixState;
-use crate::facts::sync_effects::property_inference::CapturedPropertyDescriptor;
-use crate::facts::sync_effects::value_model::{AbstractValue, DenseArray, LexicalCellId, Values};
+use crate::allocation_transfer::WritablePrefixState;
+use crate::property_inference::CapturedPropertyDescriptor;
+use crate::value_model::{AbstractValue, DenseArray, LexicalCellId, Values};
+use analysis::facts::abstract_domain::value::Value;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The result of joining a family of alternative worlds.
 #[must_use]
 #[derive(Debug, Clone, PartialEq)]
-pub(in crate::facts::sync_effects) struct Joined {
-    pub(in crate::facts::sync_effects) world: World,
+pub(crate) struct Joined {
+    pub(crate) world: World,
     /// Some alternative lost precision in the join.
-    pub(in crate::facts::sync_effects) widened: bool,
+    pub(crate) widened: bool,
     /// The joined world cannot resume the live control cursor; the caller
     /// runs one conservative remainder fallback instead.
-    pub(in crate::facts::sync_effects) refused: Option<JoinRefusal>,
+    pub(crate) refused: Option<JoinRefusal>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::facts::sync_effects) enum JoinRefusal {
+pub(crate) enum JoinRefusal {
     EmptySet,
     DivergentActiveCells,
     DivergentScope,
@@ -45,14 +45,14 @@ trait Join: Sized {
 impl World {
     /// Whether two worlds describe the same prefix. A shared allocation is a
     /// cheap sufficient check; detached copy-on-write roots can still be equal.
-    pub(in crate::facts::sync_effects) fn same_contents(&self, other: &Self) -> bool {
+    pub(crate) fn same_contents(&self, other: &Self) -> bool {
         std::ptr::eq(self, other) || self == other
     }
 
     /// Join every alternative into one world. Refusal is an outcome, never a
     /// panic: the returned world is the pointwise join of the remaining
     /// owners with `reachability.incomplete` set.
-    pub(in crate::facts::sync_effects) fn join(worlds: &[&World]) -> Joined {
+    pub(crate) fn join(worlds: &[&World]) -> Joined {
         let Some(first) = worlds.first().copied() else {
             // Nothing ran, so no scope is known; the caller never resumes
             // from this world.
@@ -123,7 +123,7 @@ impl World {
             reachability,
             // A joined prefix holds only under every alternative's conditions.
             prerequisites: worlds.iter().fold(
-                crate::analysis_inputs::ProofDependencies::default(),
+                analysis::analysis_inputs::ProofDependencies::default(),
                 |mut prerequisites, world| {
                     prerequisites.extend(&world.prerequisites);
                     prerequisites
@@ -743,9 +743,9 @@ mod tests {
     use super::super::prefix_values::{PrefixValues, TopBindings};
     use super::super::{World, WorldScope};
     use super::{JoinRefusal, Joined};
-    use crate::facts::abstract_domain::value::{Kind, Value};
-    use crate::facts::sync_effects::local_operations::LocalBinding;
-    use crate::facts::sync_effects::value_model::{AbstractValue, DenseArray, Values};
+    use crate::local_operations::LocalBinding;
+    use crate::value_model::{AbstractValue, DenseArray, Values};
+    use analysis::facts::abstract_domain::value::{Kind, Value};
     use std::sync::Arc;
     use swc_atoms::Atom;
     use swc_common::SyntaxContext;

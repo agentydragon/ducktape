@@ -14,7 +14,7 @@ use crate::facts::abstract_domain::value::{Kind, Value};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Native-read evidence the synchronous interpreter prepared for the chunk.
-pub(crate) trait NativeHeapReads {
+pub trait NativeHeapReads {
     /// The proof, author input (when not census-backed) and premises of a
     /// native own-data read at `span`.
     fn native_own_data_read(
@@ -38,7 +38,7 @@ pub(crate) trait NativeHeapReads {
 
 /// Exact native freeze calls on fresh records the synchronous interpreter
 /// certified.
-pub(crate) trait FreshFreezeInputs {
+pub trait FreshFreezeInputs {
     /// The author input certifying `call`, if the proof covers it.
     fn input_evidence(
         &self,
@@ -46,7 +46,7 @@ pub(crate) trait FreshFreezeInputs {
     ) -> Option<&crate::analysis_inputs::NativeOperationInputEvidence>;
 }
 
-pub(crate) struct HeapContentProofs<'a> {
+pub struct HeapContentProofs<'a> {
     pub local_class: &'a LocalClassHeapProof,
     pub set_iterable: &'a SetIterableProof,
     pub fresh_freeze: &'a dyn FreshFreezeInputs,
@@ -57,7 +57,7 @@ pub(crate) struct HeapContentProofs<'a> {
 
 /// The heap-content cells of a chunk's bodies, and the report uses of the
 /// native-read certificates the collection consumed per statement.
-pub(crate) struct ChunkHeapContents {
+pub struct ChunkHeapContents {
     /// First-order pre-await body cells of each callable, keyed like the
     /// execution index's callables (the body's span start).
     pub callables: BTreeMap<u32, HeapContentCells>,
@@ -70,7 +70,7 @@ pub(crate) struct ChunkHeapContents {
     )>,
 }
 
-pub(crate) fn annotate_heap_contents(
+pub fn annotate_heap_contents(
     body: &[TopLevelItemView<'_>],
     value_flow: &ChunkValueFlow,
     proofs: HeapContentProofs<'_>,

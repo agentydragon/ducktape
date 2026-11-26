@@ -14,7 +14,7 @@ use super::super::kernel::context::{
     BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
     NativeContext, Unproved,
 };
-use crate::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
+use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
 // Module-qualified: the builtin table's `Invocation` also has a
 // tagged-template form the kernel never requests.
 use super::super::kernel::frame::{
@@ -30,15 +30,15 @@ use super::super::value_model::{
     ValueExpr, Values,
 };
 use super::super::world::World;
-use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
-use crate::execution_evidence::{
+use analysis::analysis_inputs::{NativeIntrinsic, ProofDependencies};
+use analysis::execution_evidence::{
     AssumedEffectReason, ExecutionOperation, ExecutionPrecisionLossReason,
 };
-use crate::facts::OwnerInitializationCoverageRefusalReason;
-use crate::facts::abstract_domain::builtins;
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
-use crate::reports::schema::NativeIntegrityGuard;
+use analysis::facts::OwnerInitializationCoverageRefusalReason;
+use analysis::facts::abstract_domain::builtins;
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
+use analysis::reports::schema::NativeIntegrityGuard;
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -46,7 +46,7 @@ use swc_common::{DUMMY_SP, Span};
 use swc_ecma_ast::*;
 
 #[derive(Clone, Copy)]
-pub(in crate::facts::sync_effects) enum LocalExecutionScope {
+pub(crate) enum LocalExecutionScope {
     Callable(u32),
     /// A root owner's variable initializer or expression statement.
     Root,
@@ -56,7 +56,7 @@ pub(in crate::facts::sync_effects) enum LocalExecutionScope {
 }
 
 impl LocalExecutionScope {
-    pub(in crate::facts::sync_effects) fn caller(self) -> Option<u32> {
+    pub(crate) fn caller(self) -> Option<u32> {
         match self {
             Self::Callable(key) => Some(key),
             Self::Root | Self::Constructor(_) => None,
@@ -64,12 +64,12 @@ impl LocalExecutionScope {
     }
 }
 
-pub(in crate::facts::sync_effects) struct LocalExecutionContext<'a, 'source, 'rule> {
-    pub(in crate::facts::sync_effects) executor: &'a mut Executor<'source, 'rule>,
-    pub(in crate::facts::sync_effects) outcome: &'a mut Outcome,
-    pub(in crate::facts::sync_effects) owner: SourceUnitOrdinal,
-    pub(in crate::facts::sync_effects) scope: LocalExecutionScope,
-    pub(in crate::facts::sync_effects) body: &'a LocalBody,
+pub(crate) struct LocalExecutionContext<'a, 'source, 'rule> {
+    pub(crate) executor: &'a mut Executor<'source, 'rule>,
+    pub(crate) outcome: &'a mut Outcome,
+    pub(crate) owner: SourceUnitOrdinal,
+    pub(crate) scope: LocalExecutionScope,
+    pub(crate) body: &'a LocalBody,
 }
 
 impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
@@ -95,7 +95,7 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
 }
 
 impl<'source> LocalExecutionContext<'_, 'source, '_> {
-    pub(in crate::facts::sync_effects) fn calls(&self) -> &'source [Arc<Call>] {
+    pub(crate) fn calls(&self) -> &'source [Arc<Call>] {
         match self.scope {
             LocalExecutionScope::Callable(key) => &self.executor.inputs.index.callables[&key].calls,
             LocalExecutionScope::Root => &self.executor.inputs.index.top_calls[self.owner.0],
@@ -249,7 +249,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         }
     }
 
-    pub(in crate::facts::sync_effects) fn fallback(
+    pub(crate) fn fallback(
         &mut self,
         frame: &LocalFrame,
         reached: Values,
@@ -302,7 +302,7 @@ impl LocalExecutionContext<'_, '_, '_> {
         &self,
         kind: CallKind,
         callee: &ValueExpr,
-    ) -> Option<crate::analysis_inputs::ForeignCallSummary> {
+    ) -> Option<analysis::analysis_inputs::ForeignCallSummary> {
         self.executor
             .foreign_call_summary(kind, callee)
             .filter(|summary| summary.provider_cell_reads.is_empty())
@@ -314,7 +314,7 @@ impl LocalExecutionContext<'_, '_, '_> {
     fn substituted_call_summary(
         &self,
         call: &super::super::execution_index::Call,
-    ) -> Option<crate::analysis_inputs::ForeignCallSummary> {
+    ) -> Option<analysis::analysis_inputs::ForeignCallSummary> {
         if call.has_spread {
             return None;
         }
@@ -1048,8 +1048,8 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         let (selection, effects) =
             array_transfer::select_method(self.executor, receivers, property)?;
         for cell in [
-            crate::facts::EffectCell::ObjectShape(selection.object()),
-            crate::facts::EffectCell::OwnProperty {
+            analysis::facts::EffectCell::ObjectShape(selection.object()),
+            analysis::facts::EffectCell::OwnProperty {
                 origin: selection.object(),
                 property: selection.property().into(),
             },
@@ -1144,7 +1144,7 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
                 .observations
                 .record_native_operation_input_use(
                     span,
-                    crate::reports::schema::NativeOperationInputUse {
+                    analysis::reports::schema::NativeOperationInputUse {
                         evidence,
                         source_location: None,
                         span,

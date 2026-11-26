@@ -1,10 +1,10 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
 use super::world::WorldScope;
-use crate::facts::abstract_domain::builtins::IterationRow;
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::value_flow::static_prop as static_string_prop;
-use crate::inference::{FactContext, IterativeFacts, IterativeInference, IterativeRules};
+use analysis::facts::abstract_domain::builtins::IterationRow;
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::value_flow::static_prop as static_string_prop;
+use analysis::inference::{FactContext, IterativeFacts, IterativeInference, IterativeRules};
 use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use std::cmp::Ordering;
@@ -35,7 +35,7 @@ pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
 /// ordering remains the lexicographic element order. Clones share immutable
 /// storage until a write, including snapshots used by pointer witnesses.
 #[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct Values(Option<Arc<Vec<AbstractValue>>>);
+pub struct Values(Option<Arc<Vec<AbstractValue>>>);
 
 impl std::fmt::Debug for Values {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -216,7 +216,7 @@ impl<'a> IntoIterator for &'a Values {
 
 /// A shared consuming iterator clones only the elements it yields.
 #[derive(Clone)]
-pub(super) enum ValuesIntoIter {
+pub enum ValuesIntoIter {
     Owned(std::vec::IntoIter<AbstractValue>),
     Shared {
         remaining: std::ops::Range<usize>,
@@ -261,7 +261,7 @@ impl std::iter::FusedIterator for ValuesIntoIter {}
 pub(super) type Context = OrdMap<Id, Values>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct CallSite {
+pub struct CallSite {
     start: u32,
     end: u32,
 }
@@ -302,7 +302,7 @@ impl CallSite {
 /// captures becomes identity equality, so comparing value sets and cache keys
 /// never recursively compares a shared capture DAG along every path.
 #[derive(Debug, Clone)]
-pub(super) struct Captured<T> {
+pub struct Captured<T> {
     identity: usize,
     pub(super) values: Arc<T>,
 }
@@ -396,7 +396,7 @@ impl<T> Hash for Captured<T> {
 pub(super) struct LexicalCellId(pub(super) usize);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct LexicalCaptures {
+pub struct LexicalCaptures {
     pub(super) snapshots: Context,
     pub(super) cells: OrdMap<Id, LexicalCellId>,
     /// Source containment only, never a trusted receiver or instance identity.
@@ -448,7 +448,7 @@ impl<T> Ord for Captured<T> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) enum RetainedResultKind {
+pub enum RetainedResultKind {
     Factory,
     Constructor,
 }
@@ -477,7 +477,7 @@ pub(super) enum ProviderInput {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct SymbolicInputId {
+pub struct SymbolicInputId {
     pub(super) scope: ProviderScopeId,
     pub(super) input: ProviderInput,
 }
@@ -486,14 +486,14 @@ pub(super) struct SymbolicInputId {
 /// isolated provider query's closures apart from the application's, even when
 /// both create the same source callable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct HeapAddress {
+pub struct HeapAddress {
     pub(super) scope: WorldScope,
     pub(super) callable: u32,
 }
 
 /// Provenance of a local class capability; neither variant proves allocation identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) enum InstanceOrigin {
+pub enum InstanceOrigin {
     Constructed,
     Projected,
 }
@@ -501,7 +501,7 @@ pub(super) enum InstanceOrigin {
 /// The interpreter's values: the shared lattice plus carriers for the
 /// callable and heap summaries the lattice does not express yet.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) enum AbstractValue {
+pub enum AbstractValue {
     Value(Value),
     /// Unknown kind/capabilities; only forwarding, storing and returning this
     /// query-local input is covered. It proves no shape or native identity.
@@ -1801,7 +1801,7 @@ pub(super) fn infer_namespace_aliases(
     assignments: &[&(Id, ValueExpr)],
     facts: &NamespaceValueFacts,
 ) -> BTreeSet<Id> {
-    use crate::inference::{FactContext, IterativeInference, IterativeRules};
+    use analysis::inference::{FactContext, IterativeInference, IterativeRules};
     struct AliasRules<'a> {
         namespace: &'a Id,
         assignments: &'a [&'a (Id, ValueExpr)],
@@ -2040,7 +2040,7 @@ mod tests {
     use super::{
         AbstractValue, CaptureInterner, HeapAddress, InstanceOrigin, LexicalCaptures, Values,
     };
-    use crate::facts::sync_effects::world::WorldScope;
+    use crate::world::WorldScope;
     use imbl::OrdSet;
     use std::hash::{DefaultHasher, Hash, Hasher};
     use std::sync::Arc;

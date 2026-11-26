@@ -27,6 +27,7 @@ rust_library(
         "//devinfra/js/debundle:js_ast",
         "//devinfra/js/debundle:program_analysis",
         "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/analyze",
         "//devinfra/js/debundle/artifacts:artifact",
         "//devinfra/js/debundle/spec",
         "@crates//:anyhow",

@@ -15,14 +15,14 @@ use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
 use super::super::value_model::{
     AbstractValue, Context, HeapAddress, InstanceOrigin, RetainedResultKind, ValueExpr, Values,
 };
-use crate::facts::abstract_domain::builtins::IntrinsicOp;
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::evaluation_effects::GlobalAccessKind;
-use crate::reports::schema::CallbackFactoryUseKind;
+use analysis::facts::abstract_domain::builtins::IntrinsicOp;
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::evaluation_effects::GlobalAccessKind;
+use analysis::reports::schema::CallbackFactoryUseKind;
 use swc_common::Span;
 use swc_ecma_ast::*;
 
-pub(in crate::facts::sync_effects) struct ApplicationAllocationContext<'a, 'source, 'rule> {
+pub(crate) struct ApplicationAllocationContext<'a, 'source, 'rule> {
     executor: &'a mut Executor<'source, 'rule>,
     environment: &'a Context,
     captures: &'a Context,
@@ -95,7 +95,7 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
 }
 
 impl Executor<'_, '_> {
-    pub(in crate::facts::sync_effects) fn evaluate_transfer(
+    pub(crate) fn evaluate_transfer(
         &mut self,
         expr: &ValueExpr,
         env: &Context,
@@ -435,7 +435,7 @@ impl Executor<'_, '_> {
                     if let Some(&(owner, call_span)) = self.inputs.call_site_owners.get(span) {
                         self.record_returned_record_use(
                             callee,
-                            crate::reports::schema::ReturnedRecordUseKind::ReturnCapability,
+                            analysis::reports::schema::ReturnedRecordUseKind::ReturnCapability,
                             owner,
                             call_span,
                         );

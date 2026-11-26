@@ -31,9 +31,8 @@ use analysis::AnalysisInputs;
 use analysis::analysis_inputs::ResolvedCommutingStatements;
 use analysis::diagnostics::{ChunkDiagnostic, Diagnostics};
 use analysis::execution_evidence::SourceLocator;
-use analysis::facts::{
-    ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
-};
+use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis};
+use analyze::analyze_chunk_with_policy;
 use graph::GraphOptions;
 use graph::{
     atomic_groups::DependencyGraphAndAtomicGroups,

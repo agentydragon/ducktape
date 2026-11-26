@@ -259,7 +259,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
         self
     }
 
-    pub(crate) fn seed(&mut self, key: R::Key, value: R::Fact) {
+    pub fn seed(&mut self, key: R::Key, value: R::Fact) {
         let mut proof_edges = ProofTransfers::default();
         let mut context = IterativeContext::<R>::new_with_scratch(
             &mut self.facts,
@@ -498,14 +498,14 @@ pub struct CompletedTransfer<Fact> {
 }
 
 impl<Fact> CompletedTransfer<Fact> {
-    pub(crate) fn new(value: Fact, dependencies: ProofDependencies) -> Self {
+    pub fn new(value: Fact, dependencies: ProofDependencies) -> Self {
         Self {
             value,
             dependencies,
         }
     }
 
-    pub(crate) fn consume<Key, StoreFact>(
+    pub fn consume<Key, StoreFact>(
         self,
         context: &mut (impl FactContext<Key, StoreFact> + ?Sized),
     ) -> Fact {
@@ -541,7 +541,7 @@ impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
         self.facts.keys()
     }
 
-    pub(crate) fn into_values(self) -> BTreeMap<Key, Fact> {
+    pub fn into_values(self) -> BTreeMap<Key, Fact> {
         self.facts
             .into_iter()
             .map(|(key, judgment)| (key, judgment.value))

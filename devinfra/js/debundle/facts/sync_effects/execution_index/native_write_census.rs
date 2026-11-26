@@ -5,9 +5,9 @@
 
 use super::property_keys::{PropertyKeyDomain, PropertyKeyExpr};
 use super::{IntrinsicRoots, NativeReceiverRoot, NativeReceiverRoots, ValueExpr};
-use crate::analysis_inputs::{HostBehaviorKey, NativeIntegrity, NativeIntrinsic};
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::reports::schema::{
+use analysis::analysis_inputs::{HostBehaviorKey, NativeIntegrity, NativeIntrinsic};
+use analysis::inference::{FactContext, IterativeInference, IterativeRules};
+use analysis::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativeReceiverPath, NativeWriteSlot,
 };
@@ -247,7 +247,7 @@ pub(super) fn source_slot_overlap<'a>(
 }
 
 #[derive(Debug)]
-pub(in crate::facts::sync_effects) struct IntrinsicWriteTarget {
+pub(crate) struct IntrinsicWriteTarget {
     pub(super) owner: SourceUnitOrdinal,
     pub(super) activation_callable: Option<u32>,
     /// The constructor whose `this` a direct member operation writes.
@@ -255,7 +255,7 @@ pub(in crate::facts::sync_effects) struct IntrinsicWriteTarget {
     pub(super) constructor_this: Option<u32>,
     pub(super) span: Span,
     pub(super) operation: NativeMutationOperation,
-    pub(in crate::facts::sync_effects) receiver: ValueExpr,
+    pub(crate) receiver: ValueExpr,
     pub(super) key: Option<PropertyKeyExpr>,
     pub(super) additional_keys: Vec<PropertyKeyExpr>,
     /// The value an assignment stores; `None` for every other operation.
@@ -266,15 +266,15 @@ pub(in crate::facts::sync_effects) struct IntrinsicWriteTarget {
 /// This deliberately has no within-body ordering: all of a body's writes
 /// precede its first modeled native guard.
 #[derive(Clone, Default)]
-pub(in crate::facts::sync_effects) struct NativePointEffects {
-    pub(in crate::facts::sync_effects) roots: IntrinsicRoots,
+pub(crate) struct NativePointEffects {
+    pub(crate) roots: IntrinsicRoots,
     prototype_site_count: usize,
     prototype_any_key: usize,
     prototype_known_keys: BTreeMap<String, usize>,
 }
 
 impl NativePointEffects {
-    pub(in crate::facts::sync_effects) fn extend(&mut self, other: &Self) {
+    pub(crate) fn extend(&mut self, other: &Self) {
         self.roots.extend(&other.roots);
         self.prototype_site_count += other.prototype_site_count;
         self.prototype_any_key += other.prototype_any_key;
@@ -300,10 +300,7 @@ impl NativePointEffects {
         }
     }
 
-    pub(in crate::facts::sync_effects) fn blocking_prototype_mutations(
-        &self,
-        property: Option<&str>,
-    ) -> usize {
+    pub(crate) fn blocking_prototype_mutations(&self, property: Option<&str>) -> usize {
         match property {
             Some(property) => {
                 self.prototype_any_key
@@ -534,7 +531,7 @@ pub fn apply_intrinsics_never_written(
     integrity: &mut NativeIntegrity,
     families: &BTreeSet<NativeIntrinsic>,
 ) -> std::result::Result<(), Vec<String>> {
-    use crate::reports::schema::{NeverWrittenOverride, NeverWrittenReach};
+    use analysis::reports::schema::{NeverWrittenOverride, NeverWrittenReach};
     let exact_family = |slot: &NativeWriteSlot| match &slot.receiver {
         NativeReceiverPath::Constructor(family) | NativeReceiverPath::Prototype(family) => {
             families.contains(family).then_some(*family)
@@ -704,10 +701,10 @@ mod native_integrity_closure_tests {
         NativeSlotOverlap, NativeWriteCensus, array_spread_protocol_slot_overlap,
         resolve_array_spread_protocol_integrity, resolve_native_integrity, source_slot_overlap,
     };
-    use crate::analysis_inputs::{
+    use analysis::analysis_inputs::{
         CallbackFactoryEvidence, CallbackObjectArguments, NativeIntrinsic,
     };
-    use crate::reports::schema::{
+    use analysis::reports::schema::{
         NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativeReceiverPath,
         NativeUnreachableBranch, NativeWriteSlot,
     };
@@ -1072,7 +1069,7 @@ mod native_integrity_closure_tests {
         input_dependent
             .witness
             .value_input_refs
-            .insert(crate::analysis_inputs::ValueInputRef {
+            .insert(analysis::analysis_inputs::ValueInputRef {
                 defining_chunk: "test".to_owned(),
                 input_index: 0,
             });

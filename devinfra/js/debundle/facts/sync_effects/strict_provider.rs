@@ -4,9 +4,9 @@
 use super::adapters::provider::{ProviderContext, SealedProviderBody};
 use super::execution_index::ExecutionIndex;
 use super::value_model::{AbstractValue, ProviderInput, ProviderScopeId};
-use crate::analysis_inputs::{ForeignInvocation, ForeignReturn};
-use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis::analysis_inputs::{ForeignInvocation, ForeignReturn};
+use analysis::facts::abstract_domain::foreign_call::DerivedForeignCall;
+use analysis::facts::abstract_domain::value::{Kind, Value};
 use std::collections::BTreeSet;
 use swc_ecma_ast::Id;
 
@@ -264,7 +264,7 @@ pub(super) fn derive_class(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::facts::item_views::top_level_item_views;
+    use analysis::facts::item_views::top_level_item_views;
     use swc_ecma_ast::{Decl, Expr, FnDecl, ModuleItem, Stmt};
     use swc_ecma_visit::{Visit, VisitWith};
 
@@ -295,7 +295,7 @@ mod tests {
             _ => panic!("provider fixture"),
         };
         let views = top_level_item_views(&module.body);
-        let prepared = super::super::execution_index::prepare_callable_capabilities(
+        let prepared = crate::execution_index::prepare_callable_capabilities(
             &views,
             BTreeSet::from(["make".into()]),
             Vec::new(),
@@ -410,7 +410,7 @@ mod tests {
                 module.visit_with(&mut make);
                 let key = make.0.expect("canonical nested make callable");
                 let views = top_level_item_views(&module.body);
-                let prepared = super::super::execution_index::prepare_callable_capabilities(
+                let prepared = crate::execution_index::prepare_callable_capabilities(
                     &views,
                     BTreeSet::from(["make".into()]),
                     Vec::new(),
@@ -454,7 +454,7 @@ mod tests {
                 module.visit_with(&mut make);
                 let key = make.0.expect("canonical nested make callable");
                 let views = top_level_item_views(&module.body);
-                let prepared = super::super::execution_index::prepare_callable_capabilities(
+                let prepared = crate::execution_index::prepare_callable_capabilities(
                     &views,
                     BTreeSet::from(["make".into()]),
                     Vec::new(),

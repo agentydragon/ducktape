@@ -12,21 +12,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
 
 #[derive(Debug)]
-pub(crate) struct FunctionBindingFacts {
-    pub(crate) values: Values,
-    pub(crate) rebound: bool,
+pub struct FunctionBindingFacts {
+    pub values: Values,
+    pub rebound: bool,
 }
 
 #[derive(Debug)]
-pub(crate) struct NamespaceWrapperCandidateFacts {
-    pub(crate) object: Id,
-    pub(crate) weak_map: Id,
+pub struct NamespaceWrapperCandidateFacts {
+    pub object: Id,
+    pub weak_map: Id,
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct CallableInferenceInputs {
-    pub(crate) functions: BTreeMap<Id, FunctionBindingFacts>,
-    pub(crate) namespace_wrappers: BTreeMap<u32, NamespaceWrapperCandidateFacts>,
+pub struct CallableInferenceInputs {
+    pub functions: BTreeMap<Id, FunctionBindingFacts>,
+    pub namespace_wrappers: BTreeMap<u32, NamespaceWrapperCandidateFacts>,
 }
 
 impl CallableInferenceInputs {

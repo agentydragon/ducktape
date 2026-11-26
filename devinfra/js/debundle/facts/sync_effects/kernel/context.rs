@@ -13,13 +13,13 @@ use super::super::value_model::{CallSite, CapturedContext, LexicalCaptures, Valu
 use super::super::world::World;
 use super::closure::{CapturePolicy, ClosureAdmission};
 use super::frame::{LocalCallRequest, LocalFrame, LocalValueResult, RemainderDisposition};
-use crate::analysis_inputs::ProofDependencies;
-use crate::execution_evidence::OrderedFieldReadRefusal;
+use analysis::analysis_inputs::ProofDependencies;
+use analysis::execution_evidence::OrderedFieldReadRefusal;
 use rustc_hash::FxHashSet;
 use swc_common::Span;
 use swc_ecma_ast::Id;
 
-pub(in crate::facts::sync_effects) trait BindingContext {
+pub(crate) trait BindingContext {
     fn read_binding(
         &mut self,
         binding: &Id,
@@ -56,20 +56,18 @@ pub(in crate::facts::sync_effects) trait BindingContext {
 /// Which declared bindings get `World` cells. A binding without one lives only
 /// in the frame, so no closure can observe its stores.
 #[derive(Clone, Copy)]
-pub(in crate::facts::sync_effects) struct CellPolicy<'a> {
+pub(crate) struct CellPolicy<'a> {
     /// The bindings some closure captures.
-    pub(in crate::facts::sync_effects) captured: &'a FxHashSet<Id>,
+    pub(crate) captured: &'a FxHashSet<Id>,
 }
 
 impl CellPolicy<'_> {
-    pub(in crate::facts::sync_effects) fn owns(self, binding: &Id) -> bool {
+    pub(crate) fn owns(self, binding: &Id) -> bool {
         self.captured.contains(binding)
     }
 }
 
-pub(in crate::facts::sync_effects) trait CallContext:
-    BindingContext
-{
+pub(crate) trait CallContext: BindingContext {
     /// The one selected direct-import call may prove its module callee read
     /// after source closure validation. Other reads use ordinary coverage.
     fn read_call_callee(
@@ -89,9 +87,7 @@ pub(in crate::facts::sync_effects) trait CallContext:
     ) -> Result<LocalValueResult, RemainderDisposition>;
 }
 
-pub(in crate::facts::sync_effects) trait HeapContext:
-    OwnDataContext
-{
+pub(crate) trait HeapContext: OwnDataContext {
     fn index(&self) -> &ExecutionIndex;
     /// The stores this body mutates in place. Observations never go here;
     /// the kernel returns them in its ledger.
@@ -123,7 +119,7 @@ pub(in crate::facts::sync_effects) trait HeapContext:
     }
 }
 
-pub(in crate::facts::sync_effects) trait NativeContext {
+pub(crate) trait NativeContext {
     /// The native iterator protocol over an already evaluated operand, as a
     /// receipt the adapter proves from its prefix (intact Array intrinsics,
     /// settled dense slots or a primitive-array premise). The kernel's
@@ -188,7 +184,7 @@ pub(in crate::facts::sync_effects) trait NativeContext {
 
 /// An operation the kernel could not prove from its own state. Its operands
 /// have already run; the adapter must not evaluate them again.
-pub(in crate::facts::sync_effects) enum Unproved<'a> {
+pub(crate) enum Unproved<'a> {
     /// The receiver cell was read at this operation and no fresh-local or
     /// module-prefix own-data slot was found.
     FieldRead {
@@ -214,7 +210,7 @@ pub(in crate::facts::sync_effects) enum Unproved<'a> {
     CaptureStore { values: &'a Values, span: Span },
 }
 
-pub(in crate::facts::sync_effects) enum Disposition {
+pub(crate) enum Disposition {
     /// Only for `Unproved::FieldRead`: an established read proof outside the
     /// kernel's own-data transfer supplied the value and the body continues.
     Resolved(AllocationValue),
@@ -225,7 +221,7 @@ pub(in crate::facts::sync_effects) enum Disposition {
 }
 
 /// Everything the kernel asks of one adapter.
-pub(in crate::facts::sync_effects) trait KernelContext:
+pub(crate) trait KernelContext:
     BindingContext + CallContext + HeapContext + NativeContext + ControlContext
 {
 }
@@ -237,7 +233,7 @@ impl<C: BindingContext + CallContext + HeapContext + NativeContext + ControlCont
 
 /// What a consumer does with a body whose next test is undecided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::facts::sync_effects) enum ForkPolicy {
+pub(crate) enum ForkPolicy {
     /// A scalar consumer has one result and nowhere to join: the body is
     /// refused at the fork.
     Refuse,
@@ -245,7 +241,7 @@ pub(in crate::facts::sync_effects) enum ForkPolicy {
     Explore,
 }
 
-pub(in crate::facts::sync_effects) trait ControlContext {
+pub(crate) trait ControlContext {
     fn unproved(&mut self, frame: &mut LocalFrame, what: Unproved<'_>) -> Disposition;
     fn fork_policy(&self) -> ForkPolicy;
     /// Everything a later operation on the same path reads back from this

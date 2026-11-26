@@ -13,17 +13,17 @@ pub enum CallableDeclaration {
 }
 
 impl CallableDeclaration {
-    pub(crate) fn start(self) -> u32 {
+    pub fn start(self) -> u32 {
         match self {
             Self::Function(start) | Self::Class(start) | Self::Initializer { start, .. } => start,
         }
     }
 
-    pub(crate) fn is_declaration(self) -> bool {
+    pub fn is_declaration(self) -> bool {
         matches!(self, Self::Function(_) | Self::Class(_))
     }
 
-    pub(crate) fn permits_foreign_summary(self, captures_empty: bool) -> bool {
+    pub fn permits_foreign_summary(self, captures_empty: bool) -> bool {
         match self {
             Self::Function(_) | Self::Class(_) => true,
             Self::Initializer {

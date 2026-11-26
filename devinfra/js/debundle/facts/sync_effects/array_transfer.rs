@@ -2,14 +2,14 @@
 
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, Values};
-use crate::analysis_inputs::ProofDependencies;
-use crate::execution_evidence::OrderedCallAdmissionRefusal;
-use crate::facts::EffectCell;
-use crate::facts::abstract_domain::builtins::{
+use analysis::analysis_inputs::ProofDependencies;
+use analysis::execution_evidence::OrderedCallAdmissionRefusal;
+use analysis::facts::EffectCell;
+use analysis::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ITERATION_ROWS, IterationResult, IterationRow,
 };
-use crate::facts::abstract_domain::integrity::IntrinsicSlot;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::abstract_domain::integrity::IntrinsicSlot;
+use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 
 pub(super) trait ArrayContext {

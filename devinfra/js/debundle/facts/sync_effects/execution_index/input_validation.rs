@@ -55,9 +55,9 @@ impl ExecutionIndex {
         &self,
         integrity: &IntegrityFlags,
     ) -> BTreeMap<u32, InferredSetConstruction> {
-        use crate::analysis_provenance::InferenceRule;
         use IntrinsicSlot::{ArrayIteratorPrototype, Global, Prototype, SetIteratorPrototype};
         use NativeIntrinsic::{Array, Set};
+        use analysis::analysis_provenance::InferenceRule;
         if !self.dynamic_scope_owners.is_empty() {
             return BTreeMap::new();
         }
@@ -145,7 +145,7 @@ impl ExecutionIndex {
                 interval_bindings.push((*binding).clone());
                 InferredSetOperation::ProtectedSpread {
                     source: source.clone(),
-                    interval: Box::new(crate::analysis_inputs::StableSetIterableUse {
+                    interval: Box::new(analysis::analysis_inputs::StableSetIterableUse {
                         source_span: *source_span,
                         spread_token_span: *spread_token_span,
                         interval_bindings,
@@ -204,9 +204,7 @@ impl ExecutionIndex {
     }
 
     /// The author and host premises the completed census consumed.
-    pub(in crate::facts::sync_effects) fn native_integrity_dependencies(
-        &self,
-    ) -> ProofDependencies {
+    pub(crate) fn native_integrity_dependencies(&self) -> ProofDependencies {
         let bundle_globals = self
             .native_integrity_host_behavior
             .contains(&HostBehaviorKey::PredefinedGlobals);
@@ -232,7 +230,7 @@ impl ExecutionIndex {
 
     /// The completed census as slot flags, with the `IntrinsicIntact` axioms
     /// of every validated native input.
-    pub(in crate::facts::sync_effects) fn integrity_flags(&self) -> IntegrityFlags {
+    pub(crate) fn integrity_flags(&self) -> IntegrityFlags {
         IntegrityFlags::new(
             self.dynamic_scope_owners.is_empty(),
             self.mutated_intrinsic_roots.clone(),
@@ -1240,7 +1238,7 @@ impl ExecutionIndex {
             })
     }
 
-    pub(in crate::facts::sync_effects) fn direct_freeze_return_call(
+    pub(crate) fn direct_freeze_return_call(
         &self,
         binding: &Id,
         selected_span: Span,

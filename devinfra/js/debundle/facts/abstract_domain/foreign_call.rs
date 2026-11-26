@@ -15,17 +15,17 @@ pub struct DerivedForeignCall {
     /// Every private provider var cell the body reads, retained or not.
     pub provider_cell_reads: BTreeSet<String>,
     pub native_constructions: BTreeSet<NativeIntrinsic>,
-    pub(crate) dependencies: ProofDependencies,
+    pub dependencies: ProofDependencies,
     /// Set for a parameterless call that always returns one fresh record.
-    pub(crate) record: Option<Vec<RecordMember>>,
+    pub record: Option<Vec<RecordMember>>,
     /// The source range of the closure literal every call returns a fresh
     /// instance of.
-    pub(crate) closure: Option<Range<u32>>,
+    pub closure: Option<Range<u32>>,
 }
 
 /// A method or getter of a returned record literal.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RecordMember {
-    pub(crate) name: String,
-    pub(crate) function_start: u32,
+pub struct RecordMember {
+    pub name: String,
+    pub function_start: u32,
 }

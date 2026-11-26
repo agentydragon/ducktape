@@ -111,7 +111,7 @@ pub struct NativeMutationWitness {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unreachable_branch: Option<NativeUnreachableBranch>,
     #[serde(skip)]
-    pub(crate) span: swc_common::Span,
+    pub span: swc_common::Span,
 }
 
 /// A source-visible receiver path. Constructor/prototype paths identify the
@@ -145,7 +145,7 @@ pub enum NativePropertyKey {
 
 impl NativePropertyKey {
     /// Whether a key in this domain may be the string `name`.
-    pub(crate) fn may_be_string(&self, name: &str) -> bool {
+    pub fn may_be_string(&self, name: &str) -> bool {
         match self {
             Self::String(key) => key == name,
             Self::Affixed { prefix, suffix } => {
@@ -173,11 +173,11 @@ pub struct NativeUnreachableBranch {
     pub callback_location: Option<SourceLocation>,
     pub guard_location: Option<SourceLocation>,
     #[serde(skip)]
-    pub(crate) guard_span: swc_common::Span,
+    pub guard_span: swc_common::Span,
     #[serde(skip)]
-    pub(crate) wrapper_call_span: swc_common::Span,
+    pub wrapper_call_span: swc_common::Span,
     #[serde(skip)]
-    pub(crate) callback_span: swc_common::Span,
+    pub callback_span: swc_common::Span,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
@@ -231,7 +231,7 @@ pub struct NativePrototypeMutation {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
     #[serde(skip)]
-    pub(crate) span: swc_common::Span,
+    pub span: swc_common::Span,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -573,7 +573,7 @@ pub struct NativeOperationInputUse {
     pub evidence: crate::analysis_inputs::NativeOperationInputEvidence,
     pub source_location: Option<SourceLocation>,
     #[serde(skip)]
-    pub(crate) span: swc_common::Span,
+    pub span: swc_common::Span,
 }
 
 /// A consumed author assertion on a local unary record-retaining factory.
@@ -585,7 +585,7 @@ pub struct LocalRecordFactoryUse {
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
     #[serde(skip)]
-    pub(crate) span: swc_common::Span,
+    pub span: swc_common::Span,
 }
 
 /// A direct call of an annotated record factory whose argument is outside the
@@ -613,7 +613,7 @@ pub struct LocalRecordFactoryRejection {
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
     #[serde(skip)]
-    pub(crate) span: swc_common::Span,
+    pub span: swc_common::Span,
 }
 
 /// The first operation that inserted `ClassMembers(key)` into the escaped
@@ -821,7 +821,7 @@ pub struct ReentryFreeOperationUse {
     pub operation: spec::ReentryFreeOperation,
     pub source_location: Option<SourceLocation>,
     #[serde(skip)]
-    pub(crate) span: swc_common::Span,
+    pub span: swc_common::Span,
 }
 
 /// Serializable projection of [`EffectCell`]: binding cells carry the

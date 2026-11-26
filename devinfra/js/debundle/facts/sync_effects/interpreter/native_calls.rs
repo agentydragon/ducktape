@@ -8,7 +8,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// identity: the callee names the original global and the row's slots are
     /// intact, or asserted at this exact call. Operand eligibility is checked
     /// separately.
-    pub(in crate::facts::sync_effects) fn exact_native_call_row(
+    pub(crate) fn exact_native_call_row(
         &mut self,
         kind: CallKind,
         callee: &ValueExpr,
@@ -86,7 +86,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         ))
     }
 
-    pub(in crate::facts::sync_effects) fn native_member_lookup_is_data(
+    pub(crate) fn native_member_lookup_is_data(
         &mut self,
         callee: &ValueExpr,
         site: Option<u32>,
@@ -122,10 +122,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Reuse the exact identity/lookup proof of the canonical outer call.
     /// Neither this lookup nor native identity certifies the invocation's
     /// inputs, timing, purity or throws.
-    pub(in crate::facts::sync_effects) fn callee_lookup_is_certified(
-        &mut self,
-        lookup: &Call,
-    ) -> bool {
+    pub(crate) fn callee_lookup_is_certified(&mut self, lookup: &Call) -> bool {
         if self.native_member_lookup_is_data(&lookup.callee, None) {
             return true;
         }
@@ -180,7 +177,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     /// An admitted row certifies the operation after its inputs have
     /// evaluated. It does not infer purity or exception freedom.
-    pub(in crate::facts::sync_effects) fn resolve_native_call(
+    pub(crate) fn resolve_native_call(
         &mut self,
         kind: CallKind,
         callee: &ValueExpr,
@@ -206,7 +203,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// first; each proof names the operands it shows to be exact ordinary
     /// objects, on which the listed internal methods run no user code. Every
     /// remaining coercion must land on a primitive operand.
-    pub(in crate::facts::sync_effects) fn resolve_native_call_transfer(
+    pub(crate) fn resolve_native_call_transfer(
         &mut self,
         kind: CallKind,
         callee: &ValueExpr,
@@ -372,7 +369,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let source_span = site.source_span();
             self.observations.record_native_operation_input_use(
                 source_span,
-                crate::reports::schema::NativeOperationInputUse {
+                analysis::reports::schema::NativeOperationInputUse {
                     evidence: *evidence,
                     source_location: None,
                     span: source_span,
@@ -471,7 +468,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         self.native_iterable(NativeIterableUse::SetConstruction { site, input }, values)
     }
 
-    pub(in crate::facts::sync_effects) fn native_iterable(
+    pub(crate) fn native_iterable(
         &mut self,
         operation: NativeIterableUse,
         operand: &Values,
@@ -487,7 +484,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         *receipt
     }
 
-    pub(in crate::facts::sync_effects) fn transfer_native_iterable(
+    pub(crate) fn transfer_native_iterable(
         &mut self,
         operation: NativeIterableUse,
         operand: &Values,
@@ -512,7 +509,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .insert(input.evidence.reference.clone());
             self.record_proof_dependencies(NativeIntegrityGuard::ArrayIntrinsics, &dependencies);
             self.observations
-                .record_inference_use(crate::analysis_provenance::InferenceUse {
+                .record_inference_use(analysis::analysis_provenance::InferenceUse {
                     conclusion: InferenceRule::ImportedPrimitiveArraySpread,
                     derivation_rules: BTreeSet::from([
                         InferenceRule::ImportedPrimitiveArraySpread,
@@ -529,7 +526,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 });
             self.observations
                 .record_imported_primitive_array_spread_input_use(
-                    crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse {
+                    analysis::analysis_inputs::ImportedPrimitiveArraySpreadInputUse {
                         evidence: input.evidence.clone(),
                         operand_index: source_index,
                     },
@@ -542,7 +539,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return Some(NativeIterableReceipt {
                 source: None,
                 yields: NativeIterableYields::ExactSlots(yields),
-                heap_contents: crate::facts::HeapContentCells::default(),
+                heap_contents: analysis::facts::HeapContentCells::default(),
                 input: NativeIterableInput::Borrowed,
                 coverage: EffectCoverageFragment::native_iterable_protocol(&dependencies),
             });
@@ -649,7 +646,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, premise);
                     self.observations.record_native_operation_input_use(
                         span,
-                        crate::reports::schema::NativeOperationInputUse {
+                        analysis::reports::schema::NativeOperationInputUse {
                             evidence,
                             source_location: None,
                             span,
@@ -667,16 +664,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             _ => return None,
         };
         dependencies.extend(&self.settled_prefix_dependencies());
-        let mut heap_contents = crate::facts::HeapContentCells::default();
+        let mut heap_contents = analysis::facts::HeapContentCells::default();
         heap_contents.reads.insert(match kind {
-            Kind::Set => crate::facts::EffectCell::SetContents(*object),
-            Kind::Object => crate::facts::EffectCell::ArrayContents(*object),
+            Kind::Set => analysis::facts::EffectCell::SetContents(*object),
+            Kind::Object => analysis::facts::EffectCell::ArrayContents(*object),
             _ => unreachable!("native iterable admission only models Set or Array sources"),
         });
         let input = if let NativeIterableUse::SetConstruction { site, input } = operation {
             heap_contents
                 .allocations
-                .insert(crate::facts::EffectCell::SetContents(site.allocation_id()));
+                .insert(analysis::facts::EffectCell::SetContents(
+                    site.allocation_id(),
+                ));
             input
         } else {
             NativeIterableInput::Borrowed
@@ -699,7 +698,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
-        let mut dependencies = crate::analysis_inputs::ProofDependencies::default();
+        let mut dependencies = analysis::analysis_inputs::ProofDependencies::default();
         // Both arms below hold only when the index saw the matching
         // `reentry_free_operations` entry; an unaudited host selects neither.
         let operation = match (call.kind, &call.callee) {
@@ -740,9 +739,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         dependencies
             .host_behavior
-            .insert(crate::analysis_inputs::HostBehaviorKey::ReentryFreeOperation(operation));
+            .insert(analysis::analysis_inputs::HostBehaviorKey::ReentryFreeOperation(operation));
         self.consume_proof_dependencies(&dependencies);
-        let proof_use = crate::reports::schema::ReentryFreeOperationUse {
+        let proof_use = analysis::reports::schema::ReentryFreeOperationUse {
             operation,
             source_location: None,
             span: call.span,
@@ -756,7 +755,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Commit the admitted row's heap mutations to this prefix, then project
     /// its normal return value. The mutations happen whether or not the
     /// caller uses the value.
-    pub(in crate::facts::sync_effects) fn execute_native_resolution(
+    pub(crate) fn execute_native_resolution(
         &mut self,
         resolution: NativeCallResolution,
         args: &[Values],

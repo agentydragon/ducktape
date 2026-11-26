@@ -1,16 +1,28 @@
+use analysis::facts::abstract_domain::effect::CoerceSite;
+use analysis::facts::abstract_domain::effect::Effect;
+use analysis::facts::abstract_domain::effect::InvokeSite;
+use analysis::facts::item_views::TopLevelItemView;
+use analysis::purity::classifier::classify_class_static_purity;
+use analysis::purity::classifier::classify_expr_purity;
+use analysis::purity::classifier::classify_var_decl_purity;
 use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
+use swc_ecma_ast::Decl;
+use swc_ecma_ast::Expr;
+use swc_ecma_ast::Module;
+use swc_ecma_ast::ModuleItem;
+use swc_ecma_ast::Stmt;
 
-use super::*;
-use crate::analysis_inputs::{ProofDependencies, ValueInputRef};
-use crate::facts::abstract_domain::heap::{
+use analysis::analysis_inputs::{ProofDependencies, ValueInputRef};
+use analysis::facts::abstract_domain::heap::{
     ChunkHeap, plain_array_bindings, tracked_allocation_roots,
 };
-use crate::facts::{
+use analysis::facts::{
     ChunkValueFlow, DynamicScopeFact, LocalClassConstructionProof, SetIterableProof,
     StructuralChunkAnalysis, analyze_chunk_structural, compute_shadowed_globals,
     top_level_item_views,
 };
+use analysis::purity::*;
 use swc_common::{FileName, sync::Lrc};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
@@ -101,35 +113,34 @@ fn graph_with_conditioned_set_proof(
         .bindings;
     let plain_arrays = plain_array_bindings(&views, &shadowed);
     let dynamic_scope = DynamicScopeFact::analyze(&views);
-    let set_shapes = crate::facts::SetIterableShapes::analyze(
+    let set_shapes = analysis::facts::SetIterableShapes::analyze(
         &views,
         &shadowed,
         &flow,
         &plain_data,
         dynamic_scope,
     );
-    let class_shapes = crate::facts::LocalClassConstructionShapes::analyze(
+    let class_shapes = analysis::facts::LocalClassConstructionShapes::analyze(
         &views,
         &shadowed,
         &flow,
         dynamic_scope,
     );
-    let prepared =
-        crate::facts::sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index(
-            &views,
-            &flow,
-            &crate::analysis_inputs::AnalysisInputs {
-                native_integrity: Some(crate::analysis_inputs::NativeIntegrity {
-                    consumed_value_inputs: dependencies.value_inputs.clone(),
-                    ..Default::default()
-                }),
+    let prepared = sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index(
+        &views,
+        &flow,
+        &analysis::analysis_inputs::AnalysisInputs {
+            native_integrity: Some(analysis::analysis_inputs::NativeIntegrity {
+                consumed_value_inputs: dependencies.value_inputs.clone(),
                 ..Default::default()
-            },
-            &plain_arrays,
-            &class_shapes,
-            set_shapes,
-            &shadowed,
-        );
+            }),
+            ..Default::default()
+        },
+        &plain_arrays,
+        &class_shapes,
+        set_shapes,
+        &shadowed,
+    );
     let set_proof = prepared.set_iterable_proof();
     ChunkCodeGraph::build_full_with_prepared_plain_data(
         &views,
@@ -188,7 +199,7 @@ fn classify_with_declared_pure_new(prefix: &str, expr_src: &str, declared: &[&st
             shadowed,
             &BTreeSet::new(),
             &string_set(declared),
-            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+            &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         )
     })
 }
@@ -210,7 +221,7 @@ fn classify_with_declared_pure_members(
             &BTreeMap::new(),
             &BTreeSet::new(),
             &BTreeSet::new(),
-            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+            &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         )
     })
 }
@@ -228,7 +239,7 @@ fn classify_with_fluent_bindings(prefix: &str, expr_src: &str, fluent: &[&str]) 
             &BTreeMap::new(),
             &string_set(fluent),
             &BTreeSet::new(),
-            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+            &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         )
     })
 }
@@ -1071,7 +1082,7 @@ fn fluent_root_body_local_shadow_defeats_trust() {
                 &BTreeMap::new(),
                 &string_set(&["k"]),
                 &BTreeSet::new(),
-                &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+                &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
             );
             classify_expr_purity(init, shadowed, &local_shadowed, &BTreeSet::new(), &graph)
         },
@@ -1241,7 +1252,7 @@ fn stable_var_graph(structural: &StructuralChunkAnalysis<'_>) -> ChunkCodeGraph 
         &BTreeMap::new(),
         &BTreeSet::new(),
         &structural.stable_var_number_candidates,
-        &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+        &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
     )
 }
 
@@ -1415,7 +1426,7 @@ fn imported_purity_effects(prefix: &str, expr_src: &str, imports: &[(&str, Purit
             &imported_purities,
             &BTreeSet::new(),
             &BTreeSet::new(),
-            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+            &sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         );
         classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
     })
@@ -1607,28 +1618,27 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
         .bindings;
     let plain_arrays = plain_array_bindings(&views, &shadowed);
     let dependencies = value_input_dependencies("static/provider.js", 2);
-    let class_shapes = crate::facts::LocalClassConstructionShapes::analyze(
+    let class_shapes = analysis::facts::LocalClassConstructionShapes::analyze(
         &views,
         &shadowed,
         &flow,
         DynamicScopeFact::analyze(&views),
     );
-    let prepared =
-        crate::facts::sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index(
-            &views,
-            &flow,
-            &crate::analysis_inputs::AnalysisInputs {
-                native_integrity: Some(crate::analysis_inputs::NativeIntegrity {
-                    consumed_value_inputs: dependencies.value_inputs.clone(),
-                    ..Default::default()
-                }),
+    let prepared = sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index(
+        &views,
+        &flow,
+        &analysis::analysis_inputs::AnalysisInputs {
+            native_integrity: Some(analysis::analysis_inputs::NativeIntegrity {
+                consumed_value_inputs: dependencies.value_inputs.clone(),
                 ..Default::default()
-            },
-            &plain_arrays,
-            &class_shapes,
-            crate::facts::SetIterableShapes::default(),
-            &shadowed,
-        );
+            }),
+            ..Default::default()
+        },
+        &plain_arrays,
+        &class_shapes,
+        analysis::facts::SetIterableShapes::default(),
+        &shadowed,
+    );
     let class_proof = prepared.local_class_construction_proof();
     let graph = ChunkCodeGraph::build_full_with_prepared_plain_data(
         &views,

@@ -15,7 +15,7 @@ use crate::analysis_inputs::{KnownEffect, LocalEffectPolicy};
 use crate::purity::{ChunkCodeGraph, classify_expr_purity};
 
 #[derive(Debug, Default)]
-pub(crate) struct LocalEffectContext {
+pub struct LocalEffectContext {
     metadata_decorate_targets: BTreeMap<u32, Id>,
     /// Chunk-top declared binding names. Populated under both
     /// non-default policies: `VendorPrune` uses it to scope its
@@ -29,7 +29,7 @@ pub(crate) struct LocalEffectContext {
 }
 
 impl LocalEffectContext {
-    pub(crate) fn for_body(
+    pub fn for_body(
         body: &[TopLevelItemView<'_>],
         local_effect_policy: LocalEffectPolicy,
         known_effects: &BTreeMap<String, KnownEffect>,

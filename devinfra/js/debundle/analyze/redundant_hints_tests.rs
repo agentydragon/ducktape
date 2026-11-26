@@ -1,8 +1,10 @@
-use crate::analysis_inputs::AnalysisAssumptions;
+use crate::analyze_chunk;
+use analysis::AnalysisInputs;
+use analysis::analysis_inputs::AnalysisAssumptions;
 use std::collections::{BTreeMap, BTreeSet};
+use swc_ecma_ast::Module;
 
-use super::*;
-use crate::*;
+use analysis::purity::*;
 
 use raw_js_test_support::parse;
 

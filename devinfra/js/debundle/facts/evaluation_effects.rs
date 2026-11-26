@@ -68,12 +68,12 @@ impl GlobalAccessEvidence {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct EvaluationEffects {
+pub struct EvaluationEffects {
     pub global_accesses: BTreeMap<GlobalAccessSite, GlobalAccessEvidence>,
 }
 
 impl EvaluationEffects {
-    pub(crate) fn record(
+    pub fn record(
         &mut self,
         owner: SourceUnitOrdinal,
         span: Span,
@@ -96,7 +96,7 @@ impl EvaluationEffects {
             .or_default();
     }
 
-    pub(crate) fn assume(&mut self, reason: Option<&AssumedEffectReason>) {
+    pub fn assume(&mut self, reason: Option<&AssumedEffectReason>) {
         if let Some(reason) = reason {
             for evidence in self.global_accesses.values_mut() {
                 evidence.record_assumption(reason);
@@ -104,13 +104,13 @@ impl EvaluationEffects {
         }
     }
 
-    pub(crate) fn depend_on(&mut self, dependencies: &ProofDependencies) {
+    pub fn depend_on(&mut self, dependencies: &ProofDependencies) {
         for evidence in self.global_accesses.values_mut() {
             evidence.dependencies.extend(dependencies);
         }
     }
 
-    pub(crate) fn extend(&mut self, other: &Self) {
+    pub fn extend(&mut self, other: &Self) {
         for (site, evidence) in &other.global_accesses {
             self.global_accesses
                 .entry(site.clone())

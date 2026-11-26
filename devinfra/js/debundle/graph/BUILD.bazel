@@ -30,5 +30,8 @@ rust_test(
     name = "graph_test",
     crate = ":graph",
     edition = "2024",
-    deps = ["//devinfra/js/debundle:raw_js_test_support"],
+    deps = [
+        "//devinfra/js/debundle:raw_js_test_support",
+        "//devinfra/js/debundle/analyze",
+    ],
 )

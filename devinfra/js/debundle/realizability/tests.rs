@@ -7,8 +7,8 @@ use super::incremental_quotient::{
 use super::*;
 use crate::counted_digraph::CountedDiGraph;
 use analysis::AnalysisInputs;
-use analysis::facts::analyze_chunk;
 use analysis::ids::ModuleId;
+use analyze::analyze_chunk;
 use graph::DependencyGraph;
 use graph::module_assignment::ModuleAssignment;
 use graph::{EdgeRole, build_dependency_graph_with};
