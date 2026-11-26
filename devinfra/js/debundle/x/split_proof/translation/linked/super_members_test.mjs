@@ -126,7 +126,13 @@ if (runCase("install-and-read-order")) {
   const early = ["classes.mjs", "read.mjs", "install.mjs"];
   const good = sequentialFixture("super-install-first", ordered, programs, ready);
   assertPublicEmissionRefused(good.manifest, good.out);
-  await assertLinkedPreviewResult(good, "ready");
+  assert.deepEqual(observe(good.sourceFile, "result"), { result: "ready" });
+  await withSplitPreview({ manifest: good.manifest, expectedExit: 1 }, ({ directory, entryFile, log }) => {
+    assert.match(log, /FAIL  OrderOk/);
+    assert.deepEqual(moduleEvaluationOrder(directory, "entry.mjs"), [...ready, "entry.mjs"]);
+    assert.deepEqual(observe(entryFile, "result"), { result: "ready" });
+    assertMatchedModel(good, directory, [[["result"], "ready"]]);
+  });
   const { manifest, out, sourceFile, specFile } = sequentialFixture("super-read-first", ordered, programs, early);
   assertPublicEmissionRefused(manifest, out);
   assert.deepEqual(observe(sourceFile, "result"), { result: "ready" });
