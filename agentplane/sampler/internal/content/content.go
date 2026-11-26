@@ -45,6 +45,12 @@ type ContentReader interface {
 	GetContent(ContentID) (StoredContent, error)
 }
 
+// ReadWriter gives request preparation access to content in the current transaction.
+type ReadWriter interface {
+	ContentReader
+	ContentWriter
+}
+
 // CanonicalContent uses the standard JSON codec; numeric tokens retain their precision.
 func CanonicalContent(kind ContentKind, payload json.RawMessage) (StoredContent, error) {
 	if !kind.Valid() {

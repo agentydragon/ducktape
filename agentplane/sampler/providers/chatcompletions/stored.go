@@ -60,11 +60,7 @@ func PrepareRequest(store content.ContentWriter, model, effort string, instructi
 
 // PrepareNextProfile updates the retained profile for new requests. Already
 // committed attempts still render their original profile on retry or inspection.
-func PrepareNextProfile(store interface {
-	content.ContentReader
-	content.ContentWriter
-}, id content.ContentID, model, effort string,
-) (content.ContentID, error) {
+func PrepareNextProfile(store content.ReadWriter, id content.ContentID, model, effort string) (content.ContentID, error) {
 	raw, err := load(store, id, profileKind)
 	if err != nil {
 		return "", err
@@ -84,11 +80,7 @@ func PrepareNextProfile(store interface {
 
 // PrepareCompactionRequest keeps the sampling tool definitions in the prompt and
 // disables their selection for the appended summary request.
-func PrepareCompactionRequest(store interface {
-	content.ContentReader
-	content.ContentWriter
-}, profileID content.ContentID, config CompactionConfig,
-) (content.ContentID, content.ContentID, error) {
+func PrepareCompactionRequest(store content.ReadWriter, profileID content.ContentID, config CompactionConfig) (content.ContentID, content.ContentID, error) {
 	raw, err := load(store, profileID, profileKind)
 	if err != nil {
 		return "", "", err

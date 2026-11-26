@@ -11,7 +11,6 @@ import (
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/lib/pq"
 )
@@ -29,7 +28,7 @@ type Store struct {
 	pending    map[content.ContentID]content.StoredContent
 }
 
-var _ providerrequest.Content = (*Store)(nil)
+var _ content.ReadWriter = (*Store)(nil)
 
 func New(ctx context.Context, tx *sql.Tx, references ContentReferences) *Store {
 	return &Store{
