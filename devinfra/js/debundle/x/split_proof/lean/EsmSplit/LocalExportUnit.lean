@@ -19,7 +19,8 @@ def LocalExportUnit.footprint (unit : LocalExportUnit) (src : String) : Stmt :=
 
 /-- A supplied source footprint retains this unit's exact ordered public/local
 pairs and mentions every local. Name uses may be deduplicated or include
-additional conservative uses. -/
+additional conservative uses. Extra uses can induce additional imports, so
+this relation alone does not establish the actual graph or module order. -/
 structure LocalExportUnit.FootprintMatches (unit : LocalExportUnit) (statement : Stmt) : Prop where
   exports : statement.exports = unit.names.map (fun (publicName, localName) => (publicName, some localName))
   locals : ∀ pair ∈ unit.names, pair.2 ∈ statement.eager ++ statement.lazy
