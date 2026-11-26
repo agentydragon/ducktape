@@ -1,15 +1,13 @@
 import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
-import { z } from "zod";
+import type { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
+import { resourcesGetArguments } from "../../schemas/kubernetes_admin/arguments";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
-import { resource } from "./resource_common";
 import { kubernetesResourcesResult } from "./resources";
-
-const resourcesGetArguments = z.strictObject(resource);
 
 export function offersCardDecisionButtonsResourcesGet(args: unknown): boolean {
   return resourcesGetArguments.safeParse(args).success;

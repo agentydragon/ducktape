@@ -5,21 +5,21 @@ import type { z } from "zod";
 
 import { type ActionPresentation, expandsForDetails } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
-import { zPodsInNamespaceArguments } from "../../schemas/kubernetes_admin/pods_list_in_namespace";
+import { podsInNamespaceArguments } from "../../schemas/kubernetes_admin/arguments";
 
 export function offersCardDecisionButtonsPodsInNamespace(args: unknown): boolean {
-  return zPodsInNamespaceArguments.safeParse(args).success;
+  return podsInNamespaceArguments.safeParse(args).success;
 }
 
 function podsInNamespaceTitleIsRedundant(title: string, args: unknown): boolean {
-  const parsed = zPodsInNamespaceArguments.safeParse(args);
+  const parsed = podsInNamespaceArguments.safeParse(args);
   if (!parsed.success) return false;
   const normalizedTitle = title.trim().replace(/\s+/g, " ").toLowerCase();
   const actionLabel = `List pods in namespace ${parsed.data.namespace}`.toLowerCase();
   return normalizedTitle === actionLabel;
 }
 
-function PodsInNamespaceFilters({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element | null {
+function PodsInNamespaceFilters({ args }: { args: z.infer<typeof podsInNamespaceArguments> }): JSX.Element | null {
   const { fieldSelector, labelSelector } = args;
   if (fieldSelector === undefined && labelSelector === undefined) return null;
   return (
@@ -40,12 +40,9 @@ function PodsInNamespaceFilters({ args }: { args: z.infer<typeof zPodsInNamespac
   );
 }
 
-export const podsInNamespaceDetails: ArgumentsPreview = definePreview(
-  zPodsInNamespaceArguments,
-  PodsInNamespaceFilters
-);
+export const podsInNamespaceDetails: ArgumentsPreview = definePreview(podsInNamespaceArguments, PodsInNamespaceFilters);
 
-function PodsInNamespaceLabel({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
+function PodsInNamespaceLabel({ args }: { args: z.infer<typeof podsInNamespaceArguments> }): JSX.Element {
   return (
     <Text
       component="span"
@@ -58,7 +55,7 @@ function PodsInNamespaceLabel({ args }: { args: z.infer<typeof zPodsInNamespaceA
   );
 }
 
-export const podsInNamespaceLabel: ArgumentsPreview = definePreview(zPodsInNamespaceArguments, PodsInNamespaceLabel);
+export const podsInNamespaceLabel: ArgumentsPreview = definePreview(podsInNamespaceArguments, PodsInNamespaceLabel);
 
 export const podsInNamespacePresentation: ActionPresentation = {
   label: podsInNamespaceLabel,
@@ -67,7 +64,7 @@ export const podsInNamespacePresentation: ActionPresentation = {
   details: { arguments: podsInNamespaceDetails, envelopeResult: resourceListResult },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsInNamespace,
   compactCardExpands: expandsForDetails(
-    zPodsInNamespaceArguments,
+    podsInNamespaceArguments,
     (args) => args.fieldSelector !== undefined || args.labelSelector !== undefined
   ),
 };

@@ -8,16 +8,10 @@ import { ShellCommandView, ShellCommandSummary } from "../../../ui/shell_command
 
 import { definePreview, type ArgumentsPreview } from "../entry";
 import type { ResultPreview } from "../result_entry";
+import { podsDeleteArguments, podsExecArguments } from "../../schemas/kubernetes_admin/arguments";
 import { podsExecNotes } from "../../schemas/kubernetes_admin/pods_exec";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 import { kubernetesTextResult } from "./text_result";
-
-const podsExecArguments = z.strictObject({
-  name: z.string().min(1),
-  namespace: z.string().min(1).optional(),
-  container: z.string().min(1).optional(),
-  command: z.array(z.string()),
-});
 
 type PodsExecArguments = z.infer<typeof podsExecArguments>;
 
@@ -48,7 +42,6 @@ export const podsExecCollapsed: ArgumentsPreview = definePreview(podsExecArgumen
 export const podsExecPane: ArgumentsPreview = definePreview(podsExecArguments, Opened);
 export const podsExecLabel: ArgumentsPreview = definePreview(podsExecArguments, PodsExecLabel);
 
-const podsDeleteArguments = z.strictObject({ name: z.string().min(1), namespace: z.string().min(1).optional() });
 const podsDeleteResult = z.literal("Pod deleted successfully");
 
 export function offersCardDecisionButtonsPodsDelete(args: unknown): boolean {

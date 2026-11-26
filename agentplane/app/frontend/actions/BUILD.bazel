@@ -249,6 +249,7 @@ ts_library(
     srcs = ["call_tool_result.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":kubernetes_action_schemas",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -264,9 +265,9 @@ ts_library(
 ts_library(
     name = "kubernetes_action_schemas",
     srcs = [
+        "schemas/kubernetes_admin/arguments.ts",
         "schemas/kubernetes_admin/manifest.ts",
         "schemas/kubernetes_admin/pods_exec.ts",
-        "schemas/kubernetes_admin/pods_list_in_namespace.ts",
         "schemas/kubernetes_admin/pods_log.ts",
         "schemas/kubernetes_admin/target.ts",
     ],
