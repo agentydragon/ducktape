@@ -84,6 +84,12 @@ def test_admin_service_callers_are_separate_and_omitted_when_empty() -> None:
         Settings.model_validate({**settings_data(), "admin_service_callers": ["not-a-service"]})
 
 
+def test_journal_paging_only_emitted_when_configured() -> None:
+    paging = {"history_export_page_entries": 64, "history_export_pages_per_turn": 4, "follow_events_page_entries": 32}
+    assert Settings(**settings_data()).model_dump(include=set(paging)) == {}
+    assert Settings.model_validate({**settings_data(), **paging}).model_dump(include=set(paging)) == paging
+
+
 def test_event_block_profile_defaults_stay_omitted_until_customized() -> None:
     defaults = Settings(**settings_data()).model_dump(mode="json", exclude_none=True)
     assert "event_block_profile" not in defaults

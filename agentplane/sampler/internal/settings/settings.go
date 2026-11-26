@@ -41,6 +41,9 @@ type Settings struct {
 	ContextSourceWrites                    bool                        `json:"context_source_writes,omitempty"`
 	EventBlockWrites                       bool                        `json:"event_block_writes,omitempty"`
 	EventBlockV2Writes                     bool                        `json:"event_block_v2_writes,omitempty"`
+	HistoryExportPageEntries               *int                        `json:"history_export_page_entries,omitempty"`
+	HistoryExportPagesPerTurn              *int                        `json:"history_export_pages_per_turn,omitempty"`
+	FollowEventsPageEntries                *int                        `json:"follow_events_page_entries,omitempty"`
 	EventBlockProfile                      eventblock.Profile          `json:"event_block_profile,omitzero"`
 	ProviderResponseHeaderTimeoutSeconds   *int                        `json:"provider_response_header_timeout_seconds,omitempty"`
 	ProviderIdleTimeoutSeconds             *int                        `json:"provider_idle_timeout_seconds,omitempty"`
@@ -57,6 +60,30 @@ type Settings struct {
 	ShutdownBudgetSeconds                  *int                        `json:"shutdown_budget_seconds,omitempty"`
 	LeaseSeconds                           int                         `json:"lease_seconds"`
 	SetupTimeoutSeconds                    *int                        `json:"setup_timeout_seconds,omitempty"`
+}
+
+// MaxJournalPageEntries is the store limit for a single Events call.
+const MaxJournalPageEntries = 4096
+
+func (s Settings) ExportPageEntries() int {
+	if s.HistoryExportPageEntries == nil {
+		return 16
+	}
+	return *s.HistoryExportPageEntries
+}
+
+func (s Settings) ExportPagesPerTurn() int {
+	if s.HistoryExportPagesPerTurn == nil {
+		return 16
+	}
+	return *s.HistoryExportPagesPerTurn
+}
+
+func (s Settings) FollowPageEntries() int {
+	if s.FollowEventsPageEntries == nil {
+		return 256
+	}
+	return *s.FollowEventsPageEntries
 }
 
 const defaultHealthListen = ":8081"
