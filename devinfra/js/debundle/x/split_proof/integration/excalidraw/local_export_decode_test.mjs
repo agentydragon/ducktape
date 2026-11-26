@@ -3,9 +3,10 @@ import { spawnSync } from "node:child_process";
 import { dump } from "../../translation/parser.mjs";
 import { moduleGraphFixture } from "../../translation/linked/module_graph_fixture.mjs";
 
-// Use the production parser on the same complete source as the #32 CLI fixture.
+// Use the production parser and unchanged authored spec from the #32 CLI fixture.
+const fixture = moduleGraphFixture();
 const sources = [
-  moduleGraphFixture().source,
+  fixture.source,
   "const seed = 42; export { seed as exposed }; const result = seed;",
   'const seed = 42; export { seed as publicName, seed as "with-dash" }; export {}; const result = seed;',
   "export const declared = 1;",
@@ -16,7 +17,8 @@ const sources = [
 ];
 const run = spawnSync(process.env.LOCAL_EXPORT_DECODE_TEST, [], {
   encoding: "utf8",
-  input: JSON.stringify(sources.map((source) => dump(source))) + "\n",
+  input:
+    JSON.stringify([...sources.map((source) => dump(source)), JSON.stringify(fixture.spec), fixture.source]) + "\n",
   maxBuffer: 64 * 1024 * 1024,
 });
 if (run.error) throw run.error;

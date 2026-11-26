@@ -1,5 +1,8 @@
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.TerminalConstructorInput
+import EsmSplit.CoreJS.TerminalFootprints
+import EsmSplit.LowerSplit.SparseArtifact
+import EsmSplit.Cli
 
 open Lean (Json)
 open CoreJS
@@ -15,7 +18,7 @@ private def decode (j : Json) : IO (Program × List EsmSplit.LocalExportUnit) :=
 private def require (ok : Bool) (why : String) : IO Unit :=
   unless ok do throw (IO.userError why)
 
-private def checkGraph (j : Json) : IO Unit := do
+private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   let (p, rows) ← decode j
   let m ← onlyModule p
   let [row] := rows | throw (IO.userError "expected one standalone export list")
@@ -26,6 +29,21 @@ private def checkGraph (j : Json) : IO Unit := do
   let checked ← IO.ofExcept (TerminalConstructorInput.check (p, rows))
   let _ := TerminalConstructorInput.all_const checked
   let _ := TerminalConstructorInput.source_shape checked
+  let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes j sourceText)
+  let bundle := EsmSplit.LowerSplit.SparseArtifact.sourceBundle nodes
+  let spec ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
+  let plan := EsmSplit.mkPlan bundle spec
+  let statements := checked.terminal.source.body.map Prod.snd
+  unless (decide (MetadataCells.Footprints statements bundle)) do
+    throw (IO.userError "actual source bundle fails executable/metadata footprints")
+  unless (decide (checked.terminal.row.FootprintMatches (bundle.stmt checked.terminal.row.ordinal))) do
+    throw (IO.userError "actual original export row fails bundle footprint matching")
+  unless (decide (EsmSplit.Valid bundle spec plan)) do
+    throw (IO.userError "actual authored plan fails validity")
+  let some entry := plan.find plan.entry | throw (IO.userError "actual plan has no entry")
+  require (plan.evalOrder.contains plan.entry) "actual entry is not loaded"
+  require (entry.stmts == [checked.terminal.row.ordinal]) "actual entry does not contain exactly the export row"
+  require entry.exports.isEmpty "actual entry has generated glue exports"
   let badImport : Program := { p with modules := [{ m with imports := [⟨"provider.mjs", []⟩] }] }
   match TerminalConstructorInput.check (badImport, rows) with
   | .error "terminal source must not import modules" => pure ()
@@ -89,8 +107,10 @@ private def checkRefused (j : Json) (expected : String) : IO Unit := do
 def main : IO UInt32 := do
   let line ← (← IO.getStdin).getLine
   let cases ← IO.ofExcept (Json.parse line >>= Json.getArr?)
-  unless cases.size == 8 do throw (IO.userError "expected eight real parsed sources")
-  checkGraph cases[0]!
+  unless cases.size == 10 do throw (IO.userError "expected eight real parsed sources and the authored spec and source")
+  let specText ← IO.ofExcept cases[8]!.getStr?
+  let sourceText ← IO.ofExcept cases[9]!.getStr?
+  checkGraph cases[0]! specText sourceText
   checkSparse cases[1]!
   checkAliases cases[2]!
   checkInline cases[3]!

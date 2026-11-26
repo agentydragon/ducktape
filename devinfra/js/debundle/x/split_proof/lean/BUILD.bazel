@@ -924,7 +924,10 @@ test_runner(
         ":corejs_linked_input",
         ":corejs_runtime",
         ":corejs_terminal_constructor_input",
+        ":corejs_terminal_footprints",
         ":local_export_unit",
+        ":planner",
+        ":sparse_checked_artifact",
     ],
 )
 
