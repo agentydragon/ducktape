@@ -206,7 +206,7 @@ backfill old Sessions. Ordinary insertion/deletion still generates WAL.
 
 ### Online historical repack and legacy inventory
 
-Deploy reader support to every History replica and apply migration 20 before starting an apply run.
+Deploy reader support to every History replica before starting an apply run.
 The maintenance command loads the service YAML named by
 `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` plus `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`. It uses
 the same `ingress.event_block_profile` and `ingress.event_block_target_bytes_by_kind` settings as
@@ -222,15 +222,14 @@ history-service compact-history --session "$SESSION_ID" --dry-run
 ```
 
 The command requires exactly one scope (`--session UUID` or `--all`) and one mode (`--dry-run`
-or `--apply`). Dry-run uses a read-only repeatable-read snapshot and writes neither journal rows
-nor checkpoints. It simulates the configured packer over ordinary rows and decoded legacy and
-versioned blocks in cursor order. Its totals include source format counts, candidate block counts,
-logical event bytes and estimated packed bytes.
+or `--apply`). Dry-run uses a read-only repeatable-read snapshot and writes no journal or progress
+state. It simulates the configured packer over ordinary rows and decoded legacy and versioned
+blocks in cursor order. Its totals include source format counts, candidate block counts, logical
+event bytes and estimated packed bytes.
 
-Apply captures an opening `recorded_position` for all-session enumeration and a cursor watermark
-when each Session first enters its profile checkpoint. It enumerates `session_history` directly,
-including inactive Sessions, in pages of 100. Candidate decoding and compression happen outside
-the append lock. A short transaction then acquires the Session row with a 250 ms lock timeout and
+Apply holds the opening `recorded_position`, each Session cursor watermark, and run cursors in
+memory only. It enumerates `session_history` directly, including inactive Sessions, in pages of 100. Candidate decoding and compression happen outside the append lock. A short transaction then
+acquires the Session row with a 250 ms lock timeout and
 a 5 second transaction budget (`--batch-transaction-budget`), revalidates the exact source and
 settlement/removal state, and atomically replaces one bounded candidate (at most 256 frames and
 8 MiB decoded). PostgreSQL `transaction_timeout` and the transaction context enforce the budget;
@@ -246,11 +245,16 @@ synthetic integration canary stalls one unpack transaction for 750 ms with a 2 s
 verifies that a concurrent append waits only for that transaction. It records the measured wait,
 hold and append wait in the test output; this PR did not run a live apply canary.
 
-Checkpoints are durable per writer profile and Session. A crash or cancellation leaves committed
-batches intact; rerun with the same profile to resume. A completed checkpoint also notices a later
-Session suffix on the next run. Busy Sessions are deferred while the command scans the rest, then
-retried in three bounded sweeps. If contention remains, the command exits with a busy error and
-leaves those checkpoints resumable. Do not overlap two apply jobs using the same profile.
+The database stores no repack run or per-Session progress records. Each bounded batch commits its
+event-row/block replacement atomically. If the process stops, the next invocation rescans Sessions
+from the beginning; previously committed blocks and ordinary rows remain valid inputs, so the scan
+can safely repeat work. A rescan may rewrite blocks committed by an earlier process and therefore
+generate additional WAL. Within one process, Session watermarks and cursors advance in memory.
+Busy Sessions and batches that exhaust their budget are deferred while the command scans the rest,
+then retried in three bounded sweeps. If contention remains, the command exits with a busy or budget
+error; a later invocation starts a fresh safe scan. Avoid overlapping all-session runs because they
+can increase lock contention and repeat work, even though each batch revalidates its source under
+the Session lock.
 
 The default processing limit is 1 MiB of source payload per second. Use
 `--bytes-per-second N` to tune it. `--pause-file PATH` pauses before the next batch while the file
@@ -272,8 +276,8 @@ AGENTPLANE_HISTORY_SERVICE_DATABASE_URL="$HISTORY_DATABASE_URL" history-service 
 ```
 
 The JSON reports ordinary row counts and bytes plus total, versioned, legacy and invalid block
-counts. The migration is ready for legacy cleanup only when `legacy_blocks` and `invalid_blocks`
-are both zero. Invalid blocks are counted separately instead of being mistaken for legacy gzip.
+counts. Legacy cleanup is ready only when `legacy_blocks` and `invalid_blocks` are both zero.
+Invalid blocks are counted separately instead of being mistaken for legacy gzip.
 Run another all-session dry-run, then schedule `compact-history --all --apply` in bounded windows.
 Use [the manual Job template](ops/compact-history-job.yaml) and the
 [inventory Job template](ops/inventory-history-job.yaml) with the deployed image. Watch database

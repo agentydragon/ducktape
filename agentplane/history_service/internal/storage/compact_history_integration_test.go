@@ -265,22 +265,24 @@ func TestOnlineRepackDryRunMixedFormatsAndRerunPreserveWireFrames(t *testing.T) 
 		t.Fatalf("fixture contains %d frames, want %d", len(before), len(original))
 	}
 	compactor := NewStore(writer.db, Options{EventPackers: repackTestPackers(t)})
+	if tables := testpostgres.Count(t, writer.db, `SELECT count(*) FROM information_schema.tables
+		WHERE table_schema=current_schema() AND table_name IN ('history_event_repack_run','history_event_repack_checkpoint')`); tables != 0 {
+		t.Fatalf("repacker added database progress tables: %d", tables)
+	}
 	inventoryBefore, err := compactor.InventoryEventBlocks(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	ordinaryBefore, blocksBefore := packedRows(t, compactor, id)
-	checkpointBefore := testpostgres.Count(t, writer.db, "SELECT count(*) FROM history_event_repack_checkpoint WHERE session_id=$1", id)
 	dryRun, err := compactor.RepackSession(t.Context(), id, false, nil)
 	if err != nil || dryRun.Entries != int64(len(original)) || dryRun.SourceBlocks != 2 ||
 		dryRun.LegacyBlocks != 1 || dryRun.VersionedSourceBlocks != 1 || dryRun.Blocks == 0 || dryRun.PackedBytes >= dryRun.UncompressedBytes {
 		t.Fatalf("mixed-format dry run: %+v, %v", dryRun, err)
 	}
 	ordinaryAfterDryRun, blocksAfterDryRun := packedRows(t, compactor, id)
-	checkpointAfter := testpostgres.Count(t, writer.db, "SELECT count(*) FROM history_event_repack_checkpoint WHERE session_id=$1", id)
-	if ordinaryAfterDryRun != ordinaryBefore || blocksAfterDryRun != blocksBefore || checkpointAfter != checkpointBefore {
-		t.Fatalf("dry run wrote journal or checkpoint rows: ordinary %d->%d blocks %d->%d checkpoints %d->%d",
-			ordinaryBefore, ordinaryAfterDryRun, blocksBefore, blocksAfterDryRun, checkpointBefore, checkpointAfter)
+	if ordinaryAfterDryRun != ordinaryBefore || blocksAfterDryRun != blocksBefore {
+		t.Fatalf("dry run wrote journal rows: ordinary %d->%d blocks %d->%d",
+			ordinaryBefore, ordinaryAfterDryRun, blocksBefore, blocksAfterDryRun)
 	}
 	apply, err := compactor.RepackSession(t.Context(), id, true, nil)
 	if err != nil || apply != dryRun {
@@ -295,9 +297,10 @@ func TestOnlineRepackDryRunMixedFormatsAndRerunPreserveWireFrames(t *testing.T) 
 		t.Fatalf("inventory after repack: before %+v, after %+v, err %v", inventoryBefore, inventoryAfter, err)
 	}
 	again, err := compactor.RepackSession(t.Context(), id, true, nil)
-	if err != nil || again.Entries != 0 || again.Blocks != 0 || again.SourceBlocks != 0 {
-		t.Fatalf("idempotent rerun changed history: %+v, %v", again, err)
+	if err != nil || again.Entries != int64(len(original)) {
+		t.Fatalf("safe rescan did not revisit the committed prefix: %+v, %v", again, err)
 	}
+	assertLogicalFrames(t, logicalFrames(t, writer.db, id), before)
 
 	suffix := repackTestEntries(4)
 	for index, entry := range suffix {
@@ -306,8 +309,8 @@ func TestOnlineRepackDryRunMixedFormatsAndRerunPreserveWireFrames(t *testing.T) 
 	}
 	appendEntries(t, writer, id, suffix...)
 	resumed, err := compactor.RepackSession(t.Context(), id, true, nil)
-	if err != nil || resumed.Entries != int64(len(suffix)) {
-		t.Fatalf("profile checkpoint did not process the appended suffix: %+v, %v", resumed, err)
+	if err != nil || resumed.Entries != int64(len(original)+len(suffix)) {
+		t.Fatalf("fresh rescan did not process the retained prefix and appended suffix: %+v, %v", resumed, err)
 	}
 	wantAfterSuffix := make(map[uint64][]byte, len(before)+len(suffix))
 	for cursor, wire := range before {
@@ -381,24 +384,25 @@ func TestOnlineRepackResumesAfterCancellationAndAllowsConcurrentAppendAndReaders
 	compactor := NewStore(writer.db, Options{EventPackers: repackTestPackers(t)})
 	ctx, cancel := context.WithCancel(t.Context())
 	calls := 0
-	if _, err := compactor.RepackSession(ctx, id, true, func(context.Context, int64) error {
+	partial, err := compactor.RepackSession(ctx, id, true, func(context.Context, int64) error {
 		calls++
 		if calls == 2 {
 			cancel()
 			return context.Canceled
 		}
 		return nil
-	}); !errors.Is(err, context.Canceled) || calls != 2 {
+	})
+	if !errors.Is(err, context.Canceled) || calls != 2 {
 		t.Fatalf("interrupted after a committed batch: calls=%d err=%v", calls, err)
 	}
 	cancel()
-	var complete bool
-	if err := writer.db.QueryRowContext(t.Context(), `SELECT complete FROM history_event_repack_checkpoint WHERE session_id=$1`, id).Scan(&complete); err != nil || complete {
-		t.Fatalf("interrupted checkpoint state complete=%t err=%v", complete, err)
+	if partial.Blocks == 0 {
+		t.Fatalf("interruption did not leave an atomically committed prefix: %+v", partial)
 	}
-	resumed, err := compactor.RepackSession(t.Context(), id, true, nil)
-	if err != nil || resumed.Entries == 0 {
-		t.Fatalf("resume after cancellation: %+v %v", resumed, err)
+	restarted := NewStore(writer.db, Options{EventPackers: repackTestPackers(t)})
+	resumed, err := restarted.RepackSession(t.Context(), id, true, nil)
+	if err != nil || resumed.Entries != int64(len(original)) {
+		t.Fatalf("safe rescan after cancellation: %+v %v", resumed, err)
 	}
 	assertLogicalFrames(t, logicalFrames(t, writer.db, id), before)
 
@@ -527,7 +531,8 @@ func TestOnlineRepackUnpackBatchBudgetRollsBackAndResumes(t *testing.T) {
 	if _, err := writer.db.ExecContext(t.Context(), `DROP FUNCTION history_test_repack_budget()`); err != nil {
 		t.Fatal(err)
 	}
-	resumed, err := compactor.RepackSession(t.Context(), id, true, nil)
+	restarted := NewStore(writer.db, Options{EventPackers: repackTestPackers(t), RepackBatchBudget: budget})
+	resumed, err := restarted.RepackSession(t.Context(), id, true, nil)
 	if err != nil || resumed.SourceBlocks != 1 || resumed.Entries != int64(len(original)) {
 		t.Fatalf("resume after rolled-back unpack: %+v, %v", resumed, err)
 	}
