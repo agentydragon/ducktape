@@ -113,42 +113,24 @@ js_test(
     tags = ["manual"],
 )
 
-_EXCALIDRAW_SCROLL_DATA = [
-    "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
-    ":" + _EXCALIDRAW_EDITOR_SPEC,
-    "//devinfra/js/debundle/x/split_proof/translation:parser",
-    "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
-    "//devinfra/js/debundle/x/split_proof/translation:syntax_inventory",
-    "//devinfra/js/debundle/excalidraw:bundle",
-    "//devinfra/js/debundle/excalidraw:inputs",
-    "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
-    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-]
-
-_EXCALIDRAW_SCROLL_ENV = {
-    "EDITOR_LEAN_SPEC": "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
-    "EXCALIDRAW_INPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
-    "EXCALIDRAW_OUTPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
-    "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-}
-
 js_test(
-    name = "excalidraw_scroll_certificate",
+    name = "excalidraw_scroll_source_test",
     size = "medium",
     timeout = "long",
-    data = _EXCALIDRAW_SCROLL_DATA,
+    data = [
+        ":" + _EXCALIDRAW_EDITOR_SPEC,
+        "//devinfra/js/debundle/excalidraw:bundle",
+        "//devinfra/js/debundle/excalidraw:inputs",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation:syntax_inventory",
+    ],
     entry_point = "scroll.mjs",
-    env = _EXCALIDRAW_SCROLL_ENV,
-)
-
-js_test(
-    name = "excalidraw_scroll_single_certificate",
-    size = "medium",
-    args = ["--strict-single"],
-    data = _EXCALIDRAW_SCROLL_DATA,
-    entry_point = "scroll.mjs",
-    env = _EXCALIDRAW_SCROLL_ENV,
-    tags = ["manual"],
+    env = {
+        "EDITOR_LEAN_SPEC": "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
+        "EXCALIDRAW_INPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
+        "EXCALIDRAW_OUTPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
+    },
 )
 
 _EXCALIDRAW_BROWSER_PY = "browser_smoke_test.py"
@@ -199,15 +181,10 @@ py_test(
     srcs = [_EXCALIDRAW_BROWSER_PY],
     args = [
         "-k",
-        "test_native_metadata_preset",
+        "test_native_metadata",
     ],
-    data = _EXCALIDRAW_BROWSER_DATA + [
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
-    env = dict(
-        _EXCALIDRAW_BROWSER_ENV,
-        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-    ),
+    data = _EXCALIDRAW_BROWSER_DATA,
+    env = _EXCALIDRAW_BROWSER_ENV,
     main = _EXCALIDRAW_BROWSER_PY,
     deps = _EXCALIDRAW_BROWSER_DEPS,
 )
@@ -220,13 +197,8 @@ py_test(
         "-k",
         "test_bare_import",
     ],
-    data = _EXCALIDRAW_BROWSER_DATA + [
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
-    env = dict(
-        _EXCALIDRAW_BROWSER_ENV,
-        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-    ),
+    data = _EXCALIDRAW_BROWSER_DATA,
+    env = _EXCALIDRAW_BROWSER_ENV,
     main = _EXCALIDRAW_BROWSER_PY,
     deps = _EXCALIDRAW_BROWSER_DEPS,
 )

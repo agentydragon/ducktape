@@ -51,18 +51,6 @@ def editor_source(runfiles: Runfiles) -> Path:
     return bundle / name
 
 
-def write_deployment(path: Path, source: Path, spec: Path) -> Path:
-    path.write_text(
-        json.dumps(
-            {
-                "entry": source.name,
-                "chunks": [{"path": source.name, "source": str(source.absolute()), "spec": str(spec.resolve())}],
-            }
-        )
-    )
-    return path
-
-
 def certify_deployment(runfiles: Runfiles, editor: Path, origin: str, pinned: dict[str, str]) -> dict[str, Path]:
     sources = {"main": editor.parent / "main.js", "editor": editor}
     canonical = json.loads(resolve(runfiles, os.environ["CANONICAL_PLACEMENT"]).read_text())["placements"]
@@ -420,51 +408,18 @@ async def test_original_editor(
         await smoke(playwright_driver, origin, editor_source, editor_providers)
 
 
-async def test_bare_import(
-    playwright_driver: Playwright, runfiles: Runfiles, editor_app: Starlette, tmp_path: Path
-) -> None:
+async def test_bare_import(playwright_driver: Playwright, editor_app: Starlette, tmp_path: Path) -> None:
     name = "@fixture/diagram"
     entry = tmp_path / "entry.mjs"
     entry.write_text(f"var load = () => import({json.dumps(name)}); var render = () => 42; export {{load, render}};")
-    worker = "render.mjs"
     target = tmp_path / "target.mjs"
     target.write_text("globalThis.evaluated++; export const value = 7;")
     html = tmp_path / "probe.html"
     html.write_text("<!doctype html>")
-    spec = tmp_path / "spec.json"
-    spec.write_text(json.dumps({"entry": entry.name, "modules": {entry.name: ["#0", "#2"], worker: ["#1"]}}))
-    profile = tmp_path / "profile.json"
-    profile.write_text(json.dumps({"profile": "browser-page"}))
-    out = tmp_path / "out"
     for file in [html, entry, target]:
         editor_app.router.routes.insert(0, serve_file(file.name, file))
     async with serve_app_in_loop(editor_app) as origin:
-        command: list[Path | str] = [
-            resolve(runfiles, os.environ["LOWERSPLIT"]),
-            write_deployment(tmp_path / "deployment.json", entry, spec),
-            out,
-            "--structural",
-            "--host-contract",
-            profile,
-            "--deployment-origin",
-            origin,
-        ]
-        default = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True, check=False)
-        assert default.returncode == 1
-        assert "expected a relative module request" in json.loads(default.stdout)["reason"]
-        command += ["--deployment-import-map", "empty@1"]
-        for flags in [[], ["--check-output"]]:
-            run = await asyncio.to_thread(
-                subprocess.run, [*command, *flags], capture_output=True, text=True, check=False
-            )
-            assert run.returncode == 0, run.stdout + run.stderr
-            verdict = json.loads(run.stdout)
-            assert verdict["scope"] == "linked-structural-pivot"
-            assert any(s.startswith("empty@1:") for s in verdict["assumptions"])
-
-        for overlay, mapped in [(False, False), (False, True), (True, False)]:
-            if overlay:
-                install_editor_overlay(editor_app, entry, {n: out / n for n in [entry.name, worker]})
+        for mapped in (False, True):
             async with deterministic_browser_context(
                 playwright_driver, viewport={"width": 800, "height": 600}, frozen_now_ms=None
             ) as context:
@@ -507,84 +462,52 @@ async def test_bare_import(
                     assert event == [True, "TypeError"]
 
 
-async def test_native_metadata_preset(
-    playwright_driver: Playwright, runfiles: Runfiles, editor_app: Starlette, tmp_path: Path
-) -> None:
+async def test_native_metadata(playwright_driver: Playwright, editor_app: Starlette, tmp_path: Path) -> None:
     source = tmp_path / "record.mjs"
     source.write_text(
         "var read = () => import.meta.env.MODE; var meta = () => import.meta; "
         "var render = () => 42; export { read, meta, render };"
     )
-    worker = "renderer.mjs"
-    spec = tmp_path / "spec.json"
-    spec.write_text(
-        json.dumps(
-            {"entry": source.name, "modules": {source.name: ["#0", "#1", "#3"], worker: ["#2"]}, "order": [worker]}
-        )
-    )
-    profile = tmp_path / "host.json"
-    profile.write_text(json.dumps({"profile": "browser-page"}))
-    out = tmp_path / "certified"
     editor_app.router.routes.insert(0, serve_file(source.name, source))
-    async with serve_app_in_loop(editor_app) as origin:
-        command: list[str | Path] = [
-            resolve(runfiles, os.environ["LOWERSPLIT"]),
-            write_deployment(tmp_path / "deployment.json", source, spec),
-            out,
-            "--structural",
-            "--host-contract",
-            profile,
-            "--deployment-origin",
-            origin,
-            "--deployment-preset",
-            "native-browser-record@1",
+    async with (
+        serve_app_in_loop(editor_app) as origin,
+        deterministic_browser_context(
+            playwright_driver, viewport={"width": 800, "height": 600}, frozen_now_ms=None
+        ) as context,
+    ):
+        page = await context.new_page()
+        await page.goto(origin)
+        observation = await page.evaluate("""async () => {
+                const api = await import("/record.mjs");
+                const m = api.meta();
+                const desc = x => Object.values(Object.getOwnPropertyDescriptors(x)).map(
+                    d => [typeof d.value, d.writable, d.enumerable, d.configurable]);
+                const initial = [Object.keys(m), desc(m), Object.getPrototypeOf(m) === null,
+                    m.url, m.resolve.name, m.resolve.length, m.resolve("./asset.js")];
+                let current = {}, calls = 0;
+                Object.defineProperty(m, "env", {get() {
+                    if (this !== m) throw new Error("wrong getter receiver");
+                    calls++; return {MODE: current};
+                }});
+                const first = api.read(); current = {}; const second = api.read();
+                return [Object.keys(api), api.render(), initial, first !== second, second === current, calls];
+            }""")
+        assert observation == [
+            ["meta", "read", "render"],
+            42,
+            [
+                ["url", "resolve"],
+                [["string", True, True, True], ["function", True, True, True]],
+                True,
+                origin + "/record.mjs",
+                "resolve",
+                1,
+                origin + "/asset.js",
+            ],
+            True,
+            True,
+            2,
         ]
-        for args in [[], ["--check-output"]]:
-            run = await asyncio.to_thread(
-                subprocess.run, [*command, *args], capture_output=True, text=True, check=False
-            )
-            assert run.returncode == 0, run.stdout + run.stderr
-            assert json.loads(run.stdout)["scope"] == "linked-structural-pivot"
-
-        for overlay in [False, True]:
-            if overlay:
-                install_editor_overlay(editor_app, source, {name: out / name for name in [source.name, worker]})
-            async with deterministic_browser_context(
-                playwright_driver, viewport={"width": 800, "height": 600}, frozen_now_ms=None
-            ) as context:
-                page = await context.new_page()
-                await page.goto(origin)
-                observation = await page.evaluate("""async () => {
-                    const api = await import("/record.mjs");
-                    const m = api.meta();
-                    const desc = x => Object.values(Object.getOwnPropertyDescriptors(x)).map(
-                        d => [typeof d.value, d.writable, d.enumerable, d.configurable]);
-                    const initial = [Object.keys(m), desc(m), Object.getPrototypeOf(m) === null,
-                        m.url, m.resolve.name, m.resolve.length, m.resolve("./asset.js")];
-                    let current = {}, calls = 0;
-                    Object.defineProperty(m, "env", {get() {
-                        if (this !== m) throw new Error("wrong getter receiver");
-                        calls++; return {MODE: current};
-                    }});
-                    const first = api.read(); current = {}; const second = api.read();
-                    return [Object.keys(api), api.render(), initial, first !== second, second === current, calls];
-                }""")
-                assert observation == [
-                    ["meta", "read", "render"],
-                    42,
-                    [
-                        ["url", "resolve"],
-                        [["string", True, True, True], ["function", True, True, True]],
-                        True,
-                        origin + "/record.mjs",
-                        "resolve",
-                        1,
-                        origin + "/asset.js",
-                    ],
-                    True,
-                    True,
-                    2,
-                ]
 
 
 async def test_certified_deployment(

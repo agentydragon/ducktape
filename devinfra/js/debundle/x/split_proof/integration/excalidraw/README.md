@@ -85,73 +85,34 @@ question is which possible writes the checker can soundly exclude for that call.
 Both replays stop at structural checks before reaching the module URL guard.
 [Exact schedules, checker logs, and move reports](https://app.buildbuddy.io/invocation/03ee0f61-d9eb-48d8-b30e-63e9cf62e0b8)
 
-### Strict certification of the scroll module
+### Pinned scroll source and provider
 
 ```sh
-bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_scroll_certificate
-bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_scroll_single_certificate
+bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_scroll_source_test
 ```
 
 The generated editor spec assigns `isOutsideViewPort` (unit 1336) and the two
 exported helpers (1337 and 1338) to `packages/excalidraw/scene/scroll.mjs`.
-CI keeps the two exported helpers as the strict namespace-refusal replay. The
-on-demand single trial moves only `#1337`. Each keeps the other units in source
-order in `chunk-PN7KOLDJ.js`. The replay resolves the stable `editor.js` alias
-via the generated JS roster and runs the normal splitter on that original
-esbuild file beside its actual providers with the `browser-page` profile. It
-checks that all 13 `import()` and
-`import.meta` sites stay in that entry, the 11 relative dynamic imports resolve
-to existing bundle files, and the scroll module uses a new asset path.
-The decoder retains the React factory in statement 5, lowers the `Uint8Array`
-constructor reference in statement 41 and accepts the flat object bindings in
-statements 104 and 105. The concrete-checker trials lower the module-level
-`try` and `for` in statements 176 and 178. They reject the dynamic import
-in statement 354 and leave the output directory absent.
-Each target records the source filename, placement spec and verdict.
+The test resolves the `editor.js` alias to the original `chunk-PN7KOLDJ.js`
+and checks the bytes and statement roster. Both proposed moves (1337 alone
+and 1337 with 1338) leave all 13 `import()` and `import.meta` sites in the
+entry. The test checks that all 11 relative dynamic imports resolve to
+existing bundle files and that the proposed scroll path is unused.
 
-One target needs the existing editor module record. Unit `#1751` imports
-`image-GAAHSSAO-YDUOJAAS.js`, which statically imports `ok`, `pk` and `qk`
-from `chunk-PN7KOLDJ.js`. This unit follows the moved scroll function in both
-orders. A behavioral proof must preserve the live export cells seen on re-entry
-and account for the promise returned by the loader.
+The first statement after the five named imports initializes `po` with
+`Ve(callback)`. The import resolves to export `b` of
+`./chunk-BLPUKQJE.js`. The Node probe calls that exact provider export
+with a counting callback. Creating the wrapper calls the callback zero
+times. Loading it twice calls the callback once and returns the same exports
+object both times. The test records the import boundary, the selected helpers'
+binding reads, the original export count, and the provider result in
+`import-boundary.json`.
 
-Both targets render two diagnostic placements with `--diagnostic … --force` into separate
-directories, reparses their entries and compares their public names against the editor's 611 names.
-Those outputs are uncertified previews. The `--plan` report counts source-order conflicts in
-Lean's structural checker; it is diagnostic evidence only.
-
-| Units moved                         | Entry names added    | Entry names lost | Inverted conflicts | Failed check |
-| ----------------------------------- | -------------------- | ---------------: | -----------------: | ------------ |
-| Exported scroll pair, 1337 and 1338 | `Eb$1`, `Lm`, `qb$1` |                0 |                518 | `OrderOk`    |
-| 1337 only                           | none                 |                0 |                259 | `OrderOk`    |
-
-Unit 1337 creates the arrow `Jb`. Its body reads no module bindings. The other arrow, `Qb`,
-reads `Jb` and five bindings resident in the entry. The renderer imports `ct` and `vn`
-through their existing public names and adds exports for the other three. Comparing export
-names here detects additions and removals. Artifact certification also needs to establish
-which live binding each name denotes.
-[Alias replay](https://app.buildbuddy.io/invocation/50a13338-069e-4061-a8b3-d049f7740076)
-
-The first five conflicts for the single-arrow placement are with units 5–9. Unit 5 is the
-first statement after five named-import declarations and initializes `po` with `Ve(callback)`.
-The import resolves to export `b` of `./chunk-BLPUKQJE.js`. The probe calls that exact
-provider export with a counting callback. Creating the wrapper calls the callback zero times.
-Loading it twice calls the callback once and returns the same exports object both times.
-The probe runs the provider in Node. It does not execute the complete editor.
-
-The separate CoreJS theorem covers wrapper creation and the independent arrow declaration from
-a common linked environment. Both orders reach exactly the same successful final states.
-[Linked reproduction](../../lean/EsmSplit/CoreJS/WrapperLinked.lean)
-
-The single-arrow move plan records 259 structural source-order conflicts. All
-cross `#1337`, including the conflict with the first source unit after imports.
-The test records them in `scroll-move-report.json` alongside
-`import-boundary.json` and `entry-exports.json`. The reduced case in
-[`host_profile_test.mjs`](../../translation/linked/host_profile_test.mjs) uses a
-small imported wrapper and reproduces the ambient `Symbol.for` refusal. A
-lexical `Symbol` binding passes strict certification and the Node control in
-the existing local host-binding proof.
-[Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
+The [CoreJS wrapper proof](../../lean/EsmSplit/CoreJS/WrapperLinked.lean)
+covers wrapper creation and the independent arrow declaration from a common
+linked environment. Both orders reach exactly the same successful final states.
+The [historical scroll replay](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
+records the old checker's refusal, preview export differences, and order conflicts.
 
 ### Browser deployment replay
 
@@ -173,6 +134,15 @@ The independent original editor baseline remains available:
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_original_editor_browser_smoke
+```
+
+Two Chromium tests exercise the original focused fixtures. The metadata test
+checks the native module record and repeated getter reads. The bare-import
+test checks resolution with and without an import map in fresh browser contexts.
+
+```sh
+bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:native_metadata_browser_test
+bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:bare_import_browser_test
 ```
 
 ### Direct AST lowering for negated initializers
