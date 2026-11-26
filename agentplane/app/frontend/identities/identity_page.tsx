@@ -1,8 +1,9 @@
-import { Alert, Button, Group, List, Modal, Stack, Text, Title, Tooltip } from "@mantine/core";
+import { Anchor, Alert, Button, Group, List, Modal, Stack, Text, Title, Tooltip } from "@mantine/core";
 import { type JSX, useState } from "react";
 
 import type { Identity } from "../../../policy/v1/policy_service_pb";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
+import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { useCredentialMetadata } from "../egress/credential_watch";
 import { BINDING_GRANT_HELP, BindingsTable } from "../policy/table";
 import { IconArrowLeft } from "../ui/icons";
@@ -133,6 +134,8 @@ export function IdentityPage({
   onBack: () => void;
   onDeleted: () => void;
 }): JSX.Element {
+  const inventory = useRequiredSandboxesLive();
+  const sandboxes = inventory.snapshot?.filter((box) => box.identityName === name);
   const { identities, error: identityError } = useIdentities();
   const identity = identities?.find((candidate) => candidate.identity?.name === name) ?? null;
   // The UID fences the bindings view: a same-name replacement starts a fresh watch.
@@ -168,6 +171,23 @@ export function IdentityPage({
             <Group gap="xs">
               <OriginBadge origin={identityOrigin(identity)} />
             </Group>
+          </Stack>
+          <Stack component="section" aria-label="Sandboxes using this identity" gap={4}>
+            <Title order={5}>Sandboxes using this identity</Title>
+            {!sandboxInventoryFresh(inventory) && (
+              <Text size="sm" c="dimmed">
+                Waiting for current sandbox inventory…
+              </Text>
+            )}
+            {sandboxInventoryFresh(inventory) && sandboxes?.length === 0 && <Text size="sm">None</Text>}
+            {sandboxes?.map(
+              ({ target }) =>
+                target && (
+                  <Anchor size="sm" key={target.uid} href={`/#/sandboxes/${encodeURIComponent(target.name)}`}>
+                    {target.name}
+                  </Anchor>
+                )
+            )}
           </Stack>
           <Stack component="section" aria-label="Kubernetes accounts" gap="xs">
             <Title order={5}>Kubernetes accounts</Title>

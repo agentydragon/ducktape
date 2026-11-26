@@ -19,6 +19,16 @@ async def _open_identity(view: VisualPage, app: AgentplaneFixture, name: str) ->
 
 
 @DESKTOP_AND_MOBILE
+async def test_two_sandboxes_using_one_identity(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.bind_sandbox_identity("suspended-sandbox", "referenced-identity")
+    await _open_identity(view, app, "referenced-identity")
+    section = view.page.get_by_role("region", name="Sandboxes using this identity")
+    for name in ["ready-sandbox", "suspended-sandbox"]:
+        await expect(section.get_by_role("link", name=name)).to_have_attribute("href", f"/#/sandboxes/{name}")
+    await view.capture()
+
+
+@DESKTOP_AND_MOBILE
 async def test_identities_list(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/identities")
     table = view.page.get_by_role("table", name="Identities")
