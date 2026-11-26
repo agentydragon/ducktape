@@ -15,14 +15,18 @@ interface Entry {
 const DATABASE = "agentplane-history-v1";
 let opening: Promise<IDBDatabase> | undefined;
 
+function historyBuckets() {
+  return (
+    navigator as Navigator & {
+      storageBuckets?: { keys(): Promise<string[]>; open(name: string): Promise<{ indexedDB: IDBFactory }> };
+    }
+  ).storageBuckets;
+}
+
 // Explicit logout removes this bucket via Clear-Site-Data. Never fall back to the
 // default bucket, which also holds data unrelated to conversation history.
 async function openHistoryDatabase(): Promise<IDBDatabase> {
-  const buckets = (
-    navigator as Navigator & {
-      storageBuckets?: { open(name: string): Promise<{ indexedDB: IDBFactory }> };
-    }
-  ).storageBuckets;
+  const buckets = historyBuckets();
   if (!buckets) throw new Error("Named storage buckets unavailable");
   const { indexedDB } = await buckets.open("agentplane-history");
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -63,6 +67,35 @@ function finished(tx: IDBTransaction): Promise<void> {
     tx.oncomplete = () => resolve();
     tx.onabort = () => reject(tx.error);
   });
+}
+
+export interface ThreadCacheUsage {
+  windows: number;
+  bodies: number;
+  bytes: number;
+}
+
+/** Snapshot across this browser's history bucket. Only read eviction metadata: avoid
+ * loading message contents or marking them as recently used just to report their size. */
+export async function readThreadCacheUsage(): Promise<ThreadCacheUsage | null> {
+  const buckets = historyBuckets();
+  if (!buckets) return null;
+  const usage = { windows: 0, bodies: 0, bytes: 0 };
+  if (!(await buckets.keys()).includes("agentplane-history")) return usage;
+  const tx = (await database()).transaction("usage", "readonly");
+  const done = finished(tx);
+  const cursor = tx.objectStore("usage").openCursor();
+  cursor.onsuccess = () => {
+    const row = cursor.result;
+    if (!row) return;
+    const meta = row.value as { priority: number; bytes: number };
+    if (meta.priority === 1) usage.windows++;
+    else usage.bodies++;
+    usage.bytes += meta.bytes;
+    row.continue();
+  };
+  await done;
+  return usage;
 }
 
 // Evict complete bodies first, then windows, oldest use first within each group. Read only

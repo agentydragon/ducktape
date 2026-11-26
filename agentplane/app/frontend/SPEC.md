@@ -208,6 +208,8 @@ browser on desktop and phone.
   account, thread and projection epoch. Opening a thread requires a successful scope read. Explicit sign-out removes
   the profile’s thread-history bucket, including copies held on disk by other tabs. Browsers without
   named storage buckets keep history in memory. Storage pressure sheds cold bodies before windows.
+  Settings → Storage reports saved content bytes, window and body counts, and the browser’s
+  estimate of whole-site usage and quota. Refresh takes a new snapshot.
   Unavailable storage falls back to live reads; drafts and pending input are outside this cache.
 - **An appended message, reader at the bottom**: the view follows it into view. "At the bottom"
   tolerates a small amount of slack — a reader a few pixels off the exact bottom (scroll momentum,

@@ -131,6 +131,7 @@ ts_library(
         "//agentplane/app/frontend/actions/mcp:mcp_servers",
         "//agentplane/app/frontend/actions/push",
         "//agentplane/app/frontend/connections:management",
+        "//agentplane/app/frontend/sessions:thread_cache",
     ],
 )
 
