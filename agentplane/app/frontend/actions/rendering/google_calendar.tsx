@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type JSX, type ReactNode, useState } from "react";
 import { z } from "zod";
 
+import { Line } from "../../ui/line";
 import {
   GoogleCalendarEventScope,
   type GoogleCalendarEventTime,
@@ -111,22 +112,6 @@ const eventPage = z.object({
   next_page_token: z.string().nullish(),
 });
 
-function Field({ label, children }: { label?: string; children: ReactNode }): JSX.Element {
-  return (
-    <Text component="div" size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
-      {label && (
-        <>
-          <Text span fw={600}>
-            {label}
-          </Text>
-          {" · "}
-        </>
-      )}
-      {children}
-    </Text>
-  );
-}
-
 function ExactTime({ display, exact }: { display: string; exact: string }): JSX.Element {
   const [pinned, setPinned] = useState(false);
   return (
@@ -221,7 +206,7 @@ function CalendarTarget({
   const name = calendar?.calendarId === id ? calendar?.summary?.trim() : undefined;
   if (compact) {
     return (
-      <Field label="Calendar">
+      <Line label="Calendar">
         {name || (id && id !== "primary" ? id : "Primary calendar")}
         {showId && name && id !== name && (
           <>
@@ -229,7 +214,7 @@ function CalendarTarget({
             <Code>{id}</Code>
           </>
         )}
-      </Field>
+      </Line>
     );
   }
   return <CalendarField id={id} name={name} />;
@@ -237,9 +222,9 @@ function CalendarTarget({
 
 function CalendarField({ id, name }: { id?: string; name?: string | null }): JSX.Element {
   return (
-    <Field label="Calendar">
+    <Line label="Calendar">
       <CalendarName id={id} name={name} />
-    </Field>
+    </Line>
   );
 }
 
@@ -335,19 +320,19 @@ function Target({
   return (
     <Stack gap={4}>
       {showEvent && (
-        <Field>
+        <Line>
           <EventName id={id} name={preview?.summary} link={compact ? undefined : preview?.htmlLink} />
-        </Field>
+        </Line>
       )}
       {!summaryOnly && (start || end) && (
-        <Field>
+        <Line>
           <Schedule start={start} end={end} />
-        </Field>
+        </Line>
       )}
       {!summaryOnly && original && (
-        <Field label="Original occurrence">
+        <Line label="Original occurrence">
           <ExactTime display={formatEventTime(original)} exact={submittedTimeText(original)} />
-        </Field>
+        </Line>
       )}
       {compact ? (
         <CalendarTarget id={calendarId} requestId={requestId} compact />
@@ -357,7 +342,7 @@ function Target({
           name={recordedCalendarName ?? (calendar?.calendarId === calendarId ? calendar?.summary : undefined)}
         />
       )}
-      {!summaryOnly && scope && <Field>{scope}</Field>}
+      {!summaryOnly && scope && <Line>{scope}</Line>}
     </Stack>
   );
 }
@@ -373,7 +358,7 @@ function remindersText(reminders: z.infer<typeof reminder>[]): string {
 }
 
 function Recurrence({ lines, start }: { lines: string[]; start?: EventTime | null }): JSX.Element {
-  return <Field label="Repeats">{lines.map((line) => formatRecurrence(line, start)).join("\n")}</Field>;
+  return <Line label="Repeats">{lines.map((line) => formatRecurrence(line, start)).join("\n")}</Line>;
 }
 
 const createLabel = definePreview(createArguments, ({ args }) =>
@@ -395,15 +380,15 @@ const createDetails = definePreview(createArguments, ({ args, requestId }) => (
     <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
       {args.summary || "Untitled event"}
     </Text>
-    <Field label="When">
+    <Line label="When">
       <Schedule start={args.start} end={args.end} />
-    </Field>
+    </Line>
     <CalendarTarget id={args.calendar_id} requestId={requestId} />
-    {args.location && <Field label="Location">{args.location}</Field>}
-    {args.attendees && args.attendees.length > 0 && <Field label="Attendees">{args.attendees.join(", ")}</Field>}
-    <Field label="Reminders">{remindersText(args.reminders ?? [])}</Field>
+    {args.location && <Line label="Location">{args.location}</Line>}
+    {args.attendees && args.attendees.length > 0 && <Line label="Attendees">{args.attendees.join(", ")}</Line>}
+    <Line label="Reminders">{remindersText(args.reminders ?? [])}</Line>
     {args.recurrence && <Recurrence lines={args.recurrence} start={args.start} />}
-    {args.description && <Field label="Description">{args.description}</Field>}
+    {args.description && <Line label="Description">{args.description}</Line>}
   </Stack>
 ));
 
@@ -414,33 +399,33 @@ function Update({
 }: PreviewProps<z.infer<typeof updateArguments>> & { showEvent?: boolean }): JSX.Element {
   const changes = [
     args.summary != null && (
-      <Field key="title" label="Title">
+      <Line key="title" label="Title">
         {args.summary || "Clear title"}
-      </Field>
+      </Line>
     ),
     (args.start || args.end) && (
-      <Field key="when" label="New time">
+      <Line key="when" label="New time">
         <Schedule start={args.start} end={args.end} />
-      </Field>
+      </Line>
     ),
     args.location != null && (
-      <Field key="location">{args.location ? `Change location to ${args.location}` : "Clear location"}</Field>
+      <Line key="location">{args.location ? `Change location to ${args.location}` : "Clear location"}</Line>
     ),
     args.attendees != null && (
-      <Field key="attendees">
+      <Line key="attendees">
         {args.attendees.length > 0 ? `Replace attendees with ${args.attendees.join(", ")}` : "Remove all attendees"}
-      </Field>
+      </Line>
     ),
     args.reminders != null && (
-      <Field key="reminders" label="Reminders">
+      <Line key="reminders" label="Reminders">
         {remindersText(args.reminders)}
-      </Field>
+      </Line>
     ),
     args.recurrence != null && <Recurrence key="recurrence" lines={args.recurrence} start={args.start} />,
     args.description != null && (
-      <Field key="description" label="Description">
+      <Line key="description" label="Description">
         {args.description || "Clear description"}
-      </Field>
+      </Line>
     ),
   ].filter(Boolean);
   return (
@@ -474,16 +459,16 @@ function pageScope(args: z.infer<typeof listArguments>, showDateBounds = true): 
   return (
     <>
       {showDateBounds && args.time_min && (
-        <Field label="Ending after">
+        <Line label="Ending after">
           <ExactTime display={formatDateBound(args.time_min)} exact={args.time_min} />
-        </Field>
+        </Line>
       )}
       {showDateBounds && args.time_max && (
-        <Field label="Starting before">
+        <Line label="Starting before">
           <ExactTime display={formatDateBound(args.time_max)} exact={args.time_max} />
-        </Field>
+        </Line>
       )}
-      {args.max_results !== undefined && <Field label="Results per page">{args.max_results}</Field>}
+      {args.max_results !== undefined && <Line label="Results per page">{args.max_results}</Line>}
       {args.page_token && (
         <Text size="sm" c="dimmed">
           Continue from an earlier page
@@ -494,9 +479,7 @@ function pageScope(args: z.infer<typeof listArguments>, showDateBounds = true): 
 }
 
 function RecurringEvents({ expand }: { expand?: boolean }): JSX.Element {
-  return (
-    <Field>{expand ? "Expand recurring events into occurrences" : "Include recurring series and exceptions"}</Field>
-  );
+  return <Line>{expand ? "Expand recurring events into occurrences" : "Include recurring series and exceptions"}</Line>;
 }
 
 function ListDetails({
@@ -511,7 +494,7 @@ function ListDetails({
       ) : (
         <CalendarTarget id={args.calendar_id} requestId={requestId} />
       )}
-      {args.query && <Field label="Search">{args.query}</Field>}
+      {args.query && <Line label="Search">{args.query}</Line>}
       {pageScope(args)}
       <RecurringEvents expand={args.expand_recurring} />
     </Stack>
@@ -593,20 +576,20 @@ function EventCard({ value, agenda = false }: { value: z.infer<typeof event>; ag
           )}
         </Group>
         {hasSchedule && (
-          <Field>
+          <Line>
             <Schedule start={value.start} end={value.end} />
-          </Field>
+          </Line>
         )}
         {original && (!hasSchedule || !agenda) && (
-          <Field label="Original occurrence">
+          <Line label="Original occurrence">
             <ExactTime display={formatEventTime(original)} exact={submittedTimeText(original)} />
-          </Field>
+          </Line>
         )}
-        {value.location && <Field label="Location">{value.location}</Field>}
+        {value.location && <Line label="Location">{value.location}</Line>}
         {value.recurrence && value.recurrence.length > 0 && <Recurrence lines={value.recurrence} start={value.start} />}
         {!agenda && (
           <>
-            {organiser && <Field label="Organizer">{organiser}</Field>}
+            {organiser && <Line label="Organizer">{organiser}</Line>}
             {value.attendees && value.attendees.length > 0 && (
               <Stack gap={2}>
                 <Text size="sm" fw={600}>
@@ -622,15 +605,15 @@ function EventCard({ value, agenda = false }: { value: z.infer<typeof event>; ag
               </Stack>
             )}
             {value.reminders && (
-              <Field label="Reminders">
+              <Line label="Reminders">
                 {value.reminders.use_default
                   ? "Calendar defaults"
                   : value.reminders.overrides?.length
                     ? remindersText(value.reminders.overrides)
                     : "No reminders"}
-              </Field>
+              </Line>
             )}
-            {value.description && <Field label="Description">{value.description}</Field>}
+            {value.description && <Line label="Description">{value.description}</Line>}
           </>
         )}
       </Stack>
@@ -748,7 +731,7 @@ const updateSummary = definePreview(updateArguments, ({ args, requestId }) => {
         compact
         summaryOnly
       />
-      <Field>{fields.length ? `Changes: ${fields.join(", ")}` : "No field changes requested"}</Field>
+      <Line>{fields.length ? `Changes: ${fields.join(", ")}` : "No field changes requested"}</Line>
     </Stack>
   );
 });
@@ -765,7 +748,7 @@ const eventSummary = definePreview(eventTarget, ({ args, requestId }) => (
 const listSummary = definePreview(listArguments, ({ args, requestId }) => (
   <Stack gap={4}>
     <CalendarTarget id={args.calendar_id} requestId={requestId} compact showId />
-    {args.query && <Field label="Search">{args.query}</Field>}
+    {args.query && <Line label="Search">{args.query}</Line>}
     <RecurringEvents expand={args.expand_recurring} />
   </Stack>
 ));

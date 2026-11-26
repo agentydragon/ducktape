@@ -427,9 +427,7 @@ rust_library(
         "//devinfra/js/debundle/spec",
         "//devinfra/js/debundle/value_flow",
         "@crates//:anyhow",
-        "@crates//:imbl",
         "@crates//:petgraph",
-        "@crates//:rayon",
         "@crates//:roaring",
         "@crates//:rustc-hash",
         "@crates//:serde",
@@ -448,48 +446,7 @@ rust_test(
     crate = ":analysis",
     edition = "2024",
     deps = [
-        ":raw_js_test_support",
         "@crates//:rmp-serde",
-        "@crates//:swc_ecma_parser",
-        "@crates//:tempfile",
-    ],
-)
-
-rust_library(
-    name = "cross_module_purity",
-    srcs = [
-        "cross_module_purity.rs",
-        "swc_parallel.rs",
-    ],
-    crate_root = "cross_module_purity.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":analysis_model",
-        ":binding_targets",
-        ":js_ast",
-        ":progress",
-        "//devinfra/js/debundle/analysis_domain",
-        "//devinfra/js/debundle/analysis_vocabulary",
-        "//devinfra/js/debundle/facts/sync_effects",
-        "//devinfra/js/debundle/inference",
-        "//devinfra/js/debundle/purity",
-        "//devinfra/js/debundle/spec",
-        "//devinfra/js/debundle/value_flow",
-        "@crates//:anyhow",
-        "@crates//:rayon",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
-rust_test(
-    name = "cross_module_purity_test",
-    crate = ":cross_module_purity",
-    edition = "2024",
-    deps = [
-        "@crates//:swc_ecma_parser",
-        "@crates//:swc_ecma_visit",
     ],
 )
 
@@ -565,7 +522,6 @@ rust_library(
     crate_root = "report_fixtures.rs",
     edition = "2024",
     deps = [
-        ":analysis",
         ":analysis_model",
         ":source_identity",
         "//devinfra/js/debundle/analysis_domain",
@@ -989,7 +945,6 @@ rust_binary(
         ":analysis_thread",
         ":transform_command",
         ":transform_inputs",
-        "@crates//:anyhow",
         "@crates//:clap",
     ],
 )
@@ -1004,7 +959,6 @@ rust_binary(
         ":analysis_thread",
         ":resolved_placement",
         ":transform_inputs",
-        "@crates//:anyhow",
         "@crates//:clap",
     ],
 )

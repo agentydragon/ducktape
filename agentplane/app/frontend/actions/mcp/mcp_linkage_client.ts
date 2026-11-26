@@ -1,5 +1,6 @@
 import { create, fromJson, fromJsonString, toJson } from "@bufbuild/protobuf";
 import { fetchText, fetchWithLogin, type Fetcher } from "../../transport/client";
+import { required } from "../../transport/response_fields";
 import type { StreamConnection } from "../../transport/stream_reader";
 import { followWatch } from "../../transport/watch_stream";
 import {
@@ -12,11 +13,6 @@ import {
 } from "../../../../action_service/api/contracts/operator_action_service_pb";
 
 const ACTION_FACADE = "/upstream/actions";
-
-function required<T>(value: T | undefined, field: string): T {
-  if (value === undefined) throw new Error(`The Action Service omitted ${field}.`);
-  return value;
-}
 
 export async function startMcpLinkage(
   serverId: string,

@@ -90,7 +90,7 @@ pub struct JsFile {
     pub header_lines: Vec<String>,
     /// Per-binding leading comments to emit above each top-level
     /// statement that declares one of these binding names. Populated
-    /// by the lowerer from `spec::Member::comment`; empty for files
+    /// by the lowerer from `spec::member_selectors::Member::comment`; empty for files
     /// the spec doesn't annotate. Keys that don't match any
     /// top-level statement in the body are silently dropped at emit
     /// time. See `emit_js_module_with_comments`.

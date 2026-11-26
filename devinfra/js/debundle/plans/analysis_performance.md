@@ -260,7 +260,7 @@ an LRU, per-world cache or another scheduler.
 
 Keep these bounded reuse opportunities distinct from premise-dependent analysis:
 
-- `cross_module_purity.rs` optionally repeats all-module capability preparation
+- `cross_module_purity/` optionally repeats all-module capability preparation
   after deriving bundle globals. For selected-value-input modules,
   `prepare_callable_capabilities` repeats the identical body-only local flow
   solve. Reuse that result across the two preparations; the execution indexes

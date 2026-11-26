@@ -41,7 +41,8 @@ use serde::Serialize;
 use source_identity::SourceUnitId;
 use source_identity::SourceUnitOrdinal;
 use source_inspection::PreparedSource;
-use spec::{CommutingStatementsContract, ModulePath, ResolvedMemberSelector, SourceUnitSelector};
+use spec::input_contracts::{CommutingStatementsContract, SourceUnitSelector};
+use spec::{ModulePath, ResolvedMemberSelector};
 use spec_modules::{collect_module_files, module_path_from_file};
 use swc_atoms::Atom;
 

@@ -11,9 +11,11 @@ go_library(
     deps = [
         "//agentplane/configfile",
         "//agentplane/egress/api/v1alpha1",
+        "//agentplane/grpc/graceful",
         "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/issuer",
+        "//agentplane/net/listener",
         "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",

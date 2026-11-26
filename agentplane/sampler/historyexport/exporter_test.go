@@ -104,3 +104,37 @@ func TestExportQueueBacksOffFailuresAndResetsAfterProgress(t *testing.T) {
 		t.Fatalf("caught-up Session left queued=%d requeues=%d", queue.queue.Len(), queue.queue.NumRequeues("backoff-session"))
 	}
 }
+
+// flakyScanOutbox fails the first pending-Session scans, then lists one Session and ends the run.
+type flakyScanOutbox struct {
+	acknowledgementOutbox
+	failures int
+	scans    int
+	cancel   context.CancelFunc
+}
+
+func (o *flakyScanOutbox) PendingSessionIDs(context.Context, string, string, int) ([]string, error) {
+	o.scans++
+	if o.scans <= o.failures {
+		return nil, errors.New("database failover")
+	}
+	o.cancel()
+	return []string{"pending-session"}, nil
+}
+
+func TestPendingScanSurvivesTransientErrors(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	outbox := &flakyScanOutbox{failures: 2, cancel: cancel}
+	queue := newExportQueue(workqueue.TypedRateLimitingQueueConfig[string]{}, func(context.Context, string) (bool, error) {
+		return true, nil
+	})
+	defer queue.queue.ShutDown()
+	queue.scanBackoff = workqueue.NewTypedItemExponentialFailureRateLimiter[string](time.Millisecond, time.Millisecond)
+	if err := queue.scanPending(ctx, outbox, "history", make(chan struct{})); !errors.Is(err, context.Canceled) {
+		t.Fatalf("scanPending err=%v, expected context.Canceled", err)
+	}
+	if outbox.scans != 3 || queue.queue.Len() != 1 {
+		t.Fatalf("scans=%d queued=%d, expected 3 scans and the pending Session queued", outbox.scans, queue.queue.Len())
+	}
+}

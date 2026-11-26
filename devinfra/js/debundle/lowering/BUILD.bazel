@@ -83,7 +83,6 @@ rust_library(
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
-        "@crates//:thiserror",
     ],
 )
 

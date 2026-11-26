@@ -26,6 +26,7 @@ ts_library(
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
         "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/transport:response_fields",
         "//agentplane/app/frontend/transport:stream_reader",
         "//agentplane/app/frontend/transport:watch_stream",
     ],

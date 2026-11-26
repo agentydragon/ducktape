@@ -115,21 +115,18 @@ from `chunk-PN7KOLDJ.js`. This unit follows the moved scroll function in both
 orders. A behavioral proof must preserve the live export cells seen on re-entry
 and account for the promise returned by the loader.
 
-Both targets render two diagnostic placements with `--diagnostic … --force` into separate
-directories, reparses their entries and compares their public names against the editor's 611 names.
-Those outputs are uncertified previews. The `--plan` report counts source-order conflicts in
-Lean's structural checker; it is diagnostic evidence only.
+Both targets request two rejected placements through `--diagnostic --plan`, without `--force`.
+The report-only runs leave their output directories absent and preserve the structural conflict
+counts as sidecars. The report does not certify an output artifact.
 
-| Units moved                         | Entry names added    | Entry names lost | Inverted conflicts | Failed check |
-| ----------------------------------- | -------------------- | ---------------: | -----------------: | ------------ |
-| Exported scroll pair, 1337 and 1338 | `Eb$1`, `Lm`, `qb$1` |                0 |                518 | `OrderOk`    |
-| 1337 only                           | none                 |                0 |                259 | `OrderOk`    |
+| Units moved                         | Inverted conflicts | Failed check |
+| ----------------------------------- | -----------------: | ------------ |
+| Exported scroll pair, 1337 and 1338 |                518 | `OrderOk`    |
+| 1337 only                           |                259 | `OrderOk`    |
 
 Unit 1337 creates the arrow `Jb`. Its body reads no module bindings. The other arrow, `Qb`,
-reads `Jb` and five bindings resident in the entry. The renderer imports `ct` and `vn`
-through their existing public names and adds exports for the other three. Comparing export
-names here detects additions and removals. Artifact certification also needs to establish
-which live binding each name denotes.
+reads `Jb` and five bindings resident in the entry. The test records the source-level binding
+reads and probes the pinned provider directly in Node; it does not execute an unchecked output tree.
 [Alias replay](https://app.buildbuddy.io/invocation/50a13338-069e-4061-a8b3-d049f7740076)
 
 The first five conflicts for the single-arrow placement are with units 5–9. Unit 5 is the
@@ -146,7 +143,7 @@ a common linked environment. Both orders reach exactly the same successful final
 The single-arrow move plan records 259 structural source-order conflicts. All
 cross `#1337`, including the conflict with the first source unit after imports.
 The test records them in `scroll-move-report.json` alongside
-`import-boundary.json` and `entry-exports.json`. The reduced case in
+`import-boundary.json` and `diagnostic-plans.json`. The reduced case in
 [`host_profile_test.mjs`](../../translation/linked/host_profile_test.mjs) uses a
 small imported wrapper and reproduces the ambient `Symbol.for` refusal. A
 lexical `Symbol` binding passes strict certification and the Node control in

@@ -7,7 +7,7 @@
 use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract};
 use std::collections::{BTreeMap, BTreeSet};
 
-use cross_module_purity::ModulePurityFacts;
+use cross_module_purity::module_facts::ModulePurityFacts;
 use spec::ChunkExportPurity;
 
 /// One `chunk_export_purity` field for every chunk this run analyzes.
