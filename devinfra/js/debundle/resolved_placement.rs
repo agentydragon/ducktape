@@ -138,92 +138,73 @@ fn assemble(spec: &mut TransformSpec, chunk: &str, fragments: &[&ProposalFragmen
     Ok(())
 }
 
-pub fn resolve_placement(
-    source: &TransformSpecSource,
-    chunk: &str,
-    subset: Option<&Path>,
-    out: &Path,
-    fragments: &[ProposalFragment],
-    canonical_out: Option<&Path>,
-    diagnostics: &analysis::diagnostics::Diagnostics,
-) -> Result<()> {
-    ensure!(
-        canonical_out.is_none() || subset.is_some(),
-        "--canonical-out requires --ownership-subset"
-    );
-    ensure!(
-        canonical_out != Some(out),
-        "canonical and selected outputs must be distinct"
-    );
-    let qualified_fragments = fragments
-        .iter()
-        .cloned()
-        .map(|fragment| (chunk.to_owned(), fragment))
-        .collect::<Vec<_>>();
-    let chunks = [chunk.to_owned()];
-    let (selected, canonical) = resolve_placements_inner(
-        source,
-        &chunks,
-        subset,
-        &qualified_fragments,
-        canonical_out.is_some(),
-        diagnostics,
-    )?;
-    // Proposal inputs may live anywhere. Never truncate an authored file via
-    // an output path (including symlinks or hard links) in these modes.
-    let fresh = canonical_out.is_some() || !fragments.is_empty();
-    if let Some(path) = canonical_out {
-        let canonical = canonical.context("missing canonical placement output")?;
-        write_placement(path, &canonical[0], fresh)?;
-    }
-    write_placement(out, &selected[0], fresh)
+enum PlacementShape {
+    Single,
+    Batch,
 }
 
-/// Export ownership for several chunks after one shared artifact preparation and selector solve.
-pub fn resolve_placements(
-    source: &TransformSpecSource,
-    chunks: &[String],
-    subset: Option<&Path>,
-    out: &Path,
-    fragments: &[ChunkProposalFragment],
-    canonical_out: Option<&Path>,
-    diagnostics: &analysis::diagnostics::Diagnostics,
-) -> Result<()> {
-    ensure!(
-        canonical_out.is_none() || subset.is_some(),
-        "--canonical-out requires --ownership-subset"
-    );
-    ensure!(
-        canonical_out != Some(out),
-        "canonical and selected outputs must be distinct"
-    );
-    let qualified_fragments = fragments
-        .iter()
-        .map(|fragment| (fragment.chunk.clone(), fragment.fragment.clone()))
-        .collect::<Vec<_>>();
-    let (selected, canonical) = resolve_placements_inner(
-        source,
-        chunks,
-        subset,
-        &qualified_fragments,
-        canonical_out.is_some(),
-        diagnostics,
-    )?;
-    // Proposal inputs may live anywhere. Never truncate an authored file via
-    // an output path (including symlinks or hard links) in these modes.
-    let fresh = canonical_out.is_some() || !fragments.is_empty();
-    if let Some(path) = canonical_out {
-        let canonical = canonical.context("missing canonical placement output")?;
-        write_placements(path, &canonical, fresh)?;
+#[derive(Debug, ClapArgs)]
+struct PlacementOutputs {
+    /// Retain only these canonical modules, member names and anonymous indices.
+    #[arg(long)]
+    ownership_subset: Option<PathBuf>,
+    /// Also write the unfiltered view of this solve.
+    #[arg(long, requires = "ownership_subset")]
+    canonical_out: Option<PathBuf>,
+    /// Destination JSON file.
+    #[arg(long)]
+    out: PathBuf,
+}
+
+impl PlacementOutputs {
+    fn resolve_and_write(
+        &self,
+        source: &TransformSpecSource,
+        chunks: &[String],
+        fragments: &[(&str, &ProposalFragment)],
+        shape: PlacementShape,
+        diagnostics: &analysis::diagnostics::Diagnostics,
+    ) -> Result<()> {
+        let subset = self.ownership_subset.as_deref();
+        let canonical_out = self.canonical_out.as_deref();
+        ensure!(
+            canonical_out.is_none() || subset.is_some(),
+            "--canonical-out requires --ownership-subset"
+        );
+        ensure!(
+            canonical_out != Some(self.out.as_path()),
+            "canonical and selected outputs must be distinct"
+        );
+        let (selected, canonical) = resolve_placements_inner(
+            source,
+            chunks,
+            subset,
+            fragments,
+            canonical_out.is_some(),
+            diagnostics,
+        )?;
+        // Proposal inputs may live anywhere. Never truncate an authored file via
+        // an output path (including symlinks or hard links) in these modes.
+        let fresh = canonical_out.is_some() || !fragments.is_empty();
+        let write = |path: &Path, placements: &[ResolvedPlacement]| match shape {
+            PlacementShape::Single => write_json(path, &placements[0], fresh),
+            PlacementShape::Batch => write_json(path, &ResolvedPlacements { placements }, fresh),
+        };
+        if let Some(path) = canonical_out {
+            write(
+                path,
+                &canonical.context("missing canonical placement output")?,
+            )?;
+        }
+        write(&self.out, &selected)
     }
-    write_placements(out, &selected, fresh)
 }
 
 fn resolve_placements_inner(
     source: &TransformSpecSource,
     chunks: &[String],
     subset: Option<&Path>,
-    fragments: &[(String, ProposalFragment)],
+    fragments: &[(&str, &ProposalFragment)],
     include_canonical: bool,
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<(Vec<ResolvedPlacement>, Option<Vec<ResolvedPlacement>>)> {
@@ -247,15 +228,15 @@ fn resolve_placements_inner(
     }
     for (chunk, _) in fragments {
         ensure!(
-            unique_chunks.contains(chunk),
+            unique_chunks.contains(*chunk),
             "proposal fragment targets unrequested chunk {chunk:?}"
         );
     }
     for chunk in chunks {
         let chunk_fragments = fragments
             .iter()
-            .filter(|(fragment_chunk, _)| fragment_chunk == chunk)
-            .map(|(_, fragment)| fragment)
+            .filter(|(fragment_chunk, _)| *fragment_chunk == chunk.as_str())
+            .map(|(_, fragment)| *fragment)
             .collect::<Vec<_>>();
         assemble(&mut spec, chunk, &chunk_fragments)?;
     }
@@ -321,14 +302,6 @@ fn resolve_placements_inner(
         selected.push(selection);
     }
     Ok((selected, canonical))
-}
-
-fn write_placement(path: &Path, placement: &ResolvedPlacement, fresh: bool) -> Result<()> {
-    write_json(path, placement, fresh)
-}
-
-fn write_placements(path: &Path, placements: &[ResolvedPlacement], fresh: bool) -> Result<()> {
-    write_json(path, &ResolvedPlacements { placements }, fresh)
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T, fresh: bool) -> Result<()> {
@@ -429,30 +402,26 @@ pub struct ResolvePlacementArgs {
     /// Materialized chunk ID from the canonical spec.
     #[arg(long)]
     chunk: String,
-    /// Retain only these canonical modules, member names and anonymous indices.
-    #[arg(long)]
-    ownership_subset: Option<PathBuf>,
     /// Append a source_matches-only fragment to OWNER in this chunk; repeat for multiple files.
     #[arg(long, value_name = "OWNER=YAML")]
     proposal_fragment: Vec<ProposalFragment>,
-    /// Also write the unfiltered view of this solve.
-    #[arg(long, requires = "ownership_subset")]
-    canonical_out: Option<PathBuf>,
-    /// Destination JSON file.
-    #[arg(long)]
-    out: PathBuf,
+    #[command(flatten)]
+    output: PlacementOutputs,
 }
 
 impl ResolvePlacementArgs {
     pub fn run(self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
         command_diagnostics::run(stderr, |diagnostics| {
-            resolve_placement(
+            let fragments = self
+                .proposal_fragment
+                .iter()
+                .map(|fragment| (self.chunk.as_str(), fragment))
+                .collect::<Vec<_>>();
+            self.output.resolve_and_write(
                 &self.context.resolve()?,
-                &self.chunk,
-                self.ownership_subset.as_deref(),
-                &self.out,
-                &self.proposal_fragment,
-                self.canonical_out.as_deref(),
+                std::slice::from_ref(&self.chunk),
+                &fragments,
+                PlacementShape::Single,
                 diagnostics,
             )
         })
@@ -467,30 +436,26 @@ pub struct ResolvePlacementsArgs {
     /// Materialized chunk IDs from the canonical spec; repeat to export a batch.
     #[arg(long, required = true, value_name = "CHUNK")]
     chunk: Vec<String>,
-    /// Retain only these canonical modules, member names and anonymous indices.
-    #[arg(long)]
-    ownership_subset: Option<PathBuf>,
     /// Append a source_matches-only fragment to CHUNK::OWNER in this batch; repeat for multiple files.
     #[arg(long, value_name = "CHUNK::OWNER=YAML")]
     proposal_fragment: Vec<ChunkProposalFragment>,
-    /// Also write the unfiltered view of this solve.
-    #[arg(long, requires = "ownership_subset")]
-    canonical_out: Option<PathBuf>,
-    /// Destination batch JSON file.
-    #[arg(long)]
-    out: PathBuf,
+    #[command(flatten)]
+    output: PlacementOutputs,
 }
 
 impl ResolvePlacementsArgs {
     pub fn run(self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
         command_diagnostics::run(stderr, |diagnostics| {
-            resolve_placements(
+            let fragments = self
+                .proposal_fragment
+                .iter()
+                .map(|fragment| (fragment.chunk.as_str(), &fragment.fragment))
+                .collect::<Vec<_>>();
+            self.output.resolve_and_write(
                 &self.context.resolve()?,
                 &self.chunk,
-                self.ownership_subset.as_deref(),
-                &self.out,
-                &self.proposal_fragment,
-                self.canonical_out.as_deref(),
+                &fragments,
+                PlacementShape::Batch,
                 diagnostics,
             )
         })
