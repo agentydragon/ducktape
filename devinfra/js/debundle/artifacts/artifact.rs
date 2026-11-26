@@ -208,7 +208,7 @@ impl JsFile {
         let JsFileBody::Ast(parsed) = self.body else {
             return None;
         };
-        let source = parsed.cm.files()[0].clone();
+        let source = parsed.source_file();
         Some(Self {
             body: JsFileBody::SourceWithAst(SourceWithAst { parsed, source }),
             ..self
