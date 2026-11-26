@@ -51,6 +51,21 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   require entry.exports.isEmpty "actual entry has generated glue exports"
   let built ← IO.ofExcept (TerminalConstructor.construct (p, rows) bundle spec)
   let _ := TerminalConstructor.sound built
+  match spec.modules with
+  | (owner, selector :: rest) :: tail =>
+    let repeated := { spec with modules := (owner, selector :: selector :: rest) :: tail }
+    match TerminalConstructor.construct (p, rows) bundle repeated with
+    | .error "an original unit is selected more than once" => pure ()
+    | _ => throw (IO.userError "duplicate source selector was not refused")
+  | _ => throw (IO.userError "fixture has no source selector")
+  let overlapping := { spec with modules := spec.modules.map fun (owner, selectors) =>
+    (owner, if owner == "provider0.mjs" then .name "data0" :: selectors else selectors) }
+  match TerminalConstructor.construct (p, rows) bundle overlapping with
+  | .error "an original unit is selected more than once" => pure ()
+  | _ => throw (IO.userError "overlapping name and ordinal selectors were not refused")
+  match TerminalConstructor.construct (p, rows) (bundle ++ [default]) spec with
+  | .error "terminal export row must be the final original source unit" => pure ()
+  | _ => throw (IO.userError "extra omitted source unit was not refused")
   let badImport : Program := { p with modules := [{ m with imports := [⟨"provider.mjs", []⟩] }] }
   match TerminalConstructorInput.check (badImport, rows) with
   | .error "terminal source must not import modules" => pure ()
@@ -61,6 +76,14 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   match TerminalConstructorInput.check (badDeclaration, rows) with
   | .error "expected unique const declarations with only primitive initializers or earlier reads" => pure ()
   | _ => throw (IO.userError "a non-const original statement was not refused")
+
+private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := do
+  let input ← decode j
+  let nodes ← IO.ofExcept (ESTreeUnits.checkedNodes j sourceText)
+  let spec ← IO.ofExcept (EsmSplit.parseAuthoredSpec specText)
+  match TerminalConstructor.construct input (EsmSplit.LowerSplit.SparseArtifact.sourceBundle nodes) spec with
+  | .error "terminal export row must be the final original source unit" => pure ()
+  | _ => throw (IO.userError "a real omitted debugger statement was not refused")
 
 private def checkSparse (j : Json) : IO Unit := do
   let (p, rows) ← decode j
@@ -114,9 +137,9 @@ private def checkRefused (j : Json) (expected : String) : IO Unit := do
 def main : IO UInt32 := do
   let line ← (← IO.getStdin).getLine
   let cases ← IO.ofExcept (Json.parse line >>= Json.getArr?)
-  unless cases.size == 10 do throw (IO.userError "expected eight real parsed sources and the authored spec and source")
-  let specText ← IO.ofExcept cases[8]!.getStr?
-  let sourceText ← IO.ofExcept cases[9]!.getStr?
+  unless cases.size == 11 do throw (IO.userError "expected nine real parsed sources and the authored spec and source")
+  let specText ← IO.ofExcept cases[9]!.getStr?
+  let sourceText ← IO.ofExcept cases[10]!.getStr?
   checkGraph cases[0]! specText sourceText
   checkSparse cases[1]!
   checkAliases cases[2]!
@@ -125,4 +148,5 @@ def main : IO UInt32 := do
   checkRefused cases[5]! "unsupported re-export from another module"
   checkRefused cases[6]! "checked construction requires an import-free original"
   checkMixed cases[7]!
+  checkOmitted cases[8]! specText (sourceText ++ "\ndebugger;")
   return 0

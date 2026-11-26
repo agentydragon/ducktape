@@ -6,9 +6,11 @@ import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.NamedDeclarationSplit
 import EsmSplit.CoreJS.StructuralCertificate
+import EsmSplit.CoreJS.TerminalConstructor
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
 import EsmSplit.LowerSplit.SliceCertificate
+import EsmSplit.LowerSplit.SparseArtifact
 import EsmSplit.ReadDeployment
 
 /-! Certify a proposed split and publish its output or verify the existing tree. -/
@@ -316,6 +318,32 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
     | .error refusal => return some (← emitRefusal options.request.label refusal "named-declarations")
   catch e => return some (← emitVerdict options.request.label (.error e.toString) "named-declarations")
 
+/-- Use the terminal-export constructor on the original full bundle and
+unchanged authored placement. The trusted CoreJS printer receives its actual
+constructed program; publication uses the ordinary staged readback gate. -/
+private def tryTerminalDeclarations (chunk : DeploymentChunk) (src : BundleInput)
+    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
+  unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural &&
+      options.deploymentOrigin.isNone do return none
+  if (← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS") == some "1" &&
+      (← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED") == some "1" then return none
+  let .authored spec := chunk.placement | return none
+  unless spec.sequential && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
+  let .ok nodes := ESTreeUnits.checkedNodes src.program src.source | return none
+  let .ok input := CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
+  let bundle := SparseArtifact.sourceBundle nodes
+  let .ok built := CoreJS.TerminalConstructor.construct input bundle spec | return none
+  try
+    let programs ← IO.ofExcept (ESTreeEmit.corePrograms built.program src.source)
+    let part : OutputPart := { programs, source := src.source, input := src.input, work }
+    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun _ =>
+      pure (.ok ())
+    match checked with
+    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) "terminal-declarations"
+        [("strategy", toJson "compiled-constructor")])
+    | .error refusal => return some (← emitRefusal options.request.label refusal "terminal-declarations")
+  catch e => return some (← emitVerdict options.request.label (.error e.toString) "terminal-declarations")
+
 /-- Preserve singleton declarations and executable linked certificates,
 with the original bundle at the virtual root for authored inputs. -/
 private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
@@ -327,6 +355,7 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
   let structural := options.structural
   let checkOnly := options.checkOnly
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
+  if let some verdict ← tryTerminalDeclarations chunk src out work options timings then return verdict
   if let some verdict ← tryNamedDeclarations chunk src out work options timings then return verdict
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
   let part ← prepare chunk src work profile "bundle.mjs" timings declarations

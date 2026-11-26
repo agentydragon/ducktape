@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
 import { generate } from "astring";
-import { dump } from "../parser.mjs";
 import { split } from "../testing/split.mjs";
 import { moduleGraphFixture } from "./module_graph_fixture.mjs";
 
@@ -16,82 +15,65 @@ const out = path.join(root, "out");
 writeFileSync(source, fixture.source);
 writeFileSync(spec, JSON.stringify(fixture.spec));
 
-function probe(placement) {
-  const request = [{ kind: "namedConstructor", input: { source: dump(fixture.source), spec: placement } }];
-  const result = spawnSync(process.env.LINKED_INPUT_CHECKER, [], {
-    encoding: "utf8",
-    input: JSON.stringify(request) + "\n",
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: 90_000,
-  });
-  if (result.error) throw result.error;
-  assert.equal(result.status, 0, result.stderr);
-  return JSON.parse(result.stdout)[0];
-}
+const produced = split({ source, spec, out, require: "all-outcomes", timeoutMs: 90_000 });
+assert.equal(produced.status, "certified", produced.log);
+assert.equal(produced.scope, "terminal-declarations");
+assert.equal(produced.verdict.strategy, "compiled-constructor");
+const checked = split({ source, spec, out, require: "all-outcomes", checkOutput: true, timeoutMs: 90_000 });
+assert.equal(checked.status, "certified", checked.log);
+assert.equal(checked.scope, "terminal-declarations");
+assert.equal(checked.verdict.strategy, "compiled-constructor");
 
-function run(placement, dest) {
-  writeFileSync(spec, JSON.stringify(placement));
-  try {
-    const result = split({ source, spec, out: dest, require: "all-outcomes", timeoutMs: 90_000 });
-    return {
-      status: result.status,
-      scope: result.scope,
-      strategy: result.verdict.strategy ?? null,
-      reason: result.reason,
-    };
-  } catch (error) {
-    if (error.code === "ETIMEDOUT") return { status: "blocked", reason: "CLI exceeded 90 seconds" };
-    throw error;
-  }
-}
+const namespace = await import(pathToFileURL(path.join(out, fixture.entry)).href);
+assert.deepEqual(Object.fromEntries(fixture.names.map((name) => [name, namespace[name]])), fixture.expected);
 
-const constructor = probe(fixture.spec);
-const production = run(fixture.spec, out);
-const exactStrategy = production.status === "certified" && production.strategy === "compiled-constructor";
-const outcome = exactStrategy ? "green" : production.status === "blocked" ? "blocked" : "refused";
-let wrongCell = "blocked: no constructor output to mutate";
-if (exactStrategy) {
-  assert.equal(constructor.error, undefined);
-  assert.equal(production.scope, "named-declarations");
-  writeFileSync(spec, JSON.stringify(fixture.spec));
-  assert.equal(split({ source, spec, out, require: "all-outcomes", checkOutput: true }).status, "certified");
-  const entry = path.join(out, fixture.entry);
-  const before = readFileSync(entry, "utf8");
-  const ast = parse(before, { sourceType: "module", ecmaVersion: "latest" });
-  const exports = ast.body.flatMap((stmt) => (stmt.type === "ExportNamedDeclaration" ? stmt.specifiers : []));
-  const first = exports.find((item) => item.exported.name === "reader0");
-  const second = exports.find((item) => item.exported.name === "reader1");
-  assert(first && second && first.local.name !== second.local.name, "entry must expose distinct cells");
-  first.local.name = second.local.name;
-  writeFileSync(entry, generate(ast));
-  const checked = split({ source, spec, out, require: "all-outcomes", checkOutput: true });
-  assert.equal(checked.status, "refused");
-  writeFileSync(entry, before);
-  wrongCell = "refused";
-} else {
-  assert(constructor.error, "a legacy certificate cannot establish constructor acceptance");
-}
+// reader0 and data0 have the same value but are distinct live cells. Replacing
+// the consumer's exported cell must fail the ordinary output readback check.
+const consumer = path.join(out, "consumer0.mjs");
+const before = readFileSync(consumer, "utf8");
+const ast = parse(before, { sourceType: "module", ecmaVersion: "latest" });
+const imports = ast.body.flatMap((stmt) => (stmt.type === "ImportDeclaration" ? stmt.specifiers : []));
+const exports = ast.body.flatMap((stmt) => (stmt.type === "ExportNamedDeclaration" ? stmt.specifiers : []));
+const reader = exports.find((item) => item.exported.name === "reader0");
+assert(imports.some((item) => item.local.name === "data0"));
+assert.equal(reader?.local.name, "reader0");
+assert.equal(fixture.expected.reader0, "value0");
+reader.local.name = "data0";
+const altered = generate(ast);
+writeFileSync(consumer, altered);
+const wrongCell = split({ source, spec, out, require: "all-outcomes", checkOutput: true, timeoutMs: 90_000 });
+assert.equal(wrongCell.status, "refused", wrongCell.log);
+assert.equal(readFileSync(consumer, "utf8"), altered, "readback refusal changed existing bytes");
+writeFileSync(consumer, before);
 
-// Move a provider into a later consumer, changing its requested owner and schedule.
+// Request a later owner for the first provider, changing the original order.
 const wrongOwner = structuredClone(fixture.spec);
 wrongOwner.modules["provider0.mjs"] = wrongOwner.modules["provider0.mjs"].filter((id) => id !== "#0");
 wrongOwner.modules["consumer0.mjs"].unshift("#0");
-const wrongProbe = probe(wrongOwner);
-const wrongOutput = path.join(root, "wrong-owner");
-const wrongProduction = run(wrongOwner, wrongOutput);
-assert(wrongProbe.error, "constructor accepted the wrong owner");
-assert.notEqual(wrongProduction.strategy, "compiled-constructor", JSON.stringify(wrongProduction));
-if (wrongProduction.status === "refused") assert(!existsSync(wrongOutput));
+const wrongSpec = path.join(root, "wrong-owner.json");
+const protectedOut = path.join(root, "protected");
+writeFileSync(wrongSpec, JSON.stringify(wrongOwner));
+mkdirSync(protectedOut);
+const sentinel = path.join(protectedOut, "sentinel.txt");
+writeFileSync(sentinel, "preserve existing bytes\n");
+const ownerResult = split({
+  source,
+  spec: wrongSpec,
+  out: protectedOut,
+  require: "all-outcomes",
+  allowExistingOut: true,
+  timeoutMs: 90_000,
+});
+assert.equal(ownerResult.status, "refused", ownerResult.log);
+assert.equal(readFileSync(sentinel, "utf8"), "preserve existing bytes\n");
 
-// Without a constructor-produced candidate there is no output cell to mutate.
 console.log(
   JSON.stringify({
     fixture: "module_graph_test/16",
     originalExportOrdinal: 32,
-    constructor,
-    production,
-    outcome,
-    wrongOwner: { constructor: wrongProbe, production: wrongProduction },
-    wrongCell,
+    strategy: produced.verdict.strategy,
+    emittedAndReadBack: "green",
+    wrongOwner: ownerResult.status,
+    equalValueWrongCell: wrongCell.status,
   })
 );

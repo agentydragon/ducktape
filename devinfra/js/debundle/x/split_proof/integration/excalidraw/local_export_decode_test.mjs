@@ -14,6 +14,7 @@ const sources = [
   'export { value } from "./provider.mjs";',
   'import { value } from "./provider.mjs"; export { value };',
   "export const declared = 1; export { declared as alias };",
+  fixture.source + "\ndebugger;",
 ];
 const run = spawnSync(process.env.LOCAL_EXPORT_DECODE_TEST, [], {
   encoding: "utf8",

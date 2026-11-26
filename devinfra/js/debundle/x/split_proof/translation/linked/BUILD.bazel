@@ -78,15 +78,10 @@ js_test(
     timeout = "long",
     data = _TEST_DATA + [
         ":module_graph_fixture",
-        "//devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner",
-        "//devinfra/js/debundle/x/split_proof/translation:parser",
         "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
     entry_point = "module_graph_constructor_test.mjs",
-    env = dict(
-        _TEST_ENV,
-        LINKED_INPUT_CHECKER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)",
-    ),
+    env = _TEST_ENV,
 )
 
 js_test(

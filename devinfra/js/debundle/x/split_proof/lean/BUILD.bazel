@@ -781,10 +781,12 @@ lean_library(
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
+        ":corejs_terminal_constructor",
         ":lowersplit_input",
         ":lowersplit_support",
         ":named_declaration_split",
         ":planner",
+        ":sparse_checked_artifact",
     ],
 )
 
@@ -1709,6 +1711,7 @@ lean_library(
     deps = [
         ":corejs_terminal_constructor_input",
         ":planner",
+        ":terminal_export_placement",
     ],
 )
 

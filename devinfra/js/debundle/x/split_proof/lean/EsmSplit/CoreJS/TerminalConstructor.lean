@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.TerminalConstructorInput
+import EsmSplit.CoreJS.TerminalExportPlacement
 import EsmSplit.ModulePath
 
 /-! A checked CoreJS constructor for an order-kept singleton source whose
@@ -12,6 +13,9 @@ The source rows and full planner bundle are supplied by the trusted frontend. -/
 structure Construction (input : Program × List EsmSplit.LocalExportUnit)
     (B : EsmSplit.Bundle) (S : EsmSplit.Spec) where
   checked : TerminalConstructorInput.Checked input
+  placement : TerminalExportPlacement.Selection ⟨checked.terminal.source, checked.terminal.row.ordinal⟩ S
+  complete : B.length = checked.terminal.row.ordinal + 1
+  evaluationOrder : (EsmSplit.mkPlan B S).evalOrder = S.order ++ [S.entry]
   valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S)
   footprints : MetadataCells.Footprints (checked.terminal.source.body.map Prod.snd) B
   ordered : ProjectedOrder.Kept (checked.terminal.source.body.map Prod.snd) (EsmSplit.mkPlan B S)
@@ -32,10 +36,15 @@ def construct (input : Program × List EsmSplit.LocalExportUnit) (B : EsmSplit.B
     Except String (Construction input B S) := do
   unless S.sequential && !S.privateEntryBody do
     throw "terminal constructor requires sequential placement and no private entry body"
-  EsmSplit.validateModulePaths (S.modules.map Prod.fst)
+  EsmSplit.validateModulePaths (S.entry :: S.modules.map Prod.fst)
   let checked ← TerminalConstructorInput.check input
+  let placement ← TerminalExportPlacement.resolve ⟨checked.terminal.source, checked.terminal.row.ordinal⟩ S
   let ss := checked.terminal.source.body.map Prod.snd
   let plan := EsmSplit.mkPlan B S
+  let .isTrue complete := (inferInstance : Decidable (B.length = checked.terminal.row.ordinal + 1)) |
+    throw "terminal export row must be the final original source unit"
+  let .isTrue evaluationOrder := (inferInstance : Decidable (plan.evalOrder = S.order ++ [S.entry])) |
+    throw "terminal plan does not follow the authored module order"
   let .isTrue valid := (inferInstance : Decidable (EsmSplit.Valid B S plan)) |
     throw "terminal plan failed placement, linkage or scope checks"
   let .isTrue footprints := (inferInstance : Decidable (MetadataCells.Footprints ss B)) |
@@ -52,7 +61,7 @@ def construct (input : Program × List EsmSplit.LocalExportUnit) (B : EsmSplit.B
   | some entry =>
     if units : entry.stmts = [checked.terminal.row.ordinal] then
       if glue : entry.exports = [] then
-        return ⟨checked, valid, footprints, ordered, entry, found, units, glue, rowFootprint, sourceDefs⟩
+        return ⟨checked, placement, complete, evaluationOrder, valid, footprints, ordered, entry, found, units, glue, rowFootprint, sourceDefs⟩
       else throw "terminal entry has generated glue exports"
     else throw "terminal entry must contain only the original export row"
 
