@@ -431,7 +431,7 @@ fn claim_locations_by_source_unit(
 /// The batch's canonical destination per source unit; rejects repeats,
 /// import/export scaffolding and reserved residual paths.
 fn requested_source_unit_destinations(
-    graph_input: &analysis::DependencyGraphInput,
+    graph_input: &graph::DependencyGraphInput,
     assignments: Vec<SourceUnitAssignment>,
     scope: Option<&ModuleTreeScope>,
 ) -> Result<BTreeMap<String, String>> {
@@ -511,7 +511,7 @@ struct ResidualClaimPlan {
 impl ResidualClaimPlan {
     fn claim(
         &mut self,
-        node: &analysis::SourceUnitReport,
+        node: &graph::SourceUnitReport,
         source: std::path::PathBuf,
         destination: &str,
         source_unit_id: &str,
