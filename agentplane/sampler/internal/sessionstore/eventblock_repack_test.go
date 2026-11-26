@@ -107,7 +107,9 @@ func TestCompactJournalTranscodesLegacyAndCurrentBlocks(t *testing.T) {
 	store.eventBlockProfile = eventblock.Profile{TargetBytes: 64 << 10, TargetEntries: 64, Level: 3}
 	session := openSessionForStore(t, store, "")
 	appendAPBTestJournalThrough(t, store, session.ID, 300)
-	replaceRowsWithBlock(t, store, session.ID, 1, 32, true)
+	// A one-event APB block ends exactly on the first cursor of the apply range.
+	replaceRowsWithBlock(t, store, session.ID, 1, 1, false)
+	replaceRowsWithBlock(t, store, session.ID, 2, 32, true)
 	replaceRowsWithBlock(t, store, session.ID, 33, 64, false)
 	migrationExec(t, store.DB(), `DELETE FROM sampler_event WHERE session_id=$1 AND sequence=150`, session.ID)
 	want := eventFrames(t, store, session.ID, 1, 300)
@@ -116,13 +118,13 @@ func TestCompactJournalTranscodesLegacyAndCurrentBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(before.Owners) != 1 || before.Owners[0].LegacyGzipBlocks != 1 || before.Owners[0].CurrentBlocks != 1 {
+	if len(before.Owners) != 1 || before.Owners[0].LegacyGzipBlocks != 1 || before.Owners[0].CurrentBlocks != 2 {
 		t.Fatalf("pre-repack inventory=%+v", before.Owners)
 	}
 	if before.Owners[0].CoverageGaps != 1 || before.Owners[0].MissingSequences != 1 {
 		t.Fatalf("pre-repack inventory did not report the skipped cursor: %+v", before.Owners[0])
 	}
-	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); got != 2 {
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); got != 3 {
 		t.Fatalf("dry-run fixture started with %d blocks", got)
 	}
 
@@ -130,7 +132,7 @@ func TestCompactJournalTranscodesLegacyAndCurrentBlocks(t *testing.T) {
 	if err != nil || proposal.Events != int64(len(want)) || proposal.Blocks == 0 {
 		t.Fatalf("dry-run proposal=%+v err=%v", proposal, err)
 	}
-	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); got != 2 {
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); got != 3 {
 		t.Fatalf("dry run changed the block count to %d", got)
 	}
 	result, err := store.CompactJournal(t.Context(), session.ID, true)
