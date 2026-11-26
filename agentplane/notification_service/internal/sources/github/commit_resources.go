@@ -48,8 +48,11 @@ func (p *Provider) refreshCommitResource(ctx context.Context, key githubstate.Co
 			return nil, err
 		}
 	}
-	state, err := p.state.CommitState(ctx, key)
-	return state.RetryAt, err
+	state, err := p.state.ResourceStatus(ctx, key)
+	if err != nil || state == nil {
+		return nil, err
+	}
+	return state.RetryAt, nil
 }
 
 type commitTarget struct {

@@ -54,6 +54,9 @@ func (p *Provider) refreshReviews(ctx context.Context, subject githubstate.Subje
 			return nil, err
 		}
 	}
-	state, err := p.state.ReviewsState(ctx, key)
-	return state.RetryAt, err
+	state, err := p.state.ResourceStatus(ctx, key)
+	if err != nil || state == nil {
+		return nil, err
+	}
+	return state.RetryAt, nil
 }

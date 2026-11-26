@@ -111,38 +111,49 @@ func LoadStatus(ctx context.Context, q Querier, appID, installationID int64, sub
 		return Status{}, err
 	}
 	if subject.Kind == "pull_request" {
-		for _, event := range []githubmodel.EventName{githubmodel.EventCheckRun, githubmodel.EventStatus} {
-			row, err := loadRefresh(ctx, q, CommitRefreshKey{
-				AppID: appID, InstallationID: installationID, Subject: subject, Event: event,
-			})
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return Status{}, err
-			}
-			if err == nil {
-				refresh, err := row.status()
-				if err != nil {
-					return Status{}, err
-				}
-				if event == githubmodel.EventCheckRun {
-					status.CheckRuns = &refresh
-				} else {
-					status.CommitStatuses = &refresh
-				}
-			}
-		}
-		row, err := loadRefresh(ctx, q, ReviewRefreshKey{AppID: appID, InstallationID: installationID, Subject: subject})
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		commit := CommitRefreshKey{AppID: appID, InstallationID: installationID, Subject: subject, Event: githubmodel.EventCheckRun}
+		if status.CheckRuns, err = loadResourceStatus(ctx, q, commit); err != nil {
 			return Status{}, err
 		}
-		if err == nil {
-			review, err := row.status()
-			if err != nil {
-				return Status{}, err
-			}
-			status.Reviews = &review
+		commit.Event = githubmodel.EventStatus
+		if status.CommitStatuses, err = loadResourceStatus(ctx, q, commit); err != nil {
+			return Status{}, err
+		}
+		review := ReviewRefreshKey{AppID: appID, InstallationID: installationID, Subject: subject}
+		if status.Reviews, err = loadResourceStatus(ctx, q, review); err != nil {
+			return Status{}, err
 		}
 	}
 	return status, nil
+}
+
+// ResourceKey identifies one independently refreshed pull request resource.
+type ResourceKey interface {
+	RefreshKey
+	validate() error
+}
+
+// ResourceStatus returns nil until the resource has a refresh row.
+func (g *State) ResourceStatus(ctx context.Context, key ResourceKey) (*RefreshStatus, error) {
+	if err := key.validate(); err != nil {
+		return nil, err
+	}
+	return loadResourceStatus(ctx, g.db, key)
+}
+
+func loadResourceStatus(ctx context.Context, q Querier, key ResourceKey) (*RefreshStatus, error) {
+	row, err := loadRefresh(ctx, q, key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	status, err := row.status()
+	if err != nil {
+		return nil, err
+	}
+	return &status, nil
 }
 
 func (row refreshRow) status() (RefreshStatus, error) {

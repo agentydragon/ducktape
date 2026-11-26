@@ -462,11 +462,11 @@ func TestTypedCompletionRejectsAnotherResourceWithoutConsumingTheLease(t *testin
 	if err := g.state.CompleteCheckRuns(t.Context(), *lease, fences, nil); err != nil {
 		t.Fatal(err)
 	}
-	state, err := g.state.CommitState(t.Context(), key)
+	state, err := g.state.ResourceStatus(t.Context(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.LastSuccessAt == nil {
+	if state == nil || state.LastSuccessAt == nil {
 		t.Error("empty check-run read did not settle the original lease")
 	}
 }
