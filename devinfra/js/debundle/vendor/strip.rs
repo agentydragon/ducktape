@@ -384,238 +384,444 @@ fn sweep_unreachable_top_level(
             }
         }
     }
+    let sweep = Sweep {
+        body: &module.body,
+        analyses,
+        declarer,
+        mutation_items_by_target,
+        replacement_import_locals,
+        chunk_path,
+    };
+    let swapped = sweep.swapped_reachability(stripped, live_exports, &shareable_items)?;
+    let (live, live_reasons) = sweep.live_items(live_exports, &swapped);
+    sweep.check_split_brain(&swapped, &shareable_items, &live, &live_reasons)?;
+    sweep.check_live_reads(&live)?;
+    sweep.check_swap_private_effects(&swapped, &live)?;
 
-    let mut swapped_reachability = vec![BTreeSet::new(); analyses.len()];
-    let mut swapped_reasons = BTreeMap::new();
-    let mut swapped_root_items = BTreeSet::new();
-    let mut queue: Vec<(usize, String)> = Vec::new();
-    for (alias, stripped_export) in stripped {
-        for local in &stripped_export.locals {
-            let decl_idx = resolve_declared_local(local, &declarer, chunk_path, alias)?;
-            swapped_root_items.insert(decl_idx);
-            if swapped_reachability[decl_idx].insert(stripped_export.package.clone()) {
-                swapped_reasons.insert(
-                    (decl_idx, stripped_export.package.clone()),
-                    SwappedReason::Export(alias.clone()),
-                );
-                queue.push((decl_idx, stripped_export.package.clone()));
-            }
+    let mut retained = Vec::with_capacity(module.body.len());
+    for (item, &is_live) in std::mem::take(&mut module.body)
+        .into_iter()
+        .zip(live.iter())
+    {
+        if is_live {
+            retained.push(item);
+        } else {
+            removed_global_uses.record(&item);
         }
     }
+    module.body = retained;
+    Ok(())
+}
 
-    propagate_swapped_dependency_reachability(
-        &mut swapped_reachability,
-        &mut swapped_reasons,
-        &mut queue,
-        &analyses,
-        &declarer,
-        &mutation_items_by_target,
-    );
-    let residual_export_closure = residual_export_dependency_closure(
-        &analyses,
-        live_exports,
-        &declarer,
-        &mutation_items_by_target,
-    );
-    absorb_swapped_dependent_items(
-        &mut swapped_reachability,
-        &mut swapped_reasons,
-        &analyses,
-        &declarer,
-        &mutation_items_by_target,
-        &residual_export_closure,
-        &shareable_items,
-    );
+/// What every phase of `sweep_unreachable_top_level` reads.
+struct Sweep<'a> {
+    body: &'a [ModuleItem],
+    analyses: Vec<ItemAnalysis>,
+    /// Binding id -> index of the item that declares it.
+    declarer: BTreeMap<Id, usize>,
+    mutation_items_by_target: BTreeMap<Id, Vec<usize>>,
+    replacement_import_locals: &'a BTreeSet<Id>,
+    chunk_path: &'a str,
+}
 
-    // An item carries a globally-observable side effect when it is either a
-    // `Hard` statement (impure / module linkage) or a `LocalMutation` that
-    // writes a target which is neither a chunk-local declaration nor a
-    // replacement-import local — i.e. the write lands on a global / external
-    // object whose post-strip value residual or external code may read.
-    let observable_side_effect = |i: usize| -> bool {
+/// Per item, the swapped packages that reach it, and why.
+struct Swapped {
+    reachability: Vec<BTreeSet<String>>,
+    reasons: BTreeMap<(usize, String), SwappedReason>,
+    root_items: BTreeSet<usize>,
+}
+
+impl Sweep<'_> {
+    fn swapped_reachability(
+        &self,
+        stripped: &BTreeMap<String, StrippedExport>,
+        live_exports: &BTreeSet<String>,
+        shareable_items: &[bool],
+    ) -> Result<Swapped> {
+        let Self {
+            analyses,
+            declarer,
+            mutation_items_by_target,
+            chunk_path,
+            ..
+        } = self;
+        let mut swapped_reachability = vec![BTreeSet::new(); analyses.len()];
+        let mut swapped_reasons = BTreeMap::new();
+        let mut swapped_root_items = BTreeSet::new();
+        let mut queue: Vec<(usize, String)> = Vec::new();
+        for (alias, stripped_export) in stripped {
+            for local in &stripped_export.locals {
+                let decl_idx = resolve_declared_local(local, declarer, chunk_path, alias)?;
+                swapped_root_items.insert(decl_idx);
+                if swapped_reachability[decl_idx].insert(stripped_export.package.clone()) {
+                    swapped_reasons.insert(
+                        (decl_idx, stripped_export.package.clone()),
+                        SwappedReason::Export(alias.clone()),
+                    );
+                    queue.push((decl_idx, stripped_export.package.clone()));
+                }
+            }
+        }
+
+        propagate_swapped_dependency_reachability(
+            &mut swapped_reachability,
+            &mut swapped_reasons,
+            &mut queue,
+            analyses,
+            declarer,
+            mutation_items_by_target,
+        );
+        let residual_export_closure = residual_export_dependency_closure(
+            analyses,
+            live_exports,
+            declarer,
+            mutation_items_by_target,
+        );
+        absorb_swapped_dependent_items(
+            &mut swapped_reachability,
+            &mut swapped_reasons,
+            analyses,
+            declarer,
+            mutation_items_by_target,
+            &residual_export_closure,
+            shareable_items,
+        );
+        Ok(Swapped {
+            reachability: swapped_reachability,
+            reasons: swapped_reasons,
+            root_items: swapped_root_items,
+        })
+    }
+
+    /// An item carries a globally-observable side effect when it is either a
+    /// `Hard` statement (impure / module linkage) or a `LocalMutation` that
+    /// writes a target which is neither a chunk-local declaration nor a
+    /// replacement-import local — i.e. the write lands on a global / external
+    /// object whose post-strip value residual or external code may read.
+    fn observable_side_effect(&self, i: usize) -> bool {
+        let Self {
+            analyses,
+            declarer,
+            replacement_import_locals,
+            ..
+        } = self;
         let an = &analyses[i];
         an.side_effect == SideEffectKind::Hard
             || (an.side_effect == SideEffectKind::LocalMutation
                 && an.local_effects.iter().any(|id| {
                     !declarer.contains_key(id) && !replacement_import_locals.contains(id)
                 }))
-    };
-
-    let mut live = vec![false; analyses.len()];
-    let mut live_reasons = vec![None; analyses.len()];
-    for (i, an) in analyses.iter().enumerate() {
-        let residual_exports = an
-            .export_aliases
-            .iter()
-            .filter(|alias| live_exports.contains(*alias))
-            .cloned()
-            .collect::<Vec<_>>();
-        let residual_export = !residual_exports.is_empty();
-        let hard_side_effect = observable_side_effect(i) && swapped_reachability[i].is_empty();
-        if residual_export {
-            live[i] = true;
-            live_reasons[i] = Some(LiveReason::ResidualExport(residual_exports));
-        } else if hard_side_effect {
-            live[i] = true;
-            live_reasons[i] = Some(LiveReason::HardSideEffect);
-        }
     }
 
-    let mut queue: Vec<usize> = (0..analyses.len()).filter(|&i| live[i]).collect();
-    while let Some(i) = queue.pop() {
-        for (dep_idx, via) in dependency_edges(&analyses[i], &declarer, &mutation_items_by_target) {
-            if !live[dep_idx] {
-                live[dep_idx] = true;
-                live_reasons[dep_idx] = Some(LiveReason::Dependency {
-                    from: i,
-                    via: via.into_iter().map(|id| id_name(&id)).collect(),
-                });
-                queue.push(dep_idx);
+    /// Returns `(live, live_reasons)`: residual exports and hard side effects
+    /// not reachable from a swapped package, closed over dependencies.
+    fn live_items(
+        &self,
+        live_exports: &BTreeSet<String>,
+        swapped: &Swapped,
+    ) -> (Vec<bool>, Vec<Option<LiveReason>>) {
+        let Self {
+            analyses,
+            declarer,
+            mutation_items_by_target,
+            ..
+        } = self;
+        let mut live = vec![false; analyses.len()];
+        let mut live_reasons = vec![None; analyses.len()];
+        for (i, an) in analyses.iter().enumerate() {
+            let residual_exports = an
+                .export_aliases
+                .iter()
+                .filter(|alias| live_exports.contains(*alias))
+                .cloned()
+                .collect::<Vec<_>>();
+            let residual_export = !residual_exports.is_empty();
+            let hard_side_effect =
+                self.observable_side_effect(i) && swapped.reachability[i].is_empty();
+            if residual_export {
+                live[i] = true;
+                live_reasons[i] = Some(LiveReason::ResidualExport(residual_exports));
+            } else if hard_side_effect {
+                live[i] = true;
+                live_reasons[i] = Some(LiveReason::HardSideEffect);
             }
         }
+
+        let mut queue: Vec<usize> = (0..analyses.len()).filter(|&i| live[i]).collect();
+        while let Some(i) = queue.pop() {
+            for (dep_idx, via) in dependency_edges(&analyses[i], declarer, mutation_items_by_target)
+            {
+                if !live[dep_idx] {
+                    live[dep_idx] = true;
+                    live_reasons[dep_idx] = Some(LiveReason::Dependency {
+                        from: i,
+                        via: via.into_iter().map(|id| id_name(&id)).collect(),
+                    });
+                    queue.push(dep_idx);
+                }
+            }
+        }
+        (live, live_reasons)
     }
 
-    for (i, packages) in swapped_reachability.iter().enumerate() {
-        if live[i]
-            && packages.len() == 1
-            && (!shareable_items[i] || swapped_root_items.contains(&i))
-        {
+    fn check_split_brain(
+        &self,
+        swapped: &Swapped,
+        shareable_items: &[bool],
+        live: &[bool],
+        live_reasons: &[Option<LiveReason>],
+    ) -> Result<()> {
+        let Self {
+            body,
+            analyses,
+            chunk_path,
+            ..
+        } = self;
+        for (i, packages) in swapped.reachability.iter().enumerate() {
+            if live[i]
+                && packages.len() == 1
+                && (!shareable_items[i] || swapped.root_items.contains(&i))
+            {
+                let declared = analyses[i]
+                    .declared
+                    .iter()
+                    .map(id_name)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let exports = analyses[i]
+                    .export_aliases
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let swapped_paths = packages
+                    .iter()
+                    .map(|package| {
+                        format_swapped_trace(i, package, analyses, body, &swapped.reasons)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                let packages = packages.iter().cloned().collect::<Vec<_>>().join(",");
+                let residual_path = format_live_trace(i, analyses, body, live_reasons);
+                bail!(
+                    "strip_swapped_vendor_exports vendor entry {chunk_path}: split-brain vendor swap: top-level item {i} remains reachable from the residual chunk while also belonging to swapped package(s) [{packages}] (declared=[{declared}], exports=[{exports}]); swapped path: {swapped_paths}; residual path: {residual_path}",
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn check_live_reads(&self, live: &[bool]) -> Result<()> {
+        let Self {
+            analyses,
+            declarer,
+            chunk_path,
+            ..
+        } = self;
+        // Soundness gate: if any *kept* item reads a name declared only by
+        // a *dropped* item, the classification missed a side-effect or the
+        // fixpoint didn't converge. Bail with the offending pair.
+        for (i, is_live) in live.iter().enumerate() {
+            if !is_live {
+                continue;
+            }
+            for id in analyses[i]
+                .reads
+                .iter()
+                .chain(analyses[i].local_effects.iter())
+            {
+                if let Some(&decl_idx) = declarer.get(id)
+                    && !live[decl_idx]
+                {
+                    bail!(
+                        "strip_swapped_vendor_exports vendor entry {chunk_path}: live item {i} reads `{}` declared by dropped item {decl_idx}",
+                        id_name(id),
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn check_swap_private_effects(&self, swapped: &Swapped, live: &[bool]) -> Result<()> {
+        let Self {
+            body,
+            analyses,
+            declarer,
+            replacement_import_locals,
+            chunk_path,
+            ..
+        } = self;
+        // Soundness gate: a top-level item carrying a globally-observable side
+        // effect must never be *silently* dropped. The keep-pass above honors such
+        // an item only when it is not swap-reachable; a swap-reachable one falls
+        // through to deletion. Dropping is sound only when the effect is provably
+        // swap-private — every storage cell it writes stays inside the swapped
+        // island, so no retained / external code can witness its post-strip value:
+        //
+        //   * a static-key `globalThis.<prop>` write is never private (external or
+        //     other-chunk code may read the global back — e.g. `window.foo =
+        //     <swappedThing>` read via `window.foo`);
+        //   * a binding write is private unless some *retained* (`live`) item reads
+        //     that binding; writes to a replacement-import local stay private
+        //     (the old island configuring the new facade has no residual reader);
+        //   * an array or Set content write is private when that allocation is
+        //     born in a dropped item: the residual never creates it, and any live
+        //     path to it would cross a binding, global or content cell written by
+        //     a dropped item, which the other cases and the soundness gate above
+        //     check;
+        //   * a statement the analyzer cannot summarize (dynamic `globalThis[expr]`,
+        //     `eval`, `with`, `Function(...)`) may touch any cell and is never
+        //     private;
+        //   * the cell summary covers the statement's own writes, not its
+        //     callees' in-place mutations (`registry[name] = deps` inside a called
+        //     function). A callee can only mutate state rooted at a binding it or
+        //     the statement reaches, so the effect is private only when none of
+        //     those bindings is retained state (`shared_roots`). External callees
+        //     see only what the statement hands them; replacing the package
+        //     promises their package-side effects.
+        //
+        // A swap-reachable observable effect that is not provably swap-private would
+        // be silently deleted — an under-restriction soundness violation. Bail so
+        // the spec author restructures rather than shipping a broken bundle.
+        let live_reads: BTreeSet<Id> = analyses
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| live[i])
+            .flat_map(|(_, an)| an.reads.iter().chain(an.local_effects.iter()).cloned())
+            .collect();
+        // Allocation origins are the allocation node's `span.lo`.
+        let born_in_dropped_item = |origin: u32| -> bool {
+            body.iter().zip(live).any(|(item, &is_live)| {
+                let span = item.span();
+                !is_live && span.lo.0 <= origin && origin < span.hi.0
+            })
+        };
+        let private_cell = |cell: &EffectCell| -> bool {
+            match cell {
+                EffectCell::GlobalProp(_) => false,
+                EffectCell::ArrayContents(origin) | EffectCell::SetContents(origin) => {
+                    born_in_dropped_item(*origin)
+                }
+                // Property origins can be shared by repeated factory allocations;
+                // source containment alone does not prove their results private.
+                EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_) => false,
+                EffectCell::Binding(id) => {
+                    replacement_import_locals.contains(id) || !live_reads.contains(id)
+                }
+            }
+        };
+        let rebound: BTreeSet<&Id> = analyses.iter().flat_map(|an| &an.rebinds).collect();
+        // Items whose code mutates the object a binding holds in place.
+        let mut writers: BTreeMap<Id, Vec<usize>> = BTreeMap::new();
+        for (j, item) in body.iter().enumerate() {
+            let mut exposed = ExposedBindings::default();
+            item.visit_with(&mut exposed);
+            for root in exposed.mutated {
+                writers.entry(root).or_default().push(j);
+            }
+        }
+        let swap_private_effect = |i: usize| -> bool {
+            let an = &analyses[i];
+            an.effects_summarizable
+                && an.observable_writes.iter().all(private_cell)
+                && self.shared_roots(i, live, &rebound, &writers).is_empty()
+        };
+        // Every refusal of the pass, so one run shows them all.
+        let mut refusals = Vec::new();
+        for i in 0..analyses.len() {
+            if live[i]
+                || swapped.reachability[i].is_empty()
+                || !self.observable_side_effect(i)
+                || swap_private_effect(i)
+            {
+                continue;
+            }
+            let packages = swapped.reachability[i]
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(",");
             let declared = analyses[i]
                 .declared
                 .iter()
                 .map(id_name)
                 .collect::<Vec<_>>()
                 .join(",");
-            let exports = analyses[i]
-                .export_aliases
+            let public_writes = if analyses[i].effects_summarizable {
+                analyses[i]
+                    .observable_writes
+                    .iter()
+                    .filter(|cell| !private_cell(cell))
+                    .map(format_effect_cell)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            } else {
+                "unsummarizable".to_string()
+            };
+            let shared = self
+                .shared_roots(i, live, &rebound, &writers)
                 .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(",");
-            let swapped_paths = packages
-                .iter()
-                .map(|package| {
-                    format_swapped_trace(i, package, &analyses, &module.body, &swapped_reasons)
+                .map(|(id, exposure)| {
+                    format!(
+                        "`{}` (declared by retained item {}, {exposure})",
+                        id_name(id),
+                        declarer[id]
+                    )
                 })
                 .collect::<Vec<_>>()
+                .join(", ");
+            let swapped_paths = swapped.reachability[i]
+                .iter()
+                .map(|package| format_swapped_trace(i, package, analyses, body, &swapped.reasons))
+                .collect::<Vec<_>>()
                 .join("; ");
-            let packages = packages.iter().cloned().collect::<Vec<_>>().join(",");
-            let residual_path = format_live_trace(i, &analyses, &module.body, &live_reasons);
+            refusals.push(format!(
+            "observable side-effect item {i} `{}` is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private; writes not private: [{public_writes}]; retained state it or its callees may mutate: [{shared}]; swapped path: {swapped_paths}",
+            module_item_snippet(&body[i]),
+        ));
+        }
+        if !refusals.is_empty() {
             bail!(
-                "strip_swapped_vendor_exports vendor entry {chunk_path}: split-brain vendor swap: top-level item {i} remains reachable from the residual chunk while also belonging to swapped package(s) [{packages}] (declared=[{declared}], exports=[{exports}]); swapped path: {swapped_paths}; residual path: {residual_path}",
+                "strip_swapped_vendor_exports vendor entry {chunk_path}: {} side effect(s) would be silently dropped although they may write a global / external cell residual code may read — restructure the spec so they do not read swapped binding(s):\n{}",
+                refusals.len(),
+                refusals.join("\n"),
             );
         }
+        Ok(())
     }
 
-    // Soundness gate: if any *kept* item reads a name declared only by
-    // a *dropped* item, the classification missed a side-effect or the
-    // fixpoint didn't converge. Bail with the offending pair.
-    for (i, is_live) in live.iter().enumerate() {
-        if !is_live {
-            continue;
-        }
-        for id in analyses[i]
-            .reads
-            .iter()
-            .chain(analyses[i].local_effects.iter())
-        {
-            if let Some(&decl_idx) = declarer.get(id)
-                && !live[decl_idx]
-            {
-                bail!(
-                    "strip_swapped_vendor_exports vendor entry {chunk_path}: live item {i} reads `{}` declared by dropped item {decl_idx}",
-                    id_name(id),
-                );
-            }
-        }
-    }
-
-    // Soundness gate: a top-level item carrying a globally-observable side
-    // effect must never be *silently* dropped. The keep-pass above honors such
-    // an item only when it is not swap-reachable; a swap-reachable one falls
-    // through to deletion. Dropping is sound only when the effect is provably
-    // swap-private — every storage cell it writes stays inside the swapped
-    // island, so no retained / external code can witness its post-strip value:
-    //
-    //   * a static-key `globalThis.<prop>` write is never private (external or
-    //     other-chunk code may read the global back — e.g. `window.foo =
-    //     <swappedThing>` read via `window.foo`);
-    //   * a binding write is private unless some *retained* (`live`) item reads
-    //     that binding; writes to a replacement-import local stay private
-    //     (the old island configuring the new facade has no residual reader);
-    //   * an array or Set content write is private when that allocation is
-    //     born in a dropped item: the residual never creates it, and any live
-    //     path to it would cross a binding, global or content cell written by
-    //     a dropped item, which the other cases and the soundness gate above
-    //     check;
-    //   * a statement the analyzer cannot summarize (dynamic `globalThis[expr]`,
-    //     `eval`, `with`, `Function(...)`) may touch any cell and is never
-    //     private;
-    //   * the cell summary covers the statement's own writes, not its
-    //     callees' in-place mutations (`registry[name] = deps` inside a called
-    //     function). A callee can only mutate state rooted at a binding it or
-    //     the statement reaches, so the effect is private only when none of
-    //     those bindings is retained state (`shared_roots`). External callees
-    //     see only what the statement hands them; replacing the package
-    //     promises their package-side effects.
-    //
-    // A swap-reachable observable effect that is not provably swap-private would
-    // be silently deleted — an under-restriction soundness violation. Bail so
-    // the spec author restructures rather than shipping a broken bundle.
-    let live_reads: BTreeSet<Id> = analyses
-        .iter()
-        .enumerate()
-        .filter(|&(i, _)| live[i])
-        .flat_map(|(_, an)| an.reads.iter().chain(an.local_effects.iter()).cloned())
-        .collect();
-    // Allocation origins are the allocation node's `span.lo`.
-    let born_in_dropped_item = |origin: u32| -> bool {
-        module.body.iter().zip(&live).any(|(item, &is_live)| {
-            let span = item.span();
-            !is_live && span.lo.0 <= origin && origin < span.hi.0
-        })
-    };
-    let private_cell = |cell: &EffectCell| -> bool {
-        match cell {
-            EffectCell::GlobalProp(_) => false,
-            EffectCell::ArrayContents(origin) | EffectCell::SetContents(origin) => {
-                born_in_dropped_item(*origin)
-            }
-            // Property origins can be shared by repeated factory allocations;
-            // source containment alone does not prove their results private.
-            EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_) => false,
-            EffectCell::Binding(id) => {
-                replacement_import_locals.contains(id) || !live_reads.contains(id)
-            }
-        }
-    };
-    // Retained state the statement or its callees may mutate in place: a
-    // binding they reach that a retained item declares, unless its value is
-    // code or a primitive (shareable `{}` cells are state) and that some code
-    // could mutate (`ExposedBindings`). Callees follow
-    // at-init call promotion: a direct, never-rebound chunk function runs its
-    // first-order body; nested closures run only when handed to an unresolved
-    // call. What an unresolved call receives, and a chunk callee that is not
-    // a direct function, are followed through lexical reads instead.
-    let rebound: BTreeSet<&Id> = analyses.iter().flat_map(|an| &an.rebinds).collect();
-    // Items whose code mutates the object a binding holds in place.
-    let mut writers: BTreeMap<Id, Vec<usize>> = BTreeMap::new();
-    for (j, item) in module.body.iter().enumerate() {
-        let mut exposed = ExposedBindings::default();
-        item.visit_with(&mut exposed);
-        for root in exposed.mutated {
-            writers.entry(root).or_default().push(j);
-        }
-    }
-    // Each retained binding a dropped statement may mutate, with what exposes
-    // it.
-    let shared_roots = |i: usize| -> BTreeMap<Id, String> {
+    /// Each retained binding dropped item `i` may mutate, with what exposes
+    /// it.
+    ///
+    /// Retained state the statement or its callees may mutate in place: a
+    /// binding they reach that a retained item declares, unless its value is
+    /// code or a primitive (shareable `{}` cells are state) and that some code
+    /// could mutate (`ExposedBindings`). Callees follow
+    /// at-init call promotion: a direct, never-rebound chunk function runs its
+    /// first-order body; nested closures run only when handed to an unresolved
+    /// call. What an unresolved call receives, and a chunk callee that is not
+    /// a direct function, are followed through lexical reads instead.
+    fn shared_roots(
+        &self,
+        i: usize,
+        live: &[bool],
+        rebound: &BTreeSet<&Id>,
+        writers: &BTreeMap<Id, Vec<usize>>,
+    ) -> BTreeMap<Id, String> {
+        let Self {
+            body: items,
+            analyses,
+            declarer,
+            replacement_import_locals,
+            ..
+        } = self;
         let an = &analyses[i];
         let retained_state = |id: &Id| {
             !replacement_import_locals.contains(id)
                 && declarer
                     .get(id)
-                    .is_some_and(|&j| live[j] && !item_declares_code_or_primitive(&module.body[j]))
+                    .is_some_and(|&j| live[j] && !item_declares_code_or_primitive(&items[j]))
         };
         // The statement's own writes are its cells; what it reads at init
         // matters only as an argument its callees may mutate.
@@ -627,7 +833,7 @@ fn sweep_unreachable_top_level(
         // What the statement hands only to a host receiver (a global outside
         // the chunk) is followed as a value: host code calling back into it is
         // outside the analysed program (SPEC § Partial vendor-swap ownership).
-        let host = HostCalls::of(&module.body[i], |id| declarer.contains_key(id));
+        let host = HostCalls::of(&items[i], |id| declarer.contains_key(id));
         let (handed_to_host, mut lexical): (Vec<&Id>, Vec<&Id>) = an
             .at_init
             .unresolved_sources
@@ -640,13 +846,7 @@ fn sweep_unreachable_top_level(
         // runs this statement's own first-order body, unless every such closure
         // goes to a host receiver.
         if an.at_init.unresolved_inline_fn && !host.only_host_closures() {
-            run_first_order_body(
-                an,
-                &module.body[i],
-                &mut reached,
-                &mut lexical,
-                &mut callees,
-            );
+            run_first_order_body(an, &items[i], &mut reached, &mut lexical, &mut callees);
         }
         let mut entered = BTreeSet::new();
         while let Some(callee) = callees.pop() {
@@ -659,13 +859,7 @@ fn sweep_unreachable_top_level(
                 continue;
             }
             if entered.insert(j) {
-                run_first_order_body(
-                    body,
-                    &module.body[j],
-                    &mut reached,
-                    &mut lexical,
-                    &mut callees,
-                );
+                run_first_order_body(body, &items[j], &mut reached, &mut lexical, &mut callees);
             }
         }
         // Follow every reached binding to the retained state behind it: a
@@ -697,12 +891,12 @@ fn sweep_unreachable_top_level(
             let Some(&j) = declarer.get(id) else {
                 continue;
             };
-            if !code_may_run && item_declares_code_or_primitive(&module.body[j]) {
+            if !code_may_run && item_declares_code_or_primitive(&items[j]) {
                 continue;
             }
             // Calling a native container's methods runs no chunk code, but what
             // is stored in it may still alias retained state.
-            let code_may_run = code_may_run && !item_declares_native_container(&module.body[j]);
+            let code_may_run = code_may_run && !item_declares_native_container(&items[j]);
             for &k in std::iter::once(&j).chain(writers.get(id).into_iter().flatten()) {
                 if expanded.insert((k, code_may_run)) {
                     *region.entry(k).or_default() |= code_may_run;
@@ -739,7 +933,7 @@ fn sweep_unreachable_top_level(
                 skip_closures: !code_may_run,
                 ..ExposedBindings::default()
             };
-            module.body[k].visit_with(&mut exposed);
+            items[k].visit_with(&mut exposed);
             for id in candidates.iter().filter(|id| exposed.uses.contains(**id)) {
                 roots.entry((*id).clone()).or_insert_with(|| {
                     let mut trail = Vec::new();
@@ -760,7 +954,7 @@ fn sweep_unreachable_top_level(
                     }
                     format!(
                         "exposed by item {k} `{}`{}",
-                        module_item_snippet(&module.body[k]),
+                        module_item_snippet(&items[k]),
                         if trail.is_empty() {
                             String::new()
                         } else {
@@ -776,89 +970,7 @@ fn sweep_unreachable_top_level(
                 .or_insert_with(|| "rebound".to_string());
         }
         roots
-    };
-    let swap_private_effect = |i: usize| -> bool {
-        let an = &analyses[i];
-        an.effects_summarizable
-            && an.observable_writes.iter().all(private_cell)
-            && shared_roots(i).is_empty()
-    };
-    // Every refusal of the pass, so one run shows them all.
-    let mut refusals = Vec::new();
-    for i in 0..analyses.len() {
-        if live[i]
-            || swapped_reachability[i].is_empty()
-            || !observable_side_effect(i)
-            || swap_private_effect(i)
-        {
-            continue;
-        }
-        let packages = swapped_reachability[i]
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(",");
-        let declared = analyses[i]
-            .declared
-            .iter()
-            .map(id_name)
-            .collect::<Vec<_>>()
-            .join(",");
-        let public_writes = if analyses[i].effects_summarizable {
-            analyses[i]
-                .observable_writes
-                .iter()
-                .filter(|cell| !private_cell(cell))
-                .map(format_effect_cell)
-                .collect::<Vec<_>>()
-                .join(", ")
-        } else {
-            "unsummarizable".to_string()
-        };
-        let shared = shared_roots(i)
-            .iter()
-            .map(|(id, exposure)| {
-                format!(
-                    "`{}` (declared by retained item {}, {exposure})",
-                    id_name(id),
-                    declarer[id]
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let swapped_paths = swapped_reachability[i]
-            .iter()
-            .map(|package| {
-                format_swapped_trace(i, package, &analyses, &module.body, &swapped_reasons)
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
-        refusals.push(format!(
-            "observable side-effect item {i} `{}` is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private; writes not private: [{public_writes}]; retained state it or its callees may mutate: [{shared}]; swapped path: {swapped_paths}",
-            module_item_snippet(&module.body[i]),
-        ));
     }
-    if !refusals.is_empty() {
-        bail!(
-            "strip_swapped_vendor_exports vendor entry {chunk_path}: {} side effect(s) would be silently dropped although they may write a global / external cell residual code may read — restructure the spec so they do not read swapped binding(s):\n{}",
-            refusals.len(),
-            refusals.join("\n"),
-        );
-    }
-
-    let mut retained = Vec::with_capacity(module.body.len());
-    for (item, &is_live) in std::mem::take(&mut module.body)
-        .into_iter()
-        .zip(live.iter())
-    {
-        if is_live {
-            retained.push(item);
-        } else {
-            removed_global_uses.record(&item);
-        }
-    }
-    module.body = retained;
-    Ok(())
 }
 
 fn compute_shareable_items(
