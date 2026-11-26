@@ -1,7 +1,7 @@
-import assert from "node:assert/strict";
-import { assertCertifiedResult, lower, sequentialSplit } from "./harness.mjs";
+import { assertLinkedPreviewResult, prepareLinkedFixture } from "./fixture_preview.mjs";
+import { assertPublicEmissionRefused } from "../testing/public_refusal.mjs";
 
-const checked = sequentialSplit(
+const checked = prepareLinkedFixture(
   "derived-object-parameter",
   `const trace = { value: "" };
   class Base { constructor(x) { trace.value += "s"; this.value = x; } }
@@ -17,11 +17,12 @@ const checked = sequentialSplit(
     if (trace.value !== "abpsfx" || value !== 5 || Child.length !== 1) throw "parameter order";
     return trace.value;
   })();`,
-  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
-  ["base.mjs"]
+  {
+    entry: "entry.mjs",
+    modules: { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
+    order: ["base.mjs"],
+    sequential: true,
+  }
 );
-assertCertifiedResult(checked, "abpsfx");
-assert.deepEqual(
-  lower(checked.files.sourceFile, checked.files.specFile, checked.out, ["--check-output"]).verdict,
-  checked.verdict
-);
+assertPublicEmissionRefused(checked.manifest, checked.out);
+await assertLinkedPreviewResult(checked, "abpsfx");
