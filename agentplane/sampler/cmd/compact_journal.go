@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -31,7 +30,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 		return fmt.Errorf("%s is required", samplerDatabaseURLEnv)
 	}
 	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	db, err := postgres.Open(connectCtx, strings.Replace(databaseURL, "postgresql+asyncpg://", "postgresql://", 1), 1, 1)
+	db, err := postgres.Open(connectCtx, databaseURL, 1, 1)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("open sampler database: %v", safeErrorType(err))

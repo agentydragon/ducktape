@@ -73,6 +73,7 @@ func TestRunRetriesTheFirstConnection(t *testing.T) {
 	front := &flakyFront{listener: listener, upstream: target.Host, drop: 4}
 	go front.serve()
 	target.Host = listener.Addr().String()
+	target.Scheme = "postgresql+asyncpg"
 
 	migrated := false
 	err = Run(ctx, target.String(), func(ctx context.Context, db *sql.DB) error {

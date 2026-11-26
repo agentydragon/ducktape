@@ -24,6 +24,13 @@ func TestMain(m *testing.M) {
 	}, &database))
 }
 
+func TestDriverURLPreservesConnectionParameters(t *testing.T) {
+	const dsn = "host=db password='postgresql+asyncpg://in-password'"
+	if postgres.DriverURL(dsn) != dsn {
+		t.Fatal("DriverURL changed a keyword connection parameter")
+	}
+}
+
 func TestNamedTransaction(t *testing.T) {
 	db := fixture.Open(t, fixture.URLWithApplicationName(t, database.URL, "fixture").String())
 	db.SetMaxOpenConns(1)

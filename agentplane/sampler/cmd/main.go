@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -90,12 +89,11 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	if settings.PlatformInstructions == nil {
 		slog.Warn("Agentplane platform guidance is not configured; new Sessions retain caller-only instructions")
 	}
-	databaseURL := strings.Replace(settings.DatabaseURL, "postgresql+asyncpg://", "postgresql://", 1)
-	if err := migrate.Run(ctx, databaseURL, migrations.Up); err != nil {
+	if err := migrate.Run(ctx, settings.DatabaseURL, migrations.Up); err != nil {
 		return atStartupStage("database_migrations", err)
 	}
 	// Allow session state writes and lease renewals, eight exporter workers, and sixteen RPCs.
-	db, err := postgres.Open(ctx, databaseURL, 2*settings.MaxLiveSessions+8+16, 16)
+	db, err := postgres.Open(ctx, settings.DatabaseURL, 2*settings.MaxLiveSessions+8+16, 16)
 	if err != nil {
 		return atStartupStage("service_database", err)
 	}
@@ -104,7 +102,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		return atStartupStage("logs_directory", err)
 	}
 	store := sessionstore.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second, &settings)
-	hub, err := wakeups.Listen(ctx, databaseURL, sessionstore.OutboxChannel, sessionstore.WorkChannel, sessionstore.TurnChannel)
+	hub, err := wakeups.Listen(ctx, settings.DatabaseURL, sessionstore.OutboxChannel, sessionstore.WorkChannel, sessionstore.TurnChannel)
 	if err != nil {
 		return atStartupStage("database_wakeups", err)
 	}
