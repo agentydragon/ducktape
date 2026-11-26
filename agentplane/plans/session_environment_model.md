@@ -460,6 +460,14 @@ associations. If reassignment becomes a feature, define how the Session and its 
 environments change together, fence old work and credentials, and record identity provenance for
 History; never replay uncertain effects.
 
+**Deferred operator UI:** From a stopped Sandbox, show which Sessions block an Identity change
+and which other Environments each uses. Offer Sandbox-only rebinding when eligible today.
+Before offering “change the Sandbox and its Sessions”, decide whether to create successor Sessions
+or to support principal migration with the fencing and History provenance above. A central sampler
+Session can outlive the Sandbox and may have other attachments; stopping this Sandbox alone does
+not quiesce that Session or authorize changes to its other Environments. Cover a retained Session,
+a central Session with another attachment, and in-flight delegation before enabling that flow.
+
 **Open cases:** which Identity owns a Session when the creator is a human or another agent; who
 grants acting as it; historical access once it is gone; and what is allowed when policies are
 revoked or an environment is replaced. Deleting an Identity is not guaranteed durable revocation of a
