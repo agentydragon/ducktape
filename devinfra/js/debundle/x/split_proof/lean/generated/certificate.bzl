@@ -14,23 +14,17 @@ def _lowered_certificate_impl(ctx):
         }],
     }))
     args = ctx.actions.args()
-    args.add_all([splitter.executable, manifest, certificate])
+    args.add_all(["--generate-instance", manifest, certificate])
     if ctx.attr.namespace:
         args.add("--namespace", ctx.attr.namespace)
     args.add_all(ctx.files.variants, before_each = "--variant")
     args.add_all(ctx.files.controls, before_each = "--control")
-    ctx.actions.run_shell(
+    ctx.actions.run(
         inputs = [manifest, ctx.file.source, ctx.file.spec] + ctx.files.variants + ctx.files.controls,
-        tools = [splitter],
+        executable = splitter,
         outputs = [certificate],
         env = {"BAZEL_BINDIR": ctx.bin_dir.path},
         arguments = [args],
-        command = """
-set -eu
-splitter=$1 manifest=$2 instance=$3
-shift 3
-"$splitter" --generate-instance "$manifest" "$instance" "$@"
-""",
         mnemonic = "GenerateSplitCertificate",
     )
 

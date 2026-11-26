@@ -873,17 +873,9 @@ lean_proof_test(
 lean_library(
     name = "provider_input_boundary_axioms_test_modules",
     testonly = True,
-    srcs = [
-        # Keep import order for the native Lean rule.
-        "ProviderInputBoundaryTest.lean",
-        "ProviderInputBoundaryAudit.lean",
-    ],
+    srcs = ["ProviderInputBoundaryAudit.lean"],
     visibility = ["//visibility:private"],
-    deps = [
-        ":corejs_linked_input",
-        ":corejs_structural",
-        ":shared_provider_boundary",
-    ],
+    deps = [":provider_input_boundary_test_runner_modules"],
 )
 
 lean_proof_test(
@@ -1524,13 +1516,12 @@ lean_proof_test(
 lean_library(
     name = "intrinsic_error_reference_axioms_test_modules",
     testonly = True,
-    srcs = [
-        # Keep import order for the native Lean rule.
-        "EsmSplit/CoreJS/StackReadBoundary.lean",
-        "EsmSplit/CoreJS/IntrinsicErrorReference.lean",
-    ],
+    srcs = ["EsmSplit/CoreJS/IntrinsicErrorReference.lean"],
     visibility = ["//visibility:private"],
-    deps = [":corejs_certificate_support"],
+    deps = [
+        ":corejs_certificate_support",
+        ":stack_read_boundary_axioms_test_modules",
+    ],
 )
 
 lean_proof_test(
@@ -1580,14 +1571,12 @@ lean_proof_test(
 lean_library(
     name = "stack_read_composition_axioms_test_modules",
     testonly = True,
-    srcs = [
-        # Keep import order for the native Lean rule.
-        "EsmSplit/CoreJS/SharedStackString.lean",
-        "EsmSplit/CoreJS/StackReadBoundary.lean",
-        "EsmSplit/CoreJS/StackReadComposition.lean",
-    ],
+    srcs = ["EsmSplit/CoreJS/StackReadComposition.lean"],
     visibility = ["//visibility:private"],
-    deps = [":corejs_runtime"],
+    deps = [
+        ":shared_stack_string_axioms_test_modules",
+        ":stack_read_boundary_axioms_test_modules",
+    ],
 )
 
 lean_proof_test(
