@@ -176,7 +176,7 @@ pub struct Row {
     /// an unshadowed spelling alone. Otherwise purity reaches the operation
     /// only through a certificate proving `requires`: the census or a
     /// `native_operation_inputs` site.
-    pub assumed_intact: bool,
+    pub(crate) assumed_intact: bool,
     /// Slots the callee's identity reads: its global binding and, for a
     /// static member, that data property. The row applies only when every
     /// slot's integrity flag is intact or author-asserted at the call site.
@@ -286,7 +286,7 @@ const EMPTY_HOST_OBJECT: Row = Row {
     requires: &[],
 };
 
-pub const ROWS: &[Row] = &[
+pub(crate) const ROWS: &[Row] = &[
     Row {
         op: IntrinsicOp::Symbol,
         invocation: &[Invocation::Call],
@@ -769,7 +769,7 @@ pub enum PropertyValue {
 /// it runs no user code.
 #[derive(Debug)]
 pub struct DataProperty {
-    pub global: &'static str,
+    pub(crate) global: &'static str,
     pub name: &'static str,
     pub value: PropertyValue,
     /// ECMA-262 section anchor listing the property.
@@ -803,7 +803,7 @@ const MATH: &str = "sec-value-properties-of-the-math-object";
 const NUMBER: &str = "sec-properties-of-the-number-constructor";
 const SYMBOL: &str = "sec-properties-of-the-symbol-constructor";
 
-pub const DATA_PROPERTIES: &[DataProperty] = &[
+pub(crate) const DATA_PROPERTIES: &[DataProperty] = &[
     primitive("Math", "PI", PrimKinds::NUMBER, MATH),
     primitive("Math", "E", PrimKinds::NUMBER, MATH),
     primitive("Math", "LN2", PrimKinds::NUMBER, MATH),
@@ -895,7 +895,7 @@ pub fn own_data_property_name(global: &str, name: &str) -> Option<&'static str> 
 
 /// Every global binding a row or data property names. A source binding of
 /// one of these names shadows the intrinsic.
-pub static GLOBALS: LazyLock<BTreeSet<&'static str>> = LazyLock::new(|| {
+pub(crate) static GLOBALS: LazyLock<BTreeSet<&'static str>> = LazyLock::new(|| {
     ROWS.iter()
         .map(|row| row.op.callee().0)
         .chain(DATA_PROPERTIES.iter().map(|property| property.global))
@@ -907,18 +907,18 @@ pub static GLOBALS: LazyLock<BTreeSet<&'static str>> = LazyLock::new(|| {
 /// behaves as the cited host method at call time.
 #[derive(Debug)]
 pub struct MemberRow {
-    pub member: &'static str,
+    pub(crate) member: &'static str,
     /// Anchor of the summarized host algorithm.
     pub cite: &'static str,
     /// Admitted argument counts; a spread argument is never admitted.
-    pub arity: RangeInclusive<usize>,
+    pub(crate) arity: RangeInclusive<usize>,
     /// Steps that run user code unless the operand is proved silent.
-    pub coerces: &'static [(ArgSel, CoerceOp)],
+    pub(crate) coerces: &'static [(ArgSel, CoerceOp)],
     /// Operands invoked synchronously.
-    pub invokes: &'static [ArgSel],
+    pub(crate) invokes: &'static [ArgSel],
 }
 
-pub const MEMBER_ROWS: &[MemberRow] = &[
+pub(crate) const MEMBER_ROWS: &[MemberRow] = &[
     // Converts `type` with ToString and appends the listener to the event
     // listener list; only dispatch invokes it. Not listed: an object `options`
     // argument goes through dictionary conversion, whose `[[Get]]` of
@@ -937,7 +937,7 @@ pub const MEMBER_ROWS: &[MemberRow] = &[
 /// The member row a static-member call selects, when its arity matches, no
 /// argument is spread and every listed coercion is silent. Only a string
 /// literal operand is proved silent: the consumers are syntactic.
-pub fn member_call_row(callee: &Expr, args: &[ExprOrSpread]) -> Option<&'static MemberRow> {
+pub(crate) fn member_call_row(callee: &Expr, args: &[ExprOrSpread]) -> Option<&'static MemberRow> {
     let member = match callee.unwrap_parens() {
         Expr::Member(member) => member,
         Expr::OptChain(chain) => match chain.base.as_ref() {
@@ -1006,7 +1006,7 @@ pub struct IterationRow {
     pub member: &'static str,
     pub cite: &'static str,
     /// Admitted argument counts; a spread argument is never admitted.
-    pub arity: RangeInclusive<usize>,
+    pub(crate) arity: RangeInclusive<usize>,
     /// The callback operand.
     pub invokes: ArgSel,
     pub result: IterationResult,

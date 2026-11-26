@@ -4617,8 +4617,7 @@ pub(super) struct ExecutionIndex {
     pub(super) array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
     literal_property_kinds: BTreeMap<u32, Vec<super::value_model::LiteralPropertyKind>>,
     callable_creations: BTreeMap<u32, DeferredCallableCreation>,
-    pub(super) method_record_members:
-        BTreeMap<u32, Vec<analysis::facts::abstract_domain::foreign_call::RecordMember>>,
+    pub(super) method_record_members: BTreeMap<u32, Vec<crate::foreign_call::RecordMember>>,
     pub(super) array_iterations: BTreeMap<CallSite, ArrayIteration>,
     pub(super) async_callables: BTreeSet<u32>,
     pub(super) callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
@@ -7385,12 +7384,10 @@ impl Visit for ExecutionIndex {
                     && let Some(name) = object_data_property_name(key)
                     && member_names.insert(name.clone())
                 {
-                    members.push(
-                        analysis::facts::abstract_domain::foreign_call::RecordMember {
-                            name,
-                            function_start,
-                        },
-                    );
+                    members.push(crate::foreign_call::RecordMember {
+                        name,
+                        function_start,
+                    });
                 } else {
                     record_members = None;
                 }
@@ -9824,8 +9821,7 @@ pub struct InferredNamespaceWrapper {
 }
 
 pub struct InferredCallableCapabilities {
-    /// Exported local → derived call summary
-    /// (`analysis::facts::abstract_domain::foreign_call`).
+    /// Exported local → derived call summary (`foreign_call`).
     pub foreign_calls: BTreeMap<String, InferredForeignCall>,
     /// Keyed-collection families whose global constructor slot this module's
     /// census leaves intact.
@@ -9835,7 +9831,7 @@ pub struct InferredCallableCapabilities {
 }
 
 pub struct InferredForeignCall {
-    pub derived: analysis::facts::abstract_domain::foreign_call::DerivedForeignCall,
+    pub derived: crate::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
     pub declaration: analysis::facts::value_flow::CallableDeclaration,
     pub dependencies: ProofDependencies,
@@ -10394,7 +10390,7 @@ fn infer_foreign_calls<'f>(
 
 fn foreign_call(
     index: &ExecutionIndex,
-    derived: analysis::facts::abstract_domain::foreign_call::DerivedForeignCall,
+    derived: crate::foreign_call::DerivedForeignCall,
     declaration_start: u32,
     declaration: analysis::facts::value_flow::CallableDeclaration,
 ) -> InferredForeignCall {
@@ -10431,8 +10427,8 @@ fn foreign_call(
 /// bindings, and the rules the derivation used.
 fn returned_record(
     index: &ExecutionIndex,
-    members: &[analysis::facts::abstract_domain::foreign_call::RecordMember],
-    derived: &analysis::facts::abstract_domain::foreign_call::DerivedForeignCall,
+    members: &[crate::foreign_call::RecordMember],
+    derived: &crate::foreign_call::DerivedForeignCall,
     dependencies: &ProofDependencies,
 ) -> InferredReturnedRecord {
     use analysis_vocabulary::provenance::{InferenceRule, InferenceUse};

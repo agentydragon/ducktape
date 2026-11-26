@@ -10,8 +10,8 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 pub(super) struct ScalarSequenceUses {
-    pub required_bindings: BTreeSet<Id>,
-    pub uses: Vec<Ident>,
+    pub(crate) required_bindings: BTreeSet<Id>,
+    pub(crate) uses: Vec<Ident>,
 }
 
 pub(super) fn scalar_sequence_uses(sequence: &SeqExpr) -> Option<ScalarSequenceUses> {

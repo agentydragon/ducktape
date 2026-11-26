@@ -34,7 +34,7 @@ impl<'a> PuritySnapshot<'a> {
         self.snapshot_value(purity)
     }
 
-    pub fn snapshot_value(&mut self, purity: &'a Purity) -> PurityNodeId {
+    pub(crate) fn snapshot_value(&mut self, purity: &'a Purity) -> PurityNodeId {
         let identity = purity as *const Purity;
         if let Some(id) = self.identities.get(&identity) {
             return *id;
@@ -99,7 +99,7 @@ impl RestoredPurities {
     }
 
     /// Statements own their verdicts by value; cloned cause edges stay shared.
-    pub fn restore_value(&self, id: PurityNodeId) -> Result<Purity> {
+    pub(crate) fn restore_value(&self, id: PurityNodeId) -> Result<Purity> {
         Ok(self.get(id)?.as_ref().clone())
     }
 

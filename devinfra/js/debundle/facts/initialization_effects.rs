@@ -190,7 +190,7 @@ pub struct RootAttemptCounts {
 pub struct OwnerInitializationCoverageRefusal {
     pub reason: OwnerInitializationCoverageRefusalReason,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_location: Option<SourceLocation>,
+    pub(crate) source_location: Option<SourceLocation>,
 }
 
 #[derive(Debug, Clone)]

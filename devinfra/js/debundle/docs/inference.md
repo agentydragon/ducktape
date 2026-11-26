@@ -651,7 +651,7 @@ iteration requires the Set and Array iterator slots and a checked source shape.
 The original restrictions on class identity, construction sites, arguments,
 primitive elements, mutation and escape remain in their structural analyses.
 Returned records and inferred callback factories are projections of a
-derived foreign call summary (`facts/abstract_domain/foreign_call.rs`), not
+derived foreign call summary (`facts/sync_effects/foreign_call.rs`), not
 certificates. Each certificate
 records which native premises it consulted, so its report names
 `native_call_identity`, `native_integrity` and `empty_collection_construction`
