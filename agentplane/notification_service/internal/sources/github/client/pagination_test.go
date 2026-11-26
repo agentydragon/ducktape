@@ -73,3 +73,25 @@ func TestPaginatedReadsReturnTypedFailureFromLaterPage(t *testing.T) {
 		})
 	}
 }
+
+func TestPaginatedReadRejectsRepeatedPage(t *testing.T) {
+	fake := fixture.NewFake(t)
+	const reviews = "/repos/owner/repo/pulls/7/reviews"
+	fake.Handler = func(w http.ResponseWriter, r *http.Request, path string) bool {
+		if path != reviews {
+			return false
+		}
+		if fake.Count(path) > 1 {
+			t.Error("requested the same page twice")
+			w.WriteHeader(http.StatusBadRequest)
+			return true
+		}
+		replyPage(w, r, path, "per_page=100", 1, "[]")
+		return true
+	}
+	observations, err := newTestClient(t, fake).PullRequestReviews(t.Context(), "owner/repo", 7, installationID)
+	fixture.AsError[*InvalidResponseError](t, err)
+	if observations != nil {
+		t.Errorf("observations = %v, want nil", observations)
+	}
+}

@@ -196,25 +196,17 @@ type request[T any] func(context.Context, *github.Client) (T, *github.Response, 
 
 // callAsApp runs req as the App itself, signed with a JWT.
 func callAsApp[T any](ctx context.Context, c *Client, missingOK bool, req request[T]) (T, error) {
-	return call(ctx, c, missingOK, func(context.Context) (*github.Client, error) { return c.app, nil }, req)
+	value, _, err := call(ctx, c, missingOK, func(context.Context) (*github.Client, error) { return c.app, nil }, req)
+	return value, err
 }
 
 // callAsInstallation runs req as an installation, signed with the installation token it first mints or reuses.
 func callAsInstallation[T any](ctx context.Context, c *Client, installationID int64, missingOK bool, req request[T]) (T, error) {
-	return callAsInstallationWithProfile(ctx, c, installationID, coreReads, missingOK, req)
+	value, _, err := callAsInstallationWithProfile(ctx, c, installationID, coreReads, missingOK, req)
+	return value, err
 }
 
-// callAsCheckRunsInstallation uses the token profile scoped to the Checks repository permission.
-func callAsCheckRunsInstallation[T any](ctx context.Context, c *Client, installationID int64, req request[T]) (T, error) {
-	return callAsInstallationWithProfile(ctx, c, installationID, checkRunsRead, false, req)
-}
-
-// callAsCommitStatusesInstallation uses the token profile scoped to the Commit statuses repository permission.
-func callAsCommitStatusesInstallation[T any](ctx context.Context, c *Client, installationID int64, req request[T]) (T, error) {
-	return callAsInstallationWithProfile(ctx, c, installationID, commitStatusesRead, false, req)
-}
-
-func callAsInstallationWithProfile[T any](ctx context.Context, c *Client, installationID int64, profile installationPermissionProfile, missingOK bool, req request[T]) (T, error) {
+func callAsInstallationWithProfile[T any](ctx context.Context, c *Client, installationID int64, profile installationPermissionProfile, missingOK bool, req request[T]) (T, *github.Response, error) {
 	authorize := func(ctx context.Context) (*github.Client, error) {
 		if installationID <= 0 {
 			return nil, errors.New("installation ID must be above 0")
@@ -230,19 +222,19 @@ func callAsInstallationWithProfile[T any](ctx context.Context, c *Client, instal
 
 // call runs req under the request timeout, which also covers the installation-token request. missingOK turns a 404
 // from req itself, not from authorize, into errMissing.
-func call[T any](ctx context.Context, c *Client, missingOK bool, authorize func(context.Context) (*github.Client, error), req request[T]) (T, error) {
+func call[T any](ctx context.Context, c *Client, missingOK bool, authorize func(context.Context) (*github.Client, error), req request[T]) (T, *github.Response, error) {
 	var zero T
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	client, err := authorize(callCtx)
 	if err != nil {
-		return zero, c.failure(ctx, err, nil, false)
+		return zero, nil, c.failure(ctx, err, nil, false)
 	}
 	value, response, err := req(callCtx, client)
 	if err != nil {
-		return zero, c.failure(ctx, err, response, missingOK)
+		return zero, nil, c.failure(ctx, err, response, missingOK)
 	}
-	return value, nil
+	return value, response, nil
 }
 
 // failure turns a failed GitHub call into the typed error callers classify. ctx is the caller's, so a caller that
