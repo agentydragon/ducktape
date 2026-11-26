@@ -1135,22 +1135,24 @@ class EpochWindow extends Listeners {
     this.#saving = true;
     // Coalesce streaming changes and snapshot synchronously after Shape has applied its batch
     // and recorded its offset. Never persist a partial initial window or a refetch in progress.
-    window.setTimeout(async () => {
-      this.#dirty = false;
-      try {
-        const position = this.#suspended ? this.#position : this.#shape.position;
-        if (!position || !this.resumable || !this.#state.hasCaughtUp || this.#loadingOlder) return;
-        await this.cache?.saveWindow({
-          position,
-          lowest: this.#lowest?.toString() ?? null,
-          exhausted: this.#exhausted,
-          rows: [...this.#rows].map(([key, row]) => [key, toJson(ThreadEntitySchema, row)]),
-        });
-      } finally {
-        this.#saving = false;
-        if (this.#dirty) this.#checkpoint();
-      }
-    }, 150);
+    window.setTimeout(() => void this.#saveCheckpoint(), 150);
+  }
+
+  async #saveCheckpoint(): Promise<void> {
+    this.#dirty = false;
+    try {
+      const position = this.#suspended ? this.#position : this.#shape.position;
+      if (!position || !this.resumable || !this.#state.hasCaughtUp || this.#loadingOlder) return;
+      await this.cache?.saveWindow({
+        position,
+        lowest: this.#lowest?.toString() ?? null,
+        exhausted: this.#exhausted,
+        rows: [...this.#rows].map(([key, row]) => [key, toJson(ThreadEntitySchema, row)]),
+      });
+    } finally {
+      this.#saving = false;
+      if (this.#dirty) this.#checkpoint();
+    }
   }
 
   #publish(error: string | null = this.#state.error): void {
