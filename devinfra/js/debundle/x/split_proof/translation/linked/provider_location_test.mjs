@@ -143,7 +143,20 @@ assert.match(linked.stderr, /does not provide an export named ['\"]missing['\"]/
 const original = readFileSync(path.join(dir, provider), "utf8");
 writeFileSync(path.join(dir, provider), original.replace('import("./lazy.mjs")', 'import("./provider.mjs")'));
 const direct = assertRefused(files, path.join(dir, "direct"));
-assert.match(direct.reason, /directly requests a linked namespace/);
+assert.equal(direct.reason_code, "no_constructed_rule");
+
+// Native ESM resolves the provider's dynamic self-import to its existing namespace.
+const directLink = spawnSync(
+  process.execPath,
+  [
+    "--input-type=module",
+    "--eval",
+    `const api = await import(${JSON.stringify(pathToFileURL(path.join(dir, entry)).href)}); const linked = await api.load(); const provider = await import(${JSON.stringify(pathToFileURL(path.join(dir, provider)).href)}); console.log(JSON.stringify({same: linked === provider, current: linked.current}));`,
+  ],
+  { encoding: "utf8" }
+);
+assert.equal(directLink.status, 0, directLink.error?.message ?? directLink.stdout + directLink.stderr);
+assert.deepEqual(JSON.parse(directLink.stdout.trim()), { same: true, current: "before" });
 
 // The retained provider's hoist can obtain the entry's live pivot cell only
 // through the external lazy script. That capability is already in the ready
