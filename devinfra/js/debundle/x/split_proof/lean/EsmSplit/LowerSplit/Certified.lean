@@ -91,7 +91,7 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sy
     throw (IO.userError "empty@1 requires a browser-page profile and deployment origin")
   let checkOnly := args.contains "--check-output"
   let args := args.filter (· != "--check-output")
-  let usage := IO.userError "usage: lowersplit <deployment.json> <outdir> [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1] [--deployment-import-map empty@1]]]; use --diagnostic for plan and preview options"
+  let usage := IO.userError "usage: lowersplit <deployment.json> <outdir> [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1] [--deployment-import-map empty@1]]]"
   let [manifest, out] := args | throw usage
   if args.any (·.startsWith "--") then throw usage
   let out ← IO.ofExcept (outputDirectory out)
@@ -236,13 +236,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         pure (path.fileName.getD "bundle.mjs", path.parent)
       else pure ("bundle.mjs", none)
     Json.mkObj <$> loadProviders entry (Std.HashMap.ofList [(entry, program)]) root work (allowEntryImport := false)
-  -- The opt-in census wrapper must be able to measure linked execution even
-  -- when the ordinary selector would take the closed-declaration fast path.
-  let censusLinked ← do
-    let enabled ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
-    let forceLinked ← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED"
-    pure (enabled == some "1" && forceLinked == some "1")
-  let declaration := if structural || censusLinked then none else declarations.bind fun groups =>
+  let declaration := if structural then none else declarations.bind fun groups =>
     CoreJS.DeclarationArtifacts.prepare? program (CoreJS.DeclarationProgram.statements groups) B S P
   if let some prepared := declaration then
     let level := prepared.level
