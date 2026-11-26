@@ -7,7 +7,7 @@ import os
 import subprocess
 import tempfile
 from collections.abc import AsyncIterator, Callable, Sequence
-from contextlib import AbstractAsyncContextManager, ExitStack, asynccontextmanager, suppress
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -21,6 +21,7 @@ from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls import config as runtime_transport
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.settings import Settings
+from agentplane.session_dispatcher.testing.policy_service import serve_identities
 from agentplane.testing.go_process import GoProcess, RestartGoProcess, WhileStopped, go_process, restartable_go_process
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -142,74 +143,86 @@ async def run_gateway(
     # Exact service roles exercise the authoring schema and Go loader contract.
     if environment_runtime_ca is None:
         environment_runtime_ca = make_ca("Environment Runtime transport test CA")
-    async with run_environment_service(
-        kubeconfig,
-        namespace,
-        caller_uri=runtime_transport.APP_URI,
-        environment_runtime_ca=environment_runtime_ca,
-        runtime_proxy_controller_callers=runtime_proxy_controller_callers,
-        runtime_proxy_executor_callers=runtime_proxy_executor_callers,
-    ) as environment_service:
-        with ExitStack() as listeners:
-            rpc_listener = listeners.enter_context(listen_tcp())
-            with tempfile.TemporaryDirectory() as settings_dir:
-                settings_directory = Path(settings_dir)
-                environment_runtime_ca_file, _ = write_ca(
-                    environment_runtime_ca, settings_directory, "environment-runtime-ca"
+    async with (
+        run_environment_service(
+            kubeconfig,
+            namespace,
+            caller_uri=runtime_transport.APP_URI,
+            environment_runtime_ca=environment_runtime_ca,
+            runtime_proxy_controller_callers=runtime_proxy_controller_callers,
+            runtime_proxy_executor_callers=runtime_proxy_executor_callers,
+        ) as environment_service,
+        AsyncExitStack() as listeners,
+    ):
+        rpc_listener = listeners.enter_context(listen_tcp())
+        with tempfile.TemporaryDirectory() as settings_dir:
+            settings_directory = Path(settings_dir)
+            environment_runtime_ca_file, _ = write_ca(
+                environment_runtime_ca, settings_directory, "environment-runtime-ca"
+            )
+            rpc_tls_directory = settings_directory / "rpc-tls"
+            rpc_tls_directory.mkdir()
+            rpc_cert, rpc_key = issue_workload_leaf(
+                environment_runtime_ca, _SESSION_DISPATCHER_URI, rpc_tls_directory, dns_name="localhost"
+            )
+            rpc_settings = workload_listener.Listener(
+                listen_address=f"fd:{rpc_listener.socket.fileno()}",
+                tls=workload_listener.TLS(cert_file=rpc_cert, key_file=rpc_key),
+                auth=[workload_listener.SPIFFEAuth(ca_file=environment_runtime_ca_file)],
+            )
+            service_certificates = {}
+            for service in (runtime_transport.APP_URI, runtime_transport.CENTRAL_SAMPLER_URI):
+                directory = settings_directory / service.rsplit("/", 1)[-1]
+                directory.mkdir()
+                service_certificates[service] = issue_workload_leaf(environment_runtime_ca, service, directory)
+            policy_service = await listeners.enter_async_context(
+                serve_identities(
+                    kubeconfig,
+                    namespace,
+                    ca=environment_runtime_ca,
+                    ca_file=environment_runtime_ca_file,
+                    directory=settings_directory,
                 )
-                rpc_tls_directory = settings_directory / "rpc-tls"
-                rpc_tls_directory.mkdir()
-                rpc_cert, rpc_key = issue_workload_leaf(
-                    environment_runtime_ca, _SESSION_DISPATCHER_URI, rpc_tls_directory, dns_name="localhost"
-                )
-                rpc_settings = workload_listener.Listener(
-                    listen_address=f"fd:{rpc_listener.socket.fileno()}",
-                    tls=workload_listener.TLS(cert_file=rpc_cert, key_file=rpc_key),
-                    auth=[workload_listener.SPIFFEAuth(ca_file=environment_runtime_ca_file)],
-                )
-                service_certificates = {}
-                for service in (runtime_transport.APP_URI, runtime_transport.CENTRAL_SAMPLER_URI):
-                    directory = settings_directory / service.rsplit("/", 1)[-1]
-                    directory.mkdir()
-                    service_certificates[service] = issue_workload_leaf(environment_runtime_ca, service, directory)
-                effective_settings = Settings(
-                    sandbox_namespace=namespace,
-                    policy_namespace=namespace,
-                    kubeconfig=kubeconfig,
-                    rpc=rpc_settings,
-                    gateway_tls=environment_service.tls_for(runtime_transport.GATEWAY_SESSIONS_URI),
-                    runner_control_target_template=environment_service.target,
-                    dispatcher_service_callers={runtime_transport.APP_URI},
-                )
-                settings = effective_settings.model_dump(mode="json", exclude_none=True)
-                settings_path = settings_directory / "settings.yaml"
-                settings_path.write_text(yaml.safe_dump(settings, sort_keys=False))
-                environment = {
-                    **os.environ,
-                    "AGENTPLANE_SESSIONS_CONFIG_FILE": str(settings_path),
-                    "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_database_url(database_url),
-                }
-                credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
+            )
+            effective_settings = Settings(
+                sandbox_namespace=namespace,
+                policy_namespace=namespace,
+                policy_service=policy_service,
+                kubeconfig=kubeconfig,
+                rpc=rpc_settings,
+                gateway_tls=environment_service.tls_for(runtime_transport.GATEWAY_SESSIONS_URI),
+                runner_control_target_template=environment_service.target,
+                dispatcher_service_callers={runtime_transport.APP_URI},
+            )
+            settings = effective_settings.model_dump(mode="json", exclude_none=True)
+            settings_path = settings_directory / "settings.yaml"
+            settings_path.write_text(yaml.safe_dump(settings, sort_keys=False))
+            environment = {
+                **os.environ,
+                "AGENTPLANE_SESSIONS_CONFIG_FILE": str(settings_path),
+                "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_database_url(database_url),
+            }
+            credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
 
-                def process_context(generation: int) -> AbstractAsyncContextManager[GoProcess]:
-                    generation_log = log_path.with_name(f"{log_path.stem}-{generation}{log_path.suffix}")
-                    return go_process(
-                        binary,
-                        env=environment,
-                        stderr=generation_log,
-                        health_port=rpc_listener.port,
-                        grace_s=10,
-                        pass_fds=(rpc_listener.socket.fileno(),),
-                        health_credentials=credentials,
-                    )
+            def process_context(generation: int) -> AbstractAsyncContextManager[GoProcess]:
+                generation_log = log_path.with_name(f"{log_path.stem}-{generation}{log_path.suffix}")
+                return go_process(
+                    binary,
+                    env=environment,
+                    stderr=generation_log,
+                    health_port=rpc_listener.port,
+                    grace_s=10,
+                    pass_fds=(rpc_listener.socket.fileno(),),
+                    health_credentials=credentials,
+                )
 
-                async with restartable_go_process(process_context) as (started, restart_process):
-                    gateway = GatewayProcess(
-                        process=started.process,
-                        target=f"localhost:{rpc_listener.port}",
-                        environment_service=environment_service,
-                        service_certificates=service_certificates,
-                        _restart=restart_process,
-                        _close_listener=rpc_listener.socket.close,
-                    )
-                    yield gateway
+            async with restartable_go_process(process_context) as (started, restart_process):
+                gateway = GatewayProcess(
+                    process=started.process,
+                    target=f"localhost:{rpc_listener.port}",
+                    environment_service=environment_service,
+                    service_certificates=service_certificates,
+                    _restart=restart_process,
+                    _close_listener=rpc_listener.socket.close,
+                )
+                yield gateway
