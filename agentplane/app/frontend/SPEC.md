@@ -198,6 +198,8 @@ browser on desktop and phone.
   to scroll naturally without a page-by-page wait. A short thread shows its full history.
 - **Older history arrives before it is needed** — scrolling toward the start of the visible history
   reveals earlier messages without stopping at an empty edge.
+- **Returning to a retained thread** shows its saved messages immediately. A status at the end of
+  the history says it is checking for updates until the window catches up.
 - **An appended message, reader at the bottom**: the view follows it into view. "At the bottom"
   tolerates a small amount of slack — a reader a few pixels off the exact bottom (scroll momentum,
   subpixel rounding) still counts as following.

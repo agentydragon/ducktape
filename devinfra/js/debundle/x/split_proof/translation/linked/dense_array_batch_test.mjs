@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -7,9 +8,11 @@ import {
   caseShard,
   exportNamed,
   forcePreview,
+  id,
   literal,
   lower,
   moduleEvaluationOrder,
+  observe,
   prepare,
   program,
   root,
@@ -52,6 +55,7 @@ const emit = runCase("certified emission and runtime");
 if (emit) {
   const { verdict, log } = lower(sourceFile, specFile, out);
   assertCertified(verdict, log);
+  assert.equal(verdict.strategy, "compiled-replay-premised", log);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
 
   const expectedRows = Array.from({ length: rowCount }, (_, index) => [
@@ -72,4 +76,26 @@ if (runCase("exact disk verification")) {
   if (!emit) forcePreview(files, out);
   const { verdict, log } = lower(sourceFile, specFile, out, ["--check-output"]);
   assertCertified(verdict, log);
+  assert.equal(verdict.strategy, "compiled-replay-premised", log);
+}
+
+// The operand of void must still be evaluated. In source order this read hits
+// the TDZ; moving marker first would make the same array initialize normally.
+if (runCase("void-operand-tdz")) {
+  const firstRow = array([literal("row-0"), unary("void", id("marker"))]);
+  const badSource = program([
+    variable("const", "rows", array([firstRow, ...rows.slice(1)])),
+    variable("const", "marker", literal("ready")),
+    exportNamed([
+      ["rows", "rows"],
+      ["marker", "marker"],
+    ]),
+  ]);
+  const badFiles = prepare(path.join(root, "void-operand-tdz"), { source: badSource, provider: "", spec });
+  const badOut = path.join(root, "void-operand-tdz", "out");
+  const { verdict, log } = lower(badFiles.sourceFile, badFiles.specFile, badOut);
+  assert.equal(verdict.status, "rejected", log);
+  assert.match(verdict.reason, /original threw during linked initialization/, log);
+  assert(!existsSync(badOut));
+  assert.deepEqual(observe(badFiles.sourceFile, "rows"), { error: "ReferenceError" });
 }

@@ -415,7 +415,22 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     await history.record(threads[0], source.entries[-2:])
 
     mark = len(requests)
+    resume_scope = asyncio.Event()
+
+    async def hold_scope(route: Route) -> None:
+        await resume_scope.wait()
+        await route.continue_()
+
+    await route_once(page, f"**/upstream/history/v1/sessions/{threads[0]}/entities", hold_scope)
     await open_thread(0)
+    catchup = page.get_by_text("Showing saved messages. Checking for updates…", exact=True)
+    try:
+        await expect(catchup).to_be_visible()
+        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
+        await page.screenshot(path=undeclared_outputs_dir() / "thread-return-catching-up.png")
+    finally:
+        resume_scope.set()
+    await expect(catchup).to_have_count(0)
     await expect(page.get_by_text("Thread 0 message while away", exact=True)).to_be_visible(timeout=30_000)
     await page.screenshot(path=undeclared_outputs_dir() / "thread-returned-to.png")
     returned = of(threads[0], mark)
