@@ -801,6 +801,8 @@ executable_test(
     src = "CheckedMoveSplitTest.lean",
     deps = [
         ":corejs_checked_move_split",
+        ":literal_reorder_construct",
+        ":literal_reorder_layout",
         ":literal_reorder_link",
     ],
 )
@@ -1941,4 +1943,84 @@ lean_proof_test(
         "CoreJS.LiteralReorderLink.sound",
     ],
     deps = [":literal_reorder_link"],
+)
+
+lean_library(
+    name = "literal_reorder_layout",
+    srcs = ["EsmSplit/CoreJS/LiteralReorderLayout.lean"],
+    deps = [":literal_reorder_link"],
+)
+
+lean_proof_test(
+    name = "literal_reorder_layout_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LiteralReorderLayout"],
+    required_theorems = [
+        "CoreJS.LiteralReorderLayout.check",
+        "CoreJS.LiteralReorderLayout.checked",
+        "CoreJS.LiteralReorderLayout.sourceLink",
+        "CoreJS.LiteralReorderLayout.source_loaded",
+    ],
+    deps = [":literal_reorder_layout"],
+)
+
+lean_library(
+    name = "literal_reorder_graph",
+    srcs = ["EsmSplit/CoreJS/LiteralReorderGraph.lean"],
+    deps = [":literal_reorder_layout"],
+)
+
+lean_proof_test(
+    name = "literal_reorder_graph_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LiteralReorderGraph"],
+    required_theorems = [
+        "CoreJS.LiteralReorderGraph.execution_perm",
+        "CoreJS.LiteralReorderGraph.graph_regions",
+        "CoreJS.LiteralReorderGraph.graph_tops",
+        "CoreJS.LiteralReorderGraph.graphLink",
+        "CoreJS.LiteralReorderGraph.graph_loaded",
+        "CoreJS.LiteralReorderGraph.import_left",
+        "CoreJS.LiteralReorderGraph.entry_imports",
+        "CoreJS.LiteralReorderGraph.graph_of_checked",
+        "CoreJS.LiteralReorderGraph.graph_of_plan",
+        "CoreJS.LiteralReorderGraph.graph_order",
+        "CoreJS.LiteralReorderGraph.graph_scopes",
+    ],
+    deps = [":literal_reorder_graph"],
+)
+
+lean_library(
+    name = "literal_reorder_exact",
+    srcs = ["EsmSplit/CoreJS/LiteralReorderExact.lean"],
+    deps = [":literal_reorder_graph"],
+)
+
+lean_proof_test(
+    name = "literal_reorder_exact_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LiteralReorderExact"],
+    required_theorems = [
+        "CoreJS.LiteralReorderExact.outcomes",
+        "CoreJS.LiteralReorderExact.placement",
+        "CoreJS.LiteralReorderExact.sameExports",
+    ],
+    deps = [":literal_reorder_exact"],
+)
+
+lean_library(
+    name = "literal_reorder_construct",
+    srcs = ["EsmSplit/CoreJS/LiteralReorderConstruct.lean"],
+    deps = [":literal_reorder_exact"],
+)
+
+lean_proof_test(
+    name = "literal_reorder_construct_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LiteralReorderConstruct"],
+    required_theorems = [
+        "CoreJS.LiteralReorderConstruct.construct",
+        "CoreJS.LiteralReorderConstruct.sound",
+    ],
+    deps = [":literal_reorder_construct"],
 )
