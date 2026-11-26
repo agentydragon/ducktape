@@ -89,15 +89,22 @@ const callable = prepare(path.join(root, "callable"), {
   provider: "",
   spec: { entry, modules: { [entry]: ["value"], [worker]: ["read"] } },
 });
-const callableOut = path.join(root, "callable-out");
-const callableResult = split({
-  source: callable.sourceFile,
-  spec: callable.specFile,
-  out: callableOut,
-  require: "all-outcomes",
-});
-assert.equal(callableResult.status, "refused", callableResult.log);
-assert.equal(callableResult.verdict.reason_code, "strict_observation_unsupported", callableResult.log);
-assert.equal(callableResult.verdict.strategy, "compiled-constructor", callableResult.log);
+const browserContract = path.join(root, "callable-browser-contract.json");
+writeFileSync(browserContract, JSON.stringify({ profile: "browser-page" }));
+for (const [name, options] of [
+  ["default", {}],
+  ["structural", { structural: true }],
+  ["profile", { hostContract: browserContract }],
+]) {
+  const callableResult = split({
+    source: callable.sourceFile,
+    spec: callable.specFile,
+    out: path.join(root, `callable-${name}-out`),
+    ...options,
+  });
+  assert.equal(callableResult.status, "refused", callableResult.log);
+  assert.equal(callableResult.verdict.reason_code, "strict_observation_unsupported", callableResult.log);
+  assert.equal(callableResult.verdict.strategy, "compiled-constructor", callableResult.log);
+}
 
 assert.deepEqual(snapshot(), beforeUnsupported, "all refusal paths must preserve the previously published files");

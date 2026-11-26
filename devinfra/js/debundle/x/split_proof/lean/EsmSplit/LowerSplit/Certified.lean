@@ -277,11 +277,6 @@ private def tryCheckedConstructor (chunk : DeploymentChunk) (input : BundleInput
         ("reason_code", toJson "sparse_unit_id")
       ])
   | .supported => pure ()
-  if options.structural || options.profile != .empty || !options.intrinsics.isEmpty ||
-      options.deploymentOrigin.isSome || options.browserOptions.nativeRecord || options.browserOptions.emptyMap then
-    return none
-  unless javascriptSource chunk.source && chunk.source.extension == some "mjs" do return none
-  unless (spec.entry :: spec.modules.map Prod.fst).all (·.endsWith ".mjs") do return none
   unless CoreJS.CheckedSplit.supportsStrictStaticSource source do
     return some (← emitVerdict options.request.label
       (.error "strict JavaScript observations for moved callables and effectful initializers are not covered")
@@ -289,6 +284,11 @@ private def tryCheckedConstructor (chunk : DeploymentChunk) (input : BundleInput
         ("strategy", toJson "compiled-constructor"),
         ("reason_code", toJson "strict_observation_unsupported")
       ])
+  if options.structural || options.profile != .empty || !options.intrinsics.isEmpty ||
+      options.deploymentOrigin.isSome || options.browserOptions.nativeRecord || options.browserOptions.emptyMap then
+    return none
+  unless javascriptSource chunk.source && chunk.source.extension == some "mjs" do return none
+  unless (spec.entry :: spec.modules.map Prod.fst).all (·.endsWith ".mjs") do return none
   let built ← timePhase timings "checked_construction" fun _ => IO.lazyPure fun _ =>
     CoreJS.CheckedSplit.checkedSplit source spec .allOutcomes
   match built with
