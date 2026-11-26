@@ -7,7 +7,6 @@ namespace EsmSplit.CertificateData
 open Lean
 
 abbrev Entries := Array (Name × Expr)
-abbrev Quotes (ε : Type) := StateT Entries (Except ε)
 
 private initialize data : SimplePersistentEnvExtension (Name × Expr) (NameMap Expr) ←
   registerSimplePersistentEnvExtension {
@@ -18,14 +17,8 @@ private initialize data : SimplePersistentEnvExtension (Name × Expr) (NameMap E
 def addEntries (env : Environment) (entries : Entries) : Environment :=
   entries.foldl data.addEntry env
 
-def moduleName : Name := `LinkedCertificateData
-
 /-- A placeholder for a reference to a private definition in the proof module. -/
 def ref (name : Name) : Expr := .fvar ⟨name⟩
-
-def quote (name : String) (expr : Expr) : Quotes ε String := do
-  modify (·.push (Name.mkSimple name, expr))
-  return s!"(certificate_data% {name})"
 
 /-- Reconstruct a JSON object from the raw tree stored in certificate data. -/
 def jsonFromTree (tree : Std.DTreeMap.Internal.Impl String (fun _ => Json)) : Json :=

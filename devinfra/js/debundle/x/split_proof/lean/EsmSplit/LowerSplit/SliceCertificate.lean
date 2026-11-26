@@ -139,22 +139,6 @@ structure SliceEligibility (profile : CoreJS.HostProfile) (source providers file
   probeSucceeded : CoreJS.LinkedBehavior.probeWitness profile deployment.before deployment.after = .ok probe
   checkedLinks : Except String (CoreJS.LinkedBehavior.CheckedProbePair deployment.before deployment.after)
 
-def SliceEligibility.replayBlockers {profile source providers files P}
-    (input : SliceEligibility profile source providers files P) : List CoreJS.LinkedBehavior.ReplayBlocker :=
-  match input.checkedLinks with
-  | .ok pair => pair.replayBlockers
-  | .error _ => [.other "probe-link-unavailable"]
-
-def SliceEligibility.certifyReplay {profile source providers files P}
-    (input : SliceEligibility profile source providers files P) :
-    Option (PLift (CoreJS.LinkedBehavior.ASTEquivalent profile input.probe.premises source providers files P)) := do
-  let pair ← input.checkedLinks.toOption
-  let semantics ← CoreJS.LinkedBehavior.replayPremisedPrograms pair input.probe
-  have decoded : CoreJS.LinkedInput.decodePair source providers files P profile =
-      .ok (input.deployment.before, input.deployment.after) := by
-    simp only [CoreJS.LinkedInput.decodePair, input.decodedSingleton] <;> rfl
-  return ⟨⟨input.deployment.before, input.deployment.after, decoded, semantics.down⟩⟩
-
 private def checkSliceExports {original candidate : CoreJS.Program}
     (checked : Except String (CoreJS.LinkedBehavior.CheckedProbePair original candidate)) :
     Except CertificationRefusal (PLift (CoreJS.LinkedBehavior.SameExports original candidate)) := do

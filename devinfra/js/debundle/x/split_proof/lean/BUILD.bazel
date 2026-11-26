@@ -404,7 +404,6 @@ lean_library(
     name = "corejs_linked_input",
     srcs = [
         # Keep import order for the native Lean rule.
-        "EsmSplit/CertificateData.lean",
         "EsmSplit/CoreJS/DeploymentPlacement.lean",
         "EsmSplit/CoreJS/LinkedInput.lean",
     ],
@@ -416,7 +415,6 @@ lean_library(
     ],
 )
 
-# Generated certificates import the proof layer on its own.
 lean_library(
     name = "corejs_certificate_proof",
     srcs = [
@@ -430,7 +428,7 @@ lean_library(
     ],
 )
 
-# Probe inputs are needed by compiled replay; proof quotation remains a test/tool dependency.
+# Concrete model probes quote complete states for comparison.
 lean_library(
     name = "corejs_certificate_probe",
     srcs = [
@@ -445,19 +443,12 @@ lean_library(
 )
 
 lean_library(
-    name = "corejs_certificate_generation_support",
+    name = "corejs_certificate_quote_json",
+    testonly = True,
     srcs = [
+        "EsmSplit/CertificateData.lean",
         "EsmSplit/CoreJS/LinkedCertificate/QuoteJson.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteRecords.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteWrites.lean",
     ],
-    deps = [":corejs_certificate_probe"],
-)
-
-lean_library(
-    name = "corejs_certificates",
-    srcs = ["EsmSplit/CoreJS/LinkedCertificate.lean"],
-    deps = [":corejs_certificate_generation_support"],
 )
 
 lean_library(
@@ -747,7 +738,6 @@ test_runner(
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [
         ":lowersplit_support",
-        ":lowersplit_workflows",
         ":terminal_export_artifact",
     ],
 )
@@ -785,12 +775,9 @@ lean_library(
 )
 
 lean_library(
-    name = "lowersplit_workflows",
-    srcs = [
-        # Keep import order for the native Lean rule.
-        "EsmSplit/LowerSplit/SliceCertificate.lean",
-        "EsmSplit/LowerSplit/Certified.lean",
-    ],
+    name = "slice_certificate",
+    testonly = True,
+    srcs = ["EsmSplit/LowerSplit/SliceCertificate.lean"],
     deps = [
         ":corejs_certificate_probe",
         ":corejs_runtime",
@@ -810,7 +797,7 @@ lean_proof_test(
         "CoreJS.runProgram_singleModuleMetadata",
         "EsmSplit.LowerSplit.certifySlice_sound",
     ],
-    deps = [":lowersplit_workflows"],
+    deps = [":slice_certificate"],
 )
 
 lean_library(
@@ -858,13 +845,24 @@ lean_binary(
 )
 
 lean_library(
+    name = "lowersplit_certified",
+    srcs = ["EsmSplit/LowerSplit/Certified.lean"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":lowersplit_input",
+        ":lowersplit_support",
+        ":planner",
+    ],
+)
+
+lean_library(
     name = "lowersplit_core_modules",
     srcs = [
         "EsmSplit/LowerSplit.lean",
         "EsmSplit/LowerSplitMain.lean",
     ],
     visibility = ["//visibility:private"],
-    deps = [":lowersplit_workflows"],
+    deps = [":lowersplit_certified"],
 )
 
 lean_binary(
@@ -1062,7 +1060,9 @@ lean_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
-        ":corejs_certificates",
+        ":corejs_certificate_probe",
+        ":corejs_certificate_proof",
+        ":corejs_certificate_quote_json",
         ":corejs_runtime",
         ":corejs_structural",
         ":planner",

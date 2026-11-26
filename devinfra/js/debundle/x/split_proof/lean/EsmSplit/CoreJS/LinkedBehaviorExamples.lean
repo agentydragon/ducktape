@@ -1,7 +1,12 @@
-import EsmSplit.CoreJS.LinkedCertificate
+import EsmSplit.CoreJS.LinkedCertificate.Proof
+import EsmSplit.CoreJS.LinkedCertificate.QuoteCoreJS
+import EsmSplit.CoreJS.LinkedCertificate.QuoteJson
 import EsmSplit.CoreJS.LinkedPivotCertificate
 
 namespace CoreJS.LinkedBehaviorExamples
+
+deriving instance Lean.ToExpr for EsmSplit.Module
+deriving instance Lean.ToExpr for EsmSplit.Plan
 
 private def provider : Module where
   name := "factory"

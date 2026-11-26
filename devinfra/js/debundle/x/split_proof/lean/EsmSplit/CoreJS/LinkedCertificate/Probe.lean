@@ -1,8 +1,6 @@
 import EsmSplit.CoreJS.LinkedCertificate.Proof
 import EsmSplit.CoreJS.LinkedCertificate.QuoteCoreJS
 import EsmSplit.CoreJS.LinkedPivotCertificate
-import EsmSplit.CoreJS.ProbeReplay
-import EsmSplit.CoreJS.StateMatch
 
 namespace CoreJS.LinkedBehavior
 
@@ -75,12 +73,6 @@ def checkProbePair (source candidate : Program) : Except String (CheckedProbePai
   let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
   return ⟨before, after⟩
 
-/-- Typed syntax categories for the linked schedules used by replay. -/
-def CheckedProbePair.replayBlockers {source candidate : Program}
-    (pair : CheckedProbePair source candidate) : List ReplayBlocker :=
-  (replayScheduleBlockers (unitsOf pair.before.linked) ++
-    replayScheduleBlockers (unitsOf pair.after.linked)).eraseDups
-
 /-- Successful concrete runs at the same fuel and with the same host premises.
 Compiled replay uses these runs when lifting the result to other worlds. -/
 structure ProbeWitness (source candidate : Program) where
@@ -92,62 +84,6 @@ structure ProbeWitness (source candidate : Program) where
   candidateRun : runProgram (premises.specialize World.probe) fuel candidate = .ok () candidateState
   statesAgree : probeStatesEqual premises sourceState candidateState = true
 
-private def premisedStateAgreement (premises : HostPremises)
-    (sourceState candidateState : State (premises.specialize World.probe)) :
-    Option (PLift (sourceState = candidateState)) := by
-  letI : DecidableEq (premises.specialize World.probe).σ := by
-    change DecidableEq Unit
-    infer_instance
-  exact StateMatch.state sourceState candidateState
-
-private theorem replayPremisedEquivalentFor {premises : HostPremises} {source candidate : Program} {fuel : Nat}
-    {sourceState candidateState : State (premises.specialize World.probe)}
-    (sourceReplay : ∀ w, runProgram (premises.specialize w) fuel source =
-      .ok () (replaceWorld (premises.specialize w) sourceState))
-    (candidateReplay : ∀ w, runProgram (premises.specialize w) fuel candidate =
-      .ok () (replaceWorld (premises.specialize w) candidateState))
-    (statesAgree : sourceState = candidateState) : EquivalentFor premises source candidate := by
-  by_cases empty : premises = {}
-  · subst premises
-    apply of_runs fuel
-    intro w
-    have satisfied : ({} : HostPremises).Satisfied w := by
-      simp [HostPremises.Satisfied]
-    have sourceRun := sourceReplay w
-    have candidateRun := candidateReplay w
-    rw [← statesAgree] at candidateRun
-    have specialized := HostPremises.specialize_eq ({} : HostPremises) w satisfied
-    have sourceRunAtWorld : runProgram w fuel source = .ok () (replaceWorld w sourceState) := by
-      have transport := congrArg
-        (fun world : World => runProgram world fuel source = .ok () (replaceWorld world sourceState))
-        specialized
-      exact transport.mp sourceRun
-    have candidateRunAtWorld : runProgram w fuel candidate = .ok () (replaceWorld w sourceState) := by
-      have transport := congrArg
-        (fun world : World => runProgram world fuel candidate = .ok () (replaceWorld world sourceState))
-        specialized
-      exact transport.mp candidateRun
-    exact ⟨_, sourceRunAtWorld, candidateRunAtWorld⟩
-  · simp [EquivalentFor, empty]
-    intro w satisfied
-    have sourceRun := sourceReplay w
-    have candidateRun := candidateReplay w
-    rw [← statesAgree] at candidateRun
-    have specialized := premises.specialize_eq w satisfied
-    have sourceRunAtWorld : runProgram w fuel source = .ok () (replaceWorld w sourceState) := by
-      have transport := congrArg
-        (fun world : World => runProgram world fuel source = .ok () (replaceWorld world sourceState))
-        specialized
-      exact transport.mp sourceRun
-    have candidateRunAtWorld : runProgram w fuel candidate = .ok () (replaceWorld w sourceState) := by
-      have transport := congrArg
-        (fun world : World => runProgram world fuel candidate = .ok () (replaceWorld world sourceState))
-        specialized
-      exact transport.mp candidateRun
-    exact ⟨replaceWorld w sourceState,
-      ⟨fuel, sourceRunAtWorld, by simp⟩,
-      ⟨fuel, candidateRunAtWorld, by simp⟩⟩
-
 theorem CheckedProbePair.sameExports {source candidate : Program} (pair : CheckedProbePair source candidate)
     (exportsMatched : exportsMatchFrom pair.before pair.after = true) : SameExports source candidate := by
   apply sameExports_of_match
@@ -155,38 +91,18 @@ theorem CheckedProbePair.sameExports {source candidate : Program} (pair : Checke
   rw [exportsMatch_from_checked (pair.before.forWorld w) (pair.after.forWorld w)]
   exact exportsMatched
 
-/-- A compiled replay check. It accepts only when both programs have a
-successful probe run, their complete probe states match, both reached schedules
-have replay witnesses, and their public exports match. -/
-def replayPremisedPrograms {source candidate : Program}
-    (pair : CheckedProbePair source candidate) (probe : ProbeWitness source candidate) :
-    Option (PLift (EquivalentFor probe.premises source candidate ∧ SameExports source candidate)) := do
-  let allowLogical := source.modules.length == 1 && source.modules.all (fun m => m.imports.isEmpty)
-  let sourceSupported ← replayPremisedDynamicWitness (premises := probe.premises) probe.fuel allowLogical pair.before
-  let candidateSupported ← replayPremisedDynamicWitness (premises := probe.premises) probe.fuel allowLogical pair.after
-  let stateAgreement ← premisedStateAgreement probe.premises probe.sourceState probe.candidateState
-  if exportsMatched : exportsMatchFrom pair.before pair.after then
-    return ⟨⟨replayPremisedEquivalentFor
-        (sourceSupported.down probe.sourceState probe.sourceRun) (candidateSupported.down probe.candidateState probe.candidateRun)
-        stateAgreement.down,
-      pair.sameExports exportsMatched⟩⟩
-  else none
-
 #audit_linked_programs probeObservationMismatchRefutesEquivalent
-#audit_linked_programs replayPremisedEquivalentFor
 #print axioms CheckedProbePair.sameExports
 #audit_linked_programs CheckedProbePair.sameExports
-#audit_linked_programs replayPremisedPrograms
 
 inductive RefusalCode where
-  | probeMismatch | probeThrow | probeUnknown | probeFuel | proofPreparation
+  | probeMismatch | probeThrow | probeUnknown | probeFuel
 
 def RefusalCode.label : RefusalCode → String
   | .probeMismatch => "probe_mismatch"
   | .probeThrow => "probe_throw"
   | .probeUnknown => "probe_unknown"
   | .probeFuel => "probe_fuel"
-  | .proofPreparation => "proof_preparation"
 
 structure Refusal where
   code : RefusalCode

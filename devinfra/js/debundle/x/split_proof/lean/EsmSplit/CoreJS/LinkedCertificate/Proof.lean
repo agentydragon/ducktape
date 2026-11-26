@@ -233,14 +233,6 @@ macro "check_linked_layout" : tactic =>
         all_goals rfl
     | exact none)
 
-/-- Reduce a run against the link result whose equation the kernel has checked. -/
-macro "reduce_linked_run_from " fuel:num layout:ident world:ident : tactic =>
-  `(tactic|
-    ((first | rw [run_after_link $fuel (($layout $world).get (by rfl))] | skip) <;>
-      (conv =>
-        lhs
-        cbv) <;> rfl))
-
 macro "verify_linked_exports_from " source:ident candidate:ident : tactic =>
   `(tactic|
     (apply sameExports_of_match
@@ -264,24 +256,6 @@ macro "verify_ordered_linked_programs " fuel:num source:ident candidate:ident pr
        · rw [run_after_link $fuel (($source (HostPremises.specialize $premises w)).get (by rfl))]
          first | cbv <;> rfl | rfl
        · check_ordered_linked_runs $fuel $source $candidate (HostPremises.specialize $premises w)
-     · verify_linked_exports_from $source $candidate))
-
-/-- Reuse each checked link between execution and export matching. -/
-macro "verify_linked_programs_from " fuel:num source:ident candidate:ident premises:ident : tactic => do
-  let reduce ← `(tactic| first | cbv <;> constructor <;> rfl | exact ⟨rfl, rfl⟩)
-  `(tactic|
-    (constructor
-     · first
-       | apply of_evaluation $fuel
-         intro w
-         rw [run_after_link $fuel (($source w).get (by rfl)),
-             run_after_link $fuel (($candidate w).get (by rfl))] <;> $reduce
-       | apply of_host_evaluation (premises := $premises) $fuel
-         intro w
-         rw [run_after_link $fuel (($source (HostPremises.specialize $premises w)).get (by rfl)),
-             run_after_link $fuel (($candidate (HostPremises.specialize $premises w)).get (by rfl))]
-         -- Lean 4.35 can panic when cbv simplifies the conjunction in the specialized world.
-         constructor <;> (first | cbv <;> rfl | rfl)
      · verify_linked_exports_from $source $candidate))
 
 -- Check the actual theorem, whose reduction lemmas depend on the input program.
