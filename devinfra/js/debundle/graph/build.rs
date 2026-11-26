@@ -576,6 +576,7 @@ pub fn build_dependency_graph_with(
         &binding_source_unit,
         &shared_vars,
         &stmt_by_source_unit,
+        target_is_hoisted,
         &mut raw_edges,
     );
 
@@ -1724,6 +1725,7 @@ fn promote_at_init_calls(
     binding_source_unit: &HashMap<Id, SourceUnitId>,
     shared_vars: &BTreeSet<Id>,
     stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
+    target_is_hoisted: impl Fn(&Id) -> bool,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
 ) -> BTreeMap<usize, AssumedEffectReason> {
     // Index statement source units that can change a chunk binding's value or
@@ -2001,15 +2003,6 @@ fn promote_at_init_calls(
     //    fire the realizability hazard. `var` is technically hoisted
     //    too but is rare enough not to warrant a separate distinction
     //    in StatementKind.
-    let target_is_hoisted = |id: &Id| -> bool {
-        let Some(target_source_unit) = binding_source_unit.get(id) else {
-            return false;
-        };
-        stmt_by_source_unit
-            .get(target_source_unit)
-            .map(|stmt| stmt.kind == StatementKind::FnDecl)
-            .unwrap_or(false)
-    };
     let mut scc_reads: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
     let mut scc_rebinds: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
     let mut scc_fallback_roots: Vec<BTreeSet<SourceUnitId>> = vec![BTreeSet::new(); sccs.len()];
@@ -2205,52 +2198,26 @@ fn promote_at_init_calls(
         let caller = SourceUnitId(stmt.ordinal.0);
         let mut promoted_read_targets: BTreeSet<SourceUnitId> = BTreeSet::new();
         let mut fallback_roots = fallback_roots_of(&stmt.at_init_unresolved_sources, false, caller);
+        let mut promote_scc_bindings = |scc_idx: usize, callee| {
+            // Reads precede rebinds: when both identify the same target unit,
+            // its first binding and callee are retained as the edge witness.
+            for binding in scc_reads[scc_idx].iter().chain(&scc_rebinds[scc_idx]) {
+                let target = binding_source_unit[binding];
+                if target != caller && promoted_read_targets.insert(target) {
+                    raw_edges.push((
+                        caller,
+                        target,
+                        EdgeReason::for_binding(DepKind::EagerUse, stmt.ordinal, binding.clone())
+                            .promoted_at_init(callee),
+                    ));
+                }
+            }
+        };
         if stmt.at_init_unresolved_inline_fn
             && let Some(&scc_idx) = scc_of.get(&caller)
         {
             fallback_roots.extend(scc_fallback_roots[scc_idx].iter().copied());
-            for target_binding in &scc_reads[scc_idx] {
-                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == *target_source_unit {
-                    continue;
-                }
-                if !promoted_read_targets.insert(*target_source_unit) {
-                    continue;
-                }
-                raw_edges.push((
-                    caller,
-                    *target_source_unit,
-                    EdgeReason::for_binding(
-                        DepKind::EagerUse,
-                        stmt.ordinal,
-                        target_binding.clone(),
-                    )
-                    .promoted_at_init(caller),
-                ));
-            }
-            for target_binding in &scc_rebinds[scc_idx] {
-                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == *target_source_unit {
-                    continue;
-                }
-                if !promoted_read_targets.insert(*target_source_unit) {
-                    continue;
-                }
-                raw_edges.push((
-                    caller,
-                    *target_source_unit,
-                    EdgeReason::for_binding(
-                        DepKind::EagerUse,
-                        stmt.ordinal,
-                        target_binding.clone(),
-                    )
-                    .promoted_at_init(caller),
-                ));
-            }
+            promote_scc_bindings(scc_idx, caller);
         }
         for callee_id in &stmt.calls.eager {
             let Some(callee_source_unit) = resolvable_callee(callee_id) else {
@@ -2277,48 +2244,7 @@ fn promote_at_init_calls(
                 fallback_roots.insert(caller);
                 fallback_roots.extend(fallback_roots_of(&stmt.reads.eager, false, caller));
             }
-            for target_binding in &scc_reads[scc_idx] {
-                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == *target_source_unit {
-                    continue;
-                }
-                if !promoted_read_targets.insert(*target_source_unit) {
-                    continue;
-                }
-                raw_edges.push((
-                    caller,
-                    *target_source_unit,
-                    EdgeReason::for_binding(
-                        DepKind::EagerUse,
-                        stmt.ordinal,
-                        target_binding.clone(),
-                    )
-                    .promoted_at_init(callee_source_unit),
-                ));
-            }
-            for target_binding in &scc_rebinds[scc_idx] {
-                let Some(target_source_unit) = binding_source_unit.get(target_binding) else {
-                    continue;
-                };
-                if caller == *target_source_unit {
-                    continue;
-                }
-                if !promoted_read_targets.insert(*target_source_unit) {
-                    continue;
-                }
-                raw_edges.push((
-                    caller,
-                    *target_source_unit,
-                    EdgeReason::for_binding(
-                        DepKind::EagerUse,
-                        stmt.ordinal,
-                        target_binding.clone(),
-                    )
-                    .promoted_at_init(callee_source_unit),
-                ));
-            }
+            promote_scc_bindings(scc_idx, callee_source_unit);
         }
         if fallback_roots.is_empty() {
             continue;
