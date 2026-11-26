@@ -1817,3 +1817,42 @@ lean_proof_test(
     required_theorems = ["EsmSplit.MetadataImports.external_use_imported"],
     deps = [":metadata_imports"],
 )
+
+lean_library(
+    name = "exact_literal_move",
+    srcs = ["EsmSplit/CoreJS/ExactLiteralMove.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "exact_literal_move_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.ExactLiteralMove"],
+    required_theorems = [
+        "CoreJS.ExactLiteralMove.literal_closed",
+        "CoreJS.ExactLiteralMove.run_literal",
+        "CoreJS.ExactLiteralMove.swap_literals",
+        "CoreJS.ExactLiteralMove.linked_distinct",
+        "CoreJS.ExactLiteralMove.swap_from_link",
+        "CoreJS.ExactLiteralMove.swap_in_context",
+        "CoreJS.ExactLiteralMove.reorder_exact",
+        "CoreJS.ExactLiteralMove.swap_function_in_context",
+        "CoreJS.ExactLiteralMove.preserve_plan",
+        "CoreJS.ExactLiteralMove.CorpusCrossing.resolvedPlan",
+        "CoreJS.ExactLiteralMove.CorpusCrossing.resolvedMoves",
+        "CoreJS.ExactLiteralMove.CorpusCrossing.resolvedExecution",
+        "CoreJS.ExactLiteralMove.run_function",
+        "CoreJS.ExactLiteralMove.swap_literal_function",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.throw_after_swap",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.read_not_admitted",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.read_before_initialization",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.authoredOrder",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.authoredPlacement",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.authoredAllOutcomes",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.sameExports",
+    ],
+    deps = [":exact_literal_move"],
+)
