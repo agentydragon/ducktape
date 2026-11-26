@@ -46,8 +46,8 @@ func svidConfig(t *testing.T, ca *peertlstesting.CA) config {
 	c.DatabaseURL = integrationDatabase.URL
 	c.Kubeconfig, c.PolicyNamespace = kubeconfig, testPolicyNamespace
 	c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
-	c.RPC.Auth = []listener.Authentication{
-		&listener.SPIFFEAuth{CAFile: serving.CAFile},
+	c.RPC.Auth = []*listener.SPIFFEAuth{
+		{CAFile: serving.CAFile},
 	}
 	c.ReaderServiceCallers = []string{peertls.AppURI}
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}

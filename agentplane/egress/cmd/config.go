@@ -71,7 +71,6 @@ func loadConfig() (config, error) {
 	}
 	c := defaultConfig()
 	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
-		DecodeHook:      listener.AuthenticationDecodeHook,
 		ExactFieldNames: true,
 	}); err != nil {
 		return config{}, fmt.Errorf("decode egress settings file: %w", err)
@@ -106,12 +105,6 @@ func (c *config) validate() error {
 	}
 	if err := c.Forward.Validate(); err != nil {
 		return fmt.Errorf("forward listener: %w", err)
-	}
-	if c.Forward.TLS == nil {
-		return errors.New("forward listener requires TLS")
-	}
-	if !c.Forward.Has(listener.SPIFFE) {
-		return errors.New("forward listener authenticates SPIFFE alone")
 	}
 	for _, limit := range []bounded{
 		{"decision_history_size", c.DecisionHistorySize, 1, history.MaxCapacity},

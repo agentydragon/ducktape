@@ -15,7 +15,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/rules"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
@@ -31,7 +30,7 @@ func (c *config) validateAdminGRPC() error {
 	if err := auth.ValidateServiceCallers(c.AdminGRPCServiceCallers); err != nil {
 		return fmt.Errorf("invalid admin_grpc_service_callers: %w", err)
 	}
-	if c.adminGRPCEnabled() && (c.Forward.TLS == nil || !c.Forward.Has(listener.SPIFFE)) {
+	if c.adminGRPCEnabled() && (c.Forward.TLS == nil || !c.Forward.HasSPIFFE()) {
 		return errors.New("admin_grpc_service_callers requires forward TLS and SPIFFE client trust")
 	}
 	return nil

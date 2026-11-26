@@ -60,9 +60,7 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("%s is required", settingPrefix+"CONFIG_FILE")
 	}
 	c := defaultConfig()
-	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
-		DecodeHook: listener.AuthenticationDecodeHook,
-	}); err != nil {
+	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{}); err != nil {
 		return config{}, configfile.RedactMapstructureError("Runner Gateway", err)
 	}
 	c.DispatcherDatabaseURL = os.Getenv(dispatcherDatabaseURLEnv)

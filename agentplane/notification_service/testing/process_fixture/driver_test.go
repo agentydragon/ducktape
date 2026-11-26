@@ -262,8 +262,8 @@ func TestNotificationProcessDriver(t *testing.T) {
 	c.RPC = listener.Config{
 		ListenAddress: "127.0.0.1:0",
 		TLS:           &listener.TLS{CertFile: input.ServerCertFile, KeyFile: input.ServerKeyFile},
-		Auth: []listener.Authentication{
-			&listener.SPIFFEAuth{CAFile: input.ClientCAFile},
+		Auth: []*listener.SPIFFEAuth{
+			{CAFile: input.ClientCAFile},
 		},
 	}
 	c.Actions = actionPeer{URL: "http://127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
