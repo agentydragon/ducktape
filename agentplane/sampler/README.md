@@ -203,6 +203,10 @@ source rows and payloads before atomically replacing them. Session-lock acquisit
 from the beginning, validates the committed storage, and skips batches that already match the
 profile; it stores no progress table or column. `--all` inventories every retained Session in keyset
 order and defers busy Sessions after bounded retries, so repeat the pass until all Sessions finish.
+Sampler and History share the nested `event_block_profile` settings: `target_bytes`,
+`target_entries`, `codec` (zstd), and `level`. An omitted entry target uses 128 for Sampler
+and 32 for History.
+
 Use the same `--event-block-target-bytes`, `--event-block-target-entries`, and
 `--event-block-level` values for live writes and every repack pass.
 

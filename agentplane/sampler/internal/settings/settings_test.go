@@ -17,14 +17,20 @@ import (
 
 func TestEventBlockProfileDefaultsAndBounds(t *testing.T) {
 	settings := fixtureSettings()
-	profile := settings.EventBlockProfile()
+	profile := settings.PackingProfile()
 	if profile.TargetBytes != 64<<10 || profile.TargetEntries != 128 || profile.Level != 3 {
 		t.Fatalf("stock event block profile=%+v", profile)
 	}
-	settings.EventBlockTargetBytes = 32 << 10
-	settings.EventBlockTargetEntries = 96
-	settings.EventBlockLevel = 2
-	profile = settings.EventBlockProfile()
+	if err := json.Unmarshal([]byte(`{"event_block_profile":{"target_bytes":32768,"level":2}}`), &settings); err != nil {
+		t.Fatal(err)
+	}
+	if p := settings.PackingProfile(); p.TargetBytes != 32768 || p.TargetEntries != 128 || p.Codec != "zstd" || p.Level != 2 {
+		t.Fatalf("partial JSON profile: %+v", p)
+	}
+	settings.EventBlockProfile.TargetBytes = 32 << 10
+	settings.EventBlockProfile.TargetEntries = 96
+	settings.EventBlockProfile.Level = 2
+	profile = settings.PackingProfile()
 	if profile.TargetBytes != 32<<10 || profile.TargetEntries != 96 || profile.Level != 2 {
 		t.Fatalf("configured event block profile=%+v", profile)
 	}
@@ -32,9 +38,10 @@ func TestEventBlockProfileDefaultsAndBounds(t *testing.T) {
 		name string
 		set  func(*Settings)
 	}{
-		{"bytes", func(s *Settings) { s.EventBlockTargetBytes = (8 << 20) + 1 }},
-		{"entries", func(s *Settings) { s.EventBlockTargetEntries = 257 }},
-		{"level", func(s *Settings) { s.EventBlockLevel = 5 }},
+		{"bytes", func(s *Settings) { s.EventBlockProfile.TargetBytes = (8 << 20) + 1 }},
+		{"entries", func(s *Settings) { s.EventBlockProfile.TargetEntries = 257 }},
+		{"codec", func(s *Settings) { s.EventBlockProfile.Codec = "gzip" }},
+		{"level", func(s *Settings) { s.EventBlockProfile.Level = 5 }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			invalid := fixtureSettings()

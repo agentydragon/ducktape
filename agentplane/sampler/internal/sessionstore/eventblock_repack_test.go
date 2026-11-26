@@ -240,8 +240,7 @@ func TestRepackCompareAndSwapDetectsLiveWriterSealingPreparedRows(t *testing.T) 
 
 	liveDB := postgres.Open(t, dsn)
 	live := New(liveDB, 30*time.Second, &settings.Settings{
-		EventBlockV2Writes: true, EventBlockTargetBytes: 64 << 10,
-		EventBlockTargetEntries: 32, EventBlockLevel: 3,
+		EventBlockV2Writes: true, EventBlockProfile: eventblock.Profile{TargetBytes: 64 << 10, TargetEntries: 32, Level: 3},
 	})
 	if err := appendOneJournalEvent(t.Context(), live, session.ID); err != nil {
 		t.Fatal(err)
@@ -372,8 +371,7 @@ func TestCompactJournalKeepsCurrentBlocksAtTheSameProfile(t *testing.T) {
 	store.eventBlockProfile = profile
 	writerDB := postgres.Open(t, dsn)
 	writer := New(writerDB, 30*time.Second, &settings.Settings{
-		EventBlockV2Writes: true, EventBlockTargetBytes: profile.TargetBytes,
-		EventBlockTargetEntries: profile.TargetEntries, EventBlockLevel: profile.Level,
+		EventBlockV2Writes: true, EventBlockProfile: profile,
 	})
 	session := openSessionForStore(t, store, "")
 	for range profile.TargetEntries {

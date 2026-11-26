@@ -284,6 +284,7 @@ py_library(
     name = "settings",
     srcs = ["settings.py"],
     deps = [
+        "//agentplane/eventblock:settings",
         "//agentplane/net/peertls:config",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",

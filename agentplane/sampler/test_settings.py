@@ -86,19 +86,19 @@ def test_admin_service_callers_are_separate_and_omitted_when_empty() -> None:
 
 def test_event_block_profile_defaults_stay_omitted_until_customized() -> None:
     defaults = Settings(**settings_data()).model_dump(mode="json", exclude_none=True)
-    assert "event_block_target_bytes" not in defaults
-    assert "event_block_target_entries" not in defaults
-    assert "event_block_level" not in defaults
+    assert "event_block_profile" not in defaults
     assert "event_block_v2_writes" not in defaults
 
-    configured = Settings(
-        **settings_data(), event_block_v2_writes=True, event_block_target_bytes=32 * 1024, event_block_level=2
+    configured = Settings.model_validate(
+        {
+            **settings_data(),
+            "event_block_v2_writes": True,
+            "event_block_profile": {"target_bytes": 32 * 1024, "level": 2},
+        }
     )
-    serialized = configured.model_dump(mode="json", exclude_none=True)
+    serialized = configured.model_dump(mode="json")
     assert serialized["event_block_v2_writes"] is True
-    assert serialized["event_block_target_bytes"] == 32 * 1024
-    assert serialized["event_block_level"] == 2
-    assert "event_block_target_entries" not in serialized
+    assert serialized["event_block_profile"] == {"target_bytes": 32768, "codec": "zstd", "level": 2}
 
 
 def test_tls_application_listener_is_required_and_plaintext_listener_is_unknown() -> None:

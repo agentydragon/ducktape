@@ -57,7 +57,7 @@ func New(db *sql.DB, operationTimeout time.Duration, settings *samplersettings.S
 		providerProgressCoalescing: settings.ProviderProgressLeaseCoalescing(),
 		providerRetryMaxBackoff:    settings.ProviderRetryMaxBackoff(),
 		eventBlockV2Writes:         settings.EventBlockV2Writes,
-		eventBlockProfile:          settings.EventBlockProfile(),
+		eventBlockProfile:          settings.PackingProfile(),
 		contextSourceWrites:        settings.ContextSourceWrites,
 	}
 }

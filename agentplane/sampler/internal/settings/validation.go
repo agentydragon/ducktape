@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
@@ -71,10 +70,8 @@ func prefixValidationError(prefix string, err error) error {
 }
 
 func (s Settings) Validate() error {
-	profile := s.EventBlockProfile()
-	if profile.TargetBytes < 1 || profile.TargetBytes > eventblock.MaxBytes ||
-		profile.TargetEntries < 1 || profile.TargetEntries > eventblock.MaxEntries || profile.Level < 1 || profile.Level > 4 {
-		return invalidSetting("event_block_target_bytes,event_block_target_entries,event_block_level", "must form a supported event block profile")
+	if err := s.PackingProfile().Validate(); err != nil {
+		return invalidSetting("event_block_profile", err.Error())
 	}
 	if len(s.EnvironmentNamespace) > 63 || !executorDNSLabel.MatchString(s.EnvironmentNamespace) {
 		return invalidSetting("environment_namespace", "must be a nonempty Kubernetes namespace DNS label")

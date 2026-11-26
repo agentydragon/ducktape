@@ -26,9 +26,10 @@ func runCompactJournal(ctx context.Context, args []string) error {
 	pauseFile := flags.String("pause-file", "", "pause at batch boundaries while this file exists")
 	busyRetries := flags.Int("busy-retries", 3, "retries for Session lock contention or changed inputs")
 	retryDelay := flags.Duration("retry-delay", 250*time.Millisecond, "delay between contention retries")
-	targetBytes := flags.Int("event-block-target-bytes", 64<<10, "event block target frame bytes; match the live sampler profile")
-	targetEntries := flags.Int("event-block-target-entries", 128, "event block target entry count; match the live sampler profile")
-	level := flags.Int("event-block-level", 3, "stock zstd compression level (1-4); match the live sampler profile")
+	defaults := eventblock.DefaultProfile(128)
+	targetBytes := flags.Int("event-block-target-bytes", defaults.TargetBytes, "event block target frame bytes; match the live sampler profile")
+	targetEntries := flags.Int("event-block-target-entries", defaults.TargetEntries, "event block target entry count; match the live sampler profile")
+	level := flags.Int("event-block-level", defaults.Level, "stock zstd compression level (1-4); match the live sampler profile")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -54,7 +55,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 	}
 	defer db.Close()
 	store := sessionstore.New(db, 30*time.Second, &samplersettings.Settings{
-		EventBlockTargetBytes: *targetBytes, EventBlockTargetEntries: *targetEntries, EventBlockLevel: *level,
+		EventBlockProfile: profile,
 	})
 	options := sessionstore.JournalCompactionOptions{
 		BatchDelay: *batchDelay, PauseFile: *pauseFile,
