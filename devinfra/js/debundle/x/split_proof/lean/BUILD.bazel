@@ -923,6 +923,7 @@ test_runner(
     deps = [
         ":corejs_linked_input",
         ":corejs_runtime",
+        ":corejs_terminal_constructor",
         ":corejs_terminal_constructor_input",
         ":corejs_terminal_footprints",
         ":local_export_unit",
@@ -1700,6 +1701,27 @@ lean_proof_test(
         "EsmSplit.LocalExportUnit.matched_local_use_and_public",
     ],
     deps = [":local_export_unit"],
+)
+
+lean_library(
+    name = "corejs_terminal_constructor",
+    srcs = ["EsmSplit/CoreJS/TerminalConstructor.lean"],
+    deps = [
+        ":corejs_terminal_constructor_input",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_constructor_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalConstructor"],
+    required_theorems = [
+        "CoreJS.TerminalConstructor.Construction.program",
+        "CoreJS.TerminalConstructor.construct",
+        "CoreJS.TerminalConstructor.sound",
+    ],
+    deps = [":corejs_terminal_constructor"],
 )
 
 lean_library(

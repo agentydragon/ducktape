@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.TerminalConstructorInput
+import EsmSplit.CoreJS.TerminalConstructor
 import EsmSplit.CoreJS.TerminalFootprints
 import EsmSplit.LowerSplit.SparseArtifact
 import EsmSplit.Cli
@@ -48,6 +49,8 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
   require (plan.evalOrder.contains plan.entry) "actual entry is not loaded"
   require (entry.stmts == [checked.terminal.row.ordinal]) "actual entry does not contain exactly the export row"
   require entry.exports.isEmpty "actual entry has generated glue exports"
+  let built ← IO.ofExcept (TerminalConstructor.construct (p, rows) bundle spec)
+  let _ := TerminalConstructor.sound built
   let badImport : Program := { p with modules := [{ m with imports := [⟨"provider.mjs", []⟩] }] }
   match TerminalConstructorInput.check (badImport, rows) with
   | .error "terminal source must not import modules" => pure ()
