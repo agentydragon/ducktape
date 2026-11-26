@@ -67,6 +67,7 @@ rust_library(
         "//devinfra/js/debundle/selectors/authoring:synthesis_failure",
         "//devinfra/js/debundle/selectors/diagnostics:selector_debt",
         "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/matching/source_match_diagnostics",
         "//devinfra/js/debundle/selectors/resolution:anonymous_resolution",
         "//devinfra/js/debundle/selectors/resolution:selector_outcome",
         "//devinfra/js/debundle/selectors/resolution/selector_resolve",

@@ -16,6 +16,7 @@ rust_library(
         "//devinfra/js/debundle/selectors/authoring:shape_index",
         "//devinfra/js/debundle/selectors/matching:chunk_facts",
         "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/matching/source_match_diagnostics",
         "//devinfra/js/debundle/selectors/resolution:selector_backend_solver",
         "//devinfra/js/debundle/selectors/resolution:selector_ir",
         "//devinfra/js/debundle/selectors/resolution:selector_ir_lowering",

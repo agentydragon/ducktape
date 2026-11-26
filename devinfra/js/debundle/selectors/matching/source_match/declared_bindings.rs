@@ -2,7 +2,7 @@ use super::*;
 
 /// A selector projects ordinary and exported declarations and import locals.
 /// Declarator-list holes stand for a sequence, so they never declare a binding.
-pub(crate) fn declared_bindings(item: &ModuleItem) -> Vec<String> {
+pub fn declared_bindings(item: &ModuleItem) -> Vec<String> {
     match js_ast::item_decl(item) {
         Some(Decl::Var(var)) => var
             .decls
