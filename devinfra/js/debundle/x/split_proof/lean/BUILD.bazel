@@ -503,6 +503,41 @@ lean_axiom_test(
 )
 
 lean_library(
+    name = "corejs_checked_move_split",
+    srcs = ["EsmSplit/CoreJS/CheckedMoveSplit.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_checked_split",
+    ],
+)
+
+lean_binary(
+    name = "checked_move_split_test_runner",
+    testonly = True,
+    srcs = ["CheckedMoveSplitTest.lean"],
+    entry = "CheckedMoveSplitTest.lean",
+    deps = [":corejs_checked_move_split"],
+)
+
+sh_test(
+    name = "checked_move_split_test",
+    srcs = ["checked_split_test.sh"],
+    args = ["$(rlocationpath :checked_move_split_test_runner)"],
+    data = [":checked_move_split_test_runner"],
+    use_bash_launcher = True,
+)
+
+lean_axiom_test(
+    name = "checked_move_split_axioms_test",
+    imports = ["EsmSplit.CoreJS.CheckedMoveSplit"],
+    theorems = [
+        "CoreJS.CheckedMoveSplit.checkedMoveSplit",
+        "CoreJS.CheckedMoveSplit.checkedMoveSplit_sound",
+    ],
+    deps = [":corejs_checked_move_split"],
+)
+
+lean_library(
     name = "checked_artifact",
     testonly = True,
     srcs = ["EsmSplit/LowerSplit/CheckedArtifact.lean"],
