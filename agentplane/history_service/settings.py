@@ -25,7 +25,19 @@ class ServiceDelegationSettings(BaseModel):
     )
 
 
+class EventBlockProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    target_bytes: int = Field(default=65536, ge=1, le=8 << 20)
+    target_entries: int = Field(default=32, ge=1, le=256)
+    codec: Literal["zstd"] = "zstd"
+    level: int = Field(default=3, ge=1, le=4)
+
+
 class IngressSettings(BaseModel):
+    event_block_writes: bool = Field(default=False, exclude_if=lambda v: not v)
+    event_block_profile: EventBlockProfile | None = Field(default=None, exclude_if=lambda v: v is None)
+    event_block_target_bytes_by_kind: dict[str, int] | None = Field(default=None, exclude_if=lambda v: v is None)
+
     model_config = ConfigDict(extra="forbid")
     writer_namespaces: frozenset[str] = Field(
         min_length=1,

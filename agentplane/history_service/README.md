@@ -419,3 +419,21 @@ version-17 image would reject it as missing out-of-order migrations. On a databa
 version 17, the prior migration rows remain present and the version-17 Goose provider sees no
 pending migrations after the baseline. That check covers migration startup; runtime rollback to an
 older image is unsupported.
+
+### Versioned event blocks
+
+After every History reader supports versioned blocks, ingress can seal events of
+any concrete kind. These YAML fields configure the new writer:
+
+```yaml
+ingress:
+  event_block_writes: true
+  event_block_profile: { target_bytes: 65536, target_entries: 32, codec: zstd, level: 3 }
+  event_block_target_bytes_by_kind: { BOUNDARY_RECORD: 2097152 }
+```
+
+Events share a block only within one session and kind. Ingress adds the crossing
+event before sealing, including an oversized singleton if it fits the decoder
+limit. Incompressible groups can remain ordinary rows. The new writer supersedes
+the legacy packing switches when enabled. Reader behavior is independent of the
+write settings; changing them does not rewrite existing blocks.

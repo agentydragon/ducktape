@@ -59,21 +59,31 @@ type Cut struct {
 // Next plans one block within a single ordered stream. At a database page
 // boundary the caller retains a NeedMore tail; at a stream boundary it flushes.
 func (p *Packer) Next(frames [][]byte, flushTail bool) Cut {
+	return p.next(len(frames), func(i int) int { return len(frames[i]) }, flushTail)
+}
+
+// NextSizes applies the same policy to lengths before fetching large payloads.
+func (p *Packer) NextSizes(sizes []int, flushTail bool) Cut {
+	return p.next(len(sizes), func(i int) int { return sizes[i] }, flushTail)
+}
+
+func (p *Packer) next(count int, length func(int) int, flushTail bool) Cut {
 	size := 0
-	for i, frame := range frames {
-		if len(frame) > MaxBytes-size-4 {
+	for i := range count {
+		n := length(i)
+		if n < 0 || n > MaxBytes-size-4 {
 			if i == 0 {
 				return Cut{Standalone, 1}
 			}
 			return Cut{Seal, i}
 		}
-		size += 4 + len(frame)
+		size += 4 + n
 		if size >= p.profile.TargetBytes || i+1 >= p.profile.TargetEntries {
 			return Cut{Seal, i + 1}
 		}
 	}
-	if flushTail && len(frames) > 0 {
-		return Cut{Seal, len(frames)}
+	if flushTail && count > 0 {
+		return Cut{Seal, count}
 	}
 	return Cut{NeedMore, 0}
 }
