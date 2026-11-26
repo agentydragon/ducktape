@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
-from agentplane.net.peertls.config import MCP_EDGE_URI, ClientTLS, ServerTLSListener, ServiceSPIFFEID
+from agentplane.net.peertls.config import MCP_EDGE_URI, ClientTLS, PolicyServicePeer, ServerTLSListener, ServiceSPIFFEID
 
 
 class Settings(BaseModel):
@@ -28,6 +28,13 @@ class Settings(BaseModel):
 
     actions_target: str = Field(min_length=1)
     policy_namespace: str = Field(min_length=1, description="Namespace holding the live Identity objects.")
+    # CLEANUP(added 2026-11-26): require policy_service and drop policy_namespace once the edge no longer reads
+    #   Identities from Kubernetes (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+    policy_service: PolicyServicePeer | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="When set, Identities come from PolicyService.WatchIdentities instead of policy_namespace.",
+    )
     actions_token_file: str | None = Field(
         default=None, description="The MCP edge's projected token when it uses bearer authentication to Action Service."
     )
@@ -56,6 +63,8 @@ class Settings(BaseModel):
             raise ValueError("operator_services requires rpc_tls.client_ca_file")
         if self.rpc_tls.client_ca_file is not None and not self.operator_services:
             raise ValueError("rpc_tls.client_ca_file requires operator_services")
+        if self.policy_service is not None:
+            self.policy_service.tls.validate_caller(None, MCP_EDGE_URI)
         if self.oauth_file is not None and self.oauth is not None:
             raise ValueError("oauth_file and inline oauth settings are mutually exclusive")
         if self.oauth_file is not None or self.oauth is not None:

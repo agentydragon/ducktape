@@ -184,11 +184,33 @@ def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(stagi
     ]
 
 
+def test_mcp_edge_reaches_policy_service_as_itself(staging_manifests: list[Body]) -> None:
+    _, mounts = _service_container(staging_manifests, "mcp-edge")
+    peer = config_map_yaml(staging_manifests, "mcp-edge-settings", "settings.yaml")["policy_service"]
+    _assert_mounted_tls(staging_manifests, mounts, peer["tls"], MCP_EDGE_URI)
+    assert peer["tls"]["client_uri"] == MCP_EDGE_URI
+    assert peer["tls"]["server_uri"] == POLICY_CONTROLLER_URI
+    host, port = peer["target"].rsplit(":", 1)
+    service = find_resource(staging_manifests, "Service", "policy-controller")
+    assert host == f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local"
+    tls_port = one(p for p in service["spec"]["ports"] if p["port"] == int(port))
+    assert tls_port["name"] == "grpc-tls"
+    policy = config_map_yaml(staging_manifests, "policy-controller-settings", "config.yaml")
+    assert MCP_EDGE_URI in policy["reader_services"]
+    egress = find_resource(staging_manifests, "CiliumNetworkPolicy", "mcp-edge")["spec"]["egress"]
+    assert any(
+        rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("app.kubernetes.io/name") == "policy-controller"
+        and {"port": str(tls_port["targetPort"]), "protocol": "TCP"} in rule["toPorts"][0]["ports"]
+        for rule in egress
+    )
+
+
 def test_policy_service_exposes_its_tls_listener_to_the_app(staging_manifests: list[Body]) -> None:
     container, mounts = _service_container(staging_manifests, "policy-controller")
     settings = config_map_yaml(staging_manifests, "policy-controller-settings", "config.yaml")
     tls = settings["grpc_tls"]
-    assert settings["reader_services"] == settings["writer_services"] == [APP_URI]
+    assert set(settings["reader_services"]) == {APP_URI, MCP_EDGE_URI}
+    assert settings["writer_services"] == [APP_URI]
     _assert_mounted_tls(staging_manifests, mounts, tls, POLICY_CONTROLLER_URI, ca_field="client_ca_file")
 
     tls_port = int(tls["listen"].removeprefix(":"))

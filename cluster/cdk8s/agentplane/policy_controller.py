@@ -14,7 +14,7 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
-from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ServerTLSListener
+from agentplane.net.peertls.config import APP_URI, MCP_EDGE_URI, POLICY_CONTROLLER_URI, ServerTLSListener
 from agentplane.policy_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import workload_tls
@@ -92,7 +92,7 @@ class PolicyController(Construct):
             workload_issuer=WORKLOAD_ISSUER.name,
             # policy_controller_rbac.py grants the issuer the same namespaces.
             workload_namespaces=workload_namespaces,
-            reader_services=frozenset({APP_URI}),
+            reader_services=frozenset({APP_URI, MCP_EDGE_URI}),
             writer_services=frozenset({APP_URI}),
         )
         settings_file = SettingsFile(

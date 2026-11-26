@@ -7,6 +7,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.mcp_edge.settings import Settings
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, POLICY_CONTROLLER_URI
 
 
 def _settings_source() -> dict[str, object]:
@@ -149,6 +150,35 @@ def test_oauth_rejects_missing_mixed_or_wrong_action_caller_credentials() -> Non
 def test_oauth_file_also_requires_an_action_caller_credential() -> None:
     with pytest.raises(ValidationError):
         Settings.model_validate({**_settings_source(), "oauth_file": Path("/etc/agentplane-mcp/oauth.yaml")})
+
+
+def _policy_service(**overrides: object) -> dict[str, object]:
+    return {
+        "target": "policy-controller:8443",
+        "tls": {
+            "ca_file": Path("/etc/agentplane/ca/ca.crt"),
+            "server_uri": POLICY_CONTROLLER_URI,
+            "cert_file": Path("/var/run/secrets/agentplane-mcp/tls.crt"),
+            "key_file": Path("/var/run/secrets/agentplane-mcp/tls.key"),
+            "client_uri": MCP_EDGE_URI,
+        },
+        **overrides,
+    }
+
+
+def test_policy_service_is_an_exact_mutual_tls_caller_as_the_edge() -> None:
+    settings = Settings.model_validate({**_settings_source(), "policy_service": _policy_service()})
+    assert settings.policy_service is not None
+    tls = _policy_service()["tls"]
+    assert isinstance(tls, dict)
+    for invalid in (
+        _policy_service(target=""),
+        _policy_service(tls={**tls, "client_uri": APP_URI}),
+        _policy_service(tls={**tls, "server_uri": ACTIONS_URI}),
+        _policy_service(tls={"ca_file": tls["ca_file"], "server_uri": POLICY_CONTROLLER_URI}),
+    ):
+        with pytest.raises(ValidationError):
+            Settings.model_validate({**_settings_source(), "policy_service": invalid})
 
 
 if __name__ == "__main__":
