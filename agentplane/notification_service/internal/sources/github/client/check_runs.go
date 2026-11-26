@@ -59,8 +59,8 @@ func CheckRunObservation(checkRun *github.CheckRun, sha string) (githubmodel.Che
 	if checkRun.GetName() == "" {
 		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run name is missing"}
 	}
-	status, ok := checkRunStatus(checkRun.GetStatus())
-	if !ok {
+	status := githubmodel.CheckRunStatus(checkRun.GetStatus())
+	if !status.Valid() {
 		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run status is invalid"}
 	}
 	if checkRun.Conclusion != nil && !githubmodel.IsCheckConclusion(*checkRun.Conclusion) {
@@ -90,14 +90,4 @@ func CheckRunObservation(checkRun *github.CheckRun, sha string) (githubmodel.Che
 		StartedAt:   timestampTime(checkRun.StartedAt),
 		CompletedAt: timestampTime(checkRun.CompletedAt),
 	}, nil
-}
-
-func checkRunStatus(status string) (githubmodel.CheckRunStatus, bool) {
-	switch status {
-	case string(githubmodel.CheckRunQueued), string(githubmodel.CheckRunWaiting), string(githubmodel.CheckRunPending),
-		string(githubmodel.CheckRunRequested), string(githubmodel.CheckRunInProgress), string(githubmodel.CheckRunCompleted):
-		return githubmodel.CheckRunStatus(status), true
-	default:
-		return "", false
-	}
 }

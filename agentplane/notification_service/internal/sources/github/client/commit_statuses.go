@@ -59,8 +59,8 @@ func CommitStatusObservation(status *github.RepoStatus, sha string) (githubmodel
 	if status.GetContext() == "" {
 		return githubmodel.CommitStatus{}, &InvalidResponseError{Reason: "commit status context is missing"}
 	}
-	state, ok := commitStatusState(status.GetState())
-	if !ok {
+	state := githubmodel.CommitStatusState(status.GetState())
+	if !state.Valid() {
 		return githubmodel.CommitStatus{}, &InvalidResponseError{Reason: "commit status state is invalid"}
 	}
 	return githubmodel.CommitStatus{
@@ -71,21 +71,6 @@ func CommitStatusObservation(status *github.RepoStatus, sha string) (githubmodel
 		TargetURL: status.GetTargetURL(),
 		UpdatedAt: timestampTime(status.UpdatedAt),
 	}, nil
-}
-
-func commitStatusState(state string) (githubmodel.CommitStatusState, bool) {
-	switch state {
-	case "error":
-		return githubmodel.CommitStatusError, true
-	case "failure":
-		return githubmodel.CommitStatusFailure, true
-	case "pending":
-		return githubmodel.CommitStatusPending, true
-	case "success":
-		return githubmodel.CommitStatusSuccess, true
-	default:
-		return "", false
-	}
 }
 
 func validCombinedStatus(status string) bool {
