@@ -1,6 +1,6 @@
 import { Button, Group, Paper, Text } from "@mantine/core";
-import RFB from "@novnc/novnc";
 import { useEffect, useRef, useState, type ReactElement } from "react";
+import { RFB, type RfbConnection } from "../../util/frontend/rfb";
 
 interface Props {
   attached: boolean;
@@ -18,7 +18,7 @@ export function Desktop({ attached, opened, pending, onDetach, onReconnect }: Pr
     if (!attached || !target.current) return;
     const url = new URL("/owner/viewer", window.location.href);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    let connection: RFB;
+    let connection: RfbConnection;
     try {
       connection = new RFB(target.current, url.href);
     } catch {

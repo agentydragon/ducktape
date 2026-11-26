@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_bazel
-from playwright.sync_api import BrowserContext, expect, sync_playwright
+from playwright.sync_api import BrowserContext, Page, expect, sync_playwright
 
 from attendant.host import Session
 from attendant.runtime import Operation, Reply, SessionError, Tab
@@ -54,8 +54,8 @@ def _serve_site() -> Iterator[_FixtureSite]:
             account = site.sessions.get(token.value) if token else None
             if account is None:
                 self._respond(401, b"Sign in required")
-            elif self.path == "/api/identity":
-                self._respond(200, account.encode())
+            elif self.path == "/api/status":
+                self._respond(204, b"")
             elif self.path == "/api/notes":
                 self._respond(200, f"Fixture note owned by {account}".encode())
             elif self.path == "/api/redirect-away":
@@ -123,13 +123,14 @@ class _FixtureProvider:
             and op.target in {"/api/notes", "/api/redirect-away", "/api/redirect-private"}
         )
 
-    def identity(self, tab: Tab) -> str:
-        reply = tab.fetch("GET", "/api/identity")
+    def check_session(self, tab: Tab, page: Page | None) -> None:
+        if page is not None and page.get_by_role("heading", name="Complete challenge").is_visible():
+            raise SessionError("challenge_required")
+        reply = tab.fetch("GET", "/api/status")
         if reply.status == 401:
             raise SessionError("sign_in_needed")
-        return reply.body.decode()
 
-    def request(self, tab: Tab, op: Operation, identity: str) -> Reply:
+    def request(self, tab: Tab, op: Operation) -> Reply:
         reply = tab.fetch(op.method, op.target, op.body)
         if reply.status == 401:
             raise SessionError("sign_in_needed")
@@ -149,25 +150,20 @@ def _expect_issue(session: Session, provider: _FixtureProvider, op: Operation, c
     assert caught.value.code == code
 
 
-def test_browser_sign_in_binding_expiry_and_restart(tmp_path: Path) -> None:
+def test_browser_sign_in_expiry_restart_and_account_switch(tmp_path: Path) -> None:
     with sync_playwright() as playwright, _serve_site() as site, _serve_site() as other_site:
         site.off_origin_redirect = other_site.origin + "/external"
         provider = _FixtureProvider(site.origin)
-        state_dir = tmp_path / "state"
-        state_dir.mkdir()
         profile = tmp_path / "chromium"
         with playwright.chromium.launch_persistent_context(
             profile, executable_path=chromium_executable(), args=CONTAINER_BASE_BROWSER_ARGS, service_workers="block"
         ) as context:
-            session = Session(context, state_dir, [provider])
+            session = Session(context, [provider])
             assert session.status(provider.name) == "sign_in_needed"
             _expect_issue(session, provider, _READ_NOTES, "sign_in_needed")
 
             _sign_in(session, context, provider, "alice")
-            assert session.status(provider.name) == "binding_required"
-            _expect_issue(session, provider, _READ_NOTES, "binding_required")
-            assert ("GET", _READ_NOTES.target) not in site.requests
-            assert session.status(provider.name, bind=True) == "ready"
+            assert session.status(provider.name) == "ready"
             assert session.request(provider.name, _READ_NOTES).body == b"Fixture note owned by fixture-alice"
 
             for op in (
@@ -194,15 +190,25 @@ def test_browser_sign_in_binding_expiry_and_restart(tmp_path: Path) -> None:
         with playwright.chromium.launch_persistent_context(
             profile, executable_path=chromium_executable(), args=CONTAINER_BASE_BROWSER_ARGS, service_workers="block"
         ) as context:
-            session = Session(context, state_dir, [provider])
+            session = Session(context, [provider])
             assert session.status(provider.name) == "ready"
             assert session.request(provider.name, _READ_NOTES).body == b"Fixture note owned by fixture-alice"
 
             _sign_in(session, context, provider, "bob")
-            assert session.status(provider.name, bind=True) == "account_changed"
-            reads_before = site.requests.count(("GET", _READ_NOTES.target))
-            _expect_issue(session, provider, _READ_NOTES, "account_changed")
-            assert site.requests.count(("GET", _READ_NOTES.target)) == reads_before
+            assert session.status(provider.name) == "ready"
+            assert session.request(provider.name, _READ_NOTES).body == b"Fixture note owned by fixture-bob"
+
+            session.pages[provider.name].set_content("<h1>Complete challenge</h1>")
+            new_pages: list[Page] = []
+
+            def record_page(page: Page) -> None:
+                new_pages.append(page)
+
+            context.on("page", record_page)
+            requests_before = list(site.requests)
+            assert session.status(provider.name) == "challenge_required"
+            assert not new_pages
+            assert site.requests == requests_before
 
 
 if __name__ == "__main__":

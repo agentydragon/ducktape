@@ -28,7 +28,7 @@ class FakeHost:
         self.started = False
         self.closed = False
         self.opened: list[str] = []
-        self.verified: list[tuple[str, bool]] = []
+        self.verified: list[str] = []
         self.requests: list[tuple[str, Operation]] = []
         self.viewer_headers: list[list[tuple[str, str]]] = []
         self.reply = Reply(
@@ -45,9 +45,9 @@ class FakeHost:
     async def open(self, name: str) -> None:
         self.opened.append(name)
 
-    async def status(self, name: str, *, bind: bool = False) -> str:
-        self.verified.append((name, bind))
-        return "ready" if bind else "binding_required"
+    async def status(self, name: str) -> str:
+        self.verified.append(name)
+        return "ready"
 
     async def request(self, name: str, operation: Operation) -> Reply:
         self.requests.append((name, operation))
@@ -106,7 +106,11 @@ def test_owner_controls_require_cookie_and_exact_origin(client: TestClient, host
     assert client.get("/owner/providers", headers=_route_headers()).status_code == 401
     assert client.post("/owner/login", json={"token": _OWNER}).status_code == 403
     assert client.post("/owner/login", headers=_ORIGIN_HEADERS, json={"token": _ROUTES["one"]}).status_code == 401
+    unknown = "/owner/providers/unknown/verify"
+    assert client.post(unknown).status_code == 401
     _sign_in(client)
+    assert client.post(unknown).status_code == 403
+    assert client.post(unknown, headers=_ORIGIN_HEADERS).status_code == 404
     assert client.get("/owner/providers").json() == {"providers": ["one", "two"]}
     for headers in (
         {},
@@ -120,10 +124,14 @@ def test_owner_controls_require_cookie_and_exact_origin(client: TestClient, host
     assert host.opened == ["one"]
 
     verify = "/owner/providers/one/verify"
-    assert client.post(verify, headers=_ORIGIN_HEADERS, json={}).json() == {"state": "binding_required"}
-    assert client.post(verify, headers=_ORIGIN_HEADERS, json={"bind": "true"}).status_code == 400
-    assert client.post(verify, headers=_ORIGIN_HEADERS, json={"bind": True}).json() == {"state": "ready"}
-    assert host.verified == [("one", False), ("one", True)]
+    assert client.post(verify, headers=_ORIGIN_HEADERS).json() == {"state": "ready"}
+    assert host.verified == ["one"]
+
+    previous_cookie = client.cookies["__Host-attendant_owner"]
+    _sign_in(client)
+    denied = client.post(verify, headers={**_ORIGIN_HEADERS, "Cookie": f"__Host-attendant_owner={previous_cookie}"})
+    assert denied.status_code == 401
+    assert host.verified == ["one"]
 
 
 def test_viewer_admission_and_revocation(client: TestClient, host: FakeHost) -> None:
@@ -161,6 +169,9 @@ def test_route_tokens_cannot_cross_scope_or_use_owner_session(client: TestClient
     duplicates = [("Authorization", f"Bearer {_ROUTES['one']}")] * 2
     assert client.post(_ONE_PATH, headers=duplicates, json=request).status_code == 401
     assert client.post("/api/providers/two/request", headers=_route_headers(), json=request).status_code == 401
+    unknown = client.post("/api/providers/unknown/request?extra=1", headers=_route_headers())
+    assert unknown.status_code == 401
+    assert unknown.headers["www-authenticate"] == "Bearer"
     assert not host.requests
 
     result = client.post(_ONE_PATH, headers=_route_headers(), json=request)
@@ -225,10 +236,10 @@ def test_provider_checks_run_after_http_validation(client: TestClient, host: Fak
     response = client.post(_ONE_PATH, headers=_route_headers(), json={"method": "GET", "target": "/records"})
     assert response.status_code == 403
     assert response.json() == {"detail": "denied"}
-    host.issue = "account_changed"
+    host.issue = "sign_in_needed"
     response = client.post(_ONE_PATH, headers=_route_headers(), json={"method": "GET", "target": "/records"})
     assert response.status_code == 409
-    assert response.json() == {"detail": "account_changed"}
+    assert response.json() == {"detail": "sign_in_needed"}
 
 
 def test_configuration_requires_separate_tokens(host: FakeHost) -> None:

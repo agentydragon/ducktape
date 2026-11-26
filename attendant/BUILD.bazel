@@ -1,10 +1,17 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+js_library(
+    name = "fetch_js",
+    srcs = ["fetch.js"],
+)
+
 py_library(
     name = "runtime",
     srcs = ["runtime.py"],
+    data = [":fetch_js"],
     deps = ["@pypi//playwright"],
 )
 

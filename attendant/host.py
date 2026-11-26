@@ -1,12 +1,10 @@
-"""Own one persistent browser, the operator's tabs, and the account bindings."""
+"""Own the persistent browser and the owner's tabs."""
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import sqlite3
 from collections.abc import Callable, Sequence
-from contextlib import closing, suppress
+from contextlib import suppress
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -18,16 +16,13 @@ from platform_sessions.provider.interactive_browser import InteractiveBrowserRun
 
 
 class Session:
-    """All methods run on the Playwright thread, including binding and dispatch."""
+    """All methods run on the Playwright thread, including status checks and dispatch."""
 
-    def __init__(self, context: BrowserContext, state_dir: Path, providers: Sequence[Provider]):
+    def __init__(self, context: BrowserContext, providers: Sequence[Provider]):
         self.context = context
         self.providers = {provider.name: provider for provider in providers}
         self.pages: dict[str, Page] = {}
         self.selected: str | None = None
-        self.bindings = state_dir / "bindings.sqlite3"
-        with closing(sqlite3.connect(self.bindings)) as db:
-            db.execute("CREATE TABLE IF NOT EXISTS bindings (provider TEXT PRIMARY KEY, identity TEXT NOT NULL)")
 
     def open(self, name: str) -> None:
         provider = self.providers[name]
@@ -57,26 +52,23 @@ class Session:
         page.bring_to_front()
         page.goto(provider.login_url, wait_until="commit", timeout=20000)
 
-    def _verify(self, provider: Provider, tab: Tab, *, bind: bool) -> str:
-        identity = provider.identity(tab)
-        if not identity:
-            raise SessionError("sign_in_needed")
-        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
-        with closing(sqlite3.connect(self.bindings)) as db, db:
-            if bind:
-                db.execute("INSERT OR IGNORE INTO bindings VALUES (?, ?)", (provider.name, digest))
-            row = db.execute("SELECT identity FROM bindings WHERE provider = ?", (provider.name,)).fetchone()
-        if row is None:
-            raise SessionError("binding_required")
-        if row[0] != digest:
-            raise SessionError("account_changed")
-        return identity
+    def _provider_page(self, provider: Provider) -> Page | None:
+        # The owner may have navigated a different tab or restored one from the profile.
+        opened = self.pages.get(provider.name)
+        for page in (opened, *reversed(self.context.pages)):
+            if page is None or page.is_closed():
+                continue
+            url = urlsplit(page.url)
+            if f"{url.scheme}://{url.netloc}" == provider.origin:
+                return page
+        return None
 
-    def status(self, name: str, *, bind: bool = False) -> str:
+    def status(self, name: str) -> str:
         provider = self.providers[name]
         try:
+            page = self._provider_page(provider)
             with Tab.open(self.context, provider.origin) as tab:
-                self._verify(provider, tab, bind=bind)
+                provider.check_session(tab, page)
         except SessionError as issue:
             return issue.code
         except PlaywrightError:
@@ -88,8 +80,7 @@ class Session:
         if not valid_target(op.target) or not provider.allows(op):
             raise SessionError("denied")
         with Tab.open(self.context, provider.origin) as tab:
-            identity = self._verify(provider, tab, bind=False)
-            return provider.request(tab, op, identity)
+            return provider.request(tab, op)
 
     def nudge(self) -> None:
         for name, page in list(self.pages.items()):
@@ -125,7 +116,7 @@ class Host:
         await self.browser.start()
         try:
             self.session = await asyncio.to_thread(
-                self.browser.run_sync, lambda ctx: Session(ctx, self.state_dir, list(self.providers.values()))
+                self.browser.run_sync, lambda ctx: Session(ctx, list(self.providers.values()))
             )
             self._automation = asyncio.create_task(self._run_automation())
         except BaseException:
@@ -158,18 +149,18 @@ class Host:
             try:
                 return await asyncio.shield(task)
             except asyncio.CancelledError:
-                # The browser callback still owns its tab and the binding until it returns.
+                # The browser callback still owns its tab until it returns.
                 with suppress(Exception):
                     await task
                 raise
-            except PlaywrightError, sqlite3.Error, RuntimeError:
+            except PlaywrightError, RuntimeError:
                 raise SessionError("upstream_error") from None
 
     async def open(self, name: str) -> None:
         await self._run(self.session.open, name)
 
-    async def status(self, name: str, *, bind: bool = False) -> str:
-        return await self._run(self.session.status, name, bind=bind)
+    async def status(self, name: str) -> str:
+        return await self._run(self.session.status, name)
 
     async def request(self, name: str, op: Operation) -> Reply:
         def dispatch() -> Reply:

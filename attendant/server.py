@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, Response
 from python.runfiles import Runfiles
 from starlette.requests import ClientDisconnect, HTTPConnection
@@ -33,15 +33,7 @@ _MAX_REQUEST_BYTES = 1024 * 1024
 _MAX_REPLY_BYTES = 16 * 1024 * 1024
 _MAX_TARGET_LENGTH = 4096
 _METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"})
-_ISSUE_STATUS = {
-    "sign_in_needed": 409,
-    "challenge_required": 409,
-    "account_changed": 409,
-    "binding_required": 409,
-    "busy": 409,
-    "denied": 403,
-    "upstream_error": 502,
-}
+_ISSUE_STATUS = {"sign_in_needed": 409, "challenge_required": 409, "busy": 409, "denied": 403, "upstream_error": 502}
 _VIEWER = "ducktape/attendant/viewer/dist"
 _AUTHORITY = re.compile(r"(?:[a-zA-Z0-9.-]+|\[[a-fA-F0-9:.]+\])(?::[0-9]{1,5})?")
 
@@ -192,15 +184,26 @@ def create_app(
             return session
         return None
 
-    def require_owner(request: Request) -> None:
-        if signed_in(request) is None:
-            raise HTTPException(status_code=401, detail="owner_sign_in_required")
-        if request.method != "GET" and not same_origin(request):
+    async def require_origin(request: Request) -> None:
+        if not same_origin(request):
             raise HTTPException(status_code=403, detail="invalid_origin")
 
-    def require_provider(provider: str) -> None:
+    async def require_owner(request: Request) -> None:
+        if signed_in(request) is None:
+            raise HTTPException(status_code=401, detail="owner_sign_in_required")
+        if request.method != "GET":
+            await require_origin(request)
+
+    async def require_provider(provider: str) -> None:
         if provider not in host.providers:
             raise HTTPException(status_code=404, detail="unknown_provider")
+
+    async def require_caller(request: Request, provider: str) -> None:
+        token = route_tokens.get(provider)
+        if token is None or not _has_bearer(request, token):
+            raise HTTPException(status_code=401, detail="invalid_token", headers={"WWW-Authenticate": "Bearer"})
+
+    owner = APIRouter(prefix="/owner", dependencies=[Depends(require_owner)])
 
     @app.middleware("http")
     async def secure_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -234,11 +237,9 @@ def create_app(
     async def health() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.post("/owner/login")
+    @app.post("/owner/login", dependencies=[Depends(require_origin)])
     async def login(request: Request) -> Response:
         nonlocal session
-        if not same_origin(request):
-            raise HTTPException(status_code=403, detail="invalid_origin")
         payload = await _read_json(request, _MAX_OWNER_BYTES)
         token = payload.get("token")
         if set(payload) != {"token"} or not isinstance(token, str) or not _equal(token, owner_token):
@@ -253,10 +254,9 @@ def create_app(
         )
         return response
 
-    @app.post("/owner/logout")
+    @owner.post("/logout")
     async def logout(request: Request) -> Response:
         nonlocal session
-        require_owner(request)
         if session is not None:
             session.revoked.set()
             session = None
@@ -265,29 +265,21 @@ def create_app(
         response.delete_cookie(cookie, secure=secure, httponly=True, samesite="strict")
         return response
 
-    @app.get("/owner/providers")
-    async def providers(request: Request) -> dict[str, list[str]]:
-        require_owner(request)
+    @owner.get("/providers")
+    async def providers() -> dict[str, list[str]]:
         return {"providers": sorted(host.providers)}
 
-    @app.post("/owner/providers/{provider}/open")
-    async def open_provider(request: Request, provider: str) -> Response:
-        require_owner(request)
-        require_provider(provider)
+    @owner.post("/providers/{provider}/open", dependencies=[Depends(require_provider)])
+    async def open_provider(provider: str) -> Response:
         await _invoke(host.open(provider))
         return Response(status_code=204)
 
-    @app.post("/owner/providers/{provider}/verify")
-    async def verify_provider(request: Request, provider: str) -> dict[str, str]:
-        require_owner(request)
-        require_provider(provider)
-        payload = await _read_json(request, _MAX_OWNER_BYTES)
-        require_owner(request)
-        bind = payload.get("bind", False)
-        if set(payload) - {"bind"} or not isinstance(bind, bool):
-            raise HTTPException(status_code=400, detail="invalid_request")
-        state = await _invoke(host.status(provider, bind=bind))
+    @owner.post("/providers/{provider}/verify", dependencies=[Depends(require_provider)])
+    async def verify_provider(provider: str) -> dict[str, str]:
+        state = await _invoke(host.status(provider))
         return {"state": state if state == "ready" or state in _ISSUE_STATUS else "upstream_error"}
+
+    app.include_router(owner)
 
     @app.websocket("/owner/viewer")
     async def viewer(websocket: WebSocket) -> None:
@@ -326,11 +318,8 @@ def create_app(
                 with suppress(OSError, RuntimeError, WebSocketDisconnect):
                     await websocket.close(code=close_code)
 
-    @app.post("/api/providers/{provider}/request")
+    @app.post("/api/providers/{provider}/request", dependencies=[Depends(require_caller)])
     async def provider_request(request: Request, provider: str) -> Response:
-        token = route_tokens.get(provider)
-        if token is None or not _has_bearer(request, token):
-            raise HTTPException(status_code=401, detail="invalid_token", headers={"WWW-Authenticate": "Bearer"})
         if request.scope.get("query_string"):
             raise HTTPException(status_code=400, detail="invalid_request")
         payload = await _read_json(request, _MAX_REQUEST_BYTES)

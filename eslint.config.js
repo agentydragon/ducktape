@@ -100,6 +100,7 @@ export default [
   // These scripts execute in browser pages or service workers.
   {
     files: [
+      "attendant/fetch.js",
       "testing/frontend_visual/assets/capture_diagnostics.js",
       "testing/frontend_visual/assets/capture_diagnostics_fixture.js",
       "testing/frontend_visual/assets/frozen_clock.js",

@@ -8,14 +8,11 @@ import { Desktop } from "./Desktop";
 
 const messages: Record<string, string> = {
   verifying: "Verifying session…",
-  binding: "Binding account…",
   invalid_token: "The owner token was rejected.",
   invalid_origin: "Open Attendant at its configured address and try again.",
   ready: "Session verified.",
   sign_in_needed: "Sign in to this provider in the remote browser, then verify the session.",
   challenge_required: "Complete the provider’s browser challenge, then verify the session.",
-  binding_required: "Confirm that this is the intended account, then bind it to this provider.",
-  account_changed: "Sign in as the account already bound to this provider, then verify again.",
   busy: "The browser is busy. Try again in a moment.",
   denied: "This operation was denied.",
   upstream_error: "The provider could not be reached. Try again in a moment.",
@@ -144,7 +141,7 @@ function App() {
     };
   }, []);
 
-  type Action = "open" | "verify" | "bind" | "logout" | "reconnect";
+  type Action = "open" | "verify" | "logout" | "reconnect";
   async function act(action: Action) {
     setPending(true);
     try {
@@ -154,10 +151,9 @@ function App() {
           await post("/owner/logout");
           signedOut("");
           break;
-        case "verify":
-        case "bind": {
-          setState(action === "verify" ? "verifying" : "binding");
-          const response = await post(`${path}/verify`, { bind: action === "bind" });
+        case "verify": {
+          setState("verifying");
+          const response = await post(`${path}/verify`);
           const result: { state: string } = await response.json();
           setState(result.state);
           break;
@@ -217,11 +213,6 @@ function App() {
               <Button variant="default" disabled={pending || !provider} onClick={() => act("verify")}>
                 Verify session
               </Button>
-              {state === "binding_required" && (
-                <Button variant="default" disabled={pending} onClick={() => act("bind")}>
-                  Bind current account
-                </Button>
-              )}
             </Group>
             <Text size="sm" role="status" className="provider-status">
               {names.length === 0

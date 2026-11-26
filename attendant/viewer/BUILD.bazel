@@ -1,4 +1,3 @@
-load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
@@ -11,24 +10,15 @@ ts_config(
     src = "tsconfig.json",
 )
 
-copy_file(
-    name = "rfb_types",
-    src = "//platform_sessions/frontend:rfb.d.ts",
-    out = "rfb.d.ts",
-)
-
 ts_library(
     name = "desktop",
-    srcs = [
-        "Desktop.tsx",
-        "rfb.d.ts",
-    ],
+    srcs = ["Desktop.tsx"],
     tsconfig = ":tsconfig",
     deps = [
         "//:node_modules/@mantine/core",
-        "//:node_modules/@novnc/novnc",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//util/frontend:rfb",
     ],
 )
 

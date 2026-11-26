@@ -7,6 +7,7 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from playwright.sync_api import BrowserContext, Page, Route
@@ -48,58 +49,43 @@ def valid_target(target: str) -> bool:
     )
 
 
-_FETCH = """async ({method, url, headers, body, referrer}) => {
-    const options = {method, headers, credentials: "same-origin", mode: "same-origin", redirect: "manual",
-                     cache: "no-store", signal: AbortSignal.timeout(20000)};
-    if (referrer) options.referrer = referrer;
-    if (method !== "GET" && method !== "HEAD") options.body = Uint8Array.from(atob(body), c => c.charCodeAt(0));
-    const r = await fetch(url, options);
-    const reader = r.body?.getReader();
-    let size = 0;
-    const chunks = [];
-    if (reader) while (true) {
-        const {done, value} = await reader.read();
-        if (done) break;
-        size += value.length;
-        if (size > 16 * 1024 * 1024) { await reader.cancel(); throw Error("response size"); }
-        for (let i = 0; i < value.length; i += 16384)
-            chunks.push(String.fromCharCode(...value.subarray(i, i + 16384)));
-    }
-    return {status: r.type === "opaqueredirect" ? 302 : r.status, body: btoa(chunks.join("")),
-            content_type: r.headers.get("content-type") || "application/octet-stream",
-            csrf: r.headers.get("x-csrf-token"), challenge: r.headers.get("cf-mitigated") === "challenge"};
-}"""
+_FETCH = Path(__file__).with_name("fetch.js").read_text(encoding="utf-8")
 
 
 class Tab:
-    def __init__(self, page: Page, origin: str):
-        self._page = page
+    def __init__(self, context: BrowserContext, origin: str):
+        self._context = context
         self._origin = origin
-        self.csrf: str | None = None
+        self._page: Page | None = None
 
     @classmethod
     @contextmanager
     def open(cls, context: BrowserContext, origin: str) -> Iterator[Tab]:
-        page = context.new_page()
+        tab = cls(context, origin)
         try:
-            shell = origin + "/.well-known/attendant-blank"
-
-            def blank(route: Route) -> None:
-                if (
-                    route.request.url == shell
-                    and route.request.is_navigation_request()
-                    and route.request.method == "GET"
-                ):
-                    route.fulfill(content_type="text/html", body="<!doctype html>")
-                else:
-                    route.abort()
-
-            page.route("**/*", blank)
-            page.route_web_socket("**/*", lambda _: None)
-            page.goto(shell, wait_until="commit", timeout=10000)
-            yield cls(page, origin)
+            yield tab
         finally:
-            page.close()
+            if tab._page is not None:
+                tab._page.close()
+
+    def _request_page(self) -> Page:
+        # A status probe that only inspects the owner's tab never opens a second page.
+        if self._page is not None:
+            return self._page
+        page = self._context.new_page()
+        self._page = page
+        shell = self._origin + "/.well-known/attendant-blank"
+
+        def blank(route: Route) -> None:
+            if route.request.url == shell and route.request.is_navigation_request() and route.request.method == "GET":
+                route.fulfill(content_type="text/html", body="<!doctype html>")
+            else:
+                route.abort()
+
+        page.route("**/*", blank)
+        page.route_web_socket("**/*", lambda _: None)
+        page.goto(shell, wait_until="commit", timeout=10000)
+        return page
 
     def fetch(
         self,
@@ -120,9 +106,10 @@ class Tab:
             else:
                 route.abort()
 
-        self._page.route("**/*", allow)
+        page = self._request_page()
+        page.route("**/*", allow)
         try:
-            raw = self._page.evaluate(
+            raw = page.evaluate(
                 _FETCH,
                 {
                     "method": method,
@@ -133,7 +120,7 @@ class Tab:
                 },
             )
         finally:
-            self._page.unroute("**/*", allow)
+            page.unroute("**/*", allow)
         return Reply(raw["status"], base64.b64decode(raw["body"]), raw["content_type"], raw["challenge"], raw["csrf"])
 
 
@@ -145,5 +132,8 @@ class Provider(Protocol):
     @property
     def login_url(self) -> str: ...
     def allows(self, op: Operation) -> bool: ...
-    def identity(self, tab: Tab) -> str: ...
-    def request(self, tab: Tab, op: Operation, identity: str) -> Reply: ...
+    def check_session(self, tab: Tab, page: Page | None) -> None:
+        """Inspect Chrome and raise SessionError if the session needs attention."""
+        ...
+
+    def request(self, tab: Tab, op: Operation) -> Reply: ...
