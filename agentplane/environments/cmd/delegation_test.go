@@ -19,7 +19,7 @@ func TestEnvironmentServiceDelegationAllowsReadsAndResumeWithoutConnectionProven
     actors: [{spiffe_id: "spiffe://agentplane/actions"}]
     methods: [/agentplane.environments.v1.EnvironmentService/ListEnvironments, /agentplane.environments.v1.EnvironmentService/ResumeEnvironment]
 `
-	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+base))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+base+policyServiceSettings))
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestEnvironmentServiceDelegationAllowsReadsAndResumeWithoutConnectionProven
 		"Identity URI actor":    strings.Replace(base, "spiffe://agentplane/actions", "spiffe://agentplane/test/sandbox/credential-id", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+settings))
+			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+settings+policyServiceSettings))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("invalid EnvironmentService delegation was accepted")
 			}
