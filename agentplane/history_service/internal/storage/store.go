@@ -832,10 +832,6 @@ func readSequenceChunk(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, las
 	}
 	// At most two neighboring blocks per requested cursor and packed kind. DISTINCT shares a
 	// block's metadata across requests; loadEntries likewise decompresses each selected block once.
-	kinds := make([]int64, len(compactKinds))
-	for index, kind := range compactKinds {
-		kinds[index] = int64(kind)
-	}
 	rows, err = tx.QueryContext(ctx, `SELECT DISTINCT b.first_cursor,b.kind,b.cursors,b.sizes
 		FROM unnest($2::bigint[]) requested(sequence) CROSS JOIN unnest($4::integer[]) requested_kind(kind)
 		CROSS JOIN LATERAL (
@@ -846,7 +842,7 @@ func readSequenceChunk(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, las
 			(SELECT first_cursor,kind,cursors,sizes FROM session_event_block
 				WHERE session_id=$1 AND kind=requested_kind.kind AND first_cursor>requested.sequence AND first_cursor<=$3
 				ORDER BY first_cursor LIMIT 1)
-		) b`, sessionID, pq.Array(sequences), lastCursor, pq.Array(kinds))
+		) b`, sessionID, pq.Array(sequences), lastCursor, pq.Array(readableKinds))
 	if err != nil {
 		return err
 	}
