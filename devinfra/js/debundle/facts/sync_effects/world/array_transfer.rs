@@ -1,6 +1,6 @@
 //! Native array operations over an uninterrupted literal's descriptor state.
 
-use super::effect_coverage::EffectCoverageFragment;
+use crate::effect_coverage::EffectCoverageFragment;
 use analysis::facts::EffectCell;
 use analysis::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ITERATION_ROWS, IterationResult, IterationRow,
@@ -12,7 +12,7 @@ use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
 use value_model::{AbstractValue, Values};
 
-pub(super) trait ArrayContext {
+pub trait ArrayContext {
     /// Exact length, writable own length, extensibility, original prototype,
     /// and none of the `absent` own properties. Reused allocation sites and
     /// descriptor changes lose this witness even if their pooled element
@@ -29,20 +29,20 @@ pub(super) trait ArrayContext {
 /// An `%Array.prototype%` method selected by GetValue on a literal array,
 /// before any argument runs.
 #[derive(Clone)]
-pub(super) enum ArrayMethodSelection {
+pub enum ArrayMethodSelection {
     Push(ArrayPushSelection),
     Iteration(ArrayIterationSelection),
 }
 
 impl ArrayMethodSelection {
-    pub(super) fn object(&self) -> u32 {
+    pub fn object(&self) -> u32 {
         match self {
             Self::Push(selection) => selection.object,
             Self::Iteration(selection) => selection.object,
         }
     }
 
-    pub(super) fn property(&self) -> &'static str {
+    pub fn property(&self) -> &'static str {
         match self {
             Self::Push(_) => "push",
             Self::Iteration(selection) => selection.row.member,
@@ -54,14 +54,14 @@ impl ArrayMethodSelection {
 /// an array with no own property of that name. The body rechecks the
 /// receiver and the rest of the row's slots after the arguments.
 #[derive(Clone)]
-pub(super) struct ArrayIterationSelection {
-    pub(super) object: u32,
-    pub(super) row: &'static IterationRow,
+pub struct ArrayIterationSelection {
+    pub object: u32,
+    pub row: &'static IterationRow,
     dependencies: ProofDependencies,
 }
 
 /// Select the original `Array.prototype` method `property` on this receiver.
-pub(super) fn select_method(
+pub fn select_method(
     context: &mut impl ArrayContext,
     receivers: &Values,
     property: &str,
@@ -104,7 +104,7 @@ pub(super) fn select_method(
 /// `ArraySpeciesCreate`) are intact, the receiver has its exact own length
 /// and no own `constructor` where a species lookup reads one, and every
 /// index below the length is a settled own data slot.
-pub(super) fn iteration_snapshot(
+pub fn iteration_snapshot(
     context: &mut impl ArrayContext,
     selection: &ArrayIterationSelection,
 ) -> Result<(Vec<Values>, ProofDependencies), OrderedCallAdmissionRefusal> {
@@ -134,8 +134,8 @@ pub(super) fn iteration_snapshot(
 /// Captured GetValue identity, before argument evaluation. Body admission
 /// checks the receiver and indexed-setter protocol again after the arguments.
 #[derive(Clone)]
-pub(super) struct ArrayPushSelection {
-    pub(super) object: u32,
+pub struct ArrayPushSelection {
+    pub(crate) object: u32,
     dependencies: ProofDependencies,
 }
 
@@ -164,15 +164,15 @@ fn select_push(
     ))
 }
 
-pub(super) struct ArrayPushResult {
-    pub(super) values: Values,
-    pub(super) effects: EffectCoverageFragment,
-    pub(super) reads: Vec<EffectCell>,
-    pub(super) writes: Vec<EffectCell>,
-    pub(super) dependencies: ProofDependencies,
+pub struct ArrayPushResult {
+    pub values: Values,
+    pub effects: EffectCoverageFragment,
+    pub reads: Vec<EffectCell>,
+    pub writes: Vec<EffectCell>,
+    pub dependencies: ProofDependencies,
 }
 
-pub(super) fn push(
+pub fn push(
     context: &mut impl ArrayContext,
     selection: &ArrayPushSelection,
     arguments: &[Values],

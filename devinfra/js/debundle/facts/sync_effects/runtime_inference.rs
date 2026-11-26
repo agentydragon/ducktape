@@ -1,8 +1,6 @@
 //! Position-specific execution facts. A later source prefix consumes the
 //! preceding prefix's settled state and never changes that earlier state.
 
-use super::allocation_transfer::AllocationJudgment;
-use super::effect_coverage::EffectCoverageFragment;
 use super::execution_index::Call;
 use super::interpreter::{
     ExecutionInputs, ExecutionState, Executor, Observations, Outcome, OwnPropertyQuery,
@@ -28,6 +26,8 @@ use swc_common::Span;
 use value_model::CallableSelection;
 use value_model::property_inference::OwnPropertyProof;
 use value_model::{CapturedContext, Context, ValueExpr, Values};
+use world::allocation_transfer::AllocationJudgment;
+use world::effect_coverage::EffectCoverageFragment;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeKey {

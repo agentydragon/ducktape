@@ -3,8 +3,8 @@
 //! A covered result additionally requires complete canonical source coverage.
 //! Lowered values alone can have erased calls, writes or coercions.
 
-use super::effect_coverage::EffectCoverageFragment;
-use super::world::object_surface::ObjectSurfaceStore;
+use crate::effect_coverage::EffectCoverageFragment;
+use crate::object_surface::ObjectSurfaceStore;
 use analysis::facts::abstract_domain::builtins::{
     ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
 };
@@ -24,17 +24,17 @@ use value_model::{
 };
 
 /// Maximum exact slot count retained across one array literal's spreads.
-pub(super) const MAX_EXACT_ARRAY_SPREAD_SLOTS: usize = 4096;
+pub const MAX_EXACT_ARRAY_SPREAD_SLOTS: usize = 4096;
 
 #[derive(Clone)]
-pub(super) enum AllocationJudgment {
+pub enum AllocationJudgment {
     Opaque,
     /// No external access, write, publication, invocation or throwing operation.
     CoveredAllocationOnly(Box<ProofDependencies>),
 }
 
 impl AllocationJudgment {
-    pub(super) fn compose(&mut self, other: &Self) {
+    pub fn compose(&mut self, other: &Self) {
         match (&mut *self, other) {
             (Self::CoveredAllocationOnly(current), Self::CoveredAllocationOnly(next)) => {
                 current.extend(next);
@@ -44,9 +44,9 @@ impl AllocationJudgment {
     }
 }
 
-pub(super) struct AllocationValue {
-    pub(super) values: Values,
-    pub(super) judgment: AllocationJudgment,
+pub struct AllocationValue {
+    pub values: Values,
+    pub judgment: AllocationJudgment,
 }
 
 impl AllocationValue {
@@ -64,7 +64,7 @@ impl AllocationValue {
         Self { values, judgment }
     }
 
-    pub(super) fn opaque(values: Values) -> Self {
+    pub fn opaque(values: Values) -> Self {
         Self {
             values,
             judgment: AllocationJudgment::Opaque,
@@ -72,7 +72,7 @@ impl AllocationValue {
     }
 }
 
-pub(super) enum LiteralLayout {
+pub enum LiteralLayout {
     Record,
     Array(Vec<Option<ArrayElement>>),
     Unsupported,
@@ -82,7 +82,7 @@ pub(super) enum LiteralLayout {
 // `LocalValueContext` bridge when L4e deletes `legacy/evaluator.rs`, whose
 // `ApplicationAllocationContext` is the last non-kernel implementor; the
 // kernel then passes its frame to these transfers directly.
-pub(super) trait AllocationContext {
+pub trait AllocationContext {
     /// Source coverage is necessary because ValueExpr may erase syntax.
     fn source_covered(&self) -> bool;
     /// No effect receipt exists for this executed value operation yet. The
@@ -122,7 +122,7 @@ pub(super) trait AllocationContext {
 /// Transfer a binary operation over values whose kinds are already known to
 /// be primitive. An object or unknown value declines so the caller can use its
 /// application fallback after evaluating both operands exactly once.
-pub(super) fn binary(
+pub fn binary(
     op: BinaryOp,
     left: &Values,
     right: &Values,
@@ -153,7 +153,7 @@ fn primitive_kinds(values: &Values) -> Option<PrimKinds> {
 
 /// Both postfix's old value and prefix's stored value have these numeric
 /// kinds. Exact numbers are outside this domain; object coercion declines.
-pub(super) fn update_result(operand: &Values) -> Option<AllocationValue> {
+pub fn update_result(operand: &Values) -> Option<AllocationValue> {
     let kinds = primitive_kinds(operand)?;
     let result = primitive::update(Some(kinds));
     let mut values = Values::new();
@@ -169,14 +169,14 @@ pub(super) fn update_result(operand: &Values) -> Option<AllocationValue> {
 
 /// Transfer the exact zero-argument keyed-collection constructor row. Provider
 /// and application adapters both use this kernel after proving callee identity.
-pub(super) struct KeyedCollectionOperationResult {
-    pub(super) allocation: AllocationValue,
+pub struct KeyedCollectionOperationResult {
+    pub allocation: AllocationValue,
     /// Normal operation effects only. The caller still owns callee/operand
     /// evaluation and whole-source completion.
-    pub(super) effects: EffectCoverageFragment,
+    pub effects: EffectCoverageFragment,
 }
 
-pub(super) fn keyed_collection_new(
+pub fn keyed_collection_new(
     row: &'static Row,
     site: CallSite,
     dependencies: ProofDependencies,
@@ -218,21 +218,21 @@ pub(super) fn keyed_collection_new(
 }
 
 /// The real shared allocation store; neither consumer supplies app/native facts.
-pub(super) struct LiteralHeap<'a> {
-    pub(super) surface: &'a mut ObjectSurfaceStore,
-    pub(super) arrays: &'a mut OrdMap<u32, DenseArray>,
+pub struct LiteralHeap<'a> {
+    pub(crate) surface: &'a mut ObjectSurfaceStore,
+    pub(crate) arrays: &'a mut OrdMap<u32, DenseArray>,
     /// Arrays whose contents are known only to be primitive, with the
     /// iterator-protocol premises that established them. Never a slot,
     /// cardinality or order claim.
-    pub(super) primitive_arrays: &'a mut OrdMap<u32, ProofDependencies>,
-    pub(super) revision: &'a mut u64,
+    pub(crate) primitive_arrays: &'a mut OrdMap<u32, ProofDependencies>,
+    pub(crate) revision: &'a mut u64,
     /// Only application execution follows a literal's writability; provider
     /// queries never prove a normally completing write.
-    pub(super) track_writable_prefix: bool,
+    pub(crate) track_writable_prefix: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum WritablePrefixState {
+pub enum WritablePrefixState {
     InProgress,
     Proven(BTreeSet<String>),
     DenseArray { length: u32 },
@@ -245,7 +245,7 @@ impl LiteralHeap<'_> {
     /// Reentry, a prior value, or any later execution permanently loses the
     /// per-site proof because the heap does not distinguish allocation
     /// generations.
-    pub(super) fn begin_literal(&mut self, allocation: u32) {
+    pub(crate) fn begin_literal(&mut self, allocation: u32) {
         if !self.track_writable_prefix {
             return;
         }
@@ -266,7 +266,7 @@ impl LiteralHeap<'_> {
         }
     }
 
-    pub(super) fn complete_array(&mut self, allocation: u32, length: usize) {
+    pub(crate) fn complete_array(&mut self, allocation: u32, length: usize) {
         if !self.track_writable_prefix {
             return;
         }
@@ -282,7 +282,7 @@ impl LiteralHeap<'_> {
 
     /// Complete only an uninterrupted first record execution. The sticky
     /// Unknown state is never restored by a later execution of this site.
-    pub(super) fn complete_record(
+    pub(crate) fn complete_record(
         &mut self,
         allocation: u32,
         writable_properties: BTreeSet<String>,
@@ -297,7 +297,7 @@ impl LiteralHeap<'_> {
         }
     }
 
-    pub(super) fn invalidate_writable(&mut self, allocation: u32) {
+    pub fn invalidate_writable(&mut self, allocation: u32) {
         if !self.track_writable_prefix {
             return;
         }
@@ -315,7 +315,7 @@ impl LiteralHeap<'_> {
         }
     }
 
-    pub(super) fn record(&mut self, allocation: u32, properties: BTreeMap<Option<String>, Values>) {
+    pub(crate) fn record(&mut self, allocation: u32, properties: BTreeMap<Option<String>, Values>) {
         let current = self
             .surface
             .prefix_object_properties
@@ -335,12 +335,7 @@ impl LiteralHeap<'_> {
 
     /// Allocation sites may represent several records. Field stores retain
     /// earlier values and version the same heap used by ordinary execution.
-    pub(super) fn write_property(
-        &mut self,
-        allocation: u32,
-        property: Option<String>,
-        values: &Values,
-    ) {
+    pub fn write_property(&mut self, allocation: u32, property: Option<String>, values: &Values) {
         let slot = self
             .surface
             .prefix_object_properties
@@ -355,7 +350,7 @@ impl LiteralHeap<'_> {
         }
     }
 
-    pub(super) fn invalidate_dense_array(&mut self, allocation: u32) {
+    pub fn invalidate_dense_array(&mut self, allocation: u32) {
         if self.arrays.remove(&allocation).is_some() {
             *self.revision = self.revision.wrapping_add(1);
         }
@@ -364,19 +359,19 @@ impl LiteralHeap<'_> {
     /// One source origin may represent several allocations. Drop exact
     /// slots but retain the reachability properties; qualitative contents
     /// make ordinary property projection refuse this origin.
-    pub(super) fn primitive_array(&mut self, allocation: u32, dependencies: ProofDependencies) {
+    pub(crate) fn primitive_array(&mut self, allocation: u32, dependencies: ProofDependencies) {
         self.arrays.remove(&allocation);
         self.primitive_arrays.insert(allocation, dependencies);
         *self.revision = self.revision.wrapping_add(1);
     }
 
-    pub(super) fn invalidate_primitive_array(&mut self, allocation: u32) {
+    pub(crate) fn invalidate_primitive_array(&mut self, allocation: u32) {
         if self.primitive_arrays.remove(&allocation).is_some() {
             *self.revision = self.revision.wrapping_add(1);
         }
     }
 
-    pub(super) fn dense_array(&mut self, allocation: u32, slots: Vec<Values>) {
+    pub fn dense_array(&mut self, allocation: u32, slots: Vec<Values>) {
         let before = self
             .surface
             .prefix_object_properties
@@ -423,7 +418,7 @@ impl LiteralHeap<'_> {
 
 /// One semantic implementation. A strict consumer delegates children back here;
 /// application execution dispatches children through the normal runtime queries.
-pub(super) fn transfer(
+pub fn transfer(
     context: &mut impl AllocationContext,
     expression: &ValueExpr,
 ) -> Option<AllocationValue> {
@@ -552,14 +547,14 @@ pub(super) fn transfer(
 /// Source-ordered composition retains every child's effects and possible
 /// abrupt completion even though only the final completing value survives.
 #[derive(Clone)]
-pub(super) struct SequenceTransfer {
+pub struct SequenceTransfer {
     values: Values,
     may_throw: bool,
     judgment: AllocationJudgment,
 }
 
 impl SequenceTransfer {
-    pub(super) fn new(judgment: AllocationJudgment) -> Self {
+    pub fn new(judgment: AllocationJudgment) -> Self {
         Self {
             values: Values::from([AbstractValue::UNDEFINED]),
             may_throw: false,
@@ -568,7 +563,7 @@ impl SequenceTransfer {
     }
 
     /// Record the next child; false means no later child can run.
-    pub(super) fn child(&mut self, evaluated: AllocationValue) -> bool {
+    pub fn child(&mut self, evaluated: AllocationValue) -> bool {
         self.judgment.compose(&evaluated.judgment);
         self.values = evaluated.values;
         self.may_throw |= self
@@ -577,12 +572,12 @@ impl SequenceTransfer {
         !self.values.is_empty()
     }
 
-    pub(super) fn finish(self) -> AllocationValue {
+    pub fn finish(self) -> AllocationValue {
         AllocationValue::from_completion(self.values, self.may_throw, self.judgment)
     }
 }
 
-pub(super) fn sequence<'a, C, E: 'a>(
+pub(crate) fn sequence<'a, C, E: 'a>(
     context: &mut C,
     expressions: impl IntoIterator<Item = &'a E>,
     judgment: AllocationJudgment,
@@ -600,7 +595,7 @@ pub(super) fn sequence<'a, C, E: 'a>(
 /// Discard operand values, never their access evidence or abrupt outcomes.
 /// The caller supplies operation authority; erased coercions remain opaque.
 /// Later operands run only on a completing path.
-pub(super) fn primitive_operation<'a>(
+pub fn primitive_operation<'a>(
     context: &mut impl AllocationContext,
     operands: impl IntoIterator<Item = &'a ValueExpr>,
     result: AbstractValue,
@@ -627,7 +622,7 @@ pub(super) fn primitive_operation<'a>(
 /// One record literal in progress. Children are recorded in source order;
 /// the heap entry exists only once every child completed normally.
 #[derive(Clone)]
-pub(super) struct RecordTransfer {
+pub struct RecordTransfer {
     allocation: u32,
     names: Vec<Option<String>>,
     writable_properties: BTreeSet<String>,
@@ -639,7 +634,7 @@ pub(super) struct RecordTransfer {
 
 impl RecordTransfer {
     /// Every position's canonical kind is checked before any child runs.
-    pub(super) fn begin<E>(
+    pub fn begin<E>(
         context: &mut impl AllocationContext,
         allocation: u32,
         properties: &[PropertyDefinition<E>],
@@ -687,11 +682,11 @@ impl RecordTransfer {
         })
     }
 
-    pub(super) fn can_complete(&self) -> bool {
+    pub fn can_complete(&self) -> bool {
         self.can_complete
     }
 
-    pub(super) fn child(&mut self, position: usize, child: AllocationValue) {
+    pub fn child(&mut self, position: usize, child: AllocationValue) {
         self.judgment.compose(&child.judgment);
         let mut values = child.values;
         self.may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
@@ -704,7 +699,7 @@ impl RecordTransfer {
             .extend(values);
     }
 
-    pub(super) fn finish(self, context: &mut impl AllocationContext) -> AllocationValue {
+    pub fn finish(self, context: &mut impl AllocationContext) -> AllocationValue {
         let Self {
             allocation,
             writable_properties,
@@ -728,7 +723,7 @@ impl RecordTransfer {
 }
 
 /// Shared record evaluation, including the application's opaque-key fallback.
-pub(super) fn record<'a, C: AllocationContext, E: 'a>(
+pub fn record<'a, C: AllocationContext, E: 'a>(
     context: &mut C,
     allocation: u32,
     properties: impl IntoIterator<Item = PropertyDefinition<&'a E>>,
@@ -753,7 +748,7 @@ pub(super) fn record<'a, C: AllocationContext, E: 'a>(
 /// yields leave a primitive array with no slot or length claim, and an
 /// unproved or non-primitive spread taints the literal.
 #[derive(Clone)]
-pub(super) struct ArrayTransfer {
+pub struct ArrayTransfer {
     allocation: u32,
     has_spread: bool,
     properties: BTreeMap<Option<String>, Values>,
@@ -775,7 +770,7 @@ pub(super) struct ArrayTransfer {
 impl ArrayTransfer {
     /// A literal with a spread has no exact `ArrayCreate` length, so it
     /// never seeds a writable-prefix proof.
-    pub(super) fn begin(
+    pub fn begin(
         context: &mut impl AllocationContext,
         allocation: u32,
         has_spread: bool,
@@ -804,11 +799,11 @@ impl ArrayTransfer {
         }
     }
 
-    pub(super) fn can_complete(&self) -> bool {
+    pub fn can_complete(&self) -> bool {
         self.can_complete
     }
 
-    pub(super) fn hole(&mut self) {
+    pub fn hole(&mut self) {
         self.has_hole = true;
         self.primitive_only = false;
         self.next_index = self.next_index.map(|index| index + 1);
@@ -828,7 +823,7 @@ impl ArrayTransfer {
         self.dense.push(values);
     }
 
-    pub(super) fn child(&mut self, evaluated: AllocationValue) {
+    pub fn child(&mut self, evaluated: AllocationValue) {
         self.judgment.compose(&evaluated.judgment);
         let mut values = evaluated.values;
         self.may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
@@ -839,7 +834,7 @@ impl ArrayTransfer {
     /// Expand one spread whose operand has already been evaluated. The
     /// operand stays reachable from the literal whatever the protocol yields.
     /// Reading another object's contents is not an allocation-only operation.
-    pub(super) fn spread(
+    pub fn spread(
         &mut self,
         context: &mut impl AllocationContext,
         span: Span,
@@ -890,7 +885,7 @@ impl ArrayTransfer {
         }
     }
 
-    pub(super) fn finish(self, context: &mut impl AllocationContext) -> AllocationValue {
+    pub fn finish(self, context: &mut impl AllocationContext) -> AllocationValue {
         let Self {
             allocation,
             has_spread,
@@ -949,14 +944,14 @@ impl ArrayTransfer {
     }
 }
 
-pub(super) enum ArrayOperand<'a, E> {
+pub(crate) enum ArrayOperand<'a, E> {
     Hole,
     Value(&'a E),
     Spread(&'a E, Span),
 }
 
 impl<'a> ArrayOperand<'a, ValueExpr> {
-    pub(super) fn from_element(element: Option<&'a ArrayElement>) -> Self {
+    pub(crate) fn from_element(element: Option<&'a ArrayElement>) -> Self {
         match element {
             None => Self::Hole,
             Some(ArrayElement {
@@ -972,7 +967,7 @@ impl<'a> ArrayOperand<'a, ValueExpr> {
 }
 
 /// Array creation shares ordered child transfer with local execution.
-pub(super) fn array<'a, C: AllocationContext, E: 'a>(
+pub(crate) fn array<'a, C: AllocationContext, E: 'a>(
     context: &mut C,
     allocation: u32,
     elements: impl IntoIterator<Item = ArrayOperand<'a, E>>,
@@ -1001,14 +996,14 @@ pub(super) fn array<'a, C: AllocationContext, E: 'a>(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum NativeIterableInput {
+pub enum NativeIterableInput {
     Borrowed,
     /// Canonical immediate argument-array syntax, not origin uniqueness.
     ImmediateArrayLiteral(u32),
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum NativeIterableYields {
+pub enum NativeIterableYields {
     ExactSlots(Vec<Values>),
     /// Only primitive yields are known. Never infer slots, cardinality,
     /// insertion order or Set deduplication from this proposition.
@@ -1016,20 +1011,20 @@ pub(super) enum NativeIterableYields {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct NativeIterableReceipt {
+pub struct NativeIterableReceipt {
     /// `None` for the scoped imported-array transfer, which intentionally
     /// carries yields but no provider heap identity.
-    pub(super) source: Option<u32>,
-    pub(super) yields: NativeIterableYields,
+    pub source: Option<u32>,
+    pub yields: NativeIterableYields,
     /// Body reads are retained even for a private input whose read cannot
     /// observe a caller's earlier heap. The external projection is below.
-    pub(super) heap_contents: analysis::facts::HeapContentCells,
-    pub(super) input: NativeIterableInput,
-    pub(super) coverage: EffectCoverageFragment,
+    pub heap_contents: analysis::facts::HeapContentCells,
+    pub input: NativeIterableInput,
+    pub coverage: EffectCoverageFragment,
 }
 
 impl NativeIterableReceipt {
-    pub(super) fn external_heap_contents(&self) -> analysis::facts::HeapContentCells {
+    pub fn external_heap_contents(&self) -> analysis::facts::HeapContentCells {
         let mut external = self.heap_contents.clone();
         if let NativeIterableInput::ImmediateArrayLiteral(origin) = self.input
             && self.source == Some(origin)

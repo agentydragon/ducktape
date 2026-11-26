@@ -6,9 +6,6 @@
 //! happened while constructing the plan, and a plan is never evidence that
 //! the operation completed normally.
 
-use super::super::world::descriptor_heap::{
-    DescriptorApplication, DescriptorHeap, DynamicKeyDefinition,
-};
 use analysis::facts::abstract_domain::builtins::{ArgSel, Row};
 use analysis::facts::abstract_domain::heap::Mutation;
 use analysis_model::PrimKinds;
@@ -16,6 +13,7 @@ use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeSet;
 use value_model::property_inference::{OwnPropertyProjection, OwnPropertyProof};
 use value_model::{AbstractValue, CallSite, Values};
+use world::descriptor_heap::{DescriptorApplication, DescriptorHeap, DynamicKeyDefinition};
 
 /// One heap mutation of an admitted row, fully materialized by `plan`.
 #[derive(Debug, Clone)]

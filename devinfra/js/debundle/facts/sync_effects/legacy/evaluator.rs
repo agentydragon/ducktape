@@ -8,8 +8,6 @@
 //   fallbacks and the preparatory proofs of `roots::operands`) and
 //   `Executor::evaluate_initializer_transfer`.
 
-use super::super::allocation_transfer::NativeIterableReceipt;
-use super::super::allocation_transfer::{self, AllocationContext};
 use super::super::execution_index::CallKind;
 use super::super::interpreter::{Executor, from_flow, unknown};
 use super::super::runtime_heap::NativeIterableUse;
@@ -22,6 +20,8 @@ use swc_ecma_ast::*;
 use value_model::{
     AbstractValue, Context, HeapAddress, InstanceOrigin, RetainedResultKind, ValueExpr, Values,
 };
+use world::allocation_transfer::NativeIterableReceipt;
+use world::allocation_transfer::{self, AllocationContext};
 
 pub(crate) struct ApplicationAllocationContext<'a, 'source, 'rule> {
     executor: &'a mut Executor<'source, 'rule>,
@@ -50,26 +50,22 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
         self.executor.source_covered
     }
 
-    fn binding(
-        &mut self,
-        binding: &Id,
-    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+    fn binding(&mut self, binding: &Id) -> Option<world::allocation_transfer::AllocationValue> {
         let values = self.executor.evaluate_binding(binding, self.environment);
-        let judgment =
-            if self.executor.source_covered && self.executor.initialized_local_binding(binding) {
-                super::super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(
-                    Box::default(),
-                )
-            } else {
-                super::super::allocation_transfer::AllocationJudgment::Opaque
-            };
-        Some(super::super::allocation_transfer::AllocationValue { values, judgment })
+        let judgment = if self.executor.source_covered
+            && self.executor.initialized_local_binding(binding)
+        {
+            world::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(Box::default())
+        } else {
+            world::allocation_transfer::AllocationJudgment::Opaque
+        };
+        Some(world::allocation_transfer::AllocationValue { values, judgment })
     }
 
     fn child(
         &mut self,
         expression: &ValueExpr,
-    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+    ) -> Option<world::allocation_transfer::AllocationValue> {
         Some(
             self.executor
                 .evaluate_allocation_child(expression, self.environment, self.captures),
@@ -86,11 +82,11 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
             .index
             .literal_property_kind(allocation, position)
     }
-    fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
+    fn literal_layout(&self, allocation: u32) -> world::allocation_transfer::LiteralLayout {
         self.executor.inputs.index.allocation_layout(allocation)
     }
 
-    fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
+    fn heap(&mut self) -> world::allocation_transfer::LiteralHeap<'_> {
         self.executor.literal_heap()
     }
 }
@@ -102,7 +98,7 @@ impl Executor<'_, '_> {
         env: &Context,
         captures: &Context,
     ) -> Values {
-        if let Some(value) = super::super::allocation_transfer::transfer(
+        if let Some(value) = world::allocation_transfer::transfer(
             &mut ApplicationAllocationContext {
                 executor: self,
                 environment: env,
@@ -195,7 +191,7 @@ impl Executor<'_, '_> {
                         )
                     })
                     .collect::<Vec<_>>();
-                super::super::allocation_transfer::record(
+                world::allocation_transfer::record(
                     &mut ApplicationAllocationContext {
                         executor: self,
                         environment: env,
@@ -203,7 +199,7 @@ impl Executor<'_, '_> {
                     },
                     *key,
                     definitions,
-                    super::super::allocation_transfer::AllocationJudgment::Opaque,
+                    world::allocation_transfer::AllocationJudgment::Opaque,
                     |context, expression| context.child(expression),
                 )
                 .expect("application child transfers always produce values")

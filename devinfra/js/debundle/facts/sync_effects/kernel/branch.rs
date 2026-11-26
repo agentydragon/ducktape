@@ -1,11 +1,11 @@
 //! Path selection for conditional and logical operators: which paths an
 //! abstract test value leaves feasible, and what it is on each of them.
 
-use super::super::effect_coverage::EffectCoverageFragment;
 use super::frame::LocalFrame;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::value::Value;
 use value_model::{AbstractValue, Values};
+use world::effect_coverage::EffectCoverageFragment;
 
 /// `ToBoolean` and the nullish test read no property and run no user code.
 /// The operand supplied its own receipt when it ran.

@@ -1,7 +1,7 @@
 //! Normal, abrupt, or conservatively mixed completion for one synchronous transfer.
 
-use super::allocation_transfer::AllocationJudgment;
-use super::effect_coverage::EffectCoverageFragment;
+use crate::allocation_transfer::AllocationJudgment;
+use crate::effect_coverage::EffectCoverageFragment;
 use analysis::facts::statement_facts::HeapContentAccesses;
 use analysis_vocabulary::value::Value;
 use value_model::{AbstractValue, Values};
@@ -10,7 +10,7 @@ use value_model::{AbstractValue, Values};
 /// payload while recording unresolved behavior separately from throws.
 #[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Completion<N, A> {
+pub enum Completion<N, A> {
     Normal(N),
     /// A no-normal completion whose throw values are retained as a may-set,
     /// but have no single source-site witness. This must not authorize an
@@ -29,7 +29,7 @@ pub(super) enum Completion<N, A> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum AbruptAlternative<A> {
+pub enum AbruptAlternative<A> {
     Exact(A),
     /// `None` means an abrupt possibility is known but its payload was not
     /// represented. `Some` retains actual may-thrown values without inventing
@@ -38,35 +38,35 @@ pub(super) enum AbruptAlternative<A> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct UnknownThrowValues(Values);
+pub struct UnknownThrowValues(Values);
 
 /// Possible behaviors not represented by an exact throw alternative. A
 /// generic opaque result does not prove a throw; another path may diverge or
 /// have a non-normal behavior the transfer cannot classify.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct NonNormalPossibilities {
+pub struct NonNormalPossibilities {
     /// Typed evidence says a throw is possible, but no payload or exact
     /// source witness is represented.
-    pub(super) may_throw_without_payload: bool,
+    pub(crate) may_throw_without_payload: bool,
     /// A path may fail to produce any synchronous completion.
-    pub(super) may_diverge: bool,
+    pub(crate) may_diverge: bool,
     /// Some non-normal behavior exists but is not classified as a throw.
     /// Catch-sensitive consumers must conservatively refuse this path.
-    pub(super) unresolved: bool,
+    pub(crate) unresolved: bool,
 }
 
 impl<N, A> Completion<N, A> {
-    pub(super) fn is_exact_normal(&self) -> bool {
+    pub(crate) fn is_exact_normal(&self) -> bool {
         matches!(self, Self::Normal(_))
     }
 
-    pub(super) fn has_no_normal_path(&self) -> bool {
+    pub fn has_no_normal_path(&self) -> bool {
         matches!(self, Self::UnknownThrow(_) | Self::Abrupt(_))
             || matches!(self, Self::Alternatives { normal: None, .. })
     }
 
     /// Whether a non-normal path is represented beside the normal one.
-    pub(super) fn may_be_abrupt(&self) -> bool {
+    pub fn may_be_abrupt(&self) -> bool {
         match self {
             Self::Normal(_) => false,
             Self::UnknownThrow(_) | Self::Abrupt(_) | Self::OpaqueMayNormal(_) => true,
@@ -77,7 +77,7 @@ impl<N, A> Completion<N, A> {
     }
 
     /// The exact abrupt completions among the represented paths.
-    pub(super) fn exact_abrupt(&self) -> Vec<&A> {
+    pub fn exact_abrupt(&self) -> Vec<&A> {
         match self {
             Self::Normal(_) | Self::UnknownThrow(_) | Self::OpaqueMayNormal(_) => Vec::new(),
             Self::Abrupt(abrupt) => vec![abrupt],
@@ -91,7 +91,7 @@ impl<N, A> Completion<N, A> {
         }
     }
 
-    pub(super) fn may_normal(&self) -> Option<&N> {
+    pub fn may_normal(&self) -> Option<&N> {
         match self {
             Self::Normal(value) | Self::OpaqueMayNormal(value) => Some(value),
             Self::UnknownThrow(_) | Self::Abrupt(_) => None,
@@ -102,7 +102,7 @@ impl<N, A> Completion<N, A> {
     /// Expand compact completion states into normal, exact abrupt, and
     /// unresolved non-normal projections. Opaque normality may coexist with
     /// other behavior, but does not prove that a throw is among those paths.
-    pub(super) fn into_alternatives(
+    pub fn into_alternatives(
         self,
     ) -> (Option<N>, Vec<AbruptAlternative<A>>, NonNormalPossibilities) {
         match self {
@@ -138,7 +138,7 @@ impl<N, A> Completion<N, A> {
     /// the prefix are retained untouched; only its normal projection reaches
     /// `next`. Callers must still retain the corresponding per-path state
     /// family when the normal and abrupt alternatives have different worlds.
-    pub(super) fn then<M>(self, next: Completion<M, A>) -> Completion<M, A> {
+    pub(crate) fn then<M>(self, next: Completion<M, A>) -> Completion<M, A> {
         let (prefix_normal, mut abrupt, mut non_normal) = self.into_alternatives();
         if prefix_normal.is_none() {
             return Completion::<M, A>::from_alternatives(None, abrupt, non_normal);
@@ -154,7 +154,7 @@ impl<N, A> Completion<N, A> {
     /// Canonicalize a joined normal/abrupt partition without erasing either
     /// side. The empty partition is an invalid caller state; it is retained as
     /// an empty Alternatives value so release builds never invent completion.
-    pub(super) fn from_alternatives(
+    pub fn from_alternatives(
         normal: Option<N>,
         mut abrupt: Vec<AbruptAlternative<A>>,
         non_normal: NonNormalPossibilities,
@@ -212,18 +212,18 @@ impl Default for Completion<(), ()> {
 /// judgment opaque, but a covered allocation never proves normal completion.
 #[must_use]
 #[derive(Clone)]
-pub(super) struct TransferLedger<N, A> {
-    pub(super) completion: Completion<N, A>,
-    pub(super) effects: EffectCoverageFragment,
-    pub(super) allocation: AllocationJudgment,
+pub struct TransferLedger<N, A> {
+    pub completion: Completion<N, A>,
+    pub effects: EffectCoverageFragment,
+    pub allocation: AllocationJudgment,
     /// Heap cells this transfer read or wrote. Whether the path was assumed,
     /// and whether an isolated scope keeps them private, is the adopter's
     /// decision.
-    pub(super) heap_accesses: HeapContentAccesses,
+    pub heap_accesses: HeapContentAccesses,
 }
 
 impl<N, A> TransferLedger<N, A> {
-    pub(super) fn new(
+    pub fn new(
         completion: Completion<N, A>,
         effects: EffectCoverageFragment,
         allocation: AllocationJudgment,

@@ -1,15 +1,15 @@
 //! One activation of the kernel and the values that cross its boundary.
 
-use super::super::allocation_transfer::{AllocationJudgment, AllocationValue};
-use super::super::array_transfer::ArrayMethodSelection;
-use super::super::completion::{AbruptAlternative, Completion, TransferLedger};
-use super::super::effect_coverage::EffectCoverageFragment;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
 use swc_ecma_ast::Id;
 use value_model::{AbstractValue, CallableSelection, Context, Values};
+use world::allocation_transfer::{AllocationJudgment, AllocationValue};
+use world::array_transfer::ArrayMethodSelection;
+use world::completion::{AbruptAlternative, Completion, TransferLedger};
+use world::effect_coverage::EffectCoverageFragment;
 
 #[derive(Clone)]
 pub(crate) struct LocalFrame {

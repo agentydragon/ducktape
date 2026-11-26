@@ -1,11 +1,11 @@
 //! Heap and native-operation transfers over one settled execution snapshot.
 
-use super::allocation_transfer::{NativeIterableInput, NativeIterableReceipt};
 use super::execution_index::{CallKind, MemberValueWrite};
 use super::interpreter::{Executor, NativeCallResolution};
 use std::collections::BTreeSet;
 use swc_common::Span;
 use value_model::{CallSite, Context, ValueExpr, Values};
+use world::allocation_transfer::{NativeIterableInput, NativeIterableReceipt};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum NativeIterableUse {

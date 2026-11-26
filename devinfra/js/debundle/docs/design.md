@@ -4054,8 +4054,10 @@ contract is in <../SPEC.md>
   [selector resolver](../selectors/resolution/).
 - [`facts/analyze.rs`](../facts/analyze.rs) analyzes `StatementFacts`.
   [`facts/sync_effects/execution_index.rs`](../facts/sync_effects/execution_index.rs)
-  collects synchronous execution facts with the adjacent value model and
-  interpreter. [`facts/abstract_domain/builtins.rs`](../facts/abstract_domain/builtins.rs)
+  collects synchronous execution facts with the adjacent interpreter. The
+  value model ([`value_model/`](../facts/sync_effects/value_model/)) and the
+  world with its transfers ([`world/`](../facts/sync_effects/world/)) are
+  crates below it. [`facts/abstract_domain/builtins.rs`](../facts/abstract_domain/builtins.rs)
   models native operations.
 - [`graph/`](../graph/) (its own crate above `analysis`) builds dependency
   graphs, module quotients and their wire reports.

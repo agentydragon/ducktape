@@ -1,11 +1,7 @@
 //! Synchronous call-effect analysis.
 
 mod adapters;
-mod allocation_transfer;
 mod alternatives;
-mod array_transfer;
-mod completion;
-mod effect_coverage;
 pub mod execution_index;
 mod foreign_call;
 pub mod interpreter;
@@ -20,4 +16,3 @@ mod runtime_heap;
 mod runtime_inference;
 mod runtime_models;
 mod strict_provider;
-mod world;

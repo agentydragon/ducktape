@@ -9,26 +9,26 @@ use value_model::local_operations::LocalBinding;
 use value_model::{AbstractValue, Captured, LexicalCellId, Values};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CellInitialization {
+pub enum CellInitialization {
     Uninitialized,
     Initialized,
     MaybeInitialized,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct LexicalCell {
-    pub(crate) values: Values,
-    pub(crate) kind: LocalBinding,
-    pub(crate) initialization: CellInitialization,
+pub struct LexicalCell {
+    pub values: Values,
+    pub kind: LocalBinding,
+    pub initialization: CellInitialization,
 }
 
 /// Slots are never reused. Retiring a cell frees its box and value graph,
 /// leaving only an empty identity slot behind.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct LexicalCells {
-    pub(super) slots: Vec<Option<Box<LexicalCell>>>,
-    pub(super) occupied: Vec<LexicalCellId>,
-    pub(super) next_collection_at: usize,
+pub struct LexicalCells {
+    pub(crate) slots: Vec<Option<Box<LexicalCell>>>,
+    pub(crate) occupied: Vec<LexicalCellId>,
+    pub(crate) next_collection_at: usize,
 }
 
 impl Default for LexicalCells {
@@ -42,7 +42,7 @@ impl Default for LexicalCells {
 }
 
 impl LexicalCells {
-    pub(crate) fn insert(&mut self, cell: LexicalCell) -> LexicalCellId {
+    pub fn insert(&mut self, cell: LexicalCell) -> LexicalCellId {
         let id = LexicalCellId(self.slots.len());
         self.slots.push(Some(Box::new(cell)));
         self.occupied.push(id);
@@ -50,19 +50,19 @@ impl LexicalCells {
     }
 
     /// Ids handed out so far, retired ones included.
-    pub(crate) fn identities(&self) -> usize {
+    pub fn identities(&self) -> usize {
         self.slots.len()
     }
 
     /// Skip ids up to `identities` so that the next cell cannot share an id
     /// with one a sibling fork leaf instantiated.
-    pub(crate) fn reserve_identities(&mut self, identities: usize) {
+    pub fn reserve_identities(&mut self, identities: usize) {
         if self.slots.len() < identities {
             self.slots.resize_with(identities, || None);
         }
     }
 
-    pub(crate) fn get(&self, id: LexicalCellId) -> Option<&LexicalCell> {
+    pub fn get(&self, id: LexicalCellId) -> Option<&LexicalCell> {
         self.slots.get(id.0)?.as_deref()
     }
 
@@ -76,11 +76,7 @@ impl LexicalCells {
     /// for the abrupt alternative of a const, a named self binding or a cell
     /// that may still be in TDZ, and whether the contents changed; `None` for
     /// a retired cell.
-    pub(crate) fn store_captured(
-        &mut self,
-        id: LexicalCellId,
-        values: &Values,
-    ) -> Option<(Values, bool)> {
+    pub fn store_captured(&mut self, id: LexicalCellId, values: &Values) -> Option<(Values, bool)> {
         let cell = self.get_mut(id)?;
         if matches!(cell.kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
             || cell.initialization == CellInitialization::Uninitialized
@@ -101,7 +97,7 @@ impl LexicalCells {
 
     /// The declaring activation's own store or initialization: it replaces
     /// the contents and leaves TDZ. Returns whether the cell changed.
-    pub(crate) fn store_declared(&mut self, id: LexicalCellId, values: &Values) -> bool {
+    pub fn store_declared(&mut self, id: LexicalCellId, values: &Values) -> bool {
         let Some(cell) = self.get_mut(id) else {
             return false;
         };
@@ -112,11 +108,11 @@ impl LexicalCells {
         changed
     }
 
-    pub(crate) fn collection_due(&self, last_owner: bool) -> bool {
+    pub fn collection_due(&self, last_owner: bool) -> bool {
         !self.occupied.is_empty() && (last_owner || self.slots.len() >= self.next_collection_at)
     }
 
-    pub(crate) fn sweep(&mut self, marked: &FxHashSet<LexicalCellId>, trace_work: usize) {
+    pub fn sweep(&mut self, marked: &FxHashSet<LexicalCellId>, trace_work: usize) {
         self.occupied.retain(|id| {
             if marked.contains(id) {
                 true
@@ -152,7 +148,7 @@ impl std::ops::IndexMut<usize> for LexicalCells {
 /// All references here borrow the one settled owner-boundary state. Separate
 /// visited sets respect the two interner identity namespaces and break cycles
 /// through cells without cloning captured graphs.
-pub(crate) struct CellTrace<'a> {
+pub struct CellTrace<'a> {
     arena: &'a LexicalCells,
     pending: Vec<&'a Values>,
     cells: FxHashSet<LexicalCellId>,
@@ -162,7 +158,7 @@ pub(crate) struct CellTrace<'a> {
 }
 
 impl<'a> CellTrace<'a> {
-    pub(crate) fn new(arena: &'a LexicalCells) -> Self {
+    pub fn new(arena: &'a LexicalCells) -> Self {
         Self {
             arena,
             pending: Vec::new(),
@@ -173,7 +169,7 @@ impl<'a> CellTrace<'a> {
         }
     }
 
-    pub(crate) fn values(&mut self, values: &'a Values) {
+    pub fn values(&mut self, values: &'a Values) {
         self.pending.push(values);
     }
 
@@ -190,7 +186,7 @@ impl<'a> CellTrace<'a> {
         }
     }
 
-    pub(crate) fn finish(mut self) -> (FxHashSet<LexicalCellId>, usize) {
+    pub fn finish(mut self) -> (FxHashSet<LexicalCellId>, usize) {
         while let Some(values) = self.pending.pop() {
             self.work = self.work.saturating_add(values.len()).saturating_add(1);
             for value in values {

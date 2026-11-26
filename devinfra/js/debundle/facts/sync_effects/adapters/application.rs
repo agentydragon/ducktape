@@ -2,8 +2,6 @@
 //! application `Executor`, for ordered root initializers and callable bodies.
 
 use super::super::alternatives::execution_state::ExecutionPath;
-use super::super::array_transfer::{self, ArrayMethodSelection};
-use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::{
     Call, CallKind, ExecutionIndex, MemberValueWrite, native_own_data_read_slots,
 };
@@ -15,16 +13,16 @@ use super::super::kernel::context::{
     NativeContext, Unproved,
 };
 use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
+use world::array_transfer::{self, ArrayMethodSelection};
+use world::effect_coverage::EffectCoverageFragment;
 // Module-qualified: the builtin table's `Invocation` also has a
 // tagged-template form the kernel never requests.
-use super::super::allocation_transfer::NativeIterableReceipt;
 use super::super::kernel::frame::{
     self as kernel_frame, EvaluatedCallee, LocalCallRequest, LocalFrame, LocalValueResult,
     RemainderDisposition,
 };
 use super::super::runtime_heap::NativeIterableUse;
 use super::super::runtime_inference::{CallOperands, CallTransfer, RuntimeOperation, RuntimeValue};
-use super::super::world::World;
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::abstract_domain::builtins;
 use analysis::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
@@ -45,6 +43,8 @@ use value_model::{
     AbstractValue, CallSite, CallableSelection, CapturedContext, LexicalCaptures, MemberKey,
     OwnPropertyShape, ValueExpr, Values,
 };
+use world::World;
+use world::allocation_transfer::NativeIterableReceipt;
 
 #[derive(Clone, Copy)]
 pub(crate) enum LocalExecutionScope {
@@ -392,9 +392,7 @@ impl LocalExecutionContext<'_, '_, '_> {
             _ => EffectCoverageFragment::default(),
         };
         Ok(LocalValueResult {
-            allocation: super::super::allocation_transfer::AllocationValue::opaque(
-                constructed.values,
-            ),
+            allocation: world::allocation_transfer::AllocationValue::opaque(constructed.values),
             effects,
             selection: None,
         })
@@ -544,7 +542,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
                 .cloned()
         };
         Ok(LocalValueResult {
-            allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
+            allocation: world::allocation_transfer::AllocationValue::opaque(values),
             effects,
             selection,
         })
@@ -665,9 +663,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                     dependencies: Box::new(result.dependencies),
                 });
                 return Ok(LocalValueResult {
-                    allocation: super::super::allocation_transfer::AllocationValue::opaque(
-                        result.values,
-                    ),
+                    allocation: world::allocation_transfer::AllocationValue::opaque(result.values),
                     effects: result.effects,
                     selection: None,
                 });
@@ -842,7 +838,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                     outcome.effect_coverage
                 };
                 return Ok(LocalValueResult {
-                    allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
+                    allocation: world::allocation_transfer::AllocationValue::opaque(values),
                     effects,
                     selection: outcome.return_selection,
                 });
@@ -1002,7 +998,7 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
         };
         Ok(ClosureAdmission {
             effects,
-            judgment: super::super::allocation_transfer::AllocationJudgment::Opaque,
+            judgment: world::allocation_transfer::AllocationJudgment::Opaque,
         })
     }
     fn intern_captures(&mut self, captures: LexicalCaptures) -> CapturedContext {
@@ -1087,7 +1083,7 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         let mut effects = EffectCoverageFragment::no_effects();
         effects.depend_on(source.dependencies());
         Some(LocalValueResult {
-            allocation: super::super::allocation_transfer::AllocationValue::opaque(unknown()),
+            allocation: world::allocation_transfer::AllocationValue::opaque(unknown()),
             effects,
             selection: None,
         })
@@ -1169,7 +1165,7 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         let mut effects = EffectCoverageFragment::no_effects();
         effects.depend_on(&dependencies);
         Some(LocalValueResult {
-            allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
+            allocation: world::allocation_transfer::AllocationValue::opaque(values),
             effects,
             selection: None,
         })
@@ -1207,7 +1203,7 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                         .effects
                         .record_heap_read(read.cell, self.executor.state.assumption.is_none());
                     return Disposition::Resolved(
-                        super::super::allocation_transfer::AllocationValue::opaque(read.values),
+                        world::allocation_transfer::AllocationValue::opaque(read.values),
                     );
                 }
                 let callee = ValueExpr::Member(
@@ -1254,7 +1250,7 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                         .borrowed_records
                         .extend(self.executor.reachable_objects(&values));
                     return Disposition::Resolved(
-                        super::super::allocation_transfer::AllocationValue::opaque(values),
+                        world::allocation_transfer::AllocationValue::opaque(values),
                     );
                 }
                 self.fallback(

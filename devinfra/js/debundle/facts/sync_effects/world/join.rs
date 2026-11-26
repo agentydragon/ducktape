@@ -20,17 +20,17 @@ use value_model::{AbstractValue, DenseArray, LexicalCellId, Values};
 /// The result of joining a family of alternative worlds.
 #[must_use]
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Joined {
-    pub(crate) world: World,
+pub struct Joined {
+    pub world: World,
     /// Some alternative lost precision in the join.
-    pub(crate) widened: bool,
+    pub widened: bool,
     /// The joined world cannot resume the live control cursor; the caller
     /// runs one conservative remainder fallback instead.
-    pub(crate) refused: Option<JoinRefusal>,
+    pub refused: Option<JoinRefusal>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum JoinRefusal {
+pub enum JoinRefusal {
     EmptySet,
     DivergentActiveCells,
     DivergentScope,
@@ -52,7 +52,7 @@ impl World {
     /// Join every alternative into one world. Refusal is an outcome, never a
     /// panic: the returned world is the pointwise join of the remaining
     /// owners with `reachability.incomplete` set.
-    pub(crate) fn join(worlds: &[&World]) -> Joined {
+    pub fn join(worlds: &[&World]) -> Joined {
         let Some(first) = worlds.first().copied() else {
             // Nothing ran, so no scope is known; the caller never resumes
             // from this world.

@@ -4947,8 +4947,8 @@ impl ExecutionIndex {
     pub(super) fn allocation_layout(
         &self,
         allocation: u32,
-    ) -> super::allocation_transfer::LiteralLayout {
-        use super::allocation_transfer::LiteralLayout;
+    ) -> world::allocation_transfer::LiteralLayout {
+        use world::allocation_transfer::LiteralLayout;
         if self.exact_object_spread_copies.contains(&allocation) {
             return LiteralLayout::Unsupported;
         }

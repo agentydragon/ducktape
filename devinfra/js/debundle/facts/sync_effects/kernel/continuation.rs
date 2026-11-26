@@ -2,12 +2,6 @@
 //! a call yields after its callee and operands have run, and the driver
 //! resumes the same stack with the adapter's result.
 
-use super::super::allocation_transfer::NativeIterableReceipt;
-use super::super::allocation_transfer::{
-    self, AllocationContext, AllocationJudgment, AllocationValue, ArrayTransfer, LiteralHeap,
-    LiteralLayout, RecordTransfer, SequenceTransfer,
-};
-use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::runtime_heap::NativeIterableUse;
 use super::branch;
 use super::cells;
@@ -35,6 +29,12 @@ use value_model::{
     AbstractValue, CallSite, CallableSelection, HeapAddress, LiteralPropertyKind,
     PropertyDefinition, ValueExpr, Values,
 };
+use world::allocation_transfer::NativeIterableReceipt;
+use world::allocation_transfer::{
+    self, AllocationContext, AllocationJudgment, AllocationValue, ArrayTransfer, LiteralHeap,
+    LiteralLayout, RecordTransfer, SequenceTransfer,
+};
+use world::effect_coverage::EffectCoverageFragment;
 
 pub(crate) enum LocalSuspension {
     Call(LocalCallRequest),

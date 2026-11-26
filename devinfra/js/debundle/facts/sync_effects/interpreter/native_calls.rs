@@ -386,7 +386,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             let mut dependencies = self.observations.dependencies().clone();
             dependencies.extend(&self.queries.dependencies());
-            super::super::allocation_transfer::keyed_collection_new(row, site, dependencies)
+            world::allocation_transfer::keyed_collection_new(row, site, dependencies)
                 .map(|result| result.effects)
         } else {
             None

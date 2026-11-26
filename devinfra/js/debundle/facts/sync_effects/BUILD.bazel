@@ -17,6 +17,7 @@ rust_library(
         "//devinfra/js/debundle:work_metrics",
         "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/facts/sync_effects/value_model",
+        "//devinfra/js/debundle/facts/sync_effects/world",
         "//devinfra/js/debundle/inference",
         "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
