@@ -111,8 +111,12 @@ private def coreIdentifier (name : String) : Except String Json := do
 
 /-- Translate only the primitive initializer fragment handled by the direct
 constructor route. Unsupported CoreJS syntax fails closed. -/
-private def coreExpr : CoreJS.Expr → Except String Json
-  | .undef => pure <| node "UnaryExpression" [("operator", .str "void"), ("prefix", .bool true),
+private def coreExpr (expr : CoreJS.Expr) (operand := false) : Except String Json :=
+  match expr with
+  | .undef => do
+    -- The legacy standalone spelling reparses as a unary expression.
+    if operand then throw "undefined operand has no exact CoreJS readback"
+    return node "UnaryExpression" [("operator", .str "void"), ("prefix", .bool true),
       ("argument", node "Literal" [("value", toJson (0 : Nat))])]
   | .null => pure <| node "Literal" [("value", .null)]
   | .bool value => pure <| node "Literal" [("value", .bool value)]
@@ -121,12 +125,47 @@ private def coreExpr : CoreJS.Expr → Except String Json
   | .num value => do
     if value.isNaN || value.isInf then throw "unsupported non-finite CoreJS number"
     let negative := (CoreJS.Num.decompose value).1
+    if negative && operand then throw "negative numeric operand requires an explicit unary minus"
     let magnitude := if negative then -value else value
     let number ← Json.parse (CoreJS.Num.toString magnitude)
     let literalNode := node "Literal" [("value", number)]
     if negative then
       return node "UnaryExpression" [("operator", .str "-"), ("prefix", .bool true), ("argument", literalNode)]
     return literalNode
+  | .unary op argument => do
+    let operator ← match op with
+      | .neg => pure "-"
+      | .pos => pure "+"
+      | .not => pure "!"
+      | .bitNot => pure "~"
+      | .typeof => pure "typeof"
+      | .void => pure "void"
+      | .toString => throw "unsupported CoreJS string conversion for direct printing"
+    return node "UnaryExpression" [("operator", .str operator), ("prefix", .bool true),
+      ("argument", ← coreExpr argument true)]
+  | .binary op left right => do
+    let operator ← match op with
+      | .add => pure "+"
+      | .sub => pure "-"
+      | .mul => pure "*"
+      | .div => pure "/"
+      | .mod => pure "%"
+      | .bitAnd => pure "&"
+      | .bitOr => pure "|"
+      | .bitXor => pure "^"
+      | .shl => pure "<<"
+      | .shr => pure ">>"
+      | .ushr => pure ">>>"
+      | .eq => pure "=="
+      | .ne => pure "!="
+      | .strictEq => pure "==="
+      | .strictNe => pure "!=="
+      | .lt => pure "<"
+      | .le => pure "<="
+      | .gt => pure ">"
+      | .ge => pure ">="
+    return node "BinaryExpression" [("operator", .str operator),
+      ("left", ← coreExpr left true), ("right", ← coreExpr right true)]
   | _ => throw "unsupported CoreJS initializer for direct printing"
 
 private def coreStatement : CoreJS.Stmt → Except String Json
