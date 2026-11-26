@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 import { pathToFileURL } from "node:url";
@@ -28,7 +28,10 @@ function check(dir, status, ...args) {
   assert.equal(verdict.status, status);
   if (status === "certified") {
     assert([request, "all-outcomes"].includes(verdict.guarantee));
-    if (verdict.guarantee === "all-outcomes") assert.equal(verdict.scope, "linked-slice-order-kept");
+    assert.equal(verdict.guarantee, "all-outcomes");
+    assert.equal(verdict.scope, "checked-construction");
+    assert.equal(verdict.strategy, "compiled-terminal-export");
+    assert.equal(verdict.observation_scope, "strict-static-data");
   } else assert.equal(verdict.guarantee, null);
 }
 place({ [provider]: ["#0"], [entry]: ["#1"] });
@@ -57,6 +60,13 @@ function probe() {
 }
 assert.equal(probe(), "1\n");
 check(out, "certified", "--check-output");
+const entryFile = path.join(out, entry);
+const entryBytes = readFileSync(entryFile);
+const wrongCell = Buffer.from("const decoy = 1; export { decoy as a };\n");
+writeFileSync(entryFile, wrongCell);
+check(out, "rejected", "--check-output");
+assert.deepEqual(readFileSync(entryFile), wrongCell);
+writeFileSync(entryFile, entryBytes);
 const file = path.join(out, provider);
 const body = readFileSync(file, "utf8");
 const changed = body.replace("1", "2");
@@ -68,3 +78,13 @@ place({ [entry]: ["#0"], [provider]: ["#1"] });
 const bad = path.join(process.env.TEST_TMPDIR, "bad");
 check(bad, "rejected");
 assert(!existsSync(bad));
+const priorOut = path.join(process.env.TEST_TMPDIR, "prior");
+mkdirSync(priorOut);
+const priorEntry = Buffer.from("prior entry\n");
+const priorProvider = Buffer.from("prior provider\n");
+writeFileSync(path.join(priorOut, entry), priorEntry);
+writeFileSync(path.join(priorOut, provider), priorProvider);
+check(priorOut, "rejected");
+assert.deepEqual(readdirSync(priorOut).sort(), [entry, provider].sort());
+assert.deepEqual(readFileSync(path.join(priorOut, entry)), priorEntry);
+assert.deepEqual(readFileSync(path.join(priorOut, provider)), priorProvider);

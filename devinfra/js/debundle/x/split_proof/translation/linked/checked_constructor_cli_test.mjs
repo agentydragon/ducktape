@@ -84,9 +84,8 @@ assert.equal(reordered.verdict.reason_code, "constructor_refusal", reordered.log
 assert.match(reordered.verdict.reason, /changes the source unit order/);
 assert.deepEqual(snapshot(), beforeUnsupported, "unsupported move modified the existing output");
 
-// The paired terminal_export_artifact_test covers this exact CoreJS artifact
-// request. The public CLI stays refused until its production path uses that
-// proof through the common strict output gate.
+// The terminal export is a source ordinal assigned to the entry; the numeric
+// declaration is moved to its provider and checked again from disk.
 const terminalExportProvider = "provider.mjs";
 const terminalExport = prepare(path.join(root, "terminal-export-row"), {
   source: "const a = 1;\nexport { a };\n",
@@ -99,33 +98,54 @@ const terminalExport = prepare(path.join(root, "terminal-export-row"), {
   },
 });
 const terminalExportOut = path.join(root, "terminal-export-row-out");
-mkdirSync(terminalExportOut, { recursive: true });
-const terminalExportSentinel = path.join(terminalExportOut, entry);
-const terminalExportPrior = Buffer.from("keep export-only output\n");
-writeFileSync(terminalExportSentinel, terminalExportPrior);
-const terminalExportRefusal = split({
-  source: terminalExport.sourceFile,
-  spec: terminalExport.specFile,
-  out: terminalExportOut,
-  require: "all-outcomes",
-  allowExistingOut: true,
-});
+const terminalRun = (options = {}) =>
+  split({
+    source: terminalExport.sourceFile,
+    spec: terminalExport.specFile,
+    out: terminalExportOut,
+    require: "all-outcomes",
+    ...options,
+  });
+const terminalExportResult = terminalRun();
+assert.equal(terminalExportResult.status, "certified", terminalExportResult.log);
+assert.equal(terminalExportResult.verdict.strategy, "compiled-terminal-export", terminalExportResult.log);
+assert.equal(terminalExportResult.verdict.observation_scope, "strict-static-data", terminalExportResult.log);
+assert.equal(terminalExportResult.verdict.guarantee, "all-outcomes", terminalExportResult.log);
+assert.deepEqual(observe(path.join(terminalExportOut, entry), "a"), { a: 1 });
+assert.deepEqual(terminalRun({ checkOutput: true }).verdict, terminalExportResult.verdict);
+
+const terminalEntry = path.join(terminalExportOut, entry);
+const terminalProvider = path.join(terminalExportOut, terminalExportProvider);
+const terminalEntryBytes = readFileSync(terminalEntry);
+const terminalProviderBytes = readFileSync(terminalProvider);
+const wrongTerminalSpec = path.join(root, "terminal-export-wrong-owner.json");
+writeFileSync(
+  wrongTerminalSpec,
+  JSON.stringify({
+    entry,
+    modules: { [terminalExportProvider]: ["#0", "#1"], [entry]: [] },
+    order: [terminalExportProvider],
+    sequential: true,
+  })
+);
+const terminalExportRefusal = terminalRun({ spec: wrongTerminalSpec, allowExistingOut: true });
 assert.equal(terminalExportRefusal.status, "refused", terminalExportRefusal.log);
+assert.equal(terminalExportRefusal.verdict.reason_code, "terminal_export_refusal", terminalExportRefusal.log);
 assert.equal(terminalExportRefusal.verdict.guarantee, null, terminalExportRefusal.log);
 assert.equal(terminalExportRefusal.verdict.every_ending_matches, false, terminalExportRefusal.log);
-assert.deepEqual(readFileSync(terminalExportSentinel), terminalExportPrior);
-assert.deepEqual(readdirSync(terminalExportOut), [entry]);
-const terminalExportFresh = path.join(root, "terminal-export-row-fresh");
-const terminalExportFreshRefusal = split({
-  source: terminalExport.sourceFile,
-  spec: terminalExport.specFile,
-  out: terminalExportFresh,
-  require: "all-outcomes",
-});
-assert.equal(terminalExportFreshRefusal.status, "refused", terminalExportFreshRefusal.log);
-assert.equal(terminalExportFreshRefusal.verdict.guarantee, null, terminalExportFreshRefusal.log);
-assert.equal(terminalExportFreshRefusal.verdict.every_ending_matches, false, terminalExportFreshRefusal.log);
-assert(!existsSync(terminalExportFresh), "unsupported terminal export move created output");
+assert.deepEqual(readFileSync(terminalEntry), terminalEntryBytes);
+assert.deepEqual(readFileSync(terminalProvider), terminalProviderBytes);
+const terminalFreshBad = path.join(root, "terminal-export-wrong-fresh");
+assert.equal(terminalRun({ spec: wrongTerminalSpec, out: terminalFreshBad }).status, "refused");
+assert(!existsSync(terminalFreshBad));
+
+const wrongTerminalCell = Buffer.from("const decoy = 1; export { decoy as a };\n");
+writeFileSync(terminalEntry, wrongTerminalCell);
+const terminalCellRefusal = terminalRun({ checkOutput: true, allowExistingOut: true });
+assert.equal(terminalCellRefusal.status, "refused", terminalCellRefusal.log);
+assert.deepEqual(readFileSync(terminalEntry), wrongTerminalCell);
+assert.deepEqual(readFileSync(terminalProvider), terminalProviderBytes);
+writeFileSync(terminalEntry, terminalEntryBytes);
 
 const callableSource = `function read() { return 42; }\nexport const value = read();\n`;
 const callable = prepare(path.join(root, "callable"), {

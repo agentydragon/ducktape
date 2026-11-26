@@ -9,6 +9,7 @@ import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.CheckedArtifact
 import EsmSplit.LowerSplit.Input
 import EsmSplit.LowerSplit.SliceCertificate
+import EsmSplit.LowerSplit.TerminalExportArtifact
 import EsmSplit.ReadDeployment
 
 /-! Certify a proposed split and publish its output or verify the existing tree. -/
@@ -279,6 +280,47 @@ private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
   unless ok do
     throw (IO.userError "source placement or module linkage checks failed")
 
+/-- The original terminal export ordinal is part of the authored request.
+A recognized request is either certified through the shared strict gate or
+refused; it cannot silently fall through to a different strategy. -/
+private def tryTerminalExport (chunk : DeploymentChunk) (input : BundleInput)
+    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
+  let .authored spec := chunk.placement | return none
+  if options.structural || options.profile != .empty || !options.intrinsics.isEmpty ||
+      options.deploymentOrigin.isSome || options.browserOptions.nativeRecord || options.browserOptions.emptyMap then
+    return none
+  unless javascriptSource chunk.source && chunk.source.extension == some "mjs" do return none
+  unless (spec.entry :: spec.modules.map Prod.fst).all (·.endsWith ".mjs") do return none
+  let attempt ← timePhase timings "checked_construction" fun _ => IO.lazyPure fun _ =>
+    TerminalExportArtifact.attempt input.program input.source spec
+  match attempt with
+  | .notApplicable => return none
+  | .refused reason =>
+    return some (← emitVerdict options.request.label (.error reason) (some "checked-construction") [
+      ("strategy", toJson "compiled-terminal-export"),
+      ("reason_code", toJson "terminal_export_refusal")
+    ])
+  | .prepared prepared => do
+    let part : OutputPart := { programs := prepared.programs, source := input.source, input := input.input, work }
+    let covered := supportsStrictObservationInput input.program spec.entry
+    let checked ← try
+      certifyOutput [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
+        timePhase timings "checked_correspondence" fun _ => do
+          let result : Except CertificationRefusal Unit :=
+            match TerminalExportArtifact.verify input.program files prepared with
+            | .ok _ => .ok ()
+            | .error reason => .error { reason, reasonCode := some "constructed_output_mismatch" }
+          pure (guardStrictObservation covered result)
+    catch error =>
+      pure (.error ({ reason := error.toString, reasonCode := some "constructed_output_refusal" } : CertificationRefusal))
+    match checked with
+    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) (some "checked-construction") [
+        ("strategy", toJson "compiled-terminal-export"),
+        ("premises", toJson ([] : List String)),
+        ("observation_scope", toJson "strict-static-data")
+      ])
+    | .error refusal => return some (← emitRefusal options.request.label refusal (some "checked-construction"))
+
 private def tryCheckedConstructor (chunk : DeploymentChunk) (input : BundleInput)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   let .authored spec := chunk.placement | return none
@@ -387,6 +429,9 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
   let structural := options.structural
   let checkOnly := options.checkOnly
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
+  match ← tryTerminalExport chunk src out work options timings with
+  | some result => return result
+  | none => pure ()
   match ← tryCheckedConstructor chunk src out work options timings with
   | some result => return result
   | none => pure ()
