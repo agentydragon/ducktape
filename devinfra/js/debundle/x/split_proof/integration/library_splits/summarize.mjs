@@ -1,4 +1,4 @@
-// Tables from the historical split-sweep JSON lines.
+// Tables from the JSON lines `run_splits.mjs` wrote.
 // Uses Map.groupBy (Node.js 21+).
 //
 //   node summarize.mjs results/*.jsonl
