@@ -196,8 +196,15 @@ func newFixture(t *testing.T) *fixture {
 	return f
 }
 
-// start runs a reader of the fixture's namespace until the test ends.
+// start runs a reader of the fixture's namespace, watching its Identities, until the test ends.
 func (f *fixture) start() {
+	f.t.Helper()
+	f.startWith(KubernetesIdentities{})
+}
+
+// startWith runs a reader of the fixture's namespace, its Identities from identities, until the test
+// ends.
+func (f *fixture) startWith(identities IdentitySource) {
 	f.t.Helper()
 	f.health = watchhealth.New()
 	f.index = NewIndex(testRuleType, parseHosts)
@@ -205,7 +212,7 @@ func (f *fixture) start() {
 	base.Wrap(f.faults.wrap)
 	watches := NewWatches(base, f.health)
 	var err error
-	if f.reader, err = watchRules(watches, f.index, f.namespace, testCondition); err != nil {
+	if f.reader, err = watchRules(watches, f.index, f.namespace, testCondition, identities); err != nil {
 		f.t.Fatal(err)
 	}
 	kubeapiserver.RunUntilCleanup(f.t, watches.Run)

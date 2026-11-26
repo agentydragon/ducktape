@@ -26,16 +26,16 @@ type rules[R any] struct {
 	queue workqueue.TypedRateLimitingInterface[string]
 }
 
-// WatchRules keeps index equal to the PolicySets, PolicyBindings and Identities in namespace, the
-// policy namespace, and keeps the condition on each binding once all have listed: before then a set
-// not yet seen would read as missing. The Health of w covers PolicySets, PolicyBindings and
-// Identities.
-func WatchRules[R any](w *Watches, index *Index[R], namespace string, condition Condition) error {
-	_, err := watchRules(w, index, namespace, condition)
+// WatchRules keeps index equal to the PolicySets and PolicyBindings in namespace, the policy
+// namespace, and to the Identities identities reports there, and keeps the condition on each binding
+// once all have listed: before then a set not yet seen would read as missing. The Health of w covers
+// PolicySets, PolicyBindings and Identities.
+func WatchRules[R any](w *Watches, index *Index[R], namespace string, condition Condition, identities IdentitySource) error {
+	_, err := watchRules(w, index, namespace, condition, identities)
 	return err
 }
 
-func watchRules[R any](w *Watches, index *Index[R], namespace string, condition Condition) (*rules[R], error) {
+func watchRules[R any](w *Watches, index *Index[R], namespace string, condition Condition, identities IdentitySource) (*rules[R], error) {
 	policies, err := policyclient.NewForConfig(w.Config())
 	if err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func watchRules[R any](w *Watches, index *Index[R], namespace string, condition 
 	if err := errors.Join(
 		Watch(w, PolicyBindings, bindings, r.putBinding, index.DeleteBinding),
 		Watch(w, PolicySets, policyinformers.NewTypedFilteredPolicySetInformer(policies, namespace, 0, nil, nil), r.putSet, r.deleteSet),
-		Watch(w, Identities, policyinformers.NewTypedFilteredIdentityInformer(policies, namespace, 0, nil, nil), index.PutIdentity, index.DeleteIdentity),
+		watchIdentities(w, index, policies, namespace, identities),
 	); err != nil {
 		return nil, err
 	}

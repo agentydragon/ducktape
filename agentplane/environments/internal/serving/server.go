@@ -65,7 +65,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	policyHealth := watchhealth.New()
 	watches := reader.NewWatches(apiConfig, policyHealth)
 	rules := access.NewIndex()
-	if err := reader.WatchRules(watches, rules, c.PolicyNamespace, access.Ready); err != nil {
+	if err := reader.WatchRules(watches, rules, c.PolicyNamespace, access.Ready, reader.KubernetesIdentities{}); err != nil {
 		return nil, err
 	}
 	manager, err := resume.NewManager(lifecycle.Options{

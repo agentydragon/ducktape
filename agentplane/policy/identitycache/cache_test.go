@@ -188,3 +188,44 @@ func TestCacheAnswersWithinGraceAfterABreakThenRefusesUntilResynced(t *testing.T
 		t.Fatal("an Identity deleted while disconnected survived the resync")
 	}
 }
+
+// changes returns a check that reports whether Changed closed since the last check.
+func changes(cache *Cache) func() bool {
+	changed := cache.Changed()
+	return func() bool {
+		select {
+		case <-changed:
+			changed = cache.Changed()
+			return true
+		default:
+			return false
+		}
+	}
+}
+
+func TestChangedClosesOnEveryChangeOfTheViewAndWhenItTurnsStale(t *testing.T) {
+	cache, fake, _ := start(t, 0)
+	changed := changes(cache)
+	session := open(fake)
+	send(session, snapshot(identity("fake-agent", "uid-1"))...)
+	waitFor(t, "the snapshot to signal", changed)
+	if _, ok, err := cache.Lookup("fake-agent"); err != nil || !ok {
+		t.Fatalf("after the snapshot signalled: %v %v", ok, err)
+	}
+	send(session, upsert(identity("other-agent", "uid-2")))
+	waitFor(t, "the upsert to signal", changed)
+	if _, ok, _ := cache.Lookup("other-agent"); !ok {
+		t.Fatal("the upsert signalled before it was visible")
+	}
+	send(session, removed("other-agent", "uid-2"))
+	waitFor(t, "the removal to signal", changed)
+	if _, ok, _ := cache.Lookup("other-agent"); ok {
+		t.Fatal("the removal signalled before it was visible")
+	}
+	// With no grace, the view turns stale as the stream breaks.
+	close(session)
+	waitFor(t, "the break to signal", changed)
+	if _, err := cache.List(); !errors.Is(err, ErrStale) {
+		t.Fatalf("after the break signalled: %v, want ErrStale", err)
+	}
+}
