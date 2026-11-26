@@ -543,6 +543,7 @@ impl ChunkPlanBuilder {
             .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .filter_map(|member| {
                 member
+                    .annotation
                     .comment
                     .as_ref()
                     .map(|c| (member.binding.clone(), c.clone()))
@@ -910,7 +911,7 @@ impl ChunkPlanBuilder {
         }
         plan.binding_claim_origins
             .insert(binding.to_string(), member.claim_origin.clone());
-        if let Some(comment) = &member.comment {
+        if let Some(comment) = &member.annotation.comment {
             plan.binding_comments
                 .insert(binding.to_string(), comment.clone());
         }

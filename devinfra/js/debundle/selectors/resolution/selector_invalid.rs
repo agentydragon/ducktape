@@ -75,6 +75,7 @@ pub enum ClaimValidationError {
         export_name: String,
         count: usize,
     },
+    /// Historical report variant from when a member could carry its own metadata.
     #[error(
         "logical_module {logical_module}: annotations.{export_name}.{field} conflicts with metadata already declared on the member"
     )]
