@@ -543,6 +543,7 @@ impl ChunkPlanBuilder {
             .filter(|member| !duplicate_bindings.contains(member.binding.as_str()))
             .filter_map(|member| {
                 member
+                    .annotation
                     .comment
                     .as_ref()
                     .map(|c| (member.binding.clone(), c.clone()))
