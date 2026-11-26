@@ -216,6 +216,9 @@ func (s *Session) Await(ctx context.Context, requestID string) (*action_servicep
 	backoff := retry.WithCappedDuration(30*time.Second,
 		retry.WithJitterPercent(50, retry.NewExponential(500*time.Millisecond)))
 	err = retry.Do(callCtx, backoff, func(ctx context.Context) error {
+		// Every return leaves the stream unread; cancelling releases it instead of holding it for callCtx's lifetime.
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
 		stream, err := s.client.service.WatchActionRequest(ctx, &action_servicepb.WatchActionRequestRequest{
 			RequestId: requestID,
 			Until:     action_servicepb.WatchUntil_WATCH_UNTIL_TERMINAL,
@@ -240,10 +243,7 @@ func (s *Session) Await(ctx context.Context, requestID string) (*action_servicep
 			}
 		}
 	})
-	if err != nil {
-		return last, err
-	}
-	return last, nil
+	return last, err
 }
 
 func (s *Session) delegatedContext(ctx context.Context) (context.Context, error) {
