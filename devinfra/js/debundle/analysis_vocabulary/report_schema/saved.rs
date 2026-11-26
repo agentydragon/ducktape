@@ -14,7 +14,7 @@ use crate::report_schema::{
 };
 
 #[derive(Serialize, Deserialize)]
-pub struct SavedNativeMutationWitness<'a> {
+pub(crate) struct SavedNativeMutationWitness<'a> {
     report: Cow<'a, NativeMutationWitness>,
     span: Span,
     /// Required field, nullable value: missing must differ from explicit None.
