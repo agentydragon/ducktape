@@ -26,6 +26,7 @@ assert.equal(emitted.verdict.scope, "checked-construction", emitted.log);
 assert.equal(emitted.verdict.strategy, "compiled-constructor", emitted.log);
 assert.equal(emitted.verdict.guarantee, "all-outcomes", emitted.log);
 assert.equal(emitted.verdict.every_ending_matches, true, emitted.log);
+assert.equal(emitted.verdict.observation_scope, "strict-static-data", emitted.log);
 assert.match(emitted.verdict.target_theorem, /CoreJS world/);
 assert.deepEqual(emitted.verdict.premises, []);
 assert.deepEqual(emitted.files, [entry, worker]);
@@ -122,5 +123,68 @@ for (const [name, options, existingOutput] of [
     assert.deepEqual(readdirSync(callableOut), [entry], "structural refusal changed prior output files");
   }
 }
+
+// The source and split use the same entry URL in fresh Node processes. Moving
+// read changes the first stack frame from entry.mjs to worker.mjs.
+const stackRoot = path.join(root, "same-entry-url");
+mkdirSync(stackRoot, { recursive: true });
+const stackEntry = path.join(stackRoot, entry);
+const stackWorker = path.join(stackRoot, worker);
+const stackSource = `function read() { return new Error("audit").stack; }\nexport const value = read();\n`;
+const runAtSameUrl = () => observe(stackEntry, "value").value;
+writeFileSync(stackEntry, stackSource);
+const originalStack = runAtSameUrl();
+writeFileSync(stackWorker, `function read() { return new Error("audit").stack; }\nexport { read };\n`);
+writeFileSync(stackEntry, `import { read } from "./${worker}";\nexport const value = read();\n`);
+const movedStack = runAtSameUrl();
+assert.match(originalStack, /entry\.mjs:1:26/);
+assert.match(movedStack, /worker\.mjs:1:26/);
+assert.notEqual(movedStack, originalStack);
+
+const stackFixture = prepare(path.join(root, "stack-source"), {
+  source: stackSource,
+  provider: "",
+  spec: { entry, modules: { [entry]: ["value"], [worker]: ["read"] } },
+});
+for (const [name, options] of [
+  ["structural", { structural: true }],
+  ["profiled-structural", { structural: true, hostContract: browserContract }],
+]) {
+  const stackOut = path.join(root, `stack-${name}-out`);
+  const sentinel = path.join(stackOut, entry);
+  const priorBytes = Buffer.from("keep prior output\n");
+  mkdirSync(stackOut, { recursive: true });
+  writeFileSync(sentinel, priorBytes);
+  const refused = split({
+    source: stackFixture.sourceFile,
+    spec: stackFixture.specFile,
+    out: stackOut,
+    require: "all-outcomes",
+    allowExistingOut: true,
+    ...options,
+  });
+  assert.equal(refused.status, "refused", refused.log);
+  assert.equal(refused.verdict.guarantee, null, refused.log);
+  assert.equal(refused.verdict.every_ending_matches, false, refused.log);
+  assert.equal(refused.verdict.reason_code, "strict_observation_unsupported", refused.log);
+  assert.deepEqual(readFileSync(sentinel), priorBytes, "stack-observation refusal changed prior output bytes");
+  assert.deepEqual(readdirSync(stackOut), [entry], "stack-observation refusal changed prior output files");
+}
+
+const pureSparseSource = `export const value = [1, , 2];\n`;
+const pureSparse = prepare(path.join(root, "pure-sparse"), {
+  source: pureSparseSource,
+  provider: "",
+  spec: { entry, modules: { [entry]: ["value"] } },
+});
+const pureSparseOut = path.join(root, "pure-sparse-out");
+const pureSparseResult = split({
+  source: pureSparse.sourceFile,
+  spec: pureSparse.specFile,
+  out: pureSparseOut,
+  require: "all-outcomes",
+});
+assert.equal(pureSparseResult.status, "certified", pureSparseResult.log);
+assert.deepEqual(observe(path.join(pureSparseOut, entry), "value"), observe(pureSparse.sourceFile, "value"));
 
 assert.deepEqual(snapshot(), beforeUnsupported, "all refusal paths must preserve the previously published files");

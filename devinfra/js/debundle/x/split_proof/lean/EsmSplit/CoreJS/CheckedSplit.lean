@@ -69,6 +69,55 @@ def supportsStrictStaticSource (source : Program) : Bool := Id.run do
     | _ => return false
   return true
 
+private def strictStaticAtom (declared varNames initialized : List Name) : Expr → Bool
+  | .undef | .null | .bool _ | .num _ | .str _ => true
+  | .var name => declared.contains name && (varNames.contains name || initialized.contains name)
+  | _ => false
+
+private def strictStaticValue (declared varNames initialized : List Name) : Expr → Bool
+  | .undef | .null | .bool _ | .num _ | .str _ => true
+  | .var name => declared.contains name && (varNames.contains name || initialized.contains name)
+  | .unary .not value => strictStaticValue declared varNames initialized value
+  | .unary .neg (.num _) => true
+  | .arr values => values.all (strictStaticAtom declared varNames initialized)
+  | .prim (.sparseArray _) values => values.all (strictStaticAtom declared varNames initialized)
+  | .obj properties => properties.all fun property =>
+      match property with
+      | .init (.str key) value => key != "__proto__" && strictStaticAtom declared varNames initialized value
+      | _ => false
+  | _ => false
+
+/-- Positive source-level coverage for the strict JavaScript observation contract.
+Only data declarations with total initializers are admitted: no callables, host
+reads, property reads, or other operations that can expose code identity,
+module location, or an unmodeled effect. This is checked at the common
+successful-output boundary, so selecting another CoreJS strategy cannot bypass
+it. -/
+def supportsStrictObservationSource (source : Program) : Bool := Id.run do
+  let [m] := source.modules | return false
+  if source.entry != m.name || !m.imports.isEmpty then return false
+  if m.body.map Prod.fst != List.range m.body.length then return false
+  if !m.body.all (fun (_, stmt) => match stmt with
+      | .decl .. | .varDecl _ => true
+      | _ => false) then return false
+  let declared := m.body.flatMap fun (_, stmt) => match stmt with
+    | .decl _ name _ => [name]
+    | .varDecl name => [name]
+    | _ => []
+  if !declared.Nodup then return false
+  let varNames := m.body.flatMap fun (_, stmt) => match stmt with
+    | .decl .var name _ | .varDecl name => [name]
+    | _ => []
+  let mut initialized := varNames
+  for (_, stmt) in m.body do
+    match stmt with
+    | .decl _ name value =>
+      if !strictStaticValue declared varNames initialized value then return false
+      initialized := initialized ++ [name]
+    | .varDecl _ => pure ()
+    | _ => return false
+  return true
+
 private def summarize (source : Program) : EsmSplit.Bundle :=
   match source.modules with
   | [m] => m.body.map fun (_, stmt) =>

@@ -317,7 +317,8 @@ private def tryCheckedConstructor (chunk : DeploymentChunk) (input : BundleInput
     match checked with
     | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) (some "checked-construction") [
         ("strategy", toJson "compiled-constructor"),
-        ("premises", toJson ([] : List String))
+        ("premises", toJson ([] : List String)),
+        ("observation_scope", toJson "strict-static-data")
       ])
     | .error refusal => return some (← emitRefusal options.request.label refusal (some "checked-construction"))
 
@@ -372,8 +373,21 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
   let part ← prepare chunk src work profile "bundle.mjs" timings declarations
   let { original := program, bundle := B, spec := S, plan := P, output } := part
-  let verify {α : Type} (providers : Json) (check : Json → IO (Except CertificationRefusal α)) :=
-    certifyOutput [output] providers out work checkOnly timings check
+  let strictObservationCovered := match CoreJS.LinkedInput.decodeSingletonSource program S.entry with
+    | .ok source => CoreJS.CheckedSplit.supportsStrictObservationSource source
+    | .error _ => false
+  let verify {α : Type} (providers : Json) (check : Json → IO (Except CertificationRefusal α)) :
+      IO (Except CertificationRefusal α) := do
+    certifyOutput [output] providers out work checkOnly timings fun files => do
+      let checked : Except CertificationRefusal α ← check files
+      match checked with
+      | .error refusal => pure (.error refusal)
+      | .ok result =>
+        if strictObservationCovered then pure (.ok result)
+        else pure (.error ({
+          reason := "strict JavaScript observations are not covered for this source; only static data declarations have positive coverage"
+          reasonCode := some "strict_observation_unsupported"
+        } : CertificationRefusal))
   let providers := fun _ => timePhase timings "provider_loading" fun _ => do
     let (entry, root) ← if javascriptSource chunk.source then
         let path ← IO.FS.realPath chunk.source
@@ -479,11 +493,13 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
     | .ok (some kind, active, strategy, blockers) => do
       let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
       return ← emitVerdict request.label (.ok kind.level) kind.scope
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
+        (profileVerdict profile active ++ [("strategy", toJson strategy),
+          ("observation_scope", toJson "strict-static-data")] ++ blockerFields)
     | .ok (none, active, strategy, blockers) => do
       let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
+        (profileVerdict profile active ++ [("strategy", toJson strategy),
+          ("observation_scope", toJson "strict-static-data")] ++ blockerFields)
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 

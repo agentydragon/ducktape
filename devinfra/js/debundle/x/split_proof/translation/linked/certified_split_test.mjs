@@ -129,6 +129,16 @@ for (const [first, end] of [
     const selectors = decls.map((_, i) => "#" + i);
     const generated = path.join(root, "seed-" + seed);
     prepare(code, { [left]: selectors.slice(0, cut), [entry]: selectors.slice(cut) }, [left]);
+    // Every fourth seed reads a later lexical binding before initialization.
+    // The CoreJS theorem preserves the ReferenceError, but moving its source
+    // unit changes the JavaScript rejection stack's module URL.
+    if (seed % 4 === 0) {
+      assert.equal(await observe("data:text/javascript," + encodeURIComponent(code)), "ReferenceError", code);
+      const refused = check(generated, all, "rejected");
+      assert.equal(refused.reason_code, "strict_observation_unsupported", code);
+      assert(!fs.existsSync(generated), "a TDZ stack refusal must not emit modules");
+      continue;
+    }
     assert.equal(check(generated, all, "certified").guarantee, all, code);
     assert.deepEqual(
       await observe(pathToFileURL(path.join(generated, entry))),

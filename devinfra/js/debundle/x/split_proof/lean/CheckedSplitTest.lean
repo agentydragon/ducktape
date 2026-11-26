@@ -5,6 +5,20 @@ open CoreJS CoreJS.CheckedSplit
 private def entry := "entry.mjs"
 private def worker := "worker.mjs"
 
+private def strictStaticSource : Program := {
+  entry
+  modules := [{
+    name := entry
+    imports := []
+    body := [
+      (0, .decl .var "seed" (.num 42)),
+      (1, .decl .let_ "flag" (.unary .not (.var "seed"))),
+      (2, .decl .const "record" (.obj [.init (.str "flag") (.var "flag")]))
+    ]
+    exports := []
+  }]
+}
+
 private def source : Program := {
   entry
   modules := [{
@@ -19,6 +33,9 @@ private def source : Program := {
     exports := [("result", "result")]
   }]
 }
+
+#guard supportsStrictObservationSource strictStaticSource
+#guard ! supportsStrictObservationSource source
 
 private def spec : EsmSplit.Spec := {
   entry
