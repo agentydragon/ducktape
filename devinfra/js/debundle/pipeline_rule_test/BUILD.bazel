@@ -2,7 +2,7 @@ load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("//devinfra/js/debundle:debundle_cli.bzl", "debundle_cli")
 load("//devinfra/js/debundle:pipeline.bzl", "debundle_apply")
 load("//devinfra/python:defs.bzl", "py_test")
-load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "apply_projection_inputs_test", "fixture_analysis", "fixture_apply", "invalid_package_root_test", "ownership_subset_split_graphs_test", "pipeline_report_flags_test", "selected_subset_cli_contract_test", "shared_analysis_test")
+load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "apply_projection_inputs_test", "fixture_analysis", "fixture_apply", "fixture_report_test", "invalid_package_root_test", "ownership_subset_split_graphs_test", "pipeline_report_flags_test", "selected_subset_cli_contract_test", "shared_analysis_test")
 
 package(default_testonly = True)
 
@@ -175,117 +175,63 @@ analysis_threads_action_test(
     target_under_test = ":thread_limited",
 )
 
-[
-    fixture_apply(
-        name = name,
-        analysis = ":analysis",
-        effect_conflicts_chunks = chunks,
-        effect_conflicts_jsonl = export,
-        emit_on_rejection = readable,
-        split_dependency_graphs = readable,
-    )
-    for name, export, chunks, readable in [
-        ("jsonl_export", True, [], False),
-        (
-            "jsonl_filtered",
-            True,
-            [
-                "main",
-                "static/quote'; $(printf injected) `printf injected`",
-            ],
-            False,
-        ),
-        (
-            "jsonl_readable_filtered",
-            True,
-            [
-                "main",
-                "worker",
-            ],
-            True,
-        ),
-    ]
-]
-
 pipeline_report_flags_test(
     name = "default_test",
     baseline = ":jsonl_default",
     target_under_test = ":jsonl_default",
 )
 
-pipeline_report_flags_test(
+fixture_report_test(
     name = "export_test",
-    baseline = ":jsonl_default",
+    effect_conflicts_jsonl = True,
     expected_flags = "--effect-conflicts-jsonl",
-    target_under_test = ":jsonl_export",
+    target = "jsonl_export",
 )
 
-pipeline_report_flags_test(
+fixture_report_test(
     name = "filtered_test",
-    baseline = ":jsonl_default",
+    effect_conflicts_chunks = [
+        "main",
+        "static/quote'; $(printf injected) `printf injected`",
+    ],
+    effect_conflicts_jsonl = True,
     expected_flags = "--effect-conflicts-jsonl --effect-conflicts-chunk 'main' --effect-conflicts-chunk 'static/quote'\\''; $(printf injected) `printf injected`'",
-    target_under_test = ":jsonl_filtered",
+    target = "jsonl_filtered",
 )
 
-pipeline_report_flags_test(
+fixture_report_test(
     name = "readable_test",
-    baseline = ":jsonl_readable_default",
+    effect_conflicts_chunks = [
+        "main",
+        "worker",
+    ],
+    effect_conflicts_jsonl = True,
     expected_flags = "--effect-conflicts-jsonl --effect-conflicts-chunk 'main' --effect-conflicts-chunk 'worker'",
     readable = True,
-    target_under_test = ":jsonl_readable_filtered",
+    target = "jsonl_readable_filtered",
 )
 
-[
-    fixture_apply(
-        name = name,
-        analysis = ":analysis",
-        emit_on_rejection = readable,
-        full_report_chunks = chunks,
-        full_reports = kinds,
-        split_dependency_graphs = readable,
-    )
-    for name, chunks, readable, kinds in [
-        (
-            "full_translation",
-            [],
-            False,
-            ["translation_validation"],
-        ),
-        (
-            "full_reentry",
-            [],
-            False,
-            ["export_reentry"],
-        ),
-        (
-            "full_translation_filtered",
-            ["static/quote'; $(printf injected) `printf injected`"],
-            True,
-            ["translation_validation"],
-        ),
-    ]
-]
-
-pipeline_report_flags_test(
+fixture_report_test(
     name = "full_report_test",
-    baseline = ":jsonl_default",
     expected_flags = "--full-report 'translation_validation'",
-    target_under_test = ":full_translation",
+    full_reports = ["translation_validation"],
+    target = "full_translation",
 )
 
-pipeline_report_flags_test(
+fixture_report_test(
     name = "full_report_filtered_test",
-    baseline = ":jsonl_readable_default",
     expected_flags = "--full-report 'translation_validation' --full-report-chunk 'static/quote'\\''; $(printf injected) `printf injected`'",
+    full_report_chunks = ["static/quote'; $(printf injected) `printf injected`"],
+    full_reports = ["translation_validation"],
     readable = True,
-    target_under_test = ":full_translation_filtered",
+    target = "full_translation_filtered",
 )
 
-pipeline_report_flags_test(
+fixture_report_test(
     name = "full_reentry_test",
-    baseline = ":jsonl_default",
     expected_flags = "--full-report 'export_reentry'",
-    target_under_test = ":full_reentry",
+    full_reports = ["export_reentry"],
+    target = "full_reentry",
 )
 
 shared_analysis_test(
