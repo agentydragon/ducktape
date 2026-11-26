@@ -1919,19 +1919,6 @@ rust_test(
     ],
 )
 
-rust_library(
-    name = "selector_runtime",
-    srcs = ["selectors/resolution/selector_runtime.rs"],
-    crate_root = "selectors/resolution/selector_runtime.rs",
-    edition = "2024",
-    deps = [
-        ":selector_backend_solver",
-        ":selector_ir",
-        ":selector_ortools_cpsat_backend",
-        "@crates//:anyhow",
-    ],
-)
-
 # The one selector resolve every command calls: spec entities and a parsed
 # chunk in, one outcome per entity out.
 rust_library(
@@ -1946,10 +1933,11 @@ rust_library(
         ":analysis",
         ":chunk_facts",
         ":js_ast",
+        ":selector_backend_solver",
         ":selector_ir",
         ":selector_ir_lowering",
+        ":selector_ortools_cpsat_backend",
         ":selector_outcome",
-        ":selector_runtime",
         ":shape_index",
         ":source_identity",
         ":source_match",

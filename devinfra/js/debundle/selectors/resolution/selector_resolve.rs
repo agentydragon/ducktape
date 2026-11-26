@@ -21,18 +21,19 @@ use anyhow::{Context, Result, bail, ensure};
 use chunk_facts::{RelationalFactNeeds, extract_relational_facts};
 use js_ast::statement_for_source_unit_ordinal;
 use rayon::prelude::*;
+use selector_backend_solver::solve_with_backend;
 use selector_ir::{
     ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFact, SelectorFactStore, SelectorProgram,
     SelectorTargetId, SelectorVariableId, SolverClaim, SolverResult,
 };
 use selector_ir_lowering::MemberSelectorProgramBuilder;
+use selector_ortools_cpsat_backend::{CpSatSettings, OrToolsCpSatBackend};
 use selector_outcome::{
     Candidate, ConflictSourceUnit, Differentiator, Entity, EntityRef, FreeIdentifier,
     IdentifierMeaning, InvalidSelectorError, MAX_CANDIDATES_PER_SELECTOR, NearMiss, Outcome,
     OwnershipConflict, Placement, ProjectionError, ResolvedBy, SelectorKind, SelectorOutcome,
     TemplateIdentifiers,
 };
-use selector_runtime::solve_global_selector_program;
 use shape_index::ShapeIndex;
 use source_identity::SourceUnitId;
 use source_match::chunk_resolver::ChunkResolver;
@@ -945,6 +946,7 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
         .iter()
         .map(|(_, _, projection)| &projection.program)
         .collect::<Vec<_>>();
+    let backend = OrToolsCpSatBackend::new(CpSatSettings::from_env()?);
     let solved = requests
         .par_iter()
         .map(|(index, group)| {
@@ -952,7 +954,8 @@ pub fn solve(chunks: Vec<(&Chunk<'_>, &[SpecModule], Projection)>) -> Result<Vec
             let facts = facts[*index]
                 .as_ref()
                 .expect("a chunk with a request has a fact store");
-            let result = solve_global_selector_program(&slice.program, facts)?;
+            let result = solve_with_backend(&slice.program, facts, &backend)
+                .context("global selector CP-SAT backend failed")?;
             Ok((
                 *index,
                 in_program_targets(result, &slice.new_to_old_targets),
