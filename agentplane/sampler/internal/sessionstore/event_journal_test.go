@@ -100,11 +100,11 @@ func TestJournalBlockPreservesLegacyFramesAndCommandAdmission(t *testing.T) {
 	if err != nil || current.Cursor != last+2 {
 		t.Fatalf("append cursor=%v err=%v", current, err)
 	}
-	if _, err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window, true); err == nil {
+	if err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window); err == nil {
 		t.Fatal("packed despite a failed block insert")
 	}
 	migrationExec(t, store.DB(), `ALTER TABLE sampler_event_block DROP CONSTRAINT reject_event_block`)
-	if _, err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window, true); err != nil {
+	if err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window); err != nil {
 		t.Fatal(err)
 	}
 	var blockStart, blockEnd uint64

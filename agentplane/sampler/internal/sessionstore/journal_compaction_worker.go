@@ -77,7 +77,7 @@ func (s *Store) compactPendingJournal(ctx context.Context, session pendingJourna
 	}
 	if last == 0 {
 		last = through
-	} else if _, err := s.compactJournalWindow(ctx, session.id, last-journalWindowSize+1, last, true); err != nil {
+	} else if err := s.compactJournalWindow(ctx, session.id, last-journalWindowSize+1, last); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)

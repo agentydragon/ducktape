@@ -143,7 +143,7 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 				addLockHold(&result, hold)
 				if errors.Is(err, ErrJournalBatchChanged) || errors.Is(err, ErrJournalBusy) {
 					if attempt < options.ContentionRetries {
-						if err := waitJournalRetry(ctx, options.RetryDelay); err != nil {
+						if err := waitForJournalCompaction(ctx, options.RetryDelay); err != nil {
 							return result, err
 						}
 						continue
@@ -174,7 +174,7 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 			lastProgress = now
 		}
 		if options.BatchDelay > 0 {
-			if err := waitJournalRetry(ctx, options.BatchDelay); err != nil {
+			if err := waitForJournalCompaction(ctx, options.BatchDelay); err != nil {
 				return result, err
 			}
 		}
@@ -191,7 +191,7 @@ func addLockHold(result *JournalCompactionResult, hold time.Duration) {
 	}
 }
 
-func waitJournalRetry(ctx context.Context, delay time.Duration) error {
+func waitForJournalCompaction(ctx context.Context, delay time.Duration) error {
 	if delay <= 0 {
 		return nil
 	}
@@ -222,7 +222,7 @@ func waitForJournalPause(ctx context.Context, path string) error {
 			slog.InfoContext(ctx, "sampler journal repack paused", "pause_file", path)
 			paused = true
 		}
-		if err := waitJournalRetry(ctx, time.Second); err != nil {
+		if err := waitForJournalCompaction(ctx, time.Second); err != nil {
 			return err
 		}
 	}
