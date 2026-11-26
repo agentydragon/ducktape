@@ -18,6 +18,8 @@ def main : IO Unit := do
     throw (IO.userError "valid full source footprints refused")
   unless decide (row.FootprintMatches (bundle.stmt 2)) do
     throw (IO.userError "deduplicated aliased export row refused")
+  unless decide (MetadataCells.RowLocalsDefined statements bundle row) do
+    throw (IO.userError "original declaration for aliased row refused")
   let badMetadata := bundle.take 2 ++ [{ src := "", defs := ["unexpected"] }]
   if decide (MetadataCells.Footprints statements badMetadata) then
     throw (IO.userError "metadata with an extra declaration accepted")
@@ -30,3 +32,6 @@ def main : IO Unit := do
   let badLocal : EsmSplit.Stmt := { src := "", exports := (bundle.stmt 2).exports }
   if decide (row.FootprintMatches badLocal) then
     throw (IO.userError "export without its local use accepted")
+  let missingRow : EsmSplit.LocalExportUnit := ⟨2, [("exposed", "absent")]⟩
+  if decide (MetadataCells.RowLocalsDefined statements bundle missingRow) then
+    throw (IO.userError "export without an executable declaration accepted")

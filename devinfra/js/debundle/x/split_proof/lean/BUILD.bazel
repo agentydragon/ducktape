@@ -1816,12 +1816,91 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.MetadataCells"],
     required_theorems = [
+        "CoreJS.MetadataCells.bundle_decl_cell",
         "CoreJS.MetadataCells.frame_keys",
+        "CoreJS.MetadataCells.import_alias",
+        "CoreJS.MetadataCells.import_distinct",
+        "CoreJS.MetadataCells.module_scope_cells",
         "CoreJS.MetadataCells.scope_lookup_decl",
         "CoreJS.MetadataCells.scope_lookup_none",
         "CoreJS.MetadataCells.split_import_original_cell",
     ],
     deps = [":corejs_metadata_cells"],
+)
+
+lean_library(
+    name = "corejs_terminal_entry_table",
+    srcs = ["EsmSplit/CoreJS/TerminalEntryTable.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_terminal_entry_names",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_entry_table_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalEntryTable"],
+    required_theorems = [
+        "CoreJS.TerminalEntryTable.exact_exports",
+        "CoreJS.TerminalEntryTable.resolve_table",
+    ],
+    deps = [":corejs_terminal_entry_table"],
+)
+
+lean_library(
+    name = "corejs_terminal_entry_cells",
+    srcs = ["EsmSplit/CoreJS/TerminalEntryCells.lean"],
+    deps = [
+        ":corejs_metadata_cells",
+        ":corejs_terminal_entry_names",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_entry_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalEntryCells"],
+    required_theorems = [
+        "CoreJS.TerminalEntryCells.declared_rows_of_source",
+        "CoreJS.TerminalEntryCells.entry_cells",
+    ],
+    deps = [":corejs_terminal_entry_cells"],
+)
+
+lean_library(
+    name = "corejs_linked_entry_find",
+    srcs = ["EsmSplit/CoreJS/LinkedEntryFind.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "corejs_linked_entry_find_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LinkedEntryFind"],
+    required_theorems = [
+        "CoreJS.LinkedEntryFind.loaded_find",
+        "CoreJS.LinkedEntryFind.scopes_find",
+    ],
+    deps = [":corejs_linked_entry_find"],
+)
+
+lean_library(
+    name = "corejs_terminal_linked_exports",
+    srcs = ["EsmSplit/CoreJS/TerminalLinkedExports.lean"],
+    deps = [
+        ":corejs_linked_entry_find",
+        ":corejs_terminal_entry_cells",
+        ":corejs_terminal_entry_table",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_linked_exports_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalLinkedExports"],
+    required_theorems = ["CoreJS.TerminalLinkedExports.linked_table"],
+    deps = [":corejs_terminal_linked_exports"],
 )
 
 lean_library(
@@ -1893,4 +1972,25 @@ lean_proof_test(
         "CoreJS.MetadataCells.row_footprint_iff",
     ],
     deps = [":corejs_terminal_footprints"],
+)
+
+lean_library(
+    name = "corejs_terminal_plan_family",
+    srcs = ["EsmSplit/CoreJS/TerminalPlanFamily.lean"],
+    deps = [
+        ":corejs_terminal_linked_exports",
+        ":corejs_terminal_plan_scope",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_plan_family_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalPlanFamily"],
+    required_theorems = [
+        "CoreJS.TerminalPlanFamily.entry_in_order",
+        "CoreJS.TerminalPlanFamily.family",
+        "CoreJS.TerminalPlanFamily.world_result",
+    ],
+    deps = [":corejs_terminal_plan_family"],
 )
