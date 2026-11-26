@@ -3551,6 +3551,8 @@ flowchart LR
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
     IDENTITY_OWNERSHIP_DESIGN[Decision: Identity binding, store, delete rule and agent teardown]
     IDENTITY_READERS_BEHIND_POLICY_SERVICE[In flight: contract the Kubernetes Identity readers]
+    RECORD_COLOCATION_DESIGN[Unscheduled: which records share a database or service]
+    IDENTITY_OWNERSHIP_DESIGN -. cross-store invariants .-> RECORD_COLOCATION_DESIGN
     SESSION_SUBAGENT_DELEGATION[Design: a Session creates and messages a sub-Session]
     SESSION_ACCESS_GROUPING_DESIGN --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox target, grant and migration]
     SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
@@ -3596,6 +3598,28 @@ services plus the Dispatcher wake path on it in staging. Next: per-service contr
 Controller reconciler and the `orchestration_v1` writer. State and remaining steps: [Identity ownership § readers](identity_ownership.md#readers-behind-policyservice).
 **Exit:** only the Policy Controller holds `identities` RBAC, and the verifier contract documents
 watch-propagated revocation.
+
+### `RECORD_COLOCATION_DESIGN` — which records share a database or service
+
+**Unscheduled, raised by the operator 2026-11-26.** Decide which Agentplane records live in the same
+database, and behind the same service, so that invariants spanning them can be checked in one
+transaction instead of straddling authorities. Seams seen so far:
+
+- Session deletion vs its Notification inbox and subscriptions: nothing retires an inbox whose owner is
+  gone, so retries go on forever (`SESSION_AND_INBOX_LIFETIME`, stranded inboxes 2026-11-26).
+- Teardown order across Identity, Sandbox and Session, and the delete rule's reference check, which
+  spans Kubernetes and the Dispatcher non-transactionally (`IDENTITY_OWNERSHIP_DESIGN`).
+- "X is owned by Y" edges: Identity → PolicyBindings and Sandbox → launcher grants by Kubernetes
+  garbage collection; Session → inbox, History and receipts across three services' databases.
+- Read-your-writes across services: a watch-fed reader misses a just-created Identity (#20298).
+
+For each edge, choose either to put both records in one store with one owner (transactional), or a named
+cross-service protocol: owner-driven cascade with fencing, tombstones, or an outbox. Do not move any
+record before deciding. Feeds `KUBERNETES_DECOUPLING_DESIGN`; the reference inventory in
+[Identity ownership](identity_ownership.md#follow-ups) is its first input. Related:
+`NOTIFICATION_SERVICE_SPLIT`.
+**Exit:** a table of record kinds → owning service and store, the ownership edges between them, and
+the mechanism chosen per edge.
 
 ### `IDENTITY_SYSTEM_TESTS` — finish automated identity-boundary acceptance
 

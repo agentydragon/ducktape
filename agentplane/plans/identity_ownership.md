@@ -274,4 +274,7 @@ Who runs it:
   live-reference rule (decision 3).
 - Identity trace under `KUBERNETES_DECOUPLING_DESIGN`, starting with whether Sandbox bindings can move.
 - Retire the app's name-matched Session check once Sessions carry a finished state.
-- Trace Connections and launch origins as references.
+- Inventory every reference to an Identity (Sandbox `spec.identity`, PolicyBindings,
+  WorkloadCredentials, Dispatcher Sessions, inbox owners, History, app Threads, Connections, launch
+  origins): owner, name-only or UID-pinned, behaviour when the Identity goes. First input to
+  [`RECORD_COLOCATION_DESIGN`](task_dag.md#record_colocation_design--which-records-share-a-database-or-service).
