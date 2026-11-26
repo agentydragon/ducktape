@@ -24,7 +24,7 @@ theorem body_lookup (footprints : Footprints body B) {p : Nat × Stmt} (member :
   intro other same
   exact nodup_keys footprints.uniqueIds same member
 
-/-- The actual allocation frame has exactly the source declaration names at
+/-- A name-aligned frame has exactly the source declaration names at
 an original executable ID. IDs absent from the source have no frame. -/
 theorem frame_keys (footprints : Footprints body B) (frameNames : FramesOf body frames)
     {id : Nat} {name : Name} :
@@ -61,7 +61,7 @@ theorem scope_lookup_none (footprints : Footprints body B) (frameNames : FramesO
   exact declared
 
 /-- A module containing the original declaration identity resolves the binding
-to that unit's allocation frame. -/
+to that unit's frame. -/
 theorem scope_lookup_decl (footprints : Footprints body B) (frameNames : FramesOf body frames)
     (unique : EsmSplit.UniqueDefs B) {m : Module} {id : Nat} {name : Name} {stmt : Stmt}
     (inModule : (id, stmt) ∈ m.body) (inSource : body.lookup id = some stmt)
@@ -79,7 +79,7 @@ theorem scope_lookup_decl (footprints : Footprints body B) (frameNames : FramesO
   · exact ⟨(id, stmt), inModule, rfl⟩
 
 /-- The same original declaration in the source and a generated module is
-resolved to one present live address, regardless of its position in either
+resolved to one present scope address, regardless of its position in either
 body. The module contains the original declaration unit. -/
 theorem source_and_module_cell (footprints : Footprints body B) (frameNames : FramesOf body frames)
     (unique : EsmSplit.UniqueDefs B) {source m : Module} (sourceBody : source.body = body)
@@ -98,7 +98,7 @@ theorem source_and_module_cell (footprints : Footprints body B) (frameNames : Fr
     (scope_lookup_decl footprints frameNames unique inModule inSource declared).trans address⟩
 
 /-- An actual program import of a provider's public alias resolves to the
-original source cell. The module lookup and alias lookup are structural facts
+original source scope address. The module lookup and alias lookup are structural facts
 of the constructor's plan, not an execution comparison. -/
 theorem source_and_import_cell (footprints : Footprints body B) (frameNames : FramesOf body frames)
     (unique : EsmSplit.UniqueDefs B) {source provider : Module} (sourceBody : source.body = body)
