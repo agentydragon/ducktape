@@ -23,12 +23,12 @@ theorem ParentAt.after_local {s t : State W} (h : ParentAt s env base cell ctor 
   obtain ⟨H, C, rfl, _⟩ := hm _ _ _ _ (Sees.refl rfl) hu
   refine ⟨h.lookup, ?_, ?_⟩
   · obtain ⟨mutable, hb⟩ := h.binding
-    exact ⟨mutable, (by simpa only [State.cellAt_put, if_neg hc] using hb :
+    exact ⟨mutable, (by simpa only [State.cellAt_put, ite_eq_right hc] using hb :
       (s.put (i + 1) H C).cellAt cell = _)⟩
   · obtain ⟨o, f, closed, fields, w, e, c, hob, rest⟩ := h.object
     refine ⟨o, f, closed, fields, w, e, c, ?_, rest⟩
     change (s.put (i + 1) H C).objAt ctor = _
-    simpa only [State.objAt_put, if_neg ho] using hob
+    simpa only [State.objAt_put, ite_eq_right ho] using hob
 
 /-- Evaluate a derived initializer with its parent already resolved, charging the fuel consumed by
 the derived expression and its variable reference. -/
