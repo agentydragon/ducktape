@@ -14,7 +14,10 @@ private def run (manifestPath out : System.FilePath) (checkOnly : Bool) : IO Uni
   let out ← IO.ofExcept (outputDirectory out)
   IO.FS.withTempDir fun work => do
     let input ← readBundle chunk.source work true false
-    let prepared ← IO.ofExcept (TerminalExportArtifact.prepare input.program input.source spec)
+    let prepared ← match TerminalExportArtifact.attempt input.program input.source spec with
+      | .notApplicable => throw (IO.userError "terminal-export-not-applicable")
+      | .refused reason => throw (IO.userError reason)
+      | .prepared prepared => pure prepared
     let part : OutputPart := { programs := prepared.programs, source := input.source, input := input.input, work }
     let verified ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work checkOnly false fun files =>
       match TerminalExportArtifact.verify input.program files prepared with

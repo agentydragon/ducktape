@@ -112,6 +112,44 @@ def prepare (original : Json) (sourceText : String) (request : EsmSplit.Spec) :
     else throw "expected a sequential request"
   else throw "provider must differ from entry"
 
+/-- This source-only dispatch test identifies the bounded fragment before
+looking at the authored placement. It is not evidence for certification:
+`prepare` still checks the exact AST ranges, source, spec and plan. -/
+private def candidate (nodes : Array Json) : Bool := Id.run do
+  let [declaration, exportNode] := nodes.toList | return false
+  unless Lower.typ declaration == "VariableDeclaration" && Lower.str (Lower.fld declaration "kind") == "const" do
+    return false
+  let [declarator] := (Lower.items (Lower.fld declaration "declarations")).toList | return false
+  let identifier := Lower.fld declarator "id"
+  unless Lower.typ identifier == "Identifier" do return false
+  let binding := Lower.str (Lower.fld identifier "name")
+  unless !binding.isEmpty do return false
+  let initializer := Lower.fld declarator "init"
+  unless Lower.typ initializer == "Literal" && (Lower.str (Lower.fld initializer "lit")).startsWith "n:" do
+    return false
+  unless Lower.typ exportNode == "ExportNamedDeclaration" && Lower.isNull (Lower.fld exportNode "declaration") &&
+      Lower.isNull (Lower.fld exportNode "source") do return false
+  let [specifier] := (Lower.items (Lower.fld exportNode "specifiers")).toList | return false
+  return Lower.typ specifier == "ExportSpecifier" && Lower.specName (Lower.fld specifier "local") == binding &&
+    Lower.specName (Lower.fld specifier "exported") == binding
+
+/-- A recognized source owns its request: proof or placement failures refuse
+rather than falling through to another strategy. -/
+inductive Attempt (original : Json) (sourceText : String) (request : EsmSplit.Spec) where
+  | notApplicable
+  | refused (reason : String)
+  | prepared (result : Prepared original sourceText request)
+
+def attempt (original : Json) (sourceText : String) (request : EsmSplit.Spec) : Attempt original sourceText request :=
+  match ESTreeUnits.nodes original with
+  | .error reason => .refused reason
+  | .ok nodes =>
+    if candidate nodes then
+      match prepare original sourceText request with
+      | .error reason => .refused reason
+      | .ok result => .prepared result
+    else .notApplicable
+
 private def noProviders := Json.mkObj []
 
 /-- Exact staged source and output, including the live entry cell and the
@@ -148,6 +186,7 @@ theorem verify_sound {original files sourceText request}
     (_accepted : verify original files prepared = .ok proof) : Verified original files prepared := proof.down
 
 #print axioms prepare
+#print axioms attempt
 #print axioms verify
 #print axioms verify_sound
 

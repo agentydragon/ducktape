@@ -717,6 +717,7 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.LowerSplit.TerminalExportArtifact"],
     required_theorems = [
+        "EsmSplit.LowerSplit.TerminalExportArtifact.attempt",
         "EsmSplit.LowerSplit.TerminalExportArtifact.prepare",
         "EsmSplit.LowerSplit.TerminalExportArtifact.verify",
         "EsmSplit.LowerSplit.TerminalExportArtifact.verify_sound",

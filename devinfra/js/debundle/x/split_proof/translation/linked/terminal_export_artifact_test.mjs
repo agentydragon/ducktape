@@ -45,6 +45,7 @@ for (const [name, badSpec] of [
   writeFileSync(badSpecFile, JSON.stringify(badSpec));
   const refused = run({ spec: badSpecFile, allowExistingOut: true });
   assert.equal(refused.status, "refused", refused.log);
+  assert.doesNotMatch(refused.reason, /terminal-export-not-applicable/, refused.log);
   assert.deepEqual(readFileSync(entryFile), entryBytes);
   assert.deepEqual(readFileSync(workerFile), workerBytes);
   assert.deepEqual(readdirSync(out).sort(), [entry, worker].sort());
@@ -54,3 +55,15 @@ const fresh = path.join(root, "wrong-ordinal-fresh");
 const badSpecFile = path.join(root, "wrong-ordinal.json");
 assert.equal(run({ spec: badSpecFile, out: fresh }).status, "refused");
 assert(!existsSync(fresh));
+
+// A different valid source belongs to another strategy, not a refusal by this one.
+const other = prepare(path.join(root, "other-source"), {
+  source: "const a = 1;\nexport const b = 2;\n",
+  provider: "",
+  spec,
+});
+const otherOut = path.join(root, "other-source-out");
+const otherResult = split({ source: other.sourceFile, spec: other.specFile, out: otherOut, require: "all-outcomes" });
+assert.equal(otherResult.status, "refused", otherResult.log);
+assert.match(otherResult.reason, /terminal-export-not-applicable/, otherResult.log);
+assert(!existsSync(otherOut));
