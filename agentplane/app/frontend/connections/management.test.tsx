@@ -185,9 +185,8 @@ it("requires confirmation, permits cancelling, and preserves the row after unlin
   const container = await render();
   await act(async () => button(container, "Unlink").click());
   expect(unbinds(sent)).toEqual([]);
-  expect(container.textContent).toContain("Already claimed executions are not stopped");
   expect(container.querySelector(`[data-connection-id="${row.id}"]`)?.textContent).toContain(
-    "Already claimed executions are not stopped"
+    "Work already claimed will continue"
   );
   await act(async () => button(container, "Cancel").click());
   expect(unbinds(sent)).toEqual([]);
