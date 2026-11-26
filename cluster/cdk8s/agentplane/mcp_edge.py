@@ -25,9 +25,16 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from agentplane.crd_group import GROUP
 from agentplane.mcp_edge.settings import Settings
-from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, ServerTLSListener
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    APP_URI,
+    MCP_EDGE_URI,
+    POLICY_CONTROLLER_URI,
+    PolicyServicePeer,
+    ServerTLSListener,
+)
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, app as app_component, database, workload_tls
+from cluster.cdk8s.agentplane import actions, app as app_component, database, policy_controller, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.mcp_routes import add_public_route
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -124,6 +131,10 @@ class McpEdge(Construct):
             actions_tls=serving_tls.client_tls(ACTIONS_URI, client_uri=MCP_EDGE_URI),
             actions_target=actions.service(env.namespace).authority,
             policy_namespace=env.namespace,
+            policy_service=PolicyServicePeer(
+                target=policy_controller.tls_service(env.namespace).authority,
+                tls=serving_tls.client_tls(POLICY_CONTROLLER_URI, client_uri=MCP_EDGE_URI),
+            ),
             actions_token_file=None,
             oauth_file=Path(_SECRET_DIR) / "oauth" if props.oauth_secret_name is not None else None,
             host="0.0.0.0",
@@ -200,6 +211,7 @@ class McpEdge(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 actions.service(namespace).egress(),
+                policy_controller.tls_service(namespace).egress(),
                 *self.env.mcp_edge.extra_egress,
             ],
         )

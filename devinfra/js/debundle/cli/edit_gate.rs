@@ -383,7 +383,7 @@ fn priority_for_modules(
     if priority.len() != modules.len()
         || priority.iter().collect::<BTreeSet<_>>() != modules.iter().collect()
     {
-        return Err(anyhow::Error::new(::gate::ImportScheduleError::PriorityPaths {
+        return Err(anyhow::Error::new(::esm_schedule::ImportScheduleError::PriorityPaths {
             expected: modules.iter().cloned().collect(),
             actual: priority,
         }))

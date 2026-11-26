@@ -10,10 +10,35 @@ use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
 use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};
-use super::sync_effects::noninvoking_initialization::CompletedInitialization;
 use super::{DataflowOpacityCause, EffectCell, ExportLinkage, StatementFacts, StatementKind};
 use crate::analysis_inputs::ProofDependencies;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss, SourceLocation};
+
+/// Terminal evidence that the synchronous interpreter sealed this source
+/// owner's initialization. Never composed through a child ledger, generic
+/// Evaluate result, callee outcome or invocation memo.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CompletedInitialization {
+    owner: SourceUnitOrdinal,
+    dependencies: ProofDependencies,
+}
+
+impl CompletedInitialization {
+    pub(crate) fn new(owner: SourceUnitOrdinal, dependencies: ProofDependencies) -> Self {
+        Self {
+            owner,
+            dependencies,
+        }
+    }
+
+    pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
+        self.owner == owner
+    }
+
+    pub(crate) fn dependencies(&self) -> &ProofDependencies {
+        &self.dependencies
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct InitializationEffectEvidence {

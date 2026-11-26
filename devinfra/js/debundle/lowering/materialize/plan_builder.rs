@@ -15,10 +15,10 @@ use analysis::{
     top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
+use esm_schedule::{EsmImportOrder, EsmImportSchedule};
 use frontend_elaboration::MemberClaimProjection;
 use frontend_elaboration::chunk_ast::{SourceExportIdentity, TopLevelDecl, binding_declaration};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
-use gate::{EsmImportOrder, EsmImportSchedule};
 use graph::assignment_assembly::assemble_assignment_with_source_unit_claims;
 use graph::{
     DependencyGraphAndAtomicGroups, DestructuringDeclaratorGroup,

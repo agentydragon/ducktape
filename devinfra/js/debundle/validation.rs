@@ -740,8 +740,8 @@ pub fn validate_assignment_with_priority(
     nodes: &BTreeSet<ModuleId>,
     priority: &[ModulePath],
 ) -> Result<
-    (AssignmentValidation, crate::esm_schedule::EsmImportSchedule),
-    crate::esm_schedule::ImportScheduleError,
+    (AssignmentValidation, esm_schedule::EsmImportSchedule),
+    esm_schedule::ImportScheduleError,
 > {
     let entry = assignment.entry_destination().module_id();
     let by_path: BTreeMap<_, _> = nodes
@@ -754,7 +754,7 @@ pub fn validate_assignment_with_priority(
         || priority.len() != by_path.len()
         || priority.iter().collect::<BTreeSet<_>>() != by_path.keys().collect()
     {
-        return Err(crate::esm_schedule::ImportScheduleError::PriorityPaths {
+        return Err(esm_schedule::ImportScheduleError::PriorityPaths {
             expected: by_path.keys().cloned().collect(),
             actual: priority.to_vec(),
         });
@@ -784,8 +784,8 @@ pub fn validate_assignment_with_schedule(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
-    schedule: &crate::esm_schedule::EsmImportSchedule,
-) -> Result<AssignmentValidation, crate::esm_schedule::ImportScheduleError> {
+    schedule: &esm_schedule::EsmImportSchedule,
+) -> Result<AssignmentValidation, esm_schedule::ImportScheduleError> {
     let verdict = crate::realizability::check_realizability_with_schedule(
         dependency_graph,
         assignment,
@@ -805,7 +805,7 @@ pub(crate) fn validation_from_verdict(
     assignment: &ModuleAssignment,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     verdict: RealizabilityVerdict,
-    schedule: &crate::esm_schedule::EsmImportSchedule,
+    schedule: &esm_schedule::EsmImportSchedule,
 ) -> AssignmentValidation {
     let cross_rebinds = render_cross_rebinds(dependency_graph, &verdict, module_path);
     if verdict.unrealizable_sccs.is_empty() {

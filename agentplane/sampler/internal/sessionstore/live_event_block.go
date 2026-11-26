@@ -10,6 +10,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 )
 
+const insertJournalBlock = `INSERT INTO sampler_event_block(session_id,first_sequence,last_sequence,payload) VALUES($1,$2,$3,$4)`
+
 type pendingJournalFrame struct {
 	sequence uint64
 	wire     []byte

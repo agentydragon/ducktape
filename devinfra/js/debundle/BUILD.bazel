@@ -394,6 +394,7 @@ rust_library(
         "facts/array_spreads.rs",
         "facts/at_init_fallback.rs",
         "facts/at_init_fallback_tests.rs",
+        "facts/binding_effect_coverage.rs",
         "facts/callable_inference.rs",
         "facts/cell_overlap.rs",
         "facts/collector.rs",
@@ -604,57 +605,62 @@ rust_test(
     ],
 )
 
+_GATE_SRCS = [
+    "assignment_analysis.rs",
+    "assignment_analysis/tests.rs",
+    "assignment_inputs.rs",
+    "counted_digraph.rs",
+    "gate.rs",
+    "realizability/condensation_order.rs",
+    "realizability/condensation_order_proptest.rs",
+    "realizability/effect_translation_validation.rs",
+    "realizability/esm_simulator.rs",
+    "realizability/incremental_quotient.rs",
+    "realizability/mod.rs",
+    "realizability/tests.rs",
+    "realizability/translation_validation.rs",
+    "report_builders.rs",
+    "validation.rs",
+]
+
+_GATE_DEPS = [
+    ":analysis",
+    ":analysis_model",
+    ":source_identity",
+    "//devinfra/js/debundle/graph",
+    "//devinfra/js/debundle/spec",
+    "@crates//:petgraph",
+    "@crates//:rayon",
+    "@crates//:rustc-hash",
+    "@crates//:serde",
+    "@crates//:serde_json",
+    "@crates//:strum",
+    "@crates//:swc_atoms",
+    "@crates//:swc_ecma_ast",
+    "@crates//:thiserror",
+]
+
 rust_library(
     name = "gate",
-    srcs = [
-        "assignment_analysis.rs",
-        "assignment_analysis/tests.rs",
-        "assignment_inputs.rs",
-        "counted_digraph.rs",
-        "esm_import_order.rs",
-        "esm_schedule.rs",
-        "esm_schedule/construct.rs",
-        "gate.rs",
-        "realizability/condensation_order.rs",
-        "realizability/condensation_order_proptest.rs",
-        "realizability/effect_translation_validation.rs",
-        "realizability/esm_simulator.rs",
-        "realizability/incremental_quotient.rs",
-        "realizability/mod.rs",
-        "realizability/tests.rs",
-        "realizability/translation_validation.rs",
-        "report_builders.rs",
-        "validation.rs",
-    ],
+    srcs = _GATE_SRCS,
     crate_root = "gate.rs",
     edition = "2024",
-    deps = [
-        ":analysis",
-        ":analysis_model",
-        ":source_identity",
-        "//devinfra/js/debundle/graph",
-        "//devinfra/js/debundle/spec",
-        "@crates//:petgraph",
-        "@crates//:rayon",
-        "@crates//:rustc-hash",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:strum",
-        "@crates//:swc_atoms",
-        "@crates//:swc_ecma_ast",
-        "@crates//:thiserror",
-    ],
+    deps = _GATE_DEPS + ["//devinfra/js/debundle/esm_schedule"],
 )
 
+# Compiled from the gate sources rather than `crate = ":gate"` so its
+# realizability oracles link the `esm_schedule` crate with the test-only
+# schedule-construction oracle.
 rust_test(
     name = "gate_test",
-    crate = ":gate",
+    srcs = _GATE_SRCS,
+    crate_root = "gate.rs",
     edition = "2024",
-    deps = [
+    deps = _GATE_DEPS + [
         ":raw_js_test_support",
         ":report_fixtures",
+        "//devinfra/js/debundle/esm_schedule:esm_schedule_test_oracle",
         "@crates//:proptest",
-        "@crates//:serde_json",
         "@crates//:swc_common",
     ],
 )

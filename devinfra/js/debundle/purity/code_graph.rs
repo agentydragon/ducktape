@@ -137,6 +137,22 @@ pub(crate) enum ChunkBinding {
     PlainData,
 }
 
+/// Refines a chunk's structural local-class construction and Set-iterable
+/// shapes into proofs using synchronous-execution evidence under default
+/// analysis inputs. The synchronous interpreter implements it; purity code
+/// graphs built outside full chunk analysis take it as a parameter.
+pub(crate) trait ShapeProofRefinement {
+    fn refine(
+        &self,
+        body: &[TopLevelItemView<'_>],
+        value_flow: &crate::facts::ChunkValueFlow,
+        plain_array_bindings: &BTreeSet<String>,
+        local_class_construction: &LocalClassConstructionShapes,
+        set_iterable_shapes: SetIterableShapes,
+        shadowed: &BTreeSet<&'static str>,
+    ) -> (LocalClassConstructionProof, SetIterableProof);
+}
+
 impl ChunkCodeGraph {
     pub(crate) fn fresh_record_proof(&self, key: u32) -> Option<&FreshRecordProof> {
         self.fresh_record_proofs.get(&key)
@@ -149,8 +165,15 @@ impl ChunkCodeGraph {
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
+        refinement: &dyn ShapeProofRefinement,
     ) -> Self {
-        Self::build_with_declared_pure_new(body, shadowed, declared_pure, &BTreeSet::new())
+        Self::build_with_declared_pure_new(
+            body,
+            shadowed,
+            declared_pure,
+            &BTreeSet::new(),
+            refinement,
+        )
     }
 
     pub(crate) fn build_with_declared_pure_new(
@@ -158,6 +181,7 @@ impl ChunkCodeGraph {
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
         declared_pure_new: &BTreeSet<String>,
+        refinement: &dyn ShapeProofRefinement,
     ) -> Self {
         Self::build_full(
             body,
@@ -167,9 +191,12 @@ impl ChunkCodeGraph {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeSet::new(),
+            &BTreeSet::new(),
+            refinement,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_full(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
@@ -178,29 +205,8 @@ impl ChunkCodeGraph {
         declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
         imported_purities: &BTreeMap<String, Arc<Purity>>,
         fluent_bindings: &BTreeSet<String>,
-    ) -> Self {
-        Self::build_full_with_stable_vars(
-            body,
-            shadowed,
-            declared_pure,
-            declared_pure_new,
-            declared_pure_members,
-            imported_purities,
-            fluent_bindings,
-            &BTreeSet::new(),
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_full_with_stable_vars(
-        body: &[TopLevelItemView<'_>],
-        shadowed: &BTreeSet<&'static str>,
-        declared_pure: &BTreeSet<String>,
-        declared_pure_new: &BTreeSet<String>,
-        declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
-        imported_purities: &BTreeMap<String, Arc<Purity>>,
-        fluent_bindings: &BTreeSet<String>,
         stable_var_number_candidates: &BTreeSet<Id>,
+        refinement: &dyn ShapeProofRefinement,
     ) -> Self {
         // No program summary reaches this path: every import stays an
         // order-dependent cell.
@@ -223,19 +229,14 @@ impl ChunkCodeGraph {
             &plain_data_bindings,
             dynamic_scope,
         );
-        let prepared_sync_index =
-            crate::facts::sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index(
-                body,
-                &value_flow,
-                &crate::analysis_inputs::AnalysisInputs::default(),
-                &plain_array_bindings,
-                &local_class_construction_proof,
-                set_iterable_proof,
-                shadowed,
-            );
-        let local_class_construction_proof =
-            prepared_sync_index.local_class_construction_proof().clone();
-        let set_iterable_proof = prepared_sync_index.set_iterable_proof().clone();
+        let (local_class_construction_proof, set_iterable_proof) = refinement.refine(
+            body,
+            &value_flow,
+            &plain_array_bindings,
+            &local_class_construction_proof,
+            set_iterable_proof,
+            shadowed,
+        );
         Self::build_full_with_prepared_plain_data(
             body,
             shadowed,

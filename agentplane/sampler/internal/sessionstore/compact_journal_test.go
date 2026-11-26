@@ -45,7 +45,7 @@ func appendTestJournalThrough(t *testing.T, store *Store, id string, through, ov
 	}
 }
 
-func TestCompactJournalWindowDryRunApplyAndReplay(t *testing.T) {
+func TestLegacyJournalWindowPacksSmallerBlocksAndReplays(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	const window = eventcodec.MaxBlockEntries
@@ -61,8 +61,8 @@ func TestCompactJournalWindowDryRunApplyAndReplay(t *testing.T) {
 	// An imported journal with a missing cursor can pack each side independently.
 	migrationExec(t, store.DB(), `DELETE FROM sampler_event WHERE session_id=$1 AND sequence=$2`, session.ID, gap)
 	appendTestJournalThrough(t, store, session.ID, 2*window, 0)
-	if result, err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window, true); err != nil || result.Blocks != 1 {
-		t.Fatalf("pack existing block: result=%+v err=%v", result, err)
+	if err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window); err != nil {
+		t.Fatal(err)
 	}
 	appendTestJournalThrough(t, store, session.ID, tail, 0)
 	var previousBlock []byte
@@ -74,19 +74,19 @@ func TestCompactJournalWindowDryRunApplyAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := store.compactJournalWindow(t.Context(), session.ID, 1, 3*window, false)
-	if err != nil || proposal.Events == 0 || proposal.Blocks == 0 || proposal.StoredBytes <= proposal.PackedBytes {
-		t.Fatalf("dry run result=%+v err=%v", proposal, err)
+	storedBytes := func() int {
+		return postgres.Count(t, store.DB(), `SELECT
+			(SELECT COALESCE(sum(octet_length(entry)),0) FROM sampler_event WHERE session_id=$1) +
+			(SELECT COALESCE(sum(octet_length(payload)),0) FROM sampler_event_block WHERE session_id=$1)`, session.ID)
 	}
-	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); got != 1 {
-		t.Fatalf("dry run changed the block count to %d", got)
+	before := storedBytes()
+	for last := uint64(window); last <= 3*window; last += window {
+		if err := store.compactJournalWindow(t.Context(), session.ID, last-window+1, last); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1`, session.ID); got != len(original)-window {
-		t.Fatalf("dry run changed the standalone row count to %d", got)
-	}
-	result, err := store.compactJournalWindow(t.Context(), session.ID, 1, 3*window, true)
-	if err != nil || result != proposal {
-		t.Fatalf("apply result=%+v proposal=%+v err=%v", result, proposal, err)
+	if after := storedBytes(); after >= before {
+		t.Fatalf("packing changed stored journal bytes from %d to %d, want a reduction", before, after)
 	}
 	var existing []byte
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT payload FROM sampler_event_block
@@ -132,8 +132,8 @@ func TestCompactJournalWindowDryRunApplyAndReplay(t *testing.T) {
 	if current, err := store.CurrentCursor(t.Context(), session.ID); err != nil || current != tail {
 		t.Fatalf("apply changed the session cursor to %d: %v", current, err)
 	}
-	if repeated, err := store.compactJournalWindow(t.Context(), session.ID, 1, 3*window, true); err != nil || repeated != (JournalCompactionResult{}) {
-		t.Fatalf("repeat apply result=%+v err=%v", repeated, err)
+	if blocks, err := prepareJournalBlocks(t.Context(), store.DB(), session.ID, 1, 3*window); err != nil || len(blocks) != 0 {
+		t.Fatalf("repeat pass prepared %d blocks: %v", len(blocks), err)
 	}
 }
 
@@ -146,7 +146,7 @@ func TestCompactJournalResumesAfterRejectedWindow(t *testing.T) {
 	if err != nil || len(original) != window {
 		t.Fatalf("read %d original frames: %v", len(original), err)
 	}
-	if _, err := store.compactJournalWindow(t.Context(), session.ID, 1, window, true); err != nil {
+	if err := store.compactJournalWindow(t.Context(), session.ID, 1, window); err != nil {
 		t.Fatalf("commit first completed window: %v", err)
 	}
 	var frames [][]byte
@@ -169,7 +169,7 @@ func TestCompactJournalResumesAfterRejectedWindow(t *testing.T) {
 		END; $$`, window+1, tampered))
 	migrationExec(t, store.DB(), `CREATE TRIGGER replace_block_payload BEFORE INSERT ON sampler_event_block
 		FOR EACH ROW EXECUTE FUNCTION replace_block_payload()`)
-	if _, err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window, true); err == nil {
+	if err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window); err == nil {
 		t.Fatal("tampered block payload was committed")
 	}
 	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); got != 1 {
@@ -180,8 +180,8 @@ func TestCompactJournalResumesAfterRejectedWindow(t *testing.T) {
 		t.Fatalf("failed verification left %d source rows in the rejected window, want %d", got, window)
 	}
 	migrationExec(t, store.DB(), `DROP TRIGGER replace_block_payload ON sampler_event_block`)
-	if result, err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window, true); err != nil || result.Events != window || result.Blocks != 1 {
-		t.Fatalf("resume result=%+v err=%v", result, err)
+	if err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window); err != nil {
+		t.Fatal(err)
 	}
 	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1`, session.ID); got != 0 {
 		t.Fatalf("resumed packing left %d standalone rows", got)

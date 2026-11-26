@@ -7,8 +7,6 @@ mod array_transfer;
 mod callable_body_facts;
 mod completion;
 mod effect_coverage;
-pub use effect_coverage::BindingEffectAuthority;
-pub(crate) use effect_coverage::{BindingEffectCoverage, SavedBindingEffectCoverage};
 pub mod execution_index;
 pub mod interpreter;
 mod kernel;

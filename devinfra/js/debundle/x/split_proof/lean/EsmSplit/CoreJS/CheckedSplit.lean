@@ -42,6 +42,13 @@ def Sound (source : Program) (spec : EsmSplit.Spec) (requested : Guarantee) (out
   SameExports source output ∧
   ScheduleEquivalent requested (fun _ => True) source output
 
+/-- Executable statements from the single original module, in original order.
+Other source shapes are rejected by the constructor. -/
+def sourceStatements (source : Program) : List Stmt :=
+  match source.modules with
+  | [m] => m.body.map Prod.snd
+  | _ => []
+
 /-- The layout used to construct the program is also available to an artifact
 writer. The guarantee is tied to the CoreJS program. -/
 structure Construction (source : Program) (spec : EsmSplit.Spec) (requested : Guarantee) where
@@ -49,6 +56,9 @@ structure Construction (source : Program) (spec : EsmSplit.Spec) (requested : Gu
   plan : EsmSplit.Plan
   program : Program
   sound : Sound source spec requested program
+  footprints : FootprintsOfSyntax (sourceStatements source) bundle
+  planned : plan = EsmSplit.mkPlan bundle spec
+  constructed : program = splitProgram (sourceStatements source) bundle plan
 
 private theorem forRequest {source output : Program}
     (requested : Guarantee) (runs : ∀ w n, runProgram w n source = runProgram w n output) :
@@ -64,8 +74,8 @@ private theorem forRequest {source output : Program}
 results carry the requested guarantee for every CoreJS world. -/
 def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarantee) :
     Except String (Construction source spec requested) := do
-  unless spec.order.isEmpty && !spec.sequential && !spec.privateEntryBody do
-    throw "checked split supports placement without an explicit schedule or private entry body"
+  unless !spec.privateEntryBody && (spec.sequential || spec.order.isEmpty) do
+    throw "checked split requires no private entry body and an explicit sequential order when an order is supplied"
   EsmSplit.validateModulePaths (spec.modules.map Prod.fst)
   let [m] := source.modules | throw "checked split requires a single source module"
   let stmts := m.body.map Prod.snd
@@ -73,11 +83,19 @@ def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarante
   let some ⟨sourceShape⟩ := SyntaxMatch.programEq source
       { entry := m.name, modules := [{ name := m.name, imports := [], body, exports := m.exports }] } |
     throw "source must be an import-free entry with consecutive unit identities starting at zero"
+  if spec.sequential then
+    unless m.body.all (fun (_, stmt) => match stmt with
+        | .decl .const _ value => simpleValue value
+        | _ => false) do
+      throw "explicit sequential placement supports only simple const declarations"
   for (id, stmt) in m.body do
     unless supportedUnit stmt do
       throw s!"unsupported unit {id}: expected a simple const or a zero-argument function returning a value"
   let bundle := summarize source
   let plan := EsmSplit.mkPlan bundle spec
+  if spec.sequential then
+    unless plan.evalOrder == spec.order ++ [spec.entry] do
+      throw "the constructed modules do not follow the requested order"
   let .isTrue kept := (inferInstance : Decidable (OrderKept stmts plan)) |
     throw "requested placement changes the source unit order"
   let .isTrue valid := (inferInstance : Decidable (EsmSplit.Valid bundle spec plan)) |
@@ -95,7 +113,13 @@ def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarante
         exact runProgram_singleModuleMetadata body (zip_range_sorted stmts) m.name m.exports w n
       exact sourceRun.trans (run_same (split_holds_statements (orderKept_perm kept)).1
         (split_holds_statements (orderKept_perm kept)).2 (split_scopes_agree valid footprints kept) n)
-    return ⟨bundle, plan, output, placed, links.sameExports exportsMatch, forRequest requested runs⟩
+    have originalStatements : sourceStatements source = stmts := by
+      rw [sourceShape]
+      simp only [sourceStatements, body]
+      exact List.map_snd_zip (by simp)
+    return ⟨bundle, plan, output,
+      ⟨placed, links.sameExports exportsMatch, forRequest requested runs⟩,
+      originalStatements ▸ footprints, rfl, by simp [output, originalStatements]⟩
   else
     throw "the split entry does not export the source's public live cells"
 

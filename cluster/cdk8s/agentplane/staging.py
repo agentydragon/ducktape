@@ -508,6 +508,7 @@ def environment(*, identity_catalog: bool) -> Environment:
         central_sampler=CentralSamplerProps(
             context_source_writes=True,
             event_block_writes=True,
+            event_block_v2_writes=True,
             actions=ActionsConfig(
                 target=actions.service(STAGING_NAMESPACE).authority,
                 tls=TLS(

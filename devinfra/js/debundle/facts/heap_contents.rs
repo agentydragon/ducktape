@@ -13,12 +13,44 @@ use super::*;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+/// Native-read evidence the synchronous interpreter prepared for the chunk.
+pub(crate) trait NativeHeapReads {
+    /// The proof, author input (when not census-backed) and premises of a
+    /// native own-data read at `span`.
+    fn native_own_data_read(
+        &self,
+        span: Span,
+    ) -> Option<(
+        crate::analysis_provenance::InferenceUse,
+        Option<crate::analysis_inputs::NativeOperationInputEvidence>,
+        crate::analysis_inputs::ProofDependencies,
+    )>;
+
+    /// Premises under which a direct native `Map` over a primitive entry
+    /// literal touches no existing heap content.
+    fn primitive_map_literal_heap_proof(
+        &self,
+        construction: &NewExpr,
+        flow: &ChunkValueFlow,
+        shadowed: &BTreeSet<&'static str>,
+    ) -> Option<crate::analysis_inputs::ProofDependencies>;
+}
+
+/// Exact native freeze calls on fresh records the synchronous interpreter
+/// certified.
+pub(crate) trait FreshFreezeInputs {
+    /// The author input certifying `call`, if the proof covers it.
+    fn input_evidence(
+        &self,
+        call: &CallExpr,
+    ) -> Option<&crate::analysis_inputs::NativeOperationInputEvidence>;
+}
+
 pub(crate) struct HeapContentProofs<'a> {
     pub local_class: &'a LocalClassHeapProof,
     pub set_iterable: &'a SetIterableProof,
-    pub fresh_freeze: &'a sync_effects::interpreter::synchronous_calls::FreshRecordFreezeHeapProof,
-    pub native_reads:
-        &'a sync_effects::interpreter::synchronous_calls::PreparedSynchronousCallIndex,
+    pub fresh_freeze: &'a dyn FreshFreezeInputs,
+    pub native_reads: &'a dyn NativeHeapReads,
     pub native_facts: &'a ValidatedNativeOperationFacts,
     pub shadowed: &'a BTreeSet<&'static str>,
 }
@@ -310,10 +342,8 @@ struct ArrayContentCollector<'a> {
     statement_owner: source_identity::SourceUnitOrdinal,
     local_class_heap_proof: &'a LocalClassHeapProof,
     set_iterable_proof: &'a SetIterableProof,
-    fresh_freeze_proof:
-        &'a sync_effects::interpreter::synchronous_calls::FreshRecordFreezeHeapProof,
-    native_reads:
-        &'a super::sync_effects::interpreter::synchronous_calls::PreparedSynchronousCallIndex,
+    fresh_freeze_proof: &'a dyn FreshFreezeInputs,
+    native_reads: &'a dyn NativeHeapReads,
     native_facts: &'a ValidatedNativeOperationFacts,
     shadowed: &'a BTreeSet<&'static str>,
     array_reachability: &'a CandidateObjectIndex<'a>,

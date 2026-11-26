@@ -31,7 +31,7 @@ use graph::module_assignment::ModuleAssignment;
 use source_identity::SourceUnitId;
 use spec::ModulePath;
 
-use crate::esm_schedule::EsmImportSchedule;
+use esm_schedule::EsmImportSchedule;
 
 /// One swapped pair the sweep found conflicting: `runs_first` follows
 /// `runs_later` in the source, and the emit runs it first.

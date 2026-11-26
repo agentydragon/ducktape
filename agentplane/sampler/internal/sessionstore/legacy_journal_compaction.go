@@ -1,10 +1,12 @@
 package sessionstore
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -19,17 +21,6 @@ const (
 )
 
 var errJournalWindowChanged = errors.New("standalone journal window changed during packing")
-
-func waitForJournalCompaction(ctx context.Context, delay time.Duration) error {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
 
 // nextJournalWindow finds the next legacy 32-cursor window with standalone rows.
 func (s *Store) nextJournalWindow(ctx context.Context, sessionID string, after, through uint64) (uint64, error) {
@@ -50,26 +41,93 @@ func (s *Store) nextJournalWindow(ctx context.Context, sessionID string, after, 
 
 // compactJournalWindow retains the existing background worker's legacy gzip
 // writer. It prepares and verifies frame bytes before the short Session lock.
-func (s *Store) compactJournalWindow(ctx context.Context, sessionID string, first, last uint64, apply bool) (JournalCompactionResult, error) {
+func (s *Store) compactJournalWindow(ctx context.Context, sessionID string, first, last uint64) error {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 	defer cancel()
-	var result JournalCompactionResult
 	blocks, err := prepareJournalBlocks(ctx, s.db, sessionID, first, last)
+	if err != nil || len(blocks) == 0 {
+		return err
+	}
+	return s.commitJournalBlocks(ctx, sessionID, blocks)
+}
+
+type sealedJournalBlock struct {
+	first, last uint64
+	payload     []byte
+	versions    []string
+}
+
+func prepareJournalBlocks(ctx context.Context, q journalQueryer, sessionID string, first, last uint64) ([]sealedJournalBlock, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT sequence, xmin::text, CASE WHEN octet_length(entry) <= $4 THEN entry END FROM sampler_event
+		WHERE session_id=$1 AND sequence BETWEEN $2 AND $3 ORDER BY sequence`, sessionID, first, last, eventcodec.MaxBlockBytes)
 	if err != nil {
-		return result, err
+		return nil, err
 	}
-	if apply && len(blocks) > 0 {
-		if err := s.commitJournalBlocks(ctx, sessionID, blocks); err != nil {
-			return result, err
+	defer rows.Close()
+	var blocks []sealedJournalBlock
+	var frames [][]byte
+	var versions []string
+	var start uint64
+	var rawSize, storedSize int
+	flush := func() error {
+		if len(frames) > 1 {
+			payload, err := eventcodec.PackBlock(frames)
+			if err != nil {
+				return err
+			}
+			if len(payload) < storedSize {
+				verified, err := eventcodec.UnpackBlock(payload, len(frames))
+				if err != nil {
+					return err
+				}
+				if !slices.EqualFunc(frames, verified, bytes.Equal) {
+					return fmt.Errorf("packed frames differ from originals at cursor %d", start)
+				}
+				blocks = append(blocks, sealedJournalBlock{
+					first: start, last: start + uint64(len(frames)) - 1,
+					payload: payload, versions: versions,
+				})
+			}
 		}
+		frames, versions, rawSize, storedSize = nil, nil, 0, 0
+		return nil
 	}
-	for _, block := range blocks {
-		result.Events += int64(block.last - block.first + 1)
-		result.Blocks++
-		result.StoredBytes += int64(block.storedBytes)
-		result.PackedBytes += int64(len(block.payload))
+	for rows.Next() {
+		var sequence uint64
+		var version string
+		var stored []byte
+		if err := rows.Scan(&sequence, &version, &stored); err != nil {
+			return nil, err
+		}
+		frame, err := eventcodec.UnpackBlockEntry(stored)
+		if err != nil {
+			return nil, fmt.Errorf("prepare event at cursor %d: %w", sequence, err)
+		}
+		size := len(frame) + eventcodec.FrameHeaderBytes
+		if len(frame) == 0 || rawSize+size > eventcodec.MaxBlockBytes || sequence != start+uint64(len(frames)) {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+		}
+		if len(frame) == 0 {
+			continue
+		}
+		if len(frames) == 0 {
+			start = sequence
+		}
+		frames = append(frames, frame)
+		versions = append(versions, version)
+		rawSize += size
+		storedSize += len(stored)
 	}
-	return result, nil
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := flush(); err != nil {
+		return nil, err
+	}
+	return blocks, nil
 }
 
 func (s *Store) commitJournalBlocks(ctx context.Context, sessionID string, blocks []sealedJournalBlock) error {
@@ -111,16 +169,15 @@ func replaceJournalBlock(ctx context.Context, tx *sql.Tx, sessionID string, bloc
 	if count != int64(len(block.versions)) {
 		return errJournalWindowChanged
 	}
-	oldestBlock := max(block.first, journalWindowSize) - journalWindowSize + 1
 	var verified bool
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO sampler_event_block(session_id,first_sequence,last_sequence,payload)
-		SELECT $1::varchar,$2::integer,$3::integer,$4::bytea WHERE NOT EXISTS (
+		SELECT $1::varchar,$2::integer,$3::integer,$5::bytea WHERE NOT EXISTS (
 			SELECT 1 FROM sampler_event_block
-			WHERE session_id=$1 AND first_sequence BETWEEN $5 AND $3 AND last_sequence>=$2
+			WHERE `+overlappingJournalBlocks+`
 		)
-		RETURNING first_sequence=$2 AND last_sequence=$3 AND payload=$4`,
-		sessionID, block.first, block.last, block.payload, oldestBlock).Scan(&verified)
+		RETURNING first_sequence=$2 AND last_sequence=$3 AND payload=$5`,
+		sessionID, block.first, block.last, earliestJournalBlockStart(block.first), block.payload).Scan(&verified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("existing journal block overlaps cursors %d–%d", block.first, block.last)
 	}

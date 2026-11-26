@@ -188,6 +188,7 @@ fn classify_with_declared_pure_new(prefix: &str, expr_src: &str, declared: &[&st
             shadowed,
             &BTreeSet::new(),
             &string_set(declared),
+            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         )
     })
 }
@@ -208,6 +209,8 @@ fn classify_with_declared_pure_members(
             &declared_pure_members,
             &BTreeMap::new(),
             &BTreeSet::new(),
+            &BTreeSet::new(),
+            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         )
     })
 }
@@ -224,6 +227,8 @@ fn classify_with_fluent_bindings(prefix: &str, expr_src: &str, fluent: &[&str]) 
             &BTreeMap::new(),
             &BTreeMap::new(),
             &string_set(fluent),
+            &BTreeSet::new(),
+            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         )
     })
 }
@@ -1065,6 +1070,8 @@ fn fluent_root_body_local_shadow_defeats_trust() {
                 &BTreeMap::new(),
                 &BTreeMap::new(),
                 &string_set(&["k"]),
+                &BTreeSet::new(),
+                &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
             );
             classify_expr_purity(init, shadowed, &local_shadowed, &BTreeSet::new(), &graph)
         },
@@ -1225,7 +1232,7 @@ fn object_calls_shadowed_receiver_invoke() {
 /// The `ChunkCodeGraph` for `structural` with its stable numeric-`var`
 /// candidates and no declared-pure, imported or fluent inputs.
 fn stable_var_graph(structural: &StructuralChunkAnalysis<'_>) -> ChunkCodeGraph {
-    ChunkCodeGraph::build_full_with_stable_vars(
+    ChunkCodeGraph::build_full(
         &structural.body,
         &structural.shadowed,
         &BTreeSet::new(),
@@ -1234,6 +1241,7 @@ fn stable_var_graph(structural: &StructuralChunkAnalysis<'_>) -> ChunkCodeGraph 
         &BTreeMap::new(),
         &BTreeSet::new(),
         &structural.stable_var_number_candidates,
+        &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
     )
 }
 
@@ -1406,6 +1414,8 @@ fn imported_purity_effects(prefix: &str, expr_src: &str, imports: &[(&str, Purit
             &BTreeMap::new(),
             &imported_purities,
             &BTreeSet::new(),
+            &BTreeSet::new(),
+            &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
         );
         classify_expr_purity(init, shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
     })

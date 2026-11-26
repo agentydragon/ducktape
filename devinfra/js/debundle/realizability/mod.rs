@@ -40,9 +40,6 @@ mod esm_simulator;
 mod incremental_quotient;
 mod translation_validation;
 
-#[cfg(test)]
-use crate::esm_import_order::EsmImportOrder;
-use crate::esm_schedule::{EsmImportSchedule, ImportScheduleError};
 pub use effect_translation_validation::{
     EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition, EffectConflictRow,
     EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
@@ -53,6 +50,9 @@ pub use effect_translation_validation::{
 pub(crate) use effect_translation_validation::{
     EffectTranslationValidationInputs, effect_translation_assess,
 };
+#[cfg(test)]
+use esm_schedule::EsmImportOrder;
+use esm_schedule::{EsmImportSchedule, ImportScheduleError};
 #[cfg(test)]
 use esm_simulator::EsmEvaluationSimulator;
 #[cfg(test)]
