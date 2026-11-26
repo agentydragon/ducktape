@@ -15,7 +15,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
-	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/lib/pq"
@@ -324,12 +323,8 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 				entry.storedCost++
 			}
 			if entry.packable {
-				var event eventlogpb.EventEntry
-				if err := eventcodec.Decode(entry.frame, &event); err != nil {
-					return repackPlan{}, fmt.Errorf("decode event at cursor %d for repack: %w", entry.sequence, err)
-				}
-				if event.GetCursor() != entry.sequence {
-					return repackPlan{}, fmt.Errorf("event at cursor %d contains cursor %d", entry.sequence, event.GetCursor())
+				if _, err := decodeJournalEvent(entry.frame, entry.sequence); err != nil {
+					return repackPlan{}, err
 				}
 			}
 			entries = append(entries, entry)
@@ -371,22 +366,10 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 }
 
 func decodeRepackSource(source repackStorage) ([]repackEntry, error) {
-	count := int(source.last - source.first + 1)
-	var frames [][]byte
-	switch {
-	case eventblock.IsBlock(source.payload):
-		decoded, err := eventblock.Decode(source.payload)
-		if err != nil {
-			return nil, fmt.Errorf("decode event block %d–%d for repack: %w", source.first, source.last, err)
+	if !source.block {
+		if blockPayloadInEventRow(source.payload) {
+			return nil, fmt.Errorf("block-compressed payload in standalone event at cursor %d", source.first)
 		}
-		frames = decoded
-	case source.first != source.last:
-		decoded, err := eventcodec.UnpackBlock(source.payload, count)
-		if err != nil {
-			return nil, fmt.Errorf("decode legacy event block %d–%d for repack: %w", source.first, source.last, err)
-		}
-		frames = decoded
-	default:
 		if len(source.payload) == 0 {
 			return nil, fmt.Errorf("empty standalone event at cursor %d", source.first)
 		}
@@ -397,8 +380,9 @@ func decodeRepackSource(source repackStorage) ([]repackEntry, error) {
 		entry := repackEntry{frame: frame, packable: len(frame) > 0, standaloneWire: bytes.Clone(source.payload)}
 		return []repackEntry{entry}, nil
 	}
-	if len(frames) != count {
-		return nil, fmt.Errorf("event block %d–%d contains %d frames", source.first, source.last, len(frames))
+	frames, _, err := decodeJournalBlock(source.payload, source.first, source.last)
+	if err != nil {
+		return nil, err
 	}
 	entries := make([]repackEntry, len(frames))
 	for i, frame := range frames {

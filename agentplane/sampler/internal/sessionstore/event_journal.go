@@ -3,6 +3,7 @@ package sessionstore
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 
@@ -51,16 +52,54 @@ func readJournalRange(ctx context.Context, q journalQueryer, sessionID string, f
 	}
 	var entries []*eventlogpb.EventEntry
 	for _, frame := range frames {
-		entry := &eventlogpb.EventEntry{}
-		if err := eventcodec.Decode(frame.wire, entry); err != nil {
-			return nil, fmt.Errorf("decode event at cursor %d: %w", frame.sequence, err)
-		}
-		if entry.GetCursor() != frame.sequence {
-			return nil, fmt.Errorf("event at cursor %d contains cursor %d", frame.sequence, entry.GetCursor())
+		entry, err := decodeJournalEvent(frame.wire, frame.sequence)
+		if err != nil {
+			return nil, err
 		}
 		entries = append(entries, entry)
 	}
 	return entries, nil
+}
+
+func decodeJournalEvent(wire []byte, sequence uint64) (*eventlogpb.EventEntry, error) {
+	entry := &eventlogpb.EventEntry{}
+	if err := eventcodec.Decode(wire, entry); err != nil {
+		return nil, fmt.Errorf("decode event at cursor %d: %w", sequence, err)
+	}
+	if entry.GetCursor() != sequence {
+		return nil, fmt.Errorf("event at cursor %d contains cursor %d", sequence, entry.GetCursor())
+	}
+	return entry, nil
+}
+
+func decodeJournalBlock(wire []byte, first, last uint64) ([][]byte, JournalClassification, error) {
+	if last < first {
+		return nil, journalInvalid, fmt.Errorf("reversed block interval %d–%d", first, last)
+	}
+	count := last - first + 1
+	var frames [][]byte
+	var err error
+	var class JournalClassification
+	switch {
+	case eventblock.IsBlock(wire):
+		class = journalCurrent
+		frames, err = eventblock.Decode(wire)
+		if errors.Is(err, eventblock.ErrUnsupportedVersion) {
+			return nil, journalUnsupported, fmt.Errorf("event block %d–%d: %w", first, last, err)
+		}
+	case eventcodec.IsGzip(wire):
+		class = journalLegacyGzip
+		frames, err = eventcodec.UnpackBlock(wire, int(count))
+	default:
+		return nil, journalUnsupported, fmt.Errorf("unknown event block encoding at cursors %d–%d", first, last)
+	}
+	if err != nil {
+		return nil, journalInvalid, fmt.Errorf("decode event block %d–%d: %w", first, last, err)
+	}
+	if uint64(len(frames)) != count {
+		return nil, journalInvalid, fmt.Errorf("event block %d–%d contains %d frames", first, last, len(frames))
+	}
+	return frames, class, nil
 }
 
 // Both replay and the legacy writer must find any stored block intersecting
@@ -97,26 +136,15 @@ func journalFrames(ctx context.Context, q journalQueryer, sessionID string, firs
 			return nil, fmt.Errorf("overlapping journal storage at cursor %d", start)
 		}
 		previous = end
-		if eventblock.IsBlock(wire) {
-			block, err := eventblock.Decode(wire)
-			if err != nil {
-				return nil, fmt.Errorf("decode event block %d–%d: %w", start, end, err)
-			}
-			if uint64(len(block)) != end-start+1 {
-				return nil, fmt.Errorf("event block %d–%d contains %d frames", start, end, len(block))
-			}
-			for cursor := max(first, start); cursor <= min(last, end); cursor++ {
-				frames = append(frames, journalFrame{sequence: cursor, wire: block[cursor-start]})
-			}
-			continue
-		}
-		if start == end {
+		// Replay also recovers readable singletons stored in the wrong table.
+		// Maintenance uses the physical row kind before it may replace storage.
+		if start == end && !eventblock.IsBlock(wire) {
 			frames = append(frames, journalFrame{sequence: start, wire: wire})
 			continue
 		}
-		block, err := eventcodec.UnpackBlock(wire, int(end-start+1))
+		block, _, err := decodeJournalBlock(wire, start, end)
 		if err != nil {
-			return nil, fmt.Errorf("decode event block %d–%d: %w", start, end, err)
+			return nil, err
 		}
 		for cursor := max(first, start); cursor <= min(last, end); cursor++ {
 			frames = append(frames, journalFrame{sequence: cursor, wire: block[cursor-start]})
