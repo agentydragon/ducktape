@@ -95,6 +95,73 @@ theorem indexed_const_scopes_and_init {body : List (Nat × Stmt)} {B : EsmSplit.
 #print axioms indexed_const_scopes_and_init
 #print axioms indexed_scopes_success
 
+/-- The depth-first module schedule always includes the requested entry,
+even when its dependencies contain cycles. -/
+theorem entry_in_evalOrder (program : Program) : program.entry ∈ program.evalOrder := by
+  unfold Program.evalOrder Program.visit
+  rw [Nat.add_one]
+  simp only [EsmSplit.visitImports, List.contains_nil, Bool.false_eq_true, ↓reduceIte,
+    List.mem_append, List.mem_singleton]
+  exact Or.inr trivial
+
+/-- If the program names its entry module, selecting that name from the actual
+loaded modules returns exactly that module. -/
+theorem loaded_entry_find {program : Program} {entryModule : Module}
+    (found : program.find program.entry = some entryModule) :
+    program.loaded.find? (fun m => m.name == program.entry) = some entryModule := by
+  have nameEq : entryModule.name = program.entry := by
+    have selected := List.find?_some found
+    simpa [Program.find] using selected
+  have entryMember : entryModule ∈ program.loaded := by
+    apply List.mem_filterMap.mpr
+    exact ⟨program.entry, entry_in_evalOrder program, found⟩
+  have existsSelected : (program.loaded.find? (fun m => m.name == program.entry)).isSome = true := by
+    apply List.find?_isSome.2
+    exact ⟨entryModule, entryMember, by simp [nameEq]⟩
+  cases selected : program.loaded.find? (fun m => m.name == program.entry) with
+  | none => simp [selected] at existsSelected
+  | some actual =>
+    have actualName : actual.name = program.entry := by
+      have matchName := List.find?_some selected
+      simpa using matchName
+    have actualMember := List.mem_of_find?_eq_some selected
+    obtain ⟨path, _, actualFound⟩ := List.mem_filterMap.1 actualMember
+    have actualPath : actual.name = path := by
+      have matchPath := List.find?_some actualFound
+      simpa [Program.find] using matchPath
+    have sameFind : program.find program.entry = some actual := by
+      rw [← actualName, actualPath]
+      exact actualFound
+    have same : actual = entryModule := Option.some.inj (sameFind.symm.trans found)
+    simp [same]
+
+/-- An import-free source entry is the only loaded source module, independent
+of unrelated modules that might occur in the program. -/
+theorem import_free_entry_loaded {program : Program} {entryModule : Module}
+    (found : program.find program.entry = some entryModule) (noImports : entryModule.imports = []) :
+    program.loaded = [entryModule] := by
+  have order : program.evalOrder = [program.entry] := by
+    unfold Program.evalOrder Program.visit
+    rw [Nat.add_one]
+    simp [EsmSplit.visitImports, found, noImports]
+  rw [Program.loaded, order]
+  simp [found]
+
+/-- The source's actual scope constructor succeeds for an import-free entry. -/
+theorem import_free_entry_scopes {program : Program} {entryModule : Module}
+    (found : program.find program.entry = some entryModule) (noImports : entryModule.imports = [])
+    (frames : List (Nat × List (Name × Addr))) :
+    program.scopes frames program.loaded =
+      .ok [(entryModule, { vars := entryModule.scope frames, this := .undef })] := by
+  rw [import_free_entry_loaded found noImports]
+  simp [Program.scopes, Program.imported, noImports]
+  rfl
+
+#print axioms import_free_entry_loaded
+#print axioms import_free_entry_scopes
+#print axioms entry_in_evalOrder
+#print axioms loaded_entry_find
+
 /-- Selecting an entry from the actual list returned by `Program.scopes`
 selects the same first named module as the loaded-module list and pairs it
 with exactly the scope and imports produced by the CoreJS linker. -/
@@ -227,6 +294,40 @@ theorem row_resolved_entries {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {
   obtain ⟨a, b, original, _, present⟩ := agree pair member
   exact ⟨a, b, original, present⟩
 
+/-- A source import-free entry and the authored plan's entry lookup are
+sufficient to resolve the actual ordered entry tables; no loaded-list or
+scope-success results are supplied by the caller. -/
+theorem row_resolved_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {s s' : State W} {frames : List (Nat × List (Name × Addr))}
+    (allocated : declareTops body s = .ok frames s')
+    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
+    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    {row : EsmSplit.LocalExportUnit} (sourceRow : InteriorExportNames.SourceRow source row)
+    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
+    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods) (rowWithin : row.ordinal < B.length)
+    (planEntry : P.find P.entry = some owner)
+    (authored : S.claimants B row.ordinal = [owner.name]) (unitsUnique : owner.stmts.Nodup)
+    (glue : owner.exports = [])
+    (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
+    (sourceDefs : ∀ pair ∈ row.names, ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    ∃ targetLinked table,
+      (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok targetLinked ∧
+      row.ordinal ∈ owner.stmts ∧
+      EntryExports.resolve sourceProgram.entry [(source, { vars := source.scope frames, this := .undef })] = .ok table ∧
+      EntryExports.resolve (splitProgramIndexed body B P).entry targetLinked = .ok table ∧
+      ∀ pair ∈ row.names, ∃ a b, (source.scope frames).lookup pair.2 = some a ∧ s'.cellAt a = some b := by
+  have targetFind : (splitProgramIndexed body B P).find (splitProgramIndexed body B P).entry =
+      some (moduleOfIndexed body B P owner) := by
+    change (splitProgramIndexed body B P).find P.entry = some (moduleOfIndexed body B P owner)
+    rw [SparseProjectedOrder.split_indexed_find, planEntry]
+    rfl
+  exact row_resolved_entries valid footprints complete allocated sourceBody sourceImports sourceRow rowFootprint
+    ownerIn rowWithin authored unitsUnique glue onlyRow sourceDefs
+    (import_free_entry_scopes sourceFind sourceImports frames) (loaded_entry_find sourceFind) (loaded_entry_find targetFind)
+
+#print axioms row_resolved_from_plan
 #print axioms row_resolved_entries
 #print axioms export_pairs_equal
 #print axioms resolved_entries_equal
