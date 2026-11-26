@@ -30,6 +30,14 @@ compared encodings on the same sampled values. Sizes are per PostgreSQL instance
 | In History, 23,639 of 29,018 ordinary boundary entries exceeded the old 128 KiB limit. They accounted for 3.37 GiB, 96% of ordinary boundary payload bytes. Independently gzipping sampled ordinary boundaries used 39% fewer bytes than their stored PostgreSQL datums. | Fix singleton eligibility before tuning multi-entry blocks. This comparison includes the actual datum storage benefit PostgreSQL was already providing; it does not measure a switch to LZ4.                                                   |
 | Of 66 and 48 sampled JavaScript sends, only 6 and 4 canonical tool catalogs were distinct. Sharing catalogs plus gzipping the remainder saved 90–91% against per-send gzip in that model.                                                                                | Test exact serialized catalog reuse. Canonical JSON equality across a sample does not prove byte equality within one session. The estimated 2.41–2.45 GiB opportunity is not a measured table reduction and cannot be added to the 39% saving. |
 
+A [follow-up standby experiment](../debug/2026_11_25_postgres_event_compaction.md) verified exact
+reconstruction on 94/94 and 110/110 JavaScript sends in two sets of 12 session windows. A
+session-local catalog plus the remaining frame used **92.3–92.4% fewer encoded bytes than the
+existing PostgreSQL datums**. Favor this representation for large sends; benchmark the lookup
+cost before setting the admission cutoff. In a separate sample, 140 ordinary History datums
+already compressed by PGLZ occupied 6.83 MB for 24.76 MB logical. PostgreSQL is a meaningful
+control for the rest of the stream.
+
 ### Choose what goes together
 
 **Sampler.** Start one stream per session in sequence order. Close a block at a sequence gap;
