@@ -15,6 +15,17 @@ js_library(
     ],
 )
 
+js_library(
+    name = "fixture_preview",
+    srcs = ["fixture_preview.mjs"],
+    deps = [
+        ":harness",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:linked_model_probe",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
+    ],
+)
+
 js_test(
     name = "input_test",
     data = [
