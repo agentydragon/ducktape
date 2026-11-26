@@ -16,8 +16,6 @@ else
     //devinfra/js/debundle/x/split_proof/translation/linked:module_graph_scale_test
     //devinfra/js/debundle/x/split_proof/debundle_cases:strategy_census_cases_test
     //devinfra/js/debundle/x/split_proof/debundle_cases:strategy_census_pinned_test
-    //devinfra/js/debundle/x/split_proof/lean:lowered_example_certificate_test
-    //devinfra/js/debundle/x/split_proof/lean:proof_fixture_test
     //devinfra/js/debundle/x/split_proof/integration/library_splits:library_certificate_test
     //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_scroll_certificate
     //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_scroll_single_certificate
