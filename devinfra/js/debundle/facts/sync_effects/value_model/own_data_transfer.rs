@@ -1,6 +1,6 @@
 //! Present ordinary own-data slots at one settled execution prefix.
 
-use super::value_model::{
+use crate::{
     AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values, canonical_array_index,
 };
 use analysis::facts::EffectCell;
@@ -9,7 +9,7 @@ use analysis_vocabulary::execution_evidence::OrderedFieldReadRefusal;
 use analysis_vocabulary::value::Value;
 use std::collections::BTreeSet;
 
-pub(super) trait OwnDataContext {
+pub trait OwnDataContext {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape>;
     fn object_properties_are_settled(&self, allocation: u32) -> bool;
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values>;
@@ -25,7 +25,7 @@ pub(super) trait OwnDataContext {
 
 /// Ordered local mutation needs stronger ownership than a read from an
 /// already checked source prefix. Neither mode proves allocation multiplicity.
-pub(super) enum OwnDataOwnership<'a> {
+pub enum OwnDataOwnership<'a> {
     CurrentPrefix,
     FreshLocal {
         borrowed: &'a BTreeSet<u32>,
@@ -33,26 +33,26 @@ pub(super) enum OwnDataOwnership<'a> {
     },
 }
 
-pub(super) struct OwnDataSlot {
-    pub(super) object: u32,
+pub struct OwnDataSlot {
+    pub object: u32,
     property: String,
 }
 
-pub(super) struct OwnDataRead {
-    pub(super) values: Values,
-    pub(super) cell: EffectCell,
+pub struct OwnDataRead {
+    pub values: Values,
+    pub cell: EffectCell,
 }
 
 /// A checked present own-data read. The variant keeps the array proof separate
 /// so only it can bypass consumers' ordinary-record restriction.
-pub(super) enum PresentOwnDataSlot {
+pub enum PresentOwnDataSlot {
     OrdinaryRecord(OwnDataSlot),
     ArrayIndex(OwnDataSlot),
     ArrayLength(OwnDataSlot),
 }
 
 impl PresentOwnDataSlot {
-    pub(super) fn object(&self) -> u32 {
+    pub fn object(&self) -> u32 {
         match self {
             Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) | Self::ArrayLength(slot) => {
                 slot.object
@@ -60,11 +60,11 @@ impl PresentOwnDataSlot {
         }
     }
 
-    pub(super) fn is_array_specific(&self) -> bool {
+    pub fn is_array_specific(&self) -> bool {
         matches!(self, Self::ArrayIndex(_) | Self::ArrayLength(_))
     }
 
-    pub(super) fn read(self, context: &impl OwnDataContext) -> OwnDataRead {
+    pub fn read(self, context: &impl OwnDataContext) -> OwnDataRead {
         match self {
             Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) => slot.read(context),
             Self::ArrayLength(slot) => OwnDataRead {
@@ -76,7 +76,7 @@ impl PresentOwnDataSlot {
 }
 
 impl OwnDataSlot {
-    pub(super) fn cell(&self) -> EffectCell {
+    pub fn cell(&self) -> EffectCell {
         EffectCell::OwnProperty {
             origin: self.object,
             property: self.property.clone(),
@@ -84,7 +84,7 @@ impl OwnDataSlot {
     }
 
     /// Consume the checked slot immediately, without an intervening transfer.
-    pub(super) fn read(self, context: &impl OwnDataContext) -> OwnDataRead {
+    pub fn read(self, context: &impl OwnDataContext) -> OwnDataRead {
         OwnDataRead {
             values: context
                 .property_values(self.object, &self.property)
@@ -98,7 +98,7 @@ impl OwnDataSlot {
 /// Resolve a present read at the current settled prefix. An array index needs
 /// the same first-generation dense literal witness as native `length`, plus
 /// an in-range own data value. Neither proof grants a write.
-pub(super) fn resolve_present_read(
+pub fn resolve_present_read(
     context: &impl OwnDataContext,
     receivers: &Values,
     property: &str,
@@ -129,7 +129,7 @@ pub(super) fn resolve_present_read(
         .map(PresentOwnDataSlot::OrdinaryRecord)
 }
 
-pub(super) fn resolve_slot(
+pub fn resolve_slot(
     context: &impl OwnDataContext,
     receivers: &Values,
     property: &str,
@@ -207,7 +207,7 @@ fn present_data_slot(
 /// Resolve the same canonical slot as a read, then consume the independent
 /// current-prefix writable witness. A present Data slot alone never proves a
 /// normally completing write.
-pub(super) fn resolve_writable_slot(
+pub fn resolve_writable_slot(
     context: &impl OwnDataContext,
     receivers: &Values,
     property: &str,

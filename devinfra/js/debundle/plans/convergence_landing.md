@@ -265,19 +265,25 @@ when their disposition has landed on `devel`.
 
 `facts/sync_effects/` becomes, in this order of extraction:
 
-| Module                                | Owns                                                                                                                        |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `kernel/{continuation,completion}.rs` | `LocalContinuation`, `Step`, `Completion`, `TransferLedger`; the five narrow context traits.                                |
-| `alternatives/`                       | `Family`, the leaves of a forked body, and the join of their path states; refusal is a conservative outcome.                |
-| `world/`                              | `SemanticWorldData`, `ObjectSurfaceStore`, `DescriptorHeap`, lexical cells; `World::join`; no literal-heap flags.           |
-| `adapters/{application,provider}.rs`  | The two execution modes, implementing only the narrow traits; strict-provider private heap is the provider adapter's world. |
-| `native/`                             | Builtin table rows → one `plan`/`commit` path.                                                                              |
-| `roots/`                              | `execute_owner` as named phases: operands, body, assignment/export, owner finalization.                                     |
-| `legacy/`                             | Whatever is not yet deleted, each item with a `CLEANUP` tombstone naming its last caller.                                   |
+| Module                               | Owns                                                                                                                        |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `kernel/continuation.rs`             | `LocalContinuation`, `Step`; the five narrow context traits.                                                                |
+| `alternatives/`                      | `Family`, the leaves of a forked body, and the join of their path states; refusal is a conservative outcome.                |
+| `world/` (crate)                     | `SemanticWorldData`, `ObjectSurfaceStore`, `DescriptorHeap`, lexical cells; `World::join`; no literal-heap flags.           |
+| `world/completion.rs`                | `Completion`, `TransferLedger`.                                                                                             |
+| `adapters/{application,provider}.rs` | The two execution modes, implementing only the narrow traits; strict-provider private heap is the provider adapter's world. |
+| `native/`                            | Builtin table rows → one `plan`/`commit` path.                                                                              |
+| `roots/`                             | `execute_owner` as named phases: operands, body, assignment/export, owner finalization.                                     |
+| `legacy/`                            | Whatever is not yet deleted, each item with a `CLEANUP` tombstone naming its last caller.                                   |
 
 AR4 tracks the remaining execution-index interface in [the work queue](../TODO.md#architecture-review-follow-ups).
-Decide on separate `kernel` and `world` Bazel crates once the dependency
-direction is visible.
+`value_model/` and `world/` (with the allocation, array and effect-coverage
+transfers) are Bazel crates below `sync_effects`. A `kernel` crate is the next
+candidate. It first needs a trait seam for its `ExecutionIndex` reads in
+`kernel/{closure,context,continuation}.rs`: callable bodies, home objects,
+nested writes, creation sites and allocation layouts. It also needs
+`NativeIterableUse` moved out of `runtime_heap`. `alternatives/` additionally
+reads `interpreter::Outcome`.
 
 ## Dependency graph and waves
 
@@ -437,7 +443,7 @@ owner per PR; no behavior change, so no canonical-spec check. A slice never adds
 a new rule to `interpreter.rs` or `interpreter/`: it goes in `kernel/`,
 `native/`, `roots/` or `alternatives/`.
 
-**Wave 5.** Crate split if the dependency direction warrants it; real-profiler
+**Wave 5.** Further crate splits per § Target code shape; real-profiler
 performance pass on representative inputs (<analysis_performance.md>).
 
 ## Test debt

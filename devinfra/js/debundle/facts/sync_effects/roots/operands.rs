@@ -8,11 +8,8 @@ use super::super::execution_index::{
 use super::super::interpreter::{
     CheckedLocalConstructorFactory, Executor, Outcome, ValidatedMetadataDecoration, unknown,
 };
-use super::super::local_operations::{LocalBody, RootStore};
 use super::super::native::array_iteration::{admitted_callback, supported_row};
 use super::super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
-use super::super::own_data_transfer::resolve_writable_slot;
-use super::super::value_model::{AbstractValue, CallSite, Context, MemberKey, ValueExpr, Values};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::local_effect_targets::MetadataDecorateCall;
 use analysis::facts::statement_facts::{StatementFacts, StatementKind};
@@ -26,6 +23,9 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::*;
+use value_model::local_operations::{LocalBody, RootStore};
+use value_model::own_data_transfer::resolve_writable_slot;
+use value_model::{AbstractValue, CallSite, Context, MemberKey, ValueExpr, Values};
 
 pub(super) struct RootOperands<'source> {
     pub(super) owner: SourceUnitOrdinal,

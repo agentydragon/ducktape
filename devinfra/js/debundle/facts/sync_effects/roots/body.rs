@@ -7,8 +7,6 @@
 use super::super::execution_index::{Call, CallKind};
 use super::super::interpreter::{Executor, LocalActivation, Outcome};
 use super::super::kernel::frame::SelectedValue;
-use super::super::local_operations::LocalBody;
-use super::super::value_model::{Context, ValueExpr, Values};
 use super::operands::RootOperands;
 use analysis::facts::binding_effect_coverage::RootInitializerIdentity;
 use analysis::facts::{OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptRewind};
@@ -18,6 +16,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::Id;
+use value_model::local_operations::LocalBody;
+use value_model::{Context, ValueExpr, Values};
 
 pub(super) struct RootBody {
     pub(super) outcome: Outcome,

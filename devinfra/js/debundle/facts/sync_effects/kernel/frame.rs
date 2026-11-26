@@ -1,15 +1,15 @@
 //! One activation of the kernel and the values that cross its boundary.
 
-use super::super::allocation_transfer::{AllocationJudgment, AllocationValue};
-use super::super::array_transfer::ArrayMethodSelection;
-use super::super::completion::{AbruptAlternative, Completion, TransferLedger};
-use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::value_model::{AbstractValue, Context, Values};
 use analysis_vocabulary::inputs::ProofDependencies;
-use analysis_vocabulary::value::{Kind, Value};
+use analysis_vocabulary::value::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
 use swc_ecma_ast::Id;
+use value_model::{AbstractValue, CallableSelection, Context, Values};
+use world::allocation_transfer::{AllocationJudgment, AllocationValue};
+use world::array_transfer::ArrayMethodSelection;
+use world::completion::{AbruptAlternative, Completion, TransferLedger};
+use world::effect_coverage::EffectCoverageFragment;
 
 #[derive(Clone)]
 pub(crate) struct LocalFrame {
@@ -161,35 +161,6 @@ pub(crate) enum LocalNormal {
 #[derive(Clone)]
 pub(crate) struct KnownThrow {
     pub(crate) values: Values,
-}
-
-/// Nonterminal provenance of an actually selected abstract callable. This
-/// proves neither fresh allocation nor complete invocation effects.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct CallableSelection {
-    pub(crate) target: AbstractValue,
-    pub(crate) dependencies: Box<ProofDependencies>,
-}
-
-impl CallableSelection {
-    pub(crate) fn observed(values: &Values, dependencies: Box<ProofDependencies>) -> Option<Self> {
-        if values.len() != 1 {
-            return None;
-        }
-        let target = values.first()?.clone();
-        matches!(
-            &target,
-            AbstractValue::Closure(..) | AbstractValue::Value(Value::Alloc(Kind::Function, _))
-        )
-        .then_some(Self {
-            target,
-            dependencies,
-        })
-    }
-
-    pub(crate) fn matches(&self, values: &Values) -> bool {
-        values.len() == 1 && values.first() == Some(&self.target)
-    }
 }
 
 #[derive(Clone)]

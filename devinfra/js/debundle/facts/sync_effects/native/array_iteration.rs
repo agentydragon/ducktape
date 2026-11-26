@@ -10,16 +10,11 @@
 //! already ran and summarizes the remainder.
 
 use super::super::adapters::application::LocalExecutionContext;
-use super::super::allocation_transfer::AllocationValue;
-use super::super::array_transfer::{ArrayIterationSelection, iteration_snapshot};
-use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
 use super::super::interpreter::MAX_SYNCHRONOUS_INVOCATIONS;
 use super::super::kernel::frame::{
     LocalFrame, LocalValueResult, RemainderDisposition, SelectedValue,
 };
-use super::super::own_data_transfer::OwnDataContext;
-use super::super::value_model::{AbstractValue, CallSite, CapturedContext, HeapAddress, Values};
 use super::operation::{self, IterationResultArray};
 use analysis::facts::EffectCell;
 use analysis::facts::abstract_domain::builtins::IterationResult;
@@ -32,6 +27,11 @@ use analysis_vocabulary::inputs::NativeIntrinsic;
 use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeSet;
 use swc_common::Span;
+use value_model::own_data_transfer::OwnDataContext;
+use value_model::{AbstractValue, CallSite, CapturedContext, HeapAddress, Values};
+use world::allocation_transfer::AllocationValue;
+use world::array_transfer::{ArrayIterationSelection, iteration_snapshot};
+use world::effect_coverage::EffectCoverageFragment;
 
 /// The callback a row may invoke: one local callable with no live captures.
 pub(crate) struct AdmittedCallback {

@@ -3,12 +3,12 @@
 //! class body (instance fields, then the constructor's statements) against
 //! that receiver and selects the result.
 
-use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::value_model::{AbstractValue, Values};
 use super::context::{Disposition, KernelContext, Unproved};
 use super::frame::{LocalFrame, RemainderDisposition};
 use analysis_vocabulary::value::{Kind, Value};
 use swc_common::Span;
+use value_model::{AbstractValue, Values};
+use world::effect_coverage::EffectCoverageFragment;
 
 /// Bind the activation of a base constructor of `class` to its receiver:
 /// `this` is the fresh instance the adapter named for this construction.

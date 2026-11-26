@@ -2,14 +2,14 @@
 //! `World` cells closures capture by identity. The adapter's `cell_policy`
 //! says only which bindings get one.
 
-use super::super::allocation_transfer::AllocationValue;
-use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::local_operations::{LocalBinding, LocalBody};
-use super::super::world::cells::{CellInitialization, LexicalCell};
 use super::context::{Disposition, KernelContext, Unproved};
 use super::frame::{LocalFrame, RemainderDisposition};
 use swc_common::Span;
 use swc_ecma_ast::Id;
+use value_model::local_operations::{LocalBinding, LocalBody};
+use world::allocation_transfer::AllocationValue;
+use world::cells::{CellInitialization, LexicalCell};
+use world::effect_coverage::EffectCoverageFragment;
 
 /// A self or hoisted-function binding whose value this activation could not
 /// establish from source identity alone.
@@ -170,7 +170,7 @@ pub(super) fn store_captured(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     binding: &Id,
-    values: &super::super::value_model::Values,
+    values: &value_model::Values,
     span: Span,
 ) -> Result<AllocationValue, RemainderDisposition> {
     if let Some(id) = context.world().active_cells.get(binding).copied() {

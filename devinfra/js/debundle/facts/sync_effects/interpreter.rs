@@ -9,11 +9,8 @@ mod read_only_callbacks;
 pub mod synchronous_calls;
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
-use super::allocation_transfer::MAX_EXACT_ARRAY_SPREAD_SLOTS;
 use super::alternatives::execution_state::{ExecutionPath, JoinedPath};
 use super::alternatives::{Family, Leaf, join_frames};
-use super::array_transfer::ArrayContext;
-use super::effect_coverage::EffectCoverageFragment;
 use super::execution_index::{
     Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
     LocalConstructor, MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
@@ -25,9 +22,8 @@ use super::kernel::context::ControlContext;
 use super::kernel::continuation::LocalContinuation;
 use super::kernel::driver;
 use super::kernel::frame::{
-    CallableSelection, LocalExecutionAttempt, LocalFrame, RemainderDisposition, SelectedValue,
+    LocalExecutionAttempt, LocalFrame, RemainderDisposition, SelectedValue,
 };
-use super::local_operations::{LocalBinding, LocalBody};
 use super::native::operation::{
     self as native_operation, CheckedNativePlan, NativeOperationCommit, NativeOperationContext,
 };
@@ -35,33 +31,13 @@ use super::noninvoking_initialization::{
     NativeConstructorCandidate, NativeConstructorForm, NativeConstructorKind,
     NativeConstructorTransfer, OriginalInitializer,
 };
-use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use super::runtime_callbacks::{
     BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
     CallbackResult,
 };
-use super::runtime_heap::{
-    HeapOperation, HeapResult, NativeIterableInput, NativeIterableReceipt, NativeIterableUse,
-    NativeIterableYields,
-};
+use super::runtime_heap::{HeapOperation, HeapResult, NativeIterableUse};
 use super::runtime_inference::{
     CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
-};
-use super::value_model::{
-    AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
-    DenseArray, DenseArrayIterationTransfer, HeapAddress, InstanceOrigin, LexicalCaptures,
-    LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
-    canonical_array_index, ordered_values,
-};
-use super::world::World;
-use super::world::cells::{CellInitialization, CellTrace};
-use super::world::descriptor_heap::{
-    self, DescriptorApplication, DescriptorContext, DescriptorHeap, OwnDescriptorMapState,
-};
-use super::world::object_surface::{AppliedAccessor, ObjectSurfaceStore};
-use super::world::prefix_values::{PrefixValues, TopBindingOrdinal};
-use crate::property_inference::{
-    OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest, infer_own_property_projection,
 };
 use analysis::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
@@ -114,6 +90,30 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
+use value_model::local_operations::{LocalBinding, LocalBody};
+use value_model::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
+use value_model::property_inference::{
+    OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest, infer_own_property_projection,
+};
+use value_model::{
+    AbstractValue, ArrayIteration, CallSite, CallableSelection, CaptureInterner, Captured,
+    CapturedContext, Context, DenseArray, DenseArrayIterationTransfer, HeapAddress, InstanceOrigin,
+    LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr,
+    Values, canonical_array_index, ordered_values,
+};
+use world::World;
+use world::allocation_transfer::MAX_EXACT_ARRAY_SPREAD_SLOTS;
+use world::allocation_transfer::{
+    NativeIterableInput, NativeIterableReceipt, NativeIterableYields,
+};
+use world::array_transfer::ArrayContext;
+use world::cells::{CellInitialization, CellTrace};
+use world::descriptor_heap::{
+    self, DescriptorApplication, DescriptorContext, DescriptorHeap, OwnDescriptorMapState,
+};
+use world::effect_coverage::EffectCoverageFragment;
+use world::object_surface::{AppliedAccessor, ObjectSurfaceStore};
+use world::prefix_values::{PrefixValues, TopBindingOrdinal};
 
 pub(super) enum NativeIdentitySource {
     Inferred {
@@ -1528,7 +1528,7 @@ impl ExecutionState {
     /// so a new one fails to compile until it is placed.
     pub(super) fn path(
         &self,
-        allocation_judgment: &super::allocation_transfer::AllocationJudgment,
+        allocation_judgment: &world::allocation_transfer::AllocationJudgment,
         outcome: &Outcome,
     ) -> ExecutionPath {
         let ExecutionState {
@@ -1592,7 +1592,7 @@ impl ExecutionState {
     pub(super) fn enter(
         &mut self,
         path: ExecutionPath,
-    ) -> (super::allocation_transfer::AllocationJudgment, Outcome) {
+    ) -> (world::allocation_transfer::AllocationJudgment, Outcome) {
         let ExecutionPath {
             world,
             callback_fallback,
@@ -1779,7 +1779,7 @@ pub(super) struct Executor<'source, 'rule> {
     pub(super) state: ExecutionStateSlot,
     pub(super) observations: Observations,
     pub(super) queries: RuntimeQueries<'source, 'rule>,
-    pub(super) allocation_judgment: super::allocation_transfer::AllocationJudgment,
+    pub(super) allocation_judgment: world::allocation_transfer::AllocationJudgment,
     pub(super) source_covered: bool,
     pub(super) evaluation_effects: EvaluationEffects,
     native_initializer_candidate: Option<NativeConstructorCandidate>,
@@ -1897,7 +1897,7 @@ impl OwnDataContext for Executor<'_, '_> {
     fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
         let has_writable_property = match self.state.world.surface.writable_prefix.get(&allocation)
         {
-            Some(super::allocation_transfer::WritablePrefixState::Proven(properties)) => {
+            Some(world::allocation_transfer::WritablePrefixState::Proven(properties)) => {
                 properties.contains(property)
             }
             _ => false,
@@ -1922,7 +1922,7 @@ impl OwnDataContext for Executor<'_, '_> {
             return None;
         }
         match self.state.world.surface.writable_prefix.get(&allocation) {
-            Some(super::allocation_transfer::WritablePrefixState::DenseArray { length }) => {
+            Some(world::allocation_transfer::WritablePrefixState::DenseArray { length }) => {
                 Some(*length)
             }
             _ => None,
@@ -1989,7 +1989,7 @@ impl ArrayContext for Executor<'_, '_> {
             return None;
         }
         match self.state.world.surface.writable_prefix.get(&object)? {
-            super::allocation_transfer::WritablePrefixState::DenseArray { length } => Some(*length),
+            world::allocation_transfer::WritablePrefixState::DenseArray { length } => Some(*length),
             _ => None,
         }
     }
@@ -2014,7 +2014,7 @@ impl ArrayContext for Executor<'_, '_> {
             .insert(object);
         self.state.world_mut().surface.writable_prefix.insert(
             object,
-            super::allocation_transfer::WritablePrefixState::DenseArray { length },
+            world::allocation_transfer::WritablePrefixState::DenseArray { length },
         );
         let values = arguments.iter().flatten().cloned().collect();
         self.literal_heap().write_property(object, None, &values);
@@ -2052,7 +2052,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             observations,
             queries,
             // Creating an executor establishes no whole-source coverage.
-            allocation_judgment: super::allocation_transfer::AllocationJudgment::Opaque,
+            allocation_judgment: world::allocation_transfer::AllocationJudgment::Opaque,
             source_covered: false,
             evaluation_effects: EvaluationEffects::default(),
             native_initializer_candidate: None,
@@ -2065,10 +2065,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     ) -> (
         Box<ExecutionState>,
         Observations,
-        super::allocation_transfer::AllocationJudgment,
+        world::allocation_transfer::AllocationJudgment,
         EvaluationEffects,
     ) {
-        if let super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(dependencies) =
+        if let world::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(dependencies) =
             &self.allocation_judgment
         {
             self.queries.assume(dependencies);
@@ -2085,7 +2085,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     pub(super) fn mark_allocation_opaque(&mut self) {
-        self.allocation_judgment = super::allocation_transfer::AllocationJudgment::Opaque;
+        self.allocation_judgment = world::allocation_transfer::AllocationJudgment::Opaque;
     }
 
     /// Called only for an expression whose canonical source coverage was
@@ -2093,7 +2093,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn cover_source_expression(&mut self) {
         self.source_covered = true;
         self.allocation_judgment =
-            super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(Box::default());
+            world::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(Box::default());
     }
 
     /// Conditions of the settled prefix, including value-producing child
@@ -2130,7 +2130,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn request_with_allocation_judgment(
         &mut self,
         operation: RuntimeOperation,
-    ) -> (RuntimeValue, super::allocation_transfer::AllocationJudgment) {
+    ) -> (RuntimeValue, world::allocation_transfer::AllocationJudgment) {
         self.request_transfer(operation, self.state.assumption.clone())
     }
 
@@ -2138,7 +2138,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         operation: RuntimeOperation,
         assumption: Option<AssumedEffectReason>,
-    ) -> (RuntimeValue, super::allocation_transfer::AllocationJudgment) {
+    ) -> (RuntimeValue, world::allocation_transfer::AllocationJudgment) {
         self.settle_query_prerequisites();
         let state = self
             .state
@@ -2617,7 +2617,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         site: CallSite,
     ) -> Values {
         if args.is_empty()
-            && super::allocation_transfer::keyed_collection_new(
+            && world::allocation_transfer::keyed_collection_new(
                 row,
                 site,
                 ProofDependencies::default(),
@@ -2765,13 +2765,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return match property {
                 Some(property) => !matches!(
                     shape.properties.get(property),
-                    Some(super::value_model::OwnPropertyDescriptorSyntax::Accessor { .. })
+                    Some(value_model::OwnPropertyDescriptorSyntax::Accessor { .. })
                 ),
                 None => shape.properties.values().all(|descriptor| {
-                    matches!(
-                        descriptor,
-                        super::value_model::OwnPropertyDescriptorSyntax::Data
-                    )
+                    matches!(descriptor, value_model::OwnPropertyDescriptorSyntax::Data)
                 }),
             };
         }
@@ -5762,7 +5759,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         expr: &ValueExpr,
         env: &Context,
         captures: &Context,
-    ) -> super::allocation_transfer::AllocationValue {
+    ) -> world::allocation_transfer::AllocationValue {
         let (result, judgment) =
             self.request_with_allocation_judgment(RuntimeOperation::Evaluate {
                 expression: expr.clone(),
@@ -5773,7 +5770,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let RuntimeValue::Values(values) = result else {
             unreachable!("expression transfers produce values");
         };
-        super::allocation_transfer::AllocationValue { values, judgment }
+        world::allocation_transfer::AllocationValue { values, judgment }
     }
 
     /// Availability of a module-local declarative cell at this exact prefix.
@@ -6222,7 +6219,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         captures: &Context,
     ) -> (
         Values,
-        super::allocation_transfer::AllocationJudgment,
+        world::allocation_transfer::AllocationJudgment,
         Option<NativeConstructorTransfer>,
         Option<EffectCoverageFragment>,
     ) {

@@ -2,29 +2,15 @@
 //! a call yields after its callee and operands have run, and the driver
 //! resumes the same stack with the adapter's result.
 
-use super::super::allocation_transfer::{
-    self, AllocationContext, AllocationJudgment, AllocationValue, ArrayTransfer, LiteralHeap,
-    LiteralLayout, RecordTransfer, SequenceTransfer,
-};
-use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::local_operations::{
-    DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCallee,
-    LocalExpression, LocalOperation, LogicalOperator,
-};
-use super::super::own_data_transfer::{self, OwnDataOwnership, OwnDataSlot};
-use super::super::runtime_heap::{NativeIterableReceipt, NativeIterableUse};
-use super::super::value_model::{
-    AbstractValue, CallSite, HeapAddress, LiteralPropertyKind, PropertyDefinition, ValueExpr,
-    Values,
-};
+use super::super::runtime_heap::NativeIterableUse;
 use super::branch;
 use super::cells;
 use super::closure;
 use super::construct;
 use super::context::{Disposition, KernelContext, Unproved};
 use super::frame::{
-    CallableSelection, EvaluatedCallee, Invocation, LocalCallRequest, LocalExecutionAttempt,
-    LocalFrame, LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
+    EvaluatedCallee, Invocation, LocalCallRequest, LocalExecutionAttempt, LocalFrame,
+    LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
 };
 use analysis::facts::EffectCell;
 use analysis_model::PrimKinds;
@@ -34,6 +20,21 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::{BinaryOp, Id};
+use value_model::local_operations::{
+    DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCallee,
+    LocalExpression, LocalOperation, LogicalOperator,
+};
+use value_model::own_data_transfer::{self, OwnDataOwnership, OwnDataSlot};
+use value_model::{
+    AbstractValue, CallSite, CallableSelection, HeapAddress, LiteralPropertyKind,
+    PropertyDefinition, ValueExpr, Values,
+};
+use world::allocation_transfer::NativeIterableReceipt;
+use world::allocation_transfer::{
+    self, AllocationContext, AllocationJudgment, AllocationValue, ArrayTransfer, LiteralHeap,
+    LiteralLayout, RecordTransfer, SequenceTransfer,
+};
+use world::effect_coverage::EffectCoverageFragment;
 
 pub(crate) enum LocalSuspension {
     Call(LocalCallRequest),

@@ -2,20 +2,19 @@
 //! callable's address in the creating world plus the lexical captures it
 //! retains; the adapter supplies only the capture and admission policy.
 
-use super::super::allocation_transfer::{AllocationJudgment, AllocationValue};
-use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
-use super::super::local_operations::DeferredCallableCreation;
-use super::super::value_model::{
-    AbstractValue, Context, HeapAddress, LexicalCaptures, LexicalCellId, Values,
-};
 use super::context::KernelContext;
-use super::frame::{CallableSelection, LocalFrame, LocalValueResult, RemainderDisposition};
+use super::frame::{LocalFrame, LocalValueResult, RemainderDisposition};
 use analysis_vocabulary::value::Value;
 use imbl::OrdMap;
 use rustc_hash::FxHashSet;
 use std::collections::BTreeSet;
 use swc_ecma_ast::Id;
+use value_model::CallableSelection;
+use value_model::local_operations::DeferredCallableCreation;
+use value_model::{AbstractValue, Context, HeapAddress, LexicalCaptures, LexicalCellId, Values};
+use world::allocation_transfer::{AllocationJudgment, AllocationValue};
+use world::effect_coverage::EffectCoverageFragment;
 
 /// How a closure created now retains a free binding that has no active cell.
 #[derive(Clone, Copy)]

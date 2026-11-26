@@ -4,10 +4,8 @@
 //! decides closure addresses and literal writability, and the adapter keeps
 //! the ledger's heap cells out of any caller's effects.
 
-use super::super::allocation_transfer::{self, AllocationJudgment, AllocationValue};
 use super::super::alternatives::outcome::join_allocation_judgments;
 use super::super::alternatives::{Family, Leaf, PathState, join_worlds};
-use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
 use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
 use super::super::kernel::context::{
@@ -19,14 +17,6 @@ use super::super::kernel::driver;
 use super::super::kernel::frame::{
     LocalCallRequest, LocalExecutionAttempt, LocalFrame, LocalValueResult, RemainderDisposition,
 };
-use super::super::local_operations::{DeferredCallableCreation, LocalBody};
-use super::super::own_data_transfer::OwnDataContext;
-use super::super::value_model::{
-    AbstractValue, CallSite, CaptureInterner, CapturedContext, Context, LexicalCaptures,
-    OwnPropertyShape, ProviderInput, ProviderScopeId, SymbolicInputId, ValueExpr, Values,
-};
-use super::super::world::join::Joined;
-use super::super::world::{World, WorldScope};
 use analysis::facts::abstract_domain::builtins::{self, Invocation};
 use analysis::facts::abstract_domain::integrity::Integrity;
 use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
@@ -34,6 +24,17 @@ use analysis_vocabulary::value::{Kind, Value};
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
+use value_model::WorldScope;
+use value_model::local_operations::{DeferredCallableCreation, LocalBody};
+use value_model::own_data_transfer::OwnDataContext;
+use value_model::{
+    AbstractValue, CallSite, CaptureInterner, CapturedContext, Context, LexicalCaptures,
+    OwnPropertyShape, ProviderInput, ProviderScopeId, SymbolicInputId, ValueExpr, Values,
+};
+use world::World;
+use world::allocation_transfer::{self, AllocationJudgment, AllocationValue};
+use world::effect_coverage::EffectCoverageFragment;
+use world::join::Joined;
 
 pub(crate) struct ProviderContext<'a> {
     pub(crate) index: &'a ExecutionIndex,

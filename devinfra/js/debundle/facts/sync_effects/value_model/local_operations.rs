@@ -1,8 +1,6 @@
 //! Source-covered local operations collected before value lowering erases writes.
 
-use super::value_model::{
-    PropertyDefinition, ValueExpr, object_data_property_name, static_property_name,
-};
+use crate::{PropertyDefinition, ValueExpr, object_data_property_name, static_property_name};
 use analysis_model::PrimKinds;
 use analysis_vocabulary::value::Kind;
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,7 +9,7 @@ use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum LocalBinding {
+pub enum LocalBinding {
     Parameter,
     Var,
     Let,
@@ -23,7 +21,7 @@ pub(super) enum LocalBinding {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum LocalCallee {
+pub enum LocalCallee {
     Binding(Id),
     /// A direct closure expression is created before its arguments are
     /// evaluated. Creating it does not execute the body or its defaults.
@@ -68,7 +66,7 @@ impl LocalCallee {
 
 /// Home-object sites express source containment, never receiver ownership.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DeferredCallableCreation {
+pub enum DeferredCallableCreation {
     Function(u32),
     Arrow(u32),
     Method { callable: u32, home_object: u32 },
@@ -77,7 +75,7 @@ pub(super) enum DeferredCallableCreation {
 }
 
 impl DeferredCallableCreation {
-    pub(super) fn callable(self) -> u32 {
+    pub fn callable(self) -> u32 {
         match self {
             Self::Function(key) | Self::Arrow(key) => key,
             Self::Method { callable, .. }
@@ -85,7 +83,7 @@ impl DeferredCallableCreation {
             | Self::Setter { callable, .. } => callable,
         }
     }
-    pub(super) fn home_object(self) -> Option<u32> {
+    pub fn home_object(self) -> Option<u32> {
         match self {
             Self::Function(_) | Self::Arrow(_) => None,
             Self::Method { home_object, .. }
@@ -96,7 +94,7 @@ impl DeferredCallableCreation {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum LocalExpression {
+pub enum LocalExpression {
     Value(ValueExpr),
     /// A canonical primitive literal has no coercion or user-code effect.
     PrimitiveLiteral(PrimKinds),
@@ -192,7 +190,7 @@ pub(super) enum LocalExpression {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum LogicalOperator {
+pub enum LogicalOperator {
     And,
     Or,
     NullishCoalescing,
@@ -200,7 +198,7 @@ pub(super) enum LogicalOperator {
 
 /// The target of an admitted root store statement.
 #[derive(Clone, Copy)]
-pub(super) enum RootStore<'a> {
+pub enum RootStore<'a> {
     Field {
         receiver: &'a Id,
         property: &'a str,
@@ -210,7 +208,7 @@ pub(super) enum RootStore<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum LocalArrayElement {
+pub enum LocalArrayElement {
     Hole,
     Value(LocalExpression),
     /// The operand runs once at its position; the kernel's `IterateSpread`
@@ -231,7 +229,7 @@ impl LocalArrayElement {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum LocalOperation {
+pub enum LocalOperation {
     Initialize(Id, Option<LocalExpression>),
     Evaluate(LocalExpression),
     Return(Option<LocalExpression>),
@@ -239,16 +237,16 @@ pub(super) enum LocalOperation {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct LocalParameter {
-    pub(super) binding: Id,
-    pub(super) default: Option<LocalExpression>,
+pub struct LocalParameter {
+    pub binding: Id,
+    pub default: Option<LocalExpression>,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct LocalBody {
-    pub(super) bindings: BTreeMap<Id, LocalBinding>,
-    pub(super) parameters: Arc<[LocalParameter]>,
-    pub(super) operations: Arc<[LocalOperation]>,
+pub struct LocalBody {
+    pub bindings: BTreeMap<Id, LocalBinding>,
+    pub parameters: Arc<[LocalParameter]>,
+    pub operations: Arc<[LocalOperation]>,
     /// Present only for a root variable initializer or top-level expression
     /// statement lowered from its exact canonical source expression. Callable
     /// bodies have no root-owner span.
@@ -1118,7 +1116,7 @@ fn ordered_primitive_binary(op: BinaryOp) -> bool {
 }
 
 impl LocalBody {
-    pub(super) fn from_initializer(expression: &Expr) -> Option<Self> {
+    pub fn from_initializer(expression: &Expr) -> Option<Self> {
         let mut body = Self::lower_expression_with_binary(std::iter::empty(), expression, false)?;
         body.root_span = Some(expression.span());
         Some(body)
@@ -1126,7 +1124,7 @@ impl LocalBody {
 
     /// A top-level expression statement as one ordered `Evaluate`: its
     /// completion value is discarded, so the body has no return.
-    pub(super) fn from_expression_statement(expression: &Expr) -> Option<Self> {
+    pub fn from_expression_statement(expression: &Expr) -> Option<Self> {
         let mut body = Self::from_operations(
             BTreeMap::new(),
             Vec::new(),
@@ -1143,7 +1141,7 @@ impl LocalBody {
     /// function/arrow creation. The store is the statement's only operation,
     /// so what the prefix proves about its target is what the store reaches.
     /// Selection only; the kernel's store rules prove it.
-    pub(super) fn root_store_statement(&self) -> Option<RootStore<'_>> {
+    pub fn root_store_statement(&self) -> Option<RootStore<'_>> {
         self.root_span?;
         let [LocalOperation::Evaluate(store)] = self.operations.as_ref() else {
             return None;
@@ -1177,7 +1175,7 @@ impl LocalBody {
 
     /// Exact terminal source call, with no other root operation or operand.
     /// This selects ordered execution, never positive effect coverage.
-    pub(super) fn single_identifier_call_initializer(&self) -> Option<Span> {
+    pub fn single_identifier_call_initializer(&self) -> Option<Span> {
         self.root_span?;
         match self.operations.as_ref() {
             [
@@ -1193,9 +1191,7 @@ impl LocalBody {
 
     /// Exact root syntax admitted by a source-validated initializer call
     /// effect input. Selection alone grants no operation or completion proof.
-    pub(super) fn single_identifier_call_with_function_argument_initializer(
-        &self,
-    ) -> Option<(&Id, Span)> {
+    pub fn single_identifier_call_with_function_argument_initializer(&self) -> Option<(&Id, Span)> {
         self.root_span?;
         match self.operations.as_ref() {
             [
@@ -1219,9 +1215,7 @@ impl LocalBody {
 
     /// Exact root syntax for the independently audited const-primitive result
     /// form. The source contract and prefix transfer still check the binding.
-    pub(super) fn single_identifier_call_with_binding_argument_initializer(
-        &self,
-    ) -> Option<(&Id, Span)> {
+    pub fn single_identifier_call_with_binding_argument_initializer(&self) -> Option<(&Id, Span)> {
         self.root_span?;
         match self.operations.as_ref() {
             [
@@ -1243,7 +1237,7 @@ impl LocalBody {
 
     /// Called by the canonical function collector. Unsupported syntax discards
     /// the entire candidate; the ordinary conservative lanes remain available.
-    pub(super) fn lower<'a>(
+    pub fn lower<'a>(
         parameters: impl Iterator<Item = &'a Pat>,
         body: &FunctionBody,
     ) -> Option<Self> {
@@ -1310,7 +1304,7 @@ impl LocalBody {
 
     /// A concise arrow has the same ordered return semantics as a block body.
     /// Retain that operation directly without manufacturing or revisiting AST.
-    pub(super) fn lower_expression<'a>(
+    pub fn lower_expression<'a>(
         parameters: impl Iterator<Item = &'a Pat>,
         expression: &Expr,
     ) -> Option<Self> {
@@ -1337,7 +1331,7 @@ impl LocalBody {
     /// Canonically lower the allocation effects of a base class constructor.
     /// The caller still proves binding stability and native identity; this
     /// collector retains every constructor-time field operation in order.
-    pub(super) fn lower_class_constructor(class: &Class) -> Option<(Self, Vec<Id>)> {
+    pub fn lower_class_constructor(class: &Class) -> Option<(Self, Vec<Id>)> {
         if class.super_class.is_some() || !class.decorators.is_empty() {
             return None;
         }
@@ -1576,7 +1570,7 @@ impl LocalBody {
         }
     }
 
-    pub(super) fn with_declarations(
+    pub fn with_declarations(
         mut self,
         variables: impl IntoIterator<Item = Id>,
         lexical: impl IntoIterator<Item = (Id, LocalBinding)>,
@@ -1606,54 +1600,54 @@ impl LocalBody {
         self
     }
 
-    pub(super) fn free_reads(&self) -> &[Id] {
+    pub fn free_reads(&self) -> &[Id] {
         self.free_reads.as_deref().unwrap_or_default()
     }
 
-    pub(super) fn root_span(&self) -> Option<Span> {
+    pub fn root_span(&self) -> Option<Span> {
         self.root_span
     }
 
-    pub(super) fn captured_writes(&self) -> &[Id] {
+    pub fn captured_writes(&self) -> &[Id] {
         self.captured_writes.as_deref().unwrap_or_default()
     }
 
     /// Calls and captured writes remain outside the allocation-only provider
     /// proof. Closure literals use the separate shared eligibility result;
     /// either migrated query refuses without retrying another evaluator.
-    pub(super) fn allocation_only_syntax(&self) -> bool {
+    pub fn allocation_only_syntax(&self) -> bool {
         self.allocation_only_syntax
     }
 
-    pub(super) fn requires_keyed_collection_new(&self) -> bool {
+    pub fn requires_keyed_collection_new(&self) -> bool {
         self.requires_keyed_collection_new
     }
 
     /// The shared body classification admits closure literals in addition to
     /// allocation-only syntax. Both answers and canonical sites are collected
     /// in one source-covered traversal at construction.
-    pub(super) fn closure_allocation_syntax(&self) -> bool {
+    pub fn closure_allocation_syntax(&self) -> bool {
         self.closure_allocation_syntax
     }
 
-    pub(super) fn closure_sites(&self) -> &[u32] {
+    pub fn closure_sites(&self) -> &[u32] {
         &self.closure_sites
     }
 
-    pub(super) fn construct_callees(&self) -> &[Id] {
+    pub fn construct_callees(&self) -> &[Id] {
         &self.construct_callees
     }
 
-    pub(super) fn invokes(&self) -> bool {
+    pub fn invokes(&self) -> bool {
         self.invokes
     }
 
-    pub(super) fn branches(&self) -> bool {
+    pub fn branches(&self) -> bool {
         self.branches
     }
 
     /// The exact root `new callee(...)` with no other root operation.
-    pub(super) fn single_construction_initializer(&self) -> Option<(&Id, Span)> {
+    pub fn single_construction_initializer(&self) -> Option<(&Id, Span)> {
         self.root_span?;
         match self.operations.as_ref() {
             [LocalOperation::Return(Some(LocalExpression::Construct { callee, span, .. }))] => {

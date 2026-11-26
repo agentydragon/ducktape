@@ -4,52 +4,52 @@
 //! that the JavaScript operation completed normally. Completion stays with the
 //! operation transfer that planned it (`native::operation`).
 
-use super::super::allocation_transfer::WritablePrefixState;
-use super::super::value_model::Values;
+use crate::allocation_transfer::WritablePrefixState;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
+use value_model::Values;
 
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct AppliedAccessor {
-    pub(crate) getter: Values,
-    pub(crate) setter: Values,
+pub struct AppliedAccessor {
+    pub getter: Values,
+    pub setter: Values,
 }
 
 /// Object-surface state of one prefix, grouped so every surface read, write,
 /// native descriptor operation and invalidation goes through one owner.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct ObjectSurfaceStore {
+pub struct ObjectSurfaceStore {
     /// Stored data payloads by allocation origin; `None` is the dynamic-key
     /// slot. Values only accumulate within a prefix.
-    pub(crate) prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    pub prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
     /// Independent literal writability witness; see `LiteralHeap`.
-    pub(crate) writable_prefix: OrdMap<u32, WritablePrefixState>,
+    pub writable_prefix: OrdMap<u32, WritablePrefixState>,
     /// Accessor callbacks installed by a descriptor definition, kept apart
     /// from data payloads so a lookup never projects a capability as a value.
-    pub(crate) applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
+    pub applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
     /// Exact single-spread object literals whose copied data is current.
-    pub(crate) ordinary_spread_copies: BTreeSet<u32>,
+    pub ordinary_spread_copies: BTreeSet<u32>,
     /// Results of audited descriptor-copy factory calls.
-    pub(crate) descriptor_copy_results: BTreeSet<u32>,
-    pub(crate) tainted_objects: BTreeSet<u32>,
+    pub descriptor_copy_results: BTreeSet<u32>,
+    pub tainted_objects: BTreeSet<u32>,
     /// Objects code the interpreter did not run may have reached and mutated.
     /// This records possible mutation or escape, not an observed escape to
     /// unknown code. Their properties and prototypes are no longer settled.
-    pub(crate) unsettled_objects: BTreeSet<u32>,
+    pub unsettled_objects: BTreeSet<u32>,
 }
 
 impl ObjectSurfaceStore {
-    pub(crate) fn own_properties(&self, object: u32) -> Option<&BTreeMap<Option<String>, Values>> {
+    pub fn own_properties(&self, object: u32) -> Option<&BTreeMap<Option<String>, Values>> {
         self.prefix_object_properties.get(&object)
     }
 
-    pub(crate) fn data_values(&self, object: u32, property: &str) -> Option<&Values> {
+    pub fn data_values(&self, object: u32, property: &str) -> Option<&Values> {
         self.prefix_object_properties
             .get(&object)?
             .get(&Some(property.to_owned()))
     }
 
-    pub(crate) fn has_accessor_property(&self, object: u32, property: &str) -> bool {
+    pub fn has_accessor_property(&self, object: u32, property: &str) -> bool {
         self.applied_accessors
             .get(&object)
             .is_some_and(|properties| properties.contains_key(property))
@@ -61,7 +61,7 @@ impl ObjectSurfaceStore {
 
     /// Skipped local code can change descriptors or prototypes even when no
     /// escape to foreign code was observed. Neither set permits prefix reads.
-    pub(crate) fn object_accessors_are_settled(&self, object: u32) -> bool {
+    pub fn object_accessors_are_settled(&self, object: u32) -> bool {
         !self.tainted_objects.contains(&object) && !self.unsettled_objects.contains(&object)
     }
 
