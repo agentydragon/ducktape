@@ -48,9 +48,6 @@ from agentplane.sampler.testing import (
 from agentplane.sampler.testing_store import Store
 from agentplane.testing.codex_fixtures import ExecutorServer
 
-# gazelle:include_dep //agentplane/sampler:testing_fixtures
-pytest_plugins = ("agentplane.sampler.testing_fixtures",)
-
 
 def with_json_exec(config: Settings, dialect: Literal["lite", "standard"]) -> Settings:
     """`config` routing only `test-model`, over the Responses `dialect` with JSON exec."""

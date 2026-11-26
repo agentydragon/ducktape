@@ -22,9 +22,6 @@ from agentplane.app.testing.replication_process import AppProcess, OIDCProviderO
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-pytest_plugins = ("agentplane.app.integration_fixtures",)
-
 ACTION_AUDIENCE = "test-actions"
 ACTION_REQUESTS = "/upstream/actions/v1/action-requests"
 ACTION_POLICY_SUBJECT_NAMESPACE = "action-federation-tests"

@@ -194,7 +194,7 @@ Remaining:
    readers no live caller uses (`reader.KubernetesIdentities`, `auth.KubernetesIdentityUIDs` and
    kin). Replace the test PolicyService fakes the contracts added (Go: Notifications, Action
    Service, Environments; Python: History, Session Dispatcher), and the older per-test ones where
-   they fit (`policy/reader`, `app/internal/server`, `app/test_environment_identity_browser.py`), with
+   they fit (`policy/reader`, `app/internal/server`, `app/browser/test_environment_identity_browser.py`), with
    the real Policy Controller service over the tests' envtest API server: a testing package exposing
    `policy_controller/internal/rpc`, plus a small server binary for the Python harnesses that start
    real Go services.

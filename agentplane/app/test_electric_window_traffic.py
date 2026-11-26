@@ -26,8 +26,6 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-pytest_plugins = ("agentplane.app.integration_fixtures",)
 
 Row = dict[str, Any]
 

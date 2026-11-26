@@ -27,11 +27,6 @@ from agentplane.testing.scripted_model import ScriptedModel, Text
 # gazelle:include_dep @pypi//grpcio
 
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-# gazelle:include_dep //agentplane/app/testing:runtime_fixtures
-pytest_plugins = ("agentplane.app.integration_fixtures", "agentplane.app.testing.runtime_fixtures")
-
-
 def _exact_session_spec(spec: session_pb2.SessionSpec, sandbox: str, sandbox_uid: str) -> session_pb2.SessionSpec:
     exact = session_pb2.SessionSpec()
     exact.CopyFrom(spec)

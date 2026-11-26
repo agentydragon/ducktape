@@ -4,7 +4,10 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
-    default_visibility = ["//agentplane/app:__pkg__"],
+    default_visibility = [
+        "//agentplane/app:__pkg__",
+        "//agentplane/app/browser:__pkg__",
+    ],
 )
 
 py_library(
@@ -139,6 +142,7 @@ py_library(
     data = ["thread_view_marks.js"],
     visibility = [
         "//agentplane/app:__pkg__",
+        "//agentplane/app/browser:__pkg__",
         "//agentplane/app/frontend/testing:__pkg__",
     ],
     deps = [
@@ -191,6 +195,7 @@ py_test(
     deps = [
         ":thread_browser",
         "//:conftest",
+        "//agentplane/app:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -265,6 +270,7 @@ py_test(
         ":history_reads",
         ":models",
         "//:conftest",
+        "//agentplane/app:conftest",
         "//agentplane/env/runtime:harness",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/grpc:calls",
@@ -327,7 +333,6 @@ py_library(
     deps = [
         "//agentplane/env/e2e/testing:config",
         "//agentplane/env/e2e/testing:failure_journal",
-        "//agentplane/env/e2e/testing:fixtures",
         "//agentplane/env/e2e/testing:gateway",
         "//agentplane/env/e2e/testing:process",
         "//agentplane/env/e2e/testing:runtime_with_history",
@@ -346,6 +351,7 @@ py_test(
     deps = [
         ":http2_proxy",
         "//:conftest",
+        "//agentplane/app:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -386,5 +392,35 @@ py_library(
         "//testing/frontend_visual:capture",
         "@pypi//playwright",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "integration_fixtures",
+    srcs = ["integration_fixtures.py"],
+    data = ["//agentplane/app/cmd:agentplane-app"],  # keep: subprocess fixture migration
+    deps = [
+        ":history",
+        ":replication_process",
+        ":thread_test_support",
+        "//agentplane:subjects",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/history_service/testing:history",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/sandboxes/testing:sandbox_namespace",
+        "//agentplane/session_dispatcher/testing:gateway_process",
+        "//agentplane/testing:electric_role",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//testing:postgres",
+        "//testing:sqlalchemy_engines",
+        "//util:db_url",
+        "//util:net",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@rules_python//python/runfiles",
     ],
 )

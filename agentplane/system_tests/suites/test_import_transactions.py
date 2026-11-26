@@ -14,9 +14,6 @@ from agentplane.system_tests.suites.manual_pod_stack import run_manual_pod_stack
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import Listener
 
-# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
-
 
 @pytest.mark.parametrize("arm", ["warmup", "control-a", "fast-a", "fast-b", "control-b"])
 def test_import_transactions(arm: str, runfiles: Runfiles, k3s_binary: Path, scripted_listener: Listener) -> None:

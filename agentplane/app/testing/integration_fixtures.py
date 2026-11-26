@@ -1,4 +1,4 @@
-"""Pytest plugin for the app integration suite's real service fixtures."""
+"""Real service fixtures for the app integration suite, registered by `agentplane/app/conftest.py`."""
 
 import subprocess
 from collections.abc import AsyncIterator, Iterator
@@ -8,22 +8,9 @@ import pytest
 from python.runfiles import Runfiles
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from agentplane.app.testing.gateway_fixtures import (
-    dispatcher_database_url,
-    gateway_service,
-    sandbox,
-    sandbox_control,
-    session_dispatcher,
-)
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.thread_test_support import ThreadHTTP
-from agentplane.history_service.testing.fixtures import (
-    history_on,
-    history_service,
-    service_database_template,
-    service_history_db_url,
-)
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -32,38 +19,10 @@ from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from testing.postgres_fixtures import (
-    database_clones,
-    database_names,
-    postgres_admin_url,
-    postgres_container,
-    postgres_image,
-)
 from testing.sqlalchemy_engines import managed_async_engine
 from util.db_url import render_postgresql_url
 from util.net import refusing_tcp_endpoint
-
-# These imported fixtures and the hook are part of this plugin's public pytest surface.
-__all__ = [
-    "api_server",
-    "database_clones",
-    "database_names",
-    "dispatcher_database_url",
-    "gateway_service",
-    "history_on",
-    "history_service",
-    "kubeconfig",
-    "postgres_admin_url",
-    "postgres_container",
-    "postgres_image",
-    "sandbox",
-    "sandbox_control",
-    "service_database_template",
-    "service_history_db_url",
-    "session_dispatcher",
-]
 
 # gazelle:include_dep @pypi//psycopg
 # gazelle:include_dep @pypi//asyncpg

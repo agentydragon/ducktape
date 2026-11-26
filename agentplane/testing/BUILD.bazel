@@ -2,6 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 _TEST_VISIBILITY = [
     "//agentplane/app:__pkg__",
+    "//agentplane/app/browser:__pkg__",
     "//agentplane/app/testing:__pkg__",
     "//agentplane/sampler:__pkg__",
     "//agentplane/crds:__pkg__",

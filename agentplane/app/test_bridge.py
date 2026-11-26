@@ -44,9 +44,6 @@ from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 # pytest loads this plugin by name from the test target's args.
 # gazelle:include_dep //agentplane/app/testing:pytest_logfile
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-# gazelle:include_dep //agentplane/app/testing:runtime_fixtures
-pytest_plugins = ("agentplane.app.integration_fixtures", "agentplane.app.testing.runtime_fixtures")
 
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 

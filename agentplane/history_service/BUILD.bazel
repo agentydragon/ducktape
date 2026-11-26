@@ -9,6 +9,7 @@ py_library(
     srcs = ["channels.py"],
     visibility = [
         "//agentplane/app:__pkg__",
+        "//agentplane/app/browser:__pkg__",
         "//agentplane/history_service:__subpackages__",
     ],
 )

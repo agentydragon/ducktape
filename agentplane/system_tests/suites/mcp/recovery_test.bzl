@@ -40,7 +40,7 @@ def mcp_recovery_test(name, fixture_manifest, image_manifest):
             ":conftest",
             "//:conftest",
             "//agentplane/system_tests:conftest",
-            "//agentplane/system_tests/deployment:pytest_plugin",
+            "//agentplane/system_tests/suites:conftest",
             "//agentplane/system_tests/driver:cluster",
             "//agentplane/system_tests/driver:executor",
             "//agentplane/system_tests/driver:sandbox",

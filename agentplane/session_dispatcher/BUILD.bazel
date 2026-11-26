@@ -64,6 +64,8 @@ py_library(
     deps = [
         "//agentplane/app/testing:gateway_fixtures",
         "//agentplane/app/testing:runtime_fixtures",
+        "//agentplane/env/e2e/testing:failure_journal",
+        "//agentplane/env/e2e/testing:fixtures",
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
         "//testing:postgres_fixtures",

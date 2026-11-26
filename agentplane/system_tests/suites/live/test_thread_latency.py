@@ -58,9 +58,6 @@ from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-# gazelle:include_dep //agentplane/system_tests:app_fixtures
-pytest_plugins = ("agentplane.system_tests.app_fixtures",)
-
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 

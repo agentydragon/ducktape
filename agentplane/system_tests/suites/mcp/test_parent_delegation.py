@@ -28,10 +28,6 @@ from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
-# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-# gazelle:include_dep //agentplane/system_tests:app_fixtures
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.app_fixtures")
-
 _SESSION_ACTIONS = {"create", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
 
 

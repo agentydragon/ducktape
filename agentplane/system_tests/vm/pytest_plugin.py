@@ -9,9 +9,6 @@ from agentplane.system_tests.vm import guest_logs
 from agentplane.system_tests.vm.runtime import runtime
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
-
 
 @pytest.fixture(scope="session")
 def kubevirt_runtime_factory() -> Iterator[RuntimeFactory]:

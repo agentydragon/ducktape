@@ -72,6 +72,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":notification_process",
         "//:conftest",
         "//agentplane:crd_group",
@@ -81,10 +82,16 @@ py_test(
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",
         "//testing:postgres",
-        "//testing:postgres_fixtures",
         "@pypi//grpcio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//testing:postgres_fixtures"],
 )

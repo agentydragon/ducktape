@@ -23,9 +23,6 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 
-# gazelle:include_dep //agentplane/app:integration_fixtures
-pytest_plugins = ("agentplane.app.integration_fixtures",)
-
 WATCH = "/upstream/dispatcher/v1/dispatches:watch"
 # gazelle:include_dep @pypi//protobuf
 

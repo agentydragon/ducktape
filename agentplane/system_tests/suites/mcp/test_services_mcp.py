@@ -16,15 +16,6 @@ from agentplane.system_tests.driver.policy_objects import PolicyObjects
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import dcr, mcp
 
-# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-# gazelle:include_dep //agentplane/system_tests:app_fixtures
-# gazelle:include_dep //agentplane/system_tests/suites/mcp:operator_fixtures
-pytest_plugins = (
-    "agentplane.system_tests.suites.mcp.operator_fixtures",
-    "agentplane.system_tests.app_fixtures",
-    "agentplane.system_tests.deployment.pytest_plugin",
-)
-
 
 async def test_deployed_discovery_and_registration(pytestconfig: pytest.Config, deployment: Stack) -> None:
     if pytestconfig.option.showlocals:

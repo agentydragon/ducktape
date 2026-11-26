@@ -17,9 +17,6 @@ from agentplane.system_tests.suites.pod_cases import SCENARIOS, Scenario
 from agentplane.system_tests.suites.pod_worker import Worker
 from util.net import Listener
 
-# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
-
 pytestmark = [pytest.mark.case_batch, pytest.mark.asyncio(loop_scope="module")]
 CASE_LIMIT = int(os.environ.get("AGENTPLANE_POD_CASE_LIMIT", "4"))
 

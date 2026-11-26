@@ -34,9 +34,6 @@ from agentplane.sampler.testing import (
 )
 from agentplane.sampler.testing_store import Store
 
-# gazelle:include_dep //agentplane/sampler:testing_fixtures
-pytest_plugins = ("agentplane.sampler.testing_fixtures",)
-
 ROUTE = "anthropic-native-test"
 TURN_ID = "anthropic-truncated"
 TIMEOUT_SECONDS = 40

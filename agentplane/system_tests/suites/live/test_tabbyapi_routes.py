@@ -18,9 +18,6 @@ from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.tabbyapi_catalog import tabbyapi_cases
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-# gazelle:include_dep //agentplane/system_tests:app_fixtures
-pytest_plugins = ("agentplane.system_tests.app_fixtures",)
-
 # gazelle:include_dep @pypi//protobuf
 
 
