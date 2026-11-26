@@ -1701,6 +1701,7 @@ rust_library(
         ":spec_stats",
         ":spec_tree",
         ":transform_command",
+        ":transform_inputs",
         ":yaml_edit",
         "@crates//:anyhow",
         "@crates//:clap",

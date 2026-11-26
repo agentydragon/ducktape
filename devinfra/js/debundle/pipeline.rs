@@ -1,7 +1,6 @@
 #[path = "apply_projection_codec.rs"]
 mod apply_projection_codec;
-use transform_inputs::load_transform_spec_with_roots;
-pub use transform_inputs::{TransformRequest, TransformSpecSource, load_transform_spec_source};
+use transform_inputs::{TransformRequest, TransformSpecSource, load_transform_spec_with_roots};
 
 use artifact::load_js_chunks;
 use source_identity::ChunkId;
@@ -1697,6 +1696,7 @@ mod tests {
     use serde::Serialize;
     use spec::SwapVendorChunksConfig;
     use std::collections::BTreeMap;
+    use transform_inputs::load_transform_spec_source;
 
     const KEEP_GOING_RUN: TransformRunOptions = TransformRunOptions {
         ownership_subset: None,

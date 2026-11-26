@@ -11,9 +11,9 @@ use graph_provenance::{
     sha256_reader,
 };
 use nix::fcntl::{RenameFlags, renameat2};
-use pipeline::TransformSpecSource;
 use serde::{Deserialize, Serialize};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree, require_relative_source_paths};
+use transform_inputs::TransformSpecSource;
 
 use crate::{DebundleArgs, DebundleCommand, RunArgs};
 
