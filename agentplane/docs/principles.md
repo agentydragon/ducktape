@@ -37,7 +37,7 @@ Agentplane does not have a monolithic "agent" object that silently decides ident
 network reach and approvals together. Each concern is its own visible object, and a configuration
 is a combination of them:
 
-- identity: a Kubernetes ServiceAccount;
+- identity: an `Identity`, which Sandboxes and Sessions name;
 - what may run without a human: `PolicySet`/`PolicyBinding` ([action policies](action_policies.md));
 - network reach and credentials: `PolicySet`/`PolicyBinding` rules of type `egress` ([egress](../egress/SPEC.md));
 - cluster permissions: ordinary RBAC bindings;

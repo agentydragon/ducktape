@@ -60,8 +60,9 @@ holds only the queue. Rejected:
 The controller may later split into a generic workload layer and a runner-aware layer; that moves files, not responsibilities.
 
 "Session Dispatcher" names the queue service; it is not a controller. Idle is a Sandbox-level fact (every Session in
-the Sandbox idle), which is why its policy sits on the Sandbox. There is no Sandbox Service: requesters write `spec` through one
-shared helper and the controller writes `status` (D4).
+the Sandbox idle), which is why its policy sits on the Sandbox. The 2026-10-14 decision that there is no Sandbox Service is superseded: Environments serves
+`EnvironmentService`, through which the app creates and manages Sandboxes
+([environments README](../environments/README.md)); the controller writes `status` (D4).
 
 ## Decisions
 
@@ -547,40 +548,40 @@ sequenceDiagram
 
 ## Decisions
 
-| Decision                                                                                                         | Status  | Date (UTC) | Where         |
-| ---------------------------------------------------------------------------------------------------------------- | ------- | ---------- | ------------- |
-| The Dispatcher is the required door for senders; system callers keep `Quiesce`, interrupts, stops and reads      | Decided | 2026-10-14 | D4            |
-| The Dispatcher is its own service, not part of the gateway or the controller                                     | Decided | 2026-10-14 | D4            |
-| Idle policy lives in the Sandbox Controller, declarative, from runner-reported idleness                          | Decided | 2026-10-14 | D4            |
-| Runner facts reach the controller directly over observe-only `WatchState`                                        | Decided | 2026-10-13 | D2            |
-| Facts arrive in complete `WatchState` snapshots on change and periodically                                       | Decided | 2026-10-14 | D2            |
-| Quiescing is one operation on the whole runner and interrupts inside it; the renames of D3                       | Decided | 2026-10-13 | D3            |
-| Resume is refused while a Sandbox is quiescing                                                                   | Decided | 2026-10-13 | D3            |
-| Automatic suspend is a conditional `Quiesce` carrying `if_idle_since`; no ingress-health gate                    | Decided | 2026-10-14 | D3            |
-| Suspend waits for the bootstrap and every Session's setup; delete does not                                       | Decided | 2026-10-13 | D3            |
-| A waiting suspend holds `Ready` False with `SuspendPending`                                                      | Decided | 2026-10-14 | D3            |
-| Refusal codes: `ABORTED` for lameduck and a failed conditional `Quiesce`, `FAILED_PRECONDITION` terminal         | Decided | 2026-10-14 | D3            |
-| `InterruptTurn` uses the queue and retains its exact-turn guard                                                  | Decided | 2026-11-03 | D3            |
-| Delivery state names (`QUEUED_IN_DISPATCHER` and the rest)                                                       | Decided | 2026-10-14 | D4            |
-| `ChangeModel` and `ChangeReasoningEffort` start a stopped harness                                                | Decided | 2026-10-14 | D4            |
-| The Dispatcher watches the Sandbox CR                                                                            | Decided | 2026-10-14 | D4            |
-| `spec.wakeOnSend: false` holds a Sandbox suspended against wake-on-send and gates the feature                    | Decided | 2026-10-13 | D4            |
-| Per-Session idle for the UI is folded History data; Sandbox idle comes from the Controller's direct `WatchState` | Decided | 2026-10-13 | D2            |
-| Idle suspension is `status.suspendedBy: Idle` plus a `spec.wakeGeneration` bump to wake                          | Decided | 2026-10-14 | Lifecycle     |
-| Every suspension records why in `status.suspendedBy` (`Idle` or `Requested`), and the web app shows it           | Decided | 2026-10-17 | Lifecycle     |
-| The six wire phases stay; finer states are reasons on conditions                                                 | Decided | 2026-10-14 | Lifecycle     |
-| There is no Sandbox Service: the app creates, deletes, suspends and resumes Sandboxes through the Kubernetes API | Decided | 2026-10-14 | Lifecycle     |
-| The VM serial console moves into the app                                                                         | Decided | 2026-10-14 | Current state |
-| The app stores nothing per Sandbox; session defaults resolve at launch from the preset label and config          | Decided | 2026-10-14 | D4            |
-| The Dispatcher wakes a suspended Sandbox by patching `spec.running` and `spec.wakeGeneration` itself             | Decided | 2026-10-14 | D4            |
-| Requesters write `spec`; the controller writes `status`                                                          | Decided | 2026-10-14 | Lifecycle     |
-| Removing the finalizer by hand is the only break-glass; there is no force-seal                                   | Decided | 2026-10-13 | Lifecycle     |
-| A seal belongs to the incarnation that sealed it; a new incarnation reopens the journal                          | Decided | 2026-10-14 | D3            |
-| Names: Session Dispatcher, historical logical `OpenSession`, `Quiesce`, `Quiesced`, `Draining`, `Flushing`       | Decided | 2026-10-13 | below         |
-| The queue holds about 1,000 queued commands per Session; past that, `RESOURCE_EXHAUSTED`                         | Decided | 2026-10-14 | D4            |
-| Dispatch rows are kept while their Sandbox exists                                                                | Decided | 2026-10-14 | D4            |
-| Queued commands have no TTL; a Sandbox gone from Kubernetes ends them as `FAILED`                                | Decided | 2026-10-14 | D4            |
-| No special handling of poison commands for now; revisit when one is seen                                         | Decided | 2026-10-14 | Complexities  |
+| Decision                                                                                                         | Status                             | Date (UTC) | Where         |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ---------- | ------------- |
+| The Dispatcher is the required door for senders; system callers keep `Quiesce`, interrupts, stops and reads      | Decided                            | 2026-10-14 | D4            |
+| The Dispatcher is its own service, not part of the gateway or the controller                                     | Decided                            | 2026-10-14 | D4            |
+| Idle policy lives in the Sandbox Controller, declarative, from runner-reported idleness                          | Decided                            | 2026-10-14 | D4            |
+| Runner facts reach the controller directly over observe-only `WatchState`                                        | Decided                            | 2026-10-13 | D2            |
+| Facts arrive in complete `WatchState` snapshots on change and periodically                                       | Decided                            | 2026-10-14 | D2            |
+| Quiescing is one operation on the whole runner and interrupts inside it; the renames of D3                       | Decided                            | 2026-10-13 | D3            |
+| Resume is refused while a Sandbox is quiescing                                                                   | Decided                            | 2026-10-13 | D3            |
+| Automatic suspend is a conditional `Quiesce` carrying `if_idle_since`; no ingress-health gate                    | Decided                            | 2026-10-14 | D3            |
+| Suspend waits for the bootstrap and every Session's setup; delete does not                                       | Decided                            | 2026-10-13 | D3            |
+| A waiting suspend holds `Ready` False with `SuspendPending`                                                      | Decided                            | 2026-10-14 | D3            |
+| Refusal codes: `ABORTED` for lameduck and a failed conditional `Quiesce`, `FAILED_PRECONDITION` terminal         | Decided                            | 2026-10-14 | D3            |
+| `InterruptTurn` uses the queue and retains its exact-turn guard                                                  | Decided                            | 2026-11-03 | D3            |
+| Delivery state names (`QUEUED_IN_DISPATCHER` and the rest)                                                       | Decided                            | 2026-10-14 | D4            |
+| `ChangeModel` and `ChangeReasoningEffort` start a stopped harness                                                | Decided                            | 2026-10-14 | D4            |
+| The Dispatcher watches the Sandbox CR                                                                            | Decided                            | 2026-10-14 | D4            |
+| `spec.wakeOnSend: false` holds a Sandbox suspended against wake-on-send and gates the feature                    | Decided                            | 2026-10-13 | D4            |
+| Per-Session idle for the UI is folded History data; Sandbox idle comes from the Controller's direct `WatchState` | Decided                            | 2026-10-13 | D2            |
+| Idle suspension is `status.suspendedBy: Idle` plus a `spec.wakeGeneration` bump to wake                          | Decided                            | 2026-10-14 | Lifecycle     |
+| Every suspension records why in `status.suspendedBy` (`Idle` or `Requested`), and the web app shows it           | Decided                            | 2026-10-17 | Lifecycle     |
+| The six wire phases stay; finer states are reasons on conditions                                                 | Decided                            | 2026-10-14 | Lifecycle     |
+| There is no Sandbox Service: the app creates, deletes, suspends and resumes Sandboxes through the Kubernetes API | Superseded by `EnvironmentService` | 2026-10-14 | Lifecycle     |
+| The VM serial console moves into the app                                                                         | Decided                            | 2026-10-14 | Current state |
+| The app stores nothing per Sandbox; session defaults resolve at launch from the preset label and config          | Decided                            | 2026-10-14 | D4            |
+| The Dispatcher wakes a suspended Sandbox by patching `spec.running` and `spec.wakeGeneration` itself             | Decided                            | 2026-10-14 | D4            |
+| Requesters write `spec`; the controller writes `status`                                                          | Decided                            | 2026-10-14 | Lifecycle     |
+| Removing the finalizer by hand is the only break-glass; there is no force-seal                                   | Decided                            | 2026-10-13 | Lifecycle     |
+| A seal belongs to the incarnation that sealed it; a new incarnation reopens the journal                          | Decided                            | 2026-10-14 | D3            |
+| Names: Session Dispatcher, historical logical `OpenSession`, `Quiesce`, `Quiesced`, `Draining`, `Flushing`       | Decided                            | 2026-10-13 | below         |
+| The queue holds about 1,000 queued commands per Session; past that, `RESOURCE_EXHAUSTED`                         | Decided                            | 2026-10-14 | D4            |
+| Dispatch rows are kept while their Sandbox exists                                                                | Decided                            | 2026-10-14 | D4            |
+| Queued commands have no TTL; a Sandbox gone from Kubernetes ends them as `FAILED`                                | Decided                            | 2026-10-14 | D4            |
+| No special handling of poison commands for now; revisit when one is seen                                         | Decided                            | 2026-10-14 | Complexities  |
 
 **Names.** Names already taken, so not used for the queue service: `inbox` is the Notification Service's (`inbox_id`,
 `InboxView`), `outbox` is the Action Service's (`action_outbox`), "mailbox" is the task DAG's word for an agent's
