@@ -4,6 +4,7 @@ load("@rules_lean//lean:defs.bzl", "lean_binary", "lean_library", "lean_proof_te
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load(":executable_test.bzl", "executable_test", "test_runner")
 load(":generated_proof_toolchain.bzl", "generated_proof_toolchain")
 load(":splitter_launcher.bzl", "splitter_launcher")
 
@@ -529,26 +530,10 @@ lean_library(
     ],
 )
 
-lean_library(
-    name = "closed_helper_boundary_test_runner_modules",
-    testonly = True,
-    srcs = ["ClosedHelperBoundaryTest.lean"],
-    visibility = ["//visibility:private"],
-    deps = [":closed_helper_boundary"],
-)
-
-lean_binary(
-    name = "closed_helper_boundary_test_runner",
-    testonly = True,
-    deps = [":closed_helper_boundary_test_runner_modules"],
-)
-
-sh_test(
+executable_test(
     name = "closed_helper_boundary_test",
-    srcs = ["checked_split_test.sh"],
-    args = ["$(rlocationpath :closed_helper_boundary_test_runner)"],
-    data = [":closed_helper_boundary_test_runner"],
-    use_bash_launcher = True,
+    src = "ClosedHelperBoundaryTest.lean",
+    deps = [":closed_helper_boundary"],
 )
 
 lean_proof_test(
@@ -582,29 +567,13 @@ lean_library(
     ],
 )
 
-lean_library(
-    name = "sparse_checked_split_test_runner_modules",
-    testonly = True,
-    srcs = ["SparseCheckedSplitTest.lean"],
-    visibility = ["//visibility:private"],
+executable_test(
+    name = "sparse_checked_split_test",
+    src = "SparseCheckedSplitTest.lean",
     deps = [
         ":corejs_sparse_checked_split",
         ":lowersplit_support",
     ],
-)
-
-lean_binary(
-    name = "sparse_checked_split_test_runner",
-    testonly = True,
-    deps = [":sparse_checked_split_test_runner_modules"],
-)
-
-sh_test(
-    name = "sparse_checked_split_test",
-    srcs = ["checked_split_test.sh"],
-    args = ["$(rlocationpath :sparse_checked_split_test_runner)"],
-    data = [":sparse_checked_split_test_runner"],
-    use_bash_launcher = True,
 )
 
 lean_proof_test(
@@ -619,29 +588,13 @@ lean_proof_test(
     deps = [":corejs_sparse_checked_split"],
 )
 
-lean_library(
-    name = "resolved_placement_test_runner_modules",
-    testonly = True,
-    srcs = ["ResolvedPlacementTest.lean"],
-    visibility = ["//visibility:private"],
+executable_test(
+    name = "resolved_placement_test",
+    src = "ResolvedPlacementTest.lean",
     deps = [
         ":corejs_checked_split",
         ":corejs_resolved_placement",
     ],
-)
-
-lean_binary(
-    name = "resolved_placement_test_runner",
-    testonly = True,
-    deps = [":resolved_placement_test_runner_modules"],
-)
-
-sh_test(
-    name = "resolved_placement_test",
-    srcs = ["checked_split_test.sh"],
-    args = ["$(rlocationpath :resolved_placement_test_runner)"],
-    data = [":resolved_placement_test_runner"],
-    use_bash_launcher = True,
 )
 
 lean_proof_test(
@@ -657,26 +610,10 @@ lean_proof_test(
     deps = [":corejs_resolved_placement"],
 )
 
-lean_library(
-    name = "checked_split_test_runner_modules",
-    testonly = True,
-    srcs = ["CheckedSplitTest.lean"],
-    visibility = ["//visibility:private"],
-    deps = [":corejs_checked_split"],
-)
-
-lean_binary(
-    name = "checked_split_test_runner",
-    testonly = True,
-    deps = [":checked_split_test_runner_modules"],
-)
-
-sh_test(
+executable_test(
     name = "checked_split_test",
-    srcs = ["checked_split_test.sh"],
-    args = ["$(rlocationpath :checked_split_test_runner)"],
-    data = [":checked_split_test_runner"],
-    use_bash_launcher = True,
+    src = "CheckedSplitTest.lean",
+    deps = [":corejs_checked_split"],
 )
 
 lean_proof_test(
@@ -699,26 +636,10 @@ lean_library(
     ],
 )
 
-lean_library(
-    name = "checked_move_split_test_runner_modules",
-    testonly = True,
-    srcs = ["CheckedMoveSplitTest.lean"],
-    visibility = ["//visibility:private"],
-    deps = [":corejs_checked_move_split"],
-)
-
-lean_binary(
-    name = "checked_move_split_test_runner",
-    testonly = True,
-    deps = [":checked_move_split_test_runner_modules"],
-)
-
-sh_test(
+executable_test(
     name = "checked_move_split_test",
-    srcs = ["checked_split_test.sh"],
-    args = ["$(rlocationpath :checked_move_split_test_runner)"],
-    data = [":checked_move_split_test_runner"],
-    use_bash_launcher = True,
+    src = "CheckedMoveSplitTest.lean",
+    deps = [":corejs_checked_move_split"],
 )
 
 lean_proof_test(
@@ -782,11 +703,10 @@ lean_proof_test(
     deps = [":terminal_export_artifact"],
 )
 
-lean_library(
-    name = "terminal_export_artifact_test_runner_modules",
-    testonly = True,
-    srcs = ["TerminalExportArtifactMain.lean"],
-    visibility = ["//visibility:private"],
+test_runner(
+    name = "terminal_export_artifact_test_runner",
+    src = "TerminalExportArtifactMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [
         ":lowersplit_support",
         ":lowersplit_workflows",
@@ -794,31 +714,16 @@ lean_library(
     ],
 )
 
-lean_binary(
-    name = "terminal_export_artifact_test_runner",
-    testonly = True,
+test_runner(
+    name = "checked_artifact_test_runner",
+    src = "CheckedSplitArtifactMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
-    deps = [":terminal_export_artifact_test_runner_modules"],
-)
-
-lean_library(
-    name = "checked_artifact_test_runner_modules",
-    testonly = True,
-    srcs = ["CheckedSplitArtifactMain.lean"],
-    visibility = ["//visibility:private"],
     deps = [
         ":checked_artifact",
         ":lowersplit_input",
         ":lowersplit_support",
         ":sparse_checked_artifact",
     ],
-)
-
-lean_binary(
-    name = "checked_artifact_test_runner",
-    testonly = True,
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
-    deps = [":checked_artifact_test_runner_modules"],
 )
 
 lean_proof_test(
@@ -916,23 +821,15 @@ lean_binary(
     deps = [":lowersplit_core_modules"],
 )
 
-lean_library(
-    name = "provider_input_boundary_test_runner_modules",
-    testonly = True,
-    srcs = ["ProviderInputBoundaryTest.lean"],
-    visibility = ["//visibility:private"],
+test_runner(
+    name = "provider_input_boundary_test_runner",
+    src = "ProviderInputBoundaryTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [
         ":corejs_linked_input",
         ":corejs_structural",
         ":shared_provider_boundary",
     ],
-)
-
-lean_binary(
-    name = "provider_input_boundary_test_runner",
-    testonly = True,
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
-    deps = [":provider_input_boundary_test_runner_modules"],
 )
 
 lean_library(
@@ -995,44 +892,26 @@ lean_proof_test(
     deps = [":provider_input_boundary_axioms_test_modules"],
 )
 
-lean_library(
-    name = "joint_static_test_runner_modules",
-    testonly = True,
-    srcs = ["JointStaticTest.lean"],
-    visibility = ["//visibility:private"],
+test_runner(
+    name = "joint_static_test_runner",
+    src = "JointStaticTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [
         ":corejs_structural",
         ":lowersplit_input",
     ],
 )
 
-lean_binary(
-    name = "joint_static_test_runner",
-    testonly = True,
+test_runner(
+    name = "linked_input_test_runner",
+    src = "LinkedInputTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
-    deps = [":joint_static_test_runner_modules"],
-)
-
-lean_library(
-    name = "linked_input_test_runner_modules",
-    testonly = True,
-    srcs = [
-        "LinkedInputTest.lean",
-    ],
-    visibility = ["//visibility:private"],
     deps = [
         ":corejs_linked_input",
         ":corejs_runtime",
         ":effects",
         ":planner",
     ],
-)
-
-lean_binary(
-    name = "linked_input_test_runner",
-    testonly = True,
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
-    deps = [":linked_input_test_runner_modules"],
 )
 
 # The order in which the modules of a plan run. `model/differential.mjs` compares the CoreJS model's with it.
@@ -1074,34 +953,18 @@ lean_library(
     deps = [":estree"],
 )
 
-lean_library(
-    name = "error_realm_test_runner_modules",
-    testonly = True,
-    srcs = ["ErrorRealmTest.lean"],
-    visibility = ["//visibility:private"],
-    deps = [":corejs_runtime"],
-)
-
-lean_binary(
+test_runner(
     name = "error_realm_test_runner",
-    testonly = True,
+    src = "ErrorRealmTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
-    deps = [":error_realm_test_runner_modules"],
-)
-
-lean_library(
-    name = "global_env_test_runner_modules",
-    testonly = True,
-    srcs = ["GlobalEnvTest.lean"],
-    visibility = ["//visibility:private"],
     deps = [":corejs_runtime"],
 )
 
-lean_binary(
+test_runner(
     name = "global_env_test_runner",
-    testonly = True,
+    src = "GlobalEnvTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
-    deps = [":global_env_test_runner_modules"],
+    deps = [":corejs_runtime"],
 )
 
 # The CoreJS model. `model/differential.mjs` runs it against Node.
