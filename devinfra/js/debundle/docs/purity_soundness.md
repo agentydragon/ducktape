@@ -1293,27 +1293,12 @@ import cycle. This inference only defers the supplied callback on a successful
 factory return. It does not claim purity, suppress eager import evaluation,
 remove possible throws, or relax the author assertions below.
 
-`chunk_export_purity.<defining chunk>.callback_factory_exports` and
-`callback_factory_members` are not purity annotations. They assert that a call
-to the named export or static namespace member, with one inline function or
-arrow callback or a retained audited-factory result, neither invokes that
-callback or other
-caller-, host-, or export-provided callbacks synchronously nor publishes the
-argument outside the returned fresh ordinary callable/plain-object graph. It
-must not synchronously access importer-owned state through other routes, including
-imported lexical cells or caller-owned objects. Provider-private effects are
-allowed. The analyzer enforces the call-site shape and conservatively handles other shapes;
-the author remains responsible for every provider and type branch, helper,
-ordinary property access on both input and result, and prototype integrity.
-The retained input and returned graph must be fresh ordinary callable/plain-object
-graphs with no proxies or accessors at the call. The returned graph may expose
-or invoke the captured callback later.
-Opaque retained callback sets do not prove this input precondition. Only a result
-of the existing source-proved or audited factory contract has composition
-provenance, and unknown exposure or possible mutation revokes it. Member reads
-and invocation do not transfer provenance to their results. This provenance
-changes callback admission only; it cannot establish purity or the absence of
-other effects from a complete synchronous execution outcome.
+`callback_factory_exports` and `callback_factory_members` are callback-flow
+assertions, not purity annotations; their admitted shapes, author audit and
+composition-provenance rules are in
+[SPEC § Audited callback factories](../SPEC.md#audited-callback-factories).
+Provenance changes callback admission only; it cannot establish purity or the
+absence of other effects from a complete synchronous execution outcome.
 
 A declared bare imported callback factory can refine its exact direct call
 result before source-flow solving only with an independently checked immutable
@@ -1364,18 +1349,12 @@ activate on later reads, and opaque use of the result promotes its retained
 graph. The provider call itself remains ordinarily effectful and throwing.
 
 The separate `retained_callback_factory_exports` and
-`retained_callback_factory_members` contracts additionally admit stable named
-local callbacks and explicitly listed callback positions at exact arities.
-They do not widen either fresh-only assertion. The stronger audit belongs to
-each provider **and each call site**: existing callable identity, aliases and
-property/prototype capabilities cannot expose additional callbacks, proxies or
-accessors outside the tracked callable/capture graphs. The provider must not
-mutate, invoke or publish those inputs synchronously, access importer state,
-or introduce provider callbacks or cross-instance aliases in its fresh result.
+`retained_callback_factory_members` contracts admit stable named local callbacks
+at listed positions and exact arities without widening either fresh-only
+assertion; their per-provider and per-call-site audit is in
+[SPEC § Retaining existing or multiple callbacks](../SPEC.md#retaining-existing-or-multiple-callbacks).
 The analyzer aggregates all admitted callback graphs and retains ordinary
-mutation/publication/invocation checks. Recognized uncertain, rebound, exposed
-or mutated values fall back conservatively. Exact shape checks and the full
-author obligation are in <../SPEC.md> § Retaining existing or multiple callbacks.
+mutation/publication/invocation checks.
 
 Whole-program source-flow multiplicity remains a refusal for raw callback
 identities. At a retained callback call site, a nonempty set made entirely of
@@ -1576,18 +1555,10 @@ Out of scope (not admitted; flagged for follow-up review):
 ## Host membership nonreentry is separate from purity
 
 `non_reentrant_global_membership` is an explicit root/key host-integrity audit,
-not a builtin row. It narrows callback reentry only for literal-key `in`
-probes on a direct unshadowed `globalThis` or `window`. Key coercion, aliases,
-shadowed roots, effectful receivers and unlisted keys retain fallback. The
-index also rejects recognized root/prototype mutations and global exposure.
-Unknown computed writes on other descendant objects do not themselves identify
-a root mutation. Explicit prototype keys, known identity/prototype paths and
-visible stored back-aliases still reject. Disjointness of other descendants is
-part of the complete author alias-integrity premise, not inferred host trust.
-Source checks cannot establish the complete host or cross-chunk prototype
-surface: its integrity at each probe remains a strong author premise. The
-operator's existing impurity, operand reads/effects and possible throws remain;
-see the complete contract in [SPEC](../SPEC.md#audited-builtin-global-membership-probes).
+not a builtin row: it narrows callback reentry only for listed literal-key `in`
+probes, and source checks cannot establish the host or cross-chunk prototype
+surface it assumes. The operator's impurity, operand reads/effects and possible
+throws remain. Contract: [SPEC § Audited builtin-global membership probes](../SPEC.md#audited-builtin-global-membership-probes).
 
 ## Audited local constructor-factory prototype premises
 

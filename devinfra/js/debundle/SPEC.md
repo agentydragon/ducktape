@@ -1,8 +1,10 @@
-# Selector resolution: specification
+# Debundle: specification
 
-What `debundle` guarantees when it places spec entities in a bundle chunk. How to
-write selectors: <docs/selectors.md>. How it is implemented:
-`docs/selector_resolution.md`.
+What `debundle` guarantees to spec authors and CLI users: invocations, reports,
+selector resolution, assignment and the author assertions the analysis trusts.
+How to write selectors: <docs/selectors.md>. Selector-resolution implementation:
+[selector_resolution.md](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/selector_resolution.md). Design and correctness
+proof: [design.md](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md).
 
 ## Resolved CLI invocations
 
@@ -214,12 +216,6 @@ annotations are checked before ownership is reduced. The selection does not
 change the analysis projection or source graph. Retained bindings, imported
 re-exports, destructuring companions and anonymous statements use the same
 normal assignment assembly, gate, translation validation and emission.
-For an actual Pass-1 constraining SCC, `cycles.json` includes a complete
-`pass_one_witness` closed walk of ordered, typed edge causes. Its text summary
-previews a bounded number of steps and states how many were omitted from the
-preview. Actual Pass-2 TDZ and conditional after-collapse diagnoses have
-`pass_one_witness: null`; their cuts remain available, but this witness does
-not claim to explain their reciprocal import path.
 Omitted claims follow the selected residual policy: they return to entry under
 `inline_in_entry`, move into the configured catchall under `catchall_file`, or
 move into generated atomic-group modules under
@@ -319,15 +315,9 @@ selects full graphs independently of diagnostic detail and effect-conflict
 streams. Both selections retain all analysis facts, generated edges, premises,
 gate/TV checks and final reconstructed-program validation.
 
-Every `final_module_contents` row in the per-chunk `modules.json` report includes
-`binding_source_units`: one row per `binding_names` entry, in the same input-name
-order. Each row maps that input binding name to sorted `unit:N` IDs of source
-units that declare it. Redeclaration sites all appear, and IDs follow the
-analysis's source-unit boundaries, including units created by splitting a
-comma-list declaration. Reads, writes, and calls do not count as declarations.
-The existing module-level `source_unit_ids` remains the sorted union of
-declaration IDs for the row's named bindings; `member_names` remains
-positionally aligned with `binding_names`.
+Every `final_module_contents` row in the per-chunk `modules.json` report pairs
+each input binding name with the source units that declare it; see
+[wire format § Module binding source-unit associations](docs/wire_format.md#module-binding-source-unit-associations).
 
 For a rejected assignment, `atomic_group_conflicts.json` and `cycles.json` are
 each emitted when their corresponding evidence is nonempty, and may coexist.
@@ -408,38 +398,18 @@ source/spec checks, even when an analysis artifact can be reused. The standalone
 CLI remains one binary.
 
 Default Bazel apply consumes a typed canonical spec projection. YAML comments,
-whitespace, and module-level `note` do not affect this projection. Emitted
-`comment` fields, report-relevant notes, annotation-conflict inputs, and semantic
-map entries remain inputs. The internal Bazel `spec project-apply` and `run --apply-projection` interface
-treats the projection as authoritative. Bazel dependencies enforce its freshness;
-context flags retain original authored paths for report locations only; `--projection-root` allows
-paths under that root to move between execution roots. The consumer still checks
-native analysis compatibility. For tree specs, the projection records generated
-output paths relative to a placeholder and binds them to the consumer's
-`--out-root`. This lets targets with the same authored tree share canonical
-projection bytes while keeping spec and source-path compatibility checks.
-Flat specs retain their authored output paths. Projected input cannot export full graphs: graph
-export continues to read exact authored files and capture their membership and
-bytes for replay validation.
-
-The shared projection action reads source and package inputs needed by analysis,
-so changing either may rerun both projection outputs even if the canonical apply
-bytes remain the same. `DebundleAnalyze` reads only its analysis projection and
-source/package inputs. Each apply action reads its selected apply projection,
-saved analysis, and its own source/package inputs; native compatibility checks
-still reject stale or mismatched facts.
-
-The analysis and apply projection files use typed proto3 messages. Their generated
-Rust types are built by Bazel. Stored projections have no cross-version
-compatibility guarantee and must be regenerated with the consuming engine.
-Saved analysis uses a compressed MessagePack container with a typed protobuf
-purity table. Saved facts refer to its verdicts by index; shared cause references
-must point to earlier table entries. Other saved-analysis facts retain MessagePack.
-
-The analysis projection omits only fields explicitly declared as author-note
-provenance. Semantic map entries remain data even when a chunk, export, or
-property name is literally `note`. Graph-only commuting-statement notes remain
-authored report provenance and do not affect analysis identity.
+whitespace, and module-level `note` do not affect it; emitted `comment` fields,
+report-relevant notes, annotation-conflict inputs, and semantic map entries
+remain inputs. The analysis projection omits only fields explicitly declared as
+author-note provenance: semantic map entries remain data even when a chunk,
+export, or property name is literally `note`, and graph-only commuting-statement
+notes remain report provenance without affecting analysis identity. Stored
+projections have no cross-version compatibility guarantee and must be
+regenerated with the consuming engine. The hidden `spec project-apply` and
+`run --apply-projection` commands are an internal Bazel action interface, and
+projected input cannot export full graphs. Action inputs, path binding and
+sharing: [Bazel integration](docs/bazel_integration.md#explicit-analysis-and-apply-stages);
+saved formats: [design § Pipeline split](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#pipeline-split-frontend-elaboration--chunk-analysis--materialization).
 
 ### Reading-only output on gate rejection
 
@@ -707,59 +677,19 @@ unchanged. With no filter every materialized chunk can export.
 The Bazel pipeline exposes the same opt-in through `effect_conflicts_jsonl`
 and `effect_conflicts_chunks`; only its final run action receives these flags,
 and streams remain inside the existing reports tree.
-Full per-chunk report emission also writes
-`candidate_relocation_assessment.json`. It pairs the effect decision and exact
-statement order from the existing single sweep with typed cross-destination
-rebind and split-atomic-group obligations from the same assignment validation,
-plus typed source/destination projection evidence from the final plan.
-Candidate assessment and normal lowering share one checked projection over the
-retained source-unit layout, whole-statement requests, binding catalogue,
-destructuring and nested-`var` groups, and stable Set intervals. Its maps are
-available to lowering only when the projection is mappable; a projection failure
-for a finalized assignment that reaches this seam can still report typed
-blockers and unresolved checks without manufacturing an emission placement.
-Conflicting destructuring and nested-`var` requests are retained through plan
-construction and checked here against the hygienic per-binding ownership
-catalogue, so candidate assessment and normal emission share their typed
-placement decision. Request planning uses the same destructuring owner
-classifier to retain existing fixed-point pulls of unclaimed or residual-owned
-siblings when a group has one explicit owner; split requests remain intact for
-final projection. Nested-`var` planning and projection share the classifier over
-retained statement identities, explicit binding owners and whole-statement
-requests. Consistent whole-statement routing remains unchanged.
-Semantic-order SCCs remain distinct from structural causes such as rebind,
-co-declaration, co-location and local effects; mixed or unclassified causes
-remain blockers. `placement.projection_violations` retains typed identities for
-structural inconsistencies found by those checks. `placement.coverage.unresolved_checks`
-names the structural checks whose complete input domain was unavailable:
-destructuring-declarator grouping, source-unit-to-body mapping, binding and
-shared-var destination projection, and whole-statement destination projection.
-Completeness is derived from an empty unresolved set. `accepted_within_checked_scope`
-requires an accepted effect decision and all four placement checks complete
-without a known structural blocker; it is not overall acceptance. The candidate
-status names effect and placement blockers separately. An ordering-only veto
-from the still-authoritative legacy gate is reported by
-`legacy_gate_ordering_veto` and does not count as a structural blocker; the
-legacy gate remains the authority to emit runnable output.
-Full semantic precision remains incomplete; see
-<docs/wire_format.md#translation-validation>.
-The report's `full_semantic_precision: false` is a policy-level field, not a
-computed per-chunk completeness verdict. Interpret each chunk through its
-unknown-coverage and refusal counts and its actual conflict rows.
-
-The typed effect relocation decision is scoped to statement-order commutation
-for the exact emitter order. `accepted/no_reordering` proves only that this
-candidate order has no statement inversion. For a reordered accepted
-candidate, every inverted pair has closed effect domains or crosses a
-statement proved to have no evaluation effects. Open effect sets are Havoc
-against every nonempty partner, so an open statement crossing a proved-empty
-statement needs no assumption about the open side. An uncovered modeled
-may-conflict or contradictory premise is `conflict`; an uncovered Havoc pair
-or a pair conditioned by an authored premise is `incomplete`. The assessment
-retains typed `relocation_dependencies` for covered owners among inverted
-participants and typed `premise_dependencies` for premises used by conflicting
-pairs. It does not replace the legacy gate and does not establish cross-rebind,
-importability, vendor replacement, privacy or singleton obligations.
+Full per-chunk report emission also writes `effect_translation_validation.json`
+and `candidate_relocation_assessment.json`: a typed statement-order commutation
+decision for the exact emitter order, paired with typed structural placement
+obligations from the same assignment validation. Both are diagnostic. Neither
+replaces the legacy gate, which remains the authority to emit runnable output;
+an ordering-only legacy veto is reported as `legacy_gate_ordering_veto`, not as
+a structural blocker. `accepted_within_checked_scope` is a scoped assessment,
+not overall acceptance. `full_semantic_precision: false` is a policy-level
+field, not a per-chunk completeness verdict; interpret each chunk through its
+unknown-coverage and refusal counts and its conflict rows. Candidate assessment
+and normal lowering share one checked source/destination projection, so their
+placement decisions agree. Field semantics:
+[wire format § Translation validation](docs/wire_format.md#translation-validation).
 
 `bindings assign` and `bindings unassign` can return this assessment for their
 exact in-memory post-edit candidates with `--dry-run --analysis <artifact>`.
@@ -4104,7 +4034,9 @@ same importer-state restriction above. The author audits provider and helper
 paths reachable for this admitted input shape; other overloads are unclaimed.
 Calls with a named callback, a retained factory result, spread arguments, or
 `new` use conservative callback timing. This contract is independent of purity
-and does not grant the broader `callback_factory_exports` composition rule.
+and does not grant the broader `callback_factory_exports` composition rule. The imported
+binding identity follows the ordinary export/import resolver, including local
+renames.
 
 ### Descriptor-copy returned wrappers
 
@@ -4204,33 +4136,10 @@ contract. Result mutation and later callback invocation/publication retain the
 ordinary synchronous-effect checks. No callback deferral assertion implies
 purity or permission to reorder argument evaluation.
 
-`debundle gate diagnose <binding>` provides a bounded source-backed trace for
-one ownership target through constraining promoted callback dependencies. Its
-supported rejection family is a matched imported namespace-member
-callback-factory signature rejected by a top-level static write to that member
-or a recognized alias, or by a computed-key write whose receiver is the
-namespace binding or a recognized alias, or by the exact namespace binding
-passed as a non-spread ordinary top-level call argument. The report names the
-matched signature and exact source witness: write receiver/property or call
-span/argument index, with a graph source-unit reference. An opaque-call label
-requires a matching `UnknownCallTarget` loss at the same owner and span; the
-guard alone does not prove a mutation occurred. A
-supported row also requires the promoted edge's callee source unit to match a
-statically resolved callback argument root from that exact signature.
-Unresolved callback arguments and source-unit mismatches are inconclusive. The
-report provides an explicit-path `inspect-source` command. Diagnose currently
-does not read or fingerprint the source input, so it does not emit a parsed
-statement ID or apply a possibly stale `SourceUnitOrdinal -> StatementId`
-crosswalk. Five rows are returned by
-default; `--all` requests exhaustive output, while query status summarizes all
-uniquely linked candidate edges regardless of the output limit. This is a
-local witness for this guard family, not a claim of a sole or globally earliest
-cause. Computed-key writes through other receiver expressions, other guard
-families, and absent promoted
-dependencies are inconclusive. Multiple candidate barriers at one source unit
-are also reported as an ambiguous link rather than cross-paired with callback
-dependencies. Configured overloads are included only when their arity and
-callback argument positions apply to the actual call.
+`debundle gate diagnose <binding>` gives a bounded, source-backed local witness
+for a namespace-member factory signature rejected by a supported write or
+publication guard; other guard families stay inconclusive. Supported shapes and
+output: [CLI § Gate queries](docs/cli.md#gate-queries).
 
 ### Retaining callbacks in constructed instances
 
@@ -4273,6 +4182,19 @@ can expose every retained callback and its captures, including graphs returned
 by those callbacks. Argument evaluation and provider-private effects retain
 their normal checks and ordering. The contract does not assert construction
 purity: `purity: pure_new` on the defining binding requires its own audit.
+
+### Callback-storage member hints
+
+`annotations.<export_name>.no_sync_callback_members` lists member names of an
+audited API that stores callback-like arguments without synchronously invoking
+them, such as `registry.register(fn)` or `state.set({ onDone() {} })`. It
+suppresses only the conservative "the callback may have run now" edge for inline
+functions, object literals containing functions, and first-order argument
+callbacks. Receiver, callee and non-callback arguments still evaluate and feed
+ordinary read/rebind/effect summaries; the call stays impure for S-chain
+ordering unless a separate purity hint applies. Reentry through callbacks
+already escaped to host code or available exports is not suppressed. Purity
+annotations alone never assert that callback arguments are deferred.
 
 ### Calls without synchronous reentry
 

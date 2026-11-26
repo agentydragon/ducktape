@@ -26,7 +26,6 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as a `pub(cra
 
 ## Adopted expression unwrapping
 
-Expression classifiers use `swc_ecma_ast::Expr::unwrap_parens` directly
-(same semantics as the removed local walker, verified in SWC 29.0.1).
+Expression classifiers use `swc_ecma_ast::Expr::unwrap_parens` directly.
 The separate `js_ast::strip_parens` transform mutates a whole module and is not
 interchangeable with this borrowed-expression accessor.
