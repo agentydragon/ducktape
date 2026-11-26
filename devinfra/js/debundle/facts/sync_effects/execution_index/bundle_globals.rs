@@ -8,11 +8,11 @@ use super::{
     close_raw_intrinsic_aliases, intrinsic_roots_read, key_domain_may_name, property_key_evidence,
 };
 use analysis::facts::standard_globals::is_predefined_global;
-use analysis::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis_vocabulary::inputs::{
     BundleGlobalNames, NativeIntrinsic, NoAccessorInstallRef, ResolvedNoAccessorInstall,
 };
 use analysis_vocabulary::report_schema::NativeMutationOperation;
+use inference::{FactContext, IterativeInference, IterativeRules};
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
 

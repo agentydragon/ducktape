@@ -5,9 +5,9 @@
 //! projected as a purity certificate. The final projection happens only after
 //! the shared worklist reaches closure.
 
-use crate::inference::{FactChange, FactContext, IterativeInference, IterativeRules};
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::purity::{Purity, PurityReason, PurityRule};
+use inference::{FactChange, FactContext, IterativeInference, IterativeRules};
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::DiGraph;
 use std::cmp::Reverse;

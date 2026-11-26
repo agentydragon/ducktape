@@ -6,11 +6,11 @@
 //! back to its opaque behavior. Rules and builtin rows name slots; nothing but
 //! this module reads the census for them.
 
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis_vocabulary::inputs::{NativeIntrinsic, NativeOperationInputRef, ProofDependencies};
 use analysis_vocabulary::report_schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativeReceiverPath,
 };
+use inference::{FactContext, IterativeInference, IterativeRules};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 

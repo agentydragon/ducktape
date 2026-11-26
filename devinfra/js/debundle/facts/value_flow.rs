@@ -46,9 +46,9 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use super::abstract_domain::primitive::{NoBindings, evaluate};
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis_model::PrimKinds;
 use analysis_vocabulary::value::{Kind, Value};
+use inference::{FactContext, IterativeInference, IterativeRules};
 
 use super::{
     LazyBoundary, LazyPosition, PositionBucketed, StatementFacts, TopLevelItemView,

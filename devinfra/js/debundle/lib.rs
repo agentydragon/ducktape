@@ -17,7 +17,6 @@
 pub mod diagnostics;
 pub mod facts;
 pub mod ids;
-pub mod inference;
 pub mod loader_closure;
 pub mod program_bindings;
 pub mod purity;

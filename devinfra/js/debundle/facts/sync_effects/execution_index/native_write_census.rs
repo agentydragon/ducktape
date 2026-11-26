@@ -5,13 +5,13 @@
 
 use super::property_keys::{PropertyKeyDomain, PropertyKeyExpr};
 use super::{IntrinsicRoots, NativeReceiverRoot, NativeReceiverRoots, ValueExpr};
-use analysis::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis_vocabulary::inputs::{HostBehaviorKey, NativeIntegrity, NativeIntrinsic};
 use analysis_vocabulary::report_schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativeReceiverPath, NativeWriteSlot,
 };
 use binding_targets;
+use inference::{FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;

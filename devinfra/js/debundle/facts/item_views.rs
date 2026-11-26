@@ -1,6 +1,6 @@
 use super::*;
 use crate::facts::abstract_domain::builtins;
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use inference::{FactContext, IterativeInference, IterativeRules};
 
 #[derive(Clone)]
 pub enum TopLevelItemView<'a> {

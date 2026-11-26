@@ -6,13 +6,13 @@
 
 use super::*;
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis_vocabulary::inputs::{
     AnalysisInputs, ImportedPrimitiveArrayOperandEvidence, InferredSetConstruction,
     InferredSetOperation, NativeOperationInputEvidence, ProofDependencies,
     ResolvedImportedPrimitiveArraySpreadInput,
 };
 use analysis_vocabulary::value::{Kind, Value};
+use inference::{FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use std::sync::Arc;
 

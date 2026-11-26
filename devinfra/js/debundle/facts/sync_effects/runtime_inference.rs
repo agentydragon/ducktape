@@ -20,10 +20,10 @@ use analysis::facts::{
     CompletedPurity, LocalRecordFactoryPurityCertificate, OwnerInitializationCoverageRefusalReason,
     PreparedPurity,
 };
-use analysis::inference::{CompletedTransfer, FactContext, IterativeInference, IterativeRules};
 use analysis_vocabulary::execution_evidence::OrderedCallAdmissionRefusal;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::report_schema::{NativeProgramPointKind, NativeProgramPointStep};
+use inference::{CompletedTransfer, FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
 use swc_common::Span;

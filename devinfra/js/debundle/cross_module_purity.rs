@@ -55,13 +55,13 @@ use analysis_vocabulary::inputs::{
 };
 
 use analysis::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
-use analysis::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis::program_bindings::{
     BindingId, ExportId, ModuleBindings, ProgramBindings, ResolvedImport, SourceModuleKey,
 };
 use analysis::purity::{ChunkCodeGraph, PurityEffectRules, PurityMode};
 use analysis_vocabulary::purity::Purity;
 use analysis_vocabulary::value::Value;
+use inference::{FactContext, IterativeInference, IterativeRules};
 use sync_effects::execution_index::{InferredCallableCapabilities, PreparedCallableCapabilities};
 
 /// A stable export after its imports resolved: its own types and the exports
