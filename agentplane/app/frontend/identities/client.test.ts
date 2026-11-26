@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { IdentitySchema } from "../../../policy/v1/policy_service_pb";
-import { deleteIdentity } from "./client";
+import { checkIdentityDelete, deleteIdentity } from "./client";
 
 const identity = create(IdentitySchema, { identity: { namespace: "fake-policies", name: "fake agent", uid: "uid-1" } });
 afterEach(() => vi.unstubAllGlobals());
@@ -13,10 +13,13 @@ function answer(response: Response): ReturnType<typeof vi.fn> {
   return fetch;
 }
 
-it("deletes the exact incarnation through the generated facade route", async () => {
+it.each([
+  ["deletes", deleteIdentity, { case: "deleted" }, "?uid=uid-1"],
+  ["dry-runs", checkIdentityDelete, { case: "allowed" }, "?uid=uid-1&validateOnly=true"],
+] as const)("%s the exact incarnation through the generated facade route", async (_, call, outcome, query) => {
   const fetch = answer(Response.json({}));
-  expect(await deleteIdentity(identity)).toEqual({ case: "deleted" });
-  expect(fetch).toHaveBeenCalledWith("/upstream/policy/v1/identities/fake-policies/fake%20agent?uid=uid-1", {
+  expect(await call(identity)).toEqual(outcome);
+  expect(fetch).toHaveBeenCalledWith(`/upstream/policy/v1/identities/fake-policies/fake%20agent${query}`, {
     method: "DELETE",
   });
 });
