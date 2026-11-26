@@ -47,26 +47,21 @@ func TestCheckRunsPaginatesLatestRunsAndPreservesNativeFacts(t *testing.T) {
 		return true
 	}
 
-	runs, err := newTestClient(t, fake).CheckRuns(t.Context(), "owner/repo", fixture.SHA, installationID)
+	runs, err := newTestClient(t, fake).CheckRuns(t.Context(), testRevision(fixture.SHA), installationID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []githubmodel.CheckRun{
-		{HeadSHA: fixture.SHA, ID: 105, Name: "queue", Status: githubmodel.CheckRunQueued, DetailsURL: "https://ci.test/queue"},
-		{HeadSHA: fixture.SHA, ID: 202, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: new("success"), DetailsURL: "https://ci.test/build/202", StartedAt: ciUTC(2026, 10, 27, 8, 2, 3), CompletedAt: ciUTC(2026, 10, 27, 8, 4, 5)},
-		{HeadSHA: fixture.SHA, ID: 203, Name: "run", Status: githubmodel.CheckRunInProgress},
-		{HeadSHA: fixture.SHA, ID: 204, Name: "wait", Status: githubmodel.CheckRunWaiting},
-		{HeadSHA: fixture.SHA, ID: 205, Name: "pending", Status: githubmodel.CheckRunPending},
-		{HeadSHA: fixture.SHA, ID: 206, Name: "requested", Status: githubmodel.CheckRunRequested},
-		{HeadSHA: fixture.SHA, ID: 303, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: new("failure"), DetailsURL: "https://ci.test/build/303"},
+		{RepositoryID: 100, HeadSHA: fixture.SHA, ID: 105, Name: "queue", Status: githubmodel.CheckRunQueued, DetailsURL: "https://ci.test/queue"},
+		{RepositoryID: 100, HeadSHA: fixture.SHA, ID: 202, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: new("success"), DetailsURL: "https://ci.test/build/202", StartedAt: ciUTC(2026, 10, 27, 8, 2, 3), CompletedAt: ciUTC(2026, 10, 27, 8, 4, 5)},
+		{RepositoryID: 100, HeadSHA: fixture.SHA, ID: 203, Name: "run", Status: githubmodel.CheckRunInProgress},
+		{RepositoryID: 100, HeadSHA: fixture.SHA, ID: 204, Name: "wait", Status: githubmodel.CheckRunWaiting},
+		{RepositoryID: 100, HeadSHA: fixture.SHA, ID: 205, Name: "pending", Status: githubmodel.CheckRunPending},
+		{RepositoryID: 100, HeadSHA: fixture.SHA, ID: 206, Name: "requested", Status: githubmodel.CheckRunRequested},
+		{RepositoryID: 100, HeadSHA: fixture.SHA, ID: 303, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: new("failure"), DetailsURL: "https://ci.test/build/303"},
 	}
 	if !reflect.DeepEqual(runs, want) {
 		t.Errorf("CheckRuns() = %+v, want %+v", runs, want)
-	}
-	for i, run := range runs {
-		if run.RepositoryID != 0 {
-			t.Errorf("run %d repository ID = %d, want provider to fill it", i, run.RepositoryID)
-		}
 	}
 	if fake.Count("/repos/owner/repo/commits/"+fixture.SHA+"/check-runs") != 2 {
 		t.Errorf("check run page count = %d, want 2", fake.Count("/repos/owner/repo/commits/"+fixture.SHA+"/check-runs"))
@@ -78,7 +73,7 @@ func TestCheckRunsPaginatesLatestRunsAndPreservesNativeFacts(t *testing.T) {
 
 func TestCheckRunsUsesChecksOnlyTokenAndReturnsNonNilEmptySuccess(t *testing.T) {
 	fake := fixture.NewFake(t)
-	runs, err := newTestClient(t, fake).CheckRuns(t.Context(), "owner/repo", fixture.SHA, installationID)
+	runs, err := newTestClient(t, fake).CheckRuns(t.Context(), testRevision(fixture.SHA), installationID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +93,7 @@ func TestCheckRunsRejectsWrongCommitAndInvalidFacts(t *testing.T) {
 		fake := fixture.NewFake(t)
 		fake.Respond("/repos/owner/repo/commits/"+fixture.SHA+"/check-runs", http.StatusOK, nil,
 			fmt.Sprintf(`{"total_count":1,"check_runs":[{"id":9,"head_sha":%q,"name":"build","status":"completed","conclusion":"success"}]}`, fixture.OtherBaseSHA))
-		_, err := newTestClient(t, fake).CheckRuns(t.Context(), "owner/repo", fixture.SHA, installationID)
+		_, err := newTestClient(t, fake).CheckRuns(t.Context(), testRevision(fixture.SHA), installationID)
 		fixture.AsError[*SourceChangedError](t, err)
 	})
 	for name, body := range map[string]string{
@@ -115,7 +110,7 @@ func TestCheckRunsRejectsWrongCommitAndInvalidFacts(t *testing.T) {
 			fake := fixture.NewFake(t)
 			fake.Respond("/repos/owner/repo/commits/"+fixture.SHA+"/check-runs", http.StatusOK, nil,
 				`{"total_count":1,"check_runs":[`+body+`]}`)
-			_, err := newTestClient(t, fake).CheckRuns(t.Context(), "owner/repo", fixture.SHA, installationID)
+			_, err := newTestClient(t, fake).CheckRuns(t.Context(), testRevision(fixture.SHA), installationID)
 			fixture.AsError[*InvalidResponseError](t, err)
 		})
 	}
@@ -123,7 +118,7 @@ func TestCheckRunsRejectsWrongCommitAndInvalidFacts(t *testing.T) {
 
 func TestCheckRunsRejectsNonImmutableSHAWithoutRequest(t *testing.T) {
 	fake := fixture.NewFake(t)
-	_, err := newTestClient(t, fake).CheckRuns(t.Context(), "owner/repo", "main", installationID)
+	_, err := newTestClient(t, fake).CheckRuns(t.Context(), testRevision("main"), installationID)
 	if err == nil || fake.Total() != 0 {
 		t.Errorf("CheckRuns with a branch name = %v after %d requests, want argument error without requests", err, fake.Total())
 	}
@@ -135,7 +130,7 @@ func TestCheckRunsConclusionsRemainTypedAndExact(t *testing.T) {
 			fake := fixture.NewFake(t)
 			fake.Respond("/repos/owner/repo/commits/"+fixture.SHA+"/check-runs", http.StatusOK, nil,
 				fmt.Sprintf(`{"total_count":1,"check_runs":[{"id":1,"head_sha":%q,"name":"test","status":"completed","conclusion":%q}]}`, fixture.SHA, value))
-			runs, err := newTestClient(t, fake).CheckRuns(t.Context(), "owner/repo", fixture.SHA, installationID)
+			runs, err := newTestClient(t, fake).CheckRuns(t.Context(), testRevision(fixture.SHA), installationID)
 			if err != nil {
 				t.Fatal(err)
 			}

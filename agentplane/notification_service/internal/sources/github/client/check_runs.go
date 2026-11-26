@@ -11,18 +11,18 @@ import (
 )
 
 // CheckRuns reads the latest check runs for an immutable commit SHA.
-func (c *Client) CheckRuns(ctx context.Context, repository, sha string, installationID int64) ([]githubmodel.CheckRun, error) {
-	owner, name, err := splitRepository(repository)
+func (c *Client) CheckRuns(ctx context.Context, revision githubmodel.HeadRevision, installationID int64) ([]githubmodel.CheckRun, error) {
+	owner, name, err := splitRepository(revision.Repository.Name)
 	if err != nil {
 		return nil, err
 	}
-	if !githubmodel.IsCommitSHA(sha) {
+	if !githubmodel.IsCommitSHA(revision.SHA) {
 		return nil, errors.New("commit SHA must be a full lowercase Git SHA")
 	}
 
 	runs := make([]githubmodel.CheckRun, 0)
 	pages := installationPages(ctx, c, installationID, checkRunsRead, "check runs", func(ctx context.Context, client *github.Client, opts github.ListOptions) (*github.ListCheckRunsResults, *github.Response, error) {
-		return client.Checks.ListCheckRunsForRef(ctx, owner, name, sha, &github.ListCheckRunsOptions{Filter: github.Ptr("latest"), ListOptions: opts})
+		return client.Checks.ListCheckRunsForRef(ctx, owner, name, revision.SHA, &github.ListCheckRunsOptions{Filter: github.Ptr("latest"), ListOptions: opts})
 	})
 	for results, err := range pages {
 		if err != nil {
@@ -32,7 +32,7 @@ func (c *Client) CheckRuns(ctx context.Context, repository, sha string, installa
 			return nil, &InvalidResponseError{Reason: "check runs response is missing"}
 		}
 		for _, checkRun := range results.CheckRuns {
-			run, err := CheckRunObservation(checkRun, sha)
+			run, err := CheckRunObservation(checkRun, revision)
 			if err != nil {
 				return nil, err
 			}
@@ -43,14 +43,14 @@ func (c *Client) CheckRuns(ctx context.Context, repository, sha string, installa
 	return runs, nil
 }
 
-func CheckRunObservation(checkRun *github.CheckRun, sha string) (githubmodel.CheckRun, error) {
+func CheckRunObservation(checkRun *github.CheckRun, revision githubmodel.HeadRevision) (githubmodel.CheckRun, error) {
 	if checkRun == nil {
 		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run is missing"}
 	}
 	if checkRun.GetHeadSHA() == "" {
 		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run head SHA is missing"}
 	}
-	if checkRun.GetHeadSHA() != sha {
+	if checkRun.GetHeadSHA() != revision.SHA {
 		return githubmodel.CheckRun{}, &SourceChangedError{Reason: "GitHub check run refers to a different commit"}
 	}
 	if checkRun.GetID() <= 0 {
@@ -80,14 +80,15 @@ func CheckRunObservation(checkRun *github.CheckRun, sha string) (githubmodel.Che
 		}
 	}
 	return githubmodel.CheckRun{
-		HeadSHA:     sha,
-		ID:          checkRun.GetID(),
-		AppID:       appID,
-		Name:        checkRun.GetName(),
-		Status:      status,
-		Conclusion:  checkRun.Conclusion,
-		DetailsURL:  checkRun.GetDetailsURL(),
-		StartedAt:   timestampTime(checkRun.StartedAt),
-		CompletedAt: timestampTime(checkRun.CompletedAt),
+		RepositoryID: revision.Repository.ID,
+		HeadSHA:      revision.SHA,
+		ID:           checkRun.GetID(),
+		AppID:        appID,
+		Name:         checkRun.GetName(),
+		Status:       status,
+		Conclusion:   checkRun.Conclusion,
+		DetailsURL:   checkRun.GetDetailsURL(),
+		StartedAt:    timestampTime(checkRun.StartedAt),
+		CompletedAt:  timestampTime(checkRun.CompletedAt),
 	}, nil
 }
