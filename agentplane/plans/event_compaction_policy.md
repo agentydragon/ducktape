@@ -177,7 +177,7 @@ for a second write, its WAL and the larger point reads.
 Keep the profile values in each service's existing typed settings. Sampler owns the dense
 sequence-range index. History owns kind selection, sparse cursor and size indexes, and the
 merge for filtered pages. Each service also owns its legacy reader, SQL transactions, locks,
-and durable repack checkpoint. The shared package needs neither a database handle nor an
+and in-memory repack cursor. The shared package needs neither a database handle nor an
 event-kind enum. A common byte-exact round-trip suite covers both callers; service integration
 tests cover seeks and page boundaries during a concurrent repack.
 
@@ -286,6 +286,70 @@ service with winner, runner-up, measured trade-off and affected read path. Until
 exist, keep the current writer defaults; use the measured generic packing results to prioritize
 the experiment, not to authorize a fleet rewrite.
 
+### A repeatable workload for measuring growth
+
+Track two numbers per journal: **allocated bytes per MiB of original serialized frames**
+measures what the representation costs; **allocated bytes per agent turn** measures what
+a workload costs. For the first, divide the change in heap, TOAST and index bytes in a fresh
+database by the total MiB of frames presented to that journal. For the second, count the same
+turn only once even if both History and Sampler retain it; report their byte costs separately
+and sum them for the combined cost. Keep WAL generated during ingestion as a separate write
+cost. For capacity planning, multiply bytes per turn by observed turns per day in each workload
+group; account for expiry and page reuse before comparing that estimate with PVC growth.
+
+As a future load test, freeze a versioned corpus of complete session streams through recorded
+end cursors. Keep the original frame bytes, ordering, turn boundaries and arrival times, so
+the same workload can test both storage and concurrent ingestion. A manifest should identify
+the format and checksum, the service and capture point, and aggregate turns, tool calls, frame
+counts and bytes by kind. Report results by provider, model and visible stream content:
+a run that exposes reasoning frames has a different cost per turn from one that doesn't.
+Mark unavailable token counts as unknown. Splitting one response into more stream deltas
+can change bytes per event even when the user receives exactly the same response.
+
+Start with purpose-built test sessions. If using an instance capture, keep it in an
+access-controlled object store within the source data's retention and access rules; put only
+aggregate results and the replay procedure in the public repo. Replay into disposable databases
+through the journal ingestion paths, without calling models or executing recorded tools.
+Compare writer versions on the identical corpus, verify ordered frame bytes on readback, and
+record physical footprint and WAL after the same number of turns. This benchmark can follow
+the rollout independently of the live-session canary.
+
+For an end-to-end load test, record the inputs that caused those frames. Capture user commands
+at the App API (including steering, approvals and cancellation), provider responses where each
+harness consumes its model stream (including the LLM ingress for Codex), and tool outcomes at
+the executor or harness boundary. Preserve the order and relative timing of observable chunks,
+errors and completion. For example, Codex can emit `item/commandExecution/outputDelta` before
+command completion; Sampler's `exec_command` can yield a process handle and return more output
+on a later `write_stdin` call. A lone final stdout string cannot reproduce either interaction.
+
+For central Sampler, wrap the [typed executor client](../env/runtime/execution/executor.proto).
+In record mode, forward each call and save its request, response or RPC error. For
+`OpenSession`, also capture the ordered stream of wakeups, native frames and stream closure.
+For `ReadProcess`, retain the requested cursor, output chunk sequences and bytes, next cursor
+and exit status, including successful empty reads. On replay, inject a client that serves the
+recording. Sampler then runs its real polling, tool-result formatting, journal and export paths.
+Use an isolated fixture with one command that yields a handle, produces output in two parts
+and exits. Replay without a live executor and compare the observed tool results and journal
+events. Actions use a separate client and need their own recording if part of the workload.
+
+For Codex, put the recorder between its app-server and the
+[exec-server WebSocket](../env/runtime/execution/docs/codex_executor.md). In an isolated
+benchmark runtime, point the runtime-owned `CODEX_EXEC_SERVER_URL` at a relay that forwards
+to the real backend while recording. In replay mode that endpoint serves the recorded protocol
+with no upstream connection. Preserve connection boundaries, JSON-RPC request/reply correlation,
+unsolicited notifications, and relative delivery times independently in both directions.
+Let the real app-server turn these messages into command output deltas and completion events.
+Start with the same two-part command fixture; verify that replay reaches completion and that the
+runner sends the expected events to History. This covers tools routed through exec-server;
+model traffic and any tools that bypass that endpoint need their own replay inputs.
+
+On replay, drive the real App and selected harness with those commands. Match model and tool
+calls to their recorded responses, map new process and call IDs to their recorded counterparts,
+and stop on an unexpected call. Let Sampler's exporter or the Codex runner drive History through
+its normal ingress; injecting the recorded History frames as well would count that work twice.
+Compare the resulting frame counts and bytes by kind against the capture. Use the frozen
+journal input above when the comparison needs byte-identical inputs across storage versions.
+
 ## Implementation order
 
 1. Land the shared Go packer and versioned decoder with exact-byte and boundary tests.
@@ -310,14 +374,16 @@ marks. Enumerate **ordinary rows and existing blocks** in cursor order. Decode, 
 repartition; changing the codec on existing block boundaries alone cannot change grouping or size.
 For sparse History streams expand each work unit to include whole overlapping source blocks in
 the streams being replaced; if the closure exceeds the work budget, stage a replacement generation
-in bounded chunks and swap its manifest atomically. Never move a checkpoint past an unprocessed
+in bounded chunks and swap its manifest atomically. Never advance past an unprocessed
 intersecting block.
 
 Dry-run counts source bytes, target bytes, rewritten and skipped events and peak
 scratch space, without modifying journal rows. Apply outside the append critical path: prepare
 bounded candidates, acquire the session lock with a short timeout, recheck source identities and
-the removal watermark, then atomically replace the source and advance the checkpoint. Readers
-use one MVCC snapshot. Skip a busy session, resume after failure, finish the opening watermark
+the removal watermark, then atomically replace the source. Advance the in-memory cursor only
+after commit. Neither service persists run or checkpoint tables. On restart, scan the selected
+sessions again and inspect the committed rows and blocks; a crash leaves each batch wholly
+applied or wholly unapplied. Readers use one MVCC snapshot. Skip a busy session, finish the opening watermark
 even if new events arrive, and report already-conforming ranges on rerun. An operator can throttle
 by bytes per second and concurrent sessions, and pause on replica lag, WAL growth, low disk headroom
 or append/read latency. Keep old readers compatible before switching writers; rollback of the
@@ -347,3 +413,12 @@ migration path before a new-only binary opens them.
 
 Then remove legacy block readers, writers, fallback dispatch, tests specific to the obsolete
 format and rollout-only flags in a cleanup PR. Keep strict rejection of unknown formats.
+
+TODO after the rollout: consider storing the block encoding and format version in a PostgreSQL
+column on the History and Sampler block tables. The column could select the decoder directly,
+so payloads would no longer need a custom APB prefix to identify their format. Account for
+existing blocks and the decoded-size check currently carried by the header when weighing the change.
+Also consider exposing decoded byte size and frame count in SQL to find candidate blocks on a
+rescan without reading each payload. Check what the existing cursor and size indexes already
+provide before adding columns. These values can narrow the scan; by themselves they do not
+identify the encoding, compression level or whether adjacent blocks should be regrouped.

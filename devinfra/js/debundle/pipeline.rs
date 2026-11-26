@@ -1050,14 +1050,8 @@ fn prepare_transform(
     {
         // Capture the whole authored tree, including YAMLs outside the chunk
         // selected for this graph. Path membership is part of the analysis input.
-        let members = graph_provenance::collect_yaml(&tree.modules_root)?;
-        let paths = members
-            .iter()
-            .map(|member| tree.modules_root.join(member))
-            .collect::<Vec<_>>();
-        graph_provenance::record_yaml_membership(&tree.modules_root, &paths)?;
-        for path in &paths {
-            graph_provenance::read_bytes(path)?;
+        for path in graph_provenance::yaml_files(&tree.modules_root)? {
+            graph_provenance::read_bytes(&path)?;
         }
     }
     let (spec, module_roots_by_chunk) = match projection {

@@ -61,7 +61,7 @@ func serveGRPC(t *testing.T, workload workloadauthtesting.Workload, index *polic
 	config := listener.Config{
 		ListenAddress: "127.0.0.1:0",
 		TLS:           &listener.TLS{CertFile: serverFiles.CertFile, KeyFile: serverFiles.KeyFile},
-		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: serverFiles.CAFile}},
+		Auth:          []*listener.SPIFFEAuth{{CAFile: serverFiles.CAFile}},
 	}
 	reader := &rulesReader{Reader: workload.Objects}
 	records, err := resolver.New(reader, []string{workload.Record.Namespace}, &resolver.Identities{PolicyNamespace: workload.Identity.Namespace})

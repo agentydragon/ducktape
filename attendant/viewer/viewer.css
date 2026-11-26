@@ -1,0 +1,42 @@
+.masthead {
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  padding: var(--mantine-spacing-sm) max(var(--mantine-spacing-lg), calc((100vw - 1320px) / 2));
+}
+
+main {
+  max-width: 1360px;
+  margin: auto;
+  padding: var(--mantine-spacing-lg);
+}
+
+.login-panel {
+  max-width: 25rem;
+  margin: clamp(1.5rem, 10vh, 7rem) auto;
+}
+
+.provider-status:empty {
+  display: none;
+}
+
+.viewer {
+  overflow: hidden;
+}
+
+.viewer-header {
+  padding: var(--mantine-spacing-sm);
+  min-height: 3.25rem;
+}
+
+.screen {
+  display: grid;
+  place-items: center;
+  height: max(18rem, calc(100dvh - 16rem));
+  background: var(--mantine-color-default-hover);
+  text-align: center;
+}
+
+#display {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}

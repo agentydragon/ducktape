@@ -158,14 +158,14 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 		RPC: listener.Config{
 			ListenAddress: "127.0.0.1:0",
 			TLS:           &listener.TLS{CertFile: serverCertificate.CertFile, KeyFile: serverCertificate.KeyFile},
-			Auth: []listener.Authentication{
-				&listener.SPIFFEAuth{CAFile: ca.RootFile},
+			Auth: []*listener.SPIFFEAuth{
+				{CAFile: ca.RootFile},
 			},
 		},
 		PolicyNamespace:  servingTestNamespace,
 		ServiceReaders:   []string{peertls.CentralSamplerURI},
 		ServiceOperators: []string{peertls.ActionsURI},
-		ServiceDelegation: &ServiceDelegationConfig{
+		ServiceDelegation: &auth.ServiceDelegationConfig{
 			Actors:  []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}},
 			Methods: []string{environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName},
 		},

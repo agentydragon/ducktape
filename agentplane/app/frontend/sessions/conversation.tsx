@@ -7,7 +7,6 @@ import { Operation } from "../../../proto/command_pb";
 import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
 import { Harness, SetupState } from "../../../proto/session_pb";
 import { IconDotsVertical, IconHistory } from "../ui/icons";
-import { intlFormatDistance } from "date-fns";
 import { type JSX, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
@@ -42,7 +41,7 @@ import type { ThreadDeliveryState } from "./thread_delivery";
 import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
 import { timestampLabel } from "./thread_presentation";
-import { isoTime } from "../ui/format_time";
+import { isoTime, timeAgo } from "../ui/format_time";
 import { TimeAgo } from "../ui/time_ago";
 import { AUTOSUSPEND_BLOCKER_LABELS, autosuspendHint } from "./sandbox_autosuspend";
 import { NotificationStatus } from "../notifications/notification_status";
@@ -58,7 +57,7 @@ function modelActivityAge(at: string | null | undefined, now: number): string {
   const time = Date.parse(at);
   if (!Number.isFinite(time) || time > now + 60_000) return "unknown";
   if (now - time < 60_000) return "just now";
-  return intlFormatDistance(new Date(time), new Date(now), { locale: "en", numeric: "always", style: "narrow" });
+  return timeAgo(time, now);
 }
 
 function canCollapseIdleHint(

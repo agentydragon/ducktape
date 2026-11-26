@@ -45,7 +45,6 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
@@ -343,7 +342,7 @@ func gate(c config, d deps, callers grpcgate.Callers) (*grpcgate.Gate, error) {
 			}
 		}
 	}
-	if c.RPC.Has(listener.SPIFFE) {
+	if c.RPC.HasSPIFFE() {
 		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces,
 			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 		if err != nil {

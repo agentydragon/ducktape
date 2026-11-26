@@ -168,8 +168,7 @@ pub(crate) fn resolve_global_alias_escape(
         aliases,
         reads: BTreeSet::new(),
         escaped: false,
-        lazy_depth: 0,
-        past_await: false,
+        position: LazyPosition::default(),
     };
     item.visit_with(&mut uses);
     if !uses.escaped {
@@ -187,17 +186,12 @@ struct GlobalAliasUses<'a> {
     aliases: &'a BTreeSet<Id>,
     reads: BTreeSet<String>,
     escaped: bool,
-    lazy_depth: u32,
-    past_await: bool,
+    position: LazyPosition,
 }
 
 impl LazyBoundary for GlobalAliasUses<'_> {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.lazy_depth
-    }
-
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
+    fn position(&mut self) -> &mut LazyPosition {
+        &mut self.position
     }
 }
 
@@ -215,7 +209,7 @@ impl GlobalAliasUses<'_> {
 
 impl Visit for GlobalAliasUses<'_> {
     fn visit_ident(&mut self, ident: &Ident) {
-        if self.lazy_depth == 0
+        if self.position.depth == 0
             && (self.aliases.contains(&ident.to_id())
                 || self.global_object_names.contains(ident.sym.as_ref()))
         {
@@ -224,13 +218,13 @@ impl Visit for GlobalAliasUses<'_> {
     }
 
     fn visit_member_expr(&mut self, member: &MemberExpr) {
-        if self.lazy_depth == 0 && self.is_global_name(&member.obj) {
+        if self.position.depth == 0 && self.is_global_name(&member.obj) {
             if let MemberProp::Computed(key) = &member.prop {
                 key.visit_with(self);
             }
             return;
         }
-        if self.lazy_depth == 0 && self.is_alias(&member.obj) {
+        if self.position.depth == 0 && self.is_alias(&member.obj) {
             match &member.prop {
                 MemberProp::Ident(key) => {
                     self.reads.insert(key.sym.to_string());
@@ -253,7 +247,7 @@ impl Visit for GlobalAliasUses<'_> {
 
     fn visit_assign_expr(&mut self, assign: &AssignExpr) {
         // A write through an alias stays opaque.
-        if self.lazy_depth == 0
+        if self.position.depth == 0
             && let Some(binding_targets::SimpleWriteTarget::Member(member)) =
                 binding_targets::simple_write_target(&assign.left)
             && self.is_alias(&member.obj)
@@ -264,7 +258,7 @@ impl Visit for GlobalAliasUses<'_> {
     }
 
     fn visit_update_expr(&mut self, update: &UpdateExpr) {
-        if self.lazy_depth == 0
+        if self.position.depth == 0
             && let Some(binding_targets::SimpleWriteTarget::Member(member)) =
                 binding_targets::simple_write_target_expr(&update.arg)
             && self.is_alias(&member.obj)
@@ -275,7 +269,7 @@ impl Visit for GlobalAliasUses<'_> {
     }
 
     fn visit_unary_expr(&mut self, unary: &UnaryExpr) {
-        if self.lazy_depth == 0
+        if self.position.depth == 0
             && unary.op == UnaryOp::Delete
             && let Expr::Member(member) = unary.arg.unwrap_parens()
             && self.is_alias(&member.obj)

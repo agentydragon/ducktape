@@ -32,7 +32,7 @@ function IdentityRow({
   const references =
     split.referencing.length === 0 ? (
       <Text size="sm" c="dimmed">
-        unreferenced
+        No referring bindings
       </Text>
     ) : (
       <Text size="sm">
@@ -54,9 +54,24 @@ function IdentityRow({
           </Group>
           {/* On a phone the other columns fold under the name. */}
           <Stack gap="xs" px="xs" hiddenFrom="sm">
-            <BindingExpiries bindings={naming} />
-            <AccountsReached reached={reached} />
-            {references}
+            <div>
+              <Text size="xs" fw={600}>
+                Bindings
+              </Text>
+              <BindingExpiries bindings={naming} />
+            </div>
+            <div>
+              <Text size="xs" fw={600}>
+                Kubernetes accounts
+              </Text>
+              <AccountsReached reached={reached} />
+            </div>
+            <div>
+              <Text size="xs" fw={600}>
+                Referenced by
+              </Text>
+              {references}
+            </div>
           </Stack>
         </Stack>
       </Table.Td>
@@ -97,11 +112,10 @@ export function IdentityList({ onOpen }: { onOpen: (name: string) => void }): JS
         </Title>
       </TopbarTitle>
       <Text c="dimmed" size="sm">
-        Who each agent is: the subject its bindings grant to, independent of the environment it runs in. Nothing in
-        Kubernetes owns an identity, so one nothing references is left behind until someone deletes it.
+        An identity carries grants independently of the sandboxes that use it.
       </Text>
       <Switch
-        label="Only identities nothing references"
+        label="Only identities without referring bindings"
         checked={onlyUnreferenced}
         onChange={(event) => {
           const next = new URLSearchParams(params);
@@ -135,7 +149,7 @@ export function IdentityList({ onOpen }: { onOpen: (name: string) => void }): JS
               <Table.Tr>
                 <Table.Td colSpan={4}>
                   <Text size="sm" c="dimmed">
-                    {onlyUnreferenced ? "Every identity is referenced." : "No identities."}
+                    {onlyUnreferenced ? "Every identity has a referring binding." : "No identities."}
                   </Text>
                 </Table.Td>
               </Table.Tr>

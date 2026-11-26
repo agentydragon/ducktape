@@ -66,7 +66,7 @@ func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stre
 	defer endLease()
 	var high int64
 	if err := s.Store.DB.QueryRowContext(leaseCtx, "SELECT version FROM session_watch_version WHERE singleton").Scan(&high); err != nil {
-		return sessionWatchEnd(ctx, leaseCtx, apiError(err))
+		return watchEnd(ctx, leaseCtx, apiError(err))
 	}
 	if last > high {
 		return status.Error(codes.InvalidArgument, "watch resume version is ahead of stored Sessions")
@@ -87,7 +87,7 @@ func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stre
 		if s.Hub.Connected() {
 			sessions, err := s.Store.SessionsAfter(leaseCtx, last, caller)
 			if err != nil {
-				return sessionWatchEnd(ctx, leaseCtx, apiError(err))
+				return watchEnd(ctx, leaseCtx, apiError(err))
 			}
 			for _, session := range sessions {
 				resource, err := DescribeSession(session)
@@ -96,7 +96,7 @@ func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stre
 				}
 				last = session.Version
 				if err := send(leaseCtx, &dispatcherpb.WatchSessionsResponse{Frame: &dispatcherpb.WatchSessionsResponse_Session{Session: resource}}); err != nil {
-					return sessionWatchEnd(ctx, leaseCtx, err)
+					return watchEnd(ctx, leaseCtx, err)
 				}
 			}
 			if len(sessions) > 0 {
@@ -104,7 +104,7 @@ func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stre
 			}
 			if !caughtUp && s.Hub.Connected() && s.Hub.Generation() == generation {
 				if err := send(leaseCtx, &dispatcherpb.WatchSessionsResponse{Frame: &dispatcherpb.WatchSessionsResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}}}); err != nil {
-					return sessionWatchEnd(ctx, leaseCtx, err)
+					return watchEnd(ctx, leaseCtx, err)
 				}
 				caughtUp = true
 			}
@@ -118,14 +118,4 @@ func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stre
 		case <-changed:
 		}
 	}
-}
-
-func sessionWatchEnd(ctx, leaseCtx context.Context, err error) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if leaseCtx.Err() != nil {
-		return nil
-	}
-	return err
 }

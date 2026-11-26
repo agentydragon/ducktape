@@ -711,35 +711,26 @@ pub fn record_chunk_source(
     Ok(())
 }
 
-/// Record the exact list returned by the module-tree walk, including paths
-/// outside the current graph chunk. Added/deleted YAMLs invalidate the graph.
-pub fn record_yaml_membership(directory: &Path, members: &[PathBuf]) -> Result<()> {
+/// Discover every YAML input under the directory. Verification uses the same
+/// relative paths even when a caller only parses a subset as module specs.
+pub fn yaml_files(directory: &Path) -> Result<Vec<PathBuf>> {
+    let members = relative_yaml_files(directory)?;
     if let Some(state) = active_capture() {
         let mut guard = state.lock().expect("capture lock");
-        {
-            let provenance = guard
-                .as_mut()
-                .context("graph capture ended before YAML membership check")?;
-            let (root, relative_dir) = provenance.classify_spec(directory)?;
-            let mut relative_members = members
-                .iter()
-                .map(|p| {
-                    p.strip_prefix(directory)
-                        .map(Path::to_path_buf)
-                        .with_context(|| {
-                            format!("{} is outside {}", p.display(), directory.display())
-                        })
-                })
-                .collect::<Result<Vec<_>>>()?;
-            relative_members.sort();
-            provenance.yaml_memberships.push(YamlMembership {
-                root,
-                directory: relative_dir,
-                members: relative_members,
-            });
-        }
+        let provenance = guard
+            .as_mut()
+            .context("graph capture ended before YAML membership check")?;
+        let (root, relative_dir) = provenance.classify_spec(directory)?;
+        provenance.yaml_memberships.push(YamlMembership {
+            root,
+            directory: relative_dir,
+            members: members.clone(),
+        });
     }
-    Ok(())
+    Ok(members
+        .into_iter()
+        .map(|path| directory.join(path))
+        .collect())
 }
 
 impl GraphProvenance {
@@ -1074,7 +1065,7 @@ impl GraphProvenance {
         for membership in &self.yaml_memberships {
             let dir = self.resolve(&membership.root, &membership.directory, current)?;
             require_directory(&dir)?;
-            let actual = collect_yaml(&dir)?;
+            let actual = relative_yaml_files(&dir)?;
             if actual != membership.members {
                 return Err(mismatch(GraphMismatchReason::YamlMembership {
                     directory: dir,
@@ -1213,16 +1204,22 @@ pub fn validate_relative_path(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn collect_yaml(root: &Path) -> Result<Vec<PathBuf>> {
+fn relative_yaml_files(root: &Path) -> Result<Vec<PathBuf>> {
     fn walk(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
             let path = entry?.path();
             if path.is_dir() {
                 walk(root, &path, out)?;
-            } else if matches!(
-                path.extension().and_then(|e| e.to_str()),
-                Some("yaml" | "yml")
-            ) {
+                continue;
+            }
+            // The module loader accepts any UTF-8 name ending in ".yaml",
+            // including the dotfile for which Path::extension() returns None.
+            if path.file_name().is_some_and(|name| name == ".yaml")
+                || matches!(
+                    path.extension().and_then(|e| e.to_str()),
+                    Some("yaml" | "yml")
+                )
+            {
                 out.push(path.strip_prefix(root)?.to_path_buf());
             }
         }
@@ -1506,7 +1503,7 @@ mod tests {
             ],
         )?;
         read_to_string(&yaml)?;
-        record_yaml_membership(&modules, &[yaml])?;
+        assert_eq!(yaml_files(&modules)?, [yaml]);
         record_absent(&modules.join("b.yaml"))?;
         let provenance = capture.finish()?;
         assert_eq!(provenance.files[0].root, InputRoot::Spec);

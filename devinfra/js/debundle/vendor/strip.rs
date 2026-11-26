@@ -1885,28 +1885,12 @@ fn item_declares_code_or_primitive(item: &ModuleItem) -> bool {
                 || is_shareable_function_var(var)
                 || is_shareable_intrinsic_alias_var(var)
                 || is_symbol_var(var)
-                || var
-                    .decls
-                    .iter()
-                    .all(|decl| decl.init.as_deref().is_some_and(is_primitive_valued_expr))
+                || var.decls.iter().all(|decl| {
+                    decl.init
+                        .as_deref()
+                        .is_some_and(js_ast::has_definite_primitive_result)
+                })
         }),
-    }
-}
-
-/// An expression whose value is always a primitive: a non-regex literal, an
-/// untagged template, or a unary, update, arithmetic, comparison or bitwise
-/// operation (`nE * 60`). Logical operators and conditionals pass an operand
-/// through and are not included.
-fn is_primitive_valued_expr(expr: &Expr) -> bool {
-    match expr {
-        Expr::Paren(paren) => is_primitive_valued_expr(&paren.expr),
-        Expr::Lit(lit) => !matches!(lit, Lit::Regex(_)),
-        Expr::Tpl(_) | Expr::Unary(_) | Expr::Update(_) => true,
-        Expr::Bin(bin) => !matches!(
-            bin.op,
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-        ),
-        _ => false,
     }
 }
 

@@ -1,5 +1,5 @@
-import { Button, Group, Paper, Select, Stack, Textarea, TextInput, Tooltip } from "@mantine/core";
-import { type JSX, useEffect, useEffectEvent, useMemo, useState } from "react";
+import { Button, Group, Paper, Select, Stack, Text, Textarea, TextInput, Tooltip } from "@mantine/core";
+import { type JSX, type ReactNode, useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import { create } from "@bufbuild/protobuf";
 
@@ -33,7 +33,7 @@ export function NewThreadForm({
   identityName: string | null | undefined;
   showIdentity: boolean;
   presetName: string | null;
-  unavailableReason: string | null;
+  unavailableReason: ReactNode;
   creating: boolean;
   onCreate: (spec: SessionSpec, setupScript: string) => void;
   onClose: () => void;
@@ -189,11 +189,17 @@ export function NewThreadForm({
             />
           </DisclosureBody>
         </Disclosure>
+        {disabledReason && (
+          <Text component="div" role="status" hiddenFrom="sm" size="sm">
+            {disabledReason}
+          </Text>
+        )}
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
             Close
           </Button>
           <Tooltip
+            visibleFrom="sm"
             label={disabledReason}
             disabled={disabledReason === null}
             events={{ hover: true, focus: true, touch: true }}

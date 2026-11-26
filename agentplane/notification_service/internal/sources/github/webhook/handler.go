@@ -47,6 +47,7 @@ type Handler struct {
 	appID        int64
 	secret       []byte
 	maxBodyBytes int64
+	payloadHours *int
 	slots        chan struct{}
 	database     *fanout.Coordinator
 	// bound is ingressBound; a test shortens it.
@@ -54,12 +55,13 @@ type Handler struct {
 }
 
 // New is the handler for the App that settings name. The settings are validated by their owner.
-func New(settings settings.Settings, database *fanout.Coordinator) *Handler {
+func New(appSettings settings.Settings, retention settings.Retention, database *fanout.Coordinator) *Handler {
 	return &Handler{
-		appID:        settings.AppID,
-		secret:       []byte(settings.WebhookSecret),
-		maxBodyBytes: int64(settings.MaxBodyBytes),
-		slots:        make(chan struct{}, settings.WebhookConcurrency),
+		appID:        appSettings.AppID,
+		secret:       []byte(appSettings.WebhookSecret),
+		maxBodyBytes: int64(appSettings.MaxBodyBytes),
+		payloadHours: retention.PayloadHours,
+		slots:        make(chan struct{}, appSettings.WebhookConcurrency),
 		database:     database,
 		bound:        ingressBound,
 	}
@@ -142,6 +144,9 @@ func (h *Handler) receive(ctx context.Context, header http.Header, raw []byte) (
 	case err != nil:
 		slog.ErrorContext(ctx, "GitHub webhook payload unreadable", "error", err)
 		return http.StatusInternalServerError, refusal{Detail: internalFault}
+	}
+	if h.payloadHours != nil && *h.payloadHours == 0 {
+		ingest.Payload = nil
 	}
 	created, err := h.database.Ingest(ctx, ingest)
 	switch {

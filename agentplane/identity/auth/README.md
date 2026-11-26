@@ -6,9 +6,10 @@ caller to Agentplane receivers. Operator OIDC and external MCP OAuth retain thei
 contracts; Kubernetes API credentials authenticate only to Kubernetes.
 
 [`listener`](listener/config.go) and [`listener.py`](listener.py) define the shared listener
-configuration. `spiffe` requires TLS and an absolute trust-root path. Unsupported modes, empty
-lists, duplicates and unknown fields fail configuration loading. Native RPC listeners may admit
-unauthenticated public health methods. Listener authentication does not grant method authorization.
+configuration. Set `auth` to a one-entry list with `mode: spiffe` and an absolute `ca_file`, and set
+the listener's TLS certificate and key. The auth entry rejects unknown keys and values of the wrong
+type. Native RPC listeners may admit unauthenticated public health methods. Listener authentication
+does not grant method authorization.
 
 ## Workload Identity proof
 

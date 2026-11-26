@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/actions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -201,19 +201,11 @@ func newCodeModeActionService(t *testing.T, terminal pb.ActionState, loseSubmitR
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(grpc.Creds(serverCredentials))
 	pb.RegisterActionServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
+	target := grpcserver.Serve(t, server)
 	clientTLS := ca.Issue(t, peertls.CentralSamplerURI)
-	client, err := actions.Dial(t.Context(), listener.Addr().String(), clientTLS, 2*time.Second)
+	client, err := actions.Dial(t.Context(), target, clientTLS, 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

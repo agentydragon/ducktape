@@ -184,9 +184,7 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
     let materialized = debundle_e2e_support::process::debundle_output(
         Command::new(debundler_path())
             .arg("run")
-            .args(tree_spec_args(fixture.root()))
-            .arg("--out-root")
-            .arg(&out_root),
+            .args(tree_spec_args(fixture.root(), &out_root)),
     )
     .unwrap();
     process::assert_success(&materialized);
@@ -401,6 +399,40 @@ fn fallback_source_search_cannot_shadow_analyzed_file() {
     )
     .unwrap_or_else(|err| panic!("{err}"));
     assert_graph_mismatch(&output, "selector_source_root");
+}
+
+#[test]
+fn non_module_yaml_is_verified_without_becoming_a_module() {
+    let workspace = write_tree_fixture(&TreeFixture {
+        chunks: &[("main", "const value = 42; console.log(value);")],
+        module_roots: &[("main", "main")],
+        modules: &[(
+            "main/value.yaml",
+            "source_matches:\n  - match: 'const value = 42;'\n    bindings: [value]\n",
+        )],
+    });
+    let modules = workspace.root().join("modules/main");
+    let sidecar = modules.join("notes.yml");
+    fs::write(&sidecar, "owner: example").unwrap();
+    let run = workspace.run(&["--graphs"]);
+    assert!(run.result.status.success(), "{}", run.result.stderr);
+
+    let coverage = || {
+        debundle_e2e_support::process::debundle_output(
+            Command::new(debundler_path())
+                .args(["coverage", "--format", "json", "--graph"])
+                .arg(run.report_root.join("main/dependency_graph.json.gz"))
+                .arg("--modules")
+                .arg(&modules),
+        )
+        .unwrap()
+    };
+    assert_coverage_requests_value(&coverage());
+    fs::write(&sidecar, "owner: changed").unwrap();
+    assert_graph_mismatch(&coverage(), "file");
+    fs::write(&sidecar, "owner: example").unwrap();
+    fs::write(modules.join("added.yml"), "").unwrap();
+    assert_graph_mismatch(&coverage(), "yaml_membership");
 }
 
 #[test]

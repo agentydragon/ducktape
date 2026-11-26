@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"gopkg.in/yaml.v3"
 )
@@ -105,31 +106,24 @@ func decodePlatformRouteTransport(node *yaml.Node) (platformRouteTransportConfig
 	}
 }
 
-// spiffeProxyAuth is the workload SVID the sidecar presents to the central proxy, the only hop
-// authentication it accepts.
-type spiffeProxyAuth struct {
-	CertFile string
-	KeyFile  string
-}
-
-// tlsProxyTransportConfig keeps the YAML's tagged `transport.mode: tls` and `auth.mode: spiffe`, the
-// only variants, so existing settings files load unchanged.
-type tlsProxyTransportConfig struct {
-	CAFile string
-	Auth   spiffeProxyAuth
-}
-
 type proxyConfig struct {
-	Address   string
-	Transport tlsProxyTransportConfig
+	Address string
+	SVID    peertls.Config
 }
 
-// UnmarshalYAML is the narrow boundary that converts the tagged YAML auth and
-// transport objects into sealed Go variants. Variant fields remain strict.
+// UnmarshalYAML checks the deployed mode tags and decodes the single TLS/SPIFFE hop.
 func (c *proxyConfig) UnmarshalYAML(node *yaml.Node) error {
 	var raw struct {
-		Address   string    `yaml:"address"`
-		Transport yaml.Node `yaml:"transport"`
+		Address   string `yaml:"address"`
+		Transport *struct {
+			Mode   string    `yaml:"mode"`
+			CAFile yaml.Node `yaml:"ca_file"`
+			Auth   *struct {
+				Mode     string    `yaml:"mode"`
+				CertFile yaml.Node `yaml:"cert_file"`
+				KeyFile  yaml.Node `yaml:"key_file"`
+			} `yaml:"auth"`
+		} `yaml:"transport"`
 	}
 	if err := decodeKnownFields(node, &raw); err != nil {
 		return err
@@ -137,14 +131,33 @@ func (c *proxyConfig) UnmarshalYAML(node *yaml.Node) error {
 	if raw.Address == "" {
 		return errors.New("proxy.address is required")
 	}
-	if raw.Transport.Kind == 0 {
+	transport := raw.Transport
+	if transport == nil {
 		return errors.New("proxy.transport is required")
 	}
-	transport, err := decodeProxyTransport(&raw.Transport)
-	if err != nil {
-		return fmt.Errorf("proxy.transport: %w", err)
+	if transport.Mode != "tls" {
+		return fmt.Errorf("proxy.transport.mode must be %q: %q", "tls", transport.Mode)
 	}
-	*c = proxyConfig{Address: raw.Address, Transport: transport}
+	caFile, err := requiredYAMLString(&transport.CAFile, "proxy.transport.ca_file")
+	if err != nil {
+		return err
+	}
+	auth := transport.Auth
+	if auth == nil {
+		return errors.New("proxy.transport.auth is required")
+	}
+	if auth.Mode != listener.SPIFFE {
+		return fmt.Errorf("proxy.transport.auth.mode must be %q: %q", listener.SPIFFE, auth.Mode)
+	}
+	certFile, err := requiredYAMLString(&auth.CertFile, "proxy.transport.auth.cert_file")
+	if err != nil {
+		return err
+	}
+	keyFile, err := requiredYAMLString(&auth.KeyFile, "proxy.transport.auth.key_file")
+	if err != nil {
+		return err
+	}
+	*c = proxyConfig{Address: raw.Address, SVID: peertls.Config{CAFile: caFile, CertFile: certFile, KeyFile: keyFile}}
 	return nil
 }
 
@@ -156,29 +169,6 @@ func decodeKnownFields(node *yaml.Node, result any) error {
 	decoder := yaml.NewDecoder(&contents)
 	decoder.KnownFields(true)
 	return decoder.Decode(result)
-}
-
-func decodeProxyAuth(node *yaml.Node) (spiffeProxyAuth, error) {
-	var auth struct {
-		Mode     listener.Mode `yaml:"mode"`
-		CertFile yaml.Node     `yaml:"cert_file"`
-		KeyFile  yaml.Node     `yaml:"key_file"`
-	}
-	if err := decodeKnownFields(node, &auth); err != nil {
-		return spiffeProxyAuth{}, err
-	}
-	if auth.Mode != listener.SPIFFE {
-		return spiffeProxyAuth{}, fmt.Errorf("mode must be %q: %q", listener.SPIFFE, auth.Mode)
-	}
-	certFile, err := requiredYAMLString(&auth.CertFile, "cert_file")
-	if err != nil {
-		return spiffeProxyAuth{}, err
-	}
-	keyFile, err := requiredYAMLString(&auth.KeyFile, "key_file")
-	if err != nil {
-		return spiffeProxyAuth{}, err
-	}
-	return spiffeProxyAuth{CertFile: certFile, KeyFile: keyFile}, nil
 }
 
 func requiredYAMLString(node *yaml.Node, name string) (string, error) {
@@ -193,34 +183,6 @@ func requiredYAMLString(node *yaml.Node, name string) (string, error) {
 		return "", fmt.Errorf("%s must not be empty", name)
 	}
 	return value, nil
-}
-
-const proxyTransportTLS = "tls"
-
-func decodeProxyTransport(node *yaml.Node) (tlsProxyTransportConfig, error) {
-	var transport struct {
-		Mode   string    `yaml:"mode"`
-		CAFile yaml.Node `yaml:"ca_file"`
-		Auth   yaml.Node `yaml:"auth"`
-	}
-	if err := decodeKnownFields(node, &transport); err != nil {
-		return tlsProxyTransportConfig{}, err
-	}
-	if transport.Mode != proxyTransportTLS {
-		return tlsProxyTransportConfig{}, fmt.Errorf("mode must be %q: %q", proxyTransportTLS, transport.Mode)
-	}
-	caFile, err := requiredYAMLString(&transport.CAFile, "ca_file")
-	if err != nil {
-		return tlsProxyTransportConfig{}, err
-	}
-	if transport.Auth.Kind == 0 {
-		return tlsProxyTransportConfig{}, errors.New("TLS transport requires auth")
-	}
-	auth, err := decodeProxyAuth(&transport.Auth)
-	if err != nil {
-		return tlsProxyTransportConfig{}, fmt.Errorf("auth: %w", err)
-	}
-	return tlsProxyTransportConfig{CAFile: caFile, Auth: auth}, nil
 }
 
 type config struct {
@@ -330,7 +292,7 @@ func (p proxyConfig) validate() error {
 		return fmt.Errorf("proxy.address: %w", err)
 	}
 	for name, path := range map[string]string{
-		"ca_file": p.Transport.CAFile, "cert_file": p.Transport.Auth.CertFile, "key_file": p.Transport.Auth.KeyFile,
+		"ca_file": p.SVID.CAFile, "cert_file": p.SVID.CertFile, "key_file": p.SVID.KeyFile,
 	} {
 		if path == "" || !filepath.IsAbs(path) {
 			return fmt.Errorf("TLS proxy transport requires an absolute %s", name)

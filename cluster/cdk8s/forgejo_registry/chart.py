@@ -121,7 +121,11 @@ def chart(app: App) -> Chart:
                         namespace=forgejo_image_automation.NAMESPACE,
                         filter=f"req.package.name == '{forgejo_image_automation.package_name(image)}'",
                     )
-                    for image in (*forgejo_image_automation.IMAGES, *platform_sessions_remote.PROVIDER_IMAGES)
+                    for image in (
+                        *forgejo_image_automation.IMAGES,
+                        *forgejo_image_automation.MAIN_IMAGES,
+                        *platform_sessions_remote.PROVIDER_IMAGES,
+                    )
                 ),
                 ReceiverResource.image_update_automation(AUTOMATION_NAME, namespace=forgejo_image_automation.NAMESPACE),
             ],

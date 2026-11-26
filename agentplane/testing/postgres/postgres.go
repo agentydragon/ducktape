@@ -65,6 +65,9 @@ func runIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(
 	return code
 }
 
+// NoMigrations leaves the fixture database empty for tests that own their schema.
+func NoMigrations(context.Context, *sql.DB) error { return nil }
+
 // RunIntegrationTests sets the package fixture before running its tests.
 func RunIntegrationTests(run func() int, migrate func(context.Context, *sql.DB) error, destination **Database) int {
 	return runIntegrationTests(migrate, func(database *Database) int {
@@ -175,7 +178,11 @@ func Open(t testing.TB, dsn string) *sql.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close PostgreSQL connection: %v", err)
+		}
+	})
 	return db
 }
 

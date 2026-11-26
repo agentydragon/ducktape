@@ -7,7 +7,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/environments/internal/serving"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
@@ -37,7 +36,6 @@ func loadConfig() (config, error) {
 	}
 	c := defaultConfig()
 	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
-		DecodeHook:      listener.AuthenticationDecodeHook,
 		ExactFieldNames: true,
 	}); err != nil {
 		return config{}, fmt.Errorf("decode Sandbox Controller settings file: %w", err)

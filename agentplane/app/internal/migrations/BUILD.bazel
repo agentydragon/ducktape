@@ -17,6 +17,5 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/testing/postgres",
-        "@com_github_lib_pq//:pq",
     ],
 )

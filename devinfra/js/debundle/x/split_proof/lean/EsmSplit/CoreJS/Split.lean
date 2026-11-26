@@ -241,19 +241,13 @@ theorem split_find (m : String) : (splitProgram ss B P).find m = (P.find m).map 
   rfl
 
 theorem split_visit : ∀ (fuel : Nat) (m : String) (st : List String × List String),
-    (splitProgram ss B P).visit fuel m st = P.visit fuel m st
-  | 0, _, _ => by simp [Program.visit, EsmSplit.Plan.visit]
-  | fuel + 1, m, (entered, done) => by
-    simp only [Program.visit, EsmSplit.Plan.visit, split_find]
-    have hfold : ∀ (l : List String) (st : List String × List String),
-        l.foldl (fun st s => (splitProgram ss B P).visit fuel s st) st = l.foldl (fun st s => P.visit fuel s st) st := by
-      intro l
-      induction l with
-      | nil => intro st; rfl
-      | cons a l ih => intro st; simp only [List.foldl_cons, split_visit fuel]
-    cases P.find m with
-    | none => simp [hfold]
-    | some md => simp [moduleOf, hfold, Function.comp_def]
+    (splitProgram ss B P).visit fuel m st = P.visit fuel m st := by
+  intro fuel m st
+  unfold Program.visit EsmSplit.Plan.visit
+  congr 1
+  funext name
+  rw [split_find]
+  cases P.find name <;> simp [moduleOf, Function.comp_def]
 
 theorem split_evalOrder : (splitProgram ss B P).evalOrder = P.evalOrder := by
   simp only [Program.evalOrder, EsmSplit.Plan.evalOrder, split_visit]
@@ -296,7 +290,7 @@ theorem mergeSort_zip_range (ss : List Stmt) :
   List.mergeSort_of_pairwise ((zip_range_sorted ss).imp fun h => by simpa using h)
 
 theorem single_evalOrder : (Program.single ss).evalOrder = ["main"] := by
-  simp [Program.evalOrder, Program.visit, Program.single, Program.find]
+  simp [Program.evalOrder, Program.visit, EsmSplit.visitImports, Program.single, Program.find]
 
 theorem single_loaded : (Program.single ss).loaded =
     [{ name := "main", imports := [], body := (List.range ss.length).zip ss, exports := [] }] := by

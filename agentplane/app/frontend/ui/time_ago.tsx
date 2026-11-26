@@ -1,4 +1,4 @@
-/** A datetime as "4 minutes ago", the full ISO datetime on hover; it re-renders as the time passes. */
+/** A datetime as "4 min ago", the full ISO datetime on hover; it re-renders as the time passes. */
 import { type JSX, useSyncExternalStore } from "react";
 
 import { isoTime, timeAgo } from "./format_time";

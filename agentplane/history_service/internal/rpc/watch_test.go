@@ -165,19 +165,39 @@ func TestSessionsBeyondOnePageAreAllNamedInOrder(t *testing.T) {
 	watch.wantChanged()
 }
 
-func TestAWatchEndsWithReconnectRequiredWhenItsLeaseEnds(t *testing.T) {
-	server := newServer(t, 200*time.Millisecond)
-	watch := server.watch(t, &historypb.WatchSessionSummariesRequest{})
-	watch.wantChanged()
-	watch.wantReconnectAndCleanEnd()
-}
-
-func TestDrainingEndsOpenWatches(t *testing.T) {
-	server := newServer(t, time.Hour)
-	watch := server.watch(t, &historypb.WatchSessionSummariesRequest{})
-	watch.wantChanged()
-	server.service.Drain()
-	watch.wantReconnectAndCleanEnd()
+func TestSummaryWatchesReconnectOnLeaseExpiryOrDrain(t *testing.T) {
+	for _, end := range []struct {
+		name  string
+		lease time.Duration
+		drain bool
+	}{
+		{name: "lease", lease: 200 * time.Millisecond},
+		{name: "drain", lease: time.Hour, drain: true},
+	} {
+		t.Run(end.name, func(t *testing.T) {
+			for _, mode := range []string{"notifications", "selected"} {
+				t.Run(mode, func(t *testing.T) {
+					server := newServer(t, end.lease)
+					request := &historypb.WatchSessionSummariesRequest{}
+					if mode == "selected" {
+						request.Selected = &historypb.SelectedSessionSummaries{}
+					}
+					watch := server.watch(t, request)
+					if mode == "selected" {
+						if response := watch.receive(); response.GetSnapshot() == nil {
+							t.Fatalf("want snapshot, received %v", response)
+						}
+					} else {
+						watch.wantChanged()
+					}
+					if end.drain {
+						server.service.Drain()
+					}
+					watch.wantReconnectAndCleanEnd()
+				})
+			}
+		})
+	}
 }
 
 func TestSelectedSummariesSnapshotAndUpdates(t *testing.T) {

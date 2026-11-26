@@ -1,6 +1,6 @@
 """Authenticated Flux scans for the ducktape-ci Forgejo registry.
 
-This chart tracks devel tags. Platform Sessions declares its provider images in its own
+This chart tracks Ducktape devel tags and Attendant main tags. Platform Sessions declares its provider images in its own
 chart and tracks main tags. The tenant Receiver filters package pushes for both rosters.
 The ImageUpdateAutomation in flux-image-automation-ghcr writes the selected tags to
 each workload's image-pins/ Component.
@@ -99,6 +99,8 @@ IMAGES = (
     # keep-sorted end
 )
 
+MAIN_IMAGES = ("attendant",)
+
 # Repository path for the entries whose image is not named after their policy.
 _REPOSITORIES = {"grocy-mcp-oidc-server": "grocy-mcp", "tana-mcp": "tana-desktop"}
 
@@ -127,6 +129,8 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     for name in IMAGES:
         track_ci_image(chart, name, prefix="devel")
+    for name in MAIN_IMAGES:
+        track_ci_image(chart, name, prefix="main")
     return chart
 
 

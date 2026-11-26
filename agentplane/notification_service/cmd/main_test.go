@@ -223,7 +223,7 @@ func restart(t *testing.T, tune func(*config)) running {
 		ca := environmentruntimetransporttesting.NewCA(t)
 		serving := ca.IssueWithUsage(t, peertls.NotificationsURI, x509.ExtKeyUsageServerAuth)
 		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
-		c.RPC.Auth = []listener.Authentication{&listener.SPIFFEAuth{CAFile: serving.CAFile}}
+		c.RPC.Auth = []*listener.SPIFFEAuth{{CAFile: serving.CAFile}}
 		mainCredentials, err := ca.Issue(t, workloads.sandbox.URI).ClientCredentials(peertls.NotificationsURI)
 		if err != nil {
 			t.Fatal(err)
@@ -276,11 +276,7 @@ func restart(t *testing.T, tune func(*config)) running {
 	t.Cleanup(func() { _ = stop() })
 	security, err := (*peertls.ClientTLS)(nil).Credentials()
 	if c.RPC.TLS != nil {
-		for _, method := range c.RPC.Auth {
-			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
-				security, err = (&peertls.ClientTLS{CAFile: spiffe.CAFile, ServerURI: peertls.NotificationsURI}).Credentials()
-			}
-		}
+		security, err = (&peertls.ClientTLS{CAFile: c.RPC.Auth[0].CAFile, ServerURI: peertls.NotificationsURI}).Credentials()
 	}
 	if err != nil {
 		t.Fatal(err)

@@ -368,7 +368,6 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   expect(container.querySelector(".agentplane-thread-list-state-icon[data-status='suspended']")).not.toBeNull();
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
   expect(container.textContent).toContain("test-threadless");
-  expect(container.textContent).toContain("0 threads");
   expect(fetchMock).not.toHaveBeenCalled();
 
   await pushSandboxChanges(sandboxStream, [], [sandbox("test-sandbox"), sandbox("test-threadless")]);
@@ -430,7 +429,7 @@ it("keeps Dispatcher activity live while retained History rows reconnect", async
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
   await act(async () => vi.advanceTimersByTime(DEGRADED_AFTER_MS));
   expect(container.querySelector('[data-connection="degraded"]')?.getAttribute("aria-label")).toMatch(
-    /^Threads: reconnecting since 5 seconds ago \(.+\) · attempt 1 · test stream dropped$/
+    /^Threads: reconnecting since 5 s ago \(.+\) · attempt 1 · test stream dropped$/
   );
   expect(container.textContent).toContain("Retained thread");
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
@@ -448,7 +447,7 @@ it("keeps Dispatcher activity live while retained History rows reconnect", async
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
 });
 
-it("groups threads by sandbox, showing each group's state, name and visible thread count", async () => {
+it("groups threads by sandbox, showing each group's state and name", async () => {
   await render(
     [
       sandboxThread("t-1", "List the repository files", "demo-a1b2"),
@@ -476,9 +475,7 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
   );
 
   expect(container.textContent).toContain("demo-a1b2");
-  expect(container.textContent).toContain("2 threads");
   expect(container.textContent).toContain("prod-x7f2");
-  expect(container.textContent).toContain("1 thread");
   expect(container.textContent).toContain("List the repository files");
   expect(container.textContent).toContain("Investigate flaky CI");
   expect(
@@ -576,7 +573,6 @@ it("dims only the rows of threads whose harness is stopped", async () => {
 it("opens the details of a provisioning Sandbox with no Threads", async () => {
   const pending = sandbox("test-provisioning", { kubernetesDiagnostics: { pod: undefined } });
   await render([], { [pending.target!.name]: pending });
-  expect(container.textContent).toContain("0 threads");
   expect(container.querySelector(".agentplane-thread-list-state-icon[data-status='pending']")).not.toBeNull();
   const link = container.querySelector('a[href="/sandboxes/test-provisioning"]');
   if (!(link instanceof HTMLAnchorElement)) throw new Error("missing provisioning Sandbox link");

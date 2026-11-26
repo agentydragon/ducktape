@@ -40,6 +40,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        "//agentplane/identity/auth:delegation",
         "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",
         "@pypi//pydantic",

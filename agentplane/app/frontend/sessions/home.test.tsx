@@ -157,7 +157,8 @@ function searchBox(scope: HTMLElement): HTMLInputElement {
 it("adds each Thread's harness, model and last activity to its row, which the sidebar leaves out", async () => {
   await render();
   const alpha = row(home(), "Alpha thread").querySelector(".agentplane-thread-list-row-detail");
-  expect(alpha?.textContent).toContain("Claude · test-model");
+  expect(alpha?.textContent).toContain("Claude");
+  expect(alpha?.textContent).toContain("test-model");
   expect(alpha?.querySelector("time")?.dateTime).toBe("2026-01-01T11:58:00.000Z");
   expect(row(home(), "Beta thread").querySelector(".agentplane-thread-list-row-detail time")).toBeNull();
   expect(sidebar().querySelector(".agentplane-thread-list-row-detail")).toBeNull();

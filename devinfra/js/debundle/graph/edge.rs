@@ -535,115 +535,20 @@ impl fmt::Display for SequencedCause {
 }
 
 impl EdgeReason {
-    pub(crate) fn eager_use(so: SourceUnitOrdinal, b: Id) -> Self {
+    pub(crate) fn for_binding(
+        kind: DepKind,
+        statement_ordinal: SourceUnitOrdinal,
+        binding: Id,
+    ) -> Self {
         Self {
-            kind: DepKind::EagerUse,
-            statement_ordinal: so,
-            binding: Some(b),
-            role: EdgeRole::Direct,
-            sequenced_cause: None,
-            inerted_by: None,
-            premise_verdict: None,
+            binding: Some(binding),
+            ..Self::synthetic(kind, statement_ordinal, EdgeRole::Direct)
         }
     }
-    pub(crate) fn lazy_use(so: SourceUnitOrdinal, b: Id) -> Self {
-        Self {
-            kind: DepKind::LazyUse,
-            statement_ordinal: so,
-            binding: Some(b),
-            role: EdgeRole::Direct,
-            sequenced_cause: None,
-            inerted_by: None,
-            premise_verdict: None,
-        }
-    }
-    pub(crate) fn hoisted_use(so: SourceUnitOrdinal, b: Id) -> Self {
-        Self {
-            kind: DepKind::HoistedUse,
-            statement_ordinal: so,
-            binding: Some(b),
-            role: EdgeRole::Direct,
-            sequenced_cause: None,
-            inerted_by: None,
-            premise_verdict: None,
-        }
-    }
-    pub(crate) fn eager_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
-        Self {
-            kind: DepKind::EagerRebind,
-            statement_ordinal: so,
-            binding: Some(b),
-            role: EdgeRole::Direct,
-            sequenced_cause: None,
-            inerted_by: None,
-            premise_verdict: None,
-        }
-    }
-    pub(crate) fn lazy_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
-        Self {
-            kind: DepKind::LazyRebind,
-            statement_ordinal: so,
-            binding: Some(b),
-            role: EdgeRole::Direct,
-            sequenced_cause: None,
-            inerted_by: None,
-            premise_verdict: None,
-        }
-    }
-    pub(crate) fn deferred_rebind(so: SourceUnitOrdinal, b: Id) -> Self {
-        Self {
-            kind: DepKind::DeferredRebind,
-            statement_ordinal: so,
-            binding: Some(b),
-            role: EdgeRole::Direct,
-            sequenced_cause: None,
-            inerted_by: None,
-            premise_verdict: None,
-        }
-    }
-    pub(crate) fn co_declaration(so: SourceUnitOrdinal, b: Id) -> Self {
-        Self {
-            kind: DepKind::CoDeclaration,
-            statement_ordinal: so,
-            binding: Some(b),
-            role: EdgeRole::Direct,
-            sequenced_cause: None,
-            inerted_by: None,
-            premise_verdict: None,
-        }
-    }
-    pub(crate) fn co_location(so: SourceUnitOrdinal, b: Id) -> Self {
-        Self {
-            kind: DepKind::CoLocation,
-            statement_ordinal: so,
-            binding: Some(b),
-            role: EdgeRole::Direct,
-            sequenced_cause: None,
-            inerted_by: None,
-            premise_verdict: None,
-        }
-    }
-    pub(crate) fn sequenced(so: SourceUnitOrdinal, cause: SequencedCause) -> Self {
-        Self {
-            kind: DepKind::Sequenced,
-            statement_ordinal: so,
-            binding: None,
-            role: EdgeRole::Direct,
-            sequenced_cause: Some(Box::new(cause)),
-            inerted_by: None,
-            premise_verdict: None,
-        }
-    }
-    pub(crate) fn local_effect(so: SourceUnitOrdinal, b: Id) -> Self {
-        Self {
-            kind: DepKind::LocalEffect,
-            statement_ordinal: so,
-            binding: Some(b),
-            role: EdgeRole::Direct,
-            sequenced_cause: None,
-            inerted_by: None,
-            premise_verdict: None,
-        }
+
+    pub(crate) fn sequenced(statement_ordinal: SourceUnitOrdinal, cause: SequencedCause) -> Self {
+        Self::synthetic(DepKind::Sequenced, statement_ordinal, EdgeRole::Direct)
+            .with_sequenced_cause(Some(cause))
     }
 
     /// Promote this reason to `EdgeRole::PromotedAtInit`. Used by
@@ -662,7 +567,7 @@ impl EdgeReason {
     /// — every `is_*` and `constrains_init_order` predicate delegates
     /// to `kind` — so a synthetic reason without a binding is
     /// sufficient for the gate. Source-of-truth construction from
-    /// `StatementFacts` still goes through the kind-specific helpers
+    /// `StatementFacts` still goes through the binding and sequenced constructors
     /// above.
     pub fn synthetic(kind: DepKind, statement_ordinal: SourceUnitOrdinal, role: EdgeRole) -> Self {
         Self {

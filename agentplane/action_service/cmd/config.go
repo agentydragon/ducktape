@@ -94,7 +94,7 @@ func loadConfig() (config, error) {
 	// The errors name no value: a setting can be a Secret.
 	// Keep Viper's weak scalar conversions for compatibility with existing settings files.
 	if err := configfile.DecodeMapstructure(file.Others, &c, configfile.MapstructureOptions{
-		DecodeHook: listener.AuthenticationDecodeHook, WeaklyTypedInput: true,
+		WeaklyTypedInput: true,
 	}); err != nil {
 		return config{}, errors.New("invalid Action Service settings")
 	}
@@ -127,9 +127,6 @@ func (c *config) operatorsEnabled() bool { return c.OperatorOIDC != operator.Def
 func (c *config) validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)
-	}
-	if !c.RPC.Has(listener.SPIFFE) {
-		return errors.New("rpc must configure TLS and spiffe client trust")
 	}
 	for _, required := range []struct{ name, value string }{
 		{"database_url", c.DatabaseURL},

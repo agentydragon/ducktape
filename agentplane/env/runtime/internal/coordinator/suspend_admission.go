@@ -61,7 +61,7 @@ func (r *Runtime) PrepareSuspend(ctx context.Context, request *environmentruntim
 			return status.Error(codes.Aborted, "suspension generation changed")
 		}
 		if facts.IdleSince == nil || facts.IdleSince.AsTime().UnixMicro() != idleSinceMicros || len(facts.AutosuspendBlockers) != 0 ||
-			r.activeAdmissions != 0 || r.activeExecutionCalls != 0 || r.executionOwner.recovering() ||
+			r.activeAdmissions != 0 || len(r.execCalls) != 0 || r.executionOwner.recovering() ||
 			r.idleSince == nil || r.idleSince.AsTime().UnixMicro() != idleSinceMicros {
 			return status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
 		}

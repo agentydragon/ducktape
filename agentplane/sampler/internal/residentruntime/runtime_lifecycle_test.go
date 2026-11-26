@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -37,6 +36,7 @@ import (
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )
@@ -579,20 +579,12 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	}))
 	t.Cleanup(server.Close)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	executorServer := grpc.NewServer()
 	executorpb.RegisterExecutorServer(executorServer, &drainExecutorServer{startGate: f.startGate})
-	go func() { _ = executorServer.Serve(listener) }()
-	t.Cleanup(func() {
-		executorServer.Stop()
-		_ = listener.Close()
-	})
+	executorTarget := grpcserver.Serve(t, executorServer)
 	settings := samplersettings.Settings{
 		MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60, ShutdownDrainSeconds: &drainSeconds,
-		DirectExecutorTarget: listener.Addr().String(), DirectExecutorInsecureLocaltest: true,
+		DirectExecutorTarget: executorTarget, DirectExecutorInsecureLocaltest: true,
 		Connections: map[string]samplersettings.ConnectionConfig{"provider": {BaseURL: server.URL, Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeBearer, Credential: "fixture-credential"}}},
 		Models: map[string]samplersettings.ModelConfig{"fixture-model": {
 			Connection: "provider", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectStandard},

@@ -1,6 +1,5 @@
 # Notification frontend
 
-This package owns browser-facing Notification Service inbox views: Session-addressed diagnostics,
-watch URL construction, and the Thread-facing notice hook and badge. Thread navigation consumes the
-`Thread*` exports. `actions/notifications` remains the separate Action notification presentation
-package.
+`inbox_watch.ts` owns Session inbox decoding and watch timeouts. The Thread notice badges and the
+Thread and Sandbox diagnostics drawer share it. `actions/notifications` owns Action notification
+presentation.

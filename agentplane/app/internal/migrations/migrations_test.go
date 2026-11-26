@@ -9,13 +9,12 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	_ "github.com/lib/pq"
 )
 
 var testDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(m.Run, func(context.Context, *sql.DB) error { return nil }, &testDatabase))
+	os.Exit(postgres.RunIntegrationTests(m.Run, postgres.NoMigrations, &testDatabase))
 }
 
 func TestUpFreshDatabaseCreatesCurrentSchema(t *testing.T) {
@@ -90,16 +89,8 @@ func TestConcurrentUpRunnersSerialize(t *testing.T) {
 
 func openDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", testDatabase.Clone(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := postgres.Open(t, testDatabase.Clone(t))
 	db.SetMaxOpenConns(8)
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
-			t.Error(err)
-		}
-	})
 	if err := db.PingContext(t.Context()); err != nil {
 		t.Fatal(err)
 	}

@@ -34,7 +34,7 @@ pub use build::{
     DuplicateTopLevelDeclaration, GraphOptions, KnownConflict, PremiseVerdict,
     UnusedCommutingEndpoint, UnusedPremiseReason, build_dependency_graph_with,
 };
-pub use commutation_order::{CommutationOrder, PreservedOrder, TemporalConstraint, TemporalEdge};
+pub use commutation_order::{CommutationOrder, PreservedOrder};
 pub use dependency_graph::{
     AppliedCommutingPremise, DependencyGraph, GraphReportIdError, SourceUnit, SourceUnitClass,
 };

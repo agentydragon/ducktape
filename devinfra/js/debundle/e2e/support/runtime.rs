@@ -2,7 +2,7 @@
 
 use super::case_commands;
 use super::{
-    APP_DIR, CommandResult, Fixture, PreparedFixture, command_result, current_test_prefix,
+    APP_DIR, CommandResult, Fixture, PreparedFixture, current_test_prefix,
     spawn_transform_with_args,
 };
 use artifact::paths::path_from_module_path;
@@ -327,7 +327,7 @@ fn node_path() -> PathBuf {
 
 pub(super) fn run_node_script(path: &Path) -> CommandResult {
     let node = node_path();
-    command_result(
+    CommandResult::from(
         case_commands::fixture_output(Command::new(&node).arg(path), path)
             .unwrap_or_else(|e| panic!("spawn node {}: {e}", node.display())),
     )

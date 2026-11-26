@@ -85,6 +85,7 @@ js_test(
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
         "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
     entry_point = "certificate_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},

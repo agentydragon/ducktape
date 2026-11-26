@@ -21,7 +21,7 @@ import {
 import "@mantine/core/styles.css";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
-import RFB from "@novnc/novnc";
+import { RFB } from "../../util/frontend/rfb";
 
 type JsonObject = Record<string, unknown>;
 type Instruction = { text: string; command?: string };

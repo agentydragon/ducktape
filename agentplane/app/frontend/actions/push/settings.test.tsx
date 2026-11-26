@@ -165,8 +165,8 @@ it("explains pending settings and a failed load without claiming the server is u
   expect(container.textContent).toContain("Loading notification settings");
   expect(container.textContent).not.toContain("not configured on this server");
   expect(
-    [...container.querySelectorAll("button")].find((button) => button.textContent === "Register this browser")?.disabled
-  ).toBe(true);
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Register this browser")
+  ).toBeUndefined();
   await act(async () => rejectResponse(new Error("Server unavailable")));
   expect(container.textContent).toContain("Could not load notification settings");
   expect(container.textContent).toContain("Server unavailable");

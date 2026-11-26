@@ -191,8 +191,9 @@ empty at the end.
   host premises and their effect on export reentry.
 - <analysis_consolidation.md>: stage 2 analysis algorithm, bounds and migration.
 - <analysis_performance.md>: stage 2 cost and the CI budgets.
-- <native_receiver_identity.md>, <purity_analysis.md>,
-  <runtime_validation.md>: analysis precision and probe work within stage 2.
+- <native_receiver_identity.md> and <../TODO.md#purity-classifier>: stage 2
+  analysis precision. <../debug/runtime_transfers.md#open-supplemental-tana-parity>
+  tracks the remaining runtime comparison.
 - <relational_selectors.md>, <automated_spec_workflows.md>,
   <explicit_import_order.md>: the spec surface and stage 6.
 

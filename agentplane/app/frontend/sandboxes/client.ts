@@ -82,10 +82,10 @@ export async function launchEnvironment(
   request: CreateEnvironmentRequest,
   policySets: string[]
 ): Promise<EnvironmentTarget> {
-  const identity = await createIdentity(request.name, `Agent of Sandbox ${request.name}, launched from the app.`);
+  const identity = await createIdentity(request.identity, `Agent of Sandbox ${request.name}, launched from the app.`);
   try {
     if (policySets.length > 0) await grantIdentityPolicyBinding(identity, policySets);
-    return await createEnvironment({ ...request, identity: request.name });
+    return await createEnvironment(request);
   } catch (failure) {
     if (
       failure instanceof HttpError &&

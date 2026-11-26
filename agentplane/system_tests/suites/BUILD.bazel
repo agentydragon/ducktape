@@ -808,17 +808,6 @@ py_test(
     ],
 )
 
-py_library(
-    name = "native_deployment",
-    srcs = ["native_deployment.py"],
-    deps = [
-        "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:fixture_database",
-        "//agentplane/system_tests/deployment:fixture_finalization",
-        "//agentplane/system_tests/deployment:rendered_fixture",
-    ],
-)
-
 # Disposable NixOS worker qualification uses the same cold acceptance recipe.
 firecracker_test(
     name = "test_firecracker_nixos_spike",
@@ -831,14 +820,10 @@ py_library(
     name = "suite_recipe",
     srcs = ["suite_recipe.py"],
     deps = [
-        ":native_deployment",
-        "//agentplane/system_tests/deployment:fixture_chart",
         "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",
         "//agentplane/system_tests/deployment:suite_deployment",
-        "//agentplane/system_tests/suites/mcp:history_deployment",
         "//agentplane/system_tests/suites/mcp:mcp_deployment",
         "//agentplane/system_tests/suites/mcp:mcp_services_deployment",
-        "//agentplane/system_tests/suites/mcp:recovery_deployment",
     ],
 )

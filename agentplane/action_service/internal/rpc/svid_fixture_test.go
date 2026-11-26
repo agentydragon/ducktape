@@ -82,7 +82,7 @@ func (s *served) configureCertificates(t *testing.T) (credentials.TransportCrede
 	t.Helper()
 	ca := transporttesting.NewCA(t)
 	server := ca.Issue(t, peertls.ActionsURI)
-	config := listener.Config{ListenAddress: "127.0.0.1:0", TLS: &listener.TLS{CertFile: server.CertFile, KeyFile: server.KeyFile}, Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}}}
+	config := listener.Config{ListenAddress: "127.0.0.1:0", TLS: &listener.TLS{CertFile: server.CertFile, KeyFile: server.KeyFile}, Auth: []*listener.SPIFFEAuth{{CAFile: ca.RootFile}}}
 	serverCredentials, err := config.ServerCredentialsWithServices(peertls.ActionsURI)
 	if err != nil {
 		t.Fatal(err)

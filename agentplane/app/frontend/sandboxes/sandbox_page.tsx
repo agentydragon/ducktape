@@ -1,3 +1,5 @@
+import { SandboxStatusTooltip } from "./status_tooltip";
+import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { SessionStatus_Materialization } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { clone, create } from "@bufbuild/protobuf";
 
@@ -34,7 +36,7 @@ import { usePolicyResources } from "../policy/watch";
 import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";
 import { StatusView } from "./sandbox_status_view";
-import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandboxSuspended } from "./sandbox_status";
+import { containerStatuses, hasVmConsole, sandboxReady, sandboxSummary, sandboxSuspended } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
 import { sessionActivityFresh } from "../sessions/thread_status";
 import { NewThreadForm } from "../sessions/new_thread_form";
@@ -79,6 +81,22 @@ const DEFAULT_TAB: Tab = "threads";
 
 function isTab(value: string | null): value is Tab {
   return TABS.includes(value as Tab);
+}
+
+function notReadyReason(sandbox: EnvironmentDescriptor): JSX.Element {
+  const containers = containerStatuses(sandbox.kubernetesDiagnostics?.pod?.status);
+  const waiting = containers.find(
+    (container) =>
+      container.state === "waiting" && (container.reason === "ImagePullBackOff" || container.reason === "ErrImagePull")
+  );
+  if (waiting)
+    return (
+      <>
+        <strong>Waiting for the {waiting.name} image.</strong>
+        {waiting.message && <div>{waiting.message}</div>}
+      </>
+    );
+  return <>Sandbox: {sandboxSummary(sandbox).label}. See Status for details.</>;
 }
 
 export function SandboxPage({
@@ -163,7 +181,7 @@ export function SandboxPage({
       : !ready && !canWakeForThread
         ? sandboxSuspended(sandbox)
           ? "The Sandbox is suspended. Resume it or enable wake on send before creating a thread."
-          : `New threads need a ready Sandbox.\n${sandboxStatusDetail(sandbox)}`
+          : notReadyReason(sandbox)
         : null;
   useEffect(() => {
     if (requestedTab === "console" && sandbox !== null && !vmConsoleAvailable) {
@@ -320,7 +338,7 @@ export function SandboxPage({
       <TopbarTitle>
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
           {sandbox && (
-            <Tooltip label={sandboxStatusDetail(sandbox)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+            <Tooltip label={<SandboxStatusTooltip sandbox={sandbox} />} multiline withArrow>
               <span
                 role="img"
                 tabIndex={0}

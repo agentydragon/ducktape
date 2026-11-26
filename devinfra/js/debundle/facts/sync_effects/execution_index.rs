@@ -963,18 +963,6 @@ impl IterativeRules for MutationReceiverAliasRules<'_> {
     }
 }
 
-fn has_definite_primitive_result(expression: &Expr) -> bool {
-    match expression.unwrap_parens() {
-        Expr::Lit(Lit::Regex(_)) => false,
-        Expr::Lit(_) | Expr::Tpl(_) | Expr::Unary(_) | Expr::Update(_) => true,
-        Expr::Bin(binary) => !matches!(
-            binary.op,
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-        ),
-        _ => false,
-    }
-}
-
 /// Admit only arguments whose evaluation cannot itself trigger caller code.
 /// The provider must separately be audited for every admitted argument shape.
 /// The call result stays opaque and the ordinary visitor records the effects.
@@ -1310,27 +1298,6 @@ fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
             "direct Symbol(...) call (unsupported Symbol call shape)"
         }
         _ => "supported native operation",
-    }
-}
-
-fn native_operation_mutation_name(operation: NativeInputKind) -> &'static str {
-    match operation {
-        NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
-            "global Symbol replacement or accessor installation"
-        }
-        NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) => {
-            "global TextEncoder replacement or accessor installation"
-        }
-        NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) => {
-            "global Map replacement or accessor installation"
-        }
-        NativeInputKind::Operation(spec::NativeOperationKind::WeakMapEmpty) => {
-            "global WeakMap replacement or accessor installation"
-        }
-        NativeInputKind::Operation(spec::NativeOperationKind::SetEmpty) => {
-            "global Set replacement or accessor installation"
-        }
-        _ => "native operation mutation",
     }
 }
 
@@ -1811,6 +1778,25 @@ enum NativeReceiverRoot {
 }
 
 impl NativeReceiverRoot {
+    fn cloned_ordinary_input(&self) -> Option<(ValueInputRef, SourceUnitOrdinal)> {
+        match self {
+            Self::OrdinaryDirect {
+                reference,
+                available_after,
+            }
+            | Self::OrdinaryDescendant {
+                reference,
+                available_after,
+            } => Some((reference.clone(), *available_after)),
+            Self::Intrinsic(_)
+            | Self::IntrinsicPrototype(_)
+            | Self::IntrinsicDescendant(_)
+            | Self::ArrayIteratorPrototype
+            | Self::SetIteratorPrototype
+            | Self::BundleGlobal => None,
+        }
+    }
+
     fn intrinsic_root(&self) -> Option<NativeIntrinsic> {
         match self {
             Self::Intrinsic(root)
@@ -2040,6 +2026,21 @@ fn native_operation_initializers(
         }
         _ => None,
     }
+}
+
+fn matches_resolved_native_initializer(
+    input: &ResolvedNativeOperationInput,
+    declaration: &BindingDeclarationWrite,
+    call_site: CallSite,
+) -> bool {
+    declaration.direct_top_level
+        && declaration.simple_identifier
+        && span_contains(input.selected_statement_span, declaration.binding_span)
+        && declaration.binding_span == input.declaration_span
+        && declaration.initializer_span == Some(input.initializer_span)
+        && declaration.owner == input.initializer_ordinal
+        && input.binding.0.as_ref() == input.evidence.selected_binding
+        && call_site == CallSite::from(input.call_span)
 }
 
 fn set_from_primitive_array_aliases(expression: &Expr) -> Option<Vec<Id>> {
@@ -2508,22 +2509,11 @@ fn intrinsic_roots_read(
                     ordinary_inputs,
                     callable_return_inputs,
                 );
-                ordinary_refs.extend(option_roots.iter().filter_map(|root| match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_)
-                    | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype
-                    | NativeReceiverRoot::BundleGlobal => None,
-                }));
+                ordinary_refs.extend(
+                    option_roots
+                        .iter()
+                        .filter_map(NativeReceiverRoot::cloned_ordinary_input),
+                );
                 if option_roots.is_empty() && intrinsic_alternative_can_be_unknown(option) {
                     unknown_arm = true;
                 }
@@ -2554,7 +2544,6 @@ fn intrinsic_roots_read(
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
             let mut input_roots = NativeReceiverRoots::new();
             let mut ordinary_refs = BTreeSet::new();
-            let mut has_callable_return_roots = false;
             let mut object_get_prototype_of = false;
             for (position, value) in std::iter::once(callee.as_ref())
                 .chain(args.iter())
@@ -2593,22 +2582,11 @@ fn intrinsic_roots_read(
                         callable_return_inputs,
                     )
                 };
-                ordinary_refs.extend(value_roots.iter().filter_map(|root| match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_)
-                    | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype
-                    | NativeReceiverRoot::BundleGlobal => None,
-                }));
+                ordinary_refs.extend(
+                    value_roots
+                        .iter()
+                        .filter_map(NativeReceiverRoot::cloned_ordinary_input),
+                );
                 input_roots.extend(value_roots);
             }
             if matches!(value, ValueExpr::Call(..)) && object_get_prototype_of {
@@ -2619,54 +2597,26 @@ fn intrinsic_roots_read(
                 input_roots.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
                 return input_roots;
             }
-            if let ValueExpr::Binding(binding) = callee.as_ref()
-                && let Some(return_roots) = callable_return_inputs.by_binding.get(binding)
-            {
-                has_callable_return_roots = true;
-                ordinary_refs.extend(return_roots.iter().filter_map(|root| match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_)
-                    | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype
-                    | NativeReceiverRoot::BundleGlobal => None,
-                }));
-                input_roots.extend(return_roots.iter().cloned());
-            } else if let ValueExpr::Alloc(Kind::Function, function) = callee.as_ref()
-                && let Some(return_roots) = callable_return_inputs.by_origin.get(function)
-            {
-                has_callable_return_roots = true;
-                ordinary_refs.extend(return_roots.iter().filter_map(|root| match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_)
-                    | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype
-                    | NativeReceiverRoot::BundleGlobal => None,
-                }));
-                input_roots.extend(return_roots.iter().cloned());
+            let return_roots = match callee.as_ref() {
+                ValueExpr::Binding(binding) => callable_return_inputs.by_binding.get(binding),
+                ValueExpr::Alloc(Kind::Function, function) => {
+                    callable_return_inputs.by_origin.get(function)
+                }
+                _ => None,
+            };
+            if let Some(roots) = return_roots {
+                ordinary_refs.extend(
+                    roots
+                        .iter()
+                        .filter_map(NativeReceiverRoot::cloned_ordinary_input),
+                );
+                input_roots.extend(roots.iter().cloned());
             }
             // Preserve baseline opaque call/construct behavior unless an
-            // author input participates. Native constructor aliases and
-            // instances do not inherit their constructor's identity.
+            // author input participates. A known empty return summary
+            // still preserves the collected input roots.
             if ordinary_refs.is_empty() {
-                return if has_callable_return_roots {
+                return if return_roots.is_some() {
                     input_roots
                 } else {
                     NativeReceiverRoots::new()
@@ -3308,20 +3258,12 @@ fn evaluate_receiver_value(
                 .fact
                 .capture_dependencies
                 .extend(callee_value.fact.capture_dependencies.iter().cloned());
-            let mut ordinary_refs = BTreeSet::new();
-            for root in &result.fact.roots {
-                if let NativeReceiverRoot::OrdinaryDirect {
-                    reference,
-                    available_after,
-                }
-                | NativeReceiverRoot::OrdinaryDescendant {
-                    reference,
-                    available_after,
-                } = root
-                {
-                    ordinary_refs.insert((reference.clone(), *available_after));
-                }
-            }
+            let mut ordinary_refs: BTreeSet<_> = result
+                .fact
+                .roots
+                .iter()
+                .filter_map(NativeReceiverRoot::cloned_ordinary_input)
+                .collect();
             for argument in args.iter() {
                 let argument = evaluate_receiver_value(argument, context, rules);
                 result.pending |= argument.pending;
@@ -3450,22 +3392,7 @@ fn evaluate_receiver_value(
                 .fact
                 .roots
                 .iter()
-                .filter_map(|root| match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_)
-                    | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype
-                    | NativeReceiverRoot::BundleGlobal => None,
-                })
+                .filter_map(NativeReceiverRoot::cloned_ordinary_input)
                 .collect();
             if !ordinary_refs.is_empty() {
                 result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
@@ -3520,22 +3447,7 @@ impl IterativeRules for ReceiverFlowRules<'_> {
                 let ordinary_refs: BTreeSet<_> = fact
                     .roots
                     .iter()
-                    .filter_map(|root| match root {
-                        NativeReceiverRoot::OrdinaryDirect {
-                            reference,
-                            available_after,
-                        }
-                        | NativeReceiverRoot::OrdinaryDescendant {
-                            reference,
-                            available_after,
-                        } => Some((reference.clone(), *available_after)),
-                        NativeReceiverRoot::Intrinsic(_)
-                        | NativeReceiverRoot::IntrinsicPrototype(_)
-                        | NativeReceiverRoot::IntrinsicDescendant(_)
-                        | NativeReceiverRoot::ArrayIteratorPrototype
-                        | NativeReceiverRoot::SetIteratorPrototype
-                        | NativeReceiverRoot::BundleGlobal => None,
-                    })
+                    .filter_map(NativeReceiverRoot::cloned_ordinary_input)
                     .collect();
                 if let Some(copy_owner) = self.index.stable_top_level_copy_owner(target, value) {
                     fact.roots = fact
@@ -3961,7 +3873,6 @@ fn close_receiver_flow(
             Some((*function, roots))
         })
         .collect::<BTreeMap<_, _>>();
-    let by_origin = callable_roots.clone();
     let by_binding = facts
         .iter()
         .filter_map(|(key, fact)| {
@@ -3982,7 +3893,7 @@ fn close_receiver_flow(
         bindings,
         callable_returns: CallableReturnInputs {
             by_binding,
-            by_origin,
+            by_origin: callable_roots,
         },
         facts,
     }
@@ -5807,32 +5718,27 @@ impl ExecutionIndex {
             return;
         }
         if !self.dynamic_scope_owners.is_empty() {
-            for input in selected {
+            for evidence in selected
+                .iter()
+                .map(|input| &input.evidence)
+                .chain(resolved.iter().map(|input| &input.evidence))
+            {
                 self.native_operation_input_errors.push(format!(
                     "{} cannot assert native operation identity because provider analysis contains dynamic-scope contamination",
-                    input.evidence.spec_location
-                ));
-            }
-            for input in resolved {
-                self.native_operation_input_errors.push(format!(
-                    "{} cannot assert native operation identity because provider analysis contains dynamic-scope contamination",
-                    input.evidence.spec_location
+                    evidence.spec_location
                 ));
             }
             return;
         }
         for input in selected {
             let request = &input.evidence.spec_location;
+            if let Some(error) = self.native_operation_mutation_error(&input.evidence) {
+                self.native_operation_input_errors.push(error);
+                continue;
+            }
             if input.evidence.operation
                 == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
             {
-                if let Some(owner) = self.known_object_freeze_mutation() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} is contradicted by a positively identified required Object.freeze slot write in source unit {}",
-                        owner.0
-                    ));
-                    continue;
-                }
                 let candidates: Vec<_> = self
                     .hoisted_bindings
                     .keys()
@@ -5874,38 +5780,31 @@ impl ExecutionIndex {
                     });
                 continue;
             }
+            let candidates: Vec<_> = self
+                .binding_declaration_writes
+                .iter()
+                .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
+                .flat_map(|(binding, writes)| {
+                    writes.iter().filter_map(move |write| {
+                        (write.simple_identifier
+                            && write.direct_top_level
+                            && span_contains(input.selected_statement_span, write.binding_span))
+                        .then_some((binding.clone(), write.clone()))
+                    })
+                })
+                .collect();
+            let [(binding, declaration)] = candidates.as_slice() else {
+                self.native_operation_input_errors.push(format!(
+                    "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
+                    input.selected_binding,
+                    candidates.len()
+                ));
+                continue;
+            };
             if matches!(
                 input.evidence.operation,
                 NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
             ) {
-                if let Some(owner) = self.known_set_protocol_mutation() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} is contradicted by a positively identified required native slot write in source unit {}",
-                        owner.0
-                    ));
-                    continue;
-                }
-                let candidates: Vec<_> = self
-                    .binding_declaration_writes
-                    .iter()
-                    .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
-                    .flat_map(|(binding, writes)| {
-                        writes.iter().filter_map(move |write| {
-                            (write.simple_identifier
-                                && write.direct_top_level
-                                && span_contains(input.selected_statement_span, write.binding_span))
-                            .then_some((binding.clone(), write.clone()))
-                        })
-                    })
-                    .collect();
-                let [(binding, declaration)] = candidates.as_slice() else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
-                        input.selected_binding,
-                        candidates.len()
-                    ));
-                    continue;
-                };
                 let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
                 else {
                     self.native_operation_input_errors.push(format!(
@@ -5919,11 +5818,7 @@ impl ExecutionIndex {
                     ));
                     continue;
                 };
-                if !self.has_stable_primitive_set_array(declaration)
-                    || constructor.0.as_ref() != "Set"
-                    || self.property_key_declarations.contains(constructor)
-                    || self.imported_bindings.contains(constructor)
-                {
+                if !self.is_unshadowed_primitive_set_initializer(declaration, constructor) {
                     self.native_operation_input_errors
                         .push(format!(
                             "{request} requires a direct unshadowed new Set([primitive literals or earlier stable primitive bindings]) operation with one dense nonspread array literal"
@@ -5961,37 +5856,6 @@ impl ExecutionIndex {
                     });
                 continue;
             }
-            if let Some(owner) =
-                self.known_global_native_operation_mutation(input.evidence.operation)
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified {} (source unit {})",
-                    native_operation_mutation_name(input.evidence.operation),
-                    owner.0
-                ));
-                continue;
-            }
-            let candidates: Vec<_> = self
-                .binding_declaration_writes
-                .iter()
-                .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
-                .flat_map(|(binding, writes)| {
-                    writes.iter().filter_map(move |write| {
-                        (write.simple_identifier
-                            && write.direct_top_level
-                            && span_contains(input.selected_statement_span, write.binding_span))
-                        .then_some((binding.clone(), write.clone()))
-                    })
-                })
-                .collect();
-            let [(binding, declaration)] = candidates.as_slice() else {
-                self.native_operation_input_errors.push(format!(
-                    "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
-                    input.selected_binding,
-                    candidates.len()
-                ));
-                continue;
-            };
             let binding = (*binding).clone();
             let declaration = (*declaration).clone();
             if declaration.initializer.is_none() {
@@ -6026,22 +5890,18 @@ impl ExecutionIndex {
                 continue;
             }
             for (callee, args, call_site) in initializers {
-                let Some(call) = self.top_calls[declaration.owner.0]
-                    .iter()
-                    .find(|call| CallSite::from(call.span) == call_site)
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer resolves to a direct top-level call site"
-                    ));
-                    continue;
+                let call = match self.direct_native_initializer_call(
+                    input.evidence.operation,
+                    &declaration,
+                    call_site,
+                ) {
+                    Ok(call) => call,
+                    Err(reason) => {
+                        self.native_operation_input_errors
+                            .push(format!("{request} {reason}"));
+                        continue;
+                    }
                 };
-                if input.evidence.operation.empty_constructor_name().is_some()
-                    && declaration.empty_map_object_sites.is_none()
-                    && declaration.initializer_span != Some(call.span)
-                {
-                    self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
-                    continue;
-                }
                 if let Some(reason) = self.native_operation_call_shape_error(
                     input.evidence.operation,
                     callee,
@@ -6053,6 +5913,7 @@ impl ExecutionIndex {
                         .push(format!("{request} {reason}"));
                     continue;
                 }
+                let call_span = call.span;
                 let mut evidence = input.evidence.clone();
                 evidence.selected_binding = input.selected_binding.clone();
                 self.native_operation_input_evidence
@@ -6063,8 +5924,8 @@ impl ExecutionIndex {
                         binding: binding.clone(),
                         selected_statement_span: input.selected_statement_span,
                         declaration_span: declaration.binding_span,
-                        initializer_span: declaration.initializer_span.unwrap_or(call.span),
-                        call_span: call.span,
+                        initializer_span: declaration.initializer_span.unwrap_or(call_span),
+                        call_span,
                         initializer_ordinal: declaration.owner,
                     });
             }
@@ -6072,16 +5933,13 @@ impl ExecutionIndex {
 
         for input in resolved {
             let request = &input.evidence.spec_location;
+            if let Some(error) = self.native_operation_mutation_error(&input.evidence) {
+                self.native_operation_input_errors.push(error);
+                continue;
+            }
             if input.evidence.operation
                 == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
             {
-                if let Some(owner) = self.known_object_freeze_mutation() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} is contradicted by a positively identified required Object.freeze slot write in source unit {}",
-                        owner.0
-                    ));
-                    continue;
-                }
                 let is_same = self
                     .direct_freeze_return_call(&input.binding, input.selected_statement_span)
                     .is_some_and(|call| {
@@ -6103,27 +5961,20 @@ impl ExecutionIndex {
                 self.resolved_native_operation_inputs.push(input.clone());
                 continue;
             }
+            let Some([declaration]) = self
+                .binding_declaration_writes
+                .get(&input.binding)
+                .map(Vec::as_slice)
+            else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} no longer resolves to one canonical binding declaration"
+                ));
+                continue;
+            };
             if matches!(
                 input.evidence.operation,
                 NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
             ) {
-                if let Some(owner) = self.known_set_protocol_mutation() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} is contradicted by a positively identified required native slot write in source unit {}",
-                        owner.0
-                    ));
-                    continue;
-                }
-                let Some([declaration]) = self
-                    .binding_declaration_writes
-                    .get(&input.binding)
-                    .map(Vec::as_slice)
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer resolves to one canonical binding declaration"
-                    ));
-                    continue;
-                };
                 let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
                 else {
                     self.native_operation_input_errors.push(format!(
@@ -6131,19 +5982,9 @@ impl ExecutionIndex {
                     ));
                     continue;
                 };
-                let is_same = declaration.direct_top_level
-                    && declaration.simple_identifier
-                    && self.has_stable_primitive_set_array(declaration)
-                    && span_contains(input.selected_statement_span, declaration.binding_span)
-                    && declaration.binding_span == input.declaration_span
-                    && declaration.initializer_span == Some(input.initializer_span)
-                    && declaration.owner == input.initializer_ordinal
-                    && input.binding.0.as_ref() == input.evidence.selected_binding
-                    && *call_site == CallSite::from(input.call_span)
+                let is_same = matches_resolved_native_initializer(input, declaration, *call_site)
                     && matches!(callee.as_ref(), ValueExpr::Binding(constructor)
-                        if constructor.0.as_ref() == "Set"
-                            && !self.property_key_declarations.contains(constructor)
-                            && !self.imported_bindings.contains(constructor));
+                        if self.is_unshadowed_primitive_set_initializer(declaration, constructor));
                 if !is_same {
                     self.native_operation_input_errors.push(format!(
                         "{request} no longer identifies the same direct unshadowed Set initializer"
@@ -6155,26 +5996,6 @@ impl ExecutionIndex {
                 self.resolved_native_operation_inputs.push(input.clone());
                 continue;
             }
-            if let Some(owner) =
-                self.known_global_native_operation_mutation(input.evidence.operation)
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified {} (source unit {})",
-                    native_operation_mutation_name(input.evidence.operation),
-                    owner.0
-                ));
-                continue;
-            }
-            let Some([declaration]) = self
-                .binding_declaration_writes
-                .get(&input.binding)
-                .map(Vec::as_slice)
-            else {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer resolves to one canonical binding declaration"
-                ));
-                continue;
-            };
             let Some((callee, args, call_site)) =
                 native_operation_initializers(declaration, input.evidence.operation).and_then(
                     |initializers| {
@@ -6189,22 +6010,18 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
-            let Some(call) = self.top_calls[declaration.owner.0]
-                .iter()
-                .find(|call| CallSite::from(call.span) == call_site)
-            else {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer resolves to a direct top-level call site"
-                ));
-                continue;
+            let call = match self.direct_native_initializer_call(
+                input.evidence.operation,
+                declaration,
+                call_site,
+            ) {
+                Ok(call) => call,
+                Err(reason) => {
+                    self.native_operation_input_errors
+                        .push(format!("{request} {reason}"));
+                    continue;
+                }
             };
-            if input.evidence.operation.empty_constructor_name().is_some()
-                && declaration.empty_map_object_sites.is_none()
-                && declaration.initializer_span != Some(call.span)
-            {
-                self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
-                continue;
-            }
             if let Some(reason) = self.native_operation_call_shape_error(
                 input.evidence.operation,
                 callee,
@@ -6217,14 +6034,7 @@ impl ExecutionIndex {
                 ));
                 continue;
             }
-            let is_same = declaration.direct_top_level
-                && declaration.simple_identifier
-                && span_contains(input.selected_statement_span, declaration.binding_span)
-                && declaration.binding_span == input.declaration_span
-                && declaration.initializer_span == Some(input.initializer_span)
-                && declaration.owner == input.initializer_ordinal
-                && input.binding.0.as_ref() == input.evidence.selected_binding
-                && call_site == CallSite::from(input.call_span);
+            let is_same = matches_resolved_native_initializer(input, declaration, call_site);
             if !is_same {
                 self.native_operation_input_errors.push(format!(
                     "{request} no longer identifies the same direct unshadowed native initializer"
@@ -6265,6 +6075,69 @@ impl ExecutionIndex {
                     .to_owned(),
             );
         }
+    }
+
+    fn native_operation_mutation_error(
+        &self,
+        evidence: &NativeOperationInputEvidence,
+    ) -> Option<String> {
+        let request = &evidence.spec_location;
+        let operation = evidence.operation;
+        match operation {
+            NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze) => {
+                let owner = self.known_object_freeze_mutation()?;
+                Some(format!(
+                    "{request} is contradicted by a positively identified required Object.freeze slot write in source unit {}",
+                    owner.0
+                ))
+            }
+            NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray) => {
+                let owner = self.known_set_protocol_mutation()?;
+                Some(format!(
+                    "{request} is contradicted by a positively identified required native slot write in source unit {}",
+                    owner.0
+                ))
+            }
+            _ => {
+                let (name, owner) = self.known_global_native_operation_mutation(operation)?;
+                Some(format!(
+                    "{request} is contradicted by a positively identified global {name} replacement or accessor installation (source unit {})",
+                    owner.0
+                ))
+            }
+        }
+    }
+
+    fn is_unshadowed_primitive_set_initializer(
+        &self,
+        declaration: &BindingDeclarationWrite,
+        constructor: &Id,
+    ) -> bool {
+        self.has_stable_primitive_set_array(declaration)
+            && constructor.0.as_ref() == "Set"
+            && !self.property_key_declarations.contains(constructor)
+            && !self.imported_bindings.contains(constructor)
+    }
+
+    fn direct_native_initializer_call(
+        &self,
+        operation: NativeInputKind,
+        declaration: &BindingDeclarationWrite,
+        site: CallSite,
+    ) -> Result<&Call, &'static str> {
+        let call = self.top_calls[declaration.owner.0]
+            .iter()
+            .find(|call| CallSite::from(call.span) == site)
+            .ok_or("no longer resolves to a direct top-level call site")?;
+        if operation.empty_constructor_name().is_some()
+            && declaration.empty_map_object_sites.is_none()
+            && declaration.initializer_span != Some(call.span)
+        {
+            return Err(
+                "must select the direct constructor initializer without a sequence or assignment wrapper",
+            );
+        }
+        Ok(call)
     }
 
     fn source_slot_overlap(&self, slot: &NativeWriteSlot) -> NativeSlotOverlap {
@@ -6354,31 +6227,16 @@ impl ExecutionIndex {
     fn known_global_native_operation_mutation(
         &self,
         operation: NativeInputKind,
-    ) -> Option<SourceUnitOrdinal> {
-        if let Some(constructor) = operation.empty_constructor_name() {
-            return match self.source_slot_overlap(&NativeWriteSlot {
-                receiver: NativeReceiverPath::GlobalObject,
-                key: NativePropertyKey::String(constructor.to_owned()),
-            }) {
-                NativeSlotOverlap::Known(owner) => Some(owner),
-                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-            };
-        }
-        match operation {
-            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
-                self.known_global_symbol_mutation()
-            }
-            _ => None,
-        }
-    }
-
-    fn known_global_symbol_mutation(&self) -> Option<SourceUnitOrdinal> {
-        let overlap = self.source_slot_overlap(&NativeWriteSlot {
+    ) -> Option<(&'static str, SourceUnitOrdinal)> {
+        let name = match operation {
+            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => "Symbol",
+            _ => operation.empty_constructor_name()?,
+        };
+        match self.source_slot_overlap(&NativeWriteSlot {
             receiver: NativeReceiverPath::GlobalObject,
-            key: NativePropertyKey::String("Symbol".to_owned()),
-        });
-        match overlap {
-            NativeSlotOverlap::Known(owner) => Some(owner),
+            key: NativePropertyKey::String(name.to_owned()),
+        }) {
+            NativeSlotOverlap::Known(owner) => Some((name, owner)),
             NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
         }
     }
@@ -8706,7 +8564,8 @@ impl ExecutionIndex {
     }
 
     fn record_implicit_coercion(&mut self, expression: &Expr, span: Span) {
-        if (self.current.is_some() && self.past_await) || has_definite_primitive_result(expression)
+        if (self.current.is_some() && self.past_await)
+            || js_ast::has_definite_primitive_result(expression)
         {
             return;
         }
@@ -9779,10 +9638,7 @@ impl Visit for ExecutionIndex {
     fn visit_bin_expr(&mut self, expression: &BinExpr) {
         expression.left.visit_with(self);
         let after_left = self.past_await;
-        if matches!(
-            expression.op,
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-        ) {
+        if expression.op.may_short_circuit() {
             self.conditional_depth += 1;
         }
         let previous_target = self.safe_class_target.take();
@@ -9796,10 +9652,7 @@ impl Visit for ExecutionIndex {
         };
         expression.right.visit_with(self);
         self.safe_class_target = previous_target;
-        if matches!(
-            expression.op,
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-        ) {
+        if expression.op.may_short_circuit() {
             self.conditional_depth -= 1;
             self.past_await = after_left;
         }
@@ -10861,17 +10714,11 @@ impl Visit for ExecutionIndex {
         assignment.left.visit_with(self);
         self.namespace_privacy.target_depth -= 1;
         self.destructuring_source = previous_source;
-        if matches!(
-            assignment.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if assignment.op.may_short_circuit() {
             self.may_skip_member_read_depth += 1;
         }
         assignment.right.visit_with(self);
-        if matches!(
-            assignment.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if assignment.op.may_short_circuit() {
             self.may_skip_member_read_depth -= 1;
             self.past_await = before_assignment;
         }
@@ -12015,7 +11862,9 @@ impl PreparedCallableCapabilities {
         &self,
         operation: NativeInputKind,
     ) -> Option<SourceUnitOrdinal> {
-        self.index.known_global_native_operation_mutation(operation)
+        self.index
+            .known_global_native_operation_mutation(operation)
+            .map(|(_, owner)| owner)
     }
 
     pub(crate) fn known_object_freeze_mutation_owner(&self) -> Option<SourceUnitOrdinal> {

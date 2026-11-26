@@ -76,11 +76,8 @@ pub(super) fn plan_args(
 pub(super) fn tree_run_args(root: &Path, out_root: &Path, flags: &[&str]) -> Vec<String> {
     let mut args = vec!["run".to_owned()];
     args.extend(
-        tree_spec_args(root)
-            .into_iter()
-            .map(|arg| arg.into_string().expect("fixture path is UTF-8")),
+        tree_spec_args(root, out_root).map(|arg| arg.into_string().expect("fixture path is UTF-8")),
     );
-    args.extend(["--out-root".into(), out_root.display().to_string()]);
     args.push("--graphs".into());
     args.extend(flags.iter().map(|flag| (*flag).to_owned()));
     args

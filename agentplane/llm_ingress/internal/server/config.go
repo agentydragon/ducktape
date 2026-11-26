@@ -98,7 +98,6 @@ func loadConfig() (config, error) {
 	}
 	c := defaultConfig()
 	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
-		DecodeHook:      listener.AuthenticationDecodeHook,
 		ExactFieldNames: true,
 	}); err != nil {
 		return config{}, fmt.Errorf("decode LLM ingress settings file: %w", err)

@@ -15,16 +15,13 @@ use debundle_e2e_support::*;
 const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst marker = Symbol('marker');\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst made = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(marker.description, made.name, globalThis.unrelatedKey);\nexport { marker, factory, LaterError, reflect };\n";
 const BASELINE_CONFLICT_MODULES: &[&str] = &["marker", "later"];
 
-fn input_for(source: &str, declaration: &str) -> NativeOperationInputContract {
-    NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(source_match_selector(
-            declaration.trim(),
-            &["marker"],
-        )),
-        operation: NativeOperationKind::Symbol,
-        audited_source_sha256: source_sha256(source),
-        note: Some("Neutral fixture audits this one initialization call.".to_string()),
-    }
+fn symbol_input(source: &str, declaration: &str, binding: &str) -> NativeOperationInputContract {
+    native_operation_input(
+        source,
+        declared_source_unit(declaration.trim(), binding),
+        NativeOperationKind::Symbol,
+        "Neutral fixture audits this one initialization call.",
+    )
 }
 
 fn marker_input(source: &str) -> NativeOperationInputContract {
@@ -32,7 +29,7 @@ fn marker_input(source: &str) -> NativeOperationInputContract {
         .lines()
         .find(|line| line.starts_with("const marker ="))
         .expect("fixture has a direct marker initializer");
-    input_for(source, declaration)
+    symbol_input(source, declaration, "marker")
 }
 
 fn primitive_set_input(source: &str) -> NativeOperationInputContract {
@@ -40,15 +37,12 @@ fn primitive_set_input(source: &str) -> NativeOperationInputContract {
         .lines()
         .find(|line| line.starts_with("const made = new Set("))
         .expect("fixture has a direct Set initializer");
-    NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(source_match_selector(
-            declaration.trim(),
-            &["made"],
-        )),
-        operation: NativeOperationKind::SetFromPrimitiveArray,
-        audited_source_sha256: source_sha256(source),
-        note: Some("Neutral fixture audits this one Set construction site.".to_string()),
-    }
+    native_operation_input(
+        source,
+        declared_source_unit(declaration.trim(), "made"),
+        NativeOperationKind::SetFromPrimitiveArray,
+        "Neutral fixture audits this one Set construction site.",
+    )
 }
 
 fn selected_native_input(
@@ -57,15 +51,12 @@ fn selected_native_input(
     binding: &str,
     operation: NativeOperationKind,
 ) -> NativeOperationInputContract {
-    NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(source_match_selector(
-            declaration.trim(),
-            &[binding],
-        )),
+    native_operation_input(
+        source,
+        declared_source_unit(declaration.trim(), binding),
         operation,
-        audited_source_sha256: source_sha256(source),
-        note: Some("Neutral fixture audits this exact native operation.".to_string()),
-    }
+        "Neutral fixture audits this exact native operation.",
+    )
 }
 
 fn resolved_member_native_input(
@@ -74,15 +65,12 @@ fn resolved_member_native_input(
     name: &str,
     operation: NativeOperationKind,
 ) -> NativeOperationInputContract {
-    NativeOperationInputContract {
-        selector: SourceUnitSelector::ResolvedMember(ResolvedMemberSelector {
-            module: module.to_owned(),
-            name: name.to_owned(),
-        }),
+    native_operation_input(
+        source,
+        member_source_unit(module, name),
         operation,
-        audited_source_sha256: source_sha256(source),
-        note: Some("Neutral fixture audits this exact native operation.".to_owned()),
-    }
+        "Neutral fixture audits this exact native operation.",
+    )
 }
 
 #[test]
@@ -1124,13 +1112,7 @@ fn source_selected_symbol_input_rejects_unsupported_or_contradicted_facts() {
         } else {
             "marker"
         };
-        let mut input = input_for(source, declaration);
-        if selected_name == "selected" {
-            input.selector = SourceUnitSelector::SourceMatch(source_match_selector(
-                declaration.trim(),
-                &["selected"],
-            ));
-        }
+        let input = symbol_input(source, declaration, selected_name);
         expect_rejection_containing_all(rejected_opts(source, selected_name, input), &[expected]);
     }
 }

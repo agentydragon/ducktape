@@ -32,6 +32,18 @@ pub fn is_primitive_literal(expr: &Expr) -> bool {
     )
 }
 
+/// Whether this syntax guarantees a primitive result on normal completion.
+/// Coercion can still execute user code or throw. Short-circuiting operators
+/// can return an operand of any type.
+pub fn has_definite_primitive_result(expression: &Expr) -> bool {
+    match expression.unwrap_parens() {
+        Expr::Lit(Lit::Regex(_)) => false,
+        Expr::Lit(_) | Expr::Tpl(_) | Expr::Unary(_) | Expr::Update(_) => true,
+        Expr::Bin(binary) => !binary.op.may_short_circuit(),
+        _ => false,
+    }
+}
+
 /// No holes or spreads: every element is an explicit primitive literal.
 pub fn is_dense_primitive_array(array: &ArrayLit) -> bool {
     array.elems.iter().all(|element| {

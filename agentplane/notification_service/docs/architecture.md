@@ -35,8 +35,8 @@ see [`migrations`](../migrations/migrations.go) and the deployment instructions.
 An inbox row lock serializes cursor allocation, payload insertion, overlapping subscription
 matches and source-checkpoint advancement. Inbox entries hold their own payload copies, independent
 of the raw GitHub receipt journal. Event identities survive inbox payload expiry for deduplication.
-GitHub matching reads the compact event-specific fact projection stored with each receipt; the signed request body
-is retained for compatibility but is not part of delivery or notification rendering.
+GitHub matching reads the compact event-specific fact projection stored with each receipt. The signed request body
+is optional and is not part of matching or notification rendering; legacy backfill reads it only when a fact is missing.
 
 One PostgreSQL LISTEN connection per replica distributes committed invalidations, never payloads.
 Workers drain durable state at startup and after reconnect. Inbox claims, source generations and
@@ -79,8 +79,9 @@ same lock as invalidation; a lost lease cannot overwrite a newer observation.
 Subject-to-revision associations are additive and repository-qualified. They do not grant access
 to a fork: matching also requires its validated installation/repository grant. Delivery-subject
 links support events without a SHA; later association discovery can select earlier retained CI
-receipts. Receipt positions are serialized against subscription creation. Expiring raw receipts
-cascades to their subject links without removing independent inbox copies.
+receipts. Receipt positions are serialized against subscription creation. Expiring a raw body leaves
+its receipt, compact fact and subject links intact. Expiring the receipt at fact retention cascades to its
+subject links without removing independent inbox copies.
 
 Shared failure observations belong to their access/subject records, not copies on every
 subscription or inbox history. These are current-state records, not temporal versions. See

@@ -125,12 +125,10 @@ func TestExecutionParentFenceDrainsCallsBeforeReleasingOwner(t *testing.T) {
 	}
 	canceled := make(chan struct{})
 	r.mu.Lock()
-	r.activeExecutionCalls = 1
 	r.execCalls[1] = func() { close(canceled) }
 	r.mu.Unlock()
 	t.Cleanup(func() {
 		r.mu.Lock()
-		r.activeExecutionCalls = 0
 		delete(r.execCalls, 1)
 		r.changedLocked()
 		r.mu.Unlock()
@@ -145,7 +143,6 @@ func TestExecutionParentFenceDrainsCallsBeforeReleasingOwner(t *testing.T) {
 	default:
 	}
 	r.mu.Lock()
-	r.activeExecutionCalls = 0
 	delete(r.execCalls, 1)
 	r.changedLocked()
 	r.mu.Unlock()

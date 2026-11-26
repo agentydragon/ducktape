@@ -23,6 +23,16 @@ from testing.frontend_visual.capture import VisualPage
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
+async def test_running_sandbox_status_hover(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.set_running_sandbox_conditions("ready-sandbox")
+    await app.mount_app("/sandboxes/ready-sandbox")
+    await view.page.get_by_role("img", name="Sandbox status: Ready").hover()
+    tooltip = view.page.get_by_role("tooltip")
+    await expect(tooltip).to_contain_text("EnvironmentRuntimeConnected")
+    await expect(tooltip).to_contain_text("ContainersReady")
+    await view.capture(target=view.page.locator("#app"))
+
+
 @DESKTOP_AND_MOBILE
 async def test_session_recovery_messages(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.recovery("messages")
@@ -166,7 +176,7 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
     ("sandbox", "pending", "reason"),
     [
         ("suspended-sandbox", False, "Resume it or enable wake on send"),
-        ("pending-sandbox", False, "ImagePullBackOff"),
+        ("pending-sandbox", False, "Waiting for the runner image"),
         ("ready-sandbox", True, "Check its status"),
     ],
     ids=["suspended", "not-ready", "unconfirmed-create"],
@@ -188,6 +198,13 @@ async def test_create_thread_disabled_tooltip(
         await expect(
             page.get_by_role("button", name="Forget attempt; Session creation may still complete")
         ).to_be_visible()
+    inline_reason = page.get_by_role("group", name="New thread").get_by_role("status").filter(has_text=reason)
+    if page.viewport_size and page.viewport_size["width"] < 768:
+        await expect(inline_reason).to_be_visible()
+        await button.scroll_into_view_if_needed()
+        await expect(inline_reason).to_be_in_viewport()
+        await view.capture(target=page.locator("#app"))
+        return
     wrapper = button.locator("..")
     await wrapper.hover()
     tooltip = page.get_by_role("tooltip")
@@ -250,10 +267,20 @@ async def test_actions(view: VisualPage, app: AgentplaneFixture) -> None:
 
 @DESKTOP_AND_MOBILE
 async def test_action_request_audit_details(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.set_flag(Flag.PENDING_ACTIONS)
-    await app.mount_app("/actions/70000000-0000-4000-8000-000000000001")
+    await app.show_action_preview(
+        "github",
+        "create_pull_request",
+        {
+            "owner": "example",
+            "repo": "docs",
+            "title": "Document sandbox launch",
+            "head": "sandbox-guide",
+            "base": "devel",
+        },
+    )
+    await app.mount_app("/actions/70000000-0000-4000-8000-000000000009")
     page = view.page
-    audit_toggle = page.get_by_role("button", name="Identity visual-test-identity ·", exact=False)
+    audit_toggle = page.get_by_role("button", name="ready-sandbox ·", exact=False)
     await expect(audit_toggle).to_have_count(1)
     await expect(audit_toggle.locator("time")).to_be_visible()
     await expect(audit_toggle).to_have_attribute("aria-expanded", "false")
@@ -263,10 +290,8 @@ async def test_action_request_audit_details(view: VisualPage, app: AgentplaneFix
     await audit_toggle.click()
     audit_item = page.locator(".ui-disclosure-item").filter(has=audit_toggle).first
     audit_body = audit_item.locator(".ui-disclosure-body")
-    await expect(
-        audit_body.get_by_text("Requested by Identity visual-test-identity · UID visual-test-identity-uid", exact=True)
-    ).to_be_visible()
-    await expect(audit_body.get_by_text("70000000-0000-4000-8000-000000000001", exact=True)).to_be_visible()
+    await expect(audit_body.get_by_text("Requested by agentplane-visual/ready-sandbox", exact=True)).to_be_visible()
+    await expect(audit_body.get_by_text("70000000-0000-4000-8000-000000000009", exact=True)).to_be_visible()
     await _focus(page, audit_body)
     await page.mouse.move(0, 0)
     await view.capture(target=page.locator("#app"))

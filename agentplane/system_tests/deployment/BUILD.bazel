@@ -616,9 +616,6 @@ py_library(
         ":fixture_database",
         ":fixture_finalization",
         ":rendered_fixture",
-        "//cluster/cdk8s/agentplane:environment",
-        "//cluster/cdk8s/agentplane:environment_sandbox",
         "//cluster/cdk8s/agentplane:service_database",
-        "@pypi//cdk8s",
     ],
 )

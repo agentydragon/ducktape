@@ -366,16 +366,10 @@ pub fn staged_tree_with_module_roots(
     let artifact = root.join("analysis.dba");
     let mut project_args = vec!["spec".to_string(), "project-analysis".to_string()];
     project_args.extend(
-        tree_spec_args(&root)
-            .into_iter()
+        tree_spec_args(&root, &root.join("project-out"))
             .map(|arg| arg.into_string().expect("UTF-8 fixture path")),
     );
-    project_args.extend([
-        "--out-root".to_string(),
-        path(&root.join("project-out")).to_string(),
-        "--out".to_string(),
-        path(&projection).to_string(),
-    ]);
+    project_args.extend(["--out".to_owned(), path(&projection).to_owned()]);
     assert_ok(
         &command(&project_args.iter().map(String::as_str).collect::<Vec<_>>()),
         "tree spec project-analysis",
@@ -514,11 +508,7 @@ pub fn command_with(binary: &Path, args: &[&str]) -> CommandResult {
     }
     let output =
         case_commands::debundle_fixture_output(&mut command, &hint).expect("spawn debundle tool");
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    }
+    CommandResult::from(output)
 }
 
 pub fn assert_ok(result: &CommandResult, what: &str) {
@@ -813,14 +803,11 @@ pub fn native_member_fixture() -> FixtureOpts<'static> {
     )
     .with_native_operation_inputs(
         "static/app",
-        vec![NativeOperationInputContract {
-            selector: SourceUnitSelector::ResolvedMember(ResolvedMemberSelector {
-                module: "native".to_owned(),
-                name: "alias".to_owned(),
-            }),
-            operation: NativeOperationKind::Symbol,
-            audited_source_sha256: source_sha256(SOURCE),
-            note: Some("The selected Symbol call is audited.".to_owned()),
-        }],
+        vec![native_operation_input(
+            SOURCE,
+            member_source_unit("native", "alias"),
+            NativeOperationKind::Symbol,
+            "The selected Symbol call is audited.",
+        )],
     )
 }

@@ -89,7 +89,6 @@ enum Step {
         aggregate: usize,
         index: usize,
     },
-    FinishRecord(usize),
     ArrayNext {
         aggregate: usize,
         elements: Arc<[LocalArrayElement]>,
@@ -102,7 +101,7 @@ enum Step {
         aggregate: usize,
         span: Span,
     },
-    FinishArray(usize),
+    FinishAggregate(usize),
     Sequence {
         expressions: Arc<[LocalExpression]>,
         index: usize,
@@ -166,7 +165,7 @@ impl Step {
     fn finishes(&self) -> bool {
         matches!(
             self,
-            Self::Throw | Self::FinishRecord(_) | Self::FinishArray(_) | Self::Sequence { .. }
+            Self::Throw | Self::FinishAggregate(_) | Self::Sequence { .. }
         )
     }
 }
@@ -488,43 +487,6 @@ impl LocalContinuation {
                     },
                 );
             }
-            Step::FinishRecord(aggregate) => {
-                let Some(Aggregate::Record {
-                    transfer,
-                    allocation,
-                    new_record,
-                }) = self.aggregates.remove(&aggregate)
-                else {
-                    return Err(RemainderDisposition::NeedsSummary);
-                };
-                if !self.frame.continues() {
-                    // An unfinished literal is not an allocation; no heap entry
-                    // is written for it.
-                    self.frame
-                        .ledger
-                        .allocation
-                        .compose(&AllocationJudgment::Opaque);
-                    self.value = None;
-                    return Ok(None);
-                }
-                let result = transfer.finish(&mut LocalValueContext {
-                    context,
-                    frame: &mut self.frame,
-                    refusal: None,
-                });
-                self.frame.ledger.allocation.compose(&result.judgment);
-                mark_fresh_record(
-                    context,
-                    &mut self.frame,
-                    allocation,
-                    new_record,
-                    &result.values,
-                );
-                self.value = Some(completing_selected(
-                    SelectedValue::raw(result.values),
-                    &mut self.frame,
-                ));
-            }
             Step::ArrayNext {
                 aggregate,
                 elements,
@@ -606,11 +568,13 @@ impl LocalContinuation {
                     judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
                 });
             }
-            Step::FinishArray(aggregate) => {
-                let Some(Aggregate::Array(transfer)) = self.aggregates.remove(&aggregate) else {
+            Step::FinishAggregate(aggregate) => {
+                let Some(aggregate) = self.aggregates.remove(&aggregate) else {
                     return Err(RemainderDisposition::NeedsSummary);
                 };
                 if !self.frame.continues() {
+                    // An unfinished literal is not an allocation; no heap entry
+                    // is written for it.
                     self.frame
                         .ledger
                         .allocation
@@ -618,12 +582,29 @@ impl LocalContinuation {
                     self.value = None;
                     return Ok(None);
                 }
-                let result = transfer.finish(&mut LocalValueContext {
+                let mut bridge = LocalValueContext {
                     context,
                     frame: &mut self.frame,
                     refusal: None,
-                });
+                };
+                let (result, record) = match aggregate {
+                    Aggregate::Record {
+                        transfer,
+                        allocation,
+                        new_record,
+                    } => (transfer.finish(&mut bridge), Some((allocation, new_record))),
+                    Aggregate::Array(transfer) => (transfer.finish(&mut bridge), None),
+                };
                 self.frame.ledger.allocation.compose(&result.judgment);
+                if let Some((allocation, new_record)) = record {
+                    mark_fresh_record(
+                        context,
+                        &mut self.frame,
+                        allocation,
+                        new_record,
+                        &result.values,
+                    );
+                }
                 self.value = Some(completing_selected(
                     SelectedValue::raw(result.values),
                     &mut self.frame,
@@ -996,7 +977,7 @@ impl LocalContinuation {
                     allocation,
                     new_record,
                 })?;
-                self.steps.push(Step::FinishRecord(aggregate));
+                self.steps.push(Step::FinishAggregate(aggregate));
                 self.steps.push(Step::RecordNext {
                     aggregate,
                     properties,
@@ -1021,7 +1002,7 @@ impl LocalContinuation {
                     AllocationJudgment::CoveredAllocationOnly(Box::default()),
                 );
                 let aggregate = self.begin_aggregate(Aggregate::Array(Box::new(transfer)))?;
-                self.steps.push(Step::FinishArray(aggregate));
+                self.steps.push(Step::FinishAggregate(aggregate));
                 self.steps.push(Step::ArrayNext {
                     aggregate,
                     elements,

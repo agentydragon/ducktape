@@ -155,6 +155,7 @@ ts_library(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/app/frontend/app_config:client",
+        "//agentplane/app/frontend/policy:watch",
         "//agentplane/app/frontend/sandboxes:sandbox_status",
         "//agentplane/app/frontend/shell:topbar",
         "//agentplane/app/frontend/transport:client",
@@ -162,6 +163,7 @@ ts_library(
         "//agentplane/app/frontend/ui:mark_glyph",
         "//agentplane/app/frontend/ui:status_mark",
         "//agentplane/environments/v1:environment_service_pb",
+        "//util/frontend:disclosure",
     ],
 )
 
@@ -405,10 +407,15 @@ agentplane_vitest_test(
 
 ts_library(
     name = "sandbox_status",
-    srcs = ["sandbox_status.ts"],
+    srcs = [
+        "sandbox_status.ts",
+        "status_tooltip.tsx",
+    ],
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [
         "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/ui:format_time",
         "//agentplane/app/frontend/ui:status_mark",

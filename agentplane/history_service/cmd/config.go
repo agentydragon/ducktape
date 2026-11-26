@@ -28,8 +28,8 @@ type config struct {
 	DatabaseURL             string  `mapstructure:"-"`
 	MigrationTimeoutSeconds float64 `mapstructure:"migration_timeout_s"`
 	// ReaderServiceCallers are exact component SPIFFE IDs admitted as backend-wide History readers.
-	ReaderServiceCallers []string                 `mapstructure:"reader_service_callers"`
-	ServiceDelegation    *serviceDelegationConfig `mapstructure:"service_delegation"`
+	ReaderServiceCallers []string                      `mapstructure:"reader_service_callers"`
+	ServiceDelegation    *auth.ServiceDelegationConfig `mapstructure:"service_delegation"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
 	RequestTimeoutSeconds float64         `mapstructure:"request_timeout_s"`
 	RPC                   listener.Config `mapstructure:"rpc"`
@@ -44,11 +44,6 @@ type config struct {
 	NativeFrameReadBatchSize int     `mapstructure:"native_frame_read_batch_size"`
 	// WatchLeaseSeconds is how long a watch or follow stream lasts before planned renewal.
 	WatchLeaseSeconds float64 `mapstructure:"watch_lease_s"`
-}
-
-type serviceDelegationConfig struct {
-	Actors  []auth.ServiceDelegator `mapstructure:"actors"`
-	Methods []string                `mapstructure:"methods"`
 }
 
 // ingressConfig is the Session journal ingress's authorization and storage policy. Its RPC shares the service listener.
@@ -130,9 +125,7 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("%s is required", settingPrefix+"CONFIG_FILE")
 	}
 	c := defaultConfig()
-	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
-		DecodeHook: listener.AuthenticationDecodeHook,
-	}); err != nil {
+	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{}); err != nil {
 		return config{}, configfile.RedactMapstructureError("History Service", err)
 	}
 	c.DatabaseURL = os.Getenv(settingPrefix + "DATABASE_URL")
@@ -154,14 +147,9 @@ func (c *config) validate() error {
 	if err := auth.ValidateServiceCallers(c.ReaderServiceCallers); err != nil {
 		return fmt.Errorf("invalid reader_service_callers: %w", err)
 	}
-	if c.ServiceDelegation != nil && (len(c.ServiceDelegation.Actors) == 0 || len(c.ServiceDelegation.Methods) == 0) {
-		return errors.New("service_delegation requires actors and methods")
-	}
-	if c.ServiceDelegation != nil {
-		for _, actor := range c.ServiceDelegation.Actors {
-			if err := auth.ValidateServiceCallers([]string{actor.SPIFFEID}); err != nil {
-				return fmt.Errorf("invalid service_delegation actor: %w", err)
-			}
+	if d := c.ServiceDelegation; d != nil {
+		if err := d.Validate(); err != nil {
+			return fmt.Errorf("service_delegation: %w", err)
 		}
 	}
 	if c.Ingress.SamplerServiceActor != "" {

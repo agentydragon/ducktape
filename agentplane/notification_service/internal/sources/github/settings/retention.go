@@ -2,17 +2,27 @@ package settings
 
 import "errors"
 
-// Retention configures GitHub receipt and observation retention independently of enabling the source.
-// The YAML key stays at the Notification Service's top level.
+// Retention configures GitHub body, fact and observation retention independently of enabling the source.
+// The YAML keys live in the Notification Service's github block.
 type Retention struct {
-	Days *int `mapstructure:"github_delivery_retention_days"`
+	Hours        *int `mapstructure:"fact_retention_hours"`
+	PayloadHours *int `mapstructure:"raw_body_retention_hours"`
 }
 
-func DefaultRetention() Retention { return Retention{Days: new(7)} }
+func DefaultRetention() Retention { return Retention{Hours: new(168), PayloadHours: new(72)} }
 
 func (r Retention) Validate() error {
-	if r.Days != nil && (*r.Days < 1 || *r.Days > 3650) {
-		return errors.New("github_delivery_retention_days must be null or 1 to 3650")
+	if r.Hours != nil && (*r.Hours < 1 || *r.Hours > 87600) {
+		return errors.New("fact_retention_hours must be null or 1 to 87600")
+	}
+	if r.PayloadHours != nil && (*r.PayloadHours < 0 || *r.PayloadHours > 87600) {
+		return errors.New("raw_body_retention_hours must be null or 0 to 87600")
+	}
+	if r.PayloadHours == nil && r.Hours != nil {
+		return errors.New("infinite GitHub payload retention requires infinite fact_retention_hours")
+	}
+	if r.PayloadHours != nil && r.Hours != nil && *r.PayloadHours > *r.Hours {
+		return errors.New("raw_body_retention_hours cannot exceed fact_retention_hours")
 	}
 	return nil
 }

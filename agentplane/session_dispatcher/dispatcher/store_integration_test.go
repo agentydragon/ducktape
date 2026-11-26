@@ -2,7 +2,6 @@ package dispatcher
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"net"
@@ -505,13 +504,14 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 				// End the send's lease after Send starts, independent of how long a
 				// PostgreSQL connection or initial snapshot would take to acquire.
 				go func() {
-					ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+					err := sendWatchDispatch(leaseCtx, stream, &dispatcherpb.WatchDispatchesResponse{
 						Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
 					})
-					if !ended && err == nil {
-						err = errors.New("send did not end at its lease boundary")
+					if status.Code(err) != codes.Canceled {
+						done <- fmt.Errorf("send did not end at its lease boundary: %v", err)
+						return
 					}
-					done <- err
+					done <- watchEnd(ctx, leaseCtx, err)
 				}()
 			}
 			select {
@@ -1479,11 +1479,7 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 				}
 			}
 			// Independent connections and Store instances represent another replica or a restart.
-			db, err := sql.Open("postgres", databaseURL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer db.Close()
+			db := postgres.Open(t, databaseURL)
 			restarted := store.NewStore(db, 3)
 			service := &Service{
 				Store: restarted, DispatcherServices: sets.New(peertls.AppURI),
@@ -1496,7 +1492,7 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 					},
 				},
 			}
-			_, err = service.CreateSession(ctx, &dispatcherpb.CreateSessionRequest{SessionId: sessionID, Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox-api", Uid: uid}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}})
+			_, err := service.CreateSession(ctx, &dispatcherpb.CreateSessionRequest{SessionId: sessionID, Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox-api", Uid: uid}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}})
 			if status.Code(err) != codes.FailedPrecondition {
 				t.Fatalf("opening after cleanup: %v", err)
 			}
@@ -1868,11 +1864,7 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 				t.Fatal(err)
 			}
 			deletionPID := postgres.BackendPID(t, ctx, deletion)
-			db, err := sql.Open("postgres", databaseURL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer db.Close()
+			db := postgres.Open(t, databaseURL)
 			db.SetMaxOpenConns(1)
 			admissionPID := postgres.BackendPID(t, ctx, db)
 			result := make(chan error, 1)

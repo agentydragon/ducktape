@@ -2,6 +2,18 @@
 
 The largest measured store on November 25 was the **166.55 GiB PostgreSQL backup bucket**. Its logical size rose **82.44 GiB (+98%) in 24 hours**. The backup directory inventory attributes **125.30 GiB to archived WAL (75%)** and **41.32 GiB to eight base backups (25%)**. In the live database, History events, sampler journal blocks and raw GitHub receipts together occupy **17.62 GiB, 74% of all database files**. The clearest duplication is inside History: 114 sampled JavaScript sends carried only a handful of distinct tool catalogs. Sharing that field projects to **~2.4 GiB** on one database instance. For raw webhooks, bounded blocks project to **~2.5 GiB**, with an additional **~0.14 GiB** available from grouping fields by column.
 
+## What changed after the census (November 25, 23:00 PST)
+
+The primary and standby claims each grew from **48 to 96 GiB** ([#20058](https://github.com/agentydragon/ducktape/pull/20058)). That bought room for replacement blocks and WAL during an online rewrite. The usage table below is the original census; expanding the claims did not reduce the bytes used.
+
+- **GitHub receipts:** Staging now stores compact matching facts ([#20053](https://github.com/agentydragon/ducktape/pull/20053)) and expires raw webhook bodies independently ([#20054](https://github.com/agentydragon/ducktape/pull/20054)). Both Notifications replicas reached the retention build. The defaults keep bodies for 72 hours and facts for 168 hours; inbox copies retain their own lifetime. At the census, **1.90 GiB of the 2.95 GiB of body datums** were already older than 72 hours on one database instance. This is the gross payload eligible at that snapshot. Cleanup runs in batches; we have not measured how much it removed, how large the retained facts are, or how much space PostgreSQL can now reuse. The webhook block-compression estimate below overlaps those same bytes.
+- **History:** The mixed reader and versioned Zstandard writer are deployed ([#20073](https://github.com/agentydragon/ducktape/pull/20073)). Before any historical repack, **942 of 2,048** blocks sampled on the standby had the new header. That verifies replication, not the fraction migrated. We chose compression across original frames of the same session and kind, which can exploit repeated catalogs without interning a particular field. In two selected large-boundary samples it used **72–73% fewer payload bytes** than the stored datums. The effect starts with new writes; [the online repacker](https://github.com/agentydragon/ducktape/pull/20095) has not yet rewritten the historical corpus. The catalog-sharing estimate below is a separate alternative.
+- **Sampler:** Existing blocks still use gzip. [#20076](https://github.com/agentydragon/ducktape/pull/20076) moved packing out of the append transaction; it did not enable the new format. The proposed writer packs consecutive frames by session, targeting 64 KiB or 128 entries. In the [scratch PostgreSQL comparison](2026_11_25_postgres_event_compaction.md), that Zstandard layout occupied 1,376,256 bytes for 3,072 events. The comparison used individual rows and newly formed blocks; it does not establish savings against the **5.15 GiB** of allocated production gzip blocks. The online dry run and canary will give that comparison.
+
+**What to measure next.** After Notifications cleanup catches up, count remaining non-null bodies older than 72 hours and measure stored body and fact bytes separately. For each journal, compare the dry-run estimate with actual bytes before and after repacking the same range of an active session. Compare ordered replay through the opening cursor, read and append latency, WAL, replica lag and free space while new writes continue. The [journal plan](../plans/event_compaction_policy.md) tracks rollout and completion for both services.
+
+Repeat the census below at comparable load: report live payload, allocated table/index/TOAST bytes, and each PVC's filesystem use separately. Vacuum can make pages reusable without shrinking the files. The rewrite and expiry can temporarily increase archived WAL. Recheck base backups and archived WAL separately after a full seven-day recovery window; there is no measured reduction yet for the 166.55 GiB backup bucket.
+
 ## Capacity and use, November 25 at 13:00 PST
 
 | Owner                  | PVC capacity (share of 236 GiB) | Measured bytes used | Coverage                                 |
@@ -31,7 +43,7 @@ The subsequent read replica census found **23.86 GiB** across all databases and 
 | History / `thread_entity` + `thread_payload_manifest` |  1.40 | 0.52 |         0.88 | <0.01 | Materialized entity state and immutable revision references.                                                                                                                          |
 | Sampler / `sampler_intent`                            |  0.69 | 0.09 |        <0.01 |  0.59 | Across 94,966 intents, `result` occupied 601 MiB versus 56 MiB for `request`. Optimizing request storage again would miss the larger column.                                          |
 
-## Which bytes are worth changing?
+## Options evaluated in the original census
 
 **1. History: store the enabled tool catalog once per distinct value.** Of 29,018 ordinary kind-31 records in a follow-up count, 23,639 were larger than the [128 KiB decoded block limit](../history_service/internal/storage/blocks.go). They held **3.37 GiB, 96% of all ordinary boundary payload bytes**. Turning on the existing small-event packer more widely cannot reclaim those bytes. Nor is the new workload mostly repeated whole records: two sampled sets of standalone boundaries had no byte-identical bodies within either set.
 
@@ -53,7 +65,7 @@ If seven days of raw replay matters, compression is a separate option. In two sa
 
 ## What about columnar storage?
 
-**Run the first block pilot on webhook receipts.** Sixteen windows spread through the live receipt position range each held 64 consecutive deliveries. Each cohort contained eight windows (512 receipts). The same parsed JSON objects were encoded three ways with gzip level 6. The column prototype grouped each top-level field into a list of (row ordinal, value) pairs, preserving absent versus null; all objects reconstructed equal in memory. This tests layout on real receipts, not a particular columnar engine.
+**Webhook block pilot estimate.** Sixteen windows spread through the live receipt position range each held 64 consecutive deliveries. Each cohort contained eight windows (512 receipts). The same parsed JSON objects were encoded three ways with gzip level 6. The column prototype grouped each top-level field into a list of (row ordinal, value) pairs, preserving absent versus null; all objects reconstructed equal in memory. This tests layout on real receipts, not a particular columnar engine.
 
 | Representation                                  | Bytes in cohort A | Bytes in cohort B | Saving vs current | Projected saving on 2.95 GiB of payload |
 | ----------------------------------------------- | ----------------: | ----------------: | ----------------: | --------------------------------------: |

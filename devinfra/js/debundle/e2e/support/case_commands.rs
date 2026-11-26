@@ -12,6 +12,7 @@ use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const COMMANDS: &str = ".case-commands";
+const INPUT_DIRECTORIES: [&str; 4] = ["snapshot", "modules", "extracted", "dependencies"];
 static COMMAND_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Deserialize, Serialize)]
@@ -117,18 +118,14 @@ pub fn fixture_output(command: &mut Command, hint: &Path) -> Result<Output, Proc
 }
 
 pub fn debundle_fixture_output(command: &mut Command, hint: &Path) -> Result<Output, ProcessError> {
-    let output = output(command, hint, true, false)?;
-    process::assert_debundle_invariants(&output);
-    Ok(output)
+    output(command, hint, true, false)
 }
 
 pub(super) fn isolated_debundle_output(
     command: &mut Command,
     hint: &Path,
 ) -> Result<Output, ProcessError> {
-    let output = output(command, hint, true, true)?;
-    process::assert_debundle_invariants(&output);
-    Ok(output)
+    output(command, hint, true, true)
 }
 
 fn output(
@@ -166,7 +163,11 @@ fn output(
             );
         }
     }
-    output
+    let output = output?;
+    if debundle {
+        process::assert_debundle_invariants(&output);
+    }
+    Ok(output)
 }
 
 fn begin(
@@ -221,6 +222,18 @@ fn begin(
     Ok((directory, record))
 }
 
+fn copy_snapshot(source: &Path, destination: &Path, was_directory: Option<bool>) -> io::Result<()> {
+    match was_directory {
+        Some(true) => copy_tree(source, destination),
+        Some(false) => {
+            fs::create_dir_all(destination.parent().unwrap())?;
+            fs::copy(source, destination)?;
+            Ok(())
+        }
+        None => Ok(()),
+    }
+}
+
 fn snapshot_outputs(root: &Path, directory: &Path, record: &mut RecordedCommand) {
     let mut outputs = vec![];
     for pair in record.args.windows(2) {
@@ -273,13 +286,7 @@ fn snapshot_outputs(root: &Path, directory: &Path, record: &mut RecordedCommand)
             .join("outputs")
             .join(record.outputs.len().to_string());
         let was_directory = output.exists().then(|| output.is_dir());
-        let result = match was_directory {
-            Some(true) => copy_tree(&output, &destination),
-            Some(false) => fs::create_dir_all(destination.parent().unwrap())
-                .and_then(|()| fs::copy(&output, &destination).map(|_| ())),
-            None => Ok(()),
-        };
-        if let Err(error) = result {
+        if let Err(error) = copy_snapshot(&output, &destination, was_directory) {
             record
                 .snapshot_errors
                 .push(format!("{}: {error}", output.display()));
@@ -295,9 +302,7 @@ fn snapshot_inputs(root: &Path, directory: &Path, record: &mut RecordedCommand) 
     // Source and author-owned spec data are small public fixtures. Do not copy
     // generated output trees on every launch. Graphs/artifacts are copied only
     // when this command actually consumes them.
-    let mut inputs = ["snapshot", "modules", "extracted", "dependencies"]
-        .map(|path| root.join(path))
-        .to_vec();
+    let mut inputs = INPUT_DIRECTORIES.map(|path| root.join(path)).to_vec();
     if let Ok(entries) = fs::read_dir(root) {
         inputs.extend(entries.flatten().map(|entry| entry.path()).filter(|path| {
             path.is_file()
@@ -393,13 +398,7 @@ fn snapshot_inputs(root: &Path, directory: &Path, record: &mut RecordedCommand) 
             None => external_path(record, &input, "external"),
         };
         let destination = directory.join("inputs").join(relative);
-        let result = if input.is_dir() {
-            copy_tree(&input, &destination)
-        } else {
-            fs::create_dir_all(destination.parent().unwrap())
-                .and_then(|()| fs::copy(&input, &destination).map(|_| ()))
-        };
-        if let Err(error) = result {
+        if let Err(error) = copy_snapshot(&input, &destination, Some(input.is_dir())) {
             record
                 .snapshot_errors
                 .push(format!("{}: {error}", input.display()));
@@ -498,7 +497,7 @@ pub fn replay_command(
     if inputs.is_dir() {
         // Restore complete source/module directories, including deletions, before
         // overlaying command-specific files and external dependencies.
-        for name in ["snapshot", "modules", "extracted", "dependencies"] {
+        for name in INPUT_DIRECTORIES {
             if inputs.join(name).is_dir() && destination.join(name).is_dir() {
                 fs::remove_dir_all(destination.join(name))?;
             }
@@ -529,14 +528,7 @@ pub fn replay_command(
             .join(id)
             .join("outputs")
             .join(index.to_string());
-        match output.was_directory {
-            Some(true) => copy_tree(&snapshot, &path)?,
-            Some(false) => {
-                fs::create_dir_all(path.parent().unwrap())?;
-                fs::copy(snapshot, &path)?;
-            }
-            None => {}
-        }
+        copy_snapshot(&snapshot, &path, output.was_directory)?;
     }
     let metadata: CaseMetadata =
         serde_json::from_slice(&fs::read(case.join("case.json"))?).map_err(json_error)?;

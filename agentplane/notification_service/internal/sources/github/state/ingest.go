@@ -233,11 +233,15 @@ func storeDelivery(ctx context.Context, tx transaction.Tx, ingest Ingest, at tim
 		repositoryID = sql.NullInt64{Int64: ingest.Repository.ID, Valid: true}
 	}
 	var position int64
+	var rawPayload any
+	if len(ingest.Payload) != 0 {
+		rawPayload = string(ingest.Payload)
+	}
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO github_delivery (app_id, delivery_id, installation_id, repository_id, event, action, head_sha, digest, payload, fact, commit_normalized, pr_normalized, pr_normalized_action)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12, $13) RETURNING position`,
 		ingest.AppID, ingest.DeliveryID, ingest.InstallationID, repositoryID, ingest.Event, ingest.Action, ingest.HeadSHA,
-		ingest.Digest, string(ingest.Payload), string(ingest.Fact), commitNormalized, prNormalized, prNormalizedAction).Scan(&position); err != nil {
+		ingest.Digest, rawPayload, string(ingest.Fact), commitNormalized, prNormalized, prNormalizedAction).Scan(&position); err != nil {
 		return err
 	}
 	for _, key := range ingest.Subjects {

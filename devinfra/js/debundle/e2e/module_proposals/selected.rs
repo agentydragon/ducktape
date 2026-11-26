@@ -187,9 +187,7 @@ fn materialize_again(fixture: &SelectedFixture, output_root: &Path) -> Output {
     let mut command = Command::new(debundler_path());
     command
         .arg("run")
-        .args(tree_spec_args(&fixture.root))
-        .arg("--out-root")
-        .arg(output_root)
+        .args(tree_spec_args(&fixture.root, output_root))
         .args(["--graphs", "--ownership-subset"])
         .arg(&fixture.subset);
     debundle_fixture_output(&mut command, &fixture.root).unwrap()

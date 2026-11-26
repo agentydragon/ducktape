@@ -22,13 +22,13 @@ export class WatchCollection<T, I extends { uid: string }> {
     this.complete = false;
   }
 
-  /** Return a new visible collection on change, or null when there is no visible change. */
-  apply<S>(frame: CollectionFrame<T, S, I>, snapshotItems: (chunk: S) => readonly T[]): T[] | null {
+  /** Return whether the visible collection changed. */
+  apply<S>(frame: CollectionFrame<T, S, I>, snapshotItems: (chunk: S) => readonly T[]): boolean {
     switch (frame.case) {
       case "snapshot":
         if (this.complete) throw new Error(`Unexpected ${this.kind} snapshot`);
         for (const item of snapshotItems(frame.value)) this.put(item);
-        return null;
+        return false;
       case "snapshotComplete":
         if (this.complete) throw new Error(`Unexpected ${this.kind} snapshot completion`);
         this.complete = true;
@@ -40,22 +40,31 @@ export class WatchCollection<T, I extends { uid: string }> {
       case "removed": {
         if (!this.complete) throw new Error(`${this.kind} removal before snapshot completion`);
         const key = this.key(frame.value);
-        if (!key) return null;
+        if (!key || !frame.value.uid) throw new Error(`${this.kind} removal missing identity`);
         const item = this.items.get(key);
-        if (item === undefined || this.identity(item)?.uid !== frame.value.uid) return null;
+        if (item === undefined || this.identity(item)?.uid !== frame.value.uid) return false;
         this.items.delete(key);
         break;
       }
       default:
         throw new Error(`Empty ${this.kind} watch frame`);
     }
+    return true;
+  }
+
+  snapshotValues(): T[] {
     return [...this.items.values()];
+  }
+
+  snapshotByKey(): ReadonlyMap<string, T> {
+    return new Map(this.items);
   }
 
   private put(item: T): void {
     const identity = this.identity(item);
     const key = identity?.uid ? this.key(identity) : undefined;
     if (!key) throw new Error(`${this.kind} missing identity`);
+    if (!this.complete && this.items.has(key)) throw new Error(`Duplicate ${this.kind} snapshot key ${key}`);
     this.items.set(key, item);
   }
 }

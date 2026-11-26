@@ -8,7 +8,7 @@ const GAMMA: (&str, &str) = (
     "solo/gamma.yaml",
     "members: [{selector: {binding: {name: gamma}}}]\n",
 );
-const MEMBER: &str = "members: [{selector: {binding: {name: beta}}}]\n";
+const MEMBER: &str = "members: [{selector: {binding: {name: beta, kind: function_declaration}}}]\n";
 const MATCH: &str =
     "source_matches: [{match: 'let alpha = 0;', bindings: [{local: alpha, name: Alpha}]}]\n";
 

@@ -6,25 +6,16 @@ import { pathToFileURL } from "node:url";
 import { topLevelStatements } from "../../translation/scope_metadata.mjs";
 import { spec } from "./gen_spec.mjs";
 import { writeDeployment } from "../../translation/testing/deployment_manifest.mjs";
+import { split } from "../../translation/testing/split.mjs";
 import { smoke } from "./smoke.mjs";
 
 const results = [];
 const tmp = process.env.TEST_TMPDIR;
 
-function run(args) {
-  const child = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
-  if (child.error) throw child.error;
-  assert([0, 1].includes(child.status), child.stdout + child.stderr);
-  return child;
-}
-
-function certificate(args) {
-  const { status, stdout } = run([...args, "--structural"]);
-  const verdict = JSON.parse(stdout);
-  assert.equal(verdict.requested, "normal-completion", stdout);
-  assert.equal(verdict.status, status === 0 ? "certified" : "rejected", stdout);
-  if (status === 0) assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), stdout);
-  else assert.equal(verdict.guarantee, null, stdout);
+function certificate(request) {
+  const { verdict, log } = split({ ...request, structural: true });
+  if (verdict.status === "certified") assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), log);
+  else assert.equal(verdict.guarantee, null, log);
   return verdict;
 }
 
@@ -41,10 +32,10 @@ function extract(n, unit) {
 }
 
 function inputs(source, name, placement) {
-  const file = path.join(tmp, name + ".json");
-  writeFileSync(file, JSON.stringify(placement));
+  const spec = path.join(tmp, name + ".json");
+  writeFileSync(spec, JSON.stringify(placement));
   const out = path.join(tmp, name);
-  return [writeDeployment(source, file, out), out];
+  return { manifest: writeDeployment(source, spec, out), out };
 }
 
 for (const source of process.argv.slice(2)) {
@@ -61,18 +52,18 @@ for (const source of process.argv.slice(2)) {
   const firstFunction = units.findIndex(({ node }, i) => i > 0 && node.type === "FunctionDeclaration");
   if (firstFunction !== -1) placements.push(["advance-function", extract(n, firstFunction)]);
   for (const [strategy, placement] of placements) {
-    const args = inputs(source, library + "-" + strategy, placement);
-    const verdict = certificate(args);
+    const request = inputs(source, library + "-" + strategy, placement);
+    const verdict = certificate(request);
     if (verdict.status === "rejected") {
       // A refusal without an observed difference is inconclusive.
       assert.equal(verdict.scope, "linked-structural");
-      assert(!existsSync(args[1]));
+      assert(!existsSync(request.out));
       assert.equal(strategy, "advance-second", JSON.stringify(verdict));
       results.push({ library, strategy, outcome: "unknown", reason: verdict.reason });
     } else {
       if (strategy === "advance-function") assert.equal(verdict.scope, "linked-structural-pivot");
-      assert.deepEqual(certificate([...args, "--check-output"]), verdict);
-      assert.deepEqual(await smoke(library, path.join(args[1], placement.entry)), baseline);
+      assert.deepEqual(certificate({ ...request, checkOutput: true }), verdict);
+      assert.deepEqual(await smoke(library, path.join(request.out, placement.entry)), baseline);
       results.push({ library, strategy, outcome: "certified", scope: verdict.scope });
     }
   }
@@ -80,8 +71,8 @@ for (const source of process.argv.slice(2)) {
     const host = path.join(tmp, "portable.json");
     writeFileSync(host, JSON.stringify({ profile: "ecmascript", stableIntrinsicValues: ["Object.defineProperty@1"] }));
     const placement = extract(n, 1);
-    const args = [...inputs(source, "semver-portable", placement), "--host-contract", host];
-    const verdict = certificate(args);
+    const request = { ...inputs(source, "semver-portable", placement), hostContract: host };
+    const verdict = certificate(request);
     assert.equal(verdict.status, "certified", JSON.stringify(verdict));
     assert.equal(verdict.scope, "linked-structural-pivot");
     assert.equal(verdict.hostProfile, "ecmascript");
@@ -89,8 +80,8 @@ for (const source of process.argv.slice(2)) {
       verdict.assumptions.join("\n"),
       /Object\.defineProperty@1:.*intrinsic\.Object\.defineProperty.*no observable effects/
     );
-    assert.deepEqual(certificate([...args, "--check-output"]), verdict);
-    assert.deepEqual(await smoke(library, path.join(args[1], placement.entry)), baseline);
+    assert.deepEqual(certificate({ ...request, checkOutput: true }), verdict);
+    assert.deepEqual(await smoke(library, path.join(request.out, placement.entry)), baseline);
     results.push({
       library,
       strategy: "advance-second-portable",
@@ -108,12 +99,16 @@ assert(results.some((row) => row.strategy === "advance-function" && row.outcome 
 const source = path.join(tmp, "control.mjs");
 writeFileSync(source, "var current = 1; var observed = current; export { current, observed };");
 const placement = extract(3, 1);
-const args = inputs(source, "early-read", placement);
-const refused = certificate(args);
+const request = inputs(source, "early-read", placement);
+const refused = certificate(request);
 assert.equal(refused.status, "rejected");
-assert(!existsSync(args[1]));
+assert(!existsSync(request.out));
 const preview = path.join(tmp, "uncertified-preview");
-const rendered = run(["--diagnostic", args[0], preview, "--force"]);
+const rendered = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", request.manifest, preview, "--force"], {
+  encoding: "utf8",
+});
+if (rendered.error) throw rendered.error;
+assert([0, 1].includes(rendered.status), rendered.stdout + rendered.stderr);
 assert(existsSync(path.join(preview, placement.entry)), rendered.stdout + rendered.stderr);
 const before = await import(pathToFileURL(source));
 const after = await import(pathToFileURL(path.join(preview, placement.entry)));

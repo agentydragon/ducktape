@@ -8,15 +8,12 @@ use debundle_e2e_support::*;
 use serde_json::Value;
 
 fn input(source: &str, declaration: &str) -> NativeOperationInputContract {
-    NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(source_match_selector(
-            declaration.trim(),
-            &["alias"],
-        )),
-        operation: NativeOperationKind::Symbol,
-        audited_source_sha256: source_sha256(source),
-        note: Some("Only this direct Symbol call is audited.".to_owned()),
-    }
+    native_operation_input(
+        source,
+        declared_source_unit(declaration.trim(), "alias"),
+        NativeOperationKind::Symbol,
+        "Only this direct Symbol call is audited.",
+    )
 }
 
 fn decorator_trio(suffix: &str, class: &str, role: &str) -> String {
@@ -57,15 +54,12 @@ fn intrinsic_alias_opts(source: &str) -> FixtureOpts<'_> {
 }
 
 fn resolved_member_input(source: &str, module: &str, name: &str) -> NativeOperationInputContract {
-    NativeOperationInputContract {
-        selector: SourceUnitSelector::ResolvedMember(ResolvedMemberSelector {
-            module: module.to_owned(),
-            name: name.to_owned(),
-        }),
-        operation: NativeOperationKind::Symbol,
-        audited_source_sha256: source_sha256(source),
-        note: Some("One resolved Symbol call is audited.".to_owned()),
-    }
+    native_operation_input(
+        source,
+        member_source_unit(module, name),
+        NativeOperationKind::Symbol,
+        "One resolved Symbol call is audited.",
+    )
 }
 
 fn project_analysis(opts: FixtureOpts<'_>) -> CommandResult {
@@ -78,11 +72,7 @@ fn project_analysis(opts: FixtureOpts<'_>) -> CommandResult {
             .arg(fixture.spec_path.with_extension("analysis.projection")),
     )
     .expect("spawn debundle spec project-analysis");
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
-    }
+    CommandResult::from(output)
 }
 
 fn assert_project_analysis_rejected(opts: FixtureOpts<'_>, tokens: &[&str]) {
