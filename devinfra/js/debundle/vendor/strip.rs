@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use analysis::{EffectCell, StatementFacts, analyze_vendor_prune_chunk};
+use analysis::{EffectCell, StatementFacts};
+use analyze::analyze_vendor_prune_chunk;
 use anyhow::{Result, bail};
 use binding_targets::{declaration_ids, declaration_name_strings, public_export_name};
 use js_ast::{GlobalUseElisions, ParsedGlobalUses, item_var_decl};

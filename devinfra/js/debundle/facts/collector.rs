@@ -385,9 +385,9 @@ impl Visit for ConstructorMethodUse {
 /// are already covered by the source_unit's lazy sets, which the
 /// `inline_fn` flag pulls into the fallback closure.
 #[derive(Default)]
-pub(crate) struct UnresolvedCallSourceCollector {
-    pub(crate) idents: BTreeSet<Id>,
-    pub(crate) inline_fn: bool,
+pub struct UnresolvedCallSourceCollector {
+    pub idents: BTreeSet<Id>,
+    pub inline_fn: bool,
 }
 
 impl Visit for UnresolvedCallSourceCollector {

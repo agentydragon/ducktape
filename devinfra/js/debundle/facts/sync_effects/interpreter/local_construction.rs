@@ -86,7 +86,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         *result
     }
 
-    pub(in crate::facts::sync_effects) fn construct_local_class_transfer(
+    pub(crate) fn construct_local_class_transfer(
         &mut self,
         key: u32,
         args: &[Values],
@@ -245,7 +245,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// kernel evaluated. A checked class body without calls runs through the
     /// kernel's construct rule against the checked instance; a body the
     /// kernel cannot run keeps the flat lane's invocation and no coverage.
-    pub(in crate::facts::sync_effects) fn construct_local_class_ordered(
+    pub(crate) fn construct_local_class_ordered(
         &mut self,
         key: u32,
         arguments: Vec<SelectedValue>,

@@ -54,7 +54,7 @@ pub struct StatementFacts {
     pub ordinal: SourceUnitOrdinal,
     /// Local linkage executes no value expression. Dependency-bearing
     /// re-exports additionally require their dependency's evaluation order.
-    pub(crate) export_linkage: Option<ExportLinkage>,
+    pub export_linkage: Option<ExportLinkage>,
     /// Exact protected iterable producers that must remain in this module.
     pub stable_iterable_producers: BTreeSet<SourceUnitOrdinal>,
     pub source_location: Option<SourceLocation>,
@@ -79,7 +79,7 @@ pub struct StatementFacts {
     /// cell is not.
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
     /// Direct member writes on binding roots, across eager and lazy syntax.
-    pub(crate) member_write_roots: BTreeSet<Id>,
+    pub member_write_roots: BTreeSet<Id>,
     /// Target-local mutations produced by recognized trusted helper
     /// calls. Each binding is the class/prototype source_unit that must
     /// co-locate with the mutating statement.
@@ -106,7 +106,7 @@ pub struct StatementFacts {
     /// Every source-indexed callable this statement can publish contributes
     /// its synchronous prefix. `None` means coverage is incomplete, so the
     /// graph fallback must use the whole lazy read/rebind closure.
-    pub(crate) synchronous_prefix_effects: Option<(BTreeSet<Id>, BTreeSet<Id>)>,
+    pub synchronous_prefix_effects: Option<(BTreeSet<Id>, BTreeSet<Id>)>,
     /// Bindings referenced in the callee or arguments of at-init
     /// calls promotion can't follow (member calls `api.read()`,
     /// optional-chain calls, tagged templates). A function value
@@ -221,16 +221,15 @@ pub struct SynchronousCalls {
         Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
     pub initializer_external_effects: Option<crate::reports::schema::InitializerExternalEffectsUse>,
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
-    pub(crate) completed_initialization:
-        Option<super::initialization_effects::CompletedInitialization>,
+    pub completed_initialization: Option<super::initialization_effects::CompletedInitialization>,
     /// Report-only reason the original owner's whole-initialization proof was
     /// refused. This never changes the conservative effect projection.
-    pub(crate) initialization_coverage_refusal:
+    pub initialization_coverage_refusal:
         Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
     /// Report-only outcome of the owner's attempted kernel lane, if any.
-    pub(crate) root_attempt: Option<crate::facts::RootAttempt>,
+    pub root_attempt: Option<crate::facts::RootAttempt>,
     /// Report-only, source-site may-accesses; never a legacy graph input.
-    pub(crate) evaluation_effects: super::evaluation_effects::EvaluationEffects,
+    pub evaluation_effects: super::evaluation_effects::EvaluationEffects,
     // SavedSynchronousCalls transports both verdicts through the artifact's
     // shared purity graph; the report projects this runtime field separately.
     pub purity_disagreement: Option<crate::reports::schema::PurityCompletionDisagreement>,
@@ -243,10 +242,10 @@ pub struct SynchronousCalls {
     pub local_record_factory_purity: Option<LocalRecordFactoryPurityCertificate>,
     /// Direct top-level reads whose executed receiver was a private fresh
     /// instance with an own class data field on every reached path.
-    pub(crate) proven_private_own_field_reads: Vec<(SourceUnitOrdinal, swc_common::Span)>,
+    pub proven_private_own_field_reads: Vec<(SourceUnitOrdinal, swc_common::Span)>,
     /// Exact completed constructor-factory call whose checked bodies have no
     /// immediate array-content operation. Separate from the purity proof.
-    pub(crate) local_record_factory_heap_call: Option<swc_common::Span>,
+    pub local_record_factory_heap_call: Option<swc_common::Span>,
     pub reads: BTreeSet<(Id, SourceUnitOrdinal)>,
     pub rebinds: BTreeSet<(Id, SourceUnitOrdinal)>,
     /// Bindings a synchronous callee can observe before their source-order
@@ -262,11 +261,11 @@ pub struct SynchronousCalls {
     /// Its saved representation requires this field so a cache missing typed
     /// authority cannot regain `.complete` as legacy authority. Public report
     /// DTOs are separate diagnostics.
-    pub(crate) binding_effect_coverage: super::binding_effect_coverage::BindingEffectCoverage,
+    pub binding_effect_coverage: super::binding_effect_coverage::BindingEffectCoverage,
     /// For a statement with the `GlobalObjectAliasEscape` havoc: the
     /// top-level bindings it reads eagerly that may hold the global object
     /// where it starts (`None` when execution did not settle them).
-    pub(crate) global_object_aliases: Option<BTreeSet<Id>>,
+    pub global_object_aliases: Option<BTreeSet<Id>>,
     /// Heap-content cells of the callables this statement invoked.
     pub heap_contents: HeapContentCells,
     /// Heap reads and writes reached without an assumed callback or fallback
@@ -302,21 +301,21 @@ pub struct FallbackOnlyEffects {
 }
 
 impl SynchronousCalls {
-    pub(crate) fn record_heap_contents(&mut self, cells: &HeapContentCells, non_assumed: bool) {
+    pub fn record_heap_contents(&mut self, cells: &HeapContentCells, non_assumed: bool) {
         self.heap_contents.extend(cells);
         if non_assumed {
             self.non_assumed_heap_accesses.extend_cells(cells);
         }
     }
 
-    pub(crate) fn record_heap_read(&mut self, cell: EffectCell, non_assumed: bool) {
+    pub fn record_heap_read(&mut self, cell: EffectCell, non_assumed: bool) {
         self.heap_contents.reads.insert(cell.clone());
         if non_assumed {
             self.non_assumed_heap_accesses.reads.insert(cell);
         }
     }
 
-    pub(crate) fn record_heap_write(&mut self, cell: EffectCell, non_assumed: bool) {
+    pub fn record_heap_write(&mut self, cell: EffectCell, non_assumed: bool) {
         self.heap_contents.writes.insert(cell.clone());
         if non_assumed {
             self.non_assumed_heap_accesses.writes.insert(cell);
@@ -535,7 +534,7 @@ pub struct HeapContentCells {
 }
 
 impl HeapContentCells {
-    pub(crate) fn extend(&mut self, other: &Self) {
+    pub fn extend(&mut self, other: &Self) {
         self.allocations.extend(other.allocations.iter().cloned());
         self.reads.extend(other.reads.iter().cloned());
         self.writes.extend(other.writes.iter().cloned());
@@ -552,7 +551,7 @@ pub struct HeapContentAccesses {
 }
 
 impl HeapContentAccesses {
-    pub(crate) fn extend(&mut self, other: &Self) {
+    pub fn extend(&mut self, other: &Self) {
         self.reads.extend(other.reads.iter().cloned());
         self.writes.extend(other.writes.iter().cloned());
     }
@@ -845,7 +844,7 @@ pub enum StatementKind {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ExportLinkage {
+pub enum ExportLinkage {
     Local,
     Dependency,
 }
@@ -854,13 +853,13 @@ pub(crate) enum ExportLinkage {
 /// can compute about a top-level statement from the module text alone,
 /// without consulting `AnalysisInputs`. Produced by
 /// [`analyze_chunk_structural`] and consumed by
-/// [`analyze_chunk_with_policy`] to assemble the full
+/// `analyze::analyze_chunk_with_policy` to assemble the full
 /// [`StatementFacts`]. See the doc comment on
 /// [`analyze_chunk_structural`] for why this layer exists.
 #[derive(Debug, Clone)]
 pub struct StructuralStatementFacts {
     pub ordinal: SourceUnitOrdinal,
-    pub(crate) export_linkage: Option<ExportLinkage>,
+    pub export_linkage: Option<ExportLinkage>,
     pub source_location: Option<SourceLocation>,
     pub kind: StatementKind,
     pub declared: BTreeSet<Id>,
@@ -872,17 +871,17 @@ pub struct StructuralStatementFacts {
     /// All `var` declaration and initializer occurrences in this statement,
     /// including nested lazy syntax. Retained to prove unique stable bindings
     /// without another AST census.
-    pub(crate) var_declaration_counts: BTreeMap<Id, usize>,
+    pub var_declaration_counts: BTreeMap<Id, usize>,
     pub var_initializer_counts: BTreeMap<Id, usize>,
     /// Direct top-level `var name = ...` candidates. Initializer type is
     /// checked later; this records only source shape and hygienic identity.
-    pub(crate) top_level_var_initializer_candidates: BTreeSet<Id>,
+    pub top_level_var_initializer_candidates: BTreeSet<Id>,
     pub reads: PositionBucketed<BTreeSet<Id>>,
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
     pub member_write_roots: BTreeSet<Id>,
-    pub(crate) argument_value_escapes: BTreeMap<Id, BTreeSet<usize>>,
+    pub argument_value_escapes: BTreeMap<Id, BTreeSet<usize>>,
     pub calls: PositionBucketed<BTreeSet<Id>>,
-    pub(crate) constructor: Option<ConstructorFacts>,
+    pub constructor: Option<ConstructorFacts>,
     pub at_init_unresolved_sources: BTreeSet<Id>,
     pub at_init_unresolved_inline_fn: bool,
     pub first_order_unresolved_sources: BTreeSet<Id>,
@@ -999,7 +998,7 @@ pub struct ConstructorFacts {
     pub unresolved_inline_fn: bool,
 }
 
-/// The policy-independent half of [`analyze_chunk`]'s output: the
+/// The policy-independent half of `analyze::analyze_chunk`'s output: the
 /// top-level item view, the shadowed-globals set, the top-level-await
 /// scan, and the per-statement static facts that depend only on the
 /// module text (not on `AnalysisInputs`).
@@ -1009,9 +1008,9 @@ pub struct ConstructorFacts {
 /// without re-running the multi-declarator split.
 pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
-    pub(crate) imported_bindings: BTreeSet<Id>,
+    pub imported_bindings: BTreeSet<Id>,
     pub value_flow: std::sync::Arc<super::ChunkValueFlow>,
-    pub(crate) dynamic_scope: super::DynamicScopeFact,
+    pub dynamic_scope: super::DynamicScopeFact,
     pub set_iterable_shapes: super::SetIterableShapes,
     pub stable_array_spread_shapes: super::StableArraySpreadShapes,
     pub local_class_shapes: super::LocalClassConstructionShapes,
@@ -1020,7 +1019,7 @@ pub struct StructuralChunkAnalysis<'a> {
     /// Value inference admits only candidates with a proven Number initializer;
     /// at arbitrary module positions the resulting value class is Number or
     /// pre-initialization `undefined`, never exact Number.
-    pub(crate) stable_var_number_candidates: BTreeSet<Id>,
+    pub stable_var_number_candidates: BTreeSet<Id>,
     pub plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
     pub plain_data_inference_uses:
         BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
@@ -1040,121 +1039,4 @@ pub struct StructuralChunkSourceFacts<'a> {
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,
-}
-
-#[cfg(test)]
-mod initializer_overlay_tests {
-    use super::*;
-    use crate::facts::binding_effect_coverage::{BindingEffectAuthority, BindingEffectCoverage};
-    use raw_js_test_support::parse;
-
-    #[test]
-    fn initializer_overlay_preserves_raw_receipts_and_other_effect_domains() {
-        // The author marker hides the source-owned receipt in graph reports;
-        // inspect that independent authority directly after real source analysis.
-        for (source, has_receipt) in [
-            (
-                "const seed = 41; function factory() { return seed; } var result = (seed, factory(), factory());",
-                true,
-            ),
-            (
-                "const seed = 41; function factory() { globalThis.host?.(() => { const value = later; later = 3; return value; }); return seed; } var result = (seed, factory(), factory()); var later = 0;",
-                false,
-            ),
-        ] {
-            let module = parse(source);
-            let mut analysis = analyze_chunk(&module, &AnalysisInputs::default(), None);
-            let result_index = analysis
-                .facts
-                .iter()
-                .position(|fact| fact.declared.iter().any(|binding| binding.0 == "result"))
-                .unwrap();
-            let before = analysis.facts[result_index]
-                .synchronous_calls
-                .as_ref()
-                .unwrap()
-                .clone();
-            let BindingEffectCoverage::OrderedRootInitializer { receipt, .. } =
-                &before.binding_effect_coverage
-            else {
-                panic!("the fixture must exercise ordered root receipt sealing: {before:#?}");
-            };
-            assert_eq!(receipt.is_some(), has_receipt, "{before:#?}");
-            if !has_receipt {
-                assert!(
-                    !before.fallback_only.reads.is_empty(),
-                    "raw fallback must block a source receipt"
-                );
-            }
-            let coverage = serde_json::to_value(&before.binding_effect_coverage).unwrap();
-            let selected = BTreeSet::from(["result".to_string()]);
-            analysis.apply_initializer_binding_effects(&selected);
-            analysis
-                .validate_initializer_binding_effects(&selected)
-                .unwrap();
-            let fact = &analysis.facts[result_index];
-            let after = fact.synchronous_calls.as_ref().unwrap();
-            assert_eq!(
-                serde_json::to_value(&after.binding_effect_coverage).unwrap(),
-                coverage,
-                "an author filter cannot mint, upgrade or reseal a source receipt"
-            );
-            assert_eq!(
-                after.binding_effect_authority(),
-                BindingEffectAuthority::AuthorSourceOnly
-            );
-            assert_eq!(after.complete, before.complete);
-            assert_eq!(after.heap_contents, before.heap_contents);
-            assert_eq!(
-                after.non_assumed_heap_accesses,
-                before.non_assumed_heap_accesses
-            );
-            assert_eq!(
-                serde_json::to_value(&after.completed_initialization).unwrap(),
-                serde_json::to_value(&before.completed_initialization).unwrap()
-            );
-            assert_eq!(after.precision_losses, before.precision_losses);
-            let effects = fact.initialization_effects();
-            assert!(
-                effects.reads.keys().any(
-                    |cell| matches!(cell, EffectCell::Binding(binding) if binding.0 == "seed")
-                ),
-                "the syntax-derived footprint remains in initialization effects"
-            );
-            if !has_receipt {
-                assert!(before.reads.iter().any(|(binding, _)| binding.0 == "later"));
-                assert!(
-                    before
-                        .rebinds
-                        .iter()
-                        .any(|(binding, _)| binding.0 == "later")
-                );
-                for cells in [&effects.reads, &effects.writes] {
-                    assert!(!cells.keys().any(|cell| matches!(cell, EffectCell::Binding(binding) if binding.0 == "later")),
-                        "promoted fallback effects must be narrowed before effect translation validation");
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn initializer_overlay_retains_duplicate_and_consumption_guards() {
-        for (source, binding, diagnostic) in [
-            (
-                "var result = 1; var result = 2;",
-                "result",
-                "multiple source units",
-            ),
-            ("var result = 1;", "missing", "consumption mismatch"),
-        ] {
-            let module = parse(source);
-            let mut facts = analyze_chunk(&module, &AnalysisInputs::default(), None);
-            let configured = BTreeSet::from([binding.to_string()]);
-            facts.apply_initializer_binding_effects(&configured);
-            let error = facts
-                .validate_initializer_binding_effects(&configured)
-                .unwrap_err();
-            assert!(error.to_string().contains(diagnostic), "{error:#}");
-        }
-    }
 }

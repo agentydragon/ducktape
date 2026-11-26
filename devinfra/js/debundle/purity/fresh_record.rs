@@ -5,10 +5,10 @@ use crate::facts::{ChunkValueFlow, DynamicScopeFact, own_data_keys};
 /// Prepared value shape and whole-chunk identity guards for the ordinary
 /// declaration classifier. The initializer still follows its normal purity
 /// path, including call/argument effects and proof dependencies.
-pub(crate) struct FreshRecordDestructuringContext<'a> {
-    pub(crate) flow: &'a ChunkValueFlow,
-    pub(crate) dynamic_scope: DynamicScopeFact,
-    pub(crate) rebindings: &'a BTreeSet<Id>,
+pub struct FreshRecordDestructuringContext<'a> {
+    pub flow: &'a ChunkValueFlow,
+    pub dynamic_scope: DynamicScopeFact,
+    pub rebindings: &'a BTreeSet<Id>,
 }
 
 impl FreshRecordDestructuringContext<'_> {
@@ -60,10 +60,10 @@ impl FreshRecordDestructuringContext<'_> {
 /// owned by one newly allocated record. The single SWC parse supplies this
 /// certificate to both body purity and synchronous callback analysis.
 #[derive(Debug, Clone)]
-pub(crate) struct FreshRecordProof {
-    pub(crate) object: u32,
-    pub(crate) local: Id,
-    pub(crate) write_spans: BTreeSet<u32>,
+pub struct FreshRecordProof {
+    pub object: u32,
+    pub local: Id,
+    pub write_spans: BTreeSet<u32>,
 }
 
 pub(crate) fn fresh_record_proof(params: &[&Pat], body: &FunctionBody) -> Option<FreshRecordProof> {

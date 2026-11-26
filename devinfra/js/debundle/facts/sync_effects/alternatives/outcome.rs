@@ -5,15 +5,15 @@ use super::super::allocation_transfer::AllocationJudgment;
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::interpreter::Outcome;
 use super::super::kernel::frame::CallableSelection;
-use crate::analysis_inputs::ProofDependencies;
-use crate::facts::statement_facts::SynchronousCalls;
+use analysis::analysis_inputs::ProofDependencies;
+use analysis::facts::statement_facts::SynchronousCalls;
 
 impl Outcome {
     /// Join the outcomes of every leaf of a family. May-facts (effects,
     /// returns, losses, executed owners, an unknown call) are unions; definite
     /// facts (`complete`, `body_invoked`, each coverage domain, a selected
     /// return) hold only when every leaf holds them.
-    pub(in crate::facts::sync_effects) fn join(leaves: Vec<Self>) -> Self {
+    pub(crate) fn join(leaves: Vec<Self>) -> Self {
         let effect_coverage = EffectCoverageFragment::join_alternatives(
             &leaves
                 .iter()
@@ -174,7 +174,7 @@ fn join_selections(selections: Vec<Option<&CallableSelection>>) -> Option<Callab
 }
 
 /// Allocation-only when every leaf is, under all of their conditions.
-pub(in crate::facts::sync_effects) fn join_allocation_judgments<'a>(
+pub(crate) fn join_allocation_judgments<'a>(
     judgments: impl IntoIterator<Item = &'a AllocationJudgment>,
 ) -> AllocationJudgment {
     let mut dependencies = ProofDependencies::default();

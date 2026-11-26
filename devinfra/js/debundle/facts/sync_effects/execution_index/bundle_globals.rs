@@ -7,12 +7,12 @@ use super::{
     PreparedCallableCapabilities, PropertyKeyDomain, PropertyKeyEvidence, PropertyKeyExpr,
     close_raw_intrinsic_aliases, intrinsic_roots_read, key_domain_may_name, property_key_evidence,
 };
-use crate::analysis_inputs::{
+use analysis::analysis_inputs::{
     BundleGlobalNames, NativeIntrinsic, NoAccessorInstallRef, ResolvedNoAccessorInstall,
 };
-use crate::facts::standard_globals::is_predefined_global;
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::reports::schema::NativeMutationOperation;
+use analysis::facts::standard_globals::is_predefined_global;
+use analysis::inference::{FactContext, IterativeInference, IterativeRules};
+use analysis::reports::schema::NativeMutationOperation;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
 
@@ -779,7 +779,7 @@ mod tests {
             }
             source.push_str("function poison() { globalThis.leftRegistry = globalThis; }");
             let parsed = parse(&source);
-            let views = crate::facts::top_level_item_views(&parsed.body);
+            let views = analysis::facts::top_level_item_views(&parsed.body);
             let prepared = prepare_callable_capabilities(
                 &views,
                 BTreeSet::new(),

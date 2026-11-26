@@ -32,7 +32,7 @@ use swc_common::Span;
 use swc_ecma_ast::Id;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum SemanticKey {
+pub enum SemanticKey {
     LocalClass(u32),
     PrimitiveSetIteration(u32),
     StablePrimitiveArraySpread(u32),
@@ -77,7 +77,7 @@ impl SemanticKey {
 /// A positive proposition with no cross-domain "safe" flag. The key names the
 /// exact capability; its presence is the certificate.
 #[derive(Debug, Clone)]
-pub(crate) enum SemanticFact {
+pub enum SemanticFact {
     Certificate,
     Function(u32),
     NamespaceWrapper(u32),
@@ -85,24 +85,24 @@ pub(crate) enum SemanticFact {
 
 /// Binding-resolution facts captured alongside the canonical source analysis.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct NativeBindingContext {
-    pub(crate) declared_bindings: BTreeSet<Id>,
-    pub(crate) shadowed_globals: BTreeSet<&'static str>,
-    pub(crate) global_object_names: BTreeSet<&'static str>,
+pub struct NativeBindingContext {
+    pub declared_bindings: BTreeSet<Id>,
+    pub shadowed_globals: BTreeSet<&'static str>,
+    pub global_object_names: BTreeSet<&'static str>,
 }
 
 /// The source spelling of a native callee: a global binding, or a member of an
 /// unshadowed `globalThis`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct NativeCallee {
-    pub(crate) binding: Id,
-    pub(crate) global_this_qualified: bool,
+pub struct NativeCallee {
+    pub binding: Id,
+    pub global_this_qualified: bool,
 }
 
 /// `Env(binding) = Intrinsic(family)`: the binding is neither declared nor
 /// shadowed and names the family's global, or is the unshadowed `globalThis`
 /// qualifying it. Integrity of the slots it reads is a separate premise.
-pub(crate) fn names_intrinsic(
+pub fn names_intrinsic(
     callee: &NativeCallee,
     family: NativeIntrinsic,
     declared: bool,
@@ -121,16 +121,16 @@ pub(crate) fn names_intrinsic(
 
 /// A consumed native premise: its typed dependencies and report entry.
 #[derive(Debug, Clone)]
-pub(crate) struct NativePremise {
-    pub(crate) dependencies: ProofDependencies,
-    pub(crate) inference_use: InferenceUse,
+pub struct NativePremise {
+    pub dependencies: ProofDependencies,
+    pub inference_use: InferenceUse,
     /// The census, not an author axiom, established it.
-    pub(crate) census: bool,
+    pub census: bool,
 }
 
 /// Resolve `slots` at `site` into a premise reported as `conclusion`. A census
 /// proof derives it through native integrity; an author axiom names its input.
-pub(crate) fn native_premise(
+pub fn native_premise(
     integrity: &IntegrityFlags,
     slots: &[IntrinsicSlot],
     site: Option<u32>,
@@ -162,9 +162,9 @@ pub(crate) fn native_premise(
 /// Native premises a semantic rule consults. Each records what it used in
 /// `consulted` so the derivation report names the same rules as the proof.
 #[derive(Debug, Default)]
-pub(crate) struct NativePremises {
-    pub(crate) integrity: IntegrityFlags,
-    pub(crate) bindings: NativeBindingContext,
+pub struct NativePremises {
+    pub integrity: IntegrityFlags,
+    pub bindings: NativeBindingContext,
 }
 
 impl NativePremises {
@@ -243,12 +243,12 @@ impl NativePremises {
 /// Source-only candidate. The rule checks the authored provider, exact keys,
 /// and the completed census before this becomes a certificate.
 #[derive(Debug, Clone)]
-pub(crate) struct DescriptorCopyCallCandidate {
-    pub(crate) source_object: u32,
-    pub(crate) provider_binding: Id,
-    pub(crate) signature: DescriptorCopyFactorySignature,
-    pub(crate) data_keys: BTreeSet<String>,
-    pub(crate) accessor_keys: BTreeSet<String>,
+pub struct DescriptorCopyCallCandidate {
+    pub source_object: u32,
+    pub provider_binding: Id,
+    pub signature: DescriptorCopyFactorySignature,
+    pub data_keys: BTreeSet<String>,
+    pub accessor_keys: BTreeSet<String>,
 }
 
 /// Native-premise rules each certificate consulted, beyond its key premises.
@@ -257,21 +257,21 @@ type Consulted = Rc<RefCell<BTreeMap<SemanticKey, BTreeSet<InferenceRule>>>>;
 /// Immutable inputs from the canonical structural analysis and completed native
 /// census. A new source, policy or author-input context needs a new instance.
 #[derive(Debug, Default)]
-pub(crate) struct SemanticRules {
-    pub(crate) classes: LocalClassConstructionShapes,
-    pub(crate) sets: SetIterableShapes,
+pub struct SemanticRules {
+    pub classes: LocalClassConstructionShapes,
+    pub sets: SetIterableShapes,
     /// Fresh-allocation candidates: the empty keyed-collection row each binding
     /// constructs when it is the original native.
-    pub(crate) collection_bindings: BTreeMap<Id, &'static Row>,
-    pub(crate) native: NativePremises,
-    pub(crate) dynamic_scope: bool,
-    pub(crate) callables: CallableInferenceInputs,
-    pub(crate) descriptor_copy_providers: BTreeMap<Id, DescriptorCopyFactorySummary>,
-    pub(crate) descriptor_copy_calls: BTreeMap<u32, DescriptorCopyCallCandidate>,
-    pub(crate) argument_inputs: BTreeMap<(Id, u32, usize, usize), ArgumentInputRef>,
-    pub(crate) array_spreads: BTreeSet<u32>,
+    pub collection_bindings: BTreeMap<Id, &'static Row>,
+    pub native: NativePremises,
+    pub dynamic_scope: bool,
+    pub callables: CallableInferenceInputs,
+    pub descriptor_copy_providers: BTreeMap<Id, DescriptorCopyFactorySummary>,
+    pub descriptor_copy_calls: BTreeMap<u32, DescriptorCopyCallCandidate>,
+    pub argument_inputs: BTreeMap<(Id, u32, usize, usize), ArgumentInputRef>,
+    pub array_spreads: BTreeSet<u32>,
     /// Filled while solving; a caller leaves it at its default.
-    pub(crate) consulted: Consulted,
+    pub consulted: Consulted,
 }
 
 impl SemanticRules {
@@ -473,7 +473,7 @@ impl SemanticFacts {
         Self::solve_with_source(rules, None)
     }
 
-    pub(crate) fn solve_with_source(
+    pub fn solve_with_source(
         mut rules: SemanticRules,
         source: Option<&Arc<SemanticFacts>>,
     ) -> Self {
@@ -557,10 +557,7 @@ impl SemanticFacts {
         self.constructions.get(&span.lo.0).copied()
     }
 
-    pub(crate) fn judgment(
-        &self,
-        key: &SemanticKey,
-    ) -> Option<&Judgment<SemanticKey, SemanticFact>> {
+    pub fn judgment(&self, key: &SemanticKey) -> Option<&Judgment<SemanticKey, SemanticFact>> {
         self.inference
             .get(key)
             .or_else(|| self.source.as_ref()?.judgment(key))
@@ -572,7 +569,7 @@ impl SemanticFacts {
 
     /// Expand shared premise IDs only for a consumed diagnostic. The analysis
     /// stores no recursively copied derivation trees.
-    pub(crate) fn inference_use(&self, key: &SemanticKey) -> Option<InferenceUse> {
+    pub fn inference_use(&self, key: &SemanticKey) -> Option<InferenceUse> {
         let dependencies = self.dependencies(key)?;
         let mut pending = vec![key.clone()];
         let mut visited = BTreeSet::new();
@@ -610,7 +607,7 @@ impl SemanticFacts {
 /// Source-only author argument capabilities share the same certificate rules
 /// as other semantic facts. They are solved after selector resolution and the
 /// single canonical value-flow solve, before PlainData and the native census.
-pub(crate) struct ArgumentNoEscapeFacts {
+pub struct ArgumentNoEscapeFacts {
     facts: SemanticFacts,
     inputs: BTreeMap<Id, Vec<(u32, usize, usize)>>,
 }

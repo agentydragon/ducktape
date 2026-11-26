@@ -60,44 +60,44 @@ use super::world::descriptor_heap::{
 };
 use super::world::object_surface::{AppliedAccessor, ObjectSurfaceStore};
 use super::world::prefix_values::{PrefixValues, TopBindingOrdinal};
-use crate::analysis_inputs::{
+use crate::property_inference::{
+    OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest, infer_own_property_projection,
+};
+use analysis::analysis_inputs::{
     ImportedPrimitiveRead, NativeIntrinsic, ProofDependencies, ResolvedInitializerCallEffectInput,
 };
-use crate::analysis_provenance::InferenceRule;
-use crate::execution_evidence::{
+use analysis::analysis_provenance::InferenceRule;
+use analysis::execution_evidence::{
     AssumedEffectReason, ConstructionRejection, ExecutionOperation, ExecutionPrecisionLoss,
     ExecutionPrecisionLossReason, GlobalReachCause, HavocReach, OrderedCallAdmissionRefusal,
     PossibleGetterLookupSite, PossibleGetterPromotion,
 };
-use crate::facts::abstract_domain::builtins::{
+use analysis::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
 };
-use crate::facts::abstract_domain::effect::{CoerceOp, CoerceOperand};
-use crate::facts::abstract_domain::heap::Mutation;
-use crate::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::binding_effect_coverage::{
+use analysis::facts::abstract_domain::effect::{CoerceOp, CoerceOperand};
+use analysis::facts::abstract_domain::heap::Mutation;
+use analysis::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::binding_effect_coverage::{
     BindingEffectCoverage, LocalBodyIdentity, LocalCallReceipt, RootInitializerIdentity,
 };
-use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
-use crate::facts::local_effect_targets::MetadataDecorateCall;
-use crate::facts::semantic_inference::{
+use analysis::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
+use analysis::facts::local_effect_targets::MetadataDecorateCall;
+use analysis::facts::semantic_inference::{
     NativePremise, SemanticKey, names_intrinsic, native_premise,
 };
-use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
-use crate::facts::statement_facts::{
+use analysis::facts::source_unit_read_closure::SourceUnitReadClosure;
+use analysis::facts::statement_facts::{
     CallbackFactoryUseFact, HeapContentCells, ReturnedRecordUseFact, StatementFacts, StatementKind,
     SynchronousCalls,
 };
-use crate::facts::sync_effects::property_inference::{
-    OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest, infer_own_property_projection,
-};
-use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
-use crate::facts::{
+use analysis::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
+use analysis::facts::{
     DataflowOpacityCause, EffectCell, NativeIterableOperandOrigin, SetIterableProof,
 };
-use crate::purity::{ChunkCodeGraph, Effects};
-use crate::reports::schema::{
+use analysis::purity::{ChunkCodeGraph, Effects};
+use analysis::reports::schema::{
     BoundedInvocationFallbackCallSite, BoundedInvocationFallbackInputPath,
     BoundedInvocationFallbackPathEdge, BoundedInvocationFallbackSeed,
     BoundedInvocationFallbackUnknownPathReason, CallbackFactoryUseKind,
@@ -119,7 +119,7 @@ pub(super) enum NativeIdentitySource {
         premise: Box<NativePremise>,
     },
     AuthorInput {
-        evidence: Box<crate::analysis_inputs::NativeOperationInputEvidence>,
+        evidence: Box<analysis::analysis_inputs::NativeOperationInputEvidence>,
         dependencies: Box<ProofDependencies>,
     },
 }
@@ -1222,7 +1222,7 @@ pub(super) struct ExecutionState {
     pub(super) world: Arc<World>,
     native_point_effects: NativePointEffects,
     activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
-    pub(super) author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
+    pub(super) author_host_contract_uses: Vec<analysis::reports::schema::ReentryFreeOperationUse>,
     active_class_member_promotions: BTreeSet<u32>,
     pub(super) prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
     pub(super) current_top_owner: Option<SourceUnitOrdinal>,
@@ -1389,26 +1389,26 @@ pub(super) struct Observations {
     native_integrity_checks: BTreeSet<NativeIntegrityCheck>,
     native_prototype_property_checks: BTreeMap<String, NativePrototypePropertyCheck>,
     native_prefix_observations: Vec<NativePrefixObservation>,
-    native_integrity_uses: BTreeSet<crate::reports::schema::NativeIntegrityUse>,
+    native_integrity_uses: BTreeSet<analysis::reports::schema::NativeIntegrityUse>,
     native_operation_input_uses:
-        BTreeMap<(u32, u32), crate::reports::schema::NativeOperationInputUse>,
+        BTreeMap<(u32, u32), analysis::reports::schema::NativeOperationInputUse>,
     imported_primitive_array_spread_input_uses:
-        Vec<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse>,
+        Vec<analysis::analysis_inputs::ImportedPrimitiveArraySpreadInputUse>,
     /// Premises consumed by this owner's proofs so far: the conservative
     /// prerequisite set of its native transfers and record-factory certificate.
     dependencies: ProofDependencies,
-    inference_uses: BTreeSet<crate::analysis_provenance::InferenceUse>,
+    inference_uses: BTreeSet<analysis::analysis_provenance::InferenceUse>,
     /// Exact source-checked receivers whose prototype premises the author supplies.
     record_factory_prototype_premises: RecordFactoryPrototypePremises,
     /// The typed reason an operation of this owner's execution withheld its
     /// effect receipt. Report-only.
-    owner_coverage_refusal: Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
+    owner_coverage_refusal: Option<analysis::facts::OwnerInitializationCoverageRefusalReason>,
 }
 
 impl Observations {
     pub(super) fn refuse_owner_coverage(
         &mut self,
-        reason: crate::facts::OwnerInitializationCoverageRefusalReason,
+        reason: analysis::facts::OwnerInitializationCoverageRefusalReason,
     ) {
         self.owner_coverage_refusal.get_or_insert(reason);
     }
@@ -1432,14 +1432,14 @@ impl Observations {
         self.native_prefix_observations.push(observation);
     }
 
-    fn record_native_integrity_use(&mut self, use_: crate::reports::schema::NativeIntegrityUse) {
+    fn record_native_integrity_use(&mut self, use_: analysis::reports::schema::NativeIntegrityUse) {
         self.native_integrity_uses.insert(use_);
     }
 
     pub(super) fn record_native_operation_input_use(
         &mut self,
         span: Span,
-        use_: crate::reports::schema::NativeOperationInputUse,
+        use_: analysis::reports::schema::NativeOperationInputUse,
     ) {
         self.native_operation_input_uses
             .insert((span.lo.0, span.hi.0), use_);
@@ -1448,7 +1448,7 @@ impl Observations {
     /// One report entry per distinct use; a spread site can run repeatedly.
     fn record_imported_primitive_array_spread_input_use(
         &mut self,
-        use_: crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse,
+        use_: analysis::analysis_inputs::ImportedPrimitiveArraySpreadInputUse,
     ) {
         if !self
             .imported_primitive_array_spread_input_uses
@@ -1466,13 +1466,16 @@ impl Observations {
         &self.dependencies
     }
 
-    pub(super) fn record_inference_use(&mut self, use_: crate::analysis_provenance::InferenceUse) {
+    pub(super) fn record_inference_use(
+        &mut self,
+        use_: analysis::analysis_provenance::InferenceUse,
+    ) {
         self.inference_uses.insert(use_);
     }
 
     fn record_inference_uses(
         &mut self,
-        uses: impl IntoIterator<Item = crate::analysis_provenance::InferenceUse>,
+        uses: impl IntoIterator<Item = analysis::analysis_provenance::InferenceUse>,
     ) {
         self.inference_uses.extend(uses);
     }
@@ -1614,7 +1617,7 @@ pub(super) struct RootAttemptCheckpoint {
     prior_reachability_roots: Option<BTreeSet<SourceUnitOrdinal>>,
     native_point_effects: NativePointEffects,
     activated_native_effects: BTreeSet<(SourceUnitOrdinal, Option<u32>)>,
-    author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
+    author_host_contract_uses: Vec<analysis::reports::schema::ReentryFreeOperationUse>,
     proof_uses: Vec<CallbackFactoryUseFact>,
     returned_record_proof_uses: Vec<ReturnedRecordUseFact>,
     statement_executed_owners: BTreeSet<SourceUnitOrdinal>,
@@ -2288,7 +2291,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn record_returned_record_use(
         &mut self,
         callee: &ValueExpr,
-        kind: crate::reports::schema::ReturnedRecordUseKind,
+        kind: analysis::reports::schema::ReturnedRecordUseKind,
         lexical_statement_ordinal: SourceUnitOrdinal,
         span: Span,
     ) {
@@ -2469,7 +2472,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn record_proof_dependencies(
         &mut self,
         guard: NativeIntegrityGuard,
-        dependencies: &crate::analysis_inputs::ProofDependencies,
+        dependencies: &analysis::analysis_inputs::ProofDependencies,
     ) {
         self.consume_proof_dependencies(dependencies);
         if !dependencies.value_inputs.is_empty()
@@ -2477,7 +2480,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || !dependencies.program_premises.is_empty()
         {
             self.observations.record_native_integrity_use(
-                crate::reports::schema::NativeIntegrityUse {
+                analysis::reports::schema::NativeIntegrityUse {
                     guard,
                     value_input_refs: dependencies.value_inputs.clone(),
                     no_accessor_install_refs: dependencies.no_accessor_install_callables.clone(),
@@ -2489,7 +2492,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn consume_proof_dependencies(
         &mut self,
-        dependencies: &crate::analysis_inputs::ProofDependencies,
+        dependencies: &analysis::analysis_inputs::ProofDependencies,
     ) {
         self.queries.assume(dependencies);
         self.observations.consume_dependencies(dependencies);
@@ -2498,7 +2501,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn record_inference_use(
         &mut self,
         guard: NativeIntegrityGuard,
-        proof: crate::analysis_provenance::InferenceUse,
+        proof: analysis::analysis_provenance::InferenceUse,
         dependencies: &ProofDependencies,
     ) {
         self.record_proof_dependencies(guard, dependencies);
@@ -2513,7 +2516,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let span = input.call_span;
                 self.observations.record_native_operation_input_use(
                     span,
-                    crate::reports::schema::NativeOperationInputUse {
+                    analysis::reports::schema::NativeOperationInputUse {
                         evidence: input.evidence.clone(),
                         source_location: input.evidence.initializer_location.clone(),
                         span,
@@ -4040,8 +4043,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &self,
         kind: CallKind,
         callee: &ValueExpr,
-    ) -> Option<crate::analysis_inputs::ForeignCallSummary> {
-        use crate::analysis_inputs::ForeignInvocation;
+    ) -> Option<analysis::analysis_inputs::ForeignCallSummary> {
+        use analysis::analysis_inputs::ForeignInvocation;
         let ValueExpr::Binding(binding) = callee else {
             return None;
         };
@@ -4058,7 +4061,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// later holds it may invoke their callbacks or write through them.
     fn retain_foreign_arguments(
         &mut self,
-        summary: &crate::analysis_inputs::ForeignCallSummary,
+        summary: &analysis::analysis_inputs::ForeignCallSummary,
         args: &[Values],
     ) -> Values {
         let retained: Values = if summary.retained_provider_captures.is_empty() {
@@ -4081,10 +4084,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     pub(super) fn foreign_call_result(
         &mut self,
-        summary: &crate::analysis_inputs::ForeignCallSummary,
+        summary: &analysis::analysis_inputs::ForeignCallSummary,
         args: &[Values],
     ) -> Values {
-        use crate::analysis_inputs::{ForeignInvocation, ForeignReturn};
+        use analysis::analysis_inputs::{ForeignInvocation, ForeignReturn};
         let mut result = Values::new();
         for returned in &summary.returns {
             match returned {
@@ -4121,9 +4124,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     pub(super) fn record_foreign_call_use(
         &mut self,
-        summary: &crate::analysis_inputs::ForeignCallSummary,
+        summary: &analysis::analysis_inputs::ForeignCallSummary,
     ) {
-        use crate::analysis_provenance::{InferenceRule, InferenceUse};
+        use analysis::analysis_provenance::{InferenceRule, InferenceUse};
         let mut derivation_rules = BTreeSet::from([InferenceRule::ForeignCallSummary]);
         if !summary.native_constructions.is_empty() {
             derivation_rules.insert(InferenceRule::NativeIntegrity);
@@ -7846,7 +7849,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             self.record_returned_record_use(
                 &call.callee,
-                crate::reports::schema::ReturnedRecordUseKind::CallTiming,
+                analysis::reports::schema::ReturnedRecordUseKind::CallTiming,
                 call.owner,
                 call.span,
             );
@@ -8533,7 +8536,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             unreachable!()
                         };
                         outcome.effects.local_record_factory_uses.push(
-                            crate::reports::schema::LocalRecordFactoryUse {
+                            analysis::reports::schema::LocalRecordFactoryUse {
                                 factory_binding: factory.0.to_string(),
                                 prototype_properties: properties.clone(),
                                 lexical_statement_ordinal: self

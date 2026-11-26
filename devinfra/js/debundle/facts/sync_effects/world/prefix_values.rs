@@ -13,22 +13,22 @@ use swc_ecma_ast::Id;
 
 /// The run's top-level bindings, numbered in `Id` order.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(in crate::facts::sync_effects) struct TopBindings {
+pub(crate) struct TopBindings {
     ordinals: FxHashMap<Id, TopBindingOrdinal>,
 }
 
 /// A binding's position in one run's prefix-value table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::facts::sync_effects) struct TopBindingOrdinal(u32);
+pub(crate) struct TopBindingOrdinal(u32);
 
 impl TopBindingOrdinal {
-    pub(in crate::facts::sync_effects) fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         self.0 as usize
     }
 }
 
 impl TopBindings {
-    pub(in crate::facts::sync_effects) fn new(ids: impl IntoIterator<Item = Id>) -> Self {
+    pub(crate) fn new(ids: impl IntoIterator<Item = Id>) -> Self {
         let ids: BTreeSet<Id> = ids.into_iter().collect();
         let ordinals = ids
             .into_iter()
@@ -41,49 +41,46 @@ impl TopBindings {
         Self { ordinals }
     }
 
-    pub(in crate::facts::sync_effects) fn ordinal(&self, id: &Id) -> Option<TopBindingOrdinal> {
+    pub(crate) fn ordinal(&self, id: &Id) -> Option<TopBindingOrdinal> {
         self.ordinals.get(id).copied()
     }
 
-    pub(in crate::facts::sync_effects) fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.ordinals.len()
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(in crate::facts::sync_effects) struct PrefixValues {
+pub(crate) struct PrefixValues {
     bindings: Arc<TopBindings>,
     values: OrdMap<u32, Values>,
 }
 
 impl PrefixValues {
-    pub(in crate::facts::sync_effects) fn new(bindings: Arc<TopBindings>) -> Self {
+    pub(crate) fn new(bindings: Arc<TopBindings>) -> Self {
         Self {
             bindings,
             values: OrdMap::new(),
         }
     }
 
-    pub(in crate::facts::sync_effects) fn get(&self, id: &Id) -> Option<&Values> {
+    pub(crate) fn get(&self, id: &Id) -> Option<&Values> {
         self.get_ordinal(self.bindings.ordinal(id)?)
     }
 
     /// The ordinal comes from this run's shared `TopBindings`.
-    pub(in crate::facts::sync_effects) fn get_ordinal(
-        &self,
-        ordinal: TopBindingOrdinal,
-    ) -> Option<&Values> {
+    pub(crate) fn get_ordinal(&self, ordinal: TopBindingOrdinal) -> Option<&Values> {
         self.values.get(&ordinal.0)
     }
 
-    pub(in crate::facts::sync_effects) fn get_mut(&mut self, id: &Id) -> Option<&mut Values> {
+    pub(crate) fn get_mut(&mut self, id: &Id) -> Option<&mut Values> {
         let ordinal = self.bindings.ordinal(id)?;
         self.values.get_mut(&ordinal.0)
     }
 
     /// The binding's values, inserting an empty set first if it has none.
     /// Only the run's top-level bindings have prefix values.
-    pub(in crate::facts::sync_effects) fn entry_or_default(&mut self, id: &Id) -> &mut Values {
+    pub(crate) fn entry_or_default(&mut self, id: &Id) -> &mut Values {
         let ordinal = self
             .bindings
             .ordinal(id)
@@ -91,22 +88,22 @@ impl PrefixValues {
         self.values.entry(ordinal.0).or_default()
     }
 
-    pub(in crate::facts::sync_effects) fn insert(&mut self, id: &Id, values: Values) {
+    pub(crate) fn insert(&mut self, id: &Id, values: Values) {
         *self.entry_or_default(id) = values;
     }
 
-    pub(in crate::facts::sync_effects) fn values(&self) -> impl Iterator<Item = &Values> {
+    pub(crate) fn values(&self) -> impl Iterator<Item = &Values> {
         self.values.values()
     }
 
-    pub(in crate::facts::sync_effects) fn ptr_eq(&self, other: &Self) -> bool {
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
         self.values.ptr_eq(&other.values)
     }
 
     /// Joins alternatives forked from one run: each binding present on any
     /// path gets the union of its values, plus `unknown` from a path that
     /// lacks it.
-    pub(in crate::facts::sync_effects) fn join(
+    pub(crate) fn join(
         alternatives: &[&Self],
         join_value_maps: impl FnOnce(&[&OrdMap<u32, Values>]) -> OrdMap<u32, Values>,
     ) -> Self {

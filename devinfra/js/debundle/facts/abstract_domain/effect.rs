@@ -59,7 +59,7 @@ impl CoerceOp {
 /// statement or function is pure when evaluation has no effect; each effect
 /// projects to the `PurityRule` that reports it (`purity/purity_type.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Effect {
+pub enum Effect {
     /// Writes a binding or a property: assignment, update, or an initializer
     /// of a `var` another statement also declares.
     Write,
@@ -84,7 +84,7 @@ pub(crate) enum Effect {
 
 /// Where a coercion or protocol step happens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CoerceSite {
+pub enum CoerceSite {
     /// `ToPrimitive`/`ToNumeric`/`ToString` of an operator or template
     /// interpolation, `in`'s `[[HasProperty]]`, `instanceof`'s
     /// `@@hasInstance`, or a builtin row's operand conversion.
@@ -122,7 +122,7 @@ pub(crate) enum CoerceCheck {
 
 /// One operand a coercion's resolution reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum CoerceOperand {
+pub enum CoerceOperand {
     /// An operand already known to complete with one of these types.
     Known(PrimKinds),
     /// A top-level binding's value.
@@ -155,7 +155,7 @@ impl CoerceOperands {
 
 /// What kind of unsummarized code an `Invoke` may run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum InvokeSite {
+pub enum InvokeSite {
     Call,
     Construct,
     TaggedTemplate,
@@ -170,7 +170,7 @@ pub(crate) enum InvokeSite {
 
 /// Why evaluation leaves the modeled straight-line path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HavocCause {
+pub enum HavocCause {
     /// `await` or `yield`.
     Suspension,
     ThrowStatement,

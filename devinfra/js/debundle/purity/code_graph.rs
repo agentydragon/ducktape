@@ -34,11 +34,11 @@ pub struct ChunkCodeGraph {
     declared_pure_members: BTreeMap<String, BTreeSet<String>>,
     /// Primitive types of chunk-top consts and stable top-level numeric vars,
     /// read by operator classification. See `collect_binding_prims`.
-    pub(crate) binding_prims: BindingPrims,
+    pub binding_prims: BindingPrims,
     /// Projection of `binding_prims`: bindings whose values carry no user
     /// accessors and are never Symbol, so coercing a reference fires no user
     /// code. Init effects remain classified separately.
-    pub(crate) primitive_bindings: BTreeSet<String>,
+    pub primitive_bindings: BTreeSet<String>,
     /// Projection of `binding_prims`: Symbol-valued bindings are safe only for
     /// ToPropertyKey; ToString(Symbol) throws.
     pub(crate) symbol_const_bindings: BTreeSet<String>,
@@ -141,7 +141,7 @@ pub(crate) enum ChunkBinding {
 /// shapes into proofs using synchronous-execution evidence under default
 /// analysis inputs. The synchronous interpreter implements it; purity code
 /// graphs built outside full chunk analysis take it as a parameter.
-pub(crate) trait ShapeProofRefinement {
+pub trait ShapeProofRefinement {
     fn refine(
         &self,
         body: &[TopLevelItemView<'_>],
@@ -154,14 +154,14 @@ pub(crate) trait ShapeProofRefinement {
 }
 
 impl ChunkCodeGraph {
-    pub(crate) fn fresh_record_proof(&self, key: u32) -> Option<&FreshRecordProof> {
+    pub fn fresh_record_proof(&self, key: u32) -> Option<&FreshRecordProof> {
         self.fresh_record_proofs.get(&key)
     }
 
     /// Build the graph for `body`. Canonical body classification produces
     /// immutable transfer facts and exact inferred call obligations; the
     /// effects worklist closes recursion before projecting final verdicts.
-    pub(crate) fn build(
+    pub fn build(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
@@ -176,7 +176,7 @@ impl ChunkCodeGraph {
         )
     }
 
-    pub(crate) fn build_with_declared_pure_new(
+    pub fn build_with_declared_pure_new(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
@@ -197,7 +197,7 @@ impl ChunkCodeGraph {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn build_full(
+    pub fn build_full(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
@@ -532,7 +532,7 @@ impl ChunkCodeGraph {
     /// statement in this chunk writes through. Member reads `name.k`
     /// / `name[pure]` on such a binding are pure (see
     /// `ChunkBinding::PlainData`).
-    pub(crate) fn is_plain_data(&self, name: &str) -> bool {
+    pub fn is_plain_data(&self, name: &str) -> bool {
         matches!(self.bindings.get(name), Some(ChunkBinding::PlainData))
     }
 
@@ -543,7 +543,7 @@ impl ChunkCodeGraph {
         self.plain_data_dependencies.get(name)
     }
 
-    pub(crate) fn plain_data_inference_uses(
+    pub fn plain_data_inference_uses(
         &self,
         name: &str,
     ) -> Option<&BTreeSet<crate::analysis_provenance::InferenceUse>> {
@@ -552,7 +552,7 @@ impl ChunkCodeGraph {
 
     /// Whether `name` is a static ordinary array binding suitable for
     /// array-method at-init fallback refinement.
-    pub(crate) fn is_plain_array(&self, name: &str) -> bool {
+    pub fn is_plain_array(&self, name: &str) -> bool {
         self.plain_array_bindings.contains(name)
     }
 

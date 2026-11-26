@@ -13,12 +13,12 @@ use super::super::native::array_iteration::{admitted_callback, supported_row};
 use super::super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::super::own_data_transfer::resolve_writable_slot;
 use super::super::value_model::{AbstractValue, CallSite, Context, MemberKey, ValueExpr, Values};
-use crate::execution_evidence::ConstructionRejection;
-use crate::facts::OwnerInitializationCoverageRefusalReason;
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::local_effect_targets::MetadataDecorateCall;
-use crate::facts::statement_facts::{StatementFacts, StatementKind};
-use crate::reports::schema::{LocalRecordFactoryRejection, RecordFactoryRejectionReason};
+use analysis::execution_evidence::ConstructionRejection;
+use analysis::facts::OwnerInitializationCoverageRefusalReason;
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::local_effect_targets::MetadataDecorateCall;
+use analysis::facts::statement_facts::{StatementFacts, StatementKind};
+use analysis::reports::schema::{LocalRecordFactoryRejection, RecordFactoryRejectionReason};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -736,7 +736,7 @@ impl Executor<'_, '_> {
     /// Why a root statement may not store to this top-level binding at the
     /// current prefix, decided before anything is recorded. `None` admits the
     /// store: `SetMutableBinding` then has no global, heap or host effect.
-    pub(in crate::facts::sync_effects) fn module_binding_store_refusal(
+    pub(crate) fn module_binding_store_refusal(
         &self,
         binding: &Id,
     ) -> Option<OwnerInitializationCoverageRefusalReason> {

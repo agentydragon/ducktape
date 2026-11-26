@@ -12,26 +12,24 @@ use super::super::property_inference::{
 };
 use super::super::value_model::{AbstractValue, CallSite, DenseArray, Values};
 use super::object_surface::ObjectSurfaceStore;
-use crate::analysis_inputs::ProofDependencies;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis::analysis_inputs::ProofDependencies;
+use analysis::facts::abstract_domain::value::{Kind, Value};
 use imbl::OrdMap;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(in crate::facts::sync_effects) struct OwnDescriptorMapState {
-    pub(in crate::facts::sync_effects) source_object: u32,
+pub(crate) struct OwnDescriptorMapState {
+    pub(crate) source_object: u32,
     /// A pooled site that captured a different source or shape, or whose
     /// map escaped to unmodeled code, keeps only its retained values.
-    pub(in crate::facts::sync_effects) valid: bool,
-    pub(in crate::facts::sync_effects) property_order: Vec<String>,
-    pub(in crate::facts::sync_effects) properties: BTreeMap<String, CapturedPropertyDescriptor>,
-    pub(in crate::facts::sync_effects) retained_values: Values,
+    pub(crate) valid: bool,
+    pub(crate) property_order: Vec<String>,
+    pub(crate) properties: BTreeMap<String, CapturedPropertyDescriptor>,
+    pub(crate) retained_values: Values,
 }
 
 /// Premises a descriptor application needs from its executing context.
-pub(in crate::facts::sync_effects) trait DescriptorContext:
-    OwnDataContext
-{
+pub(crate) trait DescriptorContext: OwnDataContext {
     fn descriptor_map(&self, site: CallSite) -> Option<&OwnDescriptorMapState>;
     fn object_surface(&self) -> &ObjectSurfaceStore;
     /// A fresh plain-data literal: its own descriptors are the literal's, so
@@ -49,7 +47,7 @@ pub(in crate::facts::sync_effects) trait DescriptorContext:
 /// target's dynamic-key slot, so every own-key projection of the target
 /// refuses from then on, and drops the target's literal writability witness.
 #[derive(Debug, Clone)]
-pub(in crate::facts::sync_effects) struct DynamicKeyDefinition {
+pub(crate) struct DynamicKeyDefinition {
     target: u32,
     value: Values,
 }
@@ -63,7 +61,7 @@ const DATA_DESCRIPTOR_FIELDS: [&str; 4] = ["value", "writable", "enumerable", "c
 /// exact settled plain-data descriptor record holding only data-descriptor
 /// fields, with the ordinary `Object.prototype` intact for the inherited
 /// field lookups. The key's `ToPropertyKey` is silent on every primitive.
-pub(in crate::facts::sync_effects) fn dynamic_key_definition(
+pub(crate) fn dynamic_key_definition(
     context: &mut impl DescriptorContext,
     target: &Values,
     key: &Values,
@@ -119,17 +117,14 @@ pub(in crate::facts::sync_effects) fn dynamic_key_definition(
 /// A checked `Object.defineProperties(target, map)` whose every definition is
 /// copied in, so commit cannot fail after the prefix starts changing.
 #[derive(Debug, Clone)]
-pub(in crate::facts::sync_effects) struct DescriptorApplication {
-    pub(in crate::facts::sync_effects) target: u32,
+pub(crate) struct DescriptorApplication {
+    pub(crate) target: u32,
     definitions: Vec<(String, CapturedPropertyDescriptor)>,
 }
 
 impl DescriptorApplication {
     /// Every property of a still-valid map, in creation order.
-    pub(in crate::facts::sync_effects) fn from_map(
-        target: u32,
-        map: &OwnDescriptorMapState,
-    ) -> Option<Self> {
+    pub(crate) fn from_map(target: u32, map: &OwnDescriptorMapState) -> Option<Self> {
         if !map.valid {
             return None;
         }
@@ -148,7 +143,7 @@ impl DescriptorApplication {
 /// Defining captured descriptors completes normally only on an exact fresh
 /// plain-data target with no own data or accessors yet, from a valid map,
 /// with the ordinary `Object.prototype` intact for descriptor conversion.
-pub(in crate::facts::sync_effects) fn application(
+pub(crate) fn application(
     context: &mut impl DescriptorContext,
     target: &Values,
     descriptors: &Values,
@@ -178,18 +173,18 @@ pub(in crate::facts::sync_effects) fn application(
 /// A caller's borrowed prefix store. Admission owns native identity, target
 /// and completion proofs; these updates grant neither ordinary-property shape
 /// nor effect coverage.
-pub(in crate::facts::sync_effects) struct DescriptorHeap<'a> {
-    pub(in crate::facts::sync_effects) maps: &'a mut OrdMap<CallSite, OwnDescriptorMapState>,
-    pub(in crate::facts::sync_effects) surface: &'a mut ObjectSurfaceStore,
-    pub(in crate::facts::sync_effects) arrays: &'a mut OrdMap<u32, DenseArray>,
-    pub(in crate::facts::sync_effects) primitive_arrays: &'a mut OrdMap<u32, ProofDependencies>,
-    pub(in crate::facts::sync_effects) revision: &'a mut u64,
-    pub(in crate::facts::sync_effects) track_writable_prefix: bool,
+pub(crate) struct DescriptorHeap<'a> {
+    pub(crate) maps: &'a mut OrdMap<CallSite, OwnDescriptorMapState>,
+    pub(crate) surface: &'a mut ObjectSurfaceStore,
+    pub(crate) arrays: &'a mut OrdMap<u32, DenseArray>,
+    pub(crate) primitive_arrays: &'a mut OrdMap<u32, ProofDependencies>,
+    pub(crate) revision: &'a mut u64,
+    pub(crate) track_writable_prefix: bool,
 }
 
 impl<'a> DescriptorHeap<'a> {
     /// The literal-allocation view over the same prefix store.
-    pub(in crate::facts::sync_effects) fn into_literal(self) -> LiteralHeap<'a> {
+    pub(crate) fn into_literal(self) -> LiteralHeap<'a> {
         LiteralHeap {
             surface: self.surface,
             arrays: self.arrays,
@@ -212,7 +207,7 @@ impl<'a> DescriptorHeap<'a> {
     /// Record one inspection's snapshot. A pooled site that observes a
     /// different source or shape loses its map but keeps every value it may
     /// retain.
-    pub(in crate::facts::sync_effects) fn capture(
+    pub(crate) fn capture(
         &mut self,
         site: CallSite,
         projection: OwnPropertyDescriptorProjection,
@@ -258,15 +253,11 @@ impl<'a> DescriptorHeap<'a> {
         AbstractValue::OwnDescriptorMap(site)
     }
 
-    pub(in crate::facts::sync_effects) fn invalidate_writable(&mut self, object: u32) {
+    pub(crate) fn invalidate_writable(&mut self, object: u32) {
         self.literal().invalidate_writable(object);
     }
 
-    pub(in crate::facts::sync_effects) fn dense_array(
-        &mut self,
-        allocation: u32,
-        slots: Vec<Values>,
-    ) {
+    pub(crate) fn dense_array(&mut self, allocation: u32, slots: Vec<Values>) {
         self.literal().dense_array(allocation, slots);
     }
 
@@ -276,11 +267,7 @@ impl<'a> DescriptorHeap<'a> {
     /// tainted: it has no accessor, and the site never seeds a writability
     /// witness, so the row-execution, spread and own-data proofs that need a
     /// dense or primitive snapshot or a source record shape all refuse it.
-    pub(in crate::facts::sync_effects) fn contents_array(
-        &mut self,
-        allocation: u32,
-        contents: Values,
-    ) {
+    pub(crate) fn contents_array(&mut self, allocation: u32, contents: Values) {
         let mut literal = self.literal();
         literal.invalidate_dense_array(allocation);
         literal.invalidate_primitive_array(allocation);
@@ -289,10 +276,7 @@ impl<'a> DescriptorHeap<'a> {
 
     /// Commit a checked primitive-keyed definition: the payload joins the
     /// target's dynamic-key slot and the literal writability witness is gone.
-    pub(in crate::facts::sync_effects) fn define_dynamic_key(
-        &mut self,
-        definition: &DynamicKeyDefinition,
-    ) {
+    pub(crate) fn define_dynamic_key(&mut self, definition: &DynamicKeyDefinition) {
         self.literal().invalidate_writable(definition.target);
         if self
             .surface
@@ -303,7 +287,7 @@ impl<'a> DescriptorHeap<'a> {
     }
 
     /// A map that reached unmodeled code may be mutated there.
-    pub(in crate::facts::sync_effects) fn invalidate(&mut self, site: CallSite) {
+    pub(crate) fn invalidate(&mut self, site: CallSite) {
         if let Some(map) = self.maps.get_mut(&site)
             && map.valid
         {
@@ -314,7 +298,7 @@ impl<'a> DescriptorHeap<'a> {
 
     /// Commit a prevalidated application. The target's literal writability
     /// witness is gone whether or not any payload changed.
-    pub(in crate::facts::sync_effects) fn apply(&mut self, application: &DescriptorApplication) {
+    pub(crate) fn apply(&mut self, application: &DescriptorApplication) {
         self.literal().invalidate_writable(application.target);
         let mut changed = false;
         for (name, descriptor) in &application.definitions {

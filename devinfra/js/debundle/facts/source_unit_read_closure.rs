@@ -97,7 +97,7 @@ impl SourceUnitReadClosure {
     /// supplies retained callable-prefix reads where coverage is complete;
     /// other source units keep their whole lazy read set. A lexical read remains an
     /// edge even when its target's body is deferred.
-    pub(crate) fn synchronous_adjacency(
+    pub fn synchronous_adjacency(
         &self,
         facts: &[StatementFacts],
         prefix_reads: &[Option<&BTreeSet<Id>>],
@@ -129,7 +129,7 @@ impl SourceUnitReadClosure {
 
     /// Grow a persistent fallback cache using only synchronous read edges.
     /// Each reached source unit is expanded at most once as callback roots grow.
-    pub(crate) fn extend_synchronous_source_units(
+    pub fn extend_synchronous_source_units(
         adjacency: &[Vec<SourceUnitOrdinal>],
         roots: impl IntoIterator<Item = SourceUnitOrdinal>,
         expanded: &mut BTreeSet<SourceUnitOrdinal>,
@@ -153,7 +153,7 @@ impl SourceUnitReadClosure {
         reached
     }
 
-    pub(crate) fn new(facts: &[StatementFacts]) -> Self {
+    pub fn new(facts: &[StatementFacts]) -> Self {
         Self::build(facts, false)
     }
 
@@ -225,7 +225,7 @@ impl SourceUnitReadClosure {
 
     /// Close a sealed source graph with its coverage-checked local effects.
     /// Each component owns one completed summary shared by all of its owners.
-    pub(crate) fn with_effects(
+    pub fn with_effects(
         &self,
         adjacency: &[Vec<SourceUnitOrdinal>],
         effects: &[(&BTreeSet<Id>, &BTreeSet<Id>)],
@@ -335,7 +335,7 @@ impl SourceUnitReadClosure {
 
     /// Collect declaration source units for bindings, omitting globals and imports
     /// that have no declaration site in this chunk.
-    pub(crate) fn source_units_for_bindings<'a>(
+    pub fn source_units_for_bindings<'a>(
         &self,
         bindings: impl IntoIterator<Item = &'a Id>,
     ) -> BTreeSet<SourceUnitOrdinal> {

@@ -2,8 +2,8 @@
 
 use super::super::value_model::static_prop;
 use super::IntrinsicRoots;
-use crate::analysis_inputs::NativeIntrinsic;
-use crate::reports::schema::NativePropertyKey;
+use analysis::analysis_inputs::NativeIntrinsic;
+use analysis::reports::schema::NativePropertyKey;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::{AssignOp, BinaryOp, Callee, Expr, Id, Lit};
 

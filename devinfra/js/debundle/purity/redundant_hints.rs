@@ -103,7 +103,7 @@ impl RedundantPureMemberReason {
 /// they do not change statement classification. Removing hints still requires
 /// validating the resulting spec; individually redundant hints need not be jointly
 /// removable.
-pub(crate) fn detect_redundant_purity_hints(
+pub fn detect_redundant_purity_hints(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
@@ -159,7 +159,7 @@ fn redundant_reason(graph: &ChunkCodeGraph, name: &str) -> Option<RedundantPurit
 /// argument) are not reported: the hint covers every call shape, while the
 /// row covers only some, and proving every callsite's shape is out of scope
 /// under the "report only confirmed-redundant" contract.
-pub(crate) fn detect_redundant_pure_member_hints(
+pub fn detect_redundant_pure_member_hints(
     declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
     shadowed: &BTreeSet<&'static str>,
 ) -> Vec<RedundantPureMemberHint> {

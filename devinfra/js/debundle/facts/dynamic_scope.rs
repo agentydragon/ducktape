@@ -3,12 +3,12 @@
 use super::*;
 
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct DynamicScopeFact {
+pub struct DynamicScopeFact {
     pub(crate) present: bool,
 }
 
 impl DynamicScopeFact {
-    pub(crate) fn analyze(body: &[TopLevelItemView<'_>]) -> Self {
+    pub fn analyze(body: &[TopLevelItemView<'_>]) -> Self {
         let mut scanner = DynamicScopeScanner::default();
         for item in body {
             item.as_module_item().visit_with(&mut scanner);

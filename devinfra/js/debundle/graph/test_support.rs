@@ -28,7 +28,7 @@ pub(crate) fn analyze_facts_with_hints(
     module: &Module,
     hints: &AnalysisInputs,
 ) -> Vec<StatementFacts> {
-    analysis::facts::analyze_chunk(module, hints, None).facts
+    analyze::analyze_chunk(module, hints, None).facts
 }
 
 pub(crate) fn analyze_facts(module: &Module) -> Vec<StatementFacts> {

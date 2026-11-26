@@ -9,9 +9,9 @@ use super::super::runtime_inference::{CallOperands, CallTransfer};
 use super::super::value_model::{
     AbstractValue, Context, HeapAddress, MemberKey, RetainedResultKind, ValueExpr, Values,
 };
-use crate::analysis_inputs::{ForeignCallSummary, ForeignInvocation, ForeignReturn};
-use crate::facts::abstract_domain::value::Kind;
-use crate::reports::schema::CallbackFactoryUseKind;
+use analysis::analysis_inputs::{ForeignCallSummary, ForeignInvocation, ForeignReturn};
+use analysis::facts::abstract_domain::value::Kind;
+use analysis::reports::schema::CallbackFactoryUseKind;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -21,10 +21,7 @@ impl Executor<'_, '_> {
     /// does not invoke the callback, and its fresh result is the only thing
     /// that retains it. The callback is a deferred effect of whoever later
     /// holds the result, never of this call.
-    pub(in crate::facts::sync_effects) fn retaining_factory_summary(
-        &self,
-        call: &Call,
-    ) -> Option<&ForeignCallSummary> {
+    pub(crate) fn retaining_factory_summary(&self, call: &Call) -> Option<&ForeignCallSummary> {
         let ValueExpr::Binding(binding) = &call.callee else {
             return None;
         };
@@ -62,7 +59,7 @@ impl Executor<'_, '_> {
             || !callback.iter().all(|value| {
                 matches!(
                     value,
-                    AbstractValue::Value(crate::facts::abstract_domain::value::Value::Alloc(
+                    AbstractValue::Value(analysis::facts::abstract_domain::value::Value::Alloc(
                         Kind::Function,
                         actual,
                     )) | AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)
@@ -79,7 +76,7 @@ impl Executor<'_, '_> {
     /// The audited carrier of the one callback a factory call retains. With
     /// `records_evidence` the call's callback-factory evidence is reported as
     /// used for its timing and its return shape.
-    pub(in crate::facts::sync_effects) fn retained_factory_carrier(
+    pub(crate) fn retained_factory_carrier(
         &mut self,
         call: &Call,
         records_evidence: bool,
@@ -100,7 +97,7 @@ impl Executor<'_, '_> {
     /// Every call of `binding` among `calls` is one the ordered lane
     /// substitutes, so a body that reads the factory import only to call it
     /// gets no worse an outcome on the kernel than on the flattened lane.
-    pub(in crate::facts::sync_effects) fn substitutes_factory_calls(
+    pub(crate) fn substitutes_factory_calls(
         &self,
         calls: &[Arc<Call>],
         binding: &swc_ecma_ast::Id,
@@ -112,7 +109,7 @@ impl Executor<'_, '_> {
         calls.peek().is_some() && calls.all(|call| self.retaining_factory_summary(call).is_some())
     }
 
-    pub(in crate::facts::sync_effects) fn execute_supplied_call(
+    pub(crate) fn execute_supplied_call(
         &mut self,
         call: &Call,
         env: &Context,

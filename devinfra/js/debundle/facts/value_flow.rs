@@ -21,7 +21,7 @@ mod return_summary;
 mod scalar_sequence;
 use call_effects::{CallEffectBody, CallEffectRules, KnownCellAccesses};
 use candidate_reachability::CandidateReachabilityClosure;
-pub(crate) use initialization::CallableDeclaration;
+pub use initialization::CallableDeclaration;
 use initialization::{InitializationCensus, InitializationSites};
 use member_read_certificates::MemberReadCertificates;
 pub use program::{ProgramFlowModule, ProgramValueFlows, program_value_flows};
@@ -206,7 +206,7 @@ impl Default for OriginTable {
 /// A set of semantic origins. All sets in one flow analysis share its immutable
 /// origin table, so Roaring ids have identical meaning.
 #[derive(Clone)]
-pub(crate) struct Values {
+pub struct Values {
     bitmap: Arc<RoaringBitmap>,
     unknown: bool,
     origins: Arc<OriginTable>,
@@ -243,7 +243,7 @@ impl Values {
         values
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.bitmap.is_empty() && !self.unknown
     }
 
@@ -284,7 +284,7 @@ impl Values {
         Arc::make_mut(&mut self.bitmap).insert(id)
     }
 
-    pub(super) fn iter(&self) -> ValuesIter<'_> {
+    pub fn iter(&self) -> ValuesIter<'_> {
         ValuesIter {
             ids: self.bitmap.iter(),
             origins: &self.origins,
@@ -561,7 +561,7 @@ impl Extend<Value> for Values {
     }
 }
 
-pub(crate) struct ValuesIter<'a> {
+pub struct ValuesIter<'a> {
     ids: RoaringIter<'a>,
     origins: &'a OriginTable,
     unknown: bool,
@@ -583,7 +583,7 @@ impl Iterator for ValuesIter<'_> {
     }
 }
 
-pub(crate) struct ValuesIntoIter {
+pub struct ValuesIntoIter {
     ids: RoaringIntoIter,
     origins: Arc<OriginTable>,
     unknown: bool,
@@ -816,24 +816,24 @@ pub struct ChunkValueFlow {
     /// nothing about the value returned by the function.
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
     read_only_callbacks: BTreeMap<u32, ReadOnlyCallback<Id>>,
-    pub(crate) callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
+    pub callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
     /// Native Set construction sites backed by a validated author input or
     /// checked pre-flow source proof. Other constructor results stay unknown.
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
 }
 
 impl ChunkValueFlow {
-    pub(crate) fn read_only_callback(&self, function: u32) -> Option<&ReadOnlyCallback<Id>> {
+    pub fn read_only_callback(&self, function: u32) -> Option<&ReadOnlyCallback<Id>> {
         self.read_only_callbacks.get(&function)
     }
 
-    pub(crate) fn lexical_read_guards(&self) -> impl Iterator<Item = (&Id, SourceUnitOrdinal)> {
+    pub fn lexical_read_guards(&self) -> impl Iterator<Item = (&Id, SourceUnitOrdinal)> {
         self.initializations
             .iter()
             .filter_map(|(binding, sites)| sites.lexical_read_guard().map(|owner| (binding, owner)))
     }
 
-    pub(crate) fn callable_declarations(&self) -> impl Iterator<Item = (&Id, CallableDeclaration)> {
+    pub fn callable_declarations(&self) -> impl Iterator<Item = (&Id, CallableDeclaration)> {
         self.initializations
             .iter()
             .flat_map(|(binding, sites)| sites.callables().map(move |callable| (binding, callable)))
@@ -1083,11 +1083,11 @@ impl ChunkValueFlow {
         )
     }
 
-    pub(crate) fn analyze(body: &[TopLevelItemView<'_>]) -> Self {
+    pub fn analyze(body: &[TopLevelItemView<'_>]) -> Self {
         FlowProgram::collect(body, &BTreeSet::new()).solve().0
     }
 
-    pub(crate) fn analyze_with_candidates(
+    pub fn analyze_with_candidates(
         body: &[TopLevelItemView<'_>],
         candidates: &BTreeSet<Value>,
     ) -> Self {
@@ -1259,7 +1259,7 @@ impl ChunkValueFlow {
         }
     }
 
-    pub(crate) fn values_of_binding(&self, id: &Id) -> Values {
+    pub fn values_of_binding(&self, id: &Id) -> Values {
         self.bindings.get(id).cloned().unwrap_or_else(|| {
             if self.declared_ids.contains(id) {
                 Values::empty(self.origin_table.clone())
@@ -1269,7 +1269,7 @@ impl ChunkValueFlow {
         })
     }
 
-    pub(crate) fn is_declared(&self, id: &Id) -> bool {
+    pub fn is_declared(&self, id: &Id) -> bool {
         self.declared_ids.contains(id)
     }
 
@@ -1471,7 +1471,7 @@ impl ChunkValueFlow {
         self.fresh_returned_record_keys.get(&function)
     }
 
-    pub(crate) fn values_of_property(&self, object: u32, property: &str) -> Option<&Values> {
+    pub fn values_of_property(&self, object: u32, property: &str) -> Option<&Values> {
         if let Some(program) = &self.program {
             return program.values_of_property(object, property);
         }
@@ -1508,11 +1508,7 @@ impl ChunkValueFlow {
 
     /// Add call targets discovered through parameters, aliases, returns and
     /// static object properties to the ordinary syntactic call buckets.
-    pub(crate) fn augment_calls(
-        &self,
-        body: &[TopLevelItemView<'_>],
-        facts: &mut [StatementFacts],
-    ) {
+    pub fn augment_calls(&self, body: &[TopLevelItemView<'_>], facts: &mut [StatementFacts]) {
         for (item, fact) in body.iter().zip(facts) {
             let mut collector = FlowCallCollector {
                 flow: self,
@@ -4214,7 +4210,7 @@ pub(super) fn may_be_numeric_property_key(name: &str) -> bool {
     ) || matches!(name, "NaN" | "Infinity")
 }
 
-pub(crate) fn static_prop(prop: &MemberProp) -> Option<String> {
+pub fn static_prop(prop: &MemberProp) -> Option<String> {
     match prop {
         MemberProp::Ident(ident) => Some(ident.sym.to_string()),
         MemberProp::Computed(computed) => match computed.expr.unwrap_parens() {

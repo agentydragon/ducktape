@@ -6,7 +6,7 @@ use crate::facts::abstract_domain::heap::sees_only_element;
 /// `%Array.prototype%` `forEach`/`map`/`filter` with call-free callbacks
 /// that run no user code on the elements, so nothing reachable through the
 /// array runs and the array adds nothing to the statement's fallback reach.
-pub(crate) fn safe_plain_array_at_init_fallback_sources(
+pub fn safe_plain_array_at_init_fallback_sources(
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
     graph: &ChunkCodeGraph,
@@ -550,7 +550,7 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
     impl_lazy_class_visits!();
 }
 
-pub(crate) fn has_opaque_at_init_call(
+pub fn has_opaque_at_init_call(
     item: &ModuleItem,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisInputs,
@@ -569,7 +569,7 @@ pub(crate) fn has_opaque_at_init_call(
     finder.found
 }
 
-pub(crate) fn has_untrusted_at_init_unresolved_inline_fn_call(
+pub fn has_untrusted_at_init_unresolved_inline_fn_call(
     item: &ModuleItem,
     hints: &AnalysisInputs,
 ) -> bool {
@@ -581,7 +581,7 @@ pub(crate) fn has_untrusted_at_init_unresolved_inline_fn_call(
     finder.found
 }
 
-pub(crate) fn no_sync_member_argument_fallback_sources(
+pub fn no_sync_member_argument_fallback_sources(
     item: &ModuleItem,
     hints: &AnalysisInputs,
 ) -> PositionBucketed<BTreeSet<Id>> {
@@ -596,11 +596,11 @@ pub(crate) fn no_sync_member_argument_fallback_sources(
 
 /// Whether a builtin member row covers the call and invokes none of its
 /// arguments synchronously.
-pub(crate) fn member_row_invokes_no_argument(callee: &Expr, args: &[ExprOrSpread]) -> bool {
+pub fn member_row_invokes_no_argument(callee: &Expr, args: &[ExprOrSpread]) -> bool {
     member_call_row(callee, args).is_some_and(|row| row.invokes.is_empty())
 }
 
-pub(crate) fn is_no_sync_callback_member_call(
+pub fn is_no_sync_callback_member_call(
     callee: &Expr,
     no_sync_callback_members: &BTreeMap<String, BTreeSet<String>>,
 ) -> bool {

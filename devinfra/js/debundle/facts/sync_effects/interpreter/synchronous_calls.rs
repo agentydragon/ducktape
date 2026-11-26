@@ -11,25 +11,27 @@ use super::super::world::{World, WorldScope};
 use super::{
     CallbackFallbackSummary, ExecutionInputs, ExecutionState, ExportCallbackMemos, Outcome,
 };
-use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, NativeIntrinsic, ProofDependencies};
-use crate::facts::abstract_domain::integrity::IntrinsicSlot;
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::callable_inference::CallableInferenceInputs;
-use crate::facts::item_views::TopLevelItemView;
-use crate::facts::semantic_inference::SemanticFacts;
-use crate::facts::source_unit_read_closure::SourceUnitReadClosure;
-use crate::facts::statement_facts::{
+use analysis::analysis_inputs::{
+    AnalysisInputs, NativeInputKind, NativeIntrinsic, ProofDependencies,
+};
+use analysis::facts::abstract_domain::integrity::IntrinsicSlot;
+use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis::facts::callable_inference::CallableInferenceInputs;
+use analysis::facts::item_views::TopLevelItemView;
+use analysis::facts::semantic_inference::SemanticFacts;
+use analysis::facts::source_unit_read_closure::SourceUnitReadClosure;
+use analysis::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, HeapContentCells, StatementFacts,
 };
-use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
-use crate::facts::{
+use analysis::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
+use analysis::facts::{
     DataflowOpacityCause, ExportReentryPolicy, LocalClassConstructionProof,
     LocalClassConstructionShapes, NativeIterableOperandOrigin, NativeOwnDataReadDiagnostic,
     SetIterableProof, SetIterableShapes, StableArraySpreadShapes, StatementPurityContext,
     TopLevelNativeIterableOperandSite,
 };
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::purity::{ChunkCodeGraph, Effects};
+use analysis::inference::{FactContext, IterativeInference, IterativeRules};
+use analysis::purity::{ChunkCodeGraph, Effects};
 use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
@@ -214,12 +216,12 @@ fn callback_source_units_for_signature(
 /// Prove the narrow return-only wrapper shape using the same execution index
 /// as call promotion. Whole-chunk flow must contain exactly that function;
 /// aliases with unknown/reassigned targets and dynamic scopes remain opaque.
-pub(crate) struct SynchronousCallProofs<'a> {
-    pub(crate) set_iterable: &'a SetIterableProof,
-    pub(crate) graph: &'a ChunkCodeGraph,
-    pub(crate) purity: &'a StatementPurityContext<'a>,
-    pub(crate) callable_heap_contents: &'a BTreeMap<u32, HeapContentCells>,
-    pub(crate) index: PreparedSynchronousCallIndex,
+pub struct SynchronousCallProofs<'a> {
+    pub set_iterable: &'a SetIterableProof,
+    pub graph: &'a ChunkCodeGraph,
+    pub purity: &'a StatementPurityContext<'a>,
+    pub callable_heap_contents: &'a BTreeMap<u32, HeapContentCells>,
+    pub index: PreparedSynchronousCallIndex,
 }
 
 pub struct PreparedSynchronousCallIndex {
@@ -241,28 +243,28 @@ enum NativeOwnDataReadCandidate {
 
 /// Exact native calls whose own heap action cannot observe an existing array
 /// or Set. Argument evaluation remains the collector's responsibility.
-pub(crate) struct FreshRecordFreezeHeapProof {
+pub struct FreshRecordFreezeHeapProof {
     /// Each certified call site and the `native_call_identity_inputs` entry
     /// that certified it.
-    sites: BTreeMap<(u32, u32), crate::analysis_inputs::NativeOperationInputEvidence>,
+    sites: BTreeMap<(u32, u32), analysis::analysis_inputs::NativeOperationInputEvidence>,
 }
 
-impl crate::facts::heap_contents::FreshFreezeInputs for FreshRecordFreezeHeapProof {
+impl analysis::facts::heap_contents::FreshFreezeInputs for FreshRecordFreezeHeapProof {
     fn input_evidence(
         &self,
         call: &CallExpr,
-    ) -> Option<&crate::analysis_inputs::NativeOperationInputEvidence> {
+    ) -> Option<&analysis::analysis_inputs::NativeOperationInputEvidence> {
         self.sites.get(&(call.span.lo.0, call.span.hi.0))
     }
 }
 
-impl crate::facts::heap_contents::NativeHeapReads for PreparedSynchronousCallIndex {
+impl analysis::facts::heap_contents::NativeHeapReads for PreparedSynchronousCallIndex {
     fn native_own_data_read(
         &self,
         span: Span,
     ) -> Option<(
-        crate::analysis_provenance::InferenceUse,
-        Option<crate::analysis_inputs::NativeOperationInputEvidence>,
+        analysis::analysis_provenance::InferenceUse,
+        Option<analysis::analysis_inputs::NativeOperationInputEvidence>,
         ProofDependencies,
     )> {
         PreparedSynchronousCallIndex::native_own_data_read(self, span)
@@ -336,7 +338,7 @@ impl crate::facts::heap_contents::NativeHeapReads for PreparedSynchronousCallInd
 }
 
 impl PreparedSynchronousCallIndex {
-    pub(crate) fn native_own_data_read_diagnostics(
+    pub fn native_own_data_read_diagnostics(
         &self,
         owner: SourceUnitOrdinal,
     ) -> Vec<NativeOwnDataReadDiagnostic> {
@@ -410,15 +412,15 @@ impl PreparedSynchronousCallIndex {
         }
     }
 
-    pub(crate) fn resolved_native_operation_inputs(
+    pub fn resolved_native_operation_inputs(
         &self,
-    ) -> Vec<crate::analysis_inputs::ResolvedNativeOperationInput> {
+    ) -> Vec<analysis::analysis_inputs::ResolvedNativeOperationInput> {
         self.index.validated_native_operation_inputs()
     }
 
-    pub(crate) fn locate_native_integrity_witnesses(
+    pub fn locate_native_integrity_witnesses(
         &mut self,
-        locate: impl FnMut(Span) -> Option<crate::execution_evidence::SourceLocation>,
+        locate: impl FnMut(Span) -> Option<analysis::execution_evidence::SourceLocation>,
     ) {
         self.index.locate_native_integrity_witnesses(locate);
     }
@@ -431,11 +433,11 @@ impl PreparedSynchronousCallIndex {
         &self.index.local_class_construction_proof
     }
 
-    pub(crate) fn local_class_heap_proof(&self) -> crate::facts::LocalClassHeapProof {
+    pub fn local_class_heap_proof(&self) -> analysis::facts::LocalClassHeapProof {
         self.index.local_class_construction_proof.heap_proof()
     }
 
-    pub(crate) fn fresh_record_freeze_heap_proof(&self) -> FreshRecordFreezeHeapProof {
+    pub fn fresh_record_freeze_heap_proof(&self) -> FreshRecordFreezeHeapProof {
         let sites = self
             .index
             .resolved_native_operation_inputs
@@ -462,8 +464,8 @@ impl PreparedSynchronousCallIndex {
         &self,
         span: Span,
     ) -> Option<(
-        crate::analysis_provenance::InferenceUse,
-        Option<crate::analysis_inputs::NativeOperationInputEvidence>,
+        analysis::analysis_provenance::InferenceUse,
+        Option<analysis::analysis_inputs::NativeOperationInputEvidence>,
         ProofDependencies,
     )> {
         let premise = self.index.native_own_data_read_premise(span)?;
@@ -483,9 +485,9 @@ impl PreparedSynchronousCallIndex {
 
 /// Shape-proof refinement for purity code graphs built outside full chunk
 /// analysis: prepares the synchronous call index under default inputs.
-pub(crate) struct SynchronousShapeRefinement;
+pub struct SynchronousShapeRefinement;
 
-impl crate::purity::ShapeProofRefinement for SynchronousShapeRefinement {
+impl analysis::purity::ShapeProofRefinement for SynchronousShapeRefinement {
     fn refine(
         &self,
         body: &[TopLevelItemView<'_>],
@@ -511,7 +513,7 @@ impl crate::purity::ShapeProofRefinement for SynchronousShapeRefinement {
     }
 }
 
-pub(crate) fn prepare_synchronous_call_index(
+pub fn prepare_synchronous_call_index(
     body: &[TopLevelItemView<'_>],
     flow: &ChunkValueFlow,
     hints: &AnalysisInputs,
@@ -797,7 +799,7 @@ fn close_prefix_needed_bindings(
         .collect()
 }
 
-pub(crate) fn annotate_synchronous_calls(
+pub fn annotate_synchronous_calls(
     flow: &ChunkValueFlow,
     proofs: SynchronousCallProofs<'_>,
     shadowed: &BTreeSet<&'static str>,
@@ -805,7 +807,7 @@ pub(crate) fn annotate_synchronous_calls(
     export_reentry_policy: &ExportReentryPolicy,
     facts: &mut [StatementFacts],
     metrics: &work_metrics::WorkMetrics,
-) -> Vec<crate::facts::CompletedPurity> {
+) -> Vec<analysis::facts::CompletedPurity> {
     let index = proofs.index.index;
     for candidate in index.retained_callback_calls.values() {
         if candidate.caller.is_some() {

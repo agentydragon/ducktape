@@ -13,11 +13,11 @@ use super::super::interpreter::{EvaluatedCallOperands, Executor, Outcome, unknow
 use super::super::runtime_heap::NativeIterableUse;
 use super::super::runtime_inference::CallTransfer;
 use super::super::value_model::{AbstractValue, CallSite, Context, ValueExpr, Values};
-use crate::execution_evidence::ExecutionOperation;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis::execution_evidence::ExecutionOperation;
+use analysis::facts::abstract_domain::value::{Kind, Value};
 
 impl Executor<'_, '_> {
-    pub(in crate::facts::sync_effects) fn execute_call_transfer(
+    pub(crate) fn execute_call_transfer(
         &mut self,
         call: &Call,
         env: &Context,

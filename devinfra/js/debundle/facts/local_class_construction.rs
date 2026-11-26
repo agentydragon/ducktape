@@ -14,12 +14,12 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
 pub struct LocalClassConstructionShapes {
-    pub(super) classes: BTreeMap<u32, BTreeSet<(Id, u32)>>,
+    pub classes: BTreeMap<u32, BTreeSet<(Id, u32)>>,
     pub(super) constructions: BTreeMap<u32, u32>,
 }
 
 impl LocalClassConstructionShapes {
-    pub(crate) fn analyze(
+    pub fn analyze(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         flow: &ChunkValueFlow,
@@ -90,7 +90,7 @@ impl LocalClassConstructionShapes {
         proof
     }
 
-    pub(crate) fn contains_class(&self, class: u32) -> bool {
+    pub fn contains_class(&self, class: u32) -> bool {
         self.classes.contains_key(&class)
     }
 }
@@ -103,15 +103,15 @@ pub struct LocalClassConstructionProof {
 }
 
 impl LocalClassConstructionProof {
-    pub(super) fn new(facts: Arc<SemanticFacts>) -> Self {
+    pub fn new(facts: Arc<SemanticFacts>) -> Self {
         Self { facts }
     }
 
-    pub(crate) fn contains_class(&self, class: u32) -> bool {
+    pub fn contains_class(&self, class: u32) -> bool {
         self.dependencies_for_class(class).is_some()
     }
 
-    pub(crate) fn dependencies_for_class(&self, class: u32) -> Option<&ProofDependencies> {
+    pub fn dependencies_for_class(&self, class: u32) -> Option<&ProofDependencies> {
         self.facts.dependencies(&SemanticKey::LocalClass(class))
     }
 
@@ -121,14 +121,14 @@ impl LocalClassConstructionProof {
             .and_then(|class| self.dependencies_for_class(class))
     }
 
-    pub(crate) fn inference_use_for_class(
+    pub fn inference_use_for_class(
         &self,
         class: u32,
     ) -> Option<crate::analysis_provenance::InferenceUse> {
         self.facts.inference_use(&SemanticKey::LocalClass(class))
     }
 
-    pub(crate) fn heap_proof(&self) -> LocalClassHeapProof {
+    pub fn heap_proof(&self) -> LocalClassHeapProof {
         LocalClassHeapProof {
             facts: Arc::clone(&self.facts),
         }
@@ -139,7 +139,7 @@ impl LocalClassConstructionProof {
 /// state. The same derivation validates their field allocations; callee and
 /// argument evaluation remain separate effects.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct LocalClassHeapProof {
+pub struct LocalClassHeapProof {
     facts: Arc<SemanticFacts>,
 }
 

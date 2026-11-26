@@ -22,7 +22,7 @@ use std::sync::Arc;
 /// records syntax/proof identity only; it never contains evaluated iterator
 /// yields or a runtime collection size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TopLevelNativeIterableOperandProjection {
+pub struct TopLevelNativeIterableOperandProjection {
     operation_span: Span,
     operand: NativeIterableOperandOrigin,
     owner: SourceUnitOrdinal,
@@ -31,7 +31,7 @@ pub(crate) struct TopLevelNativeIterableOperandProjection {
 /// Origin of the statically checked constructor operand. Runtime iteration
 /// still resolves and validates the corresponding allocation at its prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum NativeIterableOperandOrigin {
+pub enum NativeIterableOperandOrigin {
     ImmediateArrayLiteral { allocation_site: u32 },
 }
 
@@ -48,11 +48,11 @@ impl TopLevelNativeIterableOperandProjection {
         self.operation_span
     }
 
-    pub(crate) fn operand_origin(self) -> NativeIterableOperandOrigin {
+    pub fn operand_origin(self) -> NativeIterableOperandOrigin {
         self.operand
     }
 
-    pub(crate) fn owner(self) -> SourceUnitOrdinal {
+    pub fn owner(self) -> SourceUnitOrdinal {
         self.owner
     }
 
@@ -68,10 +68,10 @@ impl TopLevelNativeIterableOperandProjection {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct TopLevelNativeIterableOperandSite {
-    pub(crate) operation_span: Span,
-    pub(crate) operand: NativeIterableOperandOrigin,
-    pub(crate) owner: SourceUnitOrdinal,
+pub struct TopLevelNativeIterableOperandSite {
+    pub operation_span: Span,
+    pub operand: NativeIterableOperandOrigin,
+    pub owner: SourceUnitOrdinal,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -80,7 +80,7 @@ pub struct SetIterableShapes {
 }
 
 impl SetIterableShapes {
-    pub(crate) fn analyze(
+    pub fn analyze(
         body: &[TopLevelItemView<'_>],
         shadowed: &BTreeSet<&'static str>,
         flow: &ChunkValueFlow,
@@ -182,7 +182,7 @@ pub struct SetIterableProof {
 }
 
 impl SetIterableProof {
-    pub(super) fn new(
+    pub fn new(
         facts: Arc<SemanticFacts>,
         author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
         hints: &AnalysisInputs,
@@ -300,15 +300,15 @@ impl SetIterableProof {
         proof
     }
 
-    pub(crate) fn protected_intervals(&self) -> &[Vec<Id>] {
+    pub fn protected_intervals(&self) -> &[Vec<Id>] {
         &self.protected_intervals
     }
 
-    pub(crate) fn stable_spread_source(&self, span: Span) -> Option<u32> {
+    pub fn stable_spread_source(&self, span: Span) -> Option<u32> {
         self.spread_sources.get(&span.lo.0).copied()
     }
 
-    pub(crate) fn stable_spread_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
+    pub fn stable_spread_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
         self.stable_spreads.get(&span.lo.0)
     }
 
@@ -328,7 +328,7 @@ impl SetIterableProof {
 
     /// Return the one shared source/operand projection and its canonical
     /// protocol dependencies for a checked top-level Set constructor.
-    pub(crate) fn native_iterable_operand(
+    pub fn native_iterable_operand(
         &self,
         span: Span,
     ) -> Option<(&TopLevelNativeIterableOperandProjection, &ProofDependencies)> {
@@ -359,14 +359,14 @@ impl SetIterableProof {
         self.dependencies_for_constructor(span)
     }
 
-    pub(crate) fn author_input_for_constructor(
+    pub fn author_input_for_constructor(
         &self,
         span: Span,
     ) -> Option<&NativeOperationInputEvidence> {
         self.author_inputs.get(&span.lo.0)
     }
 
-    pub(crate) fn inference_use_for_constructor(
+    pub fn inference_use_for_constructor(
         &self,
         span: Span,
     ) -> Option<crate::analysis_provenance::InferenceUse> {
@@ -379,20 +379,17 @@ impl SetIterableProof {
             })
     }
 
-    pub(crate) fn stable_array_spread_dependencies(
-        &self,
-        token: Span,
-    ) -> Option<&ProofDependencies> {
+    pub fn stable_array_spread_dependencies(&self, token: Span) -> Option<&ProofDependencies> {
         let initializer = self.array_spreads.by_site.get(&token.lo.0)?;
         self.facts
             .dependencies(&SemanticKey::StablePrimitiveArraySpread(*initializer))
     }
 
-    pub(crate) fn stable_array_spread_source(&self, span: Span) -> Option<u32> {
+    pub fn stable_array_spread_source(&self, span: Span) -> Option<u32> {
         self.array_spreads.source_origins.get(&span.lo.0).copied()
     }
 
-    pub(crate) fn stable_array_spread_inference_use(
+    pub fn stable_array_spread_inference_use(
         &self,
         token: Span,
     ) -> Option<crate::analysis_provenance::InferenceUse> {
@@ -401,7 +398,7 @@ impl SetIterableProof {
             .inference_use(&SemanticKey::StablePrimitiveArraySpread(*initializer))
     }
 
-    pub(crate) fn imported_array_spread(
+    pub fn imported_array_spread(
         &self,
         token: Span,
     ) -> Option<(
@@ -416,7 +413,7 @@ impl SetIterableProof {
         Some((input, *position, input.evidence.operands.get(*position)?))
     }
 
-    pub(crate) fn stable_iterable_producers(
+    pub fn stable_iterable_producers(
         &self,
         consumer: SourceUnitOrdinal,
     ) -> Option<&BTreeSet<SourceUnitOrdinal>> {

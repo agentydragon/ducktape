@@ -13,14 +13,12 @@ const GLOBAL_OBJECT_ALIASES: [&str; 5] = ["globalThis", "window", "self", "frame
 /// top-level statement are not detected; treating such an access as
 /// global only over-approximates the cell sets (extra `Sequenced`
 /// edges), which is sound.
-pub(crate) fn unshadowed_global_object_aliases(
-    body: &[TopLevelItemView<'_>],
-) -> BTreeSet<&'static str> {
+pub fn unshadowed_global_object_aliases(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
     unshadowed_global_names(body, &GLOBAL_OBJECT_ALIASES)
 }
 
 /// The subset of `names` no chunk-top-level declaration or import shadows.
-pub(crate) fn unshadowed_global_names(
+pub fn unshadowed_global_names(
     body: &[TopLevelItemView<'_>],
     names: &[&'static str],
 ) -> BTreeSet<&'static str> {
@@ -157,7 +155,7 @@ impl Visit for GlobalObjectEscapeFinder<'_> {
 /// statement's summary is complete for them; any other use (a value position,
 /// a write, a dynamic key) keeps the havoc. Bodies that run later reach the
 /// global object through their own callers' opaque-call havoc.
-pub(crate) fn resolve_global_alias_escape(
+pub fn resolve_global_alias_escape(
     item: &ModuleItem,
     global_object_names: &BTreeSet<&'static str>,
     aliases: &BTreeSet<Id>,

@@ -13,7 +13,7 @@ use swc_ecma_ast::Id;
 
 /// A self or hoisted-function binding whose value this activation could not
 /// establish from source identity alone.
-pub(in crate::facts::sync_effects) fn missing_activation_binding(
+pub(crate) fn missing_activation_binding(
     body: &LocalBody,
     binding: &Id,
     frame: &LocalFrame,

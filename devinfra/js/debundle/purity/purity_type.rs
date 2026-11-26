@@ -89,7 +89,7 @@ impl PurityReason {
 /// dependencies of the discharges that kept other steps effect-free. `Purity`
 /// is its projection: pure exactly when no event projects to a reason.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Effects {
+pub struct Effects {
     events: Vec<EffectEvent>,
     dependencies: ProofDependencies,
 }
@@ -118,7 +118,7 @@ impl Effects {
         Self::default()
     }
 
-    pub(crate) fn of(effect: Effect, span: Span) -> Self {
+    pub fn of(effect: Effect, span: Span) -> Self {
         Self::of_opt_detail(effect, span, None)
     }
 
@@ -248,7 +248,7 @@ impl Effects {
     }
 
     /// Every binding a coercion's resolution reads.
-    pub(crate) fn coerce_bindings(&self, bindings: &mut BTreeSet<Id>) {
+    pub fn coerce_bindings(&self, bindings: &mut BTreeSet<Id>) {
         for event in &self.events {
             if let EffectEvent::Effect {
                 operands: Some(operands),
@@ -271,7 +271,7 @@ impl Effects {
     /// throw, so it is no effect. `settled` answers for the program point
     /// these effects start at, and only for operands the evaluation itself
     /// cannot change before the coercion without another effect.
-    pub(crate) fn resolve_coercions(
+    pub fn resolve_coercions(
         mut self,
         settled: impl Fn(&CoerceOperand) -> Option<PrimKinds>,
     ) -> Self {
@@ -300,7 +300,7 @@ impl Effects {
         })
     }
 
-    pub(crate) fn project(self) -> Purity {
+    pub fn project(self) -> Purity {
         let mut dependencies = self.dependencies;
         let mut reasons = Vec::new();
         for event in self.events {
@@ -334,11 +334,10 @@ impl Effects {
     }
 }
 
-#[cfg(test)]
 impl Effects {
     /// The effects in evaluation order, as unit tests assert them; a call of an
     /// impure function appears as `Invoke(Call)` and a call of a pure one not at all.
-    pub(crate) fn kinds(&self) -> Vec<Effect> {
+    pub fn kinds(&self) -> Vec<Effect> {
         self.events
             .iter()
             .filter_map(|event| match event {
