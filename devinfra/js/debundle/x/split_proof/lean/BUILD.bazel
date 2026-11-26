@@ -883,11 +883,15 @@ test_runner(
 test_runner(
     name = "linked_input_test_runner",
     src = "LinkedInputTest.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+    ],
     deps = [
         ":corejs_linked_input",
         ":corejs_runtime",
         ":effects",
+        ":named_declaration_split",
         ":planner",
     ],
 )

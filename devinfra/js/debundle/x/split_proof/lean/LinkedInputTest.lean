@@ -1,5 +1,7 @@
+import EsmSplit.Cli
 import EsmSplit.CoreJS.DynamicImports
 import EsmSplit.CoreJS.LinkedInput
+import EsmSplit.CoreJS.NamedDeclarationSplit
 import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
 
@@ -122,6 +124,18 @@ private def opaqueUnits (input : Json) : Except String Json := do
       toJson free, toJson body])
   return .arr units
 
+/-- Diagnose the same source/spec constructor used by the ordinary CLI. This
+probe reports a refusal; it does not certify or produce an output. -/
+private def namedConstructor (input : Json) : Except String Json := do
+  let source ← input.getObjVal? "source"
+  let request ← EsmSplit.parseSpec (← input.getObjVal? "spec")
+  let original ← (CoreJS.LinkedInput.decodeSingletonSource source request.entry).mapError fun why =>
+    "decodeSingletonSource: " ++ why
+  let result ← (CoreJS.NamedDeclarationSplit.construct original request).mapError fun why =>
+    "NamedDeclarationSplit.construct: " ++ why
+  return Json.mkObj [("entry", toJson result.split.program.entry),
+    ("modules", toJson (result.split.program.modules.map (·.name)))]
+
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr (← cases.mapM fun fixture => do
@@ -132,6 +146,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "singletonPlacement" => pure (singletonPlacement (← fixture.getObjVal? "input"))
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
       | "structuralSparseHole" => pure (structuralSparseHole (← fixture.getObjVal? "input"))
+      | "namedConstructor" => pure (namedConstructor (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"
