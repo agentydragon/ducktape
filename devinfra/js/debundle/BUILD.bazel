@@ -1934,11 +1934,8 @@ rust_test(
 # chunk in, one outcome per entity out.
 rust_library(
     name = "selector_resolve",
-    srcs = [
-        "selectors/resolution/selector_conflict.rs",
-        "selectors/resolution/selector_resolve.rs",
-    ],
-    crate_root = "selectors/resolution/selector_resolve.rs",
+    srcs = glob(["selectors/resolution/selector_resolve/*.rs"]),
+    crate_root = "selectors/resolution/selector_resolve/lib.rs",
     edition = "2024",
     deps = [
         ":analysis",
@@ -1993,8 +1990,8 @@ rust_library(
 rust_test(
     name = "selector_conflict_test",
     size = "small",
-    srcs = ["selectors/resolution/selector_conflict.rs"],
-    crate_root = "selectors/resolution/selector_conflict.rs",
+    srcs = ["selectors/resolution/selector_resolve/selector_conflict.rs"],
+    crate_root = "selectors/resolution/selector_resolve/selector_conflict.rs",
     edition = "2024",
 )
 

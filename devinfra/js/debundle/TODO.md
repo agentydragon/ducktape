@@ -281,7 +281,7 @@ shared import order, explicit saved DTOs, and validated writer boundary.
 
 - **AR8 — Separate qualified module identity from author spelling and output paths.**
   `ModulePath::parse` in <spec/spec.rs> folds case and accepts chunk-qualified
-  spellings; `logical_module_path` in <selectors/resolution/selector_resolve.rs>
+  spellings; `logical_module_path` in <selectors/resolution/selector_resolve/>
   and <lowering/materialize/plan_builder.rs> independently split qualified
   strings. Use a typed chunk-qualified logical reference between services and
   convert to author/wire spelling or physical output paths only at boundaries.
