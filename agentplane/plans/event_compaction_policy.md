@@ -315,3 +315,21 @@ between batches; rerun with no writes; restore and replay through the opening wa
 the full ordered stream before and after, not just counts. Verify space reuse separately from bytes
 returned to the filesystem: a successful online rewrite can initially **increase** allocated
 space and archive WAL.
+
+## Retire the legacy formats
+
+Reader compatibility is a rollout step. Keep versioned writes disabled until every serving
+replica runs an image containing the new reader and is ready. Check image revisions as well
+as readiness: an old reader can pass its health probe. Once versioned writes start, the oldest
+supported rollback image must understand them.
+
+Finish by transcoding every retained legacy block in both journals. Include inactive sessions
+and retry skipped or busy ranges. Inventory each database after all live writers and maintenance
+jobs have stopped emitting legacy blocks: require zero legacy blocks, zero unrecognized or
+corrupt blocks, and no unfinished ranges. Ordinary rows intentionally left unpacked are valid;
+inventory any legacy encoding of ordinary rows separately. Exercise backup restore and replay
+through the cutover: older supported restore points must either expire or have a tested
+migration path before a new-only binary opens them.
+
+Then remove legacy block readers, writers, fallback dispatch, tests specific to the obsolete
+format and rollout-only flags in a cleanup PR. Keep strict rejection of unknown formats.
