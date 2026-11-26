@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
@@ -77,8 +78,7 @@ func jsonView(field string, document json.RawMessage, view interface{ UnmarshalJ
 }
 
 func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, error) {
-	ok := validActionState(request.State)
-	if !ok {
+	if !actionstate.Valid(request.State) {
 		return nil, fmt.Errorf("%w: state %q", errStoredRequest, request.State)
 	}
 	arguments := &structpb.Struct{}
@@ -192,8 +192,7 @@ func executionView(execution *store.Execution) (*action_servicepb.Execution, err
 }
 
 func eventView(event store.Event) (*action_servicepb.ActionEvent, error) {
-	ok := validActionState(event.State)
-	if !ok {
+	if !actionstate.Valid(event.State) {
 		return nil, fmt.Errorf("%w: event state %q", errStoredRequest, event.State)
 	}
 	if event.Sequence > math.MaxInt32 {
@@ -212,16 +211,11 @@ func eventView(event store.Event) (*action_servicepb.ActionEvent, error) {
 // define are malformed.
 func requestedStates(states []action_servicepb.ActionState) ([]action_servicepb.ActionState, error) {
 	for _, state := range states {
-		if !validActionState(state) {
+		if !actionstate.Valid(state) {
 			return nil, invalidRequest("state %v is not an action state", state)
 		}
 	}
 	return states, nil
-}
-
-func validActionState(state action_servicepb.ActionState) bool {
-	_, known := action_servicepb.ActionState_name[int32(state)]
-	return known && state != action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED
 }
 
 func validateActionActor(actor *action_servicepb.Principal) error {
