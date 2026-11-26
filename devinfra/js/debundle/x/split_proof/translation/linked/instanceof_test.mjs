@@ -67,6 +67,13 @@ export { result };`
   );
   const run = lower(f.sourceFile, f.specFile, f.out, options);
   assertCertifiedResult({ ...run, files: f, out: f.out }, expected);
+  if (name === "instanceof-evaluation-order") {
+    assert.equal(run.verdict.scope, "linked-programs", run.log);
+    assert.equal(run.verdict.guarantee, "normal-completion", run.log);
+    assert.deepEqual(run.verdict.assumptions, [
+      "Symbol.hasInstance returns the well-known hasInstance symbol without observable effects throughout initialization",
+    ]);
+  }
 }
 
 checkProtocol(

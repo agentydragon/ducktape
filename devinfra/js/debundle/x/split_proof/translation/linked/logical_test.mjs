@@ -102,7 +102,12 @@ for (const [operator, left, right] of [
       source: program([
         variable("const", "value", { type: "LogicalExpression", operator, left: literal(left), right: operand }),
         variable("const", "late", literal("ready")),
-        exportNamed([["value", "result"]]),
+        {
+          type: "ExportNamedDeclaration",
+          declaration: variable("const", "result", id("value")),
+          specifiers: [],
+          source: null,
+        },
       ]),
       provider: "",
       spec: {
@@ -130,13 +135,14 @@ for (const [operator, shortCircuit, evaluateRight, right] of cases) {
   ]) {
     const dir = path.join(root, `right-effect-${operator}-${hits}`);
     const files = prepare(dir, {
-      source: `let hits = 0;
-        const result = ${JSON.stringify(left)} ${operator} (hits = hits + 1, ${JSON.stringify(right)});
-        export { hits, result };`,
+      source: `let count = 0;
+        const value = ${JSON.stringify(left)} ${operator} (count = count + 1, ${JSON.stringify(right)});
+        export const hits = count;
+        export const result = value;`,
       provider: "",
       spec: {
         entry: "entry.mjs",
-        modules: { "value.mjs": ["#0", "#1"], "entry.mjs": ["#2"] },
+        modules: { "value.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
         order: ["value.mjs"],
         sequential: true,
       },

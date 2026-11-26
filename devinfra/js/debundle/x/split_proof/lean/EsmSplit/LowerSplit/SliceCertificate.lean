@@ -5,14 +5,11 @@ import EsmSplit.CoreJS.BindingMoves
 import EsmSplit.CoreJS.HeritageCertificate
 import EsmSplit.CoreJS.Split
 import EsmSplit.CoreJS.SyntaxMatch
-import EsmSplit.ESTreeUnits
 import EsmSplit.LowerSplit.Input
 import EsmSplit.SplitFiles
 
-/-! Compiled certificates for the CoreJS slice theorems. The input decoder
-omits source units with no CoreJS statement. This strategy checks a dense view
-with an empty block at each such ordinal, in the source and at its planned
-position in each emitted module. -/
+/-! Compiled certificates for the CoreJS slice theorems on the exact decoded
+programs. The slice model requires a CoreJS statement at each source ordinal. -/
 
 namespace EsmSplit.LowerSplit
 
@@ -35,155 +32,6 @@ def SliceKind.scope : SliceKind → String
   | .certifiedBindings => "linked-slice-certified-bindings"
   | .heritage => "linked-slice-heritage"
 
-private def ignoredSourceUnit (ast : Json) : Bool :=
-  let typ := Lower.typ ast
-  typ == "ImportDeclaration" || typ == "EmptyStatement" || typ == "DebuggerStatement" ||
-    (typ == "ExportNamedDeclaration" && Lower.isNull (Lower.fld ast "declaration"))
-
-private def ignoredSourceIdentity (nodes : Array Json) (id : Nat) : Bool :=
-  match nodes[id]? with
-  | some ast => ignoredSourceUnit ast
-  | none => false
-
-/-- Remove only the empty blocks inserted at source identities omitted by the
-decoder. -/
-private def eraseInserted (nodes : Array Json) (body : List (Nat × CoreJS.Stmt)) :=
-  body.filter fun unit => !(ignoredSourceIdentity nodes unit.1)
-
-/-- Add omitted identities while walking the placement and decoded body
-in lockstep. This refuses a placement that would reorder decoded units. -/
-private def denseBodyAux (nodes : Array Json) :
-    (ids : List Nat) → (body : List (Nat × CoreJS.Stmt)) →
-    Except String { dense : List (Nat × CoreJS.Stmt) // eraseInserted nodes dense = body }
-  | [], [] => .ok ⟨[], by simp [eraseInserted]⟩
-  | [], _ :: _ => .error "the decoded body contains identities outside its placement"
-  | id :: ids, body =>
-    match hIgnored : ignoredSourceIdentity nodes id with
-    | true => do
-      let rest ← denseBodyAux nodes ids body
-      return ⟨(id, .block []) :: rest.val, by
-        simpa [eraseInserted, hIgnored] using rest.property⟩
-    | false =>
-      match body with
-      | [] => .error s!"decoded executable source identity {id} has no CoreJS statement"
-      | (bodyId, stmt) :: bodyRest =>
-        if hId : id = bodyId then do
-          let rest ← denseBodyAux nodes ids bodyRest
-          return ⟨(id, stmt) :: rest.val, by
-            have hIgnoredBody : ignoredSourceIdentity nodes bodyId = false := by
-              simpa [hId] using hIgnored
-            calc
-              eraseInserted nodes ((id, stmt) :: rest.val) =
-                  (bodyId, stmt) :: eraseInserted nodes rest.val := by
-                simp [eraseInserted, hIgnoredBody, hId]
-              _ = (bodyId, stmt) :: bodyRest := by rw [rest.property]⟩
-        else .error s!"decoded body order differs at source identity {id}"
-termination_by ids body => ids.length
-
-private def denseBody (nodes : Array Json) (ids : List Nat) (body : List (Nat × CoreJS.Stmt)) :
-    Except String { dense : List (Nat × CoreJS.Stmt) // eraseInserted nodes dense = body } := do
-  unless ids.Nodup do throw "the placement repeats a source identity"
-  let bodyIds := body.map Prod.fst
-  unless bodyIds.Nodup do throw "the decoded body repeats a source identity"
-  unless bodyIds.all ids.contains do throw "the decoded body contains an unplaced source identity"
-  bodyIds.forM fun id => do
-    unless (ids.filter (· == id)).length == 1 do
-      throw s!"the decoded identity {id} is placed more than once"
-  denseBodyAux nodes ids body
-
-/-- Per-module evidence that the dense body erases to that decoded module's
-body, with its position retained in the evidence list. -/
-structure DenseModuleEvidence (nodes : Array Json) where
-  decoded : CoreJS.Module
-  dense : CoreJS.Module
-  nameSame : dense.name = decoded.name
-  bodyErases : eraseInserted nodes dense.body = decoded.body
-
-private def denseModuleEvidence (nodes : Array Json) :
-    (placements : List EsmSplit.Module) → (decoded : List CoreJS.Module) →
-    Except String { evidence : List (DenseModuleEvidence nodes) // evidence.map (·.decoded) = decoded }
-  | [], [] => .ok ⟨[], rfl⟩
-  | [], _ :: _ => .error "decoded candidate has modules absent from the plan"
-  | _ :: _, [] => .error "the plan has modules absent from the decoded candidate"
-  | placement :: placements, emitted :: decoded => do
-    unless placement.name == emitted.name do throw "decoded candidate module order differs from the plan"
-    let body ← denseBody nodes placement.stmts emitted.body
-    let rest ← denseModuleEvidence nodes placements decoded
-    let current : DenseModuleEvidence nodes := {
-      decoded := emitted
-      dense := { emitted with body := body.val }
-      nameSame := rfl
-      bodyErases := by simpa using body.property
-    }
-    return ⟨current :: rest.val, by simp [current, rest.property]⟩
-termination_by placements decoded => placements.length
-
-private def sourceHead (modules : List CoreJS.Module) :
-    Except String { module : CoreJS.Module // modules.head? = some module } :=
-  match modules with
-  | [] => .error "missing original module"
-  | module :: _ => .ok ⟨module, rfl⟩
-
-structure DensePair (decodedOriginal decodedCandidate : CoreJS.Program) where
-  sourceNodes : Array Json
-  original : CoreJS.Program
-  candidate : CoreJS.Program
-  sourceModule : CoreJS.Module
-  sourceShape : original.modules = [sourceModule] ∧ original.entry = sourceModule.name ∧ sourceModule.imports = []
-  sourceBodyErases : ∃ decodedModule, decodedOriginal.modules.head? = some decodedModule ∧
-    eraseInserted sourceNodes sourceModule.body = decodedModule.body
-  candidateModuleEvidence : List (DenseModuleEvidence sourceNodes)
-  candidateModulesDecode : candidateModuleEvidence.map (·.decoded) = decodedCandidate.modules
-  candidateModulesDense : candidate.modules = candidateModuleEvidence.map (·.dense)
-
-/-- Add the source-identity empty blocks omitted by `decodePair`. This checked
-post-processing is deliberately local to the slice strategy until all linked
-strategies share dense decoding. -/
-def densePair (sourceAst : Json) (P : EsmSplit.Plan) (B : EsmSplit.Bundle)
-    (original candidate : CoreJS.Program) : Except String (DensePair original candidate) := do
-  let nodes ← (ESTreeUnits.nodes sourceAst).mapError ("source syntax: " ++ ·)
-  unless nodes.size == B.length do throw "source syntax and layout bundle have different lengths"
-  let providers := original.modules.drop 1
-  unless providers.isEmpty do throw "slice strategy requires one original module and no providers"
-  let sourceData ← sourceHead original.modules
-  let sourceModule := sourceData.val
-  unless sourceModule.name != ":corejs:template-objects" do
-    throw "slice strategy does not cover a template-object source module"
-  let checks : Except String (PLift (original.entry = sourceModule.name ∧ sourceModule.imports = [])) :=
-    if hentry : original.entry = sourceModule.name then
-      if himports : sourceModule.imports = [] then .ok ⟨⟨hentry, himports⟩⟩
-      else .error "slice strategy does not cover source imports"
-    else .error "the original entry is not its single source module"
-  let hmeta ← checks
-  let ⟨hentry, himports⟩ := hmeta.down
-  unless candidate.entry == P.entry do throw "decoded candidate entry differs from the plan"
-  unless candidate.modules.map (·.name) == P.mods.map (·.name) do
-    throw "decoded candidate modules differ from the plan"
-  unless candidate.modules.all (·.name != ":corejs:template-objects") do
-    throw "slice strategy does not cover a template-object module"
-  let denseSourceBody ← denseBody nodes (List.range nodes.size) sourceModule.body
-  let denseSourceModule := { sourceModule with body := denseSourceBody.val }
-  let moduleEvidence ← denseModuleEvidence nodes P.mods candidate.modules
-  let denseModules := moduleEvidence.val.map (·.dense)
-  let denseOriginal := { original with modules := [denseSourceModule] }
-  let denseCandidate := { candidate with modules := denseModules }
-  return {
-    sourceNodes := nodes
-    original := denseOriginal
-    candidate := denseCandidate
-    sourceModule := denseSourceModule
-    sourceShape := by
-      refine ⟨by simp [denseOriginal], ?_, ?_⟩
-      simpa [denseOriginal] using hentry
-      simpa [denseSourceModule] using himports
-    sourceBodyErases := by
-      refine ⟨sourceModule, sourceData.property, ?_⟩
-      simpa [denseSourceModule] using denseSourceBody.property
-    candidateModuleEvidence := moduleEvidence.val
-    candidateModulesDecode := moduleEvidence.property
-    candidateModulesDense := by simp [denseCandidate, denseModules]
-  }
-
 /-! `linkedLayoutBundle` records assignment targets in `Stmt.assigns` for
 placement, while the binding commutation proof needs them in the bundle's
 `writes` relation too. Keep this conservative enrichment local to the slice
@@ -199,13 +47,6 @@ private theorem sameUnits_refl : ∀ units : List CoreJS.LinkedUnit, CoreJS.Same
 
 private theorem program_ext {a b : CoreJS.Program} (hentry : a.entry = b.entry)
     (hmodules : a.modules = b.modules) : a = b := by
-  cases a
-  cases b
-  simp_all
-
-private theorem module_ext {a b : CoreJS.Module} (hname : a.name = b.name)
-    (himports : a.imports = b.imports) (hbody : a.body = b.body)
-    (hexports : a.exports = b.exports) : a = b := by
   cases a
   cases b
   simp_all
@@ -280,8 +121,7 @@ theorem runProgram_singleModuleMetadata (body : List (Nat × CoreJS.Stmt))
 current static relation below is one way to build it. A prefix-sensitive
 relation can later check its adjacent swaps at their actual intermediate
 prefixes and build the same evidence from its invariant and two-way
-`CommuteOn` theorem. That change belongs in the evidence producer; the dense
-program bridge, theorem statement, and verdict packaging stay unchanged. -/
+`CommuteOn` theorem. That change belongs in the evidence producer. -/
 private structure MoveScheduleEvidence (ss : List CoreJS.Stmt) (B : EsmSplit.Bundle)
     (S : EsmSplit.Spec) (P : EsmSplit.Plan) where
   normal : CoreJS.LinkedBehavior.ScheduleEquivalent .normalCompletion (fun _ => True)
@@ -334,23 +174,13 @@ private theorem scheduleWithCertifiedMayMove (ss : List CoreJS.Stmt)
 
 def SliceStatementFor (profile : CoreJS.HostProfile) (source providers files : Json)
     (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) (kind : SliceKind) : Prop :=
+  profile = .empty ∧
   ∃ deployment,
     CoreJS.LinkedInput.decodeSingleton source providers files P profile = .ok deployment ∧
     CoreJS.Places deployment.assignment deployment.before deployment.after ∧
     CoreJS.LinkedBehavior.SameExports deployment.before deployment.after ∧
-    ∃ dense : DensePair deployment.before deployment.after,
-      densePair source P B deployment.before deployment.after = .ok dense ∧
-      CoreJS.FootprintsOfSyntax (dense.sourceModule.body.map Prod.snd) B ∧
-      EsmSplit.Valid B S P ∧
-      CoreJS.LinkedBehavior.ScheduleEquivalent kind.level (fun _ => True) dense.original dense.candidate ∧
-      CoreJS.LinkedBehavior.SameExports dense.original dense.candidate
-
-/-- The theorem carried by a compiled slice result. Its existential records
-which checked strategy supplies the guarantee; the verdict carries the same
-strategy name separately for the non-dependent result API. -/
-def SliceStatement (profile : CoreJS.HostProfile) (source providers files : Json)
-    (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) : Prop :=
-  ∃ kind : SliceKind, SliceStatementFor profile source providers files P B S kind
+    CoreJS.LinkedBehavior.ScheduleEquivalent kind.level (fun _ => True) deployment.before deployment.after ∧
+    EsmSplit.Valid B S P
 
 /-- The exact singleton deployment checked once before trying linked strategies. -/
 structure SliceEligibility (profile : CoreJS.HostProfile) (source providers files : Json)
@@ -391,88 +221,76 @@ private def checkSliceExports {original candidate : CoreJS.Program}
       ({ reason := "candidate entry: " ++ why, reasonCode := some "slice_exports" } : CertificationRefusal)
     throw { reason := CoreJS.EntryExports.mismatch a b, reasonCode := some "slice_exports" }
 
-/-- Decide one of the four compiled slice proofs against the exact output ASTs
-already checked by the linked path. The returned theorem names both the decoded
-sparse programs and the checked dense post-processing used by this strategy. -/
+/-- Check a slice against the exact decoded singleton deployment. The empty
+profile ensures the decode did not use a deployment host description. The
+source body and candidate must already match the slice model. -/
 def certifySlice (profile : CoreJS.HostProfile) (source providers files : Json)
     (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
     (eligibility : SliceEligibility profile source providers files P) :
-    Except CertificationRefusal (SliceKind × PLift (SliceStatement profile source providers files P B S)) := do
+    Except CertificationRefusal (Σ kind, PLift (SliceStatementFor profile source providers files P B S kind)) := do
   let original := eligibility.deployment.before
   let candidate := eligibility.deployment.after
-  match denseDecoded : densePair source P B original candidate with
-  | .error reason => throw { reason, reasonCode := some "slice_dense_input" }
-  | .ok dense => do
-      let denseOriginal := dense.original
-      let denseCandidate := dense.candidate
-      let sourceModule := dense.sourceModule
+  let .isTrue emptyProfile := decEq profile .empty |
+    throw { reason := "compiled slice requires the empty lowering profile", reasonCode := some "slice_profile" }
+  if candidate.modules.any (·.name == ":corejs:template-objects") then
+    throw { reason := "slice strategy does not cover a template-object module", reasonCode := some "slice_candidate_match" }
+  match sourceModules : original.modules with
+  | [sourceModule] => do
+      let .isTrue sourceEntry := decEq original.entry sourceModule.name |
+        throw { reason := "the original entry is not its only module", reasonCode := some "slice_source_match" }
+      if sourceModule.name == ":corejs:template-objects" then
+        throw { reason := "slice strategy does not cover a template-object source module", reasonCode := some "slice_source_match" }
+      let .isTrue sourceImports := decEq sourceModule.imports [] |
+        throw { reason := "slice strategy requires an original module without imports", reasonCode := some "slice_source_match" }
+      let sourceSyntax : original = { entry := sourceModule.name, modules := [sourceModule] } :=
+        program_ext sourceEntry sourceModules
       let ss := sourceModule.body.map Prod.snd
       let canonicalSource : CoreJS.Program := .single ss
       let normalizedSource : CoreJS.Program :=
         { entry := "main", modules := [{ name := "main", imports := [], body := sourceModule.body, exports := [] }] }
-      let some ⟨sourceSyntax⟩ := CoreJS.SyntaxMatch.programEq normalizedSource canonicalSource |
-        throw { reason := "dense source does not match Program.single", reasonCode := some "slice_source_match" }
+      let some ⟨bodySyntax⟩ := CoreJS.SyntaxMatch.programEq normalizedSource canonicalSource |
+        throw { reason := "decoded source does not match Program.single", reasonCode := some "slice_source_match" }
       let split := CoreJS.splitProgram ss B P
-      let candidateSyntax : PLift (denseCandidate = split) ← match CoreJS.SyntaxMatch.programEq denseCandidate split with
+      let candidateSyntax : PLift (candidate = split) ← match CoreJS.SyntaxMatch.programEq candidate split with
         | some proof => pure proof
         | none =>
-          let modulesExceptExports := (split.modules.zip denseCandidate.modules).map fun (want, got) =>
+          let modulesExceptExports := (split.modules.zip candidate.modules).map fun (want, got) =>
             { name := want.name, imports := want.imports, body := want.body, exports := got.exports }
           let sameExceptExports : CoreJS.Program :=
             { entry := split.entry, modules := modulesExceptExports }
-          let exportsPerm := (split.modules.zip denseCandidate.modules).all fun (want, got) =>
+          let exportsPerm := (split.modules.zip candidate.modules).all fun (want, got) =>
             decide (got.exports.Perm want.exports)
-          if (CoreJS.SyntaxMatch.programEq denseCandidate sameExceptExports).isSome && exportsPerm then
+          if (CoreJS.SyntaxMatch.programEq candidate sameExceptExports).isSome && exportsPerm then
             throw ({ reason := "decoded candidate export order differs from Module.namedExports", reasonCode := some "slice_export_order" } : CertificationRefusal)
-          else throw { reason := "dense candidate does not match splitProgram", reasonCode := some "slice_candidate_match" }
+          else throw { reason := "decoded candidate does not match splitProgram", reasonCode := some "slice_candidate_match" }
       let candidateEq := candidateSyntax.down
       if hfp : CoreJS.FootprintsOfSyntax ss B then
         if hvalid : EsmSplit.Valid B S P then
-          let ⟨sameExports⟩ ← checkSliceExports (CoreJS.LinkedBehavior.checkProbePair denseOriginal denseCandidate)
           let ⟨exactExports⟩ ← checkSliceExports eligibility.checkedLinks
           let sourceRun : ∀ w n,
-              CoreJS.runProgram w n denseOriginal = CoreJS.runProgram w n canonicalSource := by
+              CoreJS.runProgram w n original = CoreJS.runProgram w n canonicalSource := by
             intro w n
-            rcases dense.sourceShape with ⟨hmodules, hentry, himports⟩
-            let noImports : CoreJS.Program :=
-              { entry := sourceModule.name, modules := [{ sourceModule with imports := [] }] }
             have bodyEq : sourceModule.body = (List.range ss.length).zip ss := by
-              have h := congrArg (fun p : CoreJS.Program => p.modules.map CoreJS.Module.body) sourceSyntax
+              have h := congrArg (fun p : CoreJS.Program => p.modules.map CoreJS.Module.body) bodySyntax
               simpa [normalizedSource, canonicalSource, CoreJS.Program.single] using h
             have bodySorted : sourceModule.body.Pairwise fun a b => a.1 ≤ b.1 := by
               rw [bodyEq]
               exact CoreJS.zip_range_sorted ss
-            have sourceShape : denseOriginal =
-                { entry := sourceModule.name, modules := [sourceModule] } := by
-              exact program_ext hentry hmodules
-            have noImportsEq : noImports =
-                { entry := sourceModule.name, modules := [sourceModule] } := by
-              apply program_ext
-              · rfl
-              · have moduleEq : { sourceModule with imports := [] } = sourceModule := by
-                  apply module_ext
-                  · rfl
-                  · exact himports.symm
-                  · rfl
-                  · rfl
-                simp [noImports, moduleEq]
-            calc
-              CoreJS.runProgram w n denseOriginal = CoreJS.runProgram w n noImports := by
-                  rw [sourceShape, ← noImportsEq]
-              _ = CoreJS.runProgram w n normalizedSource := by
-                simpa [normalizedSource, himports] using
-                  runProgram_singleModuleMetadata sourceModule.body bodySorted sourceModule.name sourceModule.exports w n
-              _ = CoreJS.runProgram w n canonicalSource := by rw [sourceSyntax]
+            rw [sourceSyntax, ← bodySyntax]
+            cases sourceModule
+            simp only at sourceImports
+            simpa only [sourceImports, normalizedSource] using
+              runProgram_singleModuleMetadata _ bodySorted _ _ w n
           let rec certifyMove (kind : SliceKind)
               (semantics : CoreJS.LinkedBehavior.ScheduleEquivalent kind.level (fun _ => True) canonicalSource split) :
-              CoreJS.LinkedBehavior.ScheduleEquivalent kind.level (fun _ => True) denseOriginal denseCandidate := by
+              CoreJS.LinkedBehavior.ScheduleEquivalent kind.level (fun _ => True) original candidate := by
             cases kind with
             | orderKept =>
               intro w hw n
               rw [sourceRun w n, candidateEq]
               exact semantics w hw n
             | moves | certifiedBindings | heritage =>
-              change CoreJS.LinkedBehavior.NormalEquivalent (fun _ => True) denseOriginal denseCandidate
+              change CoreJS.LinkedBehavior.NormalEquivalent (fun _ => True) original candidate
               intro w hw final
               constructor
               · rintro ⟨n, hrun, hnotFuel⟩
@@ -493,11 +311,9 @@ def certifySlice (profile : CoreJS.HostProfile) (source providers files : Json)
                 exact ⟨m, by rw [sourceRun w m]; exact hrun', hnotFuel'⟩
           let package (kind : SliceKind)
               (semantics : CoreJS.LinkedBehavior.ScheduleEquivalent kind.level (fun _ => True) canonicalSource split) :
-              SliceKind × PLift (SliceStatement profile source providers files P B S) := by
-            have denseSemantics := certifyMove kind semantics
-            refine (kind, ⟨kind, eligibility.deployment, eligibility.decodedSingleton, eligibility.placed,
-              exactExports, dense, denseDecoded, hfp, hvalid,
-              denseSemantics, sameExports⟩)
+              Σ kind, PLift (SliceStatementFor profile source providers files P B S kind) := by
+            exact ⟨kind, ⟨emptyProfile, eligibility.deployment, eligibility.decodedSingleton,
+              eligibility.placed, exactExports, certifyMove kind semantics, hvalid⟩⟩
           let moveBundle := bindingMoveBundle B
           let moveSplit := CoreJS.splitProgram ss moveBundle P
           have hmoveSplit : moveSplit = split := splitProgram_bindingMoveBundle ss B P
@@ -561,10 +377,12 @@ def certifySlice (profile : CoreJS.HostProfile) (source providers files : Json)
         else throw { reason := "Valid B S P does not hold", reasonCode := some "slice_validity" }
       else throw { reason := "FootprintsOfSyntax ss B does not hold", reasonCode := some "slice_footprints" }
 
+  | _ => throw { reason := "slice strategy requires one original module without providers", reasonCode := some "slice_source_match" }
+
 theorem certifySlice_sound (profile : CoreJS.HostProfile) (source providers files : Json)
     (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
-    (result : SliceKind × PLift (SliceStatement profile source providers files P B S)) :
-    SliceStatement profile source providers files P B S := result.2.down
+    (result : Σ kind, PLift (SliceStatementFor profile source providers files P B S kind)) :
+    SliceStatementFor profile source providers files P B S result.1 := result.2.down
 
 #print axioms certifySlice_sound
 

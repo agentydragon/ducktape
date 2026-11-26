@@ -2,15 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import {
-  assertCertifiedResult,
-  assertRejectedOrOrderKeptSlice,
-  caseShard,
-  lower,
-  observe,
-  prepare,
-  root,
-} from "./harness.mjs";
+import { assertCertifiedResult, assertRejected, caseShard, lower, observe, prepare, root } from "./harness.mjs";
 
 const runCase = caseShard();
 
@@ -86,14 +78,9 @@ if (runCase("async-iterator-symbol")) {
     { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] }
   );
   assertCertifiedResult(run, true);
-  assert.deepEqual(
-    run.verdict.assumptions,
-    run.verdict.scope === "linked-slice-order-kept"
-      ? []
-      : [
-          "Symbol.asyncIterator returns the well-known asyncIterator symbol without observable effects throughout initialization",
-        ]
-  );
+  assert.deepEqual(run.verdict.assumptions, [
+    "Symbol.asyncIterator returns the well-known asyncIterator symbol without observable effects throughout initialization",
+  ]);
   assert.deepEqual(
     lower(run.files.sourceFile, run.files.specFile, run.out, [...run.options, "--check-output"]).verdict,
     run.verdict
@@ -112,6 +99,6 @@ for (const [name, sourceKey, memberKey, expectedName, reason] of [
     export const result = Value.prototype[${memberKey}].name;`,
     { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] }
   );
-  assertRejectedOrOrderKeptSlice(refused, reason);
+  assertRejected(refused, reason);
   assert.deepEqual(observe(refused.files.sourceFile, "result"), { result: expectedName });
 }

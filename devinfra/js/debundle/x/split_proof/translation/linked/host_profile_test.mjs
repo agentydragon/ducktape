@@ -6,7 +6,6 @@ import { split } from "../testing/split.mjs";
 import {
   assertCertified,
   arrow,
-  assertRefusedOrOrderKeptSlice,
   block,
   call,
   caseShard,
@@ -22,8 +21,8 @@ import {
   program,
   returns,
   root,
+  threeUnitFixture as fixture,
   throws,
-  threeUnitFixture,
   variable,
 } from "./harness.mjs";
 
@@ -33,7 +32,6 @@ const nodeProfile = path.join(root, "node-recording.json");
 writeFileSync(nodeProfile, JSON.stringify({ profile: "node-recording" }));
 const entry = "entry.mjs";
 const includesCase = caseShard();
-const fixture = (name, source) => threeUnitFixture(name, source, entry, true);
 
 const nodeProfileFixture = fixture(
   "unsupported-node-recording-profile",
@@ -76,22 +74,13 @@ for (const [binding, defaulted] of [
     ])
   );
   if (!local) {
-    const unprofiled = test.run();
-    if (unprofiled.status === "certified") {
-      assert.equal(unprofiled.scope, "linked-slice-order-kept", JSON.stringify(unprofiled));
-      assert.equal(unprofiled.guarantee, "all-outcomes", JSON.stringify(unprofiled));
-      assert(existsSync(test.out));
-    } else {
-      assert.match(unprofiled.reason, /unsupported global window/);
-      assert(!existsSync(test.out));
-    }
+    assert.match(test.run().reason, /unsupported global window/);
+    assert(!existsSync(test.out));
   }
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  if (verdict.scope === "linked-slice-order-kept") assert.equal(verdict.guarantee, "all-outcomes");
-  else assert.equal(verdict.scope, "linked-programs", JSON.stringify(verdict));
   assert.equal(verdict.hostProfile, "browser-page");
-  assert.equal(verdict.assumptions.length, verdict.scope === "linked-slice-order-kept" || local ? 0 : 1);
+  assert.equal(verdict.assumptions.length, local ? 0 : 1);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   // Supply the single observation promised by the profile in this Node realm.
   globalThis.window = {};
@@ -139,7 +128,8 @@ if (includesCase("caught-opaque-symbol-for")) {
     "caught-opaque-symbol-for",
     'const read = () => { try { return Symbol.for((() => { throw "argument"; })()); } catch { return "caught"; } }; const result = read(); export { result };'
   );
-  assertRefusedOrOrderKeptSlice(caughtSymbol.run(), caughtSymbol.out, /unknown.*ambient member Symbol\.for is reached/);
+  assert.match(caughtSymbol.run().reason, /unknown.*ambient member Symbol\.for is reached/);
+  assert(!existsSync(caughtSymbol.out));
 }
 
 if (includesCase("reached-symbol-iterator")) {
@@ -147,11 +137,8 @@ if (includesCase("reached-symbol-iterator")) {
     "reached-symbol-iterator",
     "const read = () => Symbol.iterator; const result = read(); export { result };"
   );
-  assertRefusedOrOrderKeptSlice(
-    reachedIterator.run(),
-    reachedIterator.out,
-    /unknown.*ambient member Symbol\.iterator is reached/
-  );
+  assert.match(reachedIterator.run().reason, /unknown.*ambient member Symbol\.iterator is reached/);
+  assert(!existsSync(reachedIterator.out));
 }
 
 if (includesCase("deferred-ambient-object")) {
@@ -196,11 +183,8 @@ if (includesCase("reached-retained-body")) {
   const result = read();
   export { result };`
   );
-  assertRefusedOrOrderKeptSlice(
-    reachedBody.run(),
-    reachedBody.out,
-    /unknown.*deferred function called: unsupported global Object/
-  );
+  assert.match(reachedBody.run().reason, /unknown.*deferred function called: unsupported global Object/);
+  assert(!existsSync(reachedBody.out));
 }
 
 for (const args of [[], [literal("absent")]]) {
@@ -214,10 +198,11 @@ for (const args of [[], [literal("absent")]]) {
       exportNamed([["result", "result"]]),
     ]);
     const test = fixture(name, source);
-    assertRefusedOrOrderKeptSlice(test.run(), test.out, /unsupported global Error/);
+    assert.match(test.run().reason, /unsupported global Error/);
     const verdict = test.run("--host-contract", profile);
     if (reached) {
-      assertRefusedOrOrderKeptSlice(verdict, test.out, /unknown.*ambient constructor Error is reached/);
+      assert.match(verdict.reason, /unknown.*ambient constructor Error is reached/);
+      assert(!existsSync(test.out));
     } else {
       assert.equal(verdict.status, "certified", JSON.stringify(verdict));
       assert.deepEqual(verdict.assumptions, []);
@@ -235,11 +220,8 @@ if (includesCase("caught-opaque-error")) {
     "caught-opaque-error",
     'const read = () => { try { throw new Error((() => { throw "argument"; })()); } catch { return 7; } }; const result = read(); export { result };'
   );
-  assertRefusedOrOrderKeptSlice(
-    caught.run("--host-contract", profile),
-    caught.out,
-    /unknown.*ambient constructor Error is reached/
-  );
+  assert.match(caught.run("--host-contract", profile).reason, /unknown.*ambient constructor Error is reached/);
+  assert(!existsSync(caught.out));
 }
 
 if (includesCase("shadowed-host-bindings")) {

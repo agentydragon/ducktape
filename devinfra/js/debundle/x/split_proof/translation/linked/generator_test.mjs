@@ -51,8 +51,8 @@ if (runCase("generator-creation-and-disk")) {
     ["offset.mjs", "functions.mjs"]
   );
   assert.equal(test.verdict.status, "certified", test.log);
-  assert.equal(test.verdict.scope, "linked-slice-order-kept", test.log);
-  assert.equal(test.verdict.guarantee, "all-outcomes", test.log);
+  assert.equal(test.verdict.scope, "linked-programs", test.log);
+  assert.equal(test.verdict.guarantee, "normal-completion", test.log);
   const checked = lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]);
   assert.deepEqual(checked.verdict, test.verdict, checked.log);
 

@@ -2,28 +2,25 @@ import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertRefusedOrOrderKeptSlice, caseShard, root, threeUnitFixture } from "./harness.mjs";
+import { caseShard, root, threeUnitFixture as fixture } from "./harness.mjs";
 
 const profile = path.join(root, "page.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const entry = "entry.mjs";
 const includesCase = caseShard();
-const fixture = (name, source) => threeUnitFixture(name, source, "entry.mjs", true);
 
 if (includesCase("page-reference")) {
   const test = fixture(
     "page-reference",
     "const read = () => { const pass = (window) => window; return [pass(window), window, pass(17)]; }; const result = read(); export { result };"
   );
-  assertRefusedOrOrderKeptSlice(test.run(), test.out, /unsupported global window/);
+  assert.match(test.run().reason, /unsupported global window/);
+  assert(!existsSync(test.out));
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(
-    verdict.assumptions,
-    verdict.scope === "linked-slice-order-kept"
-      ? []
-      : ["window returns the same page object without observable effects throughout initialization"]
-  );
+  assert.deepEqual(verdict.assumptions, [
+    "window returns the same page object without observable effects throughout initialization",
+  ]);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
 
   const page = {};
@@ -45,20 +42,15 @@ if (includesCase("page-aliases")) {
     "page-aliases",
     "const read = () => [typeof self, typeof globalThis, self, globalThis, ((self) => self)(17)]; const result = read(); export { result };"
   );
-  assertRefusedOrOrderKeptSlice(test.run(), test.out, /unsupported global self/);
+  assert.match(test.run().reason, /unsupported global self/);
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(
-    verdict.assumptions,
-    verdict.scope === "linked-slice-order-kept"
-      ? []
-      : [
-          "typeof globalThis is object without observable effects throughout initialization",
-          "typeof self is object without observable effects throughout initialization",
-          "self returns the same page object without observable effects throughout initialization",
-          "globalThis returns the same page object without observable effects throughout initialization",
-        ]
-  );
+  assert.deepEqual(verdict.assumptions, [
+    "typeof globalThis is object without observable effects throughout initialization",
+    "typeof self is object without observable effects throughout initialization",
+    "self returns the same page object without observable effects throughout initialization",
+    "globalThis returns the same page object without observable effects throughout initialization",
+  ]);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   globalThis.self = globalThis;
   try {
@@ -78,15 +70,12 @@ if (includesCase("guarded-global")) {
     "guarded-global",
     'const read = () => typeof global !== "undefined" ? global : 17; const result = read(); export { result };'
   );
-  assertRefusedOrOrderKeptSlice(test.run(), test.out, /unsupported global global/);
+  assert.match(test.run().reason, /unsupported global global/);
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(
-    verdict.assumptions,
-    verdict.scope === "linked-slice-order-kept"
-      ? []
-      : ["typeof global is undefined without observable effects throughout initialization"]
-  );
+  assert.deepEqual(verdict.assumptions, [
+    "typeof global is undefined without observable effects throughout initialization",
+  ]);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   // Node supplies a global shim and demonstrates why the browser premise is explicit.
   for (const file of [test.sourceFile, path.join(test.out, entry)]) {
@@ -102,13 +91,12 @@ for (const deferred of [false, true]) {
   );
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  const assumptions =
-    deferred || verdict.scope === "linked-slice-order-kept"
-      ? []
-      : [
-          "globalThis returns the same page object without observable effects throughout initialization",
-          "window.Error returns the stable host reference window.Error without observable effects throughout initialization",
-        ];
+  const assumptions = deferred
+    ? []
+    : [
+        "globalThis returns the same page object without observable effects throughout initialization",
+        "window.Error returns the stable host reference window.Error without observable effects throughout initialization",
+      ];
   assert.deepEqual(verdict.assumptions, assumptions);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   for (const file of [test.sourceFile, path.join(test.out, entry)]) {
@@ -131,7 +119,8 @@ for (const [name, body, reason] of [
 ]) {
   if (!includesCase(name)) continue;
   const test = fixture(name, `const read = () => { ${body} }; const result = read(); export { result };`);
-  assertRefusedOrOrderKeptSlice(test.run("--host-contract", profile), test.out, reason);
+  assert.match(test.run("--host-contract", profile).reason, reason);
+  assert(!existsSync(test.out));
 }
 
 if (includesCase("module-try-typed-array")) {
@@ -140,13 +129,9 @@ if (includesCase("module-try-typed-array")) {
     "try { new Uint8Array(1); } catch {} const result = 1; export { result };"
   );
   const verdict = test.run("--host-contract", profile);
-  if (verdict.status === "certified" && verdict.scope === "linked-slice-order-kept") {
-    assert.equal(verdict.guarantee, "all-outcomes");
-  } else {
-    assert.equal(verdict.status, "rejected");
-    assert.match(verdict.reason, /host value window\.Uint8Array is constructed/);
-    assert(!existsSync(test.out));
-  }
+  assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, /host value window\.Uint8Array is constructed/);
+  assert(!existsSync(test.out));
 }
 
 if (includesCase("bulk-browser-bindings")) {

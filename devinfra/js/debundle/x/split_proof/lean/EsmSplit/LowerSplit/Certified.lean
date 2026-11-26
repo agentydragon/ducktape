@@ -353,7 +353,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
           else timePhase timings "compiled_slice" fun _ =>
             IO.lazyPure fun _ => certifySlice profile program providers files P B S eligibility
         match sliceResult with
-        | .ok (kind, _statement) =>
+        | .ok ⟨kind, _statement⟩ =>
           if request == .allOutcomes && kind.level != .allOutcomes then
             pure (.error ({
               reason := s!"the compiled {kind.scope} slice proves only normal-completion"
