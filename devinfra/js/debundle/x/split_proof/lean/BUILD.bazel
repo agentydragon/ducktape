@@ -318,6 +318,12 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_link_world",
+    srcs = ["EsmSplit/CoreJS/LinkWorld.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_library(
     name = "corejs_certificate_probe",
     srcs = [
         # Keep import order for the native Lean rule.
@@ -326,6 +332,7 @@ lean_library(
     ],
     deps = [
         ":corejs_certificate_proof",
+        ":corejs_link_world",
         ":corejs_structural",
     ],
 )
@@ -335,7 +342,6 @@ lean_library(
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/CoreJS/Request/Frame.lean",
-        "EsmSplit/CoreJS/LinkWorld.lean",
         "EsmSplit/CoreJS/StringInitializer.lean",
         "EsmSplit/CoreJS/StableIntrinsic.lean",
         "EsmSplit/CoreJS/RecordOrigin.lean",
@@ -362,6 +368,7 @@ lean_library(
     ],
     deps = [
         ":corejs_certificate_support",
+        ":corejs_link_world",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":planner",
@@ -393,7 +400,7 @@ lean_library(
     name = "corejs_checked_split",
     srcs = ["EsmSplit/CoreJS/CheckedSplit.lean"],
     deps = [
-        ":corejs_certificate_probe",
+        ":corejs_link_world",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":corejs_single_module",
@@ -530,6 +537,7 @@ lean_library(
     deps = [
         ":corejs_checked_split",
         ":corejs_resolved_placement",
+        ":corejs_structural",
     ],
 )
 

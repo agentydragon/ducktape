@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.CheckedSplit
+import EsmSplit.CoreJS.LinkedPivotCertificate
 import EsmSplit.CoreJS.ResolvedPlacement
 
 /-! A model-only sparse constructor. The existing checked splitter supplies
