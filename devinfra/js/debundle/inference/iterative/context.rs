@@ -90,7 +90,6 @@ pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES:
     pub(super) dependencies: ProofDependencies,
     pub(super) merge_scratch: R::MergeScratch,
     pub(super) metrics: Option<&'a mut Batch>,
-    #[cfg(test)]
     pub(super) delta_deliveries: usize,
     #[cfg(test)]
     pub(super) read_attempts: usize,
@@ -126,7 +125,6 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
             dependencies: ProofDependencies::default(),
             merge_scratch,
             metrics: None,
-            #[cfg(test)]
             delta_deliveries: 0,
             #[cfg(test)]
             read_attempts: 0,
@@ -353,10 +351,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             R::merge_with_scratch(&key, delivered, contribution, &mut self.merge_scratch);
         }
         if let Some(delta) = delta {
-            #[cfg(test)]
-            {
-                self.delta_deliveries += R::delta_atoms(&delta);
-            }
+            self.delta_deliveries += R::delta_atoms(&delta);
             self.propose(key, delta)
         } else {
             if let Some(metrics) = &mut self.metrics {

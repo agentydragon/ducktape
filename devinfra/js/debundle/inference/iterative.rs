@@ -145,8 +145,8 @@ pub trait IterativeRules: Sized {
         panic!("this rule family does not define value deltas")
     }
 
-    /// Test-only cost of the actual delta operand submitted to the fact join.
-    #[cfg(test)]
+    /// Cost of the actual delta operand submitted to the fact join, which
+    /// tests read through `IterativeFacts::delta_deliveries`.
     fn delta_atoms(_delta: &Self::Fact) -> usize {
         0
     }
@@ -336,7 +336,6 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
         // backfills existing atoms; later additions cross it without a rule run.
         let mut proof_edges = ProofTransfers::default();
         let mut evaluations = 0usize;
-        #[cfg(test)]
         let mut delta_deliveries = 0usize;
         #[cfg(test)]
         let mut work = InferenceWork {
@@ -374,9 +373,9 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                 None => rules.evaluate(&rule, &mut context),
             }
             evaluations += 1;
+            delta_deliveries += context.delta_deliveries;
             #[cfg(test)]
             {
-                delta_deliveries += context.delta_deliveries;
                 work.reads += context.read_attempts;
                 work.proposals += context.proposals;
                 work.value_changes += context.value_changes;
@@ -472,7 +471,6 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             evaluations,
             #[cfg(test)]
             proof_deliveries,
-            #[cfg(test)]
             delta_deliveries,
         }
     }
@@ -523,7 +521,6 @@ pub struct IterativeFacts<Key, Fact> {
     evaluations: usize,
     #[cfg(test)]
     proof_deliveries: usize,
-    #[cfg(test)]
     delta_deliveries: usize,
 }
 
@@ -552,8 +549,7 @@ impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
         self.evaluations
     }
 
-    #[cfg(test)]
-    pub(crate) fn delta_deliveries(&self) -> usize {
+    pub fn delta_deliveries(&self) -> usize {
         self.delta_deliveries
     }
 }
