@@ -5,7 +5,6 @@ use super::execution_index::Call;
 use super::interpreter::{
     ExecutionInputs, ExecutionState, Executor, Observations, Outcome, OwnPropertyQuery,
 };
-use super::kernel::frame::EvaluatedCallee;
 use super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
@@ -20,6 +19,7 @@ use analysis_vocabulary::execution_evidence::OrderedCallAdmissionRefusal;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::report_schema::{NativeProgramPointKind, NativeProgramPointStep};
 use inference::{CompletedTransfer, FactContext, IterativeInference, IterativeRules};
+use kernel::frame::EvaluatedCallee;
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
 use swc_common::Span;

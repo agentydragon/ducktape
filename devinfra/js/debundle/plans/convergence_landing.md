@@ -277,13 +277,9 @@ when their disposition has landed on `devel`.
 | `legacy/`                            | Whatever is not yet deleted, each item with a `CLEANUP` tombstone naming its last caller.                                   |
 
 AR4 tracks the remaining execution-index interface in [the work queue](../TODO.md#architecture-review-follow-ups).
-`value_model/` and `world/` (with the allocation, array and effect-coverage
-transfers) are Bazel crates below `sync_effects`. A `kernel` crate is the next
-candidate. It first needs a trait seam for its `ExecutionIndex` reads in
-`kernel/{closure,context,continuation}.rs`: callable bodies, home objects,
-nested writes, creation sites and allocation layouts. It also needs
-`NativeIterableUse` moved out of `runtime_heap`. `alternatives/` additionally
-reads `interpreter::Outcome`.
+`value_model/`, `world/` (with the allocation, array and effect-coverage
+transfers) and `kernel/` (with `Family`; it reads `ExecutionIndex` through
+`kernel::context::IndexReads`) are Bazel crates below `sync_effects`.
 
 ## Dependency graph and waves
 

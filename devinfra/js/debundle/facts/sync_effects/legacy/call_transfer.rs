@@ -10,11 +10,11 @@
 
 use super::super::execution_index::{Call, CallKind, object_own_data_read_property};
 use super::super::interpreter::{EvaluatedCallOperands, Executor, Outcome, unknown};
-use super::super::runtime_heap::NativeIterableUse;
 use super::super::runtime_inference::CallTransfer;
 use analysis_vocabulary::execution_evidence::ExecutionOperation;
 use analysis_vocabulary::value::{Kind, Value};
 use value_model::{AbstractValue, CallSite, Context, ValueExpr, Values};
+use world::allocation_transfer::NativeIterableUse;
 
 impl Executor<'_, '_> {
     pub(crate) fn execute_call_transfer(

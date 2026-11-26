@@ -10,19 +10,10 @@ pub mod synchronous_calls;
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
 use super::alternatives::execution_state::{ExecutionPath, JoinedPath};
-use super::alternatives::{Family, Leaf, join_frames};
 use super::execution_index::{
     Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
     LocalConstructor, MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
     native_own_data_read_slots, pattern_source,
-};
-use super::kernel::closure::{CapturePolicy, lexical_captures};
-use super::kernel::construct;
-use super::kernel::context::ControlContext;
-use super::kernel::continuation::LocalContinuation;
-use super::kernel::driver;
-use super::kernel::frame::{
-    LocalExecutionAttempt, LocalFrame, RemainderDisposition, SelectedValue,
 };
 use super::native::operation::{
     self as native_operation, CheckedNativePlan, NativeOperationCommit, NativeOperationContext,
@@ -35,7 +26,7 @@ use super::runtime_callbacks::{
     BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
     CallbackResult,
 };
-use super::runtime_heap::{HeapOperation, HeapResult, NativeIterableUse};
+use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{
     CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
 };
@@ -84,6 +75,13 @@ use analysis_vocabulary::report_schema::{
 };
 use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
+use kernel::alternatives::{Family, Leaf, join_frames};
+use kernel::closure::{CapturePolicy, lexical_captures};
+use kernel::construct;
+use kernel::context::{ControlContext, IndexReads};
+use kernel::continuation::LocalContinuation;
+use kernel::driver;
+use kernel::frame::{LocalExecutionAttempt, LocalFrame, RemainderDisposition, SelectedValue};
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -103,6 +101,7 @@ use value_model::{
 };
 use world::World;
 use world::allocation_transfer::MAX_EXACT_ARRAY_SPREAD_SLOTS;
+use world::allocation_transfer::NativeIterableUse;
 use world::allocation_transfer::{
     NativeIterableInput, NativeIterableReceipt, NativeIterableYields,
 };
@@ -1714,7 +1713,7 @@ impl Executor<'_, '_> {
         } = checkpoint;
         let attempted = self.state.world.clone();
         let (allocation_judgment, _) = self.state.enter(path);
-        super::alternatives::separate_from_abandoned(&attempted, self.state.world_mut());
+        kernel::alternatives::separate_from_abandoned(&attempted, self.state.world_mut());
         self.allocation_judgment = allocation_judgment;
         let state = &mut *self.state;
         state.prior_reachability_roots = prior_reachability_roots;

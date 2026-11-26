@@ -9,7 +9,7 @@ use world::effect_coverage::EffectCoverageFragment;
 
 /// `ToBoolean` and the nullish test read no property and run no user code.
 /// The operand supplied its own receipt when it ran.
-pub(super) fn test_selected(frame: &mut LocalFrame) {
+pub(crate) fn test_selected(frame: &mut LocalFrame) {
     frame
         .ledger
         .effects
@@ -20,7 +20,7 @@ pub(super) fn test_selected(frame: &mut LocalFrame) {
 /// primitive kind set keeps no literal, so every kind but `null`, `undefined`
 /// (always falsy) and symbols (always truthy) is on both sides. Objects and
 /// functions are truthy; a value of unknown kind is on both sides.
-pub(super) fn split_truthiness(values: &Values) -> (Values, Values) {
+pub(crate) fn split_truthiness(values: &Values) -> (Values, Values) {
     let mut truthy = Values::new();
     let mut falsy = Values::new();
     for value in values {
@@ -49,7 +49,7 @@ pub(super) fn split_truthiness(values: &Values) -> (Values, Values) {
 
 /// The non-nullish part of an operand's normal values, and whether some
 /// value may be `null` or `undefined`.
-pub(super) fn split_nullish(values: &Values) -> (Values, bool) {
+pub(crate) fn split_nullish(values: &Values) -> (Values, bool) {
     let nullish = PrimKinds::NULL.union(PrimKinds::UNDEFINED);
     let mut retained = Values::new();
     let mut may_be_nullish = false;

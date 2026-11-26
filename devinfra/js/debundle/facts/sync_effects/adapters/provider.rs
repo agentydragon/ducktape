@@ -5,22 +5,22 @@
 //! the ledger's heap cells out of any caller's effects.
 
 use super::super::alternatives::outcome::join_allocation_judgments;
-use super::super::alternatives::{Family, Leaf, PathState, join_worlds};
 use super::super::execution_index::ExecutionIndex;
-use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
-use super::super::kernel::context::{
-    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
-    NativeContext, Unproved,
-};
-use super::super::kernel::continuation::{self, LocalContinuation};
-use super::super::kernel::driver;
-use super::super::kernel::frame::{
-    LocalCallRequest, LocalExecutionAttempt, LocalFrame, LocalValueResult, RemainderDisposition,
-};
 use analysis::facts::abstract_domain::builtins::{self, Invocation};
 use analysis::facts::abstract_domain::integrity::Integrity;
 use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
 use analysis_vocabulary::value::{Kind, Value};
+use kernel::alternatives::{Family, Leaf, PathState, join_worlds};
+use kernel::closure::{CapturePolicy, ClosureAdmission};
+use kernel::context::{
+    BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
+    IndexReads, NativeContext, Unproved,
+};
+use kernel::continuation::{self, LocalContinuation};
+use kernel::driver;
+use kernel::frame::{
+    LocalCallRequest, LocalExecutionAttempt, LocalFrame, LocalValueResult, RemainderDisposition,
+};
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
@@ -430,7 +430,7 @@ impl OwnDataContext for ProviderContext<'_> {
 }
 
 impl HeapContext for ProviderContext<'_> {
-    fn index(&self) -> &ExecutionIndex {
+    fn index(&self) -> &dyn IndexReads {
         self.index
     }
     fn world(&self) -> &World {

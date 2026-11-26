@@ -71,6 +71,8 @@ use analysis_vocabulary::report_schema::{
 };
 use analysis_vocabulary::value::{Kind, Value};
 use inference::{FactContext, IterativeInference, IterativeRules};
+use kernel::closure::CaptureCensus;
+use kernel::context::IndexReads;
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
 use std::cell::RefCell;
@@ -84,10 +86,11 @@ use value_model::callable_body_facts::CallableBodyFacts;
 use value_model::local_operations::{DeferredCallableCreation, LocalBinding, LocalBody};
 use value_model::{
     ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, DiscardedHeritageCall,
-    FromEntriesMappedProof, LexicalClassHeritage, MemberKey, NamespaceValueFacts,
-    OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, infer_namespace_aliases,
-    object_data_property_name, static_prop, static_property_name,
+    FromEntriesMappedProof, LexicalClassHeritage, LiteralPropertyKind, MemberKey,
+    NamespaceValueFacts, OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr,
+    infer_namespace_aliases, object_data_property_name, static_prop, static_property_name,
 };
+use world::allocation_transfer::LiteralLayout;
 
 fn map_entry_array_span(new_expr: &NewExpr) -> Option<u32> {
     if !matches!(new_expr.callee.unwrap_parens(), Expr::Ident(ident) if ident.sym == "Map") {
@@ -4615,7 +4618,7 @@ pub(super) struct ExecutionIndex {
     pub(super) map_entry_arrays: BTreeSet<u32>,
     pub(super) dense_array_literals: BTreeMap<u32, usize>,
     pub(super) array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
-    literal_property_kinds: BTreeMap<u32, Vec<value_model::LiteralPropertyKind>>,
+    literal_property_kinds: BTreeMap<u32, Vec<LiteralPropertyKind>>,
     callable_creations: BTreeMap<u32, DeferredCallableCreation>,
     pub(super) method_record_members: BTreeMap<u32, Vec<crate::foreign_call::RecordMember>>,
     pub(super) array_iterations: BTreeMap<CallSite, ArrayIteration>,
@@ -4922,42 +4925,6 @@ impl ExecutionIndex {
         self.own_descriptor_shapes.get(&allocation)
     }
 
-    pub(super) fn literal_property_kind(
-        &self,
-        allocation: u32,
-        position: usize,
-    ) -> value_model::LiteralPropertyKind {
-        self.literal_property_kinds
-            .get(&allocation)
-            .and_then(|kinds| kinds.get(position))
-            .cloned()
-            .unwrap_or(value_model::LiteralPropertyKind::Opaque)
-    }
-
-    pub(super) fn callable_creation(&self, callable: u32) -> Option<DeferredCallableCreation> {
-        self.callable_creations.get(&callable).copied()
-    }
-
-    pub(super) fn callable_home_object(&self, callable: u32) -> Option<u32> {
-        self.callable_creations
-            .get(&callable)
-            .and_then(|creation| creation.home_object())
-    }
-
-    pub(super) fn allocation_layout(
-        &self,
-        allocation: u32,
-    ) -> world::allocation_transfer::LiteralLayout {
-        use world::allocation_transfer::LiteralLayout;
-        if self.exact_object_spread_copies.contains(&allocation) {
-            return LiteralLayout::Unsupported;
-        }
-        if let Some(elements) = self.array_elements.get(&allocation) {
-            return LiteralLayout::Array(elements.clone());
-        }
-        LiteralLayout::Record
-    }
-
     /// Simple top-level declared bindings every write of which stores a fresh
     /// value (`fresh_value`); every write is modeled because the modeled
     /// writes number as many as the binding's recorded writes. Before the
@@ -5044,6 +5011,63 @@ impl ExecutionIndex {
             fresh_collections: names.fresh_collections,
             no_accessor_install_callables: names.no_accessor_install_callables.clone(),
         }
+    }
+}
+
+impl IndexReads for ExecutionIndex {
+    fn callable_creation(&self, callable: u32) -> Option<DeferredCallableCreation> {
+        self.callable_creations.get(&callable).copied()
+    }
+
+    fn capture_census(&self, callable: u32) -> Option<CaptureCensus<'_>> {
+        let body = self.callables.get(&callable)?;
+        // This canonical census also contains nested closures' references. An
+        // intermediate closure must retain cells needed by its children.
+        let reads = self
+            .prototype_callable_reads
+            .get(&callable)
+            .unwrap_or(&body.reads);
+        // A nested closure's write needs the cell as much as a read does.
+        let writes = self.nested_callable_writes.get(&callable);
+        let free = reads
+            .iter()
+            .chain(&body.rebinds)
+            .chain(writes.into_iter().flatten())
+            .filter(|id| {
+                !body.declared_locals.contains(*id)
+                    && !body.local_functions.contains_key(*id)
+                    && !body
+                        .params
+                        .iter()
+                        .any(|parameter| parameter.binding.as_ref() == Some(*id))
+            })
+            .map(|id| (id, body.reads.contains(id) || body.rebinds.contains(id)))
+            .collect();
+        Some(CaptureCensus {
+            home_object: self
+                .callable_creations
+                .get(&callable)
+                .and_then(|creation| creation.home_object()),
+            free,
+        })
+    }
+
+    fn allocation_layout(&self, allocation: u32) -> LiteralLayout {
+        if self.exact_object_spread_copies.contains(&allocation) {
+            return LiteralLayout::Unsupported;
+        }
+        if let Some(elements) = self.array_elements.get(&allocation) {
+            return LiteralLayout::Array(elements.clone());
+        }
+        LiteralLayout::Record
+    }
+
+    fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind {
+        self.literal_property_kinds
+            .get(&allocation)
+            .and_then(|kinds| kinds.get(position))
+            .cloned()
+            .unwrap_or(LiteralPropertyKind::Opaque)
     }
 }
 
@@ -7360,7 +7384,6 @@ impl Visit for ExecutionIndex {
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
-        use value_model::LiteralPropertyKind;
         let mut definition_kinds = Vec::new();
         let mut record_members = Some(Vec::new());
         let mut member_names = BTreeSet::new();

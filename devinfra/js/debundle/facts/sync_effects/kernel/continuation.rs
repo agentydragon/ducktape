@@ -2,7 +2,6 @@
 //! a call yields after its callee and operands have run, and the driver
 //! resumes the same stack with the adapter's result.
 
-use super::super::runtime_heap::NativeIterableUse;
 use super::branch;
 use super::cells;
 use super::closure;
@@ -30,6 +29,7 @@ use value_model::{
     PropertyDefinition, ValueExpr, Values,
 };
 use world::allocation_transfer::NativeIterableReceipt;
+use world::allocation_transfer::NativeIterableUse;
 use world::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, ArrayTransfer, LiteralHeap,
     LiteralLayout, RecordTransfer, SequenceTransfer,
@@ -172,7 +172,7 @@ impl Step {
 }
 
 #[derive(Clone)]
-pub(crate) struct LocalContinuation {
+pub struct LocalContinuation {
     pub(crate) frame: LocalFrame,
     steps: Vec<Step>,
     /// The value of the most recently completed expression, consumed by the
@@ -186,7 +186,7 @@ pub(crate) struct LocalContinuation {
 }
 
 impl LocalContinuation {
-    pub(crate) fn new(frame: LocalFrame) -> Self {
+    pub fn new(frame: LocalFrame) -> Self {
         Self {
             frame,
             steps: vec![Step::Prepare],
@@ -1345,7 +1345,7 @@ impl<C: KernelContext> AllocationContext for LocalValueContext<'_, C> {
 
 /// Transfer one closed value expression in this frame. Scalar consumers
 /// (the strict provider's direct allocation return) enter the kernel here.
-pub(crate) fn value_of(
+pub fn value_of(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     expression: &ValueExpr,

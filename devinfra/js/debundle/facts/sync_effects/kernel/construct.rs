@@ -12,7 +12,7 @@ use world::effect_coverage::EffectCoverageFragment;
 
 /// Bind the activation of a base constructor of `class` to its receiver:
 /// `this` is the fresh instance the adapter named for this construction.
-pub(crate) fn bind_receiver(frame: &mut LocalFrame, class: u32, instance: Values) {
+pub fn bind_receiver(frame: &mut LocalFrame, class: u32, instance: Values) {
     frame.inputs.extend(instance.iter().cloned());
     frame.this_values = Some(instance);
     frame.constructed_class = Some(class);
@@ -22,7 +22,7 @@ pub(crate) fn bind_receiver(frame: &mut LocalFrame, class: u32, instance: Values
 /// instance. A primitive or undefined return keeps it. An object return is
 /// outside this rule; the caller refuses it. `Unavailable` (an abrupt path)
 /// is kept beside the instance.
-pub(crate) fn construct_result(returns: &Values, instance: &Values) -> Option<Values> {
+pub fn construct_result(returns: &Values, instance: &Values) -> Option<Values> {
     let mut result = Values::new();
     for value in returns {
         match value {

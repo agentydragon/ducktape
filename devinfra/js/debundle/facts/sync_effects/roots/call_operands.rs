@@ -4,11 +4,11 @@
 
 use super::super::execution_index::{Call, CallKind};
 use super::super::interpreter::{EvaluatedCallOperands, Executor, Outcome, SuppliedCallSelections};
-use super::super::kernel::frame::EvaluatedCallee;
 use super::super::runtime_inference::{CallOperands, CallTransfer};
 use analysis_vocabulary::inputs::{ForeignCallSummary, ForeignInvocation, ForeignReturn};
 use analysis_vocabulary::report_schema::CallbackFactoryUseKind;
 use analysis_vocabulary::value::Kind;
+use kernel::frame::EvaluatedCallee;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use value_model::{

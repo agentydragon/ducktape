@@ -12,9 +12,6 @@
 use super::super::adapters::application::LocalExecutionContext;
 use super::super::execution_index::ExecutionIndex;
 use super::super::interpreter::MAX_SYNCHRONOUS_INVOCATIONS;
-use super::super::kernel::frame::{
-    LocalFrame, LocalValueResult, RemainderDisposition, SelectedValue,
-};
 use super::operation::{self, IterationResultArray};
 use analysis::facts::EffectCell;
 use analysis::facts::abstract_domain::builtins::IterationResult;
@@ -25,6 +22,7 @@ use analysis_vocabulary::execution_evidence::{
 };
 use analysis_vocabulary::inputs::NativeIntrinsic;
 use analysis_vocabulary::value::{Kind, Value};
+use kernel::frame::{LocalFrame, LocalValueResult, RemainderDisposition, SelectedValue};
 use std::collections::BTreeSet;
 use swc_common::Span;
 use value_model::own_data_transfer::OwnDataContext;
