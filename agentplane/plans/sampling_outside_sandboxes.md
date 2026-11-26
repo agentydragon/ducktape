@@ -23,23 +23,20 @@ our own code call Codex's backend API and the central sampler can do that; Claud
 its CLI for subscription quotas. In-Sandbox harness work therefore matters mainly for Claude
 ([native harness interfaces](native_harness_interfaces.md#which-harnesses-run-in-a-sandbox)).
 
-## Today
+## Sandbox baseline for the research
 
-- Environment Runtime runs one Codex app-server for all its Codex Sessions, with `CODEX_HOME` at
-  `<state_dir>/codex` on the Sandbox's state volume, and one Claude Code process per Session
-  ([harness process design](../docs/runner_delivery_and_harness_design.md#harness-process-store-and-session-identity)).
-  Rollouts, compaction output and harness configuration are files the agent's own tools can read and
-  rewrite: the [isolated executor](../env/runtime/execution/docs/codex_executor.md) is a resource boundary, not a
-  trust boundary.
-- Sampling already leaves the Sandbox on the wire. The harness reaches the
-  [LLM ingress](../llm_ingress/README.md) through an exact-origin sidecar route. The sidecar
-  authenticates the destination TLS connection with the Runtime SVID; the proxy authorizes CONNECT
-  for the Sandbox's ServiceAccount, and the ingress independently verifies the SVID before it
-  attributes the request to the calling Pod.
-- Every process in a Sandbox can sample. The SVID route is available without a caller-held API key
-  or a bearer-substitution credential; the ingress presents its own server-held key to LiteLLM.
-- Isolated executor mode already splits Codex in two inside the Sandbox: the app-server in the runner
-  container and `codex exec-server` in a companion container, joined by `CODEX_EXEC_SERVER_URL`.
+- At the start of the October 2026 research, isolated Pods connected their shared Codex app-server
+  to upstream `codex exec-server` in the companion. Current
+  [executor configuration](../env/runtime/execution/README.md#backend-configuration) defaults to
+  Agentplane's native backend and retains upstream Codex as an explicit option.
+  The [harness process design](../docs/runner_delivery_and_harness_design.md#harness-process-store-and-session-identity)
+  owns app-server and Claude process placement. Tools share access to the Sandbox files that hold
+  harness state.
+- Any process with access to the Sandbox sidecar can sample through the exact-origin route
+  without a caller-held model key. [LLM ingress](../llm_ingress/README.md) verifies the Runtime
+  SVID through the sidecar's opaque CONNECT tunnel. It derives Identity from the accepted
+  credential, including Pod attribution when that credential carries Pod evidence. The key for
+  the LiteLLM hop stays with the ingress.
 
 ## Codex supports the split upstream
 
