@@ -71,26 +71,21 @@ revoked, the service stops appending and reports the subscription as access deni
 ## Sequence: X subscribes to a PR, a webhook arrives, X is told
 
 1. X's CLI calls `CreateSubscription`.
-2. The inbox service checks the Session with `SessionDispatcher.GetSession`.
-3. The inbox service checks that the Runtime holds the Session, with `EnvironmentRuntime.ListSessions`
-   through the Environments proxy.
-4. The inbox service calls `GitHub.AuthorizeSubscription`.
-5. The inbox service stores the record.
-6. The GitHub service sees the record on `WatchSourceSubscriptions`.
-7. GitHub posts the webhook to the GitHub service, which checks the signature, dedupes and stores it.
-8. The GitHub service matches the delivery by subject, filters, fork heads and access fences.
-9. The GitHub service calls `AppendEntries`.
-10. The inbox service dedupes the entry and schedules a notice.
-11. The inbox worker reads `HistoryService.ReadSessionEvents`, then calls
-    `SessionDispatcher.SubmitInput`.
-12. The Dispatcher delivers the notice, waking a suspended Sandbox because
-    `spiffe://agentplane/notifications` is in `wake_service_callers`.
-13. X reads the entry with `ReadInbox` and acknowledges it with `AcknowledgeInbox`.
+2. The inbox service verifies the owner through `SessionDispatcher.GetSession`, calls
+   `GitHub.AuthorizeSubscription`, and stores the record.
+3. The GitHub service observes it on `WatchSourceSubscriptions`, verifies and records webhooks,
+   then matches deliveries by subject, filters, fork heads and access fences.
+4. The GitHub service calls `AppendEntries`. The inbox service deduplicates the entry and schedules
+   a notice.
+5. The inbox worker catches up on `HistoryService.ReadSessionEvents` and calls
+   `SessionDispatcher.SubmitInput`. The Dispatcher may wake a suspended Sandbox using the grant
+   for `spiffe://agentplane/notifications` in `wake_service_callers`.
+6. X calls `ReadInbox` and `AcknowledgeInbox`.
 
-Today steps 4 to 9 run in one process. `fanout.Coordinator.Ingest` marks every inbox following the App
-as due. Each due subscription is then processed separately: `Provider.Process` and
-`Coordinator.Deliveries` find its deliveries, and `Coordinator.Record` appends them and advances the
-cursor in one transaction.
+The settled [Session ownership contract](../notification_service/docs/api.md#agent-api) uses
+Dispatcher's recorded Identity. In the current single service, the
+[source transaction](../notification_service/docs/transactions.md) appends entries and advances
+the source cursor together.
 
 ## Alternatives considered
 
