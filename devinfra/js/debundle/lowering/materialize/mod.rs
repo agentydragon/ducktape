@@ -647,7 +647,7 @@ fn settle_assignment(
     whole_statement_assignment: &mut BTreeMap<StatementId, usize>,
     generated_residual_plans: &mut BTreeSet<usize>,
 ) -> Result<(
-    crate::rename_ledger::SealedRenames,
+    rename_ledger::SealedRenames,
     HashMap<String, String>,
     AssignmentAnalysis,
 )> {
