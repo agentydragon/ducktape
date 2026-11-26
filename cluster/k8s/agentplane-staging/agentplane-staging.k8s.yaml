@@ -9238,6 +9238,14 @@ data:
       - spiffe://agentplane/app
     actions_target: actions.agentplane-staging.svc.cluster.local:8080
     policy_namespace: agentplane-staging
+    policy_service:
+      target: policy-controller.agentplane-staging.svc.cluster.local:8083
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/policy-controller
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/mcp-edge
     oauth_file: /etc/agentplane-mcp/oauth
     host: 0.0.0.0
     http_port: 8081
@@ -9398,6 +9406,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: policy-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8083"
               protocol: TCP
     - toEntities:
         - remote-node
@@ -12174,6 +12190,7 @@ data:
       client_ca_file: /run/agentplane/workload-trust/ca-certificates.crt
     reader_services:
       - spiffe://agentplane/app
+      - spiffe://agentplane/mcp-edge
     writer_services:
       - spiffe://agentplane/app
     workload_issuer: agentplane-workload

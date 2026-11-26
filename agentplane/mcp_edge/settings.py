@@ -9,7 +9,29 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
-from agentplane.net.peertls.config import MCP_EDGE_URI, ClientTLS, ServerTLSListener, ServiceSPIFFEID
+from agentplane.net.peertls.config import (
+    MCP_EDGE_URI,
+    POLICY_CONTROLLER_URI,
+    ClientTLS,
+    ServerTLSListener,
+    ServiceSPIFFEID,
+)
+
+
+class PolicyServicePeer(BaseModel):
+    """PolicyService reached over mutual TLS as the MCP edge."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target: str = Field(min_length=1)
+    tls: ClientTLS
+
+    @model_validator(mode="after")
+    def validate_caller(self) -> PolicyServicePeer:
+        self.tls.validate_caller(None, MCP_EDGE_URI)
+        if self.tls.server_uri != POLICY_CONTROLLER_URI:
+            raise ValueError(f"policy_service.tls.server_uri must be {POLICY_CONTROLLER_URI!r}")
+        return self
 
 
 class Settings(BaseModel):
@@ -28,6 +50,13 @@ class Settings(BaseModel):
 
     actions_target: str = Field(min_length=1)
     policy_namespace: str = Field(min_length=1, description="Namespace holding the live Identity objects.")
+    # CLEANUP(added 2026-11-26): require policy_service and drop policy_namespace once the edge no longer reads
+    #   Identities from Kubernetes (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+    policy_service: PolicyServicePeer | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="When set, Identities come from PolicyService.WatchIdentities instead of policy_namespace.",
+    )
     actions_token_file: str | None = Field(
         default=None, description="The MCP edge's projected token when it uses bearer authentication to Action Service."
     )
