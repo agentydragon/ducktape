@@ -67,11 +67,11 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixes(t *testing.T) {
 					Attribution:          protocol.SessionAttribution{SessionID: session.ID, ThreadID: session.ID, TurnID: fmt.Sprint(turn)},
 				}
 				prefix := fmt.Sprintf("Request-specific instructions %d", turn)
-				wrapped := func(ctx context.Context, tx *sql.Tx, content *contentdb.Store, authoritative *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+				wrapped := func(ctx context.Context, tx *sql.Tx, content *contentdb.Store, authoritative *Conversation, metadata ProviderRequest) (ProviderRequest, error) {
 					authoritative.Instructions = &prefix
-					prepared, wire, err := prepareProviderRequest(ctx, tx, content, authoritative, metadata, *preparation)
+					prepared, err := prepareProviderRequest(ctx, tx, content, authoritative, metadata, *preparation)
 					if err != nil {
-						return prepared, wire, err
+						return prepared, err
 					}
 					ids, err := content.LoadContext(prepared.SourceContextID)
 					if err != nil || len(ids) == 0 {
@@ -82,7 +82,7 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixes(t *testing.T) {
 					} else if string(ids[0]) != firstPromptID {
 						t.Fatalf("source context changed its first prompt ID: got=%s want=%s", ids[0], firstPromptID)
 					}
-					return prepared, wire, err
+					return prepared, err
 				}
 				intent := ProviderRequestIntent(PendingIntentSampling, samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}, config)
 				id, wire, err := store.begin(t.Context(), owner, intent, wrapped, providerAttemptTestPolicyPointer())

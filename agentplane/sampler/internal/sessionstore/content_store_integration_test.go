@@ -286,20 +286,20 @@ func TestProviderRequestContentSharesAcrossAccountsAndReadsAreAuthorized(t *test
 }
 
 func fixtureResponsesPreparation(body responses.Request) requestPreparation {
-	return func(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+	return func(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, error) {
 		previous, err := previousRequest(ctx, tx, conversation.ID, "")
 		if err != nil {
-			return ProviderRequest{}, nil, err
+			return ProviderRequest{}, err
 		}
 		if previous.ProfileID != "" {
 			body, err = responses.FreezeRequest(store, previous.ProfileID, body)
 			if err != nil {
-				return ProviderRequest{}, nil, err
+				return ProviderRequest{}, err
 			}
 		}
 		profile, ids, err := responses.StoreRequest(store, body)
 		if err != nil {
-			return ProviderRequest{}, nil, err
+			return ProviderRequest{}, err
 		}
 		return finishStoredRequest(store, metadata, profile, ids)
 	}

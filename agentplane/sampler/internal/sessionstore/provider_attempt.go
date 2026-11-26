@@ -326,7 +326,7 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	var wire []byte
+	var request IntentPayload
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockProviderResumption(ctx, tx, owner, kind, original)
 		if err != nil {
@@ -366,7 +366,6 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 		if err := tx.QueryRowContext(ctx, `SELECT request FROM sampler_intent WHERE id=$1`, previousIntentID).Scan(&requestWire); err != nil {
 			return err
 		}
-		var request IntentPayload
 		if err := json.Unmarshal(requestWire, &request); err != nil {
 			return err
 		}
@@ -393,10 +392,6 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 				return fmt.Errorf("sampling retry native context changed: %w", protocol.ErrPrecondition)
 			}
 		}
-		wire, err = renderProviderRequest(newContentDB(ctx, tx), *request.ProviderRequest)
-		if err != nil {
-			return err
-		}
 		retryRequestWire, err := marshal(request)
 		if err != nil {
 			return err
@@ -410,7 +405,7 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 	if err != nil {
 		return "", nil, err
 	}
-	return id, wire, nil
+	return s.renderStartedProviderRequest(ctx, owner, id, request.ProviderRequest)
 }
 
 // BeginSamplingRetry creates a fresh intent for a due sampling frontier and returns the exact

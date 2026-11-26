@@ -28,7 +28,7 @@ func (s *Store) BeginPreparedSampling(ctx context.Context, owner Owner, source *
 		return "", nil, nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	var wire []byte
+	var prepared *ProviderRequest
 	var snapshot *ProviderAttemptSnapshot
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerWithContextRefs(ctx, tx, owner)
@@ -54,7 +54,7 @@ func (s *Store) BeginPreparedSampling(ctx context.Context, owner Owner, source *
 		if err := s.checkpointConversationContexts(ctx, tx, conversation); err != nil {
 			return err
 		}
-		wire, err = s.beginIntent(ctx, tx, owner, conversation, session, id, request, requestPreparationFor(preparation), &policy)
+		prepared, err = s.beginIntent(ctx, tx, owner, conversation, session, id, request, requestPreparationFor(preparation), &policy)
 		if err != nil {
 			return err
 		}
@@ -64,7 +64,8 @@ func (s *Store) BeginPreparedSampling(ctx context.Context, owner Owner, source *
 	if err != nil {
 		return "", nil, nil, err
 	}
-	return id, wire, snapshot, nil
+	id, wire, err := s.renderStartedProviderRequest(ctx, owner, id, prepared)
+	return id, wire, snapshot, err
 }
 
 // InvalidSamplingContinuationError indicates that the returned records failed native append or validation.

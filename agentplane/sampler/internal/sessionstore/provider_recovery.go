@@ -67,7 +67,6 @@ func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, ses
 		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	var wire []byte
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockProviderResumption(ctx, tx, owner, kind, original)
 		if err != nil {
@@ -116,11 +115,10 @@ func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, ses
 				return protocol.ErrPrecondition
 			}
 		}
-		prepared, rendered, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
+		prepared, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
 		if err != nil {
 			return err
 		}
-		wire = rendered
 		request.ProviderRequest = &prepared
 		request.ProviderRequest.SourceNativeContextID = conversation.nativeContextID()
 		request.ProviderRequest.SourceControl, err = conversation.contextControl(conversation.Context())
@@ -140,7 +138,7 @@ func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, ses
 	if err != nil {
 		return "", nil, err
 	}
-	return id, wire, nil
+	return s.renderStartedProviderRequest(ctx, owner, id, request.ProviderRequest)
 }
 
 func (s *Store) BeginSamplingAfterHostLoss(ctx context.Context, owner Owner, sessionID, previousIntentID string,

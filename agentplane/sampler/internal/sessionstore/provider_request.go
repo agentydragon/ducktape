@@ -20,14 +20,14 @@ func requestPreparationFor(preparation *providerrequest.Preparation) requestPrep
 	if preparation == nil {
 		return nil
 	}
-	return func(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+	return func(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, error) {
 		return prepareProviderRequest(ctx, tx, store, conversation, metadata, *preparation)
 	}
 }
 
-func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest, preparation providerrequest.Preparation) (ProviderRequest, []byte, error) {
+func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest, preparation providerrequest.Preparation) (ProviderRequest, error) {
 	if metadata.API != preparation.ModelConfig.API || metadata.API != conversation.API {
-		return ProviderRequest{}, nil, protocol.ErrInvalid
+		return ProviderRequest{}, protocol.ErrInvalid
 	}
 	var previousKind PendingIntentKind
 	if metadata.API == protocol.APIStyleChatCompletions {
@@ -35,7 +35,7 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.St
 	}
 	previous, err := previousRequest(ctx, tx, conversation.ID, previousKind)
 	if err != nil {
-		return ProviderRequest{}, nil, err
+		return ProviderRequest{}, err
 	}
 	snapshot := providerrequest.Snapshot{API: conversation.API, PreviousProfileID: previous.ProfileID}
 	if conversation.Instructions != nil {
@@ -47,7 +47,7 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.St
 		if len(refs) == 0 {
 			refs, err = store.LoadContext(previous.ContextID)
 			if err != nil {
-				return ProviderRequest{}, nil, err
+				return ProviderRequest{}, err
 			}
 		}
 		if len(refs) > 0 {
@@ -57,13 +57,13 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.St
 	if metadata.API == protocol.APIStyleAnthropicMessages {
 		source, ok := conversation.Context().(*anthropic.Context)
 		if !ok {
-			return ProviderRequest{}, nil, protocol.ErrInvalid
+			return ProviderRequest{}, protocol.ErrInvalid
 		}
 		snapshot.PreviousMessageID = anthropic.PreviousMessageID(source)
 	}
 	recipe, err := providerrequest.Prepare(store, snapshot, preparation)
 	if err != nil {
-		return ProviderRequest{}, nil, err
+		return ProviderRequest{}, err
 	}
 	metadata.ProfileID = recipe.ProfileID
 	metadata.PrefixIDs = append(metadata.PrefixIDs, recipe.PrefixIDs...)
@@ -87,20 +87,19 @@ func prepareProviderRequest(ctx context.Context, tx *sql.Tx, store *contentdb.St
 		case protocol.APIStyleChatCompletions:
 			project = conversation.Context().(*chatcompletions.Context).ProjectRecords
 		default:
-			return ProviderRequest{}, nil, protocol.ErrInvalid
+			return ProviderRequest{}, protocol.ErrInvalid
 		}
 		metadata.SourceContextID, metadata.ContextID, err = conversation.projectHistory(ctx, tx, store, history.Key, project)
 		if err != nil {
-			return ProviderRequest{}, nil, err
+			return ProviderRequest{}, err
 		}
 	default:
-		return ProviderRequest{}, nil, protocol.ErrInvalid
+		return ProviderRequest{}, protocol.ErrInvalid
 	}
 	if err := store.Save(); err != nil {
-		return ProviderRequest{}, nil, err
+		return ProviderRequest{}, err
 	}
-	wire, err := renderProviderRequest(store, metadata)
-	return metadata, wire, err
+	return metadata, nil
 }
 
 // ProviderRequestProjectionMatches reports whether a retained provider request uses the current
