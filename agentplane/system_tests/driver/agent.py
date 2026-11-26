@@ -29,6 +29,7 @@ from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.scripted_turn import drive_scripted_turn
+from agentplane.system_tests.driver.session_spec import environment_session_spec
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.driver.turn import TURN_SECONDS, Turn, TurnCollector
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
@@ -106,16 +107,8 @@ class Agent:
             "system_test.session.create",
             attributes={"sandbox.name": sandbox, "harness": session_pb2.Harness.Name(harness)},
         ):
-            spec = session_pb2.SessionSpec(
-                placement=session_pb2.SessionPlacement(
-                    environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                        environment=session_pb2.ExactEnvironment(name=sandbox, uid=sandbox_uid), harness=harness
-                    )
-                ),
-                cwd=cwd,
-                model=model,
-                reasoning_effort="low",
-                instructions=instructions,
+            spec = environment_session_spec(
+                sandbox, sandbox_uid, harness=harness, model=model, cwd=cwd, instructions=instructions
             )
             # Retry the same desired Session even if an earlier create reached the runner.
             session_id = uuid4()

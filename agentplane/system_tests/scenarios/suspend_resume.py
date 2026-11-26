@@ -39,6 +39,7 @@ from agentplane.system_tests.driver.identity import API_VERSION
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.session_spec import environment_session_spec
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
@@ -359,16 +360,7 @@ async def an_identity_creates_a_native_session_only_with_an_explicit_binding_gra
     )
     model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
     session_id = str(uuid4())
-    spec = session_pb2.SessionSpec(
-        placement=session_pb2.SessionPlacement(
-            environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                environment=session_pb2.ExactEnvironment(name=target.name, uid=target.uid), harness=harness
-            )
-        ),
-        cwd=WORKING_DIRECTORY,
-        model=model_name,
-        reasoning_effort="low",
-    )
+    spec = environment_session_spec(target.name, target.uid, harness=harness, model=model_name, cwd=WORKING_DIRECTORY)
     command = shlex.join(
         [
             CLI,

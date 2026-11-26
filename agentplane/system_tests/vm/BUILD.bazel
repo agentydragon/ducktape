@@ -73,6 +73,7 @@ py_library(
         "//agentplane/proto:session_pb2",
         "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:session",
+        "//agentplane/system_tests/driver:session_spec",
         "@pypi//protobuf",
     ],
 )

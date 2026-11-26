@@ -16,6 +16,7 @@ from agentplane.system_tests.driver.action_cli import CLI
 from agentplane.system_tests.driver.agent import WORKING_DIRECTORY, Agent
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.session_spec import environment_session_spec
 
 
 async def sandbox_cli_denies_create_but_lists_its_identity_session(
@@ -40,15 +41,8 @@ async def sandbox_cli_denies_create_but_lists_its_identity_session(
 
     session_id = str(uuid4())
     existing_session_id = str(agent.thread_id)
-    spec = session_pb2.SessionSpec(
-        placement=session_pb2.SessionPlacement(
-            environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                environment=session_pb2.ExactEnvironment(name=view.target.name, uid=view.target.uid), harness=harness
-            )
-        ),
-        cwd=WORKING_DIRECTORY,
-        model=offered_model,
-        reasoning_effort="low",
+    spec = environment_session_spec(
+        view.target.name, view.target.uid, harness=harness, model=offered_model, cwd=WORKING_DIRECTORY
     )
     create = shlex.join(
         [
