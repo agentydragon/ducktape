@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { assertCertifiedResult, assertRejected, lower, sequentialSplit, workerSplit } from "./harness.mjs";
+import {
+  assertCertifiedResult,
+  assertRejectedOrOrderKeptSlice,
+  lower,
+  sequentialSplit,
+  workerSplit,
+} from "./harness.mjs";
 
 {
   const test = workerSplit(
@@ -99,7 +105,7 @@ import { assertCertifiedResult, assertRejected, lower, sequentialSplit, workerSp
   assertCertifiedResult(test, [1, [2, 3], "child", 3, [], true, 4, [5], 1, 0, 1, true]);
 }
 
-assertRejected(
+assertRejectedOrOrderKeptSlice(
   workerSplit(
     "reached-rest-with-default",
     "const fn = (first = 1, ...rest) => rest.length; export const result = fn();"

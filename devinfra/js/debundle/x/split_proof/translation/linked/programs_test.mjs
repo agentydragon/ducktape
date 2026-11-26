@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
+import path from "node:path";
 import {
   id,
   literal,
@@ -12,6 +13,8 @@ import {
   arrow,
   workerSplit,
   assertWorkerResult,
+  assertRejectedOrOrderKeptSlice,
+  observe,
   observedProgram,
 } from "./harness.mjs";
 
@@ -154,10 +157,11 @@ if (includesCase("recursive-fuel")) {
     "recursive-fuel",
     observedProgram(arrow([], call(id("worker"))), call(id("worker")))
   );
-  assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, /exhausted the fuel search budget \(64\)/);
-  assert.equal(verdict.reason_code, "probe_fuel");
-  assert(!existsSync(out));
+  const orderKept = assertRejectedOrOrderKeptSlice(
+    { verdict, log: JSON.stringify(verdict), out },
+    /exhausted the fuel search budget \(64\)/
+  );
+  if (!orderKept) assert.equal(verdict.reason_code, "probe_fuel");
 }
 
 checkWorkerResult(
@@ -221,8 +225,10 @@ for (const [name, expr, reason] of [
   ["host-typeof", '"undefined" != typeof window', /unsupported global window/],
 ]) {
   if (!includesCase(name)) continue;
-  const { verdict, out } = workerSplit(name, `const worker = () => ${expr}; export const result = worker();`);
-  assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, reason, name);
-  assert(!existsSync(out));
+  const result = workerSplit(name, `const worker = () => ${expr}; export const result = worker();`);
+  if (assertRejectedOrOrderKeptSlice(result, reason)) {
+    const expected = name === "host-typeof" ? false : true;
+    assert.deepEqual(observe(result.files.sourceFile, "result"), { result: expected });
+    assert.deepEqual(observe(path.join(result.out, "entry.mjs"), "result"), { result: expected });
+  }
 }

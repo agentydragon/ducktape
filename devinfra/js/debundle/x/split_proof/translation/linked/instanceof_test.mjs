@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
-  assertRejected,
+  assertRejectedOrOrderKeptSlice,
   caseShard,
   lower,
   observe,
@@ -67,6 +67,13 @@ export { result };`
   );
   const run = lower(f.sourceFile, f.specFile, f.out, options);
   assertCertifiedResult({ ...run, files: f, out: f.out }, expected);
+  if (name === "instanceof-evaluation-order") {
+    assert.equal(run.verdict.scope, "linked-programs", run.log);
+    assert.equal(run.verdict.guarantee, "normal-completion", run.log);
+    assert.deepEqual(run.verdict.assumptions, [
+      "Symbol.hasInstance returns the well-known hasInstance symbol without observable effects throughout initialization",
+    ]);
+  }
 }
 
 checkProtocol(
@@ -100,7 +107,7 @@ if (runCase("instanceof-non-callable-hook")) {
      export { result };`
   );
   const run = lower(f.sourceFile, f.specFile, f.out, options);
-  assertRejected({ ...run, out: f.out }, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice({ ...run, out: f.out }, /original threw during linked initialization/);
   assert.deepEqual(observe(f.sourceFile, "result"), { error: "TypeError" });
 }
 

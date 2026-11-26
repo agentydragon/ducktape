@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import {
   array,
   arrow,
+  assertRejectedOrOrderKeptSlice,
   assertWorkerResult,
   binary,
   block,
@@ -126,8 +126,6 @@ for (const [name, expression, reason, runtime] of [
     const result = worker(); export { result };`,
     entryUnits
   );
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, reason, log);
-  assert(!existsSync(out));
+  assertRejectedOrOrderKeptSlice({ verdict, log, out }, reason);
   assert.deepEqual(observe(files.sourceFile, "result"), runtime);
 }

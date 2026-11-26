@@ -5,6 +5,7 @@ import {
   arrow,
   assertCertifiedResult,
   assertRejected,
+  assertRejectedOrOrderKeptSlice,
   binary,
   block,
   exportNamed,
@@ -133,11 +134,11 @@ const conversion = sequentialSplit(
   export { result };`
 );
 assert.deepEqual(observe(conversion.files.sourceFile, "result"), { result: "conversion" });
-assertRejected(conversion, /an object is converted to a primitive/);
+assertRejectedOrOrderKeptSlice(conversion, /an object is converted to a primitive/);
 
 const bigint = sequentialSplit("mixed-bigint", "const run = () => 1n + 1; const result = run(); export { result };");
 assert.deepEqual(observe(bigint.files.sourceFile, "result"), { error: "TypeError" });
-assertRejected(bigint, /unsupported literal/);
+assertRejectedOrOrderKeptSlice(bigint, /unsupported literal/);
 
 // An early read sees the already allocated var cell's undefined value, so both
 // schedules complete. The arithmetic exposes the different initialization order.

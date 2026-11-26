@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
-  assertRejected,
+  assertRejectedOrOrderKeptSlice,
   caseShard,
   lower,
   observe,
@@ -95,7 +95,7 @@ for (const [name, body, reason] of [
     { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
     ["base.mjs"]
   );
-  assertRejected(refused, reason);
+  assertRejectedOrOrderKeptSlice(refused, reason);
   assert.deepEqual(observe(refused.files.sourceFile, "result"), {
     error: name === "null" ? "TypeError" : "ReferenceError",
   });

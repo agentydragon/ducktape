@@ -26,7 +26,10 @@ function check(dir, status, ...args) {
   const verdict = JSON.parse(run.stdout);
   assert.equal(verdict.requested, request);
   assert.equal(verdict.status, status);
-  assert.equal(verdict.guarantee, status === "certified" ? request : null);
+  if (status === "certified") {
+    assert([request, "all-outcomes"].includes(verdict.guarantee));
+    if (verdict.guarantee === "all-outcomes") assert.equal(verdict.scope, "linked-slice-order-kept");
+  } else assert.equal(verdict.guarantee, null);
 }
 place({ [provider]: ["#0"], [entry]: ["#1"] });
 const out = path.join(process.env.TEST_TMPDIR, "good");

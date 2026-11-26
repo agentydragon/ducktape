@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   assertCertified,
+  assertRejectedOrOrderKeptSlice,
   array,
   arrow,
   binary,
@@ -124,10 +125,11 @@ await requireCertified(
 
 {
   const test = fixture("object-key", "const instance = { field: 1 }; export const result = instance[{}];", 2, [0]);
-  const { verdict, log } = test;
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, /object is converted to a primitive/);
-  assert(!existsSync(test.out));
+  const orderKept = assertRejectedOrOrderKeptSlice(test, /object is converted to a primitive/);
+  if (orderKept) {
+    assert.equal((await load(test.files.sourceFile)).result, undefined);
+    assert.equal((await load(path.join(test.out, entry))).result, undefined);
+  }
 }
 
 // A wrong presence result must throw during initialization, even if both
@@ -199,9 +201,8 @@ await requireCertified(
     2,
     [0]
   );
-  assert.equal(test.verdict.status, "rejected", test.log);
-  assert.match(test.verdict.reason, /object is converted to a primitive/);
-  assert(!existsSync(test.out));
+  const orderKept = assertRejectedOrOrderKeptSlice(test, /object is converted to a primitive/);
+  if (orderKept) assert.equal((await load(path.join(test.out, entry))).result, true);
   assert.equal((await load(test.files.sourceFile)).result, true);
 }
 

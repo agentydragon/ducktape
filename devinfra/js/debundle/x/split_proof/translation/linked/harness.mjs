@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -146,7 +146,7 @@ export function observe(file, exportNames) {
   return Object.fromEntries(names.map((name) => [name, observed.values[name]]));
 }
 
-export function lower(source, spec, out, extra = [], scope = "linked-programs") {
+export function lower(source, spec, out, extra = [], scope = null) {
   const options = { source, spec, out };
   for (let i = 0; i < extra.length; i++) {
     const flag = extra[i];
@@ -164,7 +164,21 @@ export function lower(source, spec, out, extra = [], scope = "linked-programs") 
   cached.push({ options, result });
   certifiedByFixture.set(fixtureKey(source, spec), cached);
   if (process.env.SPLIT_PROOF_TIMINGS === "1") process.stderr.write(result.stderr);
-  assert.equal(result.scope, scope, result.log);
+  if (scope === null) {
+    if (result.status === "certified") {
+      assert(
+        [
+          "closed-declarations",
+          "linked-programs",
+          "linked-slice-order-kept",
+          "linked-slice-moves",
+          "linked-slice-certified-bindings",
+          "linked-slice-heritage",
+        ].includes(result.scope),
+        `unexpected linked strategy scope ${result.scope}: ${result.log}`
+      );
+    }
+  } else assert.equal(result.scope, scope, result.log);
   return { verdict: result.verdict, log: result.log };
 }
 
@@ -180,15 +194,29 @@ export function prepare(dir, { source, provider, extras = {}, sourceName = "sour
   return { sourceFile, providerFile, specFile };
 }
 
-export function threeUnitFixture(name, source, entry = "entry.mjs") {
+export function threeUnitFixture(name, source, entry = "entry.mjs", withProvider = false) {
   const dir = path.join(root, name);
   const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: { entry, modules: { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] }, order: ["worker.mjs"], sequential: true },
+    source: withProvider ? `import "./provider.mjs";\n${source}` : source,
+    provider: withProvider ? "export {};\n" : "",
+    spec: withProvider
+      ? {
+          entry,
+          modules: { "worker.mjs": ["#1"], [entry]: ["#0", "#2", "#3"] },
+          order: ["worker.mjs"],
+          sequential: true,
+        }
+      : { entry, modules: { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] }, order: ["worker.mjs"], sequential: true },
   });
   const out = path.join(dir, "out");
-  return { ...files, out, run: (...opts) => lower(files.sourceFile, files.specFile, out, opts).verdict };
+  return {
+    ...files,
+    out,
+    run: (...opts) => {
+      if (!opts.includes("--check-output")) rmSync(out, { recursive: true, force: true });
+      return lower(files.sourceFile, files.specFile, out, opts).verdict;
+    },
+  };
 }
 
 // Compute evaluation order from the emitted requests, including the cycle a fixed
@@ -298,6 +326,21 @@ export function assertRejected({ verdict, log, out }, reason) {
   assert.equal(verdict.status, "rejected", log);
   assert.match(verdict.reason, reason, log);
   assert(!existsSync(out), out);
+}
+
+// Order-kept slices prove the stronger all-outcomes result for these cases.
+export function assertRejectedOrOrderKeptSlice({ verdict, log, out }, reason) {
+  if (verdict.status === "certified" && verdict.scope === "linked-slice-order-kept") {
+    assert.equal(verdict.guarantee, "all-outcomes", log);
+    assert(existsSync(out), out);
+    return true;
+  }
+  assertRejected({ verdict, log, out }, reason);
+  return false;
+}
+
+export function assertRefusedOrOrderKeptSlice(verdict, out, reason, log = JSON.stringify(verdict)) {
+  return assertRejectedOrOrderKeptSlice({ verdict, out, reason, log }, reason);
 }
 
 export function assertWorkerResult(name, source, expected, entryUnits) {

@@ -4,6 +4,7 @@ import {
   arrow,
   assertCertifiedResult,
   assertRejected,
+  assertRejectedOrOrderKeptSlice,
   block,
   call,
   caseShard,
@@ -186,7 +187,7 @@ if (runCase("optional-read-receiver-error")) {
     const result = holder.field?.id;
     export { result };`
   );
-  assertRejected(failedReceiver, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice(failedReceiver, /original threw during linked initialization/);
   assert.deepEqual(observe(failedReceiver.files.sourceFile, "result"), { error: "TypeError" });
 }
 
@@ -291,7 +292,7 @@ if (runCase("optional-method-falsy-receiver")) {
     const result = run(false);
     export { result };`
   );
-  assertRejected(missingMethod, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice(missingMethod, /original threw during linked initialization/);
   assert.deepEqual(observe(missingMethod.files.sourceFile, "result"), { error: "TypeError" });
 }
 
@@ -306,7 +307,7 @@ if (runCase("optional-method-tdz")) {
   const result = run();
   export { result };`
   );
-  assertRejected(uninitialized, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice(uninitialized, /original threw during linked initialization/);
   assert.deepEqual(observe(uninitialized.files.sourceFile, "result"), { error: "ReferenceError" });
 }
 
@@ -343,5 +344,5 @@ for (const [name, body, reason, expected] of [
       export { result };`
   );
   assert.deepEqual(observe(test.files.sourceFile, "result"), { result: expected });
-  assertRejected(test, reason);
+  assertRejectedOrOrderKeptSlice(test, reason);
 }

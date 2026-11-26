@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import {
   assertCertifiedResult,
   assertRejected,
+  assertRejectedOrOrderKeptSlice,
   caseShard,
   forcePreview,
   lower,
@@ -113,6 +114,6 @@ if (runCase("null-home-prototype")) {
     `const object = { __proto__: null, read() { return super.value; } };
    export const result = object.read();`
   );
-  assertRejected(nullBase, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice(nullBase, /original threw during linked initialization/);
   assert.deepEqual(observe(nullBase.files.sourceFile, "result"), { error: "TypeError" });
 }

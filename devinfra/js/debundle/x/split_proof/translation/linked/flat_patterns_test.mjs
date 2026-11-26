@@ -6,6 +6,7 @@ import {
   arrow,
   assertCertified,
   assertRejected,
+  assertRejectedOrOrderKeptSlice,
   block,
   call,
   caseShard,
@@ -148,7 +149,7 @@ for (const [name, declaration, reason, error] of [
   if (!runCase(name)) continue;
   const source = `${declaration} export { value };`;
   const result = sequentialSplit(name, source, { [entry]: ["#0", "#1"] }, []);
-  assertRejected(result, reason);
+  assertRejectedOrOrderKeptSlice(result, reason);
   if (error) assert.deepEqual(observe(result.files.sourceFile, "value"), { error });
 }
 
@@ -276,9 +277,7 @@ for (const [name, param] of [
   if (!runCase(`unsupported-parameter-${name}`)) continue;
   const source = `function read(${param}) {} read({}); export {read};`;
   const result = sequentialSplit(name, source, { [entry]: ["#0", "#1", "#2"] }, []);
-  assert.equal(result.verdict.status, "rejected", result.log);
-  assert.match(result.verdict.reason, /deferred function read:/, result.log);
-  assert(!existsSync(result.out));
+  assertRejectedOrOrderKeptSlice(result, /deferred function read:/);
 }
 
 if (runCase("local-defaults")) {

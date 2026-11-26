@@ -5,6 +5,7 @@ import { parse } from "acorn";
 import path from "node:path";
 import {
   assertCertified,
+  assertRejectedOrOrderKeptSlice,
   arrow,
   assertCertifiedResult,
   binary,
@@ -87,7 +88,11 @@ for (const [scenario, values, initialFields] of [
 
   const disk = lower(files.sourceFile, files.specFile, out, ["--check-output"]);
   assert.equal(disk.verdict.status, "certified", disk.log);
-  assert.equal(disk.verdict.guarantee, "normal-completion", disk.log);
+  assert.equal(
+    disk.verdict.guarantee,
+    disk.verdict.scope === "linked-slice-order-kept" ? "all-outcomes" : "normal-completion",
+    disk.log
+  );
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     const namespace = await import(pathToFileURL(file).href);
     assert.deepEqual(Object.keys(namespace), ["Codes"]);
@@ -104,10 +109,12 @@ if (includesCase("readonly-batch")) {
   const init = call(arrow([target], sequence(...writes, target)), [arrow([], literal(0))]);
   const source = program([declare("codes", init), exportNamed([["codes", "Codes"]])]);
   const { files, out, verdict, log } = sequentialSplit("readonly-batch", source, { [worker]: ["#0"], [entry]: ["#1"] });
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, /original threw during linked initialization/, log);
-  assert(!existsSync(out));
+  const orderKept = assertRejectedOrOrderKeptSlice(
+    { verdict, log, out },
+    /original threw during linked initialization/
+  );
   assert.deepEqual(observe(files.sourceFile, "Codes"), { error: "TypeError" });
+  if (orderKept) assert.deepEqual(observe(path.join(out, entry), "Codes"), { error: "TypeError" });
 }
 
 // Guard the model itself against evaluating an operand out of order or twice.

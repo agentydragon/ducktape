@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   assertCertified,
+  assertRejectedOrOrderKeptSlice,
   exportNamed,
   id,
   literal,
@@ -111,9 +111,13 @@ for (const kind of ["string", "object", "duplicate"]) {
       ]);
     }
   } else if (objectKey) {
-    assert.equal(verdict.status, "rejected", log);
-    assert.match(verdict.reason, /object is converted to a primitive/);
-    assert(!existsSync(out));
+    const orderKept = assertRejectedOrOrderKeptSlice({ verdict, log, out }, /object is converted to a primitive/);
+    if (orderKept) {
+      for (const file of [sourceFile, path.join(out, entry)]) {
+        const { result } = await import(pathToFileURL(file).href);
+        assert.deepEqual(result, [undefined, ...Array.from({ length: 8 }, (_, i) => `value${i}`)]);
+      }
+    }
   } else {
     assert.equal(verdict.status, "certified", log);
     for (const file of [sourceFile, path.join(out, entry)]) {

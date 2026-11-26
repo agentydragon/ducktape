@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertified,
-  assertRejected,
+  assertRejectedOrOrderKeptSlice,
   caseShard,
   lower,
   observe,
@@ -145,6 +145,6 @@ if (runCase("loop-head-tdz")) {
     export { values };
   `;
   const run = sequentialSplit("loop-head-tdz", source, { [entry]: ["#0", "#1", "#2"] }, []);
-  assertRejected(run, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice(run, /original threw during linked initialization/);
   assert.deepEqual(observe(run.files.sourceFile, "values"), { error: "ReferenceError" });
 }

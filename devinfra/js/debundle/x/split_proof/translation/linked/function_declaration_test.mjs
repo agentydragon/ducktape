@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   assertCertified,
+  assertRejectedOrOrderKeptSlice,
   block,
   call,
   conditional,
@@ -139,7 +140,5 @@ for (const [seed, value] of ["initialized", 42].entries()) {
 {
   const source = "function read() { { function nested() { return 3; } return nested(); } } read(); export { read };";
   const { out, verdict, log } = sequentialSplit("block-local", source, { [entry]: ["#0", "#1", "#2"] }, []);
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, /unsupported statement FunctionDeclaration/, log);
-  assert(!existsSync(out));
+  assertRejectedOrOrderKeptSlice({ verdict, log, out }, /unsupported statement FunctionDeclaration/);
 }

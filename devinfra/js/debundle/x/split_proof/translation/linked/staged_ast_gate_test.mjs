@@ -11,11 +11,12 @@ const host = path.join(root, "host.json");
 const out = path.join(root, "out");
 mkdirSync(root, { recursive: true });
 const payload = "x".repeat(220_000);
+writeFileSync(path.join(root, "provider.mjs"), "export {};\n");
 writeFileSync(
   source,
-  `let count = 0;\nconst hostType = typeof window;\nconst payload = ${JSON.stringify(payload)};\nexport { count, hostType, payload };\n`
+  `import "./provider.mjs";\nlet count = 0;\nconst hostType = typeof window;\nconst payload = ${JSON.stringify(payload)};\nexport { count, hostType, payload };\n`
 );
-writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2", "#3"] } }));
+writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2", "#3", "#4"] } }));
 writeFileSync(host, JSON.stringify({ profile: "browser-page" }));
 
 function certify(checkOutput) {

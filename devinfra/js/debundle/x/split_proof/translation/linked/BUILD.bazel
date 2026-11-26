@@ -85,7 +85,10 @@ js_test(
         timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
         data = _TEST_DATA,
         entry_point = name + ".mjs",
-        env = _TEST_ENV,
+        env = dict(
+            _TEST_ENV,
+            SPLIT_PROOF_STRATEGY_CENSUS = "1",
+        ) if name == "composition_test" else _TEST_ENV,
     )
     for name in [
         "arithmetic_observer_test",
@@ -123,6 +126,7 @@ js_test(
         "rest_parameters_test",
         "strict_arguments_test",
         "schedule_moves_test",
+        "slice_strategy_test",
         "regexp_test",
         "small_records_test",
         "structural_intrinsic_number_test",
