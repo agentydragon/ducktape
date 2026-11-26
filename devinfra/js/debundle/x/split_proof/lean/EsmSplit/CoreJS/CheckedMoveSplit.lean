@@ -80,7 +80,13 @@ def checkedMoveSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guar
           ((certifiedMovesOk_iff stmts bundle plan.execOrder).1 moves) n final
       have ordered : output.evalOrder = spec.order ++ [spec.entry] := by
         simpa only [output, split_evalOrder] using schedule
-      return ⟨⟨bundle, plan, output, placed, links.sameExports exportsMatched, requestedNormal ▸ normal⟩, ordered⟩
+      have originalStatements : CheckedSplit.sourceStatements source = stmts := by
+        rw [sourceShape]
+        simp only [CheckedSplit.sourceStatements, body]
+        exact List.map_snd_zip (by simp)
+      return ⟨⟨bundle, plan, output,
+        ⟨placed, links.sameExports exportsMatched, requestedNormal ▸ normal⟩,
+        originalStatements ▸ footprints, rfl, by simp [output, originalStatements]⟩, ordered⟩
     else throw "the split entry does not export the source's public live cells"
   else throw "a reordered pair is not certified to commute"
 
