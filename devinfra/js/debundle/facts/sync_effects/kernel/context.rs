@@ -7,10 +7,7 @@ use super::super::alternatives::PathState;
 use super::super::array_transfer::ArrayMethodSelection;
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
-use super::super::local_operations::DeferredCallableCreation;
-use super::super::own_data_transfer::OwnDataContext;
 use super::super::runtime_heap::NativeIterableUse;
-use super::super::value_model::{CallSite, CapturedContext, LexicalCaptures, ValueExpr, Values};
 use super::super::world::World;
 use super::closure::{CapturePolicy, ClosureAdmission};
 use super::frame::{LocalCallRequest, LocalFrame, LocalValueResult, RemainderDisposition};
@@ -19,6 +16,9 @@ use analysis_vocabulary::inputs::ProofDependencies;
 use rustc_hash::FxHashSet;
 use swc_common::Span;
 use swc_ecma_ast::Id;
+use value_model::local_operations::DeferredCallableCreation;
+use value_model::own_data_transfer::OwnDataContext;
+use value_model::{CallSite, CapturedContext, LexicalCaptures, ValueExpr, Values};
 
 pub(crate) trait BindingContext {
     fn read_binding(

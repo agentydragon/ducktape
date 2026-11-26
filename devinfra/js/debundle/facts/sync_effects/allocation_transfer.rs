@@ -4,10 +4,6 @@
 //! Lowered values alone can have erased calls, writes or coercions.
 
 use super::effect_coverage::EffectCoverageFragment;
-use super::value_model::{
-    AbstractValue, ArrayElement, CallSite, DenseArray, LiteralPropertyKind, PropertyDefinition,
-    ValueExpr, Values,
-};
 use super::world::object_surface::ObjectSurfaceStore;
 use analysis::facts::abstract_domain::builtins::{
     ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
@@ -22,6 +18,10 @@ use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
 use swc_ecma_ast::{BinaryOp, Id};
+use value_model::{
+    AbstractValue, ArrayElement, CallSite, DenseArray, LiteralPropertyKind, PropertyDefinition,
+    ValueExpr, Values,
+};
 
 /// Maximum exact slot count retained across one array literal's spreads.
 pub(super) const MAX_EXACT_ARRAY_SPREAD_SLOTS: usize = 4096;

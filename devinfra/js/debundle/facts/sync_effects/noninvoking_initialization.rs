@@ -2,7 +2,6 @@
 
 use super::allocation_transfer::AllocationJudgment;
 use super::effect_coverage::EffectCoverageFragment;
-use super::value_model::{AbstractValue, CallSite, HeapAddress, ValueExpr, Values};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::initialization_effects::CompletedInitialization;
 use analysis::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
@@ -12,6 +11,7 @@ use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
+use value_model::{AbstractValue, CallSite, HeapAddress, ValueExpr, Values};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum NativeConstructorKind {

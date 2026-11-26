@@ -22,14 +22,8 @@ use super::super::kernel::frame::{
     self as kernel_frame, EvaluatedCallee, LocalCallRequest, LocalFrame, LocalValueResult,
     RemainderDisposition,
 };
-use super::super::local_operations::{LocalBody, LocalExpression, LocalOperation};
-use super::super::own_data_transfer::OwnDataContext;
 use super::super::runtime_heap::NativeIterableUse;
 use super::super::runtime_inference::{CallOperands, CallTransfer, RuntimeOperation, RuntimeValue};
-use super::super::value_model::{
-    AbstractValue, CallSite, CallableSelection, CapturedContext, LexicalCaptures, MemberKey,
-    OwnPropertyShape, ValueExpr, Values,
-};
 use super::super::world::World;
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::abstract_domain::builtins;
@@ -45,6 +39,12 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span};
 use swc_ecma_ast::*;
+use value_model::local_operations::{LocalBody, LocalExpression, LocalOperation};
+use value_model::own_data_transfer::OwnDataContext;
+use value_model::{
+    AbstractValue, CallSite, CallableSelection, CapturedContext, LexicalCaptures, MemberKey,
+    OwnPropertyShape, ValueExpr, Values,
+};
 
 #[derive(Clone, Copy)]
 pub(crate) enum LocalExecutionScope {
@@ -922,7 +922,7 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
     fn admit_closure(
         &mut self,
         frame: &LocalFrame,
-        creation: super::super::local_operations::DeferredCallableCreation,
+        creation: value_model::local_operations::DeferredCallableCreation,
         captures: &LexicalCaptures,
     ) -> Result<ClosureAdmission, RemainderDisposition> {
         let callable = creation.callable();
@@ -951,7 +951,7 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
         let selected_function_argument = body.opaque
             && matches!(
                 creation,
-                super::super::local_operations::DeferredCallableCreation::Function(_)
+                value_model::local_operations::DeferredCallableCreation::Function(_)
             )
             && matches!(self.scope, LocalExecutionScope::Root)
             && self

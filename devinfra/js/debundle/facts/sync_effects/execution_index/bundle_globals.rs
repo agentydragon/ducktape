@@ -1,6 +1,5 @@
 //! Bundle-owned global properties: one finite invalidation closure across chunks.
 
-use super::super::value_model::{MemberKey, ValueExpr};
 use super::{
     CallKind, CallableReturnInputs, ExecutionIndex, GlobalNames, IntrinsicRootMap,
     IntrinsicRootRead, IntrinsicWriteTarget, NativeReceiverRoot, NativeReceiverRoots,
@@ -15,6 +14,7 @@ use analysis_vocabulary::report_schema::NativeMutationOperation;
 use inference::{FactContext, IterativeInference, IterativeRules};
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
+use value_model::{MemberKey, ValueExpr};
 
 const KEYED_COLLECTIONS: [&str; 4] = ["Map", "Set", "WeakMap", "WeakSet"];
 const LEGACY_ACCESSOR_METHODS: [&str; 2] = ["__defineGetter__", "__defineSetter__"];

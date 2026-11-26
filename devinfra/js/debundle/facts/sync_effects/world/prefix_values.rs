@@ -4,12 +4,12 @@
 //! Ordinals follow `Id` order, so iteration matches an `Id`-keyed map, while
 //! lookups compare integers instead of binding names.
 
-use super::super::value_model::Values;
 use imbl::OrdMap;
 use rustc_hash::FxHashMap;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use swc_ecma_ast::Id;
+use value_model::Values;
 
 /// The run's top-level bindings, numbered in `Id` order.
 #[derive(Debug, Default, PartialEq, Eq)]

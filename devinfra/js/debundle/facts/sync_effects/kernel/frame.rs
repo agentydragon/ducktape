@@ -4,12 +4,12 @@ use super::super::allocation_transfer::{AllocationJudgment, AllocationValue};
 use super::super::array_transfer::ArrayMethodSelection;
 use super::super::completion::{AbruptAlternative, Completion, TransferLedger};
 use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::value_model::{AbstractValue, CallableSelection, Context, Values};
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
 use swc_ecma_ast::Id;
+use value_model::{AbstractValue, CallableSelection, Context, Values};
 
 #[derive(Clone)]
 pub(crate) struct LocalFrame {

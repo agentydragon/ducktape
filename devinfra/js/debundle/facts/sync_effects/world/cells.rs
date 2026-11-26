@@ -3,10 +3,10 @@
 //! A cell id names one instantiated binding for the whole run; ids are never
 //! reused, so two worlds forked from one prefix can be joined cell by cell.
 
-use super::super::local_operations::LocalBinding;
-use super::super::value_model::{AbstractValue, Captured, LexicalCellId, Values};
 use analysis_vocabulary::value::Value;
 use rustc_hash::FxHashSet;
+use value_model::local_operations::LocalBinding;
+use value_model::{AbstractValue, Captured, LexicalCellId, Values};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CellInitialization {
@@ -228,9 +228,9 @@ impl<'a> CellTrace<'a> {
 #[cfg(test)]
 mod tests {
     use super::{CellInitialization, LexicalCell, LexicalCells};
-    use crate::local_operations::LocalBinding;
-    use crate::value_model::{AbstractValue, Values};
     use analysis_vocabulary::value::{Kind, Value};
+    use value_model::local_operations::LocalBinding;
+    use value_model::{AbstractValue, Values};
 
     const UNAVAILABLE: AbstractValue = AbstractValue::Value(Value::Unavailable);
 

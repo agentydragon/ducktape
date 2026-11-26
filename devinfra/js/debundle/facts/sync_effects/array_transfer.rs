@@ -1,7 +1,6 @@
 //! Native array operations over an uninterrupted literal's descriptor state.
 
 use super::effect_coverage::EffectCoverageFragment;
-use super::value_model::{AbstractValue, Values};
 use analysis::facts::EffectCell;
 use analysis::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ITERATION_ROWS, IterationResult, IterationRow,
@@ -11,6 +10,7 @@ use analysis_model::PrimKinds;
 use analysis_vocabulary::execution_evidence::OrderedCallAdmissionRefusal;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
+use value_model::{AbstractValue, Values};
 
 pub(super) trait ArrayContext {
     /// Exact length, writable own length, extensibility, original prototype,

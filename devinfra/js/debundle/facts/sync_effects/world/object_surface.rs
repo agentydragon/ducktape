@@ -5,9 +5,9 @@
 //! operation transfer that planned it (`native::operation`).
 
 use super::super::allocation_transfer::WritablePrefixState;
-use super::super::value_model::Values;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
+use value_model::Values;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct AppliedAccessor {

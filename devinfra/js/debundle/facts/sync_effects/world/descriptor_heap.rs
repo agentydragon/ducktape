@@ -6,16 +6,16 @@
 //! planning transfer (`native::operation`) and the realizability gate.
 
 use super::super::allocation_transfer::LiteralHeap;
-use super::super::own_data_transfer::OwnDataContext;
-use super::super::property_inference::{
-    CapturedPropertyDescriptor, OwnPropertyDescriptorProjection,
-};
-use super::super::value_model::{AbstractValue, CallSite, DenseArray, Values};
 use super::object_surface::ObjectSurfaceStore;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
 use std::collections::BTreeMap;
+use value_model::own_data_transfer::OwnDataContext;
+use value_model::property_inference::{
+    CapturedPropertyDescriptor, OwnPropertyDescriptorProjection,
+};
+use value_model::{AbstractValue, CallSite, DenseArray, Values};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct OwnDescriptorMapState {

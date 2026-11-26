@@ -13,15 +13,15 @@ use super::super::allocation_transfer::{self, AllocationContext};
 use super::super::execution_index::CallKind;
 use super::super::interpreter::{Executor, from_flow, unknown};
 use super::super::runtime_heap::NativeIterableUse;
-use super::super::value_model::{
-    AbstractValue, Context, HeapAddress, InstanceOrigin, RetainedResultKind, ValueExpr, Values,
-};
 use analysis::facts::abstract_domain::builtins::IntrinsicOp;
 use analysis::facts::evaluation_effects::GlobalAccessKind;
 use analysis_vocabulary::report_schema::CallbackFactoryUseKind;
 use analysis_vocabulary::value::{Kind, Value};
 use swc_common::Span;
 use swc_ecma_ast::*;
+use value_model::{
+    AbstractValue, Context, HeapAddress, InstanceOrigin, RetainedResultKind, ValueExpr, Values,
+};
 
 pub(crate) struct ApplicationAllocationContext<'a, 'source, 'rule> {
     executor: &'a mut Executor<'source, 'rule>,
@@ -80,7 +80,7 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
         &self,
         allocation: u32,
         position: usize,
-    ) -> super::super::value_model::LiteralPropertyKind {
+    ) -> value_model::LiteralPropertyKind {
         self.executor
             .inputs
             .index
@@ -188,7 +188,7 @@ impl Executor<'_, '_> {
                     .iter()
                     .enumerate()
                     .map(|(position, (name, value))| {
-                        super::super::value_model::PropertyDefinition::new(
+                        value_model::PropertyDefinition::new(
                             self.inputs.index.literal_property_kind(*key, position),
                             name.clone(),
                             value,

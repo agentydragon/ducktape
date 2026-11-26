@@ -6,8 +6,6 @@
 //! happened while constructing the plan, and a plan is never evidence that
 //! the operation completed normally.
 
-use super::super::property_inference::{OwnPropertyProjection, OwnPropertyProof};
-use super::super::value_model::{AbstractValue, CallSite, Values};
 use super::super::world::descriptor_heap::{
     DescriptorApplication, DescriptorHeap, DynamicKeyDefinition,
 };
@@ -16,6 +14,8 @@ use analysis::facts::abstract_domain::heap::Mutation;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeSet;
+use value_model::property_inference::{OwnPropertyProjection, OwnPropertyProof};
+use value_model::{AbstractValue, CallSite, Values};
 
 /// One heap mutation of an admitted row, fully materialized by `plan`.
 #[derive(Debug, Clone)]
@@ -27,7 +27,7 @@ pub(crate) enum NativeOperationCommit {
     },
     CaptureDescriptors {
         site: CallSite,
-        projection: Box<super::super::property_inference::OwnPropertyDescriptorProjection>,
+        projection: Box<value_model::property_inference::OwnPropertyDescriptorProjection>,
     },
     CreateNamesArray {
         allocation: u32,

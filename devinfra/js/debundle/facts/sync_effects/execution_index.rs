@@ -23,17 +23,9 @@ use property_keys::{
     property_key_evidence,
 };
 
-use super::callable_body_facts::CallableBodyFacts;
-use super::local_operations::{DeferredCallableCreation, LocalBinding, LocalBody};
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::strict_provider;
-use super::value_model::{
-    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, DiscardedHeritageCall,
-    FromEntriesMappedProof, LexicalClassHeritage, MemberKey, NamespaceValueFacts,
-    OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, infer_namespace_aliases,
-    object_data_property_name, static_prop, static_property_name,
-};
 use analysis::facts::abstract_domain::builtins::{
     self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
 };
@@ -88,6 +80,14 @@ use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
+use value_model::callable_body_facts::CallableBodyFacts;
+use value_model::local_operations::{DeferredCallableCreation, LocalBinding, LocalBody};
+use value_model::{
+    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, DiscardedHeritageCall,
+    FromEntriesMappedProof, LexicalClassHeritage, MemberKey, NamespaceValueFacts,
+    OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, infer_namespace_aliases,
+    object_data_property_name, static_prop, static_property_name,
+};
 
 fn map_entry_array_span(new_expr: &NewExpr) -> Option<u32> {
     if !matches!(new_expr.callee.unwrap_parens(), Expr::Ident(ident) if ident.sym == "Map") {
@@ -4615,7 +4615,7 @@ pub(super) struct ExecutionIndex {
     pub(super) map_entry_arrays: BTreeSet<u32>,
     pub(super) dense_array_literals: BTreeMap<u32, usize>,
     pub(super) array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
-    literal_property_kinds: BTreeMap<u32, Vec<super::value_model::LiteralPropertyKind>>,
+    literal_property_kinds: BTreeMap<u32, Vec<value_model::LiteralPropertyKind>>,
     callable_creations: BTreeMap<u32, DeferredCallableCreation>,
     pub(super) method_record_members: BTreeMap<u32, Vec<crate::foreign_call::RecordMember>>,
     pub(super) array_iterations: BTreeMap<CallSite, ArrayIteration>,
@@ -4926,12 +4926,12 @@ impl ExecutionIndex {
         &self,
         allocation: u32,
         position: usize,
-    ) -> super::value_model::LiteralPropertyKind {
+    ) -> value_model::LiteralPropertyKind {
         self.literal_property_kinds
             .get(&allocation)
             .and_then(|kinds| kinds.get(position))
             .cloned()
-            .unwrap_or(super::value_model::LiteralPropertyKind::Opaque)
+            .unwrap_or(value_model::LiteralPropertyKind::Opaque)
     }
 
     pub(super) fn callable_creation(&self, callable: u32) -> Option<DeferredCallableCreation> {
@@ -7360,7 +7360,7 @@ impl Visit for ExecutionIndex {
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
-        use super::value_model::LiteralPropertyKind;
+        use value_model::LiteralPropertyKind;
         let mut definition_kinds = Vec::new();
         let mut record_members = Some(Vec::new());
         let mut member_names = BTreeSet::new();

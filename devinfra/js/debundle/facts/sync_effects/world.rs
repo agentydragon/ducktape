@@ -11,8 +11,6 @@ pub(super) mod object_surface;
 pub(super) mod prefix_values;
 
 use super::allocation_transfer::LiteralHeap;
-use super::value_model::{CallSite, Captured, Context, DenseArray, LexicalCellId, Values};
-use super::value_model::{CallableSelection, WorldScope};
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::report_schema::FirstClassMembersPublication;
 use cells::{CellTrace, LexicalCells};
@@ -23,6 +21,8 @@ use prefix_values::PrefixValues;
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
+use value_model::{CallSite, Captured, Context, DenseArray, LexicalCellId, Values};
+use value_model::{CallableSelection, WorldScope};
 
 /// The program prefix's values, heap facts, reachability and identity-bearing
 /// cells. One `World` serves both adapters with a different `scope`; the
@@ -242,10 +242,10 @@ impl World {
             trace.values(&descriptors.retained_values);
             for descriptor in descriptors.properties.values() {
                 match descriptor {
-                    super::property_inference::CapturedPropertyDescriptor::Data(values) => {
+                    value_model::property_inference::CapturedPropertyDescriptor::Data(values) => {
                         trace.values(values)
                     }
-                    super::property_inference::CapturedPropertyDescriptor::Accessor {
+                    value_model::property_inference::CapturedPropertyDescriptor::Accessor {
                         getter,
                         setter,
                     } => {

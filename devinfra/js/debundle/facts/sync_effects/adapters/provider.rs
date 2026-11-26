@@ -19,13 +19,6 @@ use super::super::kernel::driver;
 use super::super::kernel::frame::{
     LocalCallRequest, LocalExecutionAttempt, LocalFrame, LocalValueResult, RemainderDisposition,
 };
-use super::super::local_operations::{DeferredCallableCreation, LocalBody};
-use super::super::own_data_transfer::OwnDataContext;
-use super::super::value_model::WorldScope;
-use super::super::value_model::{
-    AbstractValue, CallSite, CaptureInterner, CapturedContext, Context, LexicalCaptures,
-    OwnPropertyShape, ProviderInput, ProviderScopeId, SymbolicInputId, ValueExpr, Values,
-};
 use super::super::world::World;
 use super::super::world::join::Joined;
 use analysis::facts::abstract_domain::builtins::{self, Invocation};
@@ -35,6 +28,13 @@ use analysis_vocabulary::value::{Kind, Value};
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
+use value_model::WorldScope;
+use value_model::local_operations::{DeferredCallableCreation, LocalBody};
+use value_model::own_data_transfer::OwnDataContext;
+use value_model::{
+    AbstractValue, CallSite, CaptureInterner, CapturedContext, Context, LexicalCaptures,
+    OwnPropertyShape, ProviderInput, ProviderScopeId, SymbolicInputId, ValueExpr, Values,
+};
 
 pub(crate) struct ProviderContext<'a> {
     pub(crate) index: &'a ExecutionIndex,

@@ -1,9 +1,9 @@
 //! Deterministic synchronous models that consume a settled runtime prefix.
 
 use super::interpreter::{Executor, Outcome, ValidatedMetadataDecoration};
-use super::value_model::{AbstractValue, CallSite, Context, Values};
 use analysis::facts::local_effect_targets::MetadataDecorateCall;
 use source_identity::SourceUnitOrdinal;
+use value_model::{AbstractValue, CallSite, Context, Values};
 
 pub(super) enum ModelOperation {
     // CLEANUP(added 2026-11-10): delete with the legacy gate (L4e), with

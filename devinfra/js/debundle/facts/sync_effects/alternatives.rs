@@ -12,9 +12,9 @@ pub(super) mod outcome;
 
 use super::kernel::context::KernelContext;
 use super::kernel::frame::{LocalExecutionAttempt, LocalFrame};
-use super::value_model::Context;
 use super::world::join::Joined;
 use super::world::{Revision, World};
+use value_model::Context;
 
 /// One completed path of a body.
 pub(super) struct Leaf {

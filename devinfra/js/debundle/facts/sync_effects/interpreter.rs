@@ -30,7 +30,6 @@ use super::kernel::driver;
 use super::kernel::frame::{
     LocalExecutionAttempt, LocalFrame, RemainderDisposition, SelectedValue,
 };
-use super::local_operations::{LocalBinding, LocalBody};
 use super::native::operation::{
     self as native_operation, CheckedNativePlan, NativeOperationCommit, NativeOperationContext,
 };
@@ -38,7 +37,6 @@ use super::noninvoking_initialization::{
     NativeConstructorCandidate, NativeConstructorForm, NativeConstructorKind,
     NativeConstructorTransfer, OriginalInitializer,
 };
-use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use super::runtime_callbacks::{
     BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
     CallbackResult,
@@ -47,12 +45,6 @@ use super::runtime_heap::{HeapOperation, HeapResult, NativeIterableUse};
 use super::runtime_inference::{
     CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
 };
-use super::value_model::{
-    AbstractValue, ArrayIteration, CallSite, CallableSelection, CaptureInterner, Captured,
-    CapturedContext, Context, DenseArray, DenseArrayIterationTransfer, HeapAddress, InstanceOrigin,
-    LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr,
-    Values, canonical_array_index, ordered_values,
-};
 use super::world::World;
 use super::world::cells::{CellInitialization, CellTrace};
 use super::world::descriptor_heap::{
@@ -60,9 +52,6 @@ use super::world::descriptor_heap::{
 };
 use super::world::object_surface::{AppliedAccessor, ObjectSurfaceStore};
 use super::world::prefix_values::{PrefixValues, TopBindingOrdinal};
-use crate::property_inference::{
-    OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest, infer_own_property_projection,
-};
 use analysis::facts::abstract_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ArgSel, IntrinsicOp, Invocation, IterationResult, Return, Row, Throws,
 };
@@ -114,6 +103,17 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
+use value_model::local_operations::{LocalBinding, LocalBody};
+use value_model::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
+use value_model::property_inference::{
+    OwnPropertyProjection, OwnPropertyProof, OwnPropertyRequest, infer_own_property_projection,
+};
+use value_model::{
+    AbstractValue, ArrayIteration, CallSite, CallableSelection, CaptureInterner, Captured,
+    CapturedContext, Context, DenseArray, DenseArrayIterationTransfer, HeapAddress, InstanceOrigin,
+    LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr,
+    Values, canonical_array_index, ordered_values,
+};
 
 pub(super) enum NativeIdentitySource {
     Inferred {
@@ -2765,13 +2765,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return match property {
                 Some(property) => !matches!(
                     shape.properties.get(property),
-                    Some(super::value_model::OwnPropertyDescriptorSyntax::Accessor { .. })
+                    Some(value_model::OwnPropertyDescriptorSyntax::Accessor { .. })
                 ),
                 None => shape.properties.values().all(|descriptor| {
-                    matches!(
-                        descriptor,
-                        super::value_model::OwnPropertyDescriptorSyntax::Data
-                    )
+                    matches!(descriptor, value_model::OwnPropertyDescriptorSyntax::Data)
                 }),
             };
         }

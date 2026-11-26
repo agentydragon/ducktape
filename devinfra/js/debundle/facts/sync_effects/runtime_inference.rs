@@ -9,12 +9,9 @@ use super::interpreter::{
 };
 use super::kernel::frame::EvaluatedCallee;
 use super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
-use super::property_inference::OwnPropertyProof;
 use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
-use super::value_model::CallableSelection;
-use super::value_model::{CapturedContext, Context, ValueExpr, Values};
 use analysis::facts::evaluation_effects::EvaluationEffects;
 use analysis::facts::statement_facts::SynchronousCalls;
 use analysis::facts::{
@@ -28,6 +25,9 @@ use inference::{CompletedTransfer, FactContext, IterativeInference, IterativeRul
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
 use swc_common::Span;
+use value_model::CallableSelection;
+use value_model::property_inference::OwnPropertyProof;
+use value_model::{CapturedContext, Context, ValueExpr, Values};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeKey {
@@ -551,7 +551,7 @@ impl RuntimeRules<'_, '_> {
                 };
                 let covered_operation = operation_source
                     && !values.is_empty()
-                    && !values.contains(&super::value_model::AbstractValue::Value(
+                    && !values.contains(&value_model::AbstractValue::Value(
                         analysis_vocabulary::value::Value::Unavailable,
                     ))
                     && operation_coverage
