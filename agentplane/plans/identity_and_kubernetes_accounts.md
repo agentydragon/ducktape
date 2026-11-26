@@ -169,7 +169,7 @@ Kubernetes access is a separate account capability granted through egress impers
     The app's launch form and `LaunchSandbox` may run the three for the caller as one action; they
     stay separate operations underneath. Deleting an environment never deletes its Identity. On
     delete, the app checks whether anything else still uses the Identity and offers to delete it as
-    well; the check is advisory. `IDENTITY_CLEANUP_REFERENCE_DECISION` still needs to settle whether
+    well; the check is advisory. [`AGENT_TEARDOWN_DESIGN`](agent_teardown.md) still needs to settle whether
     and where to enforce an authoritative concurrent-reference guard. A Sandbox's
     `WorkloadCredential`s carry a controller owner reference to the Sandbox (`requester.Controller`),
     so they go with it and exist only while a Sandbox names the Identity. Only owner-less

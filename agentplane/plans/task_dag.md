@@ -1725,7 +1725,8 @@ store ([D4](architecture_overview.md#four-directions), O4).
 
 **Decision.** Which payoff warrants investment: cheaper tests, environments outside Kubernetes,
 or owning the Identity lifecycle through an Agentplane API? The operator named Identity again on
-Nov 22 as a candidate if the track is selected. Today it is a Kubernetes CR. Start with a trace
+Nov 22 as a candidate if the track is selected, and on Nov 26 in the context of
+[agent teardown](#agent_teardown_design--a-teardown-sequence-for-an-agent). Today it is a Kubernetes CR. Start with a trace
 of one Identity from creation through delegation, same-name replacement, revocation and cleanup.
 Compare keeping the CR behind PolicyService with moving the authoritative record behind that API
 and reconciling Flux declarations. Price the gain and the authorization, outage and migration
@@ -2226,7 +2227,8 @@ listed three Sessions as blockers even though all three were already archived:
 `d76abba7-10d1-4f77-9d40-3a828c2f75c7`.
 
 The operator's proposed behavior is to prevent a Session from continuing while archived and
-release its bindings, including its claim on the Identity. Decide which bindings archive
+release its bindings, including its claim on the Identity. The Identity half is step 1 of
+[agent teardown](#agent_teardown_design--a-teardown-sequence-for-an-agent). Decide which bindings archive
 releases, how cleanup recognizes other Sessions that still use a shared Identity, and what Identity
 an explicit unarchive would require if the original has since been deleted. The design should
 preserve History and cover Sessions already archived under the current behavior.
@@ -3541,7 +3543,7 @@ Cross-Identity inbox target semantics and Identity `CreateSession` remain separa
 flowchart LR
     STANDING_WORKLOAD_IDENTITY[Standing workloads run as Identities; proxy observation remains]
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
-    IDENTITY_CLEANUP_REFERENCE_DECISION[Decision: Identity cleanup reference guarantees]
+    AGENT_TEARDOWN_DESIGN[Decision: agent teardown sequence and reference rule]
     SESSION_SUBAGENT_DELEGATION[Design: a Session creates and messages a sub-Session]
     SESSION_ACCESS_GROUPING_DESIGN --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox target, grant and migration]
     SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
@@ -3562,23 +3564,17 @@ not a claim that rollout is blocked or that the source migration remains unfinis
 existing staging decision log records the expected Identity decision, or the operator records an
 explicit waiver.
 
-### `IDENTITY_CLEANUP_REFERENCE_DECISION` — decide cleanup reference guarantees
+### `AGENT_TEARDOWN_DESIGN` — a teardown sequence for an agent
 
-**Decision; independent of the other app slices.** #15444's Sandbox-delete dialog scans the live
-Sandbox inventory, PolicyBindings and retained Sessions before it calls `DeleteIdentity`. The
-Policy Controller separately checks unowned PolicyBindings and WorkloadCredentials whose Identity
-subject has the same name and either no UID or the current UID. Neither scan is atomic with creating
-a reference. A Sandbox or Session can begin naming the Identity
-after the browser scan. The [operator UI plan](identity_and_kubernetes_accounts.md#operator-ui)
-currently accepts an advisory check, with a concurrent launch failing closed if the Identity is
-gone. Decide whether that failure and the recovery of a stranded reference are acceptable, or
-whether to coordinate creation and deletion at backend owners. Recommendation: preserve the
-accepted advisory contract until reviewed; a UID/resourceVersion precondition on the Identity alone
-does not serialize references in Kubernetes and Dispatcher.
-
-Cover already referenced, concurrently created, removed and same-name replacement cases, as well
-as failures and recovery. **Exit:** a reviewed reference contract and
-independently actionable follow-ups, without changing the existing rule by implication.
+**Decision; operator request, 2026-11-26.** The operator saw the app offer an Identity delete the
+Policy Controller refused, and asked for a sane teardown sequence instead of point fixes. [The
+plan](agent_teardown.md) inventories what an agent leaves, compares the three disagreeing reference
+checks, proposes Sessions → Sandbox → Identity, and compares a published refusal (B), an in-use
+finalizer (A) and an Agentplane-owned record (C). Operator direction, 2026-11-26: the Policy
+Controller should eventually refuse while a Sandbox or Session names the Identity. Shares the
+Session-release question with [`SESSION_ARCHIVE_CONTRACT`](#session_archive_contract--what-archiving-a-session-means)
+and the store question with [`KUBERNETES_DECOUPLING_DESIGN`](#kubernetes_decoupling_design--how-far-to-decouple-from-kubernetes).
+**Exit:** the operator decides the plan's four questions; follow-ups become nodes.
 
 ### `IDENTITY_SYSTEM_TESTS` — finish automated identity-boundary acceptance
 
