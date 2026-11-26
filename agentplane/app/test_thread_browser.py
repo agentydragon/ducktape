@@ -24,6 +24,7 @@ from playwright.async_api import (
     Locator,
     Page,
     Request,
+    Response,
     Route,
     TimeoutError as PlaywrightTimeoutError,
     expect,
@@ -690,6 +691,13 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
             if all(any(f'"{owner}"' in read for read in body_reads) for owner in ("reasoning", "tool")):
                 closed_disclosures_read.set()
 
+    successful_body_reads: list[str] = []
+
+    def record_body_response(response: Response) -> None:
+        if response.ok and response.request.method == "POST" and "/sync/chunks/" in response.url:
+            successful_body_reads.append(response.request.post_data or "")
+
+    page.on("response", record_body_response)
     page.on("request", observe)
     thread = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread, "Streamed thread")
@@ -801,7 +809,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 entry => entry.name.includes('/sync/entities?') && entry.nextHopProtocol === 'h2')"""
         )
         await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reloaded.png")
-        reads_before_disconnect = len(body_reads)
+        reads_before_disconnect = len(successful_body_reads)
         await page.context.set_offline(True)
         await ingress.drop_connections()
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
@@ -814,7 +822,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         ).to_have_count(1)
         # A restored complete revision needs no payload stream until it grows. Reconnecting
         # may fetch the new revision of "first", but no other saved bodies.
-        reconnect_reads = body_reads[reads_before_disconnect:]
+        reconnect_reads = successful_body_reads[reads_before_disconnect:]
         assert len(reconnect_reads) <= 1
         if reconnect_reads:
             owner, generation = json.loads(reconnect_reads[0])["params"].values()
@@ -2170,6 +2178,12 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await drop_reply.wait()
         await route.abort()
 
+    # This case exercises the individual recovery lookup. The independent ownership
+    # observer can otherwise recover the batch receipt before the conversation mounts.
+    async def unavailable_batch(route: Route) -> None:
+        await route.fulfill(status=503)
+
+    await page.route("**/upstream/dispatcher/v1/sessions/*/dispatches:batchGet?*", unavailable_batch)
     await route_once(page, "**/upstream/dispatcher/v1/sessions/*:submitInput", lose_committed_reply)
     try:
         composer = message_composer(page)
