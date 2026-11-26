@@ -134,6 +134,29 @@ Do not derive H from the winning target. Set H from the reader's peak memory bud
 concurrent decoders, allowing for compressed input, frame indexes and output objects. Test that
 limit with hostile lengths, truncation and high expansion before enabling a new version.
 
+## One Go implementation, separate service profiles
+
+Use a shared Go package for the new block format. Give its builder one ordered stream
+of opaque wire frames and a typed writer profile (target framed bytes, target entry count,
+codec and level). It handles framing, append-then-seal, tail flush and the too-large-for-format
+outcome. The decoder reads the stored version and codec, enforces that version's hard limits
+before allocating, and returns the original frames in order. Changing writer settings must
+never change how an existing block decodes. Both live sealing and online repacking call the
+same builder; given the same stream, profile and flush boundaries they produce the same groups.
+
+| Caller                           | Stream supplied by service                         | Initial profile (target bytes / entries / codec) |
+| -------------------------------- | -------------------------------------------------- | ------------------------------------------------ |
+| Sampler                          | Contiguous sequence in one session; flush at a gap | 64 KiB / 128 / zstd-3                            |
+| History: ordinary packable kinds | Ascending cursor in one session and kind           | 64 KiB / 32 / zstd-3                             |
+| History: cold boundary evidence  | Same session and boundary kind                     | 2 MiB / 32 / zstd-3                              |
+
+Keep the profile values in each service's existing typed settings. Sampler owns the dense
+sequence-range index. History owns kind selection, sparse cursor and size indexes, and the
+merge for filtered pages. Each service also owns its legacy reader, SQL transactions, locks,
+and durable repack checkpoint. The shared package needs neither a database handle nor an
+event-kind enum. A common byte-exact round-trip suite covers both callers; service integration
+tests cover seeks and page boundaries during a concurrent repack.
+
 ## What to let PostgreSQL do
 
 TOAST can compress a single large datum and store it out of line. It knows neither the session
