@@ -3352,9 +3352,11 @@ inbox or subscriptions. Coordinate the decision with `SESSION_LIFETIME_IMPLEMENT
 
 No cleanup path for a stranded inbox, 2026-11-26: `RetireInbox` admits only the inbox owner (the
 Session's Sandbox Identity) and the operator-reader services are read-only, so once the owner is
-gone nothing short of a database edit stops the retries. Staging then had two inboxes
-(`94515635-d0eb-4f72-a702-9dcf74eeb8d7`, `778b996c-273a-4de7-966f-7ff99b622ba9`) logging
-`DispatcherNotFoundError` every retry interval. The resolution needs an operator-authorized retire,
+gone nothing short of a database edit stops the retries. Staging then had five such inboxes logging
+`DispatcherNotFoundError` every retry interval, their Sessions' Sandboxes in the Dispatcher's
+`deleted_sandbox`; the operator had the four whose Identity was also gone retired by hand (the
+service's two `Store.Retire` updates). The fifth (owner `public-coder-ducktape-4`, Identity still
+present) was left. The resolution needs an operator-authorized retire,
 or retirement driven by confirmed Session deletion; it is one of the cross-service ownership seams in
 Identity and agent teardown (#20202).
 
