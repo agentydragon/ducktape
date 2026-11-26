@@ -53,3 +53,11 @@ export function assertPublicRecheckRefused(manifest, out) {
     assert.match(verdict.reason, /check-output options are not accepted/, log);
   });
 }
+
+/** Require the public CLI to reject an invalid fixture input before publishing. */
+export function assertPublicInputRefused(manifest, out, reason) {
+  return assertRefused(manifest, out, [], (verdict, log) => {
+    assert.equal(verdict.reason_code, undefined, log);
+    assert.match(verdict.reason, reason, log);
+  });
+}

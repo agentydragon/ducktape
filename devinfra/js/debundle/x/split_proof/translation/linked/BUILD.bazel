@@ -231,6 +231,7 @@ _FIXTURE_PREVIEW_TESTS = [
     "record_prefix_test",
     "regexp_test",
     "relational_test",
+    "resolved_placement_test",
     "rest_parameters_test",
     "sequence_test",
     "spread_arguments_test",
@@ -238,6 +239,7 @@ _FIXTURE_PREVIEW_TESTS = [
     "switch_test",
     "tagged_templates_test",
     "templates_test",
+    "wide_provider_scope_test",
 ]
 
 _FIXTURE_PREVIEW_DATA = [
@@ -326,12 +328,11 @@ js_test(
 js_test(
     name = "staged_ast_gate_test",
     size = "medium",
-    data = _TEST_DATA + ["//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest"],
+    data = _TEST_DATA + _FIXTURE_PREVIEW_DATA + [
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    ],
     entry_point = "staged_ast_gate_test.mjs",
-    env = dict(
-        _TEST_ENV,
-        SPLIT_PROOF_TIMINGS = "1",
-    ),
+    env = _TEST_ENV | _LINKED_MODEL_ENV,
 )
 
 js_test(
