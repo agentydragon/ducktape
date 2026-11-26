@@ -21,7 +21,7 @@ func (r *Runtime) runQuiesce(ctx, engineCtx context.Context, request *runtimeTra
 		r.mu.Unlock()
 		return err
 	}
-	if r.closing || r.failed || !r.startupComplete {
+	if r.closing || r.failureErr != nil || !r.startupComplete {
 		r.mu.Unlock()
 		return status.Error(codes.Unavailable, "environment Runtime is unavailable")
 	}

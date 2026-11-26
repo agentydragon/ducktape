@@ -28,7 +28,7 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 	err := r.control.Admit(ctx, func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if r.closing || r.failed || r.suspendPrepared || r.executionOwner.recovering() ||
+		if r.closing || r.failureErr != nil || r.suspendPrepared || r.executionOwner.recovering() ||
 			(r.desired.Mode != lifecycle.Running && r.desired.Mode != lifecycle.Quiescing) ||
 			(r.desired.Mode == lifecycle.Running && !r.admissionOpen) {
 			return status.Error(codes.Unavailable, "execution admission is closed")
@@ -121,7 +121,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 	err := r.control.Admit(stream.Context(), func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if r.closing || r.failed || r.executionOwner.recovering() || !r.acceptingLocked() {
+		if r.executionOwner.recovering() || !r.acceptingLocked() {
 			return status.Error(codes.Unavailable, "execution admission is closed")
 		}
 		if err := validateExecutionScope(request.GetScope(), r.config.Launch.Sandbox, authorization.SandboxUID(), authorization.IncarnationUID()); err != nil {

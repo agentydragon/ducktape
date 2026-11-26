@@ -135,7 +135,6 @@ type Runtime struct {
 	execCallID             uint64
 	executionFence         *executionFence
 	closing                bool
-	failed                 bool
 	changes                chan struct{}
 	fatal                  chan error
 	failureErr             error
@@ -509,11 +508,6 @@ func (r *Runtime) joinClose(sessionLossErr error) error {
 	if lifecycleRunErr != nil || lifecycleControllerErr != nil {
 		return errors.Join(lifecycleRunErr, lifecycleControllerErr)
 	}
-	if sessionLossErr != nil {
-		r.mu.Lock()
-		sessionLossErr = errors.Join(sessionLossErr, r.failureLocked())
-		r.mu.Unlock()
-	}
 	if r.sessions != nil {
 		<-r.sessionWorkerDone
 		// Recovery completion does not prove native cleanup. Retain Runtime's
@@ -592,7 +586,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	activeAdmissions := r.activeAdmissions
 	activeExecution := len(r.execCalls)
 	executionRecovering := r.executionOwner.recovering()
-	ready := r.startupComplete && !r.failed
+	ready := r.startupComplete && r.failureErr == nil
 	r.mu.Unlock()
 	if facts == nil {
 		facts = &environmentruntimestatepb.EnvironmentRuntimeFacts{}
@@ -696,23 +690,12 @@ func (r *Runtime) failLocked(err error) {
 	if r.failureErr == nil {
 		r.failureErr = err
 	}
-	r.failed = true
 	r.admissionOpen = false
 	r.changedLocked()
 	select {
 	case r.fatal <- err:
 	default:
 	}
-}
-
-func (r *Runtime) failureLocked() error {
-	if r.failureErr != nil {
-		return r.failureErr
-	}
-	if r.failed {
-		return errors.New("environment Runtime failed")
-	}
-	return nil
 }
 
 var _ environmentruntimepb.EnvironmentRuntimeServer = (*Runtime)(nil)

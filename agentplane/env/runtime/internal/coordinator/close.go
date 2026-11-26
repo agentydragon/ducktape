@@ -26,7 +26,7 @@ func (r *Runtime) closeComponents(desired lifecycle.EnvironmentDesired) (error, 
 		return nil, fmt.Errorf("prior Runtime transition has an uncertain Execution fence: %w", err)
 	}
 	sessionsStarted := r.sessions != nil
-	sessionLossErr := r.failureLocked()
+	sessionLossErr := r.failureErr
 	r.mu.Unlock()
 
 	fenceCtx, cancel := context.WithTimeout(r.lifecycleContext, executionFenceGrace)
