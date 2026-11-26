@@ -1,6 +1,8 @@
 # Kine compaction transaction failure
 
-**Status:** The source defect is confirmed; this run’s transaction cancellation is not. The retained logs fit the timeout path, but do not record the cancellation or effective timeout, and the preceding successful 7.44-second batch is inconsistent with assuming a five-second deadline.
+K3s exited on the same fatal Kine transaction commit in a VM test on November 18 and in five
+MCP Actions cases sharing a control plane on November 26. Both retained logs show a slow SQLite
+delete immediately before process exit. Neither records what canceled the transaction.
 
 ## Backend and placement
 
@@ -18,13 +20,32 @@ The retained log for [BuildBuddy invocation `ba5af734-eafe-57ff-89d8-badd5dbf16d
 
 There is an unresolved counterexample in the same retained log: the preceding batch reports `COMPACT deleted 355 rows from 1000 revisions in 7.443793808s` and succeeds, despite Kine's five-second source default. Its SQL `DELETE` itself took `3.715204721s`. The test action did not retain Kine's effective timeout value or a transaction-cancellation event, so the successful batch prevents proving that the second batch's configured deadline expired at five seconds. `ErrTxDone` proves the transaction was already finalized before `MustCommit`; the timeout is the source-supported explanation, but the exact cancellation and timing discrepancy remain unresolved.
 
-## Upstream status and workaround
+## Recurrence in the MCP Actions suite, November 26
 
-Kine [issue #790](https://github.com/k3s-io/kine/issues/790) records the same fatal with embedded SQLite. Kine [PR #806](https://github.com/k3s-io/kine/pull/806) merged to `master` on 2026-10-26 and changes compaction's transaction operations to use the timeout context. The change is present in [Kine `v0.16.6`](https://github.com/k3s-io/kine/blob/v0.16.6/pkg/logstructured/sqllog/sql.go) (2026-11-06) and [Kine `v0.17.3`](https://github.com/k3s-io/kine/blob/v0.17.3/pkg/logstructured/sqllog/sql.go) (2026-10-27). PR #809 proposed the same propagation and was closed after maintainers noted the change was already in #806. This is a source-level mitigation; upstream has not documented it as a verified resolution of issue #790.
+On PR #20120, `test_actions` attached to a warm K3s baseline. Its `k3s-retained.log` shows
+Kine starting compaction at 08:52:59 UTC. Controller lease requests timed out at 08:53:04.
+At 08:53:06 the 7.016-second SQLite delete returned, the commit reported the same fatal error,
+and K3s exited. History requests timed out, and teardown found the K3s process dead. The failed
+transaction was in K3s's Kubernetes datastore. The PR changes the Sampler's PostgreSQL journal.
+[Failed invocation](https://app.buildbuddy.io/invocation/6615419d-f82d-548a-bb24-e6c87459e623) ·
+[Passing MCP run on its base](https://app.buildbuddy.io/invocation/8a26b653-61c0-58e8-abe4-2c174e73559b)
 
-The newest K3s release is [`v1.37.2+k3s1`](https://github.com/k3s-io/k3s/releases/tag/v1.37.2%2Bk3s1), published 2026-11-03; it pins Kine `v0.17.1`. Its [`go.mod`](https://github.com/k3s-io/k3s/blob/v1.37.2%2Bk3s1/go.mod#L108) satisfies the version range `>=v0.16.6`, but Kine `v0.17.1`'s compaction source still passes `s.ctx` to the SQL operations. The latest K3s release and its latest RC therefore do not contain this fix. K3s `v1.34.13+k3s1` and `v1.35.10+k3s1` still pin Kine `v0.16.5`.
+## Upstream mitigation, checked November 26
 
-The proposed upstream path is to wait for a K3s release that carries Kine `v0.17.3+` or the `v0.16.6` backport. A test K3s binary built from the current `v1.34.12` source with Kine `v0.16.6` would provide the fix without the Kubernetes minor-version jump. A 256 MiB tmpfs for this K3s database could reduce sensitivity to executor disk contention, but it would only mask slow compaction and the captured evidence does not establish disk contention; it is not the root-cause fix.
+[Kine issue #790](https://github.com/k3s-io/kine/issues/790) records the fatal on embedded
+SQLite. [Kine PR #806](https://github.com/k3s-io/kine/pull/806) propagated the transaction's
+timeout context into the compaction reads, write and delete. A timeout in those operations
+can then return before the commit. Confirmation that this resolves both observed failures
+requires evidence from a binary containing the change.
+
+The fixture pins K3s 1.34.12. The next stable patch, [1.34.13](https://github.com/k3s-io/k3s/blob/v1.34.13%2Bk3s1/go.mod),
+still pins Kine 0.16.5. The November 25 [K3s 1.35.11 release candidate](https://github.com/k3s-io/k3s/blob/v1.35.11-rc1%2Bk3s1/go.mod)
+pins [Kine 0.16.7](https://github.com/k3s-io/kine/blob/v0.16.7/pkg/logstructured/sqllog/sql.go#L252-L305),
+which uses the timeout context throughout. The [1.37.3 candidate](https://github.com/k3s-io/k3s/blob/v1.37.3-rc1%2Bk3s1/go.mod)
+also carries the change in [Kine 0.17.6](https://github.com/k3s-io/kine/blob/v0.17.6/pkg/logstructured/sqllog/sql.go#L252-L305).
+The earlier stable 1.37.2 carried Kine 0.17.1, which lacks it. Check the bundled source when
+choosing a candidate. A K3s 1.34.12 test build with the Kine 0.16.6 backport would isolate
+the mitigation without a Kubernetes minor-version upgrade. Neither path has been tested here.
 
 ## Source references
 

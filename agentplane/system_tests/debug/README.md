@@ -4,7 +4,7 @@ Dated measurements, root-cause notes and raw evidence behind the system-test fix
 
 ## `debug/`
 
-- [`kine_compaction_timeout_2026_11_18.md`](kine_compaction_timeout_2026_11_18.md): K3s embedded Kine (SQLite) compaction transaction failure in `test_vm`; source defect confirmed, this run's cancellation not.
+- [`kine_compaction_timeout_2026_11_18.md`](kine_compaction_timeout_2026_11_18.md): K3s SQLite compaction exits in the VM and MCP Actions suites, retained evidence and upstream candidates.
 - [`kvm_docker_recycling.md`](kvm_docker_recycling.md): Docker runner recycling on the existing KVM pool; retention rejected under the 2 GB limit, higher-cap follow-up.
 - [`mcp_case_overlap_2026_11_12.md`](mcp_case_overlap_2026_11_12.md) ([evidence](mcp_case_overlap_2026_11_12.json)): case-owned OAuth linkage for MCP Actions; shorter case envelopes, no established CI or compute saving.
 - [`setup_and_case_shortening_2026_11_12.md`](setup_and_case_shortening_2026_11_12.md): shortening setup and cases; the image split and the image-overlap trial did not establish a faster gate.
