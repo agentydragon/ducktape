@@ -9,7 +9,6 @@
 use super::callable_inference::{CallableInferenceInputs, FunctionBindingFacts};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
-use super::statement_facts::StructuralStatementFacts;
 use analysis_domain::builtins::Row;
 use analysis_domain::integrity::{Integrity, IntegrityFlags, IntrinsicSlot};
 use analysis_vocabulary::inputs::{
@@ -623,7 +622,7 @@ impl ArgumentNoEscapeFacts {
     }
     pub(crate) fn from_source(
         flow: &ChunkValueFlow,
-        statements: &[StructuralStatementFacts],
+        rebound: &BTreeSet<Id>,
         inputs: &[ResolvedArgumentInput],
         dynamic_scope: bool,
     ) -> Self {
@@ -637,13 +636,13 @@ impl ArgumentNoEscapeFacts {
             if !values.iter().eq([Value::Alloc(Kind::Function, function)]) {
                 continue;
             }
-            let rebound = statements.iter().any(|statement| {
-                statement.rebinds.eager.contains(binding)
-                    || statement.rebinds.lazy.contains(binding)
-            });
-            callables
-                .functions
-                .insert(binding.clone(), FunctionBindingFacts { values, rebound });
+            callables.functions.insert(
+                binding.clone(),
+                FunctionBindingFacts {
+                    values,
+                    rebound: rebound.contains(binding),
+                },
+            );
             let parameter_index = input.evidence.parameter_index;
             let exact_arity = input.evidence.exact_arity;
             selected.entry(binding.clone()).or_default().push((

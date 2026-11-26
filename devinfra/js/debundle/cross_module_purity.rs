@@ -624,8 +624,7 @@ impl<'a> ModulePurityFacts<'a> {
             } else {
                 (BTreeMap::new(), BTreeSet::new(), BTreeMap::new())
             };
-        let plain_array_bindings =
-            analysis::facts::abstract_domain::heap::plain_array_bindings(&views, &shadowed);
+        let plain_array_bindings = analysis::purity::heap::plain_array_bindings(&views, &shadowed);
         let set_iterable_proof = structural.set_iterable_shapes;
         let local_class_construction_proof = structural.local_class_shapes;
         let prepared_sync_index =

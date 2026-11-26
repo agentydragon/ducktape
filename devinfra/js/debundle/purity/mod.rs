@@ -47,6 +47,7 @@ pub mod code_graph;
 mod effect_inference;
 mod fluent;
 mod fresh_record;
+pub mod heap;
 mod native_rows;
 mod order_dependent_reads;
 pub mod redundant_hints;

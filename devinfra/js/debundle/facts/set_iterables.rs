@@ -678,10 +678,9 @@ mod tests {
             &body,
             &analysis_domain::allocation_roots::tracked_allocation_roots(&body),
         );
-        let plain_data =
-            crate::facts::abstract_domain::heap::ChunkHeap::analyze(&body, &shadowed, &flow, None)
-                .plain_data_bindings()
-                .bindings;
+        let plain_data = crate::purity::heap::ChunkHeap::analyze(&body, &shadowed, &flow, None)
+            .plain_data_bindings()
+            .bindings;
         let proof = SetIterableShapes::analyze(
             &body,
             &shadowed,

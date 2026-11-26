@@ -1,8 +1,8 @@
 use super::*;
-use crate::facts::abstract_domain::heap;
 use crate::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof, SetIterableShapes,
 };
+use crate::purity::heap;
 use analysis_domain::dynamic_scope::DynamicScopeFact;
 use analysis_domain::primitive::{BindingPrims, collect_binding_prims};
 use std::cell::RefCell;
@@ -132,7 +132,7 @@ pub(crate) enum ChunkBinding {
     /// — `const X = <plain literal>`, or `let`/`var` whose every
     /// re-bind is also a plain literal, or the TS-enum-IIFE shape
     /// (see `is_ts_enum_iife_init_for_binding`) — whose allocations stay
-    /// private and unwritten (`facts/abstract_domain/heap.rs`), so
+    /// private and unwritten (`purity/heap.rs`), so
     /// property reads `X.k` / `X[k]` are pure.
     /// Full soundness write-up: <docs/purity_soundness.md> §
     /// "ChunkBinding::PlainData".

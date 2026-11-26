@@ -1,5 +1,5 @@
 use super::*;
-use crate::facts::abstract_domain::heap::sees_only_element;
+use crate::purity::heap::sees_only_element;
 use analysis_domain::builtins::member_call_row;
 
 /// Plain-array roots an at-init statement iterates only through

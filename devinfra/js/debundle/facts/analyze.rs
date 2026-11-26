@@ -263,18 +263,29 @@ pub fn complete_chunk_structural_with_flow<'a>(
     let stable_var_number_candidates =
         stable_top_level_var_candidates(&per_statement, dynamic_scope);
     let argument_facts = (!argument_inputs.is_empty()).then(|| {
+        let rebound = per_statement
+            .iter()
+            .flat_map(|statement| {
+                statement
+                    .rebinds
+                    .eager
+                    .iter()
+                    .chain(&statement.rebinds.lazy)
+            })
+            .cloned()
+            .collect();
         super::semantic_inference::ArgumentNoEscapeFacts::from_source(
             &value_flow,
-            &per_statement,
+            &rebound,
             argument_inputs,
             dynamic_scope.present,
         )
     });
-    let super::abstract_domain::heap::PlainDataBindings {
+    let crate::purity::heap::PlainDataBindings {
         bindings: plain_data_bindings,
         dependencies: plain_data_dependencies,
         inference_uses: plain_data_inference_uses,
-    } = super::abstract_domain::heap::ChunkHeap::analyze(
+    } = crate::purity::heap::ChunkHeap::analyze(
         &body,
         &shadowed,
         &value_flow,

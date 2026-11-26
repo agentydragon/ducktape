@@ -104,8 +104,7 @@ fn analyze_chunk_with_policy_and_sync(
         per_statement,
         top_level_await,
     } = structural;
-    let plain_array_bindings =
-        analysis::facts::abstract_domain::heap::plain_array_bindings(&body, &shadowed);
+    let plain_array_bindings = analysis::purity::heap::plain_array_bindings(&body, &shadowed);
     let mut prepared_sync_index =
         sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index_with_source_facts(
             &body,

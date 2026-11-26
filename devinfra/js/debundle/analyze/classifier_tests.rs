@@ -13,11 +13,11 @@ use swc_ecma_ast::Module;
 use swc_ecma_ast::ModuleItem;
 use swc_ecma_ast::Stmt;
 
-use analysis::facts::abstract_domain::heap::{ChunkHeap, plain_array_bindings};
 use analysis::facts::{
     LocalClassConstructionProof, SetIterableProof, StructuralChunkAnalysis,
     analyze_chunk_structural,
 };
+use analysis::purity::heap::{ChunkHeap, plain_array_bindings};
 use analysis::purity::*;
 use analysis_domain::allocation_roots::tracked_allocation_roots;
 use analysis_domain::dynamic_scope::DynamicScopeFact;

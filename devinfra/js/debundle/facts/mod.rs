@@ -50,7 +50,6 @@ pub(crate) use analysis_vocabulary::inputs::{
 };
 pub(crate) use analysis_vocabulary::purity::Purity;
 
-pub mod abstract_domain;
 pub mod analyze;
 mod array_spreads;
 pub mod at_init_fallback;
