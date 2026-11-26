@@ -48,6 +48,14 @@ function diagnosticPreview(manifest, out) {
   return result.stdout;
 }
 
+function snapshotFiles(directory) {
+  return Object.fromEntries(
+    readdirSync(directory)
+      .sort()
+      .map((name) => [name, readFileSync(path.join(directory, name))])
+  );
+}
+
 function previewSpec(source, spec, out) {
   return diagnosticPreview(writeDeployment(source, spec, out), out);
 }
@@ -296,7 +304,16 @@ assert.equal(tagged.stdout.trim(), "certified");
   assert.equal((await import(pathToFileURL(path.join(original, entry)))).total, 6);
   assert.equal((await import(pathToFileURL(path.join(preview, entry)))).total, 6);
 
+  const before = snapshotFiles(preview);
   assertPublicRecheckRefused(manifest, preview);
+  const checkedWithFormerMode = invokePublic(manifest, preview, [...options, "--check-output"]);
+  assert.equal(
+    checkedWithFormerMode.result.status,
+    1,
+    checkedWithFormerMode.result.stdout + checkedWithFormerMode.result.stderr
+  );
+  assert.equal(checkedWithFormerMode.verdict.status, "rejected", checkedWithFormerMode.result.stdout);
+  assert.deepEqual(snapshotFiles(preview), before, "multi-chunk check-output changed existing bytes");
 }
 
 // If two moved initializers throw different values, changing which owner runs

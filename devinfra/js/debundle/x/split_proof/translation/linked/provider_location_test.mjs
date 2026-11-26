@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { prepare, root } from "./harness.mjs";
@@ -42,6 +42,14 @@ function writePreview(files, out) {
   return result.stdout;
 }
 
+function snapshotFiles(directory) {
+  return Object.fromEntries(
+    readdirSync(directory)
+      .sort()
+      .map((name) => [name, readFileSync(path.join(directory, name))])
+  );
+}
+
 mkdirSync(path.join(dir, "nested"), { recursive: true });
 const files = prepare(dir, {
   sourceName: entry,
@@ -78,8 +86,21 @@ assertRefused(files, path.join(dir, "former-mode-refusal"), opts);
 const model = writePreview(files, out);
 assert.match(model, /OrderKept/);
 
+const previewBytes = snapshotFiles(out);
 const previewManifest = writeDeployment(files.sourceFile, files.specFile, out);
 assertPublicRecheckRefused(previewManifest, out);
+const checkedWithFormerMode = invokePublic(files, out, [...opts, "--check-output"]);
+assert.equal(
+  checkedWithFormerMode.result.status,
+  1,
+  checkedWithFormerMode.result.stdout + checkedWithFormerMode.result.stderr
+);
+assert.equal(
+  checkedWithFormerMode.verdict.status,
+  "rejected",
+  checkedWithFormerMode.result.stdout + checkedWithFormerMode.result.stderr
+);
+assert.deepEqual(snapshotFiles(out), previewBytes, "former-mode check-output changed the preview bytes");
 
 // An overlay serves lazy assets and providers at their original URLs. Recreate
 // it in a second tree to exercise both module graphs without sharing Node's cache.
