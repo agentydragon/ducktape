@@ -1560,3 +1560,31 @@ lean_proof_test(
     ],
     deps = [":terminal_reader_construction"],
 )
+
+lean_library(
+    name = "terminal_export_placement",
+    srcs = ["EsmSplit/CoreJS/TerminalExportPlacement.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_resolved_placement",
+    ],
+)
+
+executable_test(
+    name = "terminal_export_placement_test",
+    src = "TerminalExportPlacementTest.lean",
+    deps = [":terminal_export_placement"],
+)
+
+lean_proof_test(
+    name = "terminal_export_placement_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalExportPlacement"],
+    required_theorems = [
+        "CoreJS.TerminalExportPlacement.resolve",
+        "CoreJS.TerminalExportPlacement.resolve_sound",
+        "CoreJS.TerminalExportPlacement.terminal_export_in_owner",
+        "CoreJS.TerminalExportPlacement.wrong_owner_not_placed",
+    ],
+    deps = [":terminal_export_placement"],
+)
