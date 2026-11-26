@@ -36,3 +36,14 @@ impl<F: Fn(Event<'_>) + Sync> Observer for F {
         self(event);
     }
 }
+
+/// Reports one phase boundary to `observer`, when the invocation has one.
+pub fn report(observer: Option<&dyn Observer>, chunk: &str, phase: Phase, state: State) {
+    if let Some(observer) = observer {
+        observer.observe(Event {
+            chunk,
+            phase,
+            state,
+        });
+    }
+}

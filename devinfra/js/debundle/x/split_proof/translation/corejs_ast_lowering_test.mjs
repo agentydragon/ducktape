@@ -814,21 +814,24 @@ const moves = path.join(dir, "moves.json");
 assert.match(split(source, ["--move-report", moves]), /model diagnostic: order kept/);
 const nativeReport = JSON.parse(readFileSync(moves));
 assert.equal(nativeReport.footprintsOfSyntax, true);
-assert.equal(nativeReport.externallyLowered, 0);
-// A different model with the same binding footprint cannot replace the AST.
+assert.equal("externallyLowered" in nativeReport, false);
+// A JSON CoreJS program is not an alternate source for a splitter verdict.
 const sidecar = file("other.json", JSON.stringify(reference("var a = 2, b = a;")));
-assert.match(split(source, ["--corejs", sidecar]), /FootprintsOfSyntax: against Lean ESTree lowering/);
+const sidecarOption = spawnSync(
+  process.env.LOWERSPLIT,
+  [
+    "--diagnostic",
+    writeDeployment(file("bundle.json", JSON.stringify(dumpSource(source))), spec, dir),
+    dir,
+    "--corejs",
+    sidecar,
+  ],
+  { encoding: "utf8" }
+);
+assert.notEqual(sidecarOption.status, 0);
+assert.match(sidecarOption.stderr, /usage/);
 const unsupported = "var a = [], b = a;";
 assert.match(split(unsupported), /model diagnostic: none\..*statement 0: unsupported expression ArrayExpression/);
-const legacy = file("external.json", JSON.stringify(reference(unsupported)));
-assert.match(split(unsupported, ["--corejs", legacy]), /externally lowered statements: 1/);
-
-// External input may supply unsupported arrays, but cannot omit their initialization.
-const missing = file("missing.json", JSON.stringify(reference("")));
-assert.match(split(unsupported, ["--corejs", missing]), /model diagnostic: none\..*omits statement 0/);
-// A call has no declarations, so footprint agreement alone could mistake its missing unit for an empty block.
-file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "#1"] } }));
-assert.match(split("var a = 1; a();", ["--corejs", missing]), /model diagnostic: none\..*omits statement 1/);
 
 // Use both forms of the Lean placement spec. For each generated declaration list,
 // keep source order in one plan and move its final independent binding in the other.
@@ -881,7 +884,7 @@ assert.deepEqual(await nodeOutcome(`${pathToFileURL(path.join(dir, "entry.mjs"))
 file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 assert.match(split("var a; let b;"), /Declaration extraction: .*all modeled outcomes/);
 assert.match(split("export let a = b, b = 1;"), /Declaration extraction: .*all modeled outcomes/);
-assert.doesNotMatch(split(unsupported, ["--corejs", legacy]), /Declaration extraction:/);
+assert.doesNotMatch(split(unsupported), /Declaration extraction:/);
 
 // Gaps in executable bodies still have source ordinals. Vary the width of an
 // exported list before a destructuring and an opaque closure so their IDs move.

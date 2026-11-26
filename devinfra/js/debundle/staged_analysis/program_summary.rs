@@ -11,7 +11,6 @@ use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use analysis::program_bindings::{ProgramBindings, ResolvedImport};
 use analysis_vocabulary::inputs::{
     ArgumentInputEvidence, ArgumentInputRef, CallableSummary, EffectiveInitializerCallReplacement,
     ImportedPrimitiveRead, InitializerCallEffectInputRef, NativeInputKind, NativeIntegrity,
@@ -37,6 +36,7 @@ use swc_ecma_ast::{
     ModuleItem, Pat, SetterProp,
 };
 use swc_ecma_visit::{Visit, VisitWith};
+use value_flow::program_bindings::{ProgramBindings, ResolvedImport};
 use vendor::VendorResolutionPlan;
 
 use crate::asserted_contracts::{project_export_set, project_onto_importers, scoped};
@@ -67,7 +67,7 @@ fn exported_decl_names(decl: &Decl) -> Vec<String> {
 /// Program-wide analysis summaries, keyed by source chunk name.
 pub struct ProgramSummary {
     /// Fresh source analysis only; saved summaries restore derived chunk facts.
-    pub structural_flows: analysis::facts::ProgramValueFlows,
+    pub structural_flows: value_flow::ProgramValueFlows,
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
     /// Per-chunk imports of never-rebound provider cells

@@ -327,7 +327,7 @@ Compare the same fixture, proof mode and runner across revisions. Record peak me
 
 ### Inspect an uncertified preview
 
-`lowersplit --diagnostic deployment.json output` runs the structural checks and prints model diagnostics. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
+`lowersplit --diagnostic deployment.json output` runs the structural checks and prints model diagnostics by lowering the source AST directly. Unsupported source units produce no model verdict. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. [Move rules and proof inventory](docs/footprint_soundness.md)
 
 ## What is proved
 

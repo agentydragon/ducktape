@@ -50,6 +50,7 @@ rust_library(
         "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:js_ast",
         "//devinfra/js/debundle:ownership_subset",
+        "//devinfra/js/debundle:progress",
         "//devinfra/js/debundle:prune_dead_imports",
         "//devinfra/js/debundle:prune_module_exports",
         "//devinfra/js/debundle:report_io",

@@ -10,6 +10,13 @@ _DUMP_DATA = [
     "//devinfra/js/debundle/x/split_proof/translation:split_dump",
 ]
 
+_SOURCE_AST_DATA = [
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+    "//devinfra/js/debundle/x/split_proof/translation:parser",
+    "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+]
+
 _LOWERSPLIT_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
 
 js_test(
@@ -94,7 +101,7 @@ js_test(
 js_test(
     name = "excalidraw_authored_placements",
     size = "large",
-    data = _DUMP_DATA + [
+    data = _SOURCE_AST_DATA + [
         "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
         ":" + _EXCALIDRAW_EDITOR_SPEC,
         ":" + _EXCALIDRAW_MAIN_SPEC,
