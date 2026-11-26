@@ -20,7 +20,7 @@ func (s *Store) RegisterProcess(ctx context.Context, owner Owner, processID stri
 		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := lockOwner(ctx, tx, owner); err != nil {
+		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx, `INSERT INTO sampler_process(id,conversation_id,generation,after_seq,status,tty,exit_code,buffered_output)
@@ -37,7 +37,7 @@ func (s *Store) RegisterModelProcess(ctx context.Context, owner Owner, processID
 		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := lockOwner(ctx, tx, owner); err != nil {
+		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx, `INSERT INTO sampler_process(id,conversation_id,generation,after_seq,status,tty,exit_code,buffered_output,model_session_id)
@@ -49,7 +49,7 @@ func (s *Store) RegisterModelProcess(ctx context.Context, owner Owner, processID
 func (s *Store) Process(ctx context.Context, owner Owner, processID string) (*RemoteProcess, error) {
 	var process *RemoteProcess
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := lockOwner(ctx, tx, owner); err != nil {
+		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
 		var err error
@@ -67,7 +67,7 @@ func (s *Store) Process(ctx context.Context, owner Owner, processID string) (*Re
 func (s *Store) ProcessByModelSession(ctx context.Context, owner Owner, sessionID int) (*RemoteProcess, error) {
 	var process *RemoteProcess
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := lockOwner(ctx, tx, owner); err != nil {
+		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
 		var err error
@@ -109,7 +109,7 @@ func scanProcess(row rowScanner) (*RemoteProcess, error) {
 }
 
 func lockOwnedProcess(ctx context.Context, tx *sql.Tx, owner Owner, processID string) (*Conversation, *RemoteProcess, error) {
-	conversation, err := lockOwner(ctx, tx, owner)
+	conversation, err := lockOwnerHeader(ctx, tx, owner)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -257,7 +257,7 @@ func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, stat
 		return protocol.ErrInvalid
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
+		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
@@ -277,7 +277,7 @@ func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, stat
 func (s *Store) ExecutionState(ctx context.Context, owner Owner) (*ExecutionState, error) {
 	var state *ExecutionState
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := lockOwner(ctx, tx, owner); err != nil {
+		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}
 		var err error
@@ -342,7 +342,7 @@ func (w LiveWork) KeepsOwner(turnActive bool) bool {
 func (s *Store) LiveWork(ctx context.Context, owner Owner) (LiveWork, error) {
 	var work LiveWork
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
+		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
