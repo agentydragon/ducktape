@@ -1552,120 +1552,29 @@ possible superclass values at that declaration's source prefix. Later writes
 to the binding do not replace the base captured by the class. Complex or
 unknown heritage keeps the conservative fallback.
 
-**Audited callback-storage APIs.** Member-specific
-`no_sync_callback_members` hints narrow only the fallback roots for
-calls like `registry.register(fn)` or `state.set({ onDone() {} })`
-where the audited API stores callback-like arguments without
-synchronously invoking them. Receiver, callee, and non-callback
-arguments still evaluate and still feed normal read/rebind/effect
-summaries; the call also remains impure for S-chain ordering unless a
-separate purity hint applies. The hint suppresses the conservative
-"the callback may have run now" edge for inline functions, object
-literals containing functions, and first-order argument callbacks.
-The synchronous value-flow summary honors the same argument exemption, and
-both honor it for calls a builtin member row admits with no `invokes` (below).
-Neither exemption suppresses reentry
-through callbacks already escaped to host code or available exports.
-Purity annotations alone do not assert that callback arguments are deferred.
-The separate exact-signature `no_reentry_callback_exports` author contract
-covers ordinary direct imported calls that cannot reenter any caller, importer
-or host callback during the call. Checked callbacks become globally escaped
-roots immediately afterward, even if the provider only returns them. The result
-remains opaque. Later unknown calls and protocol effects retain the ordinary
-promotion rules; this does not grant the return-only factory contract.
+**Audited author contracts.** Several spec assertions narrow only the opaque
+callback-promotion roots of an admitted call or operator; argument, receiver and
+operand evaluation, purity/S-chain classification, throws and source order are
+unchanged, and unsupported shapes keep the conservative fallback. Admitted
+shapes and author audits live in SPEC:
+
+- `no_sync_callback_members` — [§ Callback-storage member hints](../SPEC.md#callback-storage-member-hints).
+  The synchronous value-flow summary honors the same argument exemption, and
+  both honor it for calls a builtin member row admits with no `invokes`.
+- `no_reentry_exports`, `no_reentry_callback_exports`, anonymous
+  `no_reentry_call` — [§ Calls without synchronous reentry](../SPEC.md#calls-without-synchronous-reentry)
+  and [§ Callback registration](../SPEC.md#callback-registration-without-synchronous-reentry).
+- `no_reentry_members`, `no_reentry_record_members` — [§ Namespace and record calls](../SPEC.md#namespace-and-record-calls-without-synchronous-reentry).
+- `deferred_global_publications` — [§ Deferred browser-global publication](../SPEC.md#deferred-browser-global-publication).
+  The certified write's stored capability enters neither the opaque-call
+  callback pool nor the possible-setter pool.
+- `non_reentrant_global_membership` — [§ Audited builtin-global membership probes](../SPEC.md#audited-builtin-global-membership-probes).
+- `callback_factory_{exports,members}`, `inline_callback_factory_exports`,
+  `descriptor_copy_factory_exports`, `retained_callback_factory_{exports,members}`,
+  `retained_callback_constructor_exports` — [§ Audited callback factories](../SPEC.md#audited-callback-factories).
+
 Property writes inside collection callbacks retain the conservative accessor
 fallback when receiver integrity is unproved.
-
-**Audited direct imports without reentry.**
-`chunk_export_purity.<defining chunk>.no_reentry_exports` projects onto
-resolved direct import bindings. When a direct call has only checked primitive
-arguments and no spread, an author-audited stable export cannot execute
-caller/importer/host callbacks or access importer-owned lexical state before
-returning. The evaluator skips opaque callback promotion for that call only.
-The call can still have provider-private effects; its existing purity and
-ordering classification is unchanged, and it produces an `Unknown` result.
-Importer argument effects and provider module
-initialization stay in the ordinary model. Aliases, construction, and uncertain
-arguments retain the conservative fallback; the author must audit exported
-identity changes and every reachable provider path.
-
-**Audited namespace calls without reentry.**
-`chunk_export_purity.<defining chunk>.no_reentry_members` is an author assertion
-about synchronous call timing for checked primitive arguments. The separate
-`no_reentry_record_members` assertion covers direct static calls with at least
-one fresh object literal argument and only recursively checked inert values
-under static data keys. A primitive-only assertion never admits records. For
-either admitted call shape, the provider cannot invoke caller/importer/host
-callbacks or access importer-owned lexical state before returning. The author
-must audit the provider branch for each admitted record shape, including any
-property reads, coercion, or retention of the object and its prototype; the
-call-site syntax alone says nothing about the provider's behavior. The imported
-namespace member must also have `namespace_independent_members` lookup integrity.
-The shared namespace identity, mutation, and publication checks must pass.
-The evaluator skips only opaque callback promotion for the admitted call. It keeps
-the result `Unknown`, visits argument effects, and leaves purity/S-chain
-classification unchanged. Construction, aliases, computed/optional lookups,
-uncertain arguments, and changed member identities use the ordinary fallback.
-
-**Audited deferred browser-global publication.**
-`chunk_analysis_options.<chunk>.deferred_global_publications` certifies an
-ordinary inert own data slot on `globalThis` or `window`, or an absent slot
-whose creation cannot invoke an inherited setter and is permitted by the
-object. It also certifies no synchronous host/importer/source consumption of
-the stored capability before this chunk finishes initialization. It does not
-make the write or its RHS pure. A
-structurally checked whole assignment of a known function/class, optionally
-behind a checked `typeof window` guard, keeps all eager dataflow and ordering
-effects but does not put that stored capability into the opaque-call callback
-pool or possible setter pool. A direct call, independent export, separate
-publication, source read, ambiguous alias, global-root replacement, dynamic
-global access, or visible descriptor installation uses the conservative path.
-The host descriptor and external-consumer conditions are author-audited; they
-are not inferred from the source scan or intrinsic-integrity assumption.
-Primitive operator results and the synthetic `in` protocol call with a
-literal key and direct global-object RHS do not themselves publish the global
-object as a value. The operator and operand effects still execute and
-participate in ordinary reentry analysis.
-An earlier anonymous, zero-argument synchronous function IIFE with a
-discarded result can use a confined local alias to the global object before
-the certified publication. Its alias and derived values cannot leave that
-invocation, access the certified slot, or reach an uncertain call.
-
-**Audited builtin-global membership.**
-`chunk_analysis_options.<chunk>.non_reentrant_global_membership` separately
-certifies protocol nonreentry for listed literal-string `in` probes on a direct
-unshadowed `globalThis` or `window`. The host's exact identity and relevant
-prototype/alias behavior must remain intact at every admitted probe, including
-hidden host and cross-chunk paths. This is an explicit author premise, not
-inferred builtin trust or a consequence of deferred global publication. Scoped
-bindings, aliases, uncertain keys/receivers, dynamic scope, and recognized root,
-prototype, Object-intrinsic or exposure mutations keep conservative fallback.
-The existing confined earlier-IIFE alias proof can certify a nonescaping alias
-that never touches protected keys or prototype/identity slots. The evaluator
-still indexes/evaluates operands and retains purity, throw and dependency
-checks; it suppresses only this exact host protocol's callback reentry.
-See [the full contract](../SPEC.md#audited-builtin-global-membership-probes).
-
-**Audited callback-factory exports.**
-`chunk_export_purity.<defining chunk>.callback_factory_exports` and
-`callback_factory_members` are separate callback-flow contracts. The latter
-names static members on an imported namespace export; `pure_members` does not
-imply callback deferral. The analyzer uses these contracts only when an importer
-calls a listed target with exactly one non-spread inline function or arrow
-callback, or a retained result from another audited callback factory;
-construction and other call shapes keep the conservative fallback. The
-provider must neither invoke that callback nor synchronously invoke caller-,
-host-, or export-provided callbacks, and must not publish the callback outside
-the returned fresh ordinary callable/plain-object graph. It must not
-synchronously access importer-owned state through another route, including
-imported lexical cells or caller-owned objects. Provider-private effects are
-allowed. A retained input must be a fresh ordinary callable/plain-object graph
-from another audited factory; the outer factory must return another such graph
-that retains the original callback. The consumer may later reach or invoke the
-captured callback through that result. Authors must audit all provider and type
-branches, helpers, callback-bearing property access on both input and result,
-and prototype integrity; neither graph may contain proxies or accessors at the
-call.
 
 A pure, single-binding declaration whose only top-level call is a direct
 named import covered by `callback_factory_exports` can create its fresh result
@@ -1675,38 +1584,17 @@ definite initializer. It does not apply to namespace member calls or arbitrary
 factory aliases. A subsequent call, export, or publication of the result still
 promotes the retained callback through the value-flow model.
 
-`inline_callback_factory_exports` is a named-export contract for providers
-audited only with one non-spread syntactic inline function or arrow argument.
-The provider returns a fresh ordinary callable retaining that callback and
-cannot invoke or publish it during construction. The same importer-state
-restriction applies. A retained result from another factory, a named callback,
-spread arguments, or construction does not use this contract. The imported
-binding identity follows the ordinary export/import resolver, including local
-renames; this callback-flow fact does not imply purity.
+For `descriptor_copy_factory_exports`, the shared object-shape collector proves
+a fresh static literal and exact own descriptors; the imported callable summary
+supplies provider identity. The interpreter retains copied getters in the
+returned object and promotes them on reads.
 
-`descriptor_copy_factory_exports` has its own author premise and source-checked
-call certificate. The shared object-shape collector proves a fresh static
-literal and exact own descriptors; the imported callable summary supplies
-provider identity and the audited descriptor-copy behavior. The interpreter
-retains copied getters in the returned object and promotes them on reads,
-while preserving the registration call's ordinary ordering and throws. This
-contract does not make accessor-bearing arguments eligible for the older
-callback-factory rules.
-
-The separate `retained_callback_factory_exports` and
-`retained_callback_factory_members` assertions admit explicitly enumerated
-arities and callback positions, including stable local named callbacks. The
-call index retains the syntax/primitive-position check from the single parse;
-the interpreter checks actual callable values and unions the retained callback
-graphs at both value production and synchronous call execution. Namespace
-privacy checks cover the union of independently audited factory members, while
-the old and stronger admission rules remain separate. Unsupported values,
-mutation, rebinding, exposure, spreads and construction keep ordinary fallback.
-The per-call-site audit additionally covers nonfresh callable identity, aliases,
-property/prototype capabilities and exclusion of additional callbacks or
-cross-instance state in the returned graph; the complete contract is in
-<../SPEC.md> § Retaining existing or multiple callbacks. This is an explicit
-author assumption, never an inference from a provider's name.
+For the retained-callback contracts, the call index retains the
+syntax/primitive-position check from the single parse; the interpreter checks
+actual callable values and unions the retained callback graphs at both value
+production and synchronous call execution. Namespace privacy checks cover the
+union of independently audited factory members, while the older and stronger
+admission rules remain separate.
 
 Invoking a retained result promotes its callbacks through the shared synchronous
 statement adjacency and retained prefix effects. This includes callbacks returned

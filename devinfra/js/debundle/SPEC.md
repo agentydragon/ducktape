@@ -4104,7 +4104,9 @@ same importer-state restriction above. The author audits provider and helper
 paths reachable for this admitted input shape; other overloads are unclaimed.
 Calls with a named callback, a retained factory result, spread arguments, or
 `new` use conservative callback timing. This contract is independent of purity
-and does not grant the broader `callback_factory_exports` composition rule.
+and does not grant the broader `callback_factory_exports` composition rule. The imported
+binding identity follows the ordinary export/import resolver, including local
+renames.
 
 ### Descriptor-copy returned wrappers
 
@@ -4273,6 +4275,19 @@ can expose every retained callback and its captures, including graphs returned
 by those callbacks. Argument evaluation and provider-private effects retain
 their normal checks and ordering. The contract does not assert construction
 purity: `purity: pure_new` on the defining binding requires its own audit.
+
+### Callback-storage member hints
+
+`annotations.<export_name>.no_sync_callback_members` lists member names of an
+audited API that stores callback-like arguments without synchronously invoking
+them, such as `registry.register(fn)` or `state.set({ onDone() {} })`. It
+suppresses only the conservative "the callback may have run now" edge for inline
+functions, object literals containing functions, and first-order argument
+callbacks. Receiver, callee and non-callback arguments still evaluate and feed
+ordinary read/rebind/effect summaries; the call stays impure for S-chain
+ordering unless a separate purity hint applies. Reentry through callbacks
+already escaped to host code or available exports is not suppressed. Purity
+annotations alone never assert that callback arguments are deferred.
 
 ### Calls without synchronous reentry
 
