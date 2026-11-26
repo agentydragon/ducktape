@@ -190,3 +190,32 @@ gzip; these are local library calls, not service append latency.
 
 These windows deliberately target formerly excluded rows and do not estimate fleet-wide savings.
 They justify a boundary-specific trial, not larger blocks for sparse ordinary History point reads.
+
+## Physical PostgreSQL layouts
+
+Read source data on the standby and load fresh bytea values into a disposable local PostgreSQL
+instance on a separate scratch filesystem. Use six session windows per cohort: seed 25 and the
+next 20 ordinary boundaries as above (120 events); seed 81 and up to 512 positions for ordered
+History (2,655 events) and Sampler (3,072). Use the same events in every arm. Create a fresh
+table with a synthetic integer session key, cursor, kind, optional cursor array, and payload.
+Index (session, cursor) and, for History, also (session, kind, cursor). The modeled block layout
+stores sparse cursor arrays for History; it does not price the production sizes array or all
+ordinary-row metadata. This is a physical comparison of the candidate layouts, not a production
+capacity forecast.
+
+Compare one row per original event against four-byte length-framed groups. Use the same groups
+for both PostgreSQL codecs (EXTENDED storage) and dictionary-free zstd level 3 (EXTERNAL).
+Measure pg_total_relation_size after loading, including heap, indexes and TOAST. There were no
+live database writes. These trials did not measure steady-state allocator reuse, WAL or latency.
+
+| Window / grouping                                     |   Row PGLZ |    Row LZ4 | Block PGLZ |  Block LZ4 | Block zstd-3 |
+| ----------------------------------------------------- | ---------: | ---------: | ---------: | ---------: | -----------: |
+| History boundary, 2 MiB / 32 by kind (25 blocks)      | 17,760,256 | 16,809,984 | 17,702,912 | 16,695,296 |    4,464,640 |
+| History ordered, 64 KiB / 32 by kind (113 blocks)     |  3,153,920 |  3,293,184 |  2,015,232 |  1,998,848 |    1,433,600 |
+| Sampler ordered, 64 KiB / 128 in sequence (46 blocks) |  2,990,080 |  3,047,424 |  2,064,384 |  1,974,272 |    1,376,256 |
+
+All figures are allocated bytes. On the boundary sample, grouping with LZ4 alone saved less
+than 1% versus individual LZ4 rows. Stock zstd on the same groups cut the physical footprint by
+73% versus individual LZ4 rows. It needed neither a trained dictionary nor knowledge of the
+boundary subtype. For the other samples, plain framed groups compressed by PostgreSQL already
+beat individual rows, though stock zstd groups were smallest on disk.

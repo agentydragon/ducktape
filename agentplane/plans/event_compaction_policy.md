@@ -50,11 +50,11 @@ cannot price a slower tail reader, an extra index lookup per event, or a longer 
 The [November 25 storage census](../debug/2026_11_25_staging_storage.md#which-bytes-are-worth-changing)
 compared encodings on the same sampled values. Sizes are per PostgreSQL instance.
 
-| Observation                                                                                                                                                                                                                                                              | Design consequence                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sampler stored 11.12M frames in 347,775 blocks: about 32 frames/block, already at the count limit on average. Gzip level 6 on the same framed bytes saved 13.2% and 14.2% in two samples against best speed.                                                             | Moving only the 2 MiB byte setting may change almost nothing. Vary the count cap independently. Level 6 is a credible cold-repack candidate; these samples did not measure foreground append CPU.                                              |
-| In History, 23,639 of 29,018 ordinary boundary entries exceeded the old 128 KiB limit. They accounted for 3.37 GiB, 96% of ordinary boundary payload bytes. Independently gzipping sampled ordinary boundaries used 39% fewer bytes than their stored PostgreSQL datums. | Fix singleton eligibility before tuning multi-entry blocks. This comparison includes the actual datum storage benefit PostgreSQL was already providing; it does not measure a switch to LZ4.                                                   |
-| Of 66 and 48 sampled JavaScript sends, only 6 and 4 canonical tool catalogs were distinct. Sharing catalogs plus gzipping the remainder saved 90–91% against per-send gzip in that model.                                                                                | Test exact serialized catalog reuse. Canonical JSON equality across a sample does not prove byte equality within one session. The estimated 2.41–2.45 GiB opportunity is not a measured table reduction and cannot be added to the 39% saving. |
+| Observation                                                                                                                                                                                                                                                              | Design consequence                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sampler stored 11.12M frames in 347,775 blocks: about 32 frames/block, already at the count limit on average. Gzip level 6 on the same framed bytes saved 13.2% and 14.2% in two samples against best speed.                                                             | Moving only the 2 MiB byte setting may change almost nothing. Vary the count cap independently. Level 6 is a credible cold-repack candidate; these samples did not measure foreground append CPU.                                                 |
+| In History, 23,639 of 29,018 ordinary boundary entries exceeded the old 128 KiB limit. They accounted for 3.37 GiB, 96% of ordinary boundary payload bytes. Independently gzipping sampled ordinary boundaries used 39% fewer bytes than their stored PostgreSQL datums. | Fix singleton eligibility before tuning multi-entry blocks. This comparison includes the actual datum storage benefit PostgreSQL was already providing; it does not measure a switch to LZ4.                                                      |
+| Of 66 and 48 sampled JavaScript sends, only 6 and 4 canonical tool catalogs were distinct. Sharing catalogs plus gzipping the remainder saved 90–91% against per-send gzip in that model.                                                                                | Use field reuse as a benchmark control. Canonical JSON equality across a sample does not prove byte equality within one session. The estimated 2.41–2.45 GiB opportunity is not a measured table reduction and cannot be added to the 39% saving. |
 
 A [follow-up standby experiment](../debug/2026_11_25_postgres_event_compaction.md) verified exact
 reconstruction on 94/94 and 110/110 JavaScript sends in two sets of 12 session windows. A
@@ -87,16 +87,13 @@ JavaScript sends versus other evidence. A split below kind requires a stream dis
 index and a predecessor seek per stream: two substreams can have overlapping spans of the same kind.
 Charge those seeks to the split. Do not make each tool name or each call ID a grouping key.
 
-**Deferred alternative: repeated fields.** Try this only if generic blocks fail the point-read or storage budget. A sequence of large tool catalogs may exceed the codec's backward reference
-window even when every catalog is adjacent. For a recognized JavaScript send, find the exact
-serialized catalog slice, keep its surrounding frame bytes and lengths, and look up an immutable
-catalog by session and digest. Verify length and byte equality before reuse. Keep the full frame
-on parse ambiguity, digest mismatch, or when a reference plus lookup would cost more. Try a
-block-local dictionary first and a session-local table second. The latter survives block
-boundaries and handles a singleton; include its index, join and cleanup costs. Store references
-atomically, authorize through the event, and delete an unreferenced catalog under the same
-transactional ownership as its events. Exact reconstruction must succeed even for escaped JSON or
-unknown protobuf fields. Sample hashes of canonicalized JSON cannot be used as storage identity.
+**Use self-contained blocks.** Use stock codec settings with no trained dictionary and no
+application-managed catalog references. Every block must decode after restore using its bytes
+and its format version alone. A codec can exploit repetition inside a block without a dictionary
+artifact to train, distribute, retain or garbage-collect. The field-sharing experiment is a
+comparison point: on the sampled sends, generic 8 MiB zstd blocks came within 1.4 percentage
+points of its modeled storage saving. Reconsider a custom dictionary only through a separate
+proposal showing a material workload benefit after pricing that lifecycle.
 
 ### Choose where to seal
 
@@ -128,10 +125,10 @@ for scans, but its roughly 7 MiB average point decode is a material cost.
 
 Carry these controls and challengers into the remaining trials:
 
-| Service | Control to retain for now                                                  | Candidate targets (KiB decoded) | Count and codec comparisons                                                                |
-| ------- | -------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
-| Sampler | Current 2 MiB hard bound, 32 frames, best-speed gzip                       | 64, 128, 256, 512, 1024, 2048   | 32 vs 128; current layout at level 6 as the measured size control; zstd 1 and 3            |
-| History | Current 128 KiB hard bound, 256 entries, default gzip; keep existing reads | 64, 128, 256, 512, 1024         | 32 vs 256; include crossing singleton, with and without catalog reuse; same codec controls |
+| Service | Control to retain for now                                                  | Candidate targets (KiB decoded) | Count and codec comparisons                                                        |
+| ------- | -------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------- |
+| Sampler | Current 2 MiB hard bound, 32 frames, best-speed gzip                       | 64, 128, 256, 512, 1024, 2048   | 32 vs 128; current layout at level 6 as the measured size control; zstd 1 and 3    |
+| History | Current 128 KiB hard bound, 256 entries, default gzip; keep existing reads | 64, 128, 256, 512, 1024         | 32 vs 256; include crossing singleton, on the original frames; same codec controls |
 
 Do not derive H from the winning target. Set H from the reader's peak memory budget divided by
 concurrent decoders, allowing for compressed input, frame indexes and output objects. Test that
@@ -149,7 +146,6 @@ across entries. Benchmark these independently:
 | One bytea per event, EXTENDED storage, PGLZ or LZ4 | Simple append/delete and point reads; no packer                               | Row and index per event; no cross-event compression                                                  |
 | Uncompressed framed block, EXTENDED, PGLZ or LZ4   | Same grouping and seek metadata as an application block; no application codec | PostgreSQL CPU and heap/TOAST I/O; whole-block fetch and decompression for a point read              |
 | Application-compressed bytea, EXTERNAL storage     | Gzip or zstd sees the exact same frames; avoid asking TOAST to recompress     | Application CPU, encoded length, PostgreSQL chunk/index overhead; bounded reader and codec lifecycle |
-| Each of the above with lossless catalog reuse      | Removes repeated bytes regardless of codec                                    | Reference and dictionary rows/indexes, lookups, deletion and cold restore                            |
 
 On a writable isolated PostgreSQL instance matching staging, create fresh identical tables per
 arm. Set column storage and COMPRESSION before inserting plain framed values through the service
@@ -158,6 +154,14 @@ that PostgreSQL re-encoded them. Check pg_column_compression and pg_column_size 
 column and compare pg_total_relation_size after identical loads, including auxiliary tables and
 indexes. Measure WAL on an otherwise idle instance. pg_column_size alone excludes row and index
 overhead; an in-process LZ4 run is not a measurement of PostgreSQL LZ4.
+
+The [physical PostgreSQL trial](../debug/2026_11_25_postgres_event_compaction.md#physical-postgresql-layouts)
+found that stock zstd blocks occupied **4.26 MiB** on the large-boundary sample, including
+indexes and TOAST, versus **16.03 MiB** with one LZ4 row per event and **15.92 MiB** with LZ4
+on the same grouped frames. Stock zstd blocks were also smaller on the two ordered-window
+samples. For these high-volume streams, keep generic blocks as the candidate to beat on space;
+prefer ordinary rows for streams where they meet the budget. Measure query and append latency
+before changing defaults.
 
 **What can replace the packer?** First test ordinary rows with a primary key on (session, cursor)
 and, for History, an index on (session, kind, cursor). Use bytea with EXTENDED storage and compare
@@ -210,7 +214,7 @@ Reject any layout that fails byte-exact replay or the services' latency, through
 budgets. Among survivors choose the smallest retained footprint; if sampling variation obscures
 the difference, choose the simpler representation and the smaller read unit. Publish one row per
 service with winner, runner-up, measured trade-off and affected read path. Until these comparisons
-exist, keep the current writer defaults; use the measured catalog and gzip findings to prioritize
+exist, keep the current writer defaults; use the measured generic packing results to prioritize
 the experiment, not to authorize a fleet rewrite.
 
 ## Repack already stored data
@@ -223,7 +227,7 @@ the streams being replaced; if the closure exceeds the work budget, stage a repl
 in bounded chunks and swap its manifest atomically. Never move a checkpoint past an unprocessed
 intersecting block.
 
-Dry-run counts source bytes, target bytes, reused catalogs, rewritten and skipped events and peak
+Dry-run counts source bytes, target bytes, rewritten and skipped events and peak
 scratch space, without modifying journal rows. Apply outside the append critical path: prepare
 bounded candidates, acquire the session lock with a short timeout, recheck source identities and
 the removal watermark, then atomically replace the source and advance the checkpoint. Readers
