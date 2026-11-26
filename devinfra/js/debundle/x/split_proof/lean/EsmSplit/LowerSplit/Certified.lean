@@ -9,6 +9,8 @@ namespace EsmSplit.LowerSplit
 
 open Lean EsmSplit.SplitFiles
 
+private def requestedGuarantee : String := "all-outcomes"
+
 private def emitRefusal (requested : String) (refusal : CertificationRefusal) : IO UInt32 := do
   let reasonCodeFields := refusal.reasonCode.toList.map fun code => ("reason_code", toJson code)
   let observationFields := refusal.observation.toList.map fun observation => ("observation", observation)
@@ -23,12 +25,12 @@ private def emitRefusal (requested : String) (refusal : CertificationRefusal) : 
   return 1
 
 private def noConstructedRule : CertificationRefusal := {
-  reason := "no constructed rule currently covers strict JavaScript observations for this split"
+  reason := "no constructed rule currently covers all-outcomes strict JavaScript source-to-output observations for this split; no output was published"
   reasonCode := some "no_constructed_rule"
 }
 
 private def parseCertifiedArgs (args : List String) : IO (System.FilePath × System.FilePath) := do
-  let usage := IO.userError "usage: lowersplit <deployment.json> <outdir>; strategy, guarantee, host, deployment-origin, and check-output options are not accepted"
+  let usage := IO.userError "usage: lowersplit <deployment.json> <outdir>; strategy, guarantee, host, deployment-origin, diagnostic, generator, and check-output options are not accepted"
   let [manifest, out] := args | throw usage
   if args.any (·.startsWith "--") then throw usage
   let out ← IO.ofExcept (outputDirectory out)
@@ -58,8 +60,7 @@ private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : Syst
   let P ← planSplit B S timings
   let programs ← timePhase timings "output_ast" fun _ =>
     IO.ofExcept (ESTreeEmit.programs asts B P source sourcePath)
-  return { original := program, bundle := B, spec := S, plan := P,
-    output := { programs, source, input, work } }
+  return { original := program, bundle := B, spec := S, plan := P, output := { programs := programs, source := source, input := input, work := work } }
 
 private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
   let ok ← timePhase timings "plan_checks" fun _ => checkLayout part.bundle part.plan (some part.spec) false
@@ -74,7 +75,7 @@ private def runSingleton (chunk : DeploymentChunk) (work : System.FilePath) (tim
       pure (path.fileName.getD "bundle.mjs", path.parent)
     else pure ("bundle.mjs", none)
   let _providers ← loadProviders entry (Std.HashMap.ofList [(entry, part.original)]) root work (allowEntryImport := false)
-  emitRefusal CoreJS.Guarantee.allOutcomes.label noConstructedRule
+  emitRefusal requestedGuarantee noConstructedRule
 
 private def runDeployment (manifest : DeploymentManifest) (work : System.FilePath) (timings : Bool) : IO UInt32 := do
   let root ← deploymentRoot manifest
@@ -104,10 +105,10 @@ private def runDeployment (manifest : DeploymentManifest) (work : System.FilePat
   let _someMain ← match supplied[manifest.entry]? with
     | some main => pure main
     | none => throw (IO.userError "missing deployment entry")
-  emitRefusal CoreJS.Guarantee.allOutcomes.label noConstructedRule
+  emitRefusal requestedGuarantee noConstructedRule
 
 def certified (args : List String) : IO UInt32 := do
-  let requested := CoreJS.Guarantee.allOutcomes.label
+  let requested := requestedGuarantee
   try
     let (manifestPath, _out) ← parseCertifiedArgs args
     let manifest ← readDeploymentManifest manifestPath

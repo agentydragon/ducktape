@@ -1,6 +1,8 @@
 import EsmSplit.LowerSplit.Certified
 
-/-! Certify and publish a JavaScript deployment, or verify its existing files. -/
+/-! The public dispatcher requires an all-outcomes, strict source-to-output
+certificate. Until a constructed rule covers that contract, it refuses without
+publishing files. -/
 
 namespace EsmSplit.LowerSplit
 
