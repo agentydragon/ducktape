@@ -241,16 +241,9 @@ impl ReachWalk<'_> {
                     let source = str_value(&import.src);
                     for specifier in &import.specifiers {
                         let (local, imported) = match specifier {
-                            ImportSpecifier::Named(named) if !named.is_type_only => (
-                                &named.local,
-                                named.imported.as_ref().map_or_else(
-                                    || named.local.sym.to_string(),
-                                    |name| match name {
-                                        ModuleExportName::Ident(ident) => ident.sym.to_string(),
-                                        ModuleExportName::Str(value) => str_value(value),
-                                    },
-                                ),
-                            ),
+                            ImportSpecifier::Named(named) if !named.is_type_only => {
+                                (&named.local, binding_targets::imported_export_name(named))
+                            }
                             ImportSpecifier::Default(default) => {
                                 (&default.local, "default".to_string())
                             }
@@ -476,10 +469,7 @@ impl Visit for ReachWalk<'_> {
                     TrackedBinding::LoaderAlias { .. }
                 )
             {
-                let exported = match named.exported.as_ref().unwrap_or(&named.orig) {
-                    ModuleExportName::Ident(ident) => ident.sym.to_string(),
-                    ModuleExportName::Str(value) => str_value(value),
-                };
+                let exported = binding_targets::public_export_name(named);
                 self.tracked[index].exported_as.push(exported);
                 continue;
             }

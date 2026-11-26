@@ -6763,17 +6763,7 @@ impl ExecutionIndex {
                     if host_async_local_storage
                         && let ImportSpecifier::Named(named) = specifier
                         && !named.is_type_only
-                        && named
-                            .imported
-                            .as_ref()
-                            .map(|name| match name {
-                                ModuleExportName::Ident(id) => id.sym.as_ref(),
-                                ModuleExportName::Str(string) => {
-                                    string.value.as_str().unwrap_or("")
-                                }
-                            })
-                            .unwrap_or(named.local.sym.as_ref())
-                            == "AsyncLocalStorage"
+                        && binding_targets::imported_export_name(named) == "AsyncLocalStorage"
                     {
                         index.host_async_local_storage_imports.insert(local.to_id());
                     }
@@ -8429,10 +8419,7 @@ impl ExecutionIndex {
                     if let ExportSpecifier::Named(named) = specifier
                         && let ModuleExportName::Ident(local) = &named.orig
                     {
-                        let exported = match named.exported.as_ref().unwrap_or(&named.orig) {
-                            ModuleExportName::Ident(ident) => ident.sym.to_string(),
-                            ModuleExportName::Str(value) => js_ast::str_value(value),
-                        };
+                        let exported = binding_targets::public_export_name(named);
                         self.exported_names.insert(exported, local.to_id());
                         self.exported_bindings.insert(local.to_id());
                     }

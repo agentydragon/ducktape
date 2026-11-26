@@ -30,7 +30,9 @@ use anyhow::{Result, bail, ensure};
 use artifact::paths::join_module_path;
 use artifact::reports::SelectedModuleLowering;
 use artifact::{FileMetadata, FileRole, JsFile, JsFileBody};
-use frontend_elaboration::source_ast::RuntimeImportFacts;
+use frontend_elaboration::source_ast::{
+    RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind, runtime_import_bindings,
+};
 use gate::AssignmentAnalysis;
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use output_layout::{CHUNK_REPORT, REPORTS_DIR, TREE_DIR};
@@ -96,59 +98,17 @@ pub(super) struct PreparedModuleEmission<'a> {
     vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum EmittedImportKind {
-    Named(String),
-    Default,
-    Namespace,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct EmittedImportBinding {
-    source: String,
-    kind: EmittedImportKind,
-}
-
-fn emitted_import_local_index(
-    body: &[ModuleItem],
-) -> Result<BTreeMap<String, EmittedImportBinding>> {
+fn emitted_import_local_index(body: &[ModuleItem]) -> Result<BTreeMap<String, RuntimeImportInfo>> {
     let mut bindings = BTreeMap::new();
     for item in body {
         let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
             continue;
         };
-        let source = str_value(&import.src);
-        for specifier in &import.specifiers {
-            let (local, kind) = match specifier {
-                ImportSpecifier::Named(named) => (
-                    named.local.sym.to_string(),
-                    EmittedImportKind::Named(match &named.imported {
-                        Some(ModuleExportName::Ident(name)) => name.sym.to_string(),
-                        Some(ModuleExportName::Str(name)) => {
-                            name.value.to_string_lossy().into_owned()
-                        }
-                        None => named.local.sym.to_string(),
-                    }),
-                ),
-                ImportSpecifier::Default(default) => {
-                    (default.local.sym.to_string(), EmittedImportKind::Default)
-                }
-                ImportSpecifier::Namespace(namespace) => (
-                    namespace.local.sym.to_string(),
-                    EmittedImportKind::Namespace,
-                ),
-            };
+        for (local, info) in runtime_import_bindings(import) {
             ensure!(
-                bindings
-                    .insert(
-                        local.clone(),
-                        EmittedImportBinding {
-                            source: source.clone(),
-                            kind,
-                        },
-                    )
-                    .is_none(),
-                "module imports local {local} more than once"
+                bindings.insert(local.sym.to_string(), info).is_none(),
+                "module imports local {} more than once",
+                local.sym
             );
         }
     }
@@ -520,9 +480,11 @@ pub(super) fn prepare_module_emission<'output>(
                 ImportedSourceTarget::OutputPath(path) => relative_source(&dest_abs, path),
                 ImportedSourceTarget::ExternalSpecifier(specifier) => specifier.clone(),
             };
-            let expected = EmittedImportBinding {
-                source: src.clone(),
-                kind: EmittedImportKind::Named(reexport.imported_name.clone()),
+            let expected = RuntimeImportInfo {
+                src: src.clone(),
+                kind: RuntimeImportKind::Named {
+                    imported: reexport.imported_name.clone(),
+                },
             };
             if let Some(existing) = imported_locals.get(&reexport.local) {
                 ensure!(
