@@ -12,7 +12,6 @@ go_library(
     deps = [
         "//agentplane/environments/access",
         "//agentplane/identity/auth",
-        "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",

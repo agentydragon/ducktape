@@ -35,6 +35,7 @@ import { ThreadCache, type SavedWindow } from "./thread_cache";
 import { threadScope } from "./client";
 import { backoff, type StreamConnection } from "../transport/stream_reader";
 import { followWatch } from "../transport/watch_stream";
+import { Listeners } from "../transport/listeners";
 import {
   ThreadCommandOutcome,
   ThreadCommandSchema,
@@ -317,21 +318,6 @@ function bodySubset(references: readonly BodyId[]): SubsetParams {
       ])
     ),
   };
-}
-
-type Listener = () => void;
-
-class Listeners {
-  readonly #listeners = new Set<Listener>();
-
-  subscribe = (listener: Listener): (() => void) => {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
-  };
-
-  notify(): void {
-    for (const listener of this.#listeners) listener();
-  }
 }
 
 /**

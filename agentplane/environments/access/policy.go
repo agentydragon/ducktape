@@ -78,27 +78,45 @@ func ParseRule(rule policyapi.Rule) (Rule, error) {
 	return Rule{Operations: rule.Operations, Environments: rule.Environments}, nil
 }
 
-// Allowed reports whether the caller's current Identity grants operation on this Sandbox.
+// Grant is how a caller's Identity grants an operation on a Sandbox.
+type Grant int
+
+const (
+	// Denied: no selector of a rule for the operation matches the Sandbox.
+	Denied Grant = iota
+	// GrantedViaBoundIdentity: only selectors that name the Sandbox's bound Identity match, so the grant holds only
+	// while the Sandbox still acts as that Identity.
+	GrantedViaBoundIdentity
+	// Granted: a matching selector does not name a bound Identity.
+	Granted
+)
+
+// Evaluate reports how the caller's current Identity grants operation on this Sandbox.
 // Callers check policy readiness and live target/Identity facts separately.
-func Allowed(index *reader.Index[Rule], caller reader.Identity, operation string, sandbox *sandboxapi.Sandbox) bool {
+func Evaluate(index *reader.Index[Rule], caller reader.Identity, operation string, sandbox *sandboxapi.Sandbox) Grant {
 	if index == nil || sandbox == nil || caller.Name == "" || caller.UID == "" || (operation != resume && operation != bindSession) {
-		return false
+		return Denied
 	}
-	for _, grant := range index.Grants(caller) {
-		for _, set := range grant.Sets {
+	grant := Denied
+	for _, g := range index.Grants(caller) {
+		for _, set := range g.Sets {
 			for _, numbered := range set.Rules {
 				if !slices.Contains(numbered.Rule.Operations, operation) {
 					continue
 				}
 				for _, selector := range numbered.Rule.Environments {
-					if matches(selector, caller.Name, sandbox) {
-						return true
+					switch {
+					case !matches(selector, caller.Name, sandbox):
+					case selector.BoundIdentity == nil:
+						return Granted
+					default:
+						grant = GrantedViaBoundIdentity
 					}
 				}
 			}
 		}
 	}
-	return false
+	return grant
 }
 
 func matches(selector policyapi.EnvironmentSelector, caller string, sandbox *sandboxapi.Sandbox) bool {

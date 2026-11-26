@@ -2,9 +2,10 @@ package server
 
 import (
 	"net/http"
-	"regexp"
 	"sync"
 	"sync/atomic"
+
+	"github.com/google/uuid"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/httpresponse"
@@ -43,12 +44,17 @@ func newHTTPServer(authentication *auth.Auth) *httpServer {
 // non-UUID thread or session ID matches no route.
 type uuidMux struct{ *http.ServeMux }
 
-var uuidPathSegment = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+// isUUIDPathSegment accepts only the hyphenated 36-character form, in either case; uuid.Parse
+// alone also accepts the braced, `urn:uuid:` and unhyphenated forms.
+func isUUIDPathSegment(value string) bool {
+	_, err := uuid.Parse(value)
+	return err == nil && len(value) == 36
+}
 
 func (m *uuidMux) Handle(pattern string, handler http.Handler) {
 	m.ServeMux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, name := range []string{"thread_id", "session_id"} {
-			if value := r.PathValue(name); value != "" && !uuidPathSegment.MatchString(value) {
+			if value := r.PathValue(name); value != "" && !isUUIDPathSegment(value) {
 				http.NotFound(w, r)
 				return
 			}

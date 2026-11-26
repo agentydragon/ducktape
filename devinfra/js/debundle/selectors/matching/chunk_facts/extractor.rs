@@ -554,11 +554,9 @@ impl Extractor {
     /// `#name` private class member keys (`PrivateMethod`/`PrivateProp`) are
     /// not a `PropName` variant in `swc_ecma_ast` — they carry a `PrivateName`
     /// instead. Recorded into the same `prop_name` fact table as public keys,
-    /// `#`-prefixed, matching the label convention already used elsewhere in
-    /// this crate (`../authoring/readoff_render.rs`,
-    /// `../authoring/selector_candidate_index.rs`,
-    /// `../authoring/shape_index.rs`) so a private key can never collide with a same-named
-    /// public one.
+    /// `#`-prefixed, matching the label convention of
+    /// `selectors/authoring/{readoff_render,selector_candidate_index,shape_index}.rs`,
+    /// so a private key can never collide with a same-named public one.
     fn private_name_key(&mut self, key: &PrivateName) -> NodeId {
         let id = self.node(NodeKind::PropName);
         self.facts.prop_name.push((id, format!("#{}", key.name)));

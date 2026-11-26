@@ -5,7 +5,7 @@
 //! The command reads `cycles.json` and `dependency_graph.json.gz`, classifies
 //! each constraining `sequenced` edge between an SCC's modules with the
 //! verdict the graph build retained on it
-//! (`edges[].premise_verdict`, decided by `graph/build.rs::premise_verdict`,
+//! (`edges[].premise_verdict`, decided by `graph/build/commuting.rs::premise_verdict`,
 //! the same value the gate applies), synthesizes a proven selector for each
 //! endpoint, and emits a YAML draft plus a report. It writes only the draft
 //! (`--out`); applying an entry is the author's step, after which the gate's
@@ -41,7 +41,8 @@ use serde::Serialize;
 use source_identity::SourceUnitId;
 use source_identity::SourceUnitOrdinal;
 use source_inspection::PreparedSource;
-use spec::{CommutingStatementsContract, ModulePath, ResolvedMemberSelector, SourceUnitSelector};
+use spec::input_contracts::{CommutingStatementsContract, SourceUnitSelector};
+use spec::{ModulePath, ResolvedMemberSelector};
 use spec_modules::{collect_module_files, module_path_from_file};
 use swc_atoms::Atom;
 

@@ -214,7 +214,7 @@ pub(super) fn map_apply_spec_paths(
         }
     }
     for (chunk, mark) in &mut spec.vendor {
-        if let spec::VendorLevel::BundledPartialSwap(swap) = &mut mark.level {
+        if let spec::vendor_marks::VendorLevel::BundledPartialSwap(swap) = &mut mark.level {
             swap.bundle.path = map(ApplyPath::VendorBundle(chunk.clone()), &swap.bundle.path)?;
         }
     }

@@ -47,6 +47,7 @@ type JournalCompactionOptions struct {
 // under the selected profile. Lock timings include each short batch transaction.
 type JournalCompactionResult struct {
 	Events, Blocks, StoredBytes, PackedBytes int64
+	OutputBytes, RetainedLegacyBlocks        int64
 	OpeningCursor                            uint64
 	Batches                                  int64
 	Completed                                bool
@@ -68,7 +69,6 @@ type repackEntry struct {
 	sequence       uint64
 	frame          []byte
 	standaloneWire []byte
-	storedCost     int
 }
 
 func (entry repackEntry) packable() bool { return len(entry.frame) > 0 }
@@ -174,6 +174,8 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 			result.Blocks += plan.result.Blocks
 			result.StoredBytes += plan.result.StoredBytes
 			result.PackedBytes += plan.result.PackedBytes
+			result.OutputBytes += plan.result.OutputBytes
+			result.RetainedLegacyBlocks += plan.result.RetainedLegacyBlocks
 			result.Batches++
 			break
 		}
@@ -330,14 +332,9 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 		if sourceDecodedBytes > journalRepackBatchBytes {
 			return repackPlan{}, fmt.Errorf("decoded journal source %d–%d exceeds batch byte limit", source.first, source.last)
 		}
-		baseCost, extraCost := len(source.payload)/len(decoded), len(source.payload)%len(decoded)
 		for j := range decoded {
 			entry := decoded[j]
 			entry.sequence = source.first + uint64(j)
-			entry.storedCost = baseCost
-			if j < extraCost {
-				entry.storedCost++
-			}
 			if entry.packable() {
 				if _, err := decodeJournalEvent(entry.frame, entry.sequence); err != nil {
 					return repackPlan{}, err
@@ -351,15 +348,19 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 	if len(sources) == 0 {
 		return repackPlan{state: journalRepackState{opening: state.opening, through: state.opening}}, nil
 	}
-	outputs, err := repackJournalEntries(entries, hasMore, state.opening, s.eventBlockProfile)
+	outputs, err := repackJournalEntries(entries, state.opening, s.eventBlockProfile)
 	if err != nil {
 		return repackPlan{}, err
 	}
 	if err := validateJournalRepackCoverage(entries, outputs); err != nil {
 		return repackPlan{}, err
 	}
-	// Every selected source is covered, including an unsealed tail returned as
-	// standalone rows. The final page may end in a gap before the opening cursor.
+	// The maintenance page is bounded and all inputs are verified above. Include
+	// standalone rows on both sides, and never trade a smaller source layout
+	// for a larger final layout. Retained legacy blocks remain readable.
+	if journalPayloadBytes(outputs) > journalPayloadBytes(sources) {
+		outputs = sources
+	}
 	through := state.opening
 	if hasMore {
 		through = min(sources[len(sources)-1].last, state.opening)
@@ -369,16 +370,26 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 		state: journalRepackState{opening: state.opening, through: through},
 	}
 	plan.result.Events = int64(len(entries))
-	for _, source := range sources {
-		plan.result.StoredBytes += int64(len(source.payload))
-	}
+	plan.result.StoredBytes = journalPayloadBytes(sources)
+	plan.result.OutputBytes = journalPayloadBytes(outputs)
 	for _, output := range outputs {
 		if output.block {
 			plan.result.Blocks++
+			if eventcodec.IsGzip(output.payload) {
+				plan.result.RetainedLegacyBlocks++
+			}
 			plan.result.PackedBytes += int64(len(output.payload))
 		}
 	}
 	return plan, nil
+}
+
+func journalPayloadBytes(rows []repackStorage) int64 {
+	var total int64
+	for _, row := range rows {
+		total += int64(len(row.payload))
+	}
+	return total
 }
 
 // Keep packing decisions independent of the transaction size. An input block
@@ -414,9 +425,13 @@ func splitJournalPage(page repackPlan, limit int) ([]repackPlan, error) {
 			batch.state.through = min(last, page.state.opening)
 		}
 		for _, row := range final {
+			batch.result.OutputBytes += int64(len(row.payload))
 			batch.result.Events += int64(row.last - row.first + 1)
 			if row.block {
 				batch.result.Blocks++
+				if eventcodec.IsGzip(row.payload) {
+					batch.result.RetainedLegacyBlocks++
+				}
 				batch.result.PackedBytes += int64(len(row.payload))
 			}
 		}
@@ -476,7 +491,7 @@ func decodeRepackSource(source repackStorage) ([]repackEntry, error) {
 	return entries, nil
 }
 
-func repackJournalEntries(entries []repackEntry, hasMore bool, opening uint64, profile eventblock.Profile) ([]repackStorage, error) {
+func repackJournalEntries(entries []repackEntry, opening uint64, profile eventblock.Profile) ([]repackStorage, error) {
 	packer, err := eventblock.NewPacker(profile)
 	if err != nil {
 		return nil, err
@@ -496,19 +511,15 @@ func repackJournalEntries(entries []repackEntry, hasMore bool, opening uint64, p
 		for end < len(entries) && entries[end].packable() && entries[end].sequence == entries[end-1].sequence+1 && entries[end-1].sequence < opening {
 			end++
 		}
-		flushTail := end < len(entries) || !hasMore
 		stream := entries[start:end]
 		frames := make([][]byte, len(stream))
 		for i := range stream {
 			frames[i] = stream[i].frame
 		}
 		for offset := 0; offset < len(stream); {
-			cut := packer.Next(frames[offset:], flushTail)
+			cut := packer.Next(frames[offset:], true)
 			count := cut.N
 			switch cut.Decision {
-			case eventblock.NeedMore:
-				// Keep the bounded, unsealed tail as standalone rows.
-				count = len(stream) - offset
 			case eventblock.Standalone:
 				// The frame exceeds the block size limit.
 			case eventblock.Seal:
@@ -517,11 +528,15 @@ func repackJournalEntries(entries []repackEntry, hasMore bool, opening uint64, p
 				if err != nil {
 					return nil, err
 				}
-				baseline := 0
+				// Only ordinary rows have independent stored costs. If a candidate
+				// intersects a block, price the complete source below.
+				standaloneBytes := 0
+				fromBlock := false
 				for _, entry := range selected {
-					baseline += entry.storedCost
+					standaloneBytes += len(entry.standaloneWire)
+					fromBlock = fromBlock || entry.standaloneWire == nil
 				}
-				if len(payload) <= baseline {
+				if fromBlock || len(payload) <= standaloneBytes {
 					outputs = append(outputs, repackStorage{
 						first: selected[0].sequence, last: selected[count-1].sequence,
 						block: true, payload: payload,

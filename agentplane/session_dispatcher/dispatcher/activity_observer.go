@@ -266,15 +266,17 @@ func (o *HostActivityObserver) environmentState(ctx context.Context, key Sandbox
 func (o *HostActivityObserver) observeSampler(ctx context.Context) {
 	backoff := workqueue.NewTypedItemExponentialFailureRateLimiter[string](500*time.Millisecond, 30*time.Second)
 	for ctx.Err() == nil {
-		delay := backoff.When("sampler")
 		owner, err := o.Store.AcquireSamplerActivity(ctx)
 		if err == nil {
 			owner, err = o.Store.BeginActivityEpoch(ctx, owner, true)
 			if err == nil {
+				// A stream ending after an epoch began (lease end, sampler roll) is not a failure.
+				backoff.Forget("sampler")
 				o.observe(ctx, owner, SandboxSnapshot{}, 0, o.Sampler.WatchActivity)
 			}
 			o.release(context.WithoutCancel(ctx), owner)
 		}
+		delay := backoff.When("sampler")
 		var held *lease.HeldError
 		if errors.As(err, &held) {
 			delay = time.Until(held.Until)

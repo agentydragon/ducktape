@@ -15,8 +15,8 @@ With --check-output, it reparses the existing tree before running the proof.
 Lean computes the footprints (`Effects.lean`, under the premises in the file, if any), plans the split, runs the checks and writes certified modules.
 The bundle may import from outside modules; those are loaded first, in their order, as in the bundle.
 `--force` writes the modules even when a check rejects the split, to see what Node does with them.
-`--plan` writes the plan beside the modules, as JSON: `{"order": […], "modules": {name: [statement, …]}}` has the order
-in which the modules run (`Plan.evalOrder`) and the statements of each module, by their numbers in the bundle.
+`--plan` writes a JSON sidecar after planning, whether or not modules are emitted: `{"order": […], "modules": {name: [statement, …]}}`
+has the order in which the modules run (`Plan.evalOrder`) and the statements of each module, by their numbers in the bundle.
 With `--all-conflicts`, the plan includes every inverted structural conflict as an [earlier, later] pair.
 Diagnostic model verdicts lower the source AST directly to CoreJS. Unsupported source units
 produce no model verdict.

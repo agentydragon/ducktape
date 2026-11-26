@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"maps"
-	"net/http"
 	"strings"
 	"time"
 
@@ -207,7 +206,7 @@ func (r *Driver) waitProviderRecovery(ctx context.Context, owner sessionstore.Ow
 }
 
 func (r *Driver) sampleProvider(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, adapter protocolAdapter,
-	client *http.Client, wire []byte, compact bool,
+	wire []byte, compact bool,
 ) (*sampleResult, error) {
 	connection, err := r.settings.Connection(session.Model)
 	if err != nil {
@@ -221,14 +220,12 @@ func (r *Driver) sampleProvider(ctx context.Context, owner sessionstore.Owner, s
 	if err != nil {
 		return nil, &deferredProviderError{cause: err}
 	}
-	client, err = connection.HTTPClient(client)
+	model := r.settings.Models[session.Model]
+	client, err := r.providerClients.Client(model.Connection)
 	if err != nil {
 		return nil, r.providerFailure(ctx, owner, session, intentID, err)
 	}
-	client = providerio.WithProviderResponseHeaderTimeout(client, r.settings.ProviderResponseHeaderTimeout(r.settings.Models[session.Model]))
-	if compact || connection.TLS != nil {
-		defer client.CloseIdleConnections()
-	}
+	client = providerio.WithProviderResponseHeaderTimeout(client, r.settings.ProviderResponseHeaderTimeout(model))
 	providerCtx, hooks, stop := providerio.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout())
 	defer stop()
 	evidence := &sessionstore.ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID, ProgressLease: r.settings.ProviderProgressLease()}

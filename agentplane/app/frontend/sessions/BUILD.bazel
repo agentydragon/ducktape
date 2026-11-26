@@ -746,6 +746,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/zod",
         "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/transport:listeners",
         "//agentplane/app/frontend/transport:stream_reader",
         "//agentplane/app/frontend/transport:watch_stream",
         "//agentplane/history_service/api/history:history_service_pb",

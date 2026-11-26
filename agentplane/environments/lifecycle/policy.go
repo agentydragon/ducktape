@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -207,7 +205,7 @@ func (s *Policy) automaticWakeAssessment(ctx context.Context, view *sandboxapi.S
 	if stopping := stoppingAssessment(view); stopping != nil {
 		return stopping, false
 	}
-	if requestedStop(view) {
+	if view.StopRequested() {
 		return AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, environmentlifecyclepb.WakeReason_WAKE_REASON_OPERATOR_REQUESTED_STOP, generation), false
 	}
 	if !view.Spec.WakeOnSend {
@@ -281,7 +279,7 @@ func (s *Policy) EligibilityFor(ctx context.Context, view *sandboxapi.Sandbox, c
 		if !live {
 			return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_EXECUTION_ACCOUNT_CHANGED), nil
 		}
-		if requestedStop(view) {
+		if view.StopRequested() {
 			return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_OPERATOR_REQUESTED_STOP), nil
 		}
 		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT), nil
@@ -315,8 +313,9 @@ func (s *Policy) identityEligibility(ctx context.Context, view *sandboxapi.Sandb
 		return nil, status.Error(codes.Unavailable, "environment policy is unavailable")
 	}
 	policyCaller := reader.Identity{Name: caller.GetName(), UID: types.UID(caller.GetUid())}
-	granted := access.Allowed(s.environmentRules, policyCaller, "resume", view)
-	if granted && selectorRequiresLiveBoundIdentity(s.environmentRules, policyCaller, view) {
+	grant := access.Evaluate(s.environmentRules, policyCaller, "resume", view)
+	granted := grant != access.Denied
+	if grant == access.GrantedViaBoundIdentity {
 		bound, found, err := s.sandboxes.ExecutionIdentity(ctx, &sandboxreader.Identity{
 			Namespace: view.Namespace, Name: view.Name, Uid: string(view.UID),
 		})
@@ -325,7 +324,7 @@ func (s *Policy) identityEligibility(ctx context.Context, view *sandboxapi.Sandb
 		}
 		granted = found && bound != nil && view.Spec.Identity != nil && bound.GetName() == view.Spec.Identity.Name
 	}
-	if requestedStop(view) {
+	if view.StopRequested() {
 		if !granted {
 			return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT), nil
 		}
@@ -335,50 +334,6 @@ func (s *Policy) identityEligibility(ctx context.Context, view *sandboxapi.Sandb
 		return allowed(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_IDENTITY_GRANT), nil
 	}
 	return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT), nil
-}
-
-func selectorRequiresLiveBoundIdentity(index *reader.Index[access.Rule], caller reader.Identity, sandbox *sandboxapi.Sandbox) bool {
-	matchedBoundIdentity, matchedWithoutBoundIdentity := false, false
-	for _, grant := range index.Grants(caller) {
-		for _, set := range grant.Sets {
-			for _, numbered := range set.Rules {
-				if !slices.Contains(numbered.Rule.Operations, "resume") {
-					continue
-				}
-				for _, selector := range numbered.Rule.Environments {
-					if !selectorMatches(sandbox, caller, selector) {
-						continue
-					}
-					if selector.BoundIdentity == nil {
-						matchedWithoutBoundIdentity = true
-					} else {
-						matchedBoundIdentity = true
-					}
-				}
-			}
-		}
-	}
-	return matchedBoundIdentity && !matchedWithoutBoundIdentity
-}
-
-func selectorMatches(sandbox *sandboxapi.Sandbox, caller reader.Identity, selector policyapi.EnvironmentSelector) bool {
-	if selector.Sandbox != nil && (selector.Sandbox.Name != sandbox.Name || (selector.Sandbox.UID != "" && selector.Sandbox.UID != sandbox.UID)) {
-		return false
-	}
-	if selector.BoundIdentity == nil {
-		return true
-	}
-	if sandbox.Spec.Identity == nil {
-		return false
-	}
-	if selector.BoundIdentity.Self {
-		return sandbox.Spec.Identity.Name == caller.Name
-	}
-	return sandbox.Spec.Identity.Name == selector.BoundIdentity.Name
-}
-
-func requestedStop(view *sandboxapi.Sandbox) bool {
-	return !view.Spec.Running || (view.Status.SuspendedBy != nil && *view.Status.SuspendedBy == sandboxapi.SuspendedByRequested)
 }
 
 // isWakeBroker reports whether caller is a configured automatic-wake broker.

@@ -40,7 +40,9 @@ use selector_outcome::{
 use source_identity::SourceUnitId;
 use source_match::ParsedSourceMatchSelector;
 use source_match::chunk_resolver::ChunkResolver;
-use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, MemberSelectorSpec};
+use spec::BindingSourceKind;
+use spec::annotations::AnonymousStatementSelector;
+use spec::member_selectors::{BindingSelector, MemberSelectorSpec};
 use swc_ecma_ast::{Module, ModuleDecl, ModuleItem};
 
 use diagnostics::{add_differentiators, add_nearest_unclaimed};

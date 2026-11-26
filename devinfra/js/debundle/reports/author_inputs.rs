@@ -11,7 +11,8 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use graph_provenance::{CurrentRoots, GraphProvenance};
-use spec::{DependencyGraphOptions, SourceUnitSelector};
+use spec::DependencyGraphOptions;
+use spec::input_contracts::SourceUnitSelector;
 
 use analysis_vocabulary::inputs::{
     NativeOperationInputEvidence, NativeOperationSelectorProvenance, ValueInputEvidence,

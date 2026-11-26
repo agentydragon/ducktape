@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Result, bail, ensure};
 use selector_outcome::Outcome;
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
-use spec::{BindingSelector, MemberSelectorSpec};
+use spec::member_selectors::{BindingSelector, MemberSelectorSpec};
 
 use crate::projection::Resolve;
 use crate::{Chunk, EntityIndex, Member, MemberSelector, Resolution, SpecModule, solve};

@@ -1,5 +1,7 @@
 import EsmSplit.CoreJS.CheckedMoveSplit
 import EsmSplit.CoreJS.LiteralReorderLink
+import EsmSplit.CoreJS.LiteralReorderLayout
+import EsmSplit.CoreJS.LiteralReorderConstruct
 
 open CoreJS CoreJS.CheckedMoveSplit
 
@@ -50,6 +52,33 @@ def main : IO Unit := do
     let .ok () state := runProgram World.probe 16 program | throw (IO.userError "expected a normal run")
     let .ok (.num value) _ := readCell resultCell state | throw (IO.userError "expected a numeric result")
     unless value == 1 do throw (IO.userError "the result changed")
+  -- Resolve the unchanged authored request, rather than a replacement spec.
+  let layout ← IO.ofExcept (CoreJS.LiteralReorderLayout.check
+    (CoreJS.LiteralReorderLink.bundle "a" "b" "result") spec "a")
+  unless layout.left == left && layout.right == right do
+    throw (IO.userError "the request's actual owners changed")
+  match CoreJS.LiteralReorderLayout.check (CoreJS.LiteralReorderLink.bundle "a" "b" "result")
+      { spec with order := [left, right] } "a" with
+  | .error _ => pure ()
+  | .ok _ => throw (IO.userError "the wrong authored evaluation order was accepted")
+  -- The generalized constructor consumes the same source and unchanged request.
+  let derived ← IO.ofExcept (CoreJS.LiteralReorderConstruct.construct source spec)
+  unless derived.layout.left == left && derived.layout.right == right &&
+      derived.program.evalOrder == [right, left, entry] do
+    throw (IO.userError "the generalized constructor changed the actual request")
+  let nestedSource := CoreJS.LiteralReorderLayout.sourceProgram "app/main.mjs" "a" "b" "result" (.num 1) (.num 2)
+  let nestedSpec : EsmSplit.Spec := {
+    entry := "app/main.mjs"
+    modules := [("app/main.mjs", [.stmt 2]), ("parts/first.mjs", [.stmt 0]), ("parts/second.mjs", [.stmt 1])]
+    order := ["parts/second.mjs", "parts/first.mjs"]
+    sequential := true
+  }
+  let nested ← IO.ofExcept (CoreJS.LiteralReorderConstruct.construct nestedSource nestedSpec)
+  unless nested.program.evalOrder == ["parts/second.mjs", "parts/first.mjs", "app/main.mjs"] do
+    throw (IO.userError "the generalized constructor changed the supplied module paths")
+  match CoreJS.LiteralReorderConstruct.construct (source (.var "a")) spec with
+  | .error _ => pure ()
+  | .ok _ => throw (IO.userError "the generalized constructor moved an interfering read")
   -- The exact same authored request is also accepted by the all-outcomes constructor.
   let exact ← IO.ofExcept (CoreJS.LiteralReorderLink.construct source spec)
   unless exact.program.evalOrder == [right, left, entry] do

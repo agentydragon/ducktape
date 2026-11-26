@@ -16,7 +16,8 @@ use js_ast::{source_unit_ordinal_for_statement, split_var_declarators};
 use selector_outcome::Outcome as SelectorOutcome;
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
 use source_identity::{SourceUnitOrdinal, StatementId};
-use spec::{CommutingStatementsContract, ResolvedMemberSelector, SourceUnitSelector};
+use spec::ResolvedMemberSelector;
+use spec::input_contracts::{CommutingStatementsContract, SourceUnitSelector};
 use swc_ecma_ast::{Module, ModuleItem};
 
 use frontend_elaboration::{ResolvedMemberSite, select_one_declared_binding};
@@ -108,7 +109,7 @@ fn resolve_source_unit_endpoint(
             let parsed = spec_resolution::parse_anonymous_selector(
                 endpoint_id,
                 format!("<anonymous source_match in {endpoint_id}>"),
-                &spec::AnonymousStatementSelector {
+                &spec::annotations::AnonymousStatementSelector {
                     match_source: claim.match_source.clone(),
                     identifiers: claim.identifiers,
                     target_binding: None,

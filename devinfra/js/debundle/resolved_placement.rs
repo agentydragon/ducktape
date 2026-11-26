@@ -6,7 +6,8 @@ use frontend_elaboration::{CanonicalOwnership, ClaimSelector, resolve_ownership}
 use ownership_subset::OwnershipSubset;
 use prepare_chunks::prepare_js_chunks;
 use serde::{Deserialize, Serialize};
-use spec::{ModulePath, SourceMatchClaim, TransformSpec};
+use spec::annotations::SourceMatchClaim;
+use spec::{ModulePath, TransformSpec};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { acorn, eslintScope } from "../../translation/parser.mjs";
@@ -32,6 +32,20 @@ const parsed = parseModule(code, acorn.parse, eslintScope);
 const program = dumpParsed(parsed);
 const units = topLevelStatements(parsed.ast);
 assert.equal(units.length, all.length);
+function publicNames(ast) {
+  const names = new Set();
+  for (const s of ast.body.filter((node) => node.type.startsWith("Export"))) {
+    assert.equal(s.type, "ExportNamedDeclaration");
+    assert.equal(s.declaration, null);
+    for (const specifier of s.specifiers) names.add(specifier.exported.name ?? specifier.exported.value);
+  }
+  return names;
+}
+assert.equal(
+  publicNames(parsed.ast).size,
+  611,
+  "reinspect the source export surface after an Excalidraw bundle update"
+);
 const moduleScope = parsed.scopes.scopes.find((s) => s.type === "module");
 const imports = parsed.ast.body.filter((s) => s.type === "ImportDeclaration");
 const firstBody = parsed.ast.body.findIndex((s) => s.type !== "ImportDeclaration");
@@ -215,59 +229,38 @@ assert.equal(verdict.scope, "linked-programs", JSON.stringify(verdict));
 assert.equal(verdict.reason, "statement 354: unsupported linked expression ImportExpression");
 assert(!existsSync(out), "a rejected trial published modules");
 
-// The pinned editor exposes its public names through an export list. Read the actual
-// rendered entry independently of the planner; reject unhandled export syntax in the census.
-function publicNames(ast) {
-  const names = new Set();
-  for (const s of ast.body.filter((node) => node.type.startsWith("Export"))) {
-    assert.equal(s.type, "ExportNamedDeclaration");
-    assert.equal(s.declaration, null);
-    for (const sp of s.specifiers) names.add(sp.exported.name ?? sp.exported.value);
-  }
-  return names;
-}
-const originalNames = publicNames(parsed.ast);
-const surfaces = [];
+// Keep the structural conflict report without asking the diagnostic command to
+// publish an unchecked JavaScript preview.
+const planReports = [];
 for (const moved of [selected, selected.slice(0, 1)]) {
   const tag = moved.join("_");
-  const diagnostic = path.join(process.env.TEST_TMPDIR, "render-" + tag);
-  mkdirSync(path.join(diagnostic, path.dirname(scroll)), { recursive: true });
+  const diagnostic = path.join(process.env.TEST_TMPDIR, "report-only-" + tag);
   const candidate = path.join(process.env.TEST_TMPDIR, "candidate-" + tag + ".json");
   writeFileSync(candidate, JSON.stringify(placement(moved)));
   const plan = path.join(process.env.TEST_TMPDIR, "plan-" + tag + ".json");
-  const args = ["--diagnostic", writeDeployment(ast, candidate, diagnostic), diagnostic, "--force", "--plan", plan];
+  const args = ["--diagnostic", writeDeployment(ast, candidate, diagnostic), diagnostic, "--plan", plan];
   if (moved.length === 1) args.push("--all-conflicts");
-  const render = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
-  if (render.error) throw render.error;
-  assert([0, 1].includes(render.status), render.stdout + render.stderr);
-  const output = parseModule(readFileSync(path.join(diagnostic, entry), "utf8"), acorn.parse);
-  const names = publicNames(output.ast);
-  surfaces.push({
+  const result = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /rejected; report sidecar written; no modules written/);
+  assert(!existsSync(diagnostic), "a rejected report-only trial wrote JavaScript modules");
+  const planReport = JSON.parse(readFileSync(plan, "utf8"));
+  planReports.push({
     moved,
-    structuralStatus: render.status,
-    orderConflicts: JSON.parse(readFileSync(plan, "utf8")).orderConflicts,
-    failedChecks: render.stdout
+    structuralStatus: result.status,
+    orderConflicts: planReport.orderConflicts,
+    failedChecks: result.stdout
       .split("\n")
       .map((line) => /^\s*FAIL\s+(\S+)/.exec(line)?.[1])
       .filter(Boolean),
-    originalCount: originalNames.size,
-    extra: [...names].filter((n) => !originalNames.has(n)).sort(),
-    missing: [...originalNames].filter((n) => !names.has(n)).sort(),
   });
 }
 writeFileSync(
-  path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "entry-exports.json"),
-  JSON.stringify(surfaces, null, 2)
+  path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, "diagnostic-plans.json"),
+  JSON.stringify(planReports, null, 2)
 );
-const [pair, single] = surfaces;
-assert.deepEqual(pair.extra, ["Eb$1", "Lm", "qb$1"]);
-assert.deepEqual(pair.missing, []);
-if (report.entryMismatch) {
-  const witnesses = [...report.entryMismatch.matchAll(/"([^"]+)" \(candidate cell @\d+\.\d+\)/g)];
-  assert.deepEqual(witnesses.map((m) => m[1]).sort(), pair.extra);
-}
-assert.deepEqual(single.extra, []);
-assert.deepEqual(single.missing, []);
+const single = planReports.find(({ moved }) => moved.length === 1);
 const conflicts = single.orderConflicts.pairs;
 assert(Array.isArray(conflicts), "single-arrow plan must include all structural conflicts");
 assert.equal(conflicts.length, single.orderConflicts.count);
@@ -305,6 +298,6 @@ console.log(
     selectedUnits: report.selectedUnits,
     providerProbe: report.providerProbe,
     moveReport: report.moveReport,
-    surfaces,
+    planReports,
   })
 );

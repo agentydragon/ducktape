@@ -323,9 +323,9 @@ bbr test "$p/translation/linked:wide_table_reversal_test" "$p/translation/linked
 
 Compare the same fixture, proof mode and runner across revisions. Record peak memory separately from the phase times.
 
-### Inspect an uncertified preview
+### Inspect a diagnostic plan or uncertified preview
 
-`lowersplit --diagnostic deployment.json output` runs the structural checks and prints model diagnostics by lowering the source AST directly. Unsupported source units produce no model verdict. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. [Move rules and proof inventory](docs/footprint_soundness.md)
+`lowersplit --diagnostic deployment.json output` runs the structural checks and prints model diagnostics by lowering the source AST directly. Unsupported source units produce no model verdict. Use `--plan <file>` to write module order, statement placement and conflicting pairs, even when layout checks reject and no JavaScript is emitted. Use `--force` to emit an uncertified preview of a rejected plan; successful diagnostic runs also produce uncertified previews. `--move-report` writes its own sidecar. [Move rules and proof inventory](docs/footprint_soundness.md)
 
 ## What is proved
 

@@ -12,7 +12,8 @@ use std::process::Command;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use serde::Serialize;
-use spec::{BindingAnnotation, LogicalModule, ModulePath};
+use spec::annotations::BindingAnnotation;
+use spec::{LogicalModule, ModulePath};
 use spec_modules::read_module_file;
 
 use crate::binding::resolve_unambiguous;

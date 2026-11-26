@@ -15,7 +15,7 @@ type runtimeSlot struct {
 
 func (r *Runtime) newDriver(task *residentSession) *session.Driver {
 	return session.New(session.Dependencies{
-		Store: r.store, Settings: r.settings,
+		Store: r.store, Settings: r.settings, ProviderClients: r.providerClients,
 		ClaimLease: r.claimLease, ReleaseLease: r.releaseLease,
 		NewExecutor: r.newExecutor, OpenCodeSession: r.openCodeSession,
 		CodeHost: r.codeHost,

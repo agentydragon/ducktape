@@ -135,7 +135,7 @@ func (s *SamplerAdmin) FollowEvents(r *sampleradminpb.FollowEventsRequest, strea
 			cancel()
 			return mapped
 		}
-		entries, err := s.Store.Events(ctx, r.GetSessionId(), cursor, 256)
+		entries, err := s.Store.Events(ctx, r.GetSessionId(), cursor, s.Settings.FollowPageEntries())
 		mapped := samplerError(ctx, err)
 		cancel()
 		if err != nil {

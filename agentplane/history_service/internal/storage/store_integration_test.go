@@ -330,9 +330,11 @@ func TestRecordedSessionsListInRecordingOrder(t *testing.T) {
 	assertError(t, err, ErrInvalidArgument)
 }
 
-// notifications counts what each channel was notified while `operate` ran. A barrier notified after
+type notification struct{ channel, payload string }
+
+// notifications counts each channel and payload notified while `operate` ran. A barrier notified after
 // `operate` returns marks where its commits end in the notification queue, so counting needs no timing.
-func notifications(t *testing.T, db *sql.DB, operate func()) map[string]int {
+func notifications(t *testing.T, db *sql.DB, operate func()) map[notification]int {
 	t.Helper()
 	const barrier = "agentplane_test_barrier"
 	listener := pq.NewListener(integrationDatabase.URL, time.Second, time.Minute, nil)
@@ -346,18 +348,18 @@ func notifications(t *testing.T, db *sql.DB, operate func()) map[string]int {
 	if _, err := db.Exec("SELECT pg_notify($1, '')", barrier); err != nil {
 		t.Fatal(err)
 	}
-	counts := map[string]int{}
+	counts := map[notification]int{}
 	timeout := time.After(30 * time.Second)
 	for {
 		select {
-		case notification := <-listener.Notify:
+		case received := <-listener.Notify:
 			switch {
-			case notification == nil:
+			case received == nil:
 				t.Fatal("listener reconnected")
-			case notification.Channel == barrier:
+			case received.Channel == barrier:
 				return counts
 			default:
-				counts[notification.Channel]++
+				counts[notification{channel: received.Channel, payload: received.Extra}]++
 			}
 		case <-timeout:
 			t.Fatal("barrier notification never arrived")
@@ -369,37 +371,40 @@ func TestHistoryNotifiesAfterCommitAndNotAfterRollbackOrNoOp(t *testing.T) {
 	db := testDB(t)
 	store := NewStore(db, Options{})
 	sessionID := uuid.New()
+	// Followers subscribe by Session ID, so each notification names its Session.
+	history := notification{channel: ChannelHistory, payload: sessionID.String()}
+	sessions := notification{channel: ChannelSessions, payload: sessionID.String()}
 	for _, step := range []struct {
 		name    string
 		operate func()
-		want    map[string]int
+		want    map[notification]int
 	}{
 		{"binding a new Session", func() {
 			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 				t.Fatal(err)
 			}
-		}, map[string]int{ChannelHistory: 1, ChannelSessions: 1}},
+		}, map[notification]int{history: 1, sessions: 1}},
 		{"binding it again", func() {
 			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 				t.Fatal(err)
 			}
-		}, map[string]int{}},
+		}, map[notification]int{}},
 		{"a rejected batch", func() {
 			_, err := store.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{entry(1), entry(3)})
 			assertError(t, err, ErrConflict)
-		}, map[string]int{}},
-		{"appending", func() { appendEntries(t, store, sessionID, entry(1)) }, map[string]int{ChannelHistory: 1}},
-		{"replaying", func() { appendEntries(t, store, sessionID, entry(1)) }, map[string]int{}},
+		}, map[notification]int{}},
+		{"appending", func() { appendEntries(t, store, sessionID, entry(1)) }, map[notification]int{history: 1}},
+		{"replaying", func() { appendEntries(t, store, sessionID, entry(1)) }, map[notification]int{}},
 		{"recording a snapshot", func() {
 			if err := store.RecordFeedState(t.Context(), sessionID, stoppedAt(sessionID, 1)); err != nil {
 				t.Fatal(err)
 			}
-		}, map[string]int{ChannelHistory: 1}},
+		}, map[notification]int{history: 1}},
 		{"recording it again", func() {
 			if err := store.RecordFeedState(t.Context(), sessionID, stoppedAt(sessionID, 1)); err != nil {
 				t.Fatal(err)
 			}
-		}, map[string]int{}},
+		}, map[notification]int{}},
 	} {
 		if got := notifications(t, db, step.operate); !reflect.DeepEqual(got, step.want) {
 			t.Errorf("%s notified %v, want %v", step.name, got, step.want)
