@@ -11,6 +11,12 @@ import (
 	"github.com/lib/pq"
 )
 
+// Include the cursor and size bigint arrays and a fixed allowance for the row,
+// array headers and B-tree entries when comparing a block with ordinary rows.
+func estimatedBlockBytes(payload []byte, entries int) int64 {
+	return int64(len(payload) + 16*entries + 160)
+}
+
 // sealVersionedTail runs under ingress's session lock. Inspect only lengths until
 // the next block is ready. Existing blocks are immutable barriers, including
 // when a writer is enabled again after a period of ordinary writes.
@@ -71,13 +77,11 @@ func sealVersionedTail(ctx context.Context, tx *sql.Tx, id uuid.UUID, kind histo
 			if err != nil {
 				return err
 			}
-			var oldBytes int
+			var oldBytes int64
 			for _, v := range stored[:cut.N] {
-				oldBytes += v
+				oldBytes += int64(v)
 			}
-			// Account for both bigint index arrays plus a conservative fixed
-			// allowance for the row, array headers and its B-tree entries.
-			if len(b)+16*cut.N+160 < oldBytes {
+			if estimatedBlockBytes(b, cut.N) < oldBytes {
 				if _, err := tx.ExecContext(ctx, `INSERT INTO session_event_block(session_id,first_cursor,last_cursor,kind,cursors,sizes,payload)
 					VALUES($1,$2,$3,$4,$5,$6,$7)`, id, cursors[0], cursors[cut.N-1], kind, pq.Array(cursors), pq.Array(sizes), b); err != nil {
 					return err

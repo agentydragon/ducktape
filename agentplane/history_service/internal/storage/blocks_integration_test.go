@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -321,7 +322,7 @@ func TestReadVersionedSparseBlockOfPreviouslyUnpackedKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := marshal(originals[2])
+	b, err := nonCanonicalCursorWire(originals[2])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +332,7 @@ func TestReadVersionedSparseBlockOfPreviouslyUnpackedKind(t *testing.T) {
 	}
 	kind := observationNumber(originals[0])
 	if _, err := store.db.ExecContext(t.Context(), `INSERT INTO session_event_block(session_id,first_cursor,last_cursor,kind,cursors,sizes,payload)
-    VALUES($1,1,3,$2,'{1,3}',ARRAY[$3::bigint,$4::bigint],$5)`, id, kind, len(a), len(b), wire); err != nil {
+    VALUES($1,1,3,$2,'{1,3}',ARRAY[$3::bigint,$4::bigint],$5)`, id, kind, len(a), proto.Size(originals[2]), wire); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.db.ExecContext(t.Context(), `DELETE FROM session_event WHERE session_id=$1 AND cursor IN (1,3)`, id); err != nil {
@@ -363,6 +364,13 @@ func TestReadVersionedSparseBlockOfPreviouslyUnpackedKind(t *testing.T) {
 	surviving, err := ReadEntry(t.Context(), tx, id, 3)
 	if err != nil || !proto.Equal(surviving, originals[2]) {
 		t.Fatalf("after removal: %v, %v", surviving, err)
+	}
+	var stored []byte
+	if err := tx.QueryRowContext(t.Context(), `SELECT payload FROM session_event WHERE session_id=$1 AND cursor=3`, id).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stored, b) {
+		t.Fatal("range deletion rewrote the surviving versioned frame")
 	}
 }
 
