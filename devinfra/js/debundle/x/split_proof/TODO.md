@@ -26,3 +26,8 @@
 - **test262 module tests** as an oracle for `Plan.visit`. Top-level `await` and async module graphs are not modeled.
 - **Debundle case coverage.** [Adapter and checker work](PLAN.md#more-of-debundles-cases-through-the-lean-checker) and [saved corpus results](debundle_cases/results/summary.md).
 - **Translation validation.** [Translation plan](translation/PLAN.md).
+
+## Lean build and runtime wiring
+
+- **Remove the [rules_lean patch](../../../../../patches/martianoff_rules_lean_proof_gates.patch) one hunk at a time.** When upstream can pass `--error=hasSorry` to each Lean compile, configure it there and drop the compiler hunk. Drop the audit hunks when upstream can check the transitive axioms of each named declaration (including imported definitions) and reject missing names and empty import-only audits. Verify those cases with the unpatched rules before removing the patch from [MODULE.bazel](../../../../../MODULE.bazel). These checks still apply to proofs compiled at build time.
+- **Remove Lean from the splitter's runtime.** Replace the remaining per-input proof recipes with [build-time proofs](PLAN.md#acceptance-contract), or explicitly refuse unsupported requests before publishing output. Once neither emission nor `--check-output` invokes Lean, delete the [SDK and import-map rule](lean/generated_proof_toolchain.bzl), its compiler and `.olean` runfiles, and the Bazel and Lake proof-toolchain loaders. Exercise both commands with no compiler or `.olean` files installed: supported splits must still pass the staged output check, and refused splits must leave prior output untouched.

@@ -2,6 +2,8 @@
 
 rules_lean exposes module artifacts and the selected SDK to build rules, but
 not as a runtime import map. Generated proofs need both beside the executable.
+TODO: Delete this rule and its SDK/olean runfiles when the last runtime proof
+recipe is retired; see ../TODO.md#lean-build-and-runtime-wiring.
 """
 
 load("@rules_lean//lean:defs.bzl", "LeanInfo")
