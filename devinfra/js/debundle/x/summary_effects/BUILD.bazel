@@ -19,6 +19,8 @@ rust_library(
         "program.rs",
         "report.rs",
         "tier0.rs",
+        "tier0/classifier.rs",
+        "tier0/syntax.rs",
     ],
     crate_root = "lib.rs",
     edition = "2024",
