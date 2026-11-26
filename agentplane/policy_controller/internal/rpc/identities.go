@@ -32,13 +32,9 @@ func (s *Service) GetIdentity(ctx context.Context, request *policypb.GetIdentity
 	if request.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "Identity name is required")
 	}
-	identity := &policyapi.Identity{}
-	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: request.GetName()}, identity); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "Identity not found")
-		}
-		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
+	identity, err := s.getIdentity(ctx, request.GetName(), errIdentityNotFound)
+	if err != nil {
+		return nil, err
 	}
 	message, err := identityMessage(identity)
 	if err != nil {
@@ -55,13 +51,9 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 	if request.GetNamespace() != s.namespace {
 		return nil, status.Error(codes.NotFound, "Identity not found")
 	}
-	identity := &policyapi.Identity{}
-	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: request.GetName()}, identity); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "Identity not found")
-		}
-		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
+	identity, err := s.getIdentity(ctx, request.GetName(), errIdentityNotFound)
+	if err != nil {
+		return nil, err
 	}
 	if string(identity.UID) != request.GetUid() || identity.ResourceVersion == "" {
 		return nil, status.Error(codes.Aborted, "Identity changed; refresh the identities view")
@@ -182,16 +174,27 @@ func (s *Service) CreateIdentity(ctx context.Context, request *policypb.CreateId
 	return &policypb.CreateIdentityResponse{Identity: message}, nil
 }
 
-// retriedIdentity is the Identity of name that an earlier CreateIdentity carrying record created, while it is not
-// being deleted.
-func (s *Service) retriedIdentity(ctx context.Context, name string, record map[string]string) (*policyapi.Identity, error) {
+var errIdentityNotFound = status.Error(codes.NotFound, "Identity not found")
+
+// getIdentity reads the Identity of name in the policy namespace; missing is the error when there is none.
+func (s *Service) getIdentity(ctx context.Context, name string, missing error) (*policyapi.Identity, error) {
 	identity := &policyapi.Identity{}
 	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: name}, identity); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, status.Error(codes.Aborted, "Identity changed; try again")
+			return nil, missing
 		}
 		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
 		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
+	}
+	return identity, nil
+}
+
+// retriedIdentity is the Identity of name that an earlier CreateIdentity carrying record created, while it is not
+// being deleted.
+func (s *Service) retriedIdentity(ctx context.Context, name string, record map[string]string) (*policyapi.Identity, error) {
+	identity, err := s.getIdentity(ctx, name, status.Error(codes.Aborted, "Identity changed; try again"))
+	if err != nil {
+		return nil, err
 	}
 	if !recorded(identity.Annotations, record) {
 		return nil, status.Error(codes.AlreadyExists, "an Identity of that name exists and is not this idempotency_key's")
@@ -209,13 +212,9 @@ func (s *Service) GrantIdentityPolicyBinding(ctx context.Context, request *polic
 	if len(request.GetPolicySets()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "at least one PolicySet is required")
 	}
-	identity := &policyapi.Identity{}
-	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: request.GetIdentityName()}, identity); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "Identity not found")
-		}
-		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
+	identity, err := s.getIdentity(ctx, request.GetIdentityName(), errIdentityNotFound)
+	if err != nil {
+		return nil, err
 	}
 	if string(identity.UID) != request.GetIdentityUid() || !identity.DeletionTimestamp.IsZero() {
 		return nil, status.Error(codes.NotFound, "Identity not found")
