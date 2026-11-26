@@ -3,9 +3,7 @@ package auth
 import (
 	"context"
 	"crypto"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -523,18 +521,6 @@ func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
 		session.End()
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-// ThreadCacheKey unlocks disposable browser history for one login and one thread.
-// It is not accepted as an authentication credential. A new login gets a fresh key.
-func (a *Auth) ThreadCacheKey(ctx context.Context, thread string) string {
-	s, ok := SessionFromContext(ctx)
-	if !ok || s.Login == nil || s.Row == nil || a == nil || a.cfg.OIDC == nil {
-		return ""
-	}
-	mac := hmac.New(sha256.New, []byte(a.cfg.OIDC.SessionSecret))
-	fmt.Fprintf(mac, "browser-thread-cache/v1\x00%s\x00%s", s.Row.ID(), thread)
-	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
 
 func (a *Auth) me(w http.ResponseWriter, r *http.Request) {

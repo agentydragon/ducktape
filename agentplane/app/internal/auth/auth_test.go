@@ -386,17 +386,3 @@ func TestDiscoveredIDTokenAuthenticatesTheOperator(t *testing.T) {
 		t.Fatalf("caller=%+v status=%d", caller, status)
 	}
 }
-
-func TestThreadCacheKeyFollowsLoginAndThread(t *testing.T) {
-	a := &Auth{cfg: Config{OIDC: &OIDCConfig{SessionSecret: "test-secret"}}}
-	s := &RequestSession{Row: &SessionRow{id: "one"}, Login: &OperatorSession{Username: "operator"}}
-	ctx := context.WithValue(t.Context(), sessionContextKey{}, s)
-	key := a.ThreadCacheKey(ctx, "thread")
-	if key == "" || key != a.ThreadCacheKey(ctx, "thread") || key == a.ThreadCacheKey(ctx, "other") {
-		t.Fatal("cache key must be stable within one login and thread only")
-	}
-	s.Row = &SessionRow{id: "two"}
-	if key == a.ThreadCacheKey(ctx, "thread") || a.ThreadCacheKey(t.Context(), "thread") != "" {
-		t.Fatal("another login or anonymous request must not unlock saved history")
-	}
-}

@@ -1,5 +1,3 @@
-// One encrypted record is either a complete payload revision or a window and its matching
-// Electric offset. No authentication credential or decryption key is written to browser storage.
 import type { JsonValue } from "@bufbuild/protobuf";
 import type { Offset } from "@electric-sql/client";
 
@@ -12,8 +10,7 @@ export interface SavedWindow {
 interface Entry {
   id: string;
   version: string;
-  iv: Uint8Array<ArrayBuffer>;
-  ciphertext: ArrayBuffer;
+  value: unknown;
 }
 const DATABASE = "agentplane-history-v1";
 let opening: Promise<IDBDatabase> | undefined;
@@ -82,27 +79,18 @@ async function makeRoom(db: IDBDatabase): Promise<void> {
     await trim(db, estimate.usage - estimate.quota * 0.8);
 }
 
-const encode = new TextEncoder();
-const decode = new TextDecoder();
 export class ThreadCache {
   private constructor(
     private db: IDBDatabase,
-    private key: CryptoKey,
     private prefix: string
   ) {}
   private version: string | null = null;
   private writable = true;
 
-  static async open(secret: string | null, epoch: string): Promise<ThreadCache | null> {
-    if (!secret) return null;
+  static async open(account: string | null, threadId: string, epoch: string): Promise<ThreadCache | null> {
+    if (!account) return null;
     try {
-      const bytes = Uint8Array.from(atob(secret), (c) => c.charCodeAt(0));
-      const [db, key, digest] = await Promise.all([
-        database(),
-        crypto.subtle.importKey("raw", bytes, "AES-GCM", false, ["encrypt", "decrypt"]),
-        crypto.subtle.digest("SHA-256", bytes),
-      ]);
-      return new ThreadCache(db, key, JSON.stringify([Array.from(new Uint8Array(digest)).join("."), epoch]));
+      return new ThreadCache(await database(), JSON.stringify([account, threadId, epoch]));
     } catch {
       return null;
     }
@@ -120,22 +108,12 @@ export class ThreadCache {
     const [entry] = await Promise.all([result<Entry | undefined>(reading), finished(tx)]);
     if (!entry) return null;
     if (name === "window") this.version = entry.version;
-    const plain = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: entry.iv, additionalData: encode.encode(id) },
-      this.key,
-      entry.ciphertext
-    );
-    return JSON.parse(decode.decode(plain)) as T;
+    return entry.value as T;
   }
 
   private async write(name: string, value: unknown): Promise<void> {
     const id = this.prefix + name;
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv, additionalData: encode.encode(id) },
-      this.key,
-      encode.encode(JSON.stringify(value))
-    );
+    const bytes = new Blob([JSON.stringify(value)]).size;
     const version = crypto.randomUUID();
     const commit = async () => {
       const tx = this.db.transaction(["entries", "usage"], "readwrite");
@@ -145,12 +123,12 @@ export class ThreadCache {
       // Bodies are immutable by revision. A window may advance only from the version we read.
       request.onsuccess = () => {
         const put = () => {
-          entries.put({ id, version, iv, ciphertext });
+          entries.put({ id, version, value });
           tx.objectStore("usage").put({
             id,
             used: Date.now(),
             priority: name === "window" ? 1 : 0,
-            bytes: ciphertext.byteLength,
+            bytes,
           });
         };
         if (name !== "window") {
@@ -170,7 +148,7 @@ export class ThreadCache {
       await commit();
     } catch (error) {
       if (!(error instanceof DOMException) || error.name !== "QuotaExceededError") throw error;
-      await trim(this.db, Math.max(4 * 1024 * 1024, ciphertext.byteLength * 2));
+      await trim(this.db, Math.max(4 * 1024 * 1024, bytes * 2));
       await commit();
     }
     if (name === "window" && this.writable) this.version = version;

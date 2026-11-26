@@ -204,10 +204,9 @@ browser on desktop and phone.
   confirms its scope. The browser stores the rows, page boundary and Electric resume position
   together in IndexedDB. Complete payload revisions live separately and load as their rows are
   displayed. Missing bodies are fetched individually or in batches.
-- **Local storage is disposable.** A fresh login or projection epoch opens a fresh window. Cached
-  values are encrypted with a per-login, per-thread key supplied only on a successful browser
-  scope read; the key stays in memory. After logout the stored ciphertext can be evicted but a
-  new login cannot unlock it. Storage pressure sheds least recently used bodies before windows.
+- **Local storage is disposable.** Saved history is plain IndexedDB data, scoped to the operator's
+  account, thread and projection epoch. It stays in the browser profile across logins; opening a
+  thread still requires a successful scope read. Storage pressure sheds cold bodies before windows.
   Unavailable storage falls back to live reads; drafts and pending input are outside this cache.
 - **An appended message, reader at the bottom**: the view follows it into view. "At the bottom"
   tolerates a small amount of slack — a reader a few pixels off the exact bottom (scroll momentum,

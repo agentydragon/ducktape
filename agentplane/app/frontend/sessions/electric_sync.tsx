@@ -583,7 +583,7 @@ class PayloadShape extends Listeners {
   /** Reads the body once nothing a reader waits on is being read, unless a reader asks for it first. */
   readAhead(reference: ThreadPayloadReference): void {
     // A restored window can be much larger than the viewport. Only its mounted readers should
-    // decrypt bodies or fetch evicted ones.
+    // read bodies or fetch evicted ones.
     if (this.restored) {
       if (this.#requested.has(bodyKey(reference.ownerId, String(reference.generation)))) this.#saveComplete(reference);
       return;
@@ -839,7 +839,7 @@ class EpochWindow extends Listeners {
     scope: ReadThreadEntitiesResponse,
     onGone: () => void,
     private cache: ThreadCache | null,
-    readonly loginKey: string | null,
+    readonly cacheAccount: string | null,
     saved: SavedWindow | null
   ) {
     super();
@@ -1294,7 +1294,7 @@ class ThreadEpochs extends Listeners {
       if (resolving.signal.aborted || this.#closed) return;
       // The app can know the Thread before History records the Session, and the first fold may
       // have no epoch yet. Keep the event watch open until the next projection change.
-      if (!scope || (this.#state.window?.loginKey !== scope.cacheKey && this.#state.window)) {
+      if (!scope || (this.#state.window?.cacheAccount !== scope.cacheAccount && this.#state.window)) {
         this.#state.window?.close();
         this.#set({ window: null, error: null });
       }
@@ -1316,15 +1316,15 @@ class ThreadEpochs extends Listeners {
         return this.#set({ window: suspended, error: null });
       }
       this.#next?.close();
-      const cache = await ThreadCache.open(scope.cacheKey, scope.projectionEpoch);
+      const cache = await ThreadCache.open(scope.cacheAccount, this.#threadId, scope.projectionEpoch);
       const saved = await cache?.readWindow();
       if (resolving.signal.aborted || this.#closed) return;
       let next: EpochWindow;
       try {
-        next = new EpochWindow(this.#threadId, scope, this.refresh, cache, scope.cacheKey, saved ?? null);
+        next = new EpochWindow(this.#threadId, scope, this.refresh, cache, scope.cacheAccount, saved ?? null);
       } catch (error) {
         if (!saved) throw error;
-        next = new EpochWindow(this.#threadId, scope, this.refresh, cache, scope.cacheKey, null);
+        next = new EpochWindow(this.#threadId, scope, this.refresh, cache, scope.cacheAccount, null);
       }
       // The first window shows its own catch-up; a replacement takes over once it has caught up,
       // or has an error to show.

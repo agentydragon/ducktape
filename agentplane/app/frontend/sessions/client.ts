@@ -461,7 +461,7 @@ export async function interruptTurn(threadId: string, commandId: string, turnId:
 export async function threadScope(
   threadId: string,
   signal?: AbortSignal
-): Promise<(ReadThreadEntitiesResponse & { cacheKey: string | null }) | null> {
+): Promise<(ReadThreadEntitiesResponse & { cacheAccount: string | null }) | null> {
   const request = create(ReadThreadEntitiesRequestSchema, {
     sessionId: threadId,
     projectionEpoch: "",
@@ -479,7 +479,7 @@ export async function threadScope(
     );
     if (!response.ok) throw await HttpError.fromResponse(response);
     return Object.assign(fromJson(ReadThreadEntitiesResponseSchema, await response.json()), {
-      cacheKey: response.headers.get("Agentplane-Thread-Cache-Key"),
+      cacheAccount: response.headers.get("Agentplane-Cache-Account"),
     });
   } catch (error) {
     if (error instanceof HttpError && error.status === 404) return null;
