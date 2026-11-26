@@ -75,32 +75,40 @@ not observed). None of the checks is atomic with creating a reference.
   [`policy/reader`](../policy/reader/index.go) index behind egress, the Action Service and the MCP edge
   still treats it as live (`PutIdentity` on every update).
 
-## Invariant: a Session with one Sandbox acts as that Sandbox's Identity
+## Invariant: every Sandbox attached to a Session carries the Session's Identity
 
-Operator, 2026-11-26: a Session attached to exactly one Sandbox uses that Sandbox's Identity, or none
-when the Sandbox has none. This holds wherever the harness runs: native Sessions (harness in the
-Sandbox) and central sampler Sessions (harness in the sampler, the Sandbox as executor) alike. Today
-every Session has exactly one Sandbox; central V1 requires its executor Sandbox. `CreateSession`
+Operator, 2026-11-26: a Session and every Sandbox attached to it have the same Identity, wherever the
+harness runs: native Sessions (harness in the Sandbox) and central sampler Sessions (harness in the
+sampler, the Sandbox as executor) alike. With one Sandbox the Session acts as that Sandbox's Identity,
+or none when it has none. With several, all carry the Session's Identity. With none, nothing
+constrains it.
+
+Today every Session has exactly one Sandbox; central V1 requires its executor Sandbox. `CreateSession`
 records "the exact Identity its Sandbox names now" for both placements, and dispatch refuses when they
 later differ (`sandbox execution identity changed`, [`api.go`](../session_dispatcher/dispatcher/api.go)).
 Sessions with no Sandbox or several are a future shape
-([Sandbox-free central Sessions](task_dag.md#sandbox-free-central-sessions)); which Identity those act
-as is not settled here.
+([Sandbox-free central Sessions](task_dag.md#sandbox-free-central-sessions)); there, attaching a
+Sandbox requires it to carry the Session's Identity.
 
 Consequence: changing a Sandbox's Identity changes the Identity of every Session attached to it, in
-the same operation. Today it does not. `SetEnvironmentIdentity` patches only the Sandbox (stopped workloads
+the same operation, and with it the required Identity of every other Sandbox those Sessions have
+attached. A rebind therefore moves the whole connected set of Sessions and Sandboxes, or detaches the
+Sandbox first. Today the set is one Sandbox and its Sessions. Today it does not. `SetEnvironmentIdentity` patches only the Sandbox (stopped workloads
 only, [`SetIdentity`](../environments/internal/service/management/access.go)); the app exposes it as
 the clearable "Identity for next start" ([`identity.tsx`](../app/frontend/sandboxes/identity.tsx)).
 Sessions keep their pinned UID, so after a rebind they fail dispatch, and #15445 refuses the
-rebind while a retained Session names another incarnation. Two candidate shapes; **how either works
+rebind while a retained Session names another incarnation. Three candidate shapes; **how any works
 is not designed**:
 
-- **Derive:** a single-Sandbox Session stores no Identity; each dispatch uses the Sandbox's current Identity,
-  and History records the Identity per turn. Past turns keep the Identity they ran as.
+- **Derive:** a Session with Sandboxes stores no Identity; each dispatch uses its Sandboxes' common
+  Identity, and History records the Identity per turn. Past turns keep the Identity they ran as. Breaks
+  down with several Sandboxes: rebinding one makes them disagree.
+- **Session owns it:** the Session holds the Identity; its Sandboxes follow. Rebinding is an operation
+  on the Session that moves every attached Sandbox, all suspended.
 - **Move together:** rebind or unbind of a suspended Sandbox rewrites its Sessions' pinned
   Identity in the same Dispatcher-coordinated operation.
 
-Open for either: commands Dispatcher accepted under the old Identity but has not delivered; native harness
+Open for each: commands Dispatcher accepted under the old Identity but has not delivered; native harness
 state inside the Sandbox (Claude Code, Codex) and central sampler continuation state from runs as the
 old Identity; inbox and subscription
 ownership; delegation issued to the old Identity and still in flight; the Sandbox and Dispatcher
@@ -184,11 +192,12 @@ contract (Terminating, draining, no new references) is store-independent, so C c
 1. **Live-reference rule:** confirm or amend the draft above. In particular, does a Sandbox naming
    the Identity block, or is "cannot start" (today's accepted consequence) enough? Unbinding makes
    blocking cheap to clear.
-2. **Single-Sandbox Session Identity:** derive it from the Sandbox, or move pinned Sessions with the
-   Sandbox's rebind.
+2. **Where the Session-Sandbox Identity lives:** derived from the Sandbox, owned by the Session, or
+   pinned on both and moved together; and whether a rebind may detach a Sandbox instead of moving the
+   whole set.
 3. **Session "finished":** does finishing release the Identity, can it be undone, and is it the same
    as app archive (shared with `SESSION_ARCHIVE_CONTRACT`)? Which Identity a Session with no Sandbox
-   or several acts as waits for that shape.
+   acts as waits for that shape.
 4. **Enforcement:** B now and A later, B only, or wait for C.
 5. **Who runs it:** checklist, backend operation (and which owner), or delete-driven.
 
