@@ -1,7 +1,6 @@
 # Storing and repacking Sampler and History events in PostgreSQL
 
-**Decision status: History writes versioned blocks in staging; Sampler APB rollout pending.** Keep each service's journal in
-its own PostgreSQL database. Use PostgreSQL rows and B-tree indexes as the baseline. Where
+Keep each service's journal in its own PostgreSQL database. Use PostgreSQL rows and B-tree indexes as the baseline. Where
 cross-event compression pays, group original frames without interpreting their contents. The
 first candidate for History boundary evidence is **same session + kind, 2 MiB or 32 entries,
 Zstandard level 3**: it saved 72–73% against the current stored datums on two large-boundary
@@ -9,20 +8,18 @@ samples without extracting a single field. Keep a smaller read unit for other Hi
 Prefer a database-managed layout if it meets the same read, space and operations requirements.
 Any winning policy must apply to existing data as well as new writes.
 
-## Staging rollout (November 25, 2026)
+## Staging writer rollout
 
-Both database volume claims were expanded to 96 GiB ([#20058](https://github.com/agentydragon/ducktape/pull/20058)).
-History's mixed reader and new writer are deployed, and the staging writer is enabled
-([#20073](https://github.com/agentydragon/ducktape/pull/20073)). Before historical repacking,
-942 of 2,048 sampled History blocks on the standby had the APB v1 prefix. That confirms new
-blocks replicated; the sample is not an estimate of legacy blocks remaining.
+On November 25, both database claims were expanded to 96 GiB and History enabled its APB writer.
+Before historical repacking, 942 of 2,048 sampled History blocks on the standby had the APB v1
+prefix. That sample established replication of new blocks. [Volume expansion](https://github.com/agentydragon/ducktape/pull/20058) · [History writer](https://github.com/agentydragon/ducktape/pull/20073)
 
-Sampler's existing packing switch still selects the legacy background writer. The mixed APB v1
-reader, separate default-off live writer gate, and repack/verification commands are implemented,
-but none has been enabled or run in staging. Deploy the mixed reader everywhere before enabling
-APB writes. Neither service has started its historical APB repack. For each service independently,
-the next rollout step is an inventory and dry run, then a bounded trial on an active session with a
-replay comparison. See the [writer rollout checks](../eventblock/rollout.md).
+On November 26, staging enabled the Sampler live writer in GitOps after both replicas were ready
+on an image with the mixed-format reader. [Sampler writer change](https://github.com/agentydragon/ducktape/pull/20258)
+
+Before expanding either historical repack, verify a new block on the standby, inventory the
+retained data and compare replay through one active session’s opening cursor.
+[Writer and repack checks](../eventblock/rollout.md)
 
 ## Capacity comes before the rewrite
 
