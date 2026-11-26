@@ -493,6 +493,47 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_sparse_projected_order",
+    srcs = ["EsmSplit/CoreJS/SparseProjectedOrder.lean"],
+    deps = [
+        ":corejs_plan_placement",
+        ":planner",
+    ],
+)
+
+executable_test(
+    name = "corejs_sparse_projected_order_test",
+    src = "SparseProjectedOrderTest.lean",
+    deps = [
+        ":corejs_indexed_checked_split",
+        ":corejs_sparse_projected_order",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_sparse_projected_order_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.SparseProjectedOrder"],
+    required_theorems = [
+        "CoreJS.SparseProjectedOrder.authored_owner",
+        "CoreJS.SparseProjectedOrder.loaded_ids_of_order_kept",
+        "CoreJS.SparseProjectedOrder.loaded_row_lookup",
+        "CoreJS.SparseProjectedOrder.moduleOfIndexed_body_lookup",
+        "CoreJS.SparseProjectedOrder.split_indexed_authored_owner",
+        "CoreJS.SparseProjectedOrder.split_indexed_declareTops_initial",
+        "CoreJS.SparseProjectedOrder.split_indexed_fileUnitPlacements",
+        "CoreJS.SparseProjectedOrder.split_indexed_loaded_eq_source",
+        "CoreJS.SparseProjectedOrder.split_indexed_find",
+        "CoreJS.SparseProjectedOrder.split_indexed_loaded_flat",
+        "CoreJS.SparseProjectedOrder.split_indexed_loaded_ids",
+        "CoreJS.SparseProjectedOrder.split_indexed_regions_eq_source",
+        "CoreJS.SparseProjectedOrder.split_indexed_tops_eq_source",
+    ],
+    deps = [":corejs_sparse_projected_order"],
+)
+
+lean_library(
     name = "corejs_single_module",
     srcs = ["EsmSplit/CoreJS/SingleModule.lean"],
     deps = [":corejs_certificate_support"],
@@ -577,7 +618,10 @@ executable_test(
 lean_proof_test(
     name = "ordered_region_axioms_test",
     allow_empty = True,
-    modules = ["EsmSplit.CoreJS.OrderedRegion"],
+    modules = [
+        "EsmSplit.CoreJS.OrderedRegion",
+        "EsmSplit.CoreJS.SingleModule",
+    ],
     required_theorems = [
         "CoreJS.OrderedRegion.matching_link",
         "CoreJS.OrderedRegion.planned_link",
@@ -585,6 +629,7 @@ lean_proof_test(
         "CoreJS.OrderedRegion.planned_runs_with_exports",
         "CoreJS.OrderedRegion.planned_scopes",
         "CoreJS.OrderedRegion.sameUnits_capture",
+        "CoreJS.link_singleModuleConst",
     ],
     deps = [":ordered_region"],
 )
@@ -2023,6 +2068,243 @@ lean_proof_test(
         "CoreJS.LiteralReorderConstruct.sound",
     ],
     deps = [":literal_reorder_construct"],
+)
+
+lean_library(
+    name = "corejs_indexed_export_cells",
+    srcs = ["EsmSplit/CoreJS/IndexedExportCells.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_export_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedExportCells"],
+    required_theorems = [
+        "CoreJS.IndexedExportCells.body_lookup",
+        "CoreJS.IndexedExportCells.distinct_source_cells",
+        "CoreJS.IndexedExportCells.frame_keys",
+        "CoreJS.IndexedExportCells.scope_lookup_decl",
+        "CoreJS.IndexedExportCells.scope_lookup_none",
+        "CoreJS.IndexedExportCells.source_and_module_cell",
+        "CoreJS.IndexedExportCells.source_and_import_cell",
+    ],
+    deps = [":corejs_indexed_export_cells"],
+)
+
+lean_library(
+    name = "corejs_interior_export_names",
+    srcs = ["EsmSplit/CoreJS/InteriorExportNames.lean"],
+    deps = [
+        ":corejs_declaring_owner",
+        ":local_export_unit",
+        ":metadata_imports",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_interior_export_names_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.InteriorExportNames"],
+    required_theorems = [
+        "CoreJS.InteriorExportNames.exact_public_table",
+        "CoreJS.InteriorExportNames.row_owner",
+        "CoreJS.InteriorExportNames.row_pair_binding",
+        "CoreJS.InteriorExportNames.row_pair_published",
+    ],
+    deps = [":corejs_interior_export_names"],
+)
+
+lean_library(
+    name = "corejs_indexed_plan_cells",
+    srcs = ["EsmSplit/CoreJS/IndexedPlanCells.lean"],
+    deps = [":corejs_indexed_export_cells"],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_plan_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedPlanCells"],
+    required_theorems = [
+        "CoreJS.IndexedPlanCells.import_cell",
+        "CoreJS.IndexedPlanCells.module_scope_cells",
+    ],
+    deps = [":corejs_indexed_plan_cells"],
+)
+
+lean_library(
+    name = "corejs_interior_plan_exports",
+    srcs = ["EsmSplit/CoreJS/InteriorPlanExports.lean"],
+    deps = [
+        ":corejs_indexed_plan_cells",
+        ":corejs_interior_export_names",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_interior_plan_exports_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.InteriorPlanExports"],
+    required_theorems = [
+        "CoreJS.InteriorPlanExports.declaration_owner",
+        "CoreJS.InteriorPlanExports.row_scope_cells",
+    ],
+    deps = [":corejs_interior_plan_exports"],
+)
+
+lean_library(
+    name = "corejs_indexed_constructor_cells",
+    srcs = ["EsmSplit/CoreJS/IndexedConstructorCells.lean"],
+    deps = [
+        ":corejs_interior_plan_exports",
+        ":corejs_sparse_projected_order",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_constructor_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedConstructorCells"],
+    required_theorems = [
+        "CoreJS.IndexedConstructorCells.projection",
+        "CoreJS.IndexedConstructorCells.projection_and_schedule",
+    ],
+    deps = [":corejs_indexed_constructor_cells"],
+)
+
+lean_library(
+    name = "corejs_indexed_allocated_cells",
+    srcs = ["EsmSplit/CoreJS/IndexedAllocatedCells.lean"],
+    deps = [":corejs_indexed_constructor_cells"],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_allocated_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedAllocatedCells"],
+    required_theorems = [
+        "CoreJS.IndexedAllocatedCells.row_allocated_cells",
+        "CoreJS.IndexedAllocatedCells.scope_cell_present",
+    ],
+    deps = [":corejs_indexed_allocated_cells"],
+)
+
+lean_library(
+    name = "corejs_indexed_entry_link",
+    srcs = ["EsmSplit/CoreJS/IndexedEntryLink.lean"],
+    deps = [
+        ":corejs_indexed_allocated_cells",
+        ":corejs_projected_order",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_entry_link_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedEntryLink"],
+    required_theorems = [
+        "CoreJS.IndexedEntryLink.source_const_init",
+        "CoreJS.IndexedEntryLink.link_allocation_failure",
+        "CoreJS.IndexedEntryLink.link_after_const_allocation",
+        "CoreJS.IndexedEntryLink.import_free_source_tops",
+        "CoreJS.IndexedEntryLink.singleton_source_regions",
+        "CoreJS.IndexedEntryLink.import_free_entry_loaded",
+        "CoreJS.IndexedEntryLink.import_free_entry_scopes",
+        "CoreJS.IndexedEntryLink.entry_in_evalOrder",
+        "CoreJS.IndexedEntryLink.loaded_entry_find",
+        "CoreJS.IndexedEntryLink.indexed_const_scopes_and_init",
+        "CoreJS.IndexedEntryLink.indexed_scopes_success",
+        "CoreJS.IndexedEntryLink.row_link_outcomes_from_plan",
+        "CoreJS.IndexedEntryLink.row_actual_links_from_allocation",
+        "CoreJS.IndexedEntryLink.row_resolved_from_plan",
+        "CoreJS.IndexedEntryLink.row_resolved_entries",
+        "CoreJS.IndexedEntryLink.export_pairs_equal",
+        "CoreJS.IndexedEntryLink.resolved_entries_equal",
+        "CoreJS.IndexedEntryLink.scopes_find",
+        "CoreJS.IndexedEntryLink.indexed_initFunctions_consts",
+        "CoreJS.IndexedEntryLink.initFunctions_consts",
+        "CoreJS.IndexedEntryLink.sorted_initFunctions_consts",
+    ],
+    deps = [":corejs_indexed_entry_link"],
+)
+
+lean_library(
+    name = "corejs_indexed_units_agree",
+    srcs = ["EsmSplit/CoreJS/IndexedUnitsAgree.lean"],
+    deps = [":corejs_indexed_entry_link"],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_units_agree_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedUnitsAgree"],
+    required_theorems = [
+        "CoreJS.IndexedUnitsAgree.indexed_run_same",
+        "CoreJS.IndexedUnitsAgree.indexed_run_same_of_order_kept",
+        "CoreJS.IndexedUnitsAgree.indexed_scopes_agree",
+        "CoreJS.IndexedUnitsAgree.indexed_units_agree",
+        "CoreJS.IndexedUnitsAgree.imported_exact",
+        "CoreJS.IndexedUnitsAgree.module_statement_agree",
+        "CoreJS.IndexedUnitsAgree.row_link_outcomes_of_order_kept",
+    ],
+    deps = [":corejs_indexed_units_agree"],
+)
+
+lean_library(
+    name = "corejs_indexed_const_link",
+    srcs = ["EsmSplit/CoreJS/IndexedConstLink.lean"],
+    deps = [
+        ":corejs_indexed_units_agree",
+        ":corejs_single_module",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_const_link_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedConstLink"],
+    required_theorems = [
+        "CoreJS.IndexedConstLink.same_exports_of_order_kept",
+        "CoreJS.IndexedConstLink.source_allocation",
+    ],
+    deps = [":corejs_indexed_const_link"],
+)
+
+lean_library(
+    name = "corejs_indexed_input_checks",
+    srcs = ["EsmSplit/CoreJS/IndexedInputChecks.lean"],
+    deps = [":corejs_indexed_units_agree"],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_input_checks_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedInputChecks"],
+    required_theorems = [
+        "CoreJS.IndexedInputChecks.checked_definitions",
+        "CoreJS.IndexedInputChecks.checked_footprints",
+    ],
+    deps = [":corejs_indexed_input_checks"],
+)
+
+lean_library(
+    name = "corejs_indexed_checked_split",
+    srcs = ["EsmSplit/CoreJS/IndexedCheckedSplit.lean"],
+    deps = [
+        ":corejs_indexed_const_link",
+        ":corejs_indexed_input_checks",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_checked_split_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedCheckedSplit"],
+    required_theorems = [
+        "CoreJS.IndexedCheckedSplit.construct",
+        "CoreJS.IndexedCheckedSplit.construct_sound",
+    ],
+    deps = [":corejs_indexed_checked_split"],
 )
 
 lean_library(
