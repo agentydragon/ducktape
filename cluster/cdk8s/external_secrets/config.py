@@ -124,6 +124,7 @@ def chart(app: App) -> Chart:
             "agentplane-staging",
             "agents-infra",
             "airlock",
+            "attendant",
             "buildbuddy-executor",  # prebuilt KVM worker containerDisks
             "claude-session-sync",
             "cli-proxy-api",
