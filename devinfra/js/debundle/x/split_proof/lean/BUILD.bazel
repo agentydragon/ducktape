@@ -1707,3 +1707,26 @@ lean_proof_test(
     ],
     deps = [":corejs_terminal_source"],
 )
+
+lean_library(
+    name = "corejs_terminal_plan_link",
+    srcs = ["EsmSplit/CoreJS/TerminalPlanLink.lean"],
+    deps = [
+        ":corejs_terminal_source",
+        ":ordered_region",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_plan_link_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalPlanLink"],
+    required_theorems = [
+        "CoreJS.TerminalPlanLink.candidate_link",
+        "CoreJS.TerminalPlanLink.candidate_link_of_modules",
+        "CoreJS.TerminalPlanLink.scopes_of_units",
+        "CoreJS.TerminalPlanLink.source_statements",
+        "CoreJS.TerminalPlanLink.units_of_modules",
+    ],
+    deps = [":corejs_terminal_plan_link"],
+)
