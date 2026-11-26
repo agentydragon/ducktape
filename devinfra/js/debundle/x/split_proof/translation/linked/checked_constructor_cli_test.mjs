@@ -111,6 +111,10 @@ for (const [name, options, existingOutput] of [
     ...options,
   });
   assert.equal(callableResult.status, "refused", callableResult.log);
+  assert.equal(callableResult.verdict.scope, "checked-construction", callableResult.log);
+  assert.equal(callableResult.verdict.requested, "normal-completion", callableResult.log);
+  assert.equal(callableResult.verdict.guarantee, null, callableResult.log);
+  assert.equal(callableResult.verdict.every_ending_matches, false, callableResult.log);
   assert.equal(callableResult.verdict.reason_code, "strict_observation_unsupported", callableResult.log);
   assert.equal(callableResult.verdict.strategy, "compiled-constructor", callableResult.log);
   if (existingBytes) {
