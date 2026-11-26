@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use source_identity::SourceUnitId;
@@ -22,7 +21,7 @@ use crate::DependencyGraphReport;
 #[derive(Debug)]
 pub struct DependencyGraphInput {
     report: DependencyGraphReport,
-    graph: Arc<DependencyGraph>,
+    graph: DependencyGraph,
     source_units_by_report_id: HashMap<String, SourceUnitId>,
 }
 
@@ -38,7 +37,7 @@ impl DependencyGraphInput {
         let (graph, source_units_by_report_id) = DependencyGraph::from_report(&report)?;
         Ok(Self {
             report,
-            graph: Arc::new(graph),
+            graph,
             source_units_by_report_id,
         })
     }
@@ -110,7 +109,7 @@ impl DependencyGraphInput {
             declarations_by_report_row.push(&fact.declared);
         }
 
-        let graph = std::sync::Arc::make_mut(&mut self.graph);
+        let graph = &mut self.graph;
         anyhow::ensure!(
             graph.nodes.len() == declarations_by_report_row.len(),
             "dependency graph topology has {} nodes for {} report rows",
@@ -129,12 +128,6 @@ impl DependencyGraphInput {
 
     pub fn graph(&self) -> &DependencyGraph {
         &self.graph
-    }
-
-    /// Quotient working states share the immutable topology while retaining
-    /// their own mutable assignments and incremental indexes.
-    pub fn shared_graph(&self) -> Arc<DependencyGraph> {
-        Arc::clone(&self.graph)
     }
 
     /// Typed IDs are assigned in report row order when the input is prepared.

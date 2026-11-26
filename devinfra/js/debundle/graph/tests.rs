@@ -230,18 +230,17 @@ mod from_report_tests {
                 export_name: "readableName".into(),
             });
         let input = DependencyGraphInput::from_report(report).unwrap();
-        let first = input.shared_graph();
-        let second = input.shared_graph();
-        assert!(std::sync::Arc::ptr_eq(&first, &second));
-        assert!(std::ptr::eq(input.graph(), &*first));
         assert_eq!(input.source_unit_id("unit:1"), Some(SourceUnitId(1)));
         assert_eq!(input.source_unit_id("provider"), Some(SourceUnitId(2)));
         assert_eq!(input.source_unit_id("callee"), Some(SourceUnitId(0)));
         assert_eq!(input.source_unit_id("missing"), None);
-        assert_eq!(first.edge(DependencyEdgeId(0)).from, SourceUnitId(1));
-        assert_eq!(first.edge(DependencyEdgeId(0)).to, SourceUnitId(2));
         assert_eq!(
-            first.edge(DependencyEdgeId(0)).reason.role(),
+            input.graph().edge(DependencyEdgeId(0)).from,
+            SourceUnitId(1)
+        );
+        assert_eq!(input.graph().edge(DependencyEdgeId(0)).to, SourceUnitId(2));
+        assert_eq!(
+            input.graph().edge(DependencyEdgeId(0)).reason.role(),
             EdgeRole::PromotedAtInit {
                 callee_source_unit: SourceUnitId(0)
             },
