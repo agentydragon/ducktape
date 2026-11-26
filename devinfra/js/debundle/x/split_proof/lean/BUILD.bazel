@@ -2216,3 +2216,23 @@ lean_proof_test(
     ],
     deps = [":corejs_indexed_entry_link"],
 )
+
+lean_library(
+    name = "corejs_indexed_units_agree",
+    srcs = ["EsmSplit/CoreJS/IndexedUnitsAgree.lean"],
+    deps = [":corejs_indexed_entry_link"],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_units_agree_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedUnitsAgree"],
+    required_theorems = [
+        "CoreJS.IndexedUnitsAgree.indexed_run_same",
+        "CoreJS.IndexedUnitsAgree.indexed_scopes_agree",
+        "CoreJS.IndexedUnitsAgree.indexed_units_agree",
+        "CoreJS.IndexedUnitsAgree.imported_exact",
+        "CoreJS.IndexedUnitsAgree.module_statement_agree",
+    ],
+    deps = [":corejs_indexed_units_agree"],
+)
