@@ -36,7 +36,7 @@ mod var;
 
 pub(crate) use class::minimize_class_selector_candidates;
 pub(crate) use function::minimize_function_selector_candidates;
-pub(crate) use group::{minimize_var_group_selector, minimize_var_group_selector_candidates};
+pub(crate) use group::minimize_var_group_selector_candidates;
 pub(crate) use use_site::{call_use_bindings, named_object_use_bindings};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -557,6 +557,21 @@ fn rename_pattern_targets(
     }
 }
 
+/// Keep the first proof for each source spelling. Return true when the menu is full.
+fn push_candidate(
+    out: &mut Vec<SpecializedSelector>,
+    selector: SpecializedSelector,
+    limit: usize,
+) -> bool {
+    if !out
+        .iter()
+        .any(|kept| kept.match_source == selector.match_source)
+    {
+        out.push(selector);
+    }
+    out.len() >= limit
+}
+
 /// Collect up to `limit` read-off selectors for the target, best-first — minimal
 /// anchor set → individually-discriminating value anchors → multi-feature value
 /// cover → bare scaffold → exact-declaration relaxation → use site →
@@ -592,17 +607,6 @@ fn read_off_candidates(
         .get(decl.body_idx)
         .context("read-off body index no longer in module")?;
 
-    // Push a proven candidate unless its source duplicates one already kept;
-    // return true once `limit` is reached so the caller stops walking.
-    let collect = |selector: SpecializedSelector, out: &mut Vec<SpecializedSelector>| -> bool {
-        if !out
-            .iter()
-            .any(|kept| kept.match_source == selector.match_source)
-        {
-            out.push(selector);
-        }
-        out.len() >= limit
-    };
     let mut out: Vec<SpecializedSelector> = Vec::new();
 
     // Primary read-off: the minimal anchor set. Keep it when its holed selector
@@ -619,7 +623,7 @@ fn read_off_candidates(
             && !anchor_set.opt_one
             && let Some(selector) =
                 finish_minimized_selector(index, decl, target, render_with(&kept)?)?
-            && collect(selector, &mut out)
+            && push_candidate(&mut out, selector, limit)
         {
             return Ok(out);
         }
@@ -649,7 +653,7 @@ fn read_off_candidates(
     value_kept.sort_by_key(|kept| (anchor_quality(index, kept), kept.len()));
     for kept in value_kept {
         if let Some(selector) = finish_minimized_selector(index, decl, target, render_with(&kept)?)?
-            && collect(selector, &mut out)
+            && push_candidate(&mut out, selector, limit)
         {
             return Ok(out);
         }
@@ -667,7 +671,7 @@ fn read_off_candidates(
         if !kept.is_empty()
             && let Some(selector) =
                 finish_minimized_selector(index, decl, target, render_with(&kept)?)?
-            && collect(selector, &mut out)
+            && push_candidate(&mut out, selector, limit)
         {
             return Ok(out);
         }
@@ -686,7 +690,7 @@ fn read_off_candidates(
         .is_ok_and(|matched| matched == BTreeSet::from([decl.body_idx]))
     {
         if let Some(selector) = finish_minimized_selector(index, decl, target, scaffold)? {
-            collect(selector, &mut out);
+            push_candidate(&mut out, selector, limit);
         }
         return Ok(out);
     }
@@ -696,7 +700,7 @@ fn read_off_candidates(
     // Search the target's own hole lattice before borrowing context.
     if let Some(selector) =
         relax_exact_declaration(index, item, decl, std::slice::from_ref(target))?
-        && collect(selector, &mut out)
+        && push_candidate(&mut out, selector, limit)
     {
         return Ok(out);
     }
@@ -705,12 +709,12 @@ fn read_off_candidates(
     // body is indistinguishable from a sibling. Prefer that relationship over
     // an incidental adjacent declaration.
     if let Some(selector) = use_site::render_via_named_object_use_site(index, decl, target)?
-        && collect(selector, &mut out)
+        && push_candidate(&mut out, selector, limit)
     {
         return Ok(out);
     }
     if let Some(selector) = use_site::render_via_call_use_site(index, decl, target)?
-        && collect(selector, &mut out)
+        && push_candidate(&mut out, selector, limit)
     {
         return Ok(out);
     }
@@ -721,7 +725,7 @@ fn read_off_candidates(
     // unique anchor + the target scaffold. `None` here leaves the target as residual
     // debt after exact-declaration relaxation also fails.
     if let Some(selector) = render_via_neighbor_context(index, decl, target, &scaffold)? {
-        collect(selector, &mut out);
+        push_candidate(&mut out, selector, limit);
     }
     Ok(out)
 }
