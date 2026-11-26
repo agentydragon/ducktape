@@ -22,6 +22,7 @@ go_library(
         "//agentplane/llm_ingress/v1:model_config_go_proto",
         "//agentplane/net/peertls",
         "//agentplane/observability",
+        "//agentplane/policy/identitycache",
         "@io_k8s_client_go//rest",
         "@io_opentelemetry_go_otel//baggage",
         "@org_golang_google_grpc//:grpc",

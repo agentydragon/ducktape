@@ -12,6 +12,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 	"go.opentelemetry.io/otel/baggage"
 )
 
@@ -73,16 +75,21 @@ type config struct {
 	CentralSamplerIdentityCallers   bool     `mapstructure:"central_sampler_identity_callers"`
 	AllowedServiceAccountNamespaces []string `mapstructure:"allowed_service_account_namespaces"`
 	// PolicyNamespace holds the Identities a Sandbox SVID may name.
-	PolicyNamespace       string            `mapstructure:"policy_namespace"`
-	LogLLMRequests        bool              `mapstructure:"log_llm_requests"`
-	Models                []modelConfig     `mapstructure:"models"`
-	Attribution           attributionConfig `mapstructure:"attribution"`
-	CodexModelCatalogFile string            `mapstructure:"codex_model_catalog_file"`
-	LiteLLMURL            string            `mapstructure:"litellm_url"`
-	LiteLLMKey            string            `mapstructure:"-"`
-	LogLevels             map[string]string `mapstructure:"log_levels"`
-	RPC                   listener.Config   `mapstructure:"rpc"`
-	Kubeconfig            string            `mapstructure:"kubeconfig"`
+	PolicyNamespace string `mapstructure:"policy_namespace"`
+	// PolicyService, when set, supplies Identities through PolicyService.WatchIdentities instead of direct reads in
+	// PolicyNamespace.
+	// CLEANUP(added 2026-11-26): require it and drop PolicyNamespace and the Kubernetes Identity reads once the staging
+	//   manifests set it (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+	PolicyService         *identitycache.Peer `mapstructure:"policy_service"`
+	LogLLMRequests        bool                `mapstructure:"log_llm_requests"`
+	Models                []modelConfig       `mapstructure:"models"`
+	Attribution           attributionConfig   `mapstructure:"attribution"`
+	CodexModelCatalogFile string              `mapstructure:"codex_model_catalog_file"`
+	LiteLLMURL            string              `mapstructure:"litellm_url"`
+	LiteLLMKey            string              `mapstructure:"-"`
+	LogLevels             map[string]string   `mapstructure:"log_levels"`
+	RPC                   listener.Config     `mapstructure:"rpc"`
+	Kubeconfig            string              `mapstructure:"kubeconfig"`
 }
 
 func defaultConfig() config {
@@ -123,6 +130,11 @@ func validateConfig(c *config) error {
 	}
 	if c.PolicyNamespace == "" {
 		return errors.New("policy_namespace is required")
+	}
+	if c.PolicyService != nil {
+		if err := c.PolicyService.Validate(peertls.LLMIngressURI); err != nil {
+			return err
+		}
 	}
 	for _, namespace := range c.AllowedServiceAccountNamespaces {
 		if namespace == "" {
