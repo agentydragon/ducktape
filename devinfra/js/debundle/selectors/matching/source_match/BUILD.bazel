@@ -15,7 +15,6 @@ rust_library(
         "//devinfra/js/debundle/selectors/matching:source_match_holes",
         "//devinfra/js/debundle/selectors/matching/selector_match",
         "//devinfra/js/debundle/spec",
-        "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:strum",
         "@crates//:swc_ecma_ast",
