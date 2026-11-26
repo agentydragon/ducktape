@@ -150,6 +150,7 @@ _UNSHARDED_TESTS = [
     "async_methods_test",
     "bitwise_test",
     "composition_test",
+    "construction_only_cut_test",
     "derived_defaults_test",
     "derived_fields_test",
     "derived_object_parameters_test",
