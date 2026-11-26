@@ -95,7 +95,8 @@ impl EsmImportSchedule {
     /// Sorting every import list by this order reproduces the same DFS: when a
     /// module's imports are visited, its next white target is the next child
     /// discovered in the original walk.
-    pub fn discovery_order(&self) -> Vec<ModuleId> {
+    #[cfg(test)]
+    fn discovery_order(&self) -> Vec<ModuleId> {
         let mut seen = BTreeSet::from([self.entry]);
         let mut frames = vec![(self.entry, 0)];
         let mut order = Vec::with_capacity(self.imports.len().saturating_sub(1));

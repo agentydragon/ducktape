@@ -161,7 +161,6 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
                     .iter()
                     .map(|directory| &directory.root),
             )
-            .chain(provenance.absent_files.iter().map(|file| &file.root))
             .chain(
                 provenance
                     .yaml_memberships

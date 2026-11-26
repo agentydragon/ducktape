@@ -92,7 +92,6 @@ pub struct GraphProvenance {
     /// Snapshot replay recreates these directories without copying their contents.
     #[serde(default)]
     pub present_directories: Vec<InputPath>,
-    pub absent_files: Vec<InputPath>,
     pub chunk_sources: Vec<ChunkSource>,
     pub yaml_memberships: Vec<YamlMembership>,
     pub engine_sha256: String,
@@ -431,7 +430,6 @@ impl InputCapture {
             selected_ownership_by_chunk: BTreeMap::new(),
             files: Vec::new(),
             present_directories: Vec::new(),
-            absent_files: Vec::new(),
             chunk_sources: Vec::new(),
             yaml_memberships: Vec::new(),
             engine_sha256: engine_sha256()?,
@@ -529,9 +527,6 @@ impl InputCapture {
                 .sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
             provenance
                 .present_directories
-                .sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
-            provenance
-                .absent_files
                 .sort_by(|a, b| (&a.root, &a.path).cmp(&(&b.root, &b.path)));
             provenance
                 .chunk_sources
@@ -669,20 +664,6 @@ pub fn record_package_input(name: &str, path: &Path) -> Result<()> {
         }
     } else {
         provenance.files.push(entry);
-    }
-    Ok(())
-}
-
-pub fn record_absent(path: &Path) -> Result<()> {
-    if let Some(state) = active_capture() {
-        let mut guard = state.lock().expect("capture lock");
-        {
-            let provenance = guard
-                .as_mut()
-                .context("graph capture ended before absent-input check")?;
-            let (root, path) = provenance.classify_spec(path)?;
-            provenance.absent_files.push(InputPath { root, path });
-        }
     }
     Ok(())
 }
@@ -1113,16 +1094,6 @@ impl GraphProvenance {
                 verified_source = contents.map(|bytes| (path, bytes));
             }
         }
-        for absent in &self.absent_files {
-            let path = self.resolve(&absent.root, &absent.path, current)?;
-            if path.exists() {
-                return Err(mismatch(GraphMismatchReason::File {
-                    path,
-                    expected: "absent".to_string(),
-                    actual: "present".to_string(),
-                }));
-            }
-        }
         let Some((source, _)) = source else {
             return Ok(None);
         };
@@ -1504,11 +1475,9 @@ mod tests {
         )?;
         read_to_string(&yaml)?;
         assert_eq!(yaml_files(&modules)?, [yaml]);
-        record_absent(&modules.join("b.yaml"))?;
         let provenance = capture.finish()?;
         assert_eq!(provenance.files[0].root, InputRoot::Spec);
         assert_eq!(provenance.yaml_memberships[0].root, InputRoot::Spec);
-        assert_eq!(provenance.absent_files[0].root, InputRoot::Spec);
         Ok(())
     }
 
