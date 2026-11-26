@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.BindingMoves
+import EsmSplit.CoreJS.LinkWorld
 
 /-! Construct a dense singleton split with a checked, commuting schedule. -/
 

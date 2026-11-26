@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.SparseCheckedSplit
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input

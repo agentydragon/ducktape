@@ -1,4 +1,6 @@
 import EsmSplit.LowerSplit.SparseArtifact
+import EsmSplit.CoreJS.LinkedPivotCertificate
+import EsmSplit.CoreJS.LinkWorld
 
 /-! A bounded artifact proof for a single const declaration followed by a
 local named-export list. The authored spec assigns both original AST units. -/

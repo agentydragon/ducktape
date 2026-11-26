@@ -1,5 +1,5 @@
 import EsmSplit.CoreJS.DeploymentPlacement
-import EsmSplit.CoreJS.LinkedCertificate.Probe
+import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.SingleModule
 import EsmSplit.CoreJS.SyntaxMatch
 import EsmSplit.Split

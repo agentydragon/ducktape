@@ -360,6 +360,12 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_link_world",
+    srcs = ["EsmSplit/CoreJS/LinkWorld.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_library(
     name = "corejs_certificate_generation_support",
     srcs = [
         # Keep import order for the native Lean rule.
@@ -371,6 +377,7 @@ lean_library(
     ],
     deps = [
         ":corejs_certificate_proof",
+        ":corejs_link_world",
         ":corejs_structural",
     ],
 )
@@ -386,7 +393,6 @@ lean_library(
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/CoreJS/Request/Frame.lean",
-        "EsmSplit/CoreJS/LinkWorld.lean",
         "EsmSplit/CoreJS/StringInitializer.lean",
         "EsmSplit/CoreJS/StableIntrinsic.lean",
         "EsmSplit/CoreJS/RecordOrigin.lean",
@@ -413,6 +419,7 @@ lean_library(
     ],
     deps = [
         ":corejs_certificate_support",
+        ":corejs_link_world",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":planner",
@@ -486,7 +493,7 @@ lean_library(
     name = "corejs_checked_split",
     srcs = ["EsmSplit/CoreJS/CheckedSplit.lean"],
     deps = [
-        ":corejs_certificate_generation_support",
+        ":corejs_link_world",
         ":corejs_linked_input",
         ":corejs_runtime",
         ":corejs_single_module",
@@ -594,7 +601,10 @@ lean_library(
 executable_test(
     name = "named_declaration_split_test",
     src = "NamedDeclarationSplitTest.lean",
-    deps = [":named_declaration_split"],
+    deps = [
+        ":corejs_state_match",
+        ":named_declaration_split",
+    ],
 )
 
 lean_proof_test(
@@ -652,7 +662,9 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/SparseCheckedSplit.lean"],
     deps = [
         ":corejs_checked_split",
+        ":corejs_link_world",
         ":corejs_resolved_placement",
+        ":corejs_structural",
     ],
 )
 
@@ -682,7 +694,10 @@ executable_test(
     src = "ResolvedPlacementTest.lean",
     deps = [
         ":corejs_checked_split",
+        ":corejs_link_world",
         ":corejs_resolved_placement",
+        ":corejs_state_match",
+        ":corejs_structural",
     ],
 )
 
@@ -702,7 +717,12 @@ lean_proof_test(
 executable_test(
     name = "checked_split_test",
     src = "CheckedSplitTest.lean",
-    deps = [":corejs_checked_split"],
+    deps = [
+        ":corejs_checked_split",
+        ":corejs_link_world",
+        ":corejs_state_match",
+        ":corejs_structural",
+    ],
 )
 
 lean_proof_test(
@@ -722,6 +742,7 @@ lean_library(
     deps = [
         ":corejs_certificate_support",
         ":corejs_checked_split",
+        ":corejs_link_world",
     ],
 )
 
@@ -756,6 +777,7 @@ lean_library(
     name = "sparse_checked_artifact",
     srcs = ["EsmSplit/LowerSplit/SparseArtifact.lean"],
     deps = [
+        ":corejs_linked_input",
         ":corejs_sparse_checked_split",
         ":lowersplit_input",
         ":lowersplit_support",
@@ -777,7 +799,11 @@ lean_proof_test(
 lean_library(
     name = "terminal_export_artifact",
     srcs = ["EsmSplit/LowerSplit/TerminalExportArtifact.lean"],
-    deps = [":sparse_checked_artifact"],
+    deps = [
+        ":corejs_link_world",
+        ":corejs_structural",
+        ":sparse_checked_artifact",
+    ],
 )
 
 lean_proof_test(
@@ -1091,6 +1117,7 @@ lean_library(
     visibility = ["//visibility:private"],
     deps = [
         ":corejs_certificates",
+        ":corejs_link_world",
         ":corejs_runtime",
         ":corejs_structural",
         ":planner",
@@ -1178,6 +1205,7 @@ lean_proof_test(
         "CoreJS.LinkedBehavior.EquivalentFor.normalEquivalent",
         "CoreJS.LinkedBehavior.ASTEquivalent.normal",
         "CoreJS.LinkedBehavior.normalEquivalent_of_shared",
+        "CoreJS.LinkedBehavior.CheckedProbePair.sameExports",
         "CoreJS.LinkedBehavior.probeObservationMismatchRefutesEquivalent",
         "CoreJS.LinkedBehaviorExamples.literalRoundTrip",
         "CoreJS.LinkedBehaviorExamples.jsonLiteralRoundTrip",
