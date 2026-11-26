@@ -116,9 +116,7 @@ impl ParsedJsModule {
         SourceLineIndex::for_source_map(&self.cm)
     }
 
-    /// Clone the source text stored in the SourceMap. Returns the full
-    /// source string that was passed to `parse_js_module` or
-    /// `parse_js_module_consuming`.
+    /// Copy the source text retained by the parser.
     pub fn source_text(&self) -> String {
         self.cm.files()[0].src.to_string()
     }
@@ -240,20 +238,13 @@ impl std::fmt::Display for JsParseError {
 
 impl std::error::Error for JsParseError {}
 
+/// Parse a module and retain its source and resolver marks. An owned source
+/// string moves into the source map; a borrowed one is copied.
 pub fn parse_js_module(
     source_name: &str,
-    source: &str,
+    source: impl Into<String>,
 ) -> std::result::Result<ParsedJsModule, JsParseError> {
-    parse_js_module_consuming(source_name, source.to_string())
-}
-
-/// Like `parse_js_module` but takes ownership of the source string, avoiding
-/// its clone. The source text is retrievable via
-/// `ParsedJsModule::source_text()`.
-pub fn parse_js_module_consuming(
-    source_name: &str,
-    source: String,
-) -> std::result::Result<ParsedJsModule, JsParseError> {
+    let source: String = source.into();
     let cm: Lrc<SourceMap> = Default::default();
     let fm = cm.new_source_file(FileName::Custom(source_name.to_string()).into(), source);
     let (module, unresolved_mark, top_level_mark) = parse_and_resolve(source_name, &fm)?;

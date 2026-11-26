@@ -90,7 +90,7 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
     )?;
     let source = std::fs::read_to_string(&source_file)
         .with_context(|| format!("reading source file {}", source_file.display()))?;
-    let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
+    let parsed = js_ast::parse_js_module(&source_file.display().to_string(), source)
         .with_context(|| format!("parsing source file {}", source_file.display()))?;
     let chunk = selector_resolve::Chunk::analyze("<match-selector>", &parsed.module);
     // The probe is a one-entity spec: its outcome is the resolve's.
@@ -168,10 +168,9 @@ fn compute_slack(
     selector_target_binding: Option<&str>,
     resolve: &impl Fn(String) -> Result<Outcome>,
 ) -> Result<Vec<SlackRelaxation>> {
-    let mut selector_module =
-        js_ast::parse_js_module_consuming("<match-selector slack>", match_source.to_string())
-            .with_context(|| "parsing the candidate selector for slack analysis")?
-            .module;
+    let mut selector_module = js_ast::parse_js_module("<match-selector slack>", match_source)
+        .with_context(|| "parsing the candidate selector for slack analysis")?
+        .module;
     js_ast::strip_parens(&mut selector_module);
     let baseline_emit = js_ast::emit_module_source(&selector_module)?;
 

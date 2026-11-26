@@ -613,7 +613,7 @@ fn resolve_full_swap(job: FullSwapJob, options: &VendorPlanOptions<'_>) -> Resul
     let wrapper_source = match job.wrapper_shape {
         Some(WrapperShape::NamedFromDefault) => {
             let upstream_ast =
-                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+                parse_js_module(&upstream_path.display().to_string(), upstream_code)?;
             let object_keys =
                 collect_default_export_object_keys(&upstream_ast.module, &job.chunk_path)?;
             let non_default_exports = job
@@ -691,7 +691,7 @@ fn resolve_full_swap(job: FullSwapJob, options: &VendorPlanOptions<'_>) -> Resul
                 );
             }
             let upstream_ast =
-                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+                parse_js_module(&upstream_path.display().to_string(), upstream_code)?;
             Some(generate_named_from_module_default_wrapper(
                 &upstream_ast,
                 &job.vendor_exports,
@@ -700,7 +700,7 @@ fn resolve_full_swap(job: FullSwapJob, options: &VendorPlanOptions<'_>) -> Resul
         }
         None => {
             let upstream_ast =
-                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+                parse_js_module(&upstream_path.display().to_string(), upstream_code)?;
             let upstream_exports = collect_exported_names(&upstream_ast.module);
             let missing = set_diff(&job.vendor_exports, &upstream_exports);
             if !missing.is_empty() {
@@ -795,7 +795,7 @@ fn plan_partial_swaps(
             let upstream_code =
                 graph_provenance::read_package_to_string(package_name, &upstream_path)?;
             let upstream_ast =
-                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+                parse_js_module(&upstream_path.display().to_string(), upstream_code)?;
             let upstream_exports = collect_exported_names(&upstream_ast.module);
             // Packages that re-export everything from a sibling module
             // (`export * from "./other.js"`) can't be fully enumerated
