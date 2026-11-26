@@ -47,6 +47,5 @@ go_test(
         "@com_github_go_jose_go_jose_v4//:go-jose",
         "@com_github_go_jose_go_jose_v4//jwt",
         "@com_github_google_uuid//:uuid",
-        "@com_github_lib_pq//:pq",
     ],
 )

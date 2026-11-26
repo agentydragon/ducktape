@@ -51,7 +51,7 @@ func forward(conn net.Conn, upstream string) {
 func TestRunRetriesTheFirstConnection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	database, err := postgres.Start(ctx, func(context.Context, *sql.DB) error { return nil })
+	database, err := postgres.Start(ctx, postgres.NoMigrations)
 	if err != nil {
 		t.Fatal(err)
 	}
