@@ -29,6 +29,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
+from agentplane.identity.auth.delegation import ServiceDelegation, ServiceDelegator
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -39,7 +40,7 @@ from agentplane.net.peertls.config import (
     SESSION_DISPATCHER_URI,
     ServiceSPIFFEID,
 )
-from agentplane.session_dispatcher.settings import CentralSamplerTarget, ServiceDelegation, ServiceDelegator, Settings
+from agentplane.session_dispatcher.settings import CentralSamplerTarget, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
