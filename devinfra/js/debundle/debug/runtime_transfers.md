@@ -84,4 +84,14 @@ exit zero and print `7`. Raw samples and comparisons are under
 Exact-head hosted CI passes production Clippy and all 183 selected tests in
 [3a719cd6-739b-5fb0-a1f4-19ef548d8253](https://app.buildbuddy.io/invocation/3a719cd6-739b-5fb0-a1f4-19ef548d8253).
 The private Claude replay matches all 75 baseline graphs and 11 conflict reports
-apart from executable provenance. Supplemental Tana parity remains pending.
+apart from executable provenance.
+
+## Open: supplemental Tana parity
+
+The canonical baseline/candidate comparison remains open. Its former scratch
+location `/tmp/debundle-runtime-baseline/corpus/runs/{baseline,candidate-compact}`
+no longer holds the run outputs.
+Preserve outputs from both runs and compare gate decisions, structured evidence,
+emitted files and runtime checks. Record refusals separately from successful
+emission. The performance controls above establish their own results; Tana
+parity requires this comparison or an explicit decision to supersede it.

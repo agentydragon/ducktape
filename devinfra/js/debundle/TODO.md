@@ -15,7 +15,6 @@ plans and evidence live here:
   diagnostic workflows.
 - <plans/explicit_import_order.md> — explicit-order delivery contract, residual
   proof and the remaining downstream and selected-view work in W9 below.
-- <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
 - <plans/native_receiver_identity.md> — native receiver identity and its
   descriptor, alias, method-receiver and initialization proof obligations.
 - <plans/convergence_landing.md> — gate-migration debt, discrepancy controls
@@ -33,7 +32,6 @@ plans and evidence live here:
 - <plans/synchronous_execution_fallback.md> — make modeled effects authoritative
   for incomplete at-init calls before removing the graph builder's conservative
   read-closure fallback; reported havoc reach is not yet consumed.
-- <ARCHITECTURE_BACKLOG.md> — unrelated deferred integrity and test/spec items.
 - `perf/` — measured performance notes. Update from real
   profiles before major matcher/index rewrites.
 
@@ -51,32 +49,16 @@ The sections below hold details, not competing priority queues.
    throughout the work below. Use the cyclic export-cell item and AR7 for
    concrete soundness gaps, with causal CLI evidence and canonical controls.
 2. **Shared analysis and bounded propagation.** Follow
-   <plans/analysis_consolidation.md>. Restore bounded private-consumer completion
-   through opt-in SDK work metrics and measured fixes (PF0 in
-   <plans/analysis_performance.md>), retaining the Excalidraw 10% regression bound.
-   Complete namespace provenance's remaining
-   recursive path unfolding (PF6); #17181 bounds the local-class slice. For the
-   measured Tana flow bottleneck, prioritize incremental source transfers (PF7)
-   and dependency registration,
-   storage and useful wakeups (PF8) together. #17179 and #17180 cover property
-   receiver/expression reuse and compact reverse subscriptions; remaining set
-   operand costs, bitmap sharing, and repeated registrations stay open. Take
-   independent, bounded immutable preparation/query reuse slices (PF9);
-   loader rescans (PF10), receiver-flow
-   aggregate/restart work (PF11) and remaining capability payload work (PF12)
-   follow their corpus reach and measured costs. Record matched invocation (PF1)
-   and capability-containment (PF4) impact profiles. Replace callback replay in
-   bounded families through PF5 as their dependencies become explicit.
-   Task completion criteria live in
-   <plans/analysis_performance.md>; preserve separate proof-change propagation
-   and conservative unknowns. Standardize pass contracts (PS1),
-   sealed/consumed inputs (PS2), and adapter conformance (PS4) alongside those
-   migrations. Invocation origin deltas and activation/snapshot semantics are
-   maintained in <docs/inference.md#source-invocation-origin-deltas>; typed proof
-   additions use the shared inference context's premise-edge propagation.
-   Independent sealed
-   graph passes need not wait for general notification infrastructure. Reuse
-   the existing inference and operation semantics.
+   <plans/analysis_consolidation.md> and the [performance tasks](plans/analysis_performance.md#open-analysis-tasks).
+   Restore bounded private-consumer completion (PF0), including the Excalidraw
+   10% regression bound. Finish namespace provenance (PF6) and address measured
+   Tana costs through source transfers and dependency registration together
+   (PF7–PF8). Take bounded preparation reuse (PF9) independently. Rank remaining
+   loader, receiver-flow and containment changes (PF10–PF12) by measured corpus
+   costs. Record matched impact profiles (PF1, PF4), replace callback replay as
+   dependencies become explicit (PF5), and standardize pass contracts alongside
+   those migrations (PS1, PS2, PS4). Independent sealed graph passes can proceed
+   before general notification infrastructure.
 3. **Consumer consolidation and gate migration.** AR1–AR4 follow the shared
    facts and operation semantics above. Delete each superseded decision path
    with its last consumer; name any remaining legacy authority and removal
@@ -359,60 +341,6 @@ to one exact source/spec pair and held to the interactive budget in
    Assumption-core localization remains rejected for its measured cost
    (<docs/selector_resolution.md> § Unsatisfiable programs).
 
-### Audit features unused by gaffer-private — dispositions
-
-The originating downstream census covered authored specs, the Tana canonical,
-baselines and fixtures at `gaffer-private/main` on 2026-11-14 and reported no
-configured uses. The public configuration search found two configured callers:
-plain `partial_swap` in <excalidraw/spec/vendor_marks.yaml> and
-`no_reentry_callback_exports` in
-<skills/shared/examples/contract_examples/persistent_registry/spec_config.yaml>;
-the other ten have no configured public spec caller. E2E cases establish
-contract boundaries, not demand. Current-source review supports retaining all
-twelve; no further deletion or consolidation is recommended. Any future proposal
-must name the capability being retired or prove an equivalent replacement and
-check current caller migration.
-
-- **Retain `member_of_module`:** pins the consumer through both import source
-  specifier and export name, which `reads_member` does not preserve.
-- **Retain `passed_to_call`:** pins a registration target by callee, optional
-  receiver, argument position and declaration kind. The closed
-  [#16600](https://github.com/agentydragon/ducktape/pull/16600) template
-  experiment showed why these constraints differ: call-only templates
-  mix class/function registrations, class-only templates match unregistered
-  identical classes, and a free template receiver alpha-renames instead of
-  binding the selector's explicit `object`. Do not retry blanket replacement.
-- **Retain `value_inputs`:** lets an author assert that an otherwise opaque
-  provider binding holds an ordinary non-Proxy object distinct from global and
-  native identities, with exact source and import provenance.
-- **Retain `argument_inputs`:** lets an author certify that a stable helper's
-  exact parameter index and arity do not allow its function or callees to
-  mutate, retain, return, publish or expose the argument graph through callbacks
-  or opaque calls during or after activation; it does not assert helper purity.
-- **Retain `imported_primitive_array_spread_inputs`:** carries finite primitive
-  contents across a direct imported-array spread while auditing array identity,
-  contents, iterator/prototype behavior and lifetime.
-- **Retain binding-level `pure_members`:** admits selected static calls through
-  a chosen binding, including a local or imported namespace, in that chunk; it
-  does not propagate an export-wide purity claim.
-- **Retain `retained_callback_factory_exports`:** covers existing named or
-  captured callbacks at audited argument positions; inline-only factory
-  contracts do not cover those values.
-- **Retain `descriptor_copy_factory_exports`:** models exact own-descriptor
-  copying, including deferred getter callbacks and assigned-key checks; generic
-  callback retention does not establish those descriptor effects.
-- **Retain `no_reentry_callback_exports`:** audits callback registration calls
-  that store callbacks without invoking them during the call; callbacks become
-  escaped afterward, unlike returned-graph factory contracts.
-- **Retain `host_behavior.reentry_free_operations`:** supplies host-specific
-  timing for exact Bun `Promise.resolve()` and `AsyncLocalStorage` construction
-  sites; it makes no purity or return-shape claim.
-- **Retain plain `partial_swap`:** the Excalidraw spec uses this package
-  replacement path; migration must preserve its import and export behavior.
-- **Retain `typescript_decorate_helper`:** asserts target-local mutation only;
-  the stronger metadata variants add separate callback-timing promises and are
-  not substitutes.
-
 ### Test infrastructure
 
 1. **Runtime resource controls.** `e2e/emission/url_rebase.rs` covers lazy JavaScript and
@@ -594,8 +522,13 @@ rebuilds, codegen cache), and materialize-stage performance work lives in
 
 ## Purity classifier
 
-Statement-level overrides, the redundant-hint guardrail and compositional proof:
-<plans/purity_analysis.md>.
+- **Statement-level purity override.** Member `purity: pure` covers calls;
+  `initializer_purity: pure` covers a simple variable initializer. Consider a
+  statement-level override for an otherwise unprovable source unit outside those
+  contracts. Prefer compositional analysis for recurring expression families.
+- **Redundant-hint guardrail.** Use [spec lint](SPEC.md#spec-lint)
+  to check for newly inferable purity hints in CI or pre-commit, with a narrow
+  allowlist for intentional hints. Validate each removal against the resulting spec.
 
 The ignored `inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle`
 fixture is a deferred **RegExp admission feature**, not a contradictory classifier
@@ -657,13 +590,6 @@ support default and namespace import member re-exports (<SPEC.md> § Entities).
 Add neutral CLI/Node cases for both forms; a minimal default case is
 `import a from "./dependency.js"` with a member claim for `a` carrying
 `kind: import_specifier`.
-
-## Suspected bugs
-
-Findings from a read-only code review (2026-09-30), each with where to look and
-how to confirm. An entry is deleted when it is reproduced and fixed with a test,
-or disproved. Status says how far it was checked; "reported" means nobody has
-confirmed it.
 
 ## CLI usability
 
@@ -771,3 +697,26 @@ core, retain source/vendor/native compatibility evidence, then bind the exact
 current inventory. Require accepted and rejected graph replay tests, note and
 membership freshness, relocation between execroots, and measured Bazel cache
 reuse before removing raw YAML from graph export inputs.
+
+## Deferred architecture decisions
+
+- **Serialization for generated spec types.** Check whether protobuf-aware
+  serialization can replace `spec_wire_serde_enums` in `BUILD.bazel` while keeping
+  authored YAML and JSON field presence, unknown-field rejection and snake_case
+  names. Test schema-derived diagnostic spellings for `ReentryFreeOperation` and
+  `InitializerExternalEffects` before removing their Strum `Display` derives.
+- **Whole-chunk intrinsic integrity.** The census guards exact slots for migrated
+  consumers. Hidden writes and host mutations remain the author's
+  [A11 obligation](docs/design.md#conditions-on-the-input-chunk-assumptions-a1a11).
+  Measure the cost and reach of a mandatory whole-chunk check before changing
+  that contract. Purity consumers follow <plans/abstract_interpreter.md>.
+
+## Retained spec capabilities
+
+The 2026-11-14 census of gaffer-private authored specs, Tana canonical,
+baselines and fixtures found no configured uses of the audited opt-ins. Public `partial_swap` and `no_reentry_callback_exports` callers are in
+<excalidraw/spec/vendor_marks.yaml> and
+[the persistent registry example](skills/shared/examples/contract_examples/persistent_registry/spec_config.yaml).
+[The audit retained each capability](https://github.com/agentydragon/ducktape/pull/16739/files)
+for a distinct contract or caller. Recheck current consumers and identify the
+contract change or equivalent replacement before proposing a retirement.
