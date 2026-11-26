@@ -10,7 +10,7 @@ use std::ops::Bound::{Excluded, Unbounded};
 
 use analysis::analysis_inputs::{CommutingStatementsRef, ProofDependencies};
 use analysis::facts::{
-    CellOverlap, CellOverlapIndex, InitializationEffectEvidence, InitializationEffects,
+    CellOverlap, CellOverlapIndex, EffectCell, InitializationEffectEvidence, InitializationEffects,
     OwnerInitializationCoverageRefusal, OwnerInitializationCoverageRefusalReason, RootAttempt,
     RootAttemptCounts, StatementFacts, UnknownEffectCoverage,
 };
@@ -589,45 +589,7 @@ fn assess_effect_relocation<E>(
             .collect::<BTreeSet<_>>(),
         "effect facts and assignment graph must name exactly the same source units",
     );
-    let mut coverage = EffectCoverageReport {
-        statement_count: effects.len(),
-        covered_owner_dependencies: Default::default(),
-        unknown_coverage: BTreeMap::new(),
-        owner_coverage_refusals: BTreeMap::new(),
-        root_attempts: RootAttemptCounts::default(),
-        legacy_dataflow_opaque_statements: 0,
-        incomplete_execution_statements: 0,
-        precision_loss_statements: 0,
-        opaque_heap_statements: 0,
-        havoc_statements: 0,
-    };
-    for effect in effects.values() {
-        if let Some(dependencies) = effect.coverage_dependencies {
-            coverage.covered_owner_dependencies.extend(dependencies);
-        }
-        for domain in &effect.unknown_coverage {
-            *coverage.unknown_coverage.entry(*domain).or_default() += 1;
-        }
-        if let Some(refusal) = &effect.owner_coverage_refusal {
-            *coverage
-                .owner_coverage_refusals
-                .entry(refusal.reason)
-                .or_default() += 1;
-        }
-        match effect.root_attempt {
-            Some(RootAttempt::Sealed) => coverage.root_attempts.sealed += 1,
-            Some(RootAttempt::Rewound(reason)) => {
-                *coverage.root_attempts.rewound.entry(reason).or_default() += 1;
-            }
-            None => {}
-        }
-        coverage.legacy_dataflow_opaque_statements +=
-            usize::from(!effect.dataflow_opacity.is_empty());
-        coverage.incomplete_execution_statements += usize::from(effect.incomplete_execution);
-        coverage.precision_loss_statements += usize::from(!effect.execution_losses.is_empty());
-        coverage.opaque_heap_statements += usize::from(effect.opaque_heap);
-        coverage.havoc_statements += usize::from(effect.has_havoc());
-    }
+    let coverage = effect_coverage_report(&effects);
     let mut counts = EffectConflictCounts::default();
     let emitted = emitted_order.rows();
     let has_reordering = emitted.windows(2).any(|pair| pair[0].1 > pair[1].1);
@@ -663,27 +625,7 @@ fn assess_effect_relocation<E>(
     let mut havoc: CellParticipants = BTreeMap::new();
     for (_, ordinal, unit) in emitted.iter().copied() {
         let current = &effects[&unit];
-        let mut current_accesses = BTreeMap::new();
-        for (cell, evidence) in &current.reads {
-            let access = current_accesses
-                .entry(cell)
-                .or_insert_with(CellAccess::default);
-            access.reader = true;
-            access.observed.read = evidence.is_observed();
-        }
-        for (cell, evidence) in &current.writes {
-            let access = current_accesses
-                .entry(cell)
-                .or_insert_with(CellAccess::default);
-            access.writer = true;
-            access.observed.write = evidence.is_observed();
-        }
-        for cell in &current.allocates {
-            current_accesses
-                .entry(cell)
-                .or_insert_with(CellAccess::default)
-                .writer = true;
-        }
+        let current_accesses = cell_accesses(current);
         // Merge ordered suffix iterators by partner. This retains only one
         // pair's cells, even if one statement conflicts with many partners on
         // many cells. The merge is output-sensitive, including Havoc pairs.
@@ -825,44 +767,15 @@ fn assess_effect_relocation<E>(
         drop(ranges);
         // All queries precede insertion, so a statement never conflicts with
         // itself. No pair-premise decision mutates these participants.
-        for (cell, access) in &current_accesses {
-            let participant = CellParticipant {
-                unit,
-                observed: access.observed,
-            };
-            // Every access queries prior writers, retaining complete evidence.
-            // Read/write participants therefore need only the writer index.
-            if access.reader && !access.writer {
-                cells
-                    .readers_without_writes
-                    .get_or_default((*cell).clone())
-                    .insert(ordinal, participant);
-            }
-            if access.writer {
-                cells
-                    .writers
-                    .get_or_default((*cell).clone())
-                    .insert(ordinal, participant);
-            }
-        }
-        if !current.is_empty() {
-            nonempty.insert(
-                ordinal,
-                CellParticipant {
-                    unit,
-                    observed: ObservedAccess::default(),
-                },
-            );
-        }
-        if current.has_havoc() {
-            havoc.insert(
-                ordinal,
-                CellParticipant {
-                    unit,
-                    observed: ObservedAccess::default(),
-                },
-            );
-        }
+        record_participants(
+            &mut cells,
+            &mut nonempty,
+            &mut havoc,
+            &current_accesses,
+            current,
+            unit,
+            ordinal,
+        );
     }
     let decision = if !has_reordering {
         debug_assert_eq!(counts.pairs, 0, "a non-inverted order has no conflicts");
@@ -902,6 +815,130 @@ fn assess_effect_relocation<E>(
         counts,
         coverage,
     })
+}
+
+/// Coverage and opacity counts over every statement's effect facts.
+fn effect_coverage_report(
+    effects: &BTreeMap<SourceUnitId, InitializationEffects<'_>>,
+) -> EffectCoverageReport {
+    let mut coverage = EffectCoverageReport {
+        statement_count: effects.len(),
+        covered_owner_dependencies: Default::default(),
+        unknown_coverage: BTreeMap::new(),
+        owner_coverage_refusals: BTreeMap::new(),
+        root_attempts: RootAttemptCounts::default(),
+        legacy_dataflow_opaque_statements: 0,
+        incomplete_execution_statements: 0,
+        precision_loss_statements: 0,
+        opaque_heap_statements: 0,
+        havoc_statements: 0,
+    };
+    for effect in effects.values() {
+        if let Some(dependencies) = effect.coverage_dependencies {
+            coverage.covered_owner_dependencies.extend(dependencies);
+        }
+        for domain in &effect.unknown_coverage {
+            *coverage.unknown_coverage.entry(*domain).or_default() += 1;
+        }
+        if let Some(refusal) = &effect.owner_coverage_refusal {
+            *coverage
+                .owner_coverage_refusals
+                .entry(refusal.reason)
+                .or_default() += 1;
+        }
+        match effect.root_attempt {
+            Some(RootAttempt::Sealed) => coverage.root_attempts.sealed += 1,
+            Some(RootAttempt::Rewound(reason)) => {
+                *coverage.root_attempts.rewound.entry(reason).or_default() += 1;
+            }
+            None => {}
+        }
+        coverage.legacy_dataflow_opaque_statements +=
+            usize::from(!effect.dataflow_opacity.is_empty());
+        coverage.incomplete_execution_statements += usize::from(effect.incomplete_execution);
+        coverage.precision_loss_statements += usize::from(!effect.execution_losses.is_empty());
+        coverage.opaque_heap_statements += usize::from(effect.opaque_heap);
+        coverage.havoc_statements += usize::from(effect.has_havoc());
+    }
+    coverage
+}
+
+/// How a statement reads, writes or allocates each effect cell.
+fn cell_accesses<'e>(
+    current: &'e InitializationEffects<'_>,
+) -> BTreeMap<&'e EffectCell, CellAccess> {
+    let mut current_accesses = BTreeMap::new();
+    for (cell, evidence) in &current.reads {
+        let access = current_accesses
+            .entry(cell)
+            .or_insert_with(CellAccess::default);
+        access.reader = true;
+        access.observed.read = evidence.is_observed();
+    }
+    for (cell, evidence) in &current.writes {
+        let access = current_accesses
+            .entry(cell)
+            .or_insert_with(CellAccess::default);
+        access.writer = true;
+        access.observed.write = evidence.is_observed();
+    }
+    for cell in &current.allocates {
+        current_accesses
+            .entry(cell)
+            .or_insert_with(CellAccess::default)
+            .writer = true;
+    }
+    current_accesses
+}
+
+/// Indexes a swept statement as a partner for every later statement.
+fn record_participants(
+    cells: &mut CellParticipantIndexes,
+    nonempty: &mut CellParticipants,
+    havoc: &mut CellParticipants,
+    current_accesses: &BTreeMap<&EffectCell, CellAccess>,
+    current: &InitializationEffects<'_>,
+    unit: SourceUnitId,
+    ordinal: SourceUnitOrdinal,
+) {
+    for (cell, access) in current_accesses {
+        let participant = CellParticipant {
+            unit,
+            observed: access.observed,
+        };
+        // Every access queries prior writers, retaining complete evidence.
+        // Read/write participants therefore need only the writer index.
+        if access.reader && !access.writer {
+            cells
+                .readers_without_writes
+                .get_or_default((*cell).clone())
+                .insert(ordinal, participant);
+        }
+        if access.writer {
+            cells
+                .writers
+                .get_or_default((*cell).clone())
+                .insert(ordinal, participant);
+        }
+    }
+    if !current.is_empty() {
+        nonempty.insert(
+            ordinal,
+            CellParticipant {
+                unit,
+                observed: ObservedAccess::default(),
+            },
+        );
+    }
+    if current.has_havoc() {
+        havoc.insert(
+            ordinal,
+            CellParticipant {
+                unit,
+                observed: ObservedAccess::default(),
+            },
+        );
+    }
 }
 
 fn effect_domains_closed(effects: &InitializationEffects<'_>) -> bool {
@@ -975,7 +1012,7 @@ mod observed_access_tests {
     use super::*;
 
     use analysis::AnalysisInputs;
-    use analysis::facts::{CellOverlapLaw, EffectCell, analyze_chunk};
+    use analysis::facts::{CellOverlapLaw, analyze_chunk};
     use source_identity::SourceUnitId;
 
     fn access_map<'a>(
