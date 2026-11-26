@@ -67,8 +67,9 @@ type repackEntry struct {
 	frame          []byte
 	standaloneWire []byte
 	storedCost     int
-	packable       bool
 }
+
+func (entry repackEntry) packable() bool { return len(entry.frame) > 0 }
 
 type repackPlan struct {
 	sources []repackStorage
@@ -322,7 +323,7 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 			if j < extraCost {
 				entry.storedCost++
 			}
-			if entry.packable {
+			if entry.packable() {
 				if _, err := decodeJournalEvent(entry.frame, entry.sequence); err != nil {
 					return repackPlan{}, err
 				}
@@ -377,7 +378,7 @@ func decodeRepackSource(source repackStorage) ([]repackEntry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unpack event at cursor %d for repack: %w", source.first, err)
 		}
-		entry := repackEntry{frame: frame, packable: len(frame) > 0, standaloneWire: bytes.Clone(source.payload)}
+		entry := repackEntry{frame: frame, standaloneWire: source.payload}
 		return []repackEntry{entry}, nil
 	}
 	frames, _, err := decodeJournalBlock(source.payload, source.first, source.last)
@@ -389,7 +390,7 @@ func decodeRepackSource(source repackStorage) ([]repackEntry, error) {
 		if len(frame) == 0 {
 			return nil, fmt.Errorf("empty frame at cursor %d", source.first+uint64(i))
 		}
-		entries[i] = repackEntry{frame: frame, packable: true}
+		entries[i] = repackEntry{frame: frame}
 	}
 	return entries, nil
 }
@@ -401,7 +402,7 @@ func repackJournalEntries(entries []repackEntry, hasMore bool, opening uint64, p
 	}
 	var outputs []repackStorage
 	for start := 0; start < len(entries); {
-		if !entries[start].packable {
+		if !entries[start].packable() {
 			entry := entries[start]
 			outputs = append(outputs, repackStorage{
 				first: entry.sequence, last: entry.sequence,
@@ -411,7 +412,7 @@ func repackJournalEntries(entries []repackEntry, hasMore bool, opening uint64, p
 			continue
 		}
 		end := start + 1
-		for end < len(entries) && entries[end].packable && entries[end].sequence == entries[end-1].sequence+1 && entries[end-1].sequence < opening {
+		for end < len(entries) && entries[end].packable() && entries[end].sequence == entries[end-1].sequence+1 && entries[end-1].sequence < opening {
 			end++
 		}
 		flushTail := end < len(entries) || !hasMore
@@ -479,16 +480,13 @@ func validateJournalRepackCoverage(entries []repackEntry, outputs []repackStorag
 		}
 		count := int(output.last - output.first + 1)
 		if output.block {
-			decoded, err := eventblock.Decode(output.payload)
+			decoded, err := decodeAPBJournalBlock(output.payload, output.first, output.last)
 			if err != nil {
 				return fmt.Errorf("verify output block %d–%d: %w", output.first, output.last, err)
 			}
-			if len(decoded) != count {
-				return fmt.Errorf("output block %d–%d contains %d frames, want %d", output.first, output.last, len(decoded), count)
-			}
 			for i := range decoded {
 				if entryIndex >= len(entries) || entries[entryIndex].sequence != output.first+uint64(i) ||
-					!entries[entryIndex].packable || !bytes.Equal(decoded[i], entries[entryIndex].frame) {
+					!entries[entryIndex].packable() || !bytes.Equal(decoded[i], entries[entryIndex].frame) {
 					return fmt.Errorf("output block %d–%d does not preserve ordered source frame %d", output.first, output.last, output.first+uint64(i))
 				}
 				entryIndex++
@@ -499,7 +497,7 @@ func validateJournalRepackCoverage(entries []repackEntry, outputs []repackStorag
 			return fmt.Errorf("standalone output at cursor %d does not match its source", output.first)
 		}
 		entry := entries[entryIndex]
-		if entry.packable {
+		if entry.packable() {
 			frame, err := eventcodec.UnpackPackableEntry(output.payload)
 			if err != nil || len(frame) == 0 || !bytes.Equal(frame, entry.frame) {
 				return fmt.Errorf("standalone output at cursor %d does not preserve its source frame", output.first)

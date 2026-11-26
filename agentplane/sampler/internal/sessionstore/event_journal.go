@@ -72,32 +72,41 @@ func decodeJournalEvent(wire []byte, sequence uint64) (*eventlogpb.EventEntry, e
 	return entry, nil
 }
 
+// Check the APB frame count against the PostgreSQL interval during replay
+// and before either writer installs a new block.
+func decodeAPBJournalBlock(wire []byte, first, last uint64) ([][]byte, error) {
+	frames, err := eventblock.Decode(wire)
+	if err != nil {
+		return nil, err
+	}
+	if uint64(len(frames)) != last-first+1 {
+		return nil, fmt.Errorf("event block %d–%d contains %d frames", first, last, len(frames))
+	}
+	return frames, nil
+}
+
 func decodeJournalBlock(wire []byte, first, last uint64) ([][]byte, JournalClassification, error) {
 	if last < first {
 		return nil, journalInvalid, fmt.Errorf("reversed block interval %d–%d", first, last)
 	}
-	count := last - first + 1
 	var frames [][]byte
 	var err error
 	var class JournalClassification
 	switch {
 	case eventblock.IsBlock(wire):
 		class = journalCurrent
-		frames, err = eventblock.Decode(wire)
+		frames, err = decodeAPBJournalBlock(wire, first, last)
 		if errors.Is(err, eventblock.ErrUnsupportedVersion) {
 			return nil, journalUnsupported, fmt.Errorf("event block %d–%d: %w", first, last, err)
 		}
 	case eventcodec.IsGzip(wire):
 		class = journalLegacyGzip
-		frames, err = eventcodec.UnpackBlock(wire, int(count))
+		frames, err = eventcodec.UnpackBlock(wire, int(last-first+1))
 	default:
 		return nil, journalUnsupported, fmt.Errorf("unknown event block encoding at cursors %d–%d", first, last)
 	}
 	if err != nil {
 		return nil, journalInvalid, fmt.Errorf("decode event block %d–%d: %w", first, last, err)
-	}
-	if uint64(len(frames)) != count {
-		return nil, journalInvalid, fmt.Errorf("event block %d–%d contains %d frames", first, last, len(frames))
 	}
 	return frames, class, nil
 }
