@@ -43,7 +43,6 @@ use analysis::facts::semantic_inference::{
 use analysis::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness,
 };
-use analysis::facts::value_flow::ChunkValueFlow;
 use analysis::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes,
     OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
@@ -78,6 +77,7 @@ use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
+use value_flow::ChunkValueFlow;
 use value_model::callable_body_facts::CallableBodyFacts;
 use value_model::local_operations::{DeferredCallableCreation, LocalBinding, LocalBody};
 use value_model::{
@@ -9852,7 +9852,7 @@ pub struct InferredCallableCapabilities {
 pub struct InferredForeignCall {
     pub derived: crate::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
-    pub declaration: analysis::facts::value_flow::CallableDeclaration,
+    pub declaration: value_flow::CallableDeclaration,
     pub dependencies: ProofDependencies,
     pub record: Option<InferredReturnedRecord>,
     /// The returned closure defers its first argument (`deferred_callback_closure`).
@@ -10358,10 +10358,7 @@ fn infer_foreign_calls<'f>(
         .filter(|(binding, _)| !index.reassigned_bindings.contains(*binding))
         .filter_map(|(binding, declaration)| {
             let declaration_start = declaration.start();
-            let derived = if matches!(
-                declaration,
-                analysis::facts::value_flow::CallableDeclaration::Class(_)
-            ) {
+            let derived = if matches!(declaration, value_flow::CallableDeclaration::Class(_)) {
                 strict_provider::derive_class(index, declaration_start, &shadowed)?
             } else {
                 // All callable bodies consume one shared source-covered plan.
@@ -10411,7 +10408,7 @@ fn foreign_call(
     index: &ExecutionIndex,
     derived: crate::foreign_call::DerivedForeignCall,
     declaration_start: u32,
-    declaration: analysis::facts::value_flow::CallableDeclaration,
+    declaration: value_flow::CallableDeclaration,
 ) -> InferredForeignCall {
     let mut dependencies = derived.dependencies.clone();
     for family in &derived.native_constructions {

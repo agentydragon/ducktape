@@ -237,7 +237,7 @@ def test_policy_service_exposes_its_tls_listener_to_the_app(staging_manifests: l
         NOTIFICATIONS_URI,
         SANDBOX_CONTROLLER_URI,
     }
-    assert settings["writer_services"] == [APP_URI]
+    assert settings["writer_services"] == [ACTIONS_URI, APP_URI]
     _assert_mounted_tls(staging_manifests, mounts, tls, POLICY_CONTROLLER_URI, ca_field="client_ca_file")
 
     tls_port = int(tls["listen"].removeprefix(":"))

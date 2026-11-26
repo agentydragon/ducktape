@@ -82,7 +82,8 @@ fn run_program(modules: &[TestModule]) -> ProgramValueFlows {
                 native_operation_inputs: &[],
                 inferred_sets: &inferred,
             }),
-        &crate::diagnostics::Diagnostics::default(),
+        &work_metrics::WorkMetrics::default(),
+        None,
     )
 }
 

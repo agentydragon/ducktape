@@ -15,7 +15,7 @@ use swc_ecma_ast::Stmt;
 
 use analysis::facts::abstract_domain::heap::{ChunkHeap, plain_array_bindings};
 use analysis::facts::{
-    ChunkValueFlow, LocalClassConstructionProof, SetIterableProof, StructuralChunkAnalysis,
+    LocalClassConstructionProof, SetIterableProof, StructuralChunkAnalysis,
     analyze_chunk_structural,
 };
 use analysis::purity::*;
@@ -26,6 +26,7 @@ use analysis_vocabulary::inputs::{ProofDependencies, ValueInputRef};
 use analysis_vocabulary::purity::{Effects, Purity};
 use swc_common::{FileName, sync::Lrc};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
+use value_flow::ChunkValueFlow;
 
 use raw_js_test_support::parse;
 

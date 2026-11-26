@@ -1807,6 +1807,7 @@ lean_library(
         ":corejs_terminal_plan_family",
         ":corejs_terminal_source",
         ":named_declaration_split",
+        ":ordered_const_syntax",
     ],
 )
 
@@ -1817,7 +1818,6 @@ lean_proof_test(
     required_theorems = [
         "CoreJS.TerminalConstructorInput.all_const",
         "CoreJS.TerminalConstructorInput.check",
-        "CoreJS.TerminalConstructorInput.declarations_all_const",
         "CoreJS.TerminalConstructorInput.source_shape",
         "CoreJS.TerminalConstructorInput.source_links",
         "CoreJS.TerminalConstructorInput.planned_family",
