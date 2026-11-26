@@ -179,6 +179,8 @@ The verdict's `scope` identifies which theorem the run established. Each theorem
 
 `CoreJS.CheckedSplit.checkedSplit` constructs an order-preserving split of a single import-free CoreJS entry. The fragment covers simple `const` declarations, including direct zero-argument calls, and ordinary zero-argument function declarations that return a literal or binding. Each success carries the requested placement, the same public live cells, and the requested guarantee in every CoreJS world. A companion check compares an independently decoded artifact with the constructed program. A Bazel fixture exercises the API from prebuilt Lean modules. The `lowersplit` command uses the production checkers above. [Constructor and proof](lean/EsmSplit/CoreJS/CheckedSplit.lean)
 
+The test-only `checked_artifact_test` exercises the constructor from a JavaScript file and authored spec. It prints the constructor's plan with the existing emitter, reparses the staged files, and requires their linked lowering to equal the constructed graph before publication. It also checks the same graph on disk, rejects tampered files and keeps prior output intact on refusal. The tracked Bazel test uses the standard Lean launcher for the test entry. The native version of the fixture uses the same JavaScript frontend and staging code. [Artifact verification](lean/EsmSplit/LowerSplit/CheckedArtifact.lean)
+
 For a module that calls functions or imports named bindings from relative JavaScript files, use
 the manifest command with the same original source path. The splitter parses
 reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
