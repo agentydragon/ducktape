@@ -1209,31 +1209,23 @@ fn patch_plan_rows(
                 let Some(atomic_group) = atomic_group_by_id.get(atomic_group_id) else {
                     continue;
                 };
-                let atomic_group_bindings: BTreeSet<String> = atomic_group
+                let missing_bindings: Vec<_> = atomic_group
                     .members
                     .iter()
-                    .map(|m| m.binding.to_string())
+                    .map(|member| member.binding.as_str())
+                    .filter(|binding| !claimed_bindings.contains(*binding))
                     .collect();
-                let atomic_group_source_units: BTreeSet<String> =
-                    atomic_group.source_unit_ids.iter().cloned().collect();
-                let bindings_complete = atomic_group_bindings
+                let missing_units: Vec<_> = atomic_group
+                    .source_unit_ids
                     .iter()
-                    .all(|binding| claimed_bindings.contains(binding));
-                let source_units_complete = atomic_group_source_units
-                    .iter()
-                    .all(|source_unit_id| requested_source_unit_ids.contains(source_unit_id));
-                if bindings_complete && source_units_complete {
+                    .filter(|id| !requested_source_unit_ids.contains(*id))
+                    .collect();
+                if missing_bindings.is_empty() && missing_units.is_empty() {
                     complete_atomic_group_ids.push(atomic_group_id.clone());
                 } else {
                     split_atomic_group_ids.push(atomic_group_id.clone());
-                    missing_binding_ids.extend(
-                        atomic_group_bindings
-                            .into_iter()
-                            .filter(|binding| !claimed_bindings.contains(binding)),
-                    );
-                    missing_source_unit_ids.extend(atomic_group_source_units.into_iter().filter(
-                        |source_unit_id| !requested_source_unit_ids.contains(source_unit_id),
-                    ));
+                    missing_binding_ids.extend(missing_bindings.into_iter().map(str::to_owned));
+                    missing_source_unit_ids.extend(missing_units.into_iter().cloned());
                     missing_anonymous_source_unit_ids.extend(
                         atomic_group
                             .anonymous_statement_source_unit_ids
