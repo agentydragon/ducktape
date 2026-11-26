@@ -32,7 +32,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
     newTag: devel-20261126190026-2c6df40 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261126190011-2c6df40 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261126191038-3794342 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker
     newTag: devel-20261124024526-3e4257c # {"$imagepolicy": "flux-system:agentplane-environment-firecracker:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher
