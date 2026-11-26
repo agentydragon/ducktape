@@ -22,6 +22,13 @@ private def observe (bindings : List (String × Addr)) (state : State world) (pa
     throw (IO.userError s!"expected initialized own data at {path}")
   return showVal value
 
+private def observePaths (bindings candidateBindings : List (String × Addr))
+    (original split : State world) (paths : List (List String)) : IO (List Json) :=
+  paths.mapM fun path => do
+    let original ← observe bindings original path
+    let split ← observe candidateBindings split path
+    return Json.mkObj [("path", toJson path), ("original", toJson original), ("split", toJson split)]
+
 private def hostRef (ref : HostRef × String) : Json :=
   let (ref, identity) := ref
   let fields := match ref with
@@ -29,7 +36,14 @@ private def hostRef (ref : HostRef × String) : Json :=
     | .property receiver key => [("receiver", toJson receiver), ("key", toJson key)]
   Json.mkObj (fields ++ [("identity", toJson identity)])
 
-private def check (input : Json) : IO (Except CertificationRefusal Json) := do
+private def refusalReport (failure : CertificationRefusal) (details : List (String × Json) := []) : Json :=
+  Json.mkObj ([
+    ("status", toJson "refused"),
+    ("reason_code", toJson failure.reasonCode),
+    ("reason", toJson failure.reason),
+    ("observation", toJson failure.observation)] ++ details)
+
+private def check (input : Json) : IO (Except Json Json) := do
   let source ← IO.ofExcept (input.getObjVal? "source")
   let files ← IO.ofExcept (input.getObjVal? "files")
   let providers := (input.getObjVal? "providers").toOption.getD (Json.mkObj [])
@@ -40,6 +54,9 @@ private def check (input : Json) : IO (Except CertificationRefusal Json) := do
   let paths ← match input.getObjVal? "observe" with
     | .ok value => IO.ofExcept (fromJson? (α := List (List String)) value)
     | .error _ => pure []
+  let mismatchFuel ← (input.getObjVal? "mismatchFuel").toOption.mapM (IO.ofExcept ∘ Json.getNat?)
+  if mismatchFuel.isSome && profile != .empty then
+    throw (IO.userError "explicit mismatch fuel requires the empty host profile")
   let asts ← IO.ofExcept (source.getObjValAs? String "sourceText" >>= ESTreeUnits.checkedNodes source)
   let bundle := linkedLayoutBundle asts (Effects.footprintUnits asts)
   let plan := mkPlan bundle spec
@@ -54,15 +71,28 @@ private def check (input : Json) : IO (Except CertificationRefusal Json) := do
   let bindings ← IO.ofExcept (EntryExports.resolve before.entry pair.before.linked)
   let candidateBindings ← IO.ofExcept (EntryExports.resolve after.entry pair.after.linked)
   unless decide (bindings.Perm candidateBindings) do
-    return .error { reason := EntryExports.mismatch bindings candidateBindings, reasonCode := some "linked_exports" }
+    return .error (refusalReport { reason := EntryExports.mismatch bindings candidateBindings, reasonCode := some "linked_exports" })
   match LinkedBehavior.probeWitness profile before after with
   | .error failure =>
-    return .error { reason := failure.reason, reasonCode := some failure.code.label, observation := failure.observation }
+    let refusal : CertificationRefusal :=
+      { reason := failure.reason, reasonCode := some failure.code.label, observation := failure.observation }
+    match failure.code, mismatchFuel with
+    | .probeMismatch, some fuel =>
+      -- Refusals retain only a summary. Re-run the exact pair at the caller's
+      -- explicit fuel to inspect requested paths in the two completed states.
+      let premises : HostPremises := {}
+      let world := premises.specialize World.probe
+      let .ok () original := runProgram world fuel before |
+        throw (IO.userError "original did not complete normally at the requested mismatch fuel")
+      let .ok () split := runProgram world fuel after |
+        throw (IO.userError "split did not complete normally at the requested mismatch fuel")
+      if LinkedBehavior.probeStatesEqual premises original split then
+        throw (IO.userError "states agree at the requested mismatch fuel")
+      let values ← observePaths bindings candidateBindings original split paths
+      return .error (refusalReport refusal [("fuel", toJson fuel), ("observed", toJson values)])
+    | _, _ => return .error (refusalReport refusal)
   | .ok probe =>
-    let values ← paths.mapM fun path => do
-      let original ← observe bindings probe.sourceState path
-      let split ← observe candidateBindings probe.candidateState path
-      return Json.mkObj [("path", toJson path), ("original", toJson original), ("split", toJson split)]
+    let values ← observePaths bindings candidateBindings probe.sourceState probe.candidateState paths
     return .ok (Json.mkObj [
       ("status", toJson "matched"),
       ("fuel", toJson probe.fuel),
@@ -70,19 +100,12 @@ private def check (input : Json) : IO (Except CertificationRefusal Json) := do
       ("host_refs", toJson (probe.premises.refs.map hostRef)),
       ("observed", toJson values)])
 
-private def refuse (failure : CertificationRefusal) : IO UInt32 := do
-  IO.println (Json.mkObj [
-    ("status", toJson "refused"),
-    ("reason_code", toJson failure.reasonCode),
-    ("reason", toJson failure.reason),
-    ("observation", toJson failure.observation)]).compress
-  return 1
-
 def main : IO UInt32 := do
   try
     let input ← IO.ofExcept (Json.parse (← (← IO.getStdin).getLine))
     match ← check input with
     | .ok result => IO.println result.compress; return 0
-    | .error failure => refuse failure
+    | .error result => IO.println result.compress; return 1
   catch error =>
-    refuse { reason := error.toString, reasonCode := some "linked_input" }
+    IO.println (refusalReport { reason := error.toString, reasonCode := some "linked_input" }).compress
+    return 1

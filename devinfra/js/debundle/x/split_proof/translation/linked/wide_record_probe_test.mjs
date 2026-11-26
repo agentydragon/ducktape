@@ -24,7 +24,7 @@ for (const changed of [false, true]) {
   writeFileSync(
     source,
     `const table = { ${table} };
-const rows = [table.field0];
+const rows = [table.field0, [table.field0]];
 const marker = ${marker};
 export { table, rows, marker };\n`
   );
@@ -32,16 +32,18 @@ export { table, rows, marker };\n`
   await withSplitPreview({ source, spec, expectedExit: 1 }, async ({ directory, entryFile }) => {
     const original = await import(pathToFileURL(source).href);
     const candidate = await import(pathToFileURL(entryFile).href);
-    assert.deepEqual(original.rows, ["value0"]);
-    assert.deepEqual(candidate.rows, [changed ? "changed" : "value0"]);
+    const candidateValue = changed ? "changed" : "value0";
+    assert.deepEqual(original.rows, ["value0", ["value0"]]);
+    assert.deepEqual(candidate.rows, [candidateValue, [candidateValue]]);
     assert.equal(candidate.marker, original.marker);
     const report = probeLinkedModel({
       source,
       spec,
       directory,
+      mismatchFuel: changed ? 64 + 705 : undefined,
       observe: [
         ["table", "field704"],
-        ["rows", "0"],
+        ["rows", "1", "0"],
       ],
     });
     if (changed) {
@@ -52,13 +54,19 @@ export { table, rows, marker };\n`
         original: '"value0"',
         split: '"changed"',
       });
+      assert.equal(report.status, "refused");
+      assert.equal(report.fuel, 64 + 705);
+      assert.deepEqual(report.observed, [
+        { path: ["table", "field704"], original: '"value704"', split: '"value704"' },
+        { path: ["rows", "1", "0"], original: '"value0"', split: '"changed"' },
+      ]);
     } else {
       assert.equal(report.status, "matched");
       assert.equal(report.fuel, 64 + 705);
       assert.deepEqual(report.assumptions, []);
       assert.deepEqual(report.observed, [
         { path: ["table", "field704"], original: '"value704"', split: '"value704"' },
-        { path: ["rows", "0"], original: '"value0"', split: '"value0"' },
+        { path: ["rows", "1", "0"], original: '"value0"', split: '"value0"' },
       ]);
     }
   });

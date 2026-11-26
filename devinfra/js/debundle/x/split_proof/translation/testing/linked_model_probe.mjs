@@ -6,8 +6,11 @@ import { dump } from "../parser.mjs";
 
 const parse = (text) => dump(text.toString("utf8"), { includeOpaqueCaptures: true });
 
-/** Probe the original and actual preview in CoreJS. All paths name test files. */
-export function probeLinkedModel({ source, spec, directory, observe, host, providers = [] }) {
+/**
+ * Probe the original and actual preview in CoreJS. For an empty-profile mismatch,
+ * mismatchFuel requests concrete path observations at that explicit fuel.
+ */
+export function probeLinkedModel({ source, spec, directory, observe, host, providers = [], mismatchFuel }) {
   assert(process.env.LINKED_MODEL_CHECKER, "LINKED_MODEL_CHECKER is required");
   const shared = Object.create(null);
   for (const name of providers) {
@@ -33,6 +36,7 @@ export function probeLinkedModel({ source, spec, directory, observe, host, provi
       files,
       providers: shared,
       observe,
+      mismatchFuel,
       host,
     }),
   });
