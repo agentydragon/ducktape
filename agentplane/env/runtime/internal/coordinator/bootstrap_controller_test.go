@@ -53,8 +53,7 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	release := filepath.Join(stateDir, "bootstrap-release")
 	count := filepath.Join(stateDir, "bootstrap-count")
 	script := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done\nprintf b >> %s", shellQuote(started), shellQuote(release), shellQuote(count))
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, workspace, &script, "/bin/false")
+	config := lifecycleConfig(t, workspace, &script, "/bin/false")
 	config.StateDir = stateDir
 	r, read := newHeldCloseBootstrapRead(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
@@ -122,7 +121,7 @@ func TestCloseObservesAlreadyTerminalBootstrap(t *testing.T) {
 		{name: "failed", script: "exit 7", phase: bootstrap.Failed},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			config := lifecycleConfig(t, modelConfigServer(t).URL, t.TempDir(), &tc.script, "/bin/false")
+			config := lifecycleConfig(t, t.TempDir(), &tc.script, "/bin/false")
 			r := newLifecycleRuntime(t, config)
 			waitRuntime(t, r, func() bool {
 				status, found, err := bootstrap.ReadStatus(t.Context(), r.lifecycleState)
@@ -140,7 +139,7 @@ func TestCloseWaitsForFailedBootstrapOutcome(t *testing.T) {
 	started := filepath.Join(stateDir, "bootstrap-started")
 	release := filepath.Join(stateDir, "bootstrap-release")
 	script := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done\nexit 7", shellQuote(started), shellQuote(release))
-	config := lifecycleConfig(t, modelConfigServer(t).URL, t.TempDir(), &script, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), &script, "/bin/false")
 	config.StateDir = stateDir
 	r, read := newHeldCloseBootstrapRead(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
@@ -164,7 +163,7 @@ func TestCloseWaitsForFailedBootstrapOutcome(t *testing.T) {
 }
 
 func TestCloseWithoutBootstrap(t *testing.T) {
-	config := lifecycleConfig(t, modelConfigServer(t).URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	r := newLifecycleRuntime(t, config)
 	if err := r.Close(context.Background()); err != nil {
 		t.Fatal(err)
@@ -220,7 +219,7 @@ func TestCloseObservesBootstrapCompletionDuringStatusRead(t *testing.T) {
 	started := filepath.Join(stateDir, "bootstrap-started")
 	releaseScript := filepath.Join(stateDir, "bootstrap-release")
 	script := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done", shellQuote(started), shellQuote(releaseScript))
-	config := lifecycleConfig(t, modelConfigServer(t).URL, t.TempDir(), &script, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), &script, "/bin/false")
 	config.StateDir = stateDir
 	r, read := newHeldCloseBootstrapRead(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(releaseScript, nil, 0o600) })
@@ -273,7 +272,7 @@ func TestCloseBootstrapStatusReadFailureRetainsOwner(t *testing.T) {
 	started := filepath.Join(stateDir, "bootstrap-started")
 	release := filepath.Join(stateDir, "bootstrap-release")
 	script := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done", shellQuote(started), shellQuote(release))
-	config := lifecycleConfig(t, modelConfigServer(t).URL, t.TempDir(), &script, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), &script, "/bin/false")
 	config.StateDir = stateDir
 	config.expectCloseError = true
 	failure := errors.New("injected bootstrap status read failure")
@@ -294,8 +293,7 @@ func TestRuntimeCloseEngineCancelJoinsBootstrapWaitAndRetainsOwner(t *testing.T)
 	started := filepath.Join(stateDir, "bootstrap-started")
 	release := filepath.Join(stateDir, "bootstrap-release")
 	script := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done", shellQuote(started), shellQuote(release))
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, t.TempDir(), &script, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), &script, "/bin/false")
 	config.StateDir = stateDir
 	config.expectCloseError = true
 	r, read := newHeldCloseBootstrapRead(t, config)
@@ -333,8 +331,7 @@ func TestBootstrapEventStorageFailureDoesNotLeaveBusyFact(t *testing.T) {
 	release := filepath.Join(stateDir, "bootstrap-release")
 	storageErr := errors.New("bootstrap event storage failed")
 	script := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done\nprintf output", shellQuote(started), shellQuote(release))
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, workspace, &script, "/bin/false")
+	config := lifecycleConfig(t, workspace, &script, "/bin/false")
 	config.StateDir = stateDir
 	resources, closer, err := cosistate.Open(stateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), bootstrap.EventRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration())
 	if err != nil {

@@ -36,7 +36,7 @@ func TestForwardRuntimeServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
 
 func testRuntimeHealthAndFencing(t *testing.T, mode environmentruntimetransport.SecurityMode) {
 	t.Helper()
-	_, peers := startControl(t, lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false"), mode)
+	_, peers := startControl(t, lifecycleConfig(t, t.TempDir(), nil, "/bin/false"), mode)
 	conn := peers.dial(t, environmentruntimetransport.RuntimeProxyURI)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -148,9 +148,8 @@ func TestRuntimeRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 }
 
 func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *testing.T) {
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	_, peers := startControl(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), environmentruntimetransport.MutualTLS)
+	_, peers := startControl(t, lifecycleConfig(t, workspace, nil, "/bin/false"), environmentruntimetransport.MutualTLS)
 	var cancelFirst context.CancelFunc
 	var firstCursor uint64
 	dropFirstReply := true
@@ -243,7 +242,7 @@ func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t 
 }
 
 func TestForwardRuntimeRejectsUnconfiguredExecutionSession(t *testing.T) {
-	_, peers := startControl(t, lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false"), environmentruntimetransport.MutualTLS)
+	_, peers := startControl(t, lifecycleConfig(t, t.TempDir(), nil, "/bin/false"), environmentruntimetransport.MutualTLS)
 	conn := peers.dial(t, environmentruntimetransport.RuntimeProxyURI)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -351,7 +350,7 @@ func TestForwardRuntimeBackpressuresExecutorOutputBurst(t *testing.T) {
 }
 
 func TestControllerBindsRuntimeForIndependentAuthenticatedProxyReplicas(t *testing.T) {
-	_, peers := startControl(t, lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false"), environmentruntimetransport.MutualTLS)
+	_, peers := startControl(t, lifecycleConfig(t, t.TempDir(), nil, "/bin/false"), environmentruntimetransport.MutualTLS)
 	controllerConn := peers.dial(t, environmentruntimetransport.SandboxControllerURI)
 	controller := environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn)
 	gateway := environmentruntimepb.NewEnvironmentRuntimeClient(peers.dial(t, environmentruntimetransport.RuntimeProxyURI))
@@ -497,7 +496,7 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedProxyReplicas(t *testi
 }
 
 func TestPassiveWatchAdoptsReplacementAfterRestoringSealedState(t *testing.T) {
-	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	_, retained, closeBacking := openPersistentEnvironmentState(t, config.StateDir)
 	if err := retained.AdoptIncarnation("old-pod"); err != nil {
 		t.Fatal(err)

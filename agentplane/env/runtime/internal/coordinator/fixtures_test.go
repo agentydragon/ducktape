@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -56,11 +54,16 @@ type runtimeTestConfig struct {
 	testBacking      io.Closer
 }
 
-func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string, binary string) runtimeTestConfig {
+func lifecycleConfig(t *testing.T, workspace string, bootstrap *string, binary string) runtimeTestConfig {
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "pid1", InitializationCwd: workspace, Control: insecureControl(), WorkspaceRoot: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, ModelConfigClient: fixtureModelConfig{endpoint: endpoint}}
+	config := Config{
+		StateDir: root, Launch: launch, Supervision: "pid1", Control: insecureControl(),
+		InitializationCwd: workspace, WorkspaceRoot: workspace,
+		Claude:            &harness.LaunchConfig{Binary: binary, BaseURL: "http://unused.invalid", Token: "test"},
+		ModelConfigClient: fixtureModelConfig{},
+	}
 	return runtimeTestConfig{Config: config}
 }
 
@@ -169,15 +172,6 @@ func waitRuntime(t *testing.T, r *Runtime, ready func() bool, want string) {
 			t.Fatalf("timed out waiting for %s", want)
 		}
 	}
-}
-
-func modelConfigServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprintf(w, `{"model":%q,"total_context_budget_tokens":32768}`, r.URL.Query().Get("model"))
-	}))
-	t.Cleanup(server.Close)
-	return server
 }
 
 func openLifecycleSession(id, cwd string) *harnesshostpb.CreateSessionRequest {

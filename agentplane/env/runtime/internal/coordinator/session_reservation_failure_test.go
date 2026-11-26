@@ -78,9 +78,8 @@ func reservationState(backing *reservationBacking) state.State {
 func TestUncertainSessionReservationFailsRuntimeUntilRestart(t *testing.T) {
 	for _, committed := range []bool{false, true} {
 		t.Run(fmt.Sprintf("committed=%t", committed), func(t *testing.T) {
-			proxy := modelConfigServer(t)
 			workspace := t.TempDir()
-			config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+			config := lifecycleConfig(t, workspace, nil, "/bin/false")
 			config.expectCloseError = true
 			failure := errors.New("injected uncertain write")
 			backing := &reservationBacking{values: map[string]resource.Resource{}, fail: true, commit: committed, failure: failure}

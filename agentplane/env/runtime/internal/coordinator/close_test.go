@@ -11,7 +11,7 @@ type nonComparableCloseFailure struct{ details []string }
 func (e nonComparableCloseFailure) Error() string { return strings.Join(e.details, ", ") }
 
 func TestCloseSessionStopFailureRetainsOwner(t *testing.T) {
-	config := lifecycleConfig(t, modelConfigServer(t).URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	config.deps.stopSessions = func(context.Context) error {
 		return nonComparableCloseFailure{details: []string{"Session stop unproved"}}

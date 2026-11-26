@@ -18,7 +18,7 @@ import (
 
 func TestSuspendAdmissionFencePersistsAcrossIndependentWatchAndGeneration(t *testing.T) {
 	workspace := t.TempDir()
-	r, peers := startControl(t, lifecycleConfig(t, "http://127.0.0.1", workspace, nil, "/bin/false"), environmentruntimetransport.Insecure)
+	r, peers := startControl(t, lifecycleConfig(t, workspace, nil, "/bin/false"), environmentruntimetransport.Insecure)
 	conn := peers.dial(t, "")
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	host := harnesshostpb.NewHarnessHostClient(conn)

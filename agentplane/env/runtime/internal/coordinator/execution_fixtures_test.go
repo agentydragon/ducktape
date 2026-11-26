@@ -54,7 +54,7 @@ func newExecutionRuntime(t *testing.T, url string, acquire func(context.Context)
 
 func executionRuntimeConfig(t *testing.T, url string, acquire func(context.Context) (string, error)) runtimeTestConfig {
 	t.Helper()
-	config := lifecycleConfig(t, "http://unused", t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.ExecutionBackend = &backend.Config{URL: url}
 	config.HarnessEnvironment = map[string]string{}
 
