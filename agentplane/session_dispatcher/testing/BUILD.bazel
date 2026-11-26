@@ -13,7 +13,7 @@ py_library(
     data = ["//agentplane/session_dispatcher/cmd:sessions"],
     deps = [
         ":policy_service",
-        "//agentplane/environments/testing:process",
+        "//agentplane/environments/testing:environment_service_process",
         "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",
         "//agentplane/session_dispatcher:client",

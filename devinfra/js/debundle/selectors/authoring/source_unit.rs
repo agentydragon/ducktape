@@ -8,10 +8,8 @@ use anyhow::{Context, Result, bail};
 use selector_outcome::Outcome;
 use selector_resolve::{EntityIndex, SpecModule};
 use source_match::ParsedSourceMatchSelector;
-use spec::{
-    SourceMatch, SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim,
-    SourceMatchIdentifierMode,
-};
+use spec::annotations::{SourceMatch, SourceMatchBinding, SourceMatchClaim};
+use spec::{SourceMatchBindingDetail, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 use synthesis_failure::SynthesisSkipReason;
@@ -98,7 +96,7 @@ pub fn synthesize_residual_claims_for_modules(
 pub fn synthesize_anonymous_claims_for_modules(
     source_file: &Path,
     modules: &BTreeMap<String, Vec<source_identity::SourceUnitOrdinal>>,
-) -> Result<BTreeMap<String, Vec<spec::AnonymousStatement>>> {
+) -> Result<BTreeMap<String, Vec<spec::annotations::AnonymousStatement>>> {
     js_ast::with_swc_globals(|| {
         let source = fs::read_to_string(source_file)?;
         let parsed = js_ast::parse_js_module(&source_file.display().to_string(), source)?;
@@ -123,7 +121,7 @@ pub fn synthesize_anonymous_claims_for_modules(
                             "anonymous source unit {ordinal:?} has no unique structural selector"
                         );
                     };
-                    statements.push(spec::AnonymousStatement {
+                    statements.push(spec::annotations::AnonymousStatement {
                         match_source: None,
                         source_match: Some(SourceMatch {
                             identifiers: selector.claim.identifiers,
@@ -274,7 +272,7 @@ fn synthesize_anonymous_statement_selector(
         body: vec![item.clone()],
         shebang: None,
     })?;
-    let selector = spec::AnonymousStatementSelector {
+    let selector = spec::annotations::AnonymousStatementSelector {
         match_source: match_source.clone(),
         identifiers: SourceMatchIdentifierMode::AlphaAll,
         target_binding: None,

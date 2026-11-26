@@ -1,8 +1,8 @@
-use analysis::purity::{RedundantPurityHint, RedundantPurityProofBasis, RedundantPurityReason};
 use debundle_e2e_support::{
     FixtureOpts, Member, MemberPurity, assert_entry_output, chunk_rename_with_pure_members,
     logical_module, read_json, run_fixture,
 };
+use purity::{RedundantPurityHint, RedundantPurityProofBasis, RedundantPurityReason};
 use serde::Deserialize;
 
 #[derive(Deserialize)]

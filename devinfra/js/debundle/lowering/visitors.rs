@@ -14,7 +14,7 @@
 //! declaration) would change runtime behavior. The renamer and the capture probe
 //! maintain a scope stack (`RenameScopeStack`) and suppress a name's
 //! rename for the duration of any subtree that shadows it. This mirrors
-//! the heap scan's (`facts/abstract_domain/heap.rs`) `shadowed_by_params` + `with_scope`
+//! the heap scan's (`purity/heap.rs`) `shadowed_by_params` + `with_scope`
 //! pattern; here it must additionally track block-scoped `let`/`const`/
 //! `class`/`function` and `catch` bindings because rename targets reach
 //! deeper than the purity scan's parameter-only tracking.

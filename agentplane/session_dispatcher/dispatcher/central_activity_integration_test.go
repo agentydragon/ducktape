@@ -215,3 +215,21 @@ func TestCentralActivityObserverSnapshotReconnectAndWatch(t *testing.T) {
 		t.Fatalf("stale callback changed current observation: %v", err)
 	}
 }
+
+func TestCentralActivityObserverReconnectBackoffResetsAfterEpoch(t *testing.T) {
+	store := testStore(t, 5)
+	client := &activityClient{calls: make(chan *activityCall, 1)}
+	observers, cancel := context.WithCancel(t.Context())
+	var workers sync.WaitGroup
+	workers.Go(func() {
+		(&HostActivityObserver{Store: store, Sampler: samplerActivityFixture{client}}).observeSampler(observers)
+	})
+	t.Cleanup(func() { cancel(); workers.Wait() })
+	// Without a reset, the sixth reconnect waits 16 s and exceeds nextActivityCall's 10 s budget.
+	for range 6 {
+		call := nextActivityCall(t, client)
+		close(call.disconnect)
+		<-call.ended
+	}
+	nextActivityCall(t, client)
+}

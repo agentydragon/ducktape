@@ -138,13 +138,14 @@ sent alone. Indexed cursor/kind/size metadata selects entries and applies byte b
 payloads are loaded; packed blocks are decompressed only for selected entries.
 The server reads a bounded entries/settlements page, waits for its frames to finish sending, then
 reads the next; it holds no database transaction while sending. It reads all intersecting removal
-ranges once per catch-up. Backend reads and waiting for each stream `Send` to clear transport
+ranges once per catch-up and sends those the stream has not yet reported. Backend reads and waiting for each stream `Send` to clear transport
 backpressure have `request_timeout_s` bounds. A bound does not guarantee when a queued frame reaches
 the peer.
 Each replica subscribes followers to the wakeup hub's
-`agentplane_session_history_changes` before the first read. A payload-free notification wakes all
-followers; reconnecting the LISTEN connection also wakes them to cover lost notifications.
-Cleanup writers must record removed ranges and notify that channel in the same transaction.
+`agentplane_session_history_changes`, keyed by Session ID, before the first read. A notification
+carries the Session ID and wakes only that Session's followers; reconnecting the LISTEN connection
+wakes all of them to cover lost notifications. Cleanup writers must record removed ranges and notify
+that channel with the Session ID in the same transaction.
 
 Normal read scope is applied in SQL before pagination, projection, or evidence lookup. It covers
 summary reads and batches, Sandbox discovery, raw event and observation pages, Thread entities,

@@ -3751,6 +3751,8 @@ data:
       "context_source_writes": true,
       "event_block_writes": true,
       "event_block_v2_writes": true,
+      "history_export_page_entries": 64,
+      "history_export_pages_per_turn": 4,
       "rpc_timeout_seconds": 30,
       "executor_initialize_timeout_seconds": 30,
       "shutdown_drain_seconds": 40,

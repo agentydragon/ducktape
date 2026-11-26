@@ -34,6 +34,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var fixturePaging = historyexport.Paging{PageEntries: 16, PagesPerTurn: 16}
+
 type fixtureHistory struct {
 	ingresspb.UnimplementedSessionJournalIngressServer
 	mu                  sync.Mutex
@@ -247,10 +249,10 @@ func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testi
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil); err == nil {
+	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil, fixturePaging); err == nil {
 		t.Fatal("first export did not observe the lost acknowledgement")
 	}
-	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
+	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil, fixturePaging); err != nil {
 		t.Fatal(err)
 	}
 	current, err := store.GetSession(ctx, session.ID, "")
@@ -281,7 +283,7 @@ func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testi
 	if _, err := store.DB().ExecContext(ctx, "DELETE FROM sampler_export_checkpoint"); err != nil {
 		t.Fatal(err)
 	}
-	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
+	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil, fixturePaging); err != nil {
 		t.Fatal(err)
 	}
 	checkpoint, err = store.Checkpoint(ctx, session.ID, target)
@@ -304,7 +306,9 @@ func TestHistoryExporterWakesForAnotherWriterAndListenerReconnect(t *testing.T) 
 	}
 	defer hub.Close()
 	stopped := make(chan error, 1)
-	go func() { stopped <- historyexport.Run(ctx, store, target, token, OutboxChannel, hub, nil) }()
+	go func() {
+		stopped <- historyexport.Run(ctx, store, target, token, OutboxChannel, hub, nil, fixturePaging)
+	}()
 	defer func() {
 		cancel()
 		if err := <-stopped; err != nil && !errors.Is(err, context.Canceled) {
@@ -348,7 +352,8 @@ func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	store, databaseURL := newTestStoreWithDSN(t)
 	session := exportFixtureSession(t, store)
 	// Leave a full quantum for the replacement exporter to drain after the direct first turn.
-	const eventsBeyondTwoQuanta = 2*16*16 + 1
+	paging := historyexport.Paging{PageEntries: 7, PagesPerTurn: 3}
+	eventsBeyondTwoQuanta := 2*paging.PageEntries*paging.PagesPerTurn + 1
 	for i := 0; i < eventsBeyondTwoQuanta; i++ {
 		if err := admitExportEvent(t.Context(), store, session.ID, i); err != nil {
 			t.Fatal(err)
@@ -362,10 +367,13 @@ func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
+	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil, paging); err != nil {
 		t.Fatal(err)
 	}
 	history.mu.Lock()
+	if got, want := history.cursor, uint64(paging.PageEntries*paging.PagesPerTurn); got != want {
+		t.Errorf("first quantum cursor=%d, want %d", got, want)
+	}
 	if len(history.snapshots) == 0 || !proto.Equal(history.snapshots[0].GetExecutionIdentity(), fixtureExecutionIdentity()) {
 		t.Errorf("export announcement identity=%v, want %v", history.snapshots, fixtureExecutionIdentity())
 	}
@@ -386,7 +394,7 @@ func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	}
 	defer hub.Close()
 	stopped := make(chan error, 1)
-	go func() { stopped <- historyexport.Run(ctx, store, target, token, OutboxChannel, hub, nil) }()
+	go func() { stopped <- historyexport.Run(ctx, store, target, token, OutboxChannel, hub, nil, paging) }()
 	defer func() {
 		cancel()
 		if err := <-stopped; err != nil && !errors.Is(err, context.Canceled) {

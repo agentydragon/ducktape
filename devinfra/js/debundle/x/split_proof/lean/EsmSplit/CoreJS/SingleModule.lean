@@ -59,7 +59,7 @@ theorem runProgram_singleModuleMetadata (body : List (Nat × CoreJS.Stmt))
 
 #print axioms runProgram_singleModuleMetadata
 
-private theorem declareConstTops_ok {W : World} (tops : List (Nat × Stmt))
+theorem declareConstTops_ok {W : World} (tops : List (Nat × Stmt))
     (consts : ∀ p ∈ tops, ∃ name value, p.2 = .decl .const name value) (s : State W)
     (regions : ∀ p ∈ tops, p.1 + 1 < s.cells.size) :
     ∃ frames ready, declareTops tops s = .ok frames ready ∧ ready.cells.size = s.cells.size := by

@@ -204,5 +204,5 @@ func applySettlement(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, settl
 			return err
 		}
 	}
-	return postgres.Notify(ctx, tx, storage.ChannelHistory, "")
+	return postgres.Notify(ctx, tx, storage.ChannelHistory, sessionID.String())
 }

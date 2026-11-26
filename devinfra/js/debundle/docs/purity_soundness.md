@@ -1379,7 +1379,7 @@ summary. Neither annotation asserts call purity.
 ## `ChunkBinding::PlainData`
 
 `PlainData` is a projection of the heap state in
-<../facts/abstract_domain/heap.rs>: a chunk-top binding whose every
+<../purity/heap.rs>: a chunk-top binding whose every
 initializer is a plain-data shape, which is never rebound to anything else,
 and whose every denoted allocation is `escape = Private` and `taint = Clean`.
 The state is solved once per chunk, before purity, from value flow and one

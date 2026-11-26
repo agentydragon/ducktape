@@ -62,7 +62,7 @@ py_library(
         "@envtest_kubernetes_linux_amd64//:assets",  # keep: pinned control-plane executables
     ],
     visibility = _TEST_VISIBILITY + [
-        "//agentplane/notification_service/testing/process_fixture:__pkg__",
+        "//agentplane/notification_service/testing:__pkg__",
         "//cluster/cdk8s:__pkg__",
     ],
     deps = [
@@ -123,7 +123,7 @@ py_library(
 py_library(
     name = "tls",
     srcs = ["tls.py"],
-    visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing:__pkg__"],
     deps = ["@pypi//cryptography"],
 )
 

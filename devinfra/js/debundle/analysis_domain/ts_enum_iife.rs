@@ -1,5 +1,5 @@
 //! The TypeScript enum IIFE as a pre-purity admission shape. The heap scan
-//! (`facts/abstract_domain/heap.rs`) and the initializer statement's own
+//! (`purity/heap.rs`) and the initializer statement's own
 //! purity both run before synchronous execution evaluates the IIFE, so they
 //! still need this syntactic shape; everything that reads what the enum holds
 //! uses the executed initializer's settled fields instead. It goes once a

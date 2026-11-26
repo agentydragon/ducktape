@@ -3,7 +3,7 @@
 
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
-use spec::{
+use spec::input_contracts::{
     ImportedPrimitiveArrayLifetimeContract, ImportedPrimitiveArrayOperandContract,
     ImportedPrimitiveArraySpreadInputContract,
 };

@@ -82,7 +82,7 @@ fn validate_analysis_paths(value: &crate::AnalysisSpec) -> Result<()> {
             .context("analysis projection path is not UTF-8")?;
     }
     for vendor in value.vendor.values() {
-        if let spec::VendorLevel::BundledPartialSwap(mark) = &vendor.level {
+        if let spec::vendor_marks::VendorLevel::BundledPartialSwap(mark) = &vendor.level {
             mark.bundle
                 .path
                 .to_str()

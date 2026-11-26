@@ -59,28 +59,32 @@ func pushContext(ctx context.Context, session *sessionpb.Attached) (context.Cont
 }
 
 const (
-	exportPageSize     = 16
-	exportPagesPerTurn = 16
-	exportConcurrency  = 8
-	exportListPage     = 256
-	exportRetryBase    = time.Second
-	exportRetryMax     = 5 * time.Minute
+	exportConcurrency = 8
+	exportListPage    = 256
+	exportRetryBase   = time.Second
+	exportRetryMax    = 5 * time.Minute
 )
 
-func ExportSession(ctx context.Context, outbox Outbox, sessionID, target, tokenFile string, tls *peertls.ClientTLS) error {
+// Paging controls journal reads and the scheduling quantum independently.
+type Paging struct {
+	PageEntries  int
+	PagesPerTurn int
+}
+
+func ExportSession(ctx context.Context, outbox Outbox, sessionID, target, tokenFile string, tls *peertls.ClientTLS, paging Paging) error {
 	history, err := dialHistory(target, tokenFile, tls)
 	if err != nil {
 		return err
 	}
 	defer history.Close()
-	_, err = exportSession(ctx, outbox, sessionID, target, history)
+	_, err = exportSession(ctx, outbox, sessionID, target, history, paging)
 	return err
 }
 
 // exportSession sends at most one scheduling quantum and reports whether History has caught up.
-func exportSession(ctx context.Context, outbox Outbox, sessionID, target string, history *grpc.ClientConn) (bool, error) {
+func exportSession(ctx context.Context, outbox Outbox, sessionID, target string, history *grpc.ClientConn, paging Paging) (bool, error) {
 	pages := 0
-	for refresh := 0; refresh < exportPagesPerTurn; refresh++ {
+	for refresh := 0; refresh < paging.PagesPerTurn; refresh++ {
 		session, err := outbox.ExportSnapshot(ctx, sessionID)
 		if err != nil {
 			return false, err
@@ -106,8 +110,8 @@ func exportSession(ctx context.Context, outbox Outbox, sessionID, target string,
 				return err
 			}
 			acknowledged, sent := first.GetCursor(), first.GetCursor()
-			for acknowledged < session.Cursor && pages < exportPagesPerTurn {
-				entries, err := outbox.Events(callCtx, sessionID, sent, min(exportPageSize, int(session.Cursor-sent)))
+			for acknowledged < session.Cursor && pages < paging.PagesPerTurn {
+				entries, err := outbox.Events(callCtx, sessionID, sent, min(paging.PageEntries, int(session.Cursor-sent)))
 				if err != nil {
 					return err
 				}
@@ -179,7 +183,7 @@ func exportSession(ctx context.Context, outbox Outbox, sessionID, target string,
 			return false, err
 		}
 		caughtUp := checkpoint != nil && *checkpoint == current && session.Cursor == current
-		if caughtUp || pages == exportPagesPerTurn {
+		if caughtUp || pages == paging.PagesPerTurn {
 			return caughtUp, nil
 		}
 	}
@@ -234,12 +238,38 @@ func checkExportAcknowledgement(ctx context.Context, outbox Outbox, sessionID st
 type exportQueue struct {
 	queue  workqueue.TypedRateLimitingInterface[string]
 	export func(ctx context.Context, sessionID string) (caughtUp bool, err error)
+	// scanBackoff spaces pending-Session scans after a failed one; success resets it.
+	scanBackoff workqueue.TypedRateLimiter[string]
 }
 
 func newExportQueue(config workqueue.TypedRateLimitingQueueConfig[string], export func(context.Context, string) (bool, error)) *exportQueue {
 	return &exportQueue{
-		queue:  workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.NewTypedItemExponentialFailureRateLimiter[string](exportRetryBase, exportRetryMax), config),
-		export: export,
+		queue:       workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.NewTypedItemExponentialFailureRateLimiter[string](exportRetryBase, exportRetryMax), config),
+		export:      export,
+		scanBackoff: workqueue.NewTypedItemExponentialFailureRateLimiter[string](exportRetryBase, exportRetryMax),
+	}
+}
+
+// scanPending enqueues pending Sessions after each outbox change until ctx ends. A failed scan
+// (a DB timeout or failover) is retried after a backoff rather than ending the export loop.
+func (q *exportQueue) scanPending(ctx context.Context, outbox Outbox, target string, changed <-chan struct{}) error {
+	const scanKey = "pending-scan"
+	for {
+		wake := changed
+		var retry <-chan time.Time
+		if err := q.enqueuePending(ctx, outbox, target); err == nil {
+			q.scanBackoff.Forget(scanKey)
+		} else if ctx.Err() == nil {
+			delay := q.scanBackoff.When(scanKey)
+			slog.Warn("History export pending-Session scan failed; retrying", "target", target, "error", err, "retry_in", delay)
+			wake, retry = nil, time.After(delay)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-wake:
+		case <-retry:
+		}
 	}
 }
 
@@ -285,7 +315,7 @@ func (q *exportQueue) processNext(ctx context.Context) bool {
 	return true
 }
 
-func Run(ctx context.Context, outbox Outbox, target, tokenFile, outboxChannel string, hub *wakeups.Hub, tls *peertls.ClientTLS) error {
+func Run(ctx context.Context, outbox Outbox, target, tokenFile, outboxChannel string, hub *wakeups.Hub, tls *peertls.ClientTLS, paging Paging) error {
 	changed, unsubscribe, err := hub.Subscribe(outboxChannel)
 	if err != nil {
 		return err
@@ -297,7 +327,7 @@ func Run(ctx context.Context, outbox Outbox, target, tokenFile, outboxChannel st
 	}
 	defer history.Close()
 	queue := newExportQueue(workqueue.TypedRateLimitingQueueConfig[string]{}, func(ctx context.Context, sessionID string) (bool, error) {
-		return exportSession(ctx, outbox, sessionID, target, history)
+		return exportSession(ctx, outbox, sessionID, target, history, paging)
 	})
 	tasks, taskCtx := errgroup.WithContext(ctx)
 	for range exportConcurrency {
@@ -309,19 +339,7 @@ func Run(ctx context.Context, outbox Outbox, target, tokenFile, outboxChannel st
 	}
 	tasks.Go(func() error {
 		defer queue.queue.ShutDown()
-		for {
-			if err := queue.enqueuePending(taskCtx, outbox, target); err != nil {
-				if taskCtx.Err() != nil {
-					return taskCtx.Err()
-				}
-				return err
-			}
-			select {
-			case <-taskCtx.Done():
-				return taskCtx.Err()
-			case <-changed:
-			}
-		}
+		return queue.scanPending(taskCtx, outbox, target, changed)
 	})
 	return tasks.Wait()
 }

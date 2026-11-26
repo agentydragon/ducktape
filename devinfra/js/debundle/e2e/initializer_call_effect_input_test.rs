@@ -4,11 +4,11 @@
 use analysis_vocabulary::provenance::InferenceRule;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
-use spec::{
-    BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage,
-    InitializerCallEffectiveReplacement, PartialSwapKind, PartialSwapSymbol,
-    ResolvedMemberSelector,
+use spec::input_contracts::InitializerCallEffectiveReplacement;
+use spec::vendor_marks::{
+    BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, PartialSwapSymbol,
 };
+use spec::{PartialSwapKind, ResolvedMemberSelector};
 use std::collections::BTreeMap;
 use std::fs;
 use tempfile::TempDir;

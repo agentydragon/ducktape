@@ -147,6 +147,11 @@ func TestJournalBlockPreservesLegacyFramesAndCommandAdmission(t *testing.T) {
 		len(progress.GetEvent().GetSourceSequences()) != 1 || progress.GetEvent().GetSourceSequences()[0] != boundary.GetCursor() {
 		t.Fatalf("boundary and progress link changed across the block boundary: %v %v", boundary, progress)
 	}
+	// Model a row written before the response metadata columns existed. The admission is already
+	// packed, so both lookup paths must retain the legacy journal fallback.
+	migrationExec(t, store.DB(), `UPDATE sampler_command SET admission_origin_source_id=NULL,
+		admission_event_at_seconds=NULL,admission_event_at_nanos=NULL WHERE session_id=$1 AND id=$2`,
+		session.ID, command.GetCommandId())
 	gotCommand, err := store.GetCommand(t.Context(), session.ID, command.GetCommandId())
 	if err != nil || !proto.Equal(gotCommand.GetAdmission(), admitted) {
 		t.Fatalf("packed GetCommand admission=%v err=%v", gotCommand, err)

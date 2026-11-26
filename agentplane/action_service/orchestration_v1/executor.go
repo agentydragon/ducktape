@@ -13,12 +13,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
+	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Executor runs one orchestration_v1 group's Actions in this process. It acts with this service's own authority over
-// Sandboxes, PolicySets, the Session Dispatcher and the History Service, which a request reaches only once it is decided: the Decision, the
+// Sandboxes, PolicySets, Identities through PolicyService, the Session Dispatcher and the History Service, which a request reaches only once it is decided: the Decision, the
 // operator's or a rule's, is what authorizes it. Launcher grants are bound to ExecutionRequest.Caller, which the
 // authenticated admission path sets and no argument can reach.
 type Executor struct {
@@ -27,6 +28,7 @@ type Executor struct {
 	binding     catalog.OrchestrationBinding
 	presets     map[string]Preset
 	kube        client.Client
+	policy      policypb.PolicyServiceClient
 	environment environmentpb.EnvironmentServiceClient
 	dispatcher  dispatcherpb.SessionDispatcherClient
 	history     historypb.HistoryServiceClient
@@ -35,9 +37,10 @@ type Executor struct {
 }
 
 // NewExecutor is the Executor of the group under key. kube reaches binding.Namespace with a scheme that holds Sandboxes,
-// PolicySets and PolicyBindings.
+// PolicySets and PolicyBindings; policy reads, creates and deletes the Identities launched Sandboxes act as.
 func NewExecutor(
-	group string, binding catalog.OrchestrationBinding, kube client.Client, environment environmentpb.EnvironmentServiceClient, dispatcher dispatcherpb.SessionDispatcherClient,
+	group string, binding catalog.OrchestrationBinding, kube client.Client, policy policypb.PolicyServiceClient,
+	environment environmentpb.EnvironmentServiceClient, dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient, directWait time.Duration,
 ) (*Executor, error) {
 	presets, err := parsePresets(binding.Presets)
@@ -49,7 +52,7 @@ func NewExecutor(
 		return nil, err
 	}
 	return &Executor{
-		group: group, binding: binding, presets: presets, kube: kube, environment: environment, dispatcher: dispatcher, history: history,
+		group: group, binding: binding, presets: presets, kube: kube, policy: policy, environment: environment, dispatcher: dispatcher, history: history,
 		inputs: inputs, readBudget: directWait - time.Second,
 	}, nil
 }

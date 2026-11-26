@@ -7,9 +7,10 @@ use std::fs;
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::Value;
+use spec::annotations::BindingAnnotation;
 use spec::{
-    BindingAnnotation, InitializerBindingEffects, InitializerExternalEffects, IntrinsicFamilies,
-    IntrinsicFamily, IntrinsicsNeverWritten, ProgramPremises,
+    InitializerBindingEffects, InitializerExternalEffects, IntrinsicFamilies, IntrinsicFamily,
+    IntrinsicsNeverWritten, ProgramPremises,
 };
 
 fn annotated_encoder_split(source: &'static str) -> FixtureOpts<'static> {

@@ -28,6 +28,7 @@ go_test(
     ],
     embed = [":auth"],
     deps = [
+        "//agentplane/app/internal/auth/session",
         "@com_github_go_jose_go_jose_v4//:go-jose",
         "@com_github_go_jose_go_jose_v4//jwt",
     ],

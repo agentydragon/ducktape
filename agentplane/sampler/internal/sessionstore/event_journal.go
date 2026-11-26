@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
@@ -20,7 +21,7 @@ type journalQueryer interface {
 func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) ([]*eventlogpb.EventEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 	defer cancel()
-	if limit <= 0 || limit > 4096 {
+	if limit <= 0 || limit > settings.MaxJournalPageEntries {
 		return nil, protocol.ErrInvalid
 	}
 	if after >= math.MaxInt32 {

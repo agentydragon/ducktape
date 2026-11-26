@@ -1,5 +1,10 @@
 //! Property absence on the intrinsic Object prototype, separate from native call identity.
 
+use super::intrinsic_roots::{
+    IntrinsicRootRead, IntrinsicRoots, NativeReceiverRoot, NativeReceiverRoots,
+    intrinsic_alternative_can_be_unknown, intrinsic_roots, intrinsic_roots_read,
+};
+use super::receiver_flow::CallableReturnInputs;
 use super::*;
 use analysis_vocabulary::report_schema::{NativePrototypeMutation, NativePrototypeMutationKind};
 use std::cell::RefCell;

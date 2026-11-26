@@ -16,6 +16,7 @@
     ../modules/kubeconfig.nix
     ../modules/talosconfig.nix
     ../modules/discord-minimized-autostart.nix
+    ../modules/karere.nix
     ./wyrm2-opencode.nix
   ];
 

@@ -25,13 +25,15 @@ use graph::GraphOptions;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 
+use spec::input_contracts::{
+    ArgumentInputContract, CommutingStatementsContract, InitializerCallEffectInputContract,
+    NativeCallIdentityInputContract, NativeOperationInputContract,
+    NoAccessorInstallCallableContract, ValueInputContract,
+};
+use spec::vendor_marks::{VendorLevel, VendorMark};
 use spec::{
-    AdmissionOverrides, ArgumentInputContract, BuiltinGlobalRoot, ChunkExportPurity,
-    CommutingStatementsContract, DependencyGraphOptions, HostBehavior,
-    InitializerCallEffectInputContract, IntrinsicsNeverWritten, LoadJsChunksArgs,
-    NativeCallIdentityInputContract, NativeOperationInputContract, NativeOperationKind,
-    NoAccessorInstallCallableContract, ProgramPremises, TransformSpec, ValueInputContract,
-    VendorLevel, VendorMark,
+    AdmissionOverrides, BuiltinGlobalRoot, ChunkExportPurity, DependencyGraphOptions, HostBehavior,
+    IntrinsicsNeverWritten, LoadJsChunksArgs, NativeOperationKind, ProgramPremises, TransformSpec,
 };
 
 #[path = "analysis_projection_wire.rs"]
@@ -122,7 +124,7 @@ pub struct ProjectedChunkOptions {
     pub graph: ChunkGraphInputs,
     pub native_operation_inputs: Vec<NativeOperationInputContract>,
     pub imported_primitive_array_spread_inputs:
-        Vec<spec::ImportedPrimitiveArraySpreadInputContract>,
+        Vec<spec::input_contracts::ImportedPrimitiveArraySpreadInputContract>,
 }
 
 /// Split the mixed YAML authoring type into the inputs read by each stage.
@@ -235,13 +237,17 @@ fn project_native_operation_input(
     }
 }
 
-fn project_source_unit_selector(selector: spec::SourceUnitSelector) -> spec::SourceUnitSelector {
+fn project_source_unit_selector(
+    selector: spec::input_contracts::SourceUnitSelector,
+) -> spec::input_contracts::SourceUnitSelector {
     match selector {
-        spec::SourceUnitSelector::SourceMatch(source_match) => {
-            spec::SourceUnitSelector::SourceMatch(source_match.without_author_note())
+        spec::input_contracts::SourceUnitSelector::SourceMatch(source_match) => {
+            spec::input_contracts::SourceUnitSelector::SourceMatch(
+                source_match.without_author_note(),
+            )
         }
-        spec::SourceUnitSelector::ResolvedMember(member) => {
-            spec::SourceUnitSelector::ResolvedMember(member)
+        spec::input_contracts::SourceUnitSelector::ResolvedMember(member) => {
+            spec::input_contracts::SourceUnitSelector::ResolvedMember(member)
         }
     }
 }
@@ -272,27 +278,27 @@ fn project_initializer_call_effect_input(
 }
 
 fn project_imported_primitive_array_spread_input(
-    input: spec::ImportedPrimitiveArraySpreadInputContract,
-) -> spec::ImportedPrimitiveArraySpreadInputContract {
-    let spec::ImportedPrimitiveArraySpreadInputContract {
+    input: spec::input_contracts::ImportedPrimitiveArraySpreadInputContract,
+) -> spec::input_contracts::ImportedPrimitiveArraySpreadInputContract {
+    let spec::input_contracts::ImportedPrimitiveArraySpreadInputContract {
         source_match,
         operands,
         audited_source_sha256,
         lifetime,
         note: _,
     } = input;
-    spec::ImportedPrimitiveArraySpreadInputContract {
+    spec::input_contracts::ImportedPrimitiveArraySpreadInputContract {
         source_match: source_match.without_author_note(),
         operands: operands
             .into_iter()
             .map(|operand| {
-                let spec::ImportedPrimitiveArrayOperandContract {
+                let spec::input_contracts::ImportedPrimitiveArrayOperandContract {
                     selector_local,
                     provider_chunk,
                     provider_source_match,
                     audited_provider_source_sha256,
                 } = operand;
-                spec::ImportedPrimitiveArrayOperandContract {
+                spec::input_contracts::ImportedPrimitiveArrayOperandContract {
                     selector_local,
                     provider_chunk,
                     provider_source_match: provider_source_match.without_author_note(),

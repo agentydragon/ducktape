@@ -10,7 +10,7 @@ use selector_outcome::{
     SelectorOutcome, TemplateIdentifiers,
 };
 use source_identity::SourceUnitId;
-use spec::MemberSelectorSpec;
+use spec::member_selectors::MemberSelectorSpec;
 
 use crate::collect::{Collected, CollectedRow, CollectedShape, Rejection, source_match_groups};
 use crate::placement::FrozenPlacementAnchor;

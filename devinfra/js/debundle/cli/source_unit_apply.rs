@@ -50,8 +50,8 @@ pub struct SourceUnitApplyOptions<'a> {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "kind", content = "selector", rename_all = "snake_case")]
 pub enum SelectorOverride {
-    SourceMatch(spec::SourceMatchClaim),
-    Relational(Box<spec::RawMemberSelector>),
+    SourceMatch(spec::annotations::SourceMatchClaim),
+    Relational(Box<spec::member_selectors::RawMemberSelector>),
 }
 
 fn resolve_plan_destinations(
@@ -625,10 +625,13 @@ impl ResidualClaimPlan {
                     doc.source_matches.push(claim);
                 }
                 SelectorOverride::Relational(selector) => {
-                    if matches!(selector.validate()?, spec::MemberSelectorSpec::Binding(_)) {
+                    if matches!(
+                        selector.validate()?,
+                        spec::member_selectors::MemberSelectorSpec::Binding(_)
+                    ) {
                         bail!("relational override for {runtime:?} cannot use a binding name pin");
                     }
-                    doc.members.push(spec::Member {
+                    doc.members.push(spec::member_selectors::Member {
                         name: Some(readable),
                         selector: *selector,
                     });

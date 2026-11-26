@@ -56,7 +56,9 @@ use graph::{AtomicGroupConflictReport, DependencyGraphInput, DependencyGraphRepo
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use serde::Serialize;
 use source_identity::SourceUnitId;
-use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, ModulePath};
+use spec::annotations::AnonymousStatementSelector;
+use spec::member_selectors::MemberSelectorSpec;
+use spec::{BindingSourceKind, ModulePath};
 use spec_modules::{
     ModuleClaims, ModuleFile, collect_module_files, ensure_unaliased_module_tree, module_claims,
     module_path_from_file, read_module_claims,
@@ -742,7 +744,7 @@ fn record_direct_binding_source_check(
     projection: &mut SourceUnitClaimProjection,
     module_path: &Path,
     claim_name: &str,
-    binding: &spec::BindingSelector,
+    binding: &spec::member_selectors::BindingSelector,
     check: Option<&Option<DirectBindingSourceCheck>>,
 ) {
     let Some(expected_kind) = binding.kind else {

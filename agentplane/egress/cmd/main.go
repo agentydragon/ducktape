@@ -25,7 +25,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/upstream"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
@@ -186,9 +185,9 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 		return err
 	}
 
-	identities, rulesIdentities, stopIdentities, err := startIdentities(ctx, c, base)
+	identities, stopIdentities, err := identitycache.Start(ctx, c.PolicyService, identitycache.StandardGrace)
 	if err != nil {
-		return err
+		return fmt.Errorf("start PolicyService Identity view: %w", err)
 	}
 	defer stopIdentities()
 	records, err := resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, identities)
@@ -210,7 +209,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 	}
 	watcher, err := informer.New(base, informer.Config{
 		Index: index, RulesNamespace: c.RulesNamespace, CredentialsNamespace: c.CredentialsNamespace,
-		Identities: rulesIdentities,
+		Identities: reader.CachedIdentities{View: identities},
 	})
 	if err != nil {
 		return err
@@ -267,24 +266,6 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 		return drain(egress, index, adminServer)
 	})
 	return group.Wait()
-}
-
-// startIdentities returns the one Identity source workload authentication and the rules watch both read:
-// the PolicyService view when policy_service is set, else the Identity CRs in rules_namespace. stop ends
-// the view.
-func startIdentities(ctx context.Context, c config, base *rest.Config) (auth.IdentityUIDReader, reader.IdentitySource, func(), error) {
-	if c.PolicyService == nil {
-		identities, err := auth.NewKubernetesIdentityUIDs(base, c.RulesNamespace)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("create live Identity reader: %w", err)
-		}
-		return identities, reader.KubernetesIdentities{}, func() {}, nil
-	}
-	cache, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("start PolicyService Identity view: %w", err)
-	}
-	return cache, reader.CachedIdentities{View: cache}, stop, nil
 }
 
 // drain marks the proxy unready, lets admitted requests finish, then stops the other listeners. The
