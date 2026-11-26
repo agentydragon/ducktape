@@ -1852,8 +1852,8 @@ rust_test(
 
 rust_library(
     name = "selector_constraint_model_builder",
-    srcs = ["selectors/resolution/selector_constraint_model_builder.rs"],
-    crate_root = "selectors/resolution/selector_constraint_model_builder.rs",
+    srcs = glob(["selectors/resolution/selector_constraint_model_builder/*.rs"]),
+    crate_root = "selectors/resolution/selector_constraint_model_builder/mod.rs",
     edition = "2024",
     deps = [
         ":selector_constraint_backend",
