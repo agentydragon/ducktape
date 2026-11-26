@@ -81,6 +81,17 @@ js_test(
 )
 
 js_test(
+    name = "checked_constructor_cli_test",
+    size = "medium",
+    data = _TEST_DATA + [
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
+    ],
+    entry_point = "checked_constructor_cli_test.mjs",
+    env = _TEST_ENV | {"SPLIT_PROOF_TIMINGS": "1"},
+)
+
+js_test(
     name = "sparse_checked_artifact_test",
     size = "medium",
     data = [

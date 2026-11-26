@@ -6,6 +6,7 @@ import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.StructuralCertificate
 import EsmSplit.ESTreeEmit
+import EsmSplit.LowerSplit.CheckedArtifact
 import EsmSplit.LowerSplit.Input
 import EsmSplit.LowerSplit.SliceCertificate
 import EsmSplit.ReadDeployment
@@ -92,12 +93,16 @@ private def verifyExecution (loadToolchain : IO GeneratedProofToolchain)
   return cert.premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
+  let theoremText := fun level => match level with
+    | .allOutcomes => "The source and split match in every modeled CoreJS world, including abrupt outcomes."
+    | .normalCompletion => "The source and split have matching successful final states in every modeled CoreJS world."
   let everyEndingMatches := match outcome with
     | .ok .allOutcomes => true
     | _ => false
   let fields := match outcome with
     | .error why => [("status", toJson "rejected"), ("guarantee", Json.null), ("reason", toJson why)]
-    | .ok level => [("status", toJson "certified"), ("guarantee", toJson level.label)]
+    | .ok level => [("status", toJson "certified"), ("guarantee", toJson level.label),
+      ("target_theorem", toJson (theoremText level))]
   IO.println (Json.mkObj ([
     ("requested", toJson requested),
     ("scope", toJson scope),
@@ -254,6 +259,68 @@ private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
   unless ok do
     throw (IO.userError "source placement or module linkage checks failed")
 
+private def tryCheckedConstructor (chunk : DeploymentChunk) (input : BundleInput)
+    (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
+  let .authored spec := chunk.placement | return none
+  let parsed ← timePhase timings "source_lowering" fun _ => IO.lazyPure fun _ => do
+    let nodes ← (ESTreeUnits.checkedNodes input.program input.source).toOption
+    let source ← (CoreJS.LinkedInput.decodeSingletonSource input.program spec.entry).toOption
+    return (nodes, source)
+  let some (nodes, source) := parsed | return none
+  match CoreJS.CheckedSplit.sourceAdmission source with
+  | .outsideFragment => return none
+  | .sparseUnitIds =>
+    return some (← emitVerdict options.request.label
+      (.error "source has sparse unit identities; placement requires the original ordinals")
+      (some "checked-construction") [
+        ("strategy", toJson "compiled-constructor"),
+        ("reason_code", toJson "sparse_unit_id")
+      ])
+  | .supported => pure ()
+  if options.structural || options.profile != .empty || !options.intrinsics.isEmpty ||
+      options.deploymentOrigin.isSome || options.browserOptions.nativeRecord || options.browserOptions.emptyMap then
+    return none
+  unless javascriptSource chunk.source && chunk.source.extension == some "mjs" do return none
+  unless (spec.entry :: spec.modules.map Prod.fst).all (·.endsWith ".mjs") do return none
+  unless CoreJS.CheckedSplit.supportsStrictStaticSource source do
+    return some (← emitVerdict options.request.label
+      (.error "strict JavaScript observations for moved callables and effectful initializers are not covered")
+      (some "checked-construction") [
+        ("strategy", toJson "compiled-constructor"),
+        ("reason_code", toJson "strict_observation_unsupported")
+      ])
+  let built ← timePhase timings "checked_construction" fun _ => IO.lazyPure fun _ =>
+    CoreJS.CheckedSplit.checkedSplit source spec .allOutcomes
+  match built with
+  | .error reason =>
+    return some (← emitVerdict options.request.label (.error reason) (some "checked-construction") [
+      ("strategy", toJson "compiled-constructor"),
+      ("reason_code", toJson "constructor_refusal")
+    ])
+  | .ok construction => do
+    let programs ← timePhase timings "output_ast" fun _ =>
+      IO.ofExcept (ESTreeEmit.programs nodes construction.bundle construction.plan input.source)
+    let part : OutputPart := {
+      programs
+      source := input.source
+      input := input.input
+      work
+    }
+    let checked ← try
+      certifyOutput [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
+        timePhase timings "checked_correspondence" fun _ =>
+          match CheckedArtifact.verify input.program files construction with
+          | .ok _ => pure (.ok ())
+          | .error reason => pure (.error ({ reason, reasonCode := some "constructed_output_mismatch" } : CertificationRefusal))
+    catch error =>
+      pure (.error ({ reason := error.toString, reasonCode := some "constructed_output_refusal" } : CertificationRefusal))
+    match checked with
+    | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) (some "checked-construction") [
+        ("strategy", toJson "compiled-constructor"),
+        ("premises", toJson ([] : List String))
+      ])
+    | .error refusal => return some (← emitRefusal options.request.label refusal (some "checked-construction"))
+
 /-- Which check rejected the concrete singleton input before strategy selection. -/
 inductive SingletonPreparationRefusal where
   | input (reason : String)
@@ -299,6 +366,9 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
   let structural := options.structural
   let checkOnly := options.checkOnly
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
+  match ← tryCheckedConstructor chunk src out work options timings with
+  | some result => return result
+  | none => pure ()
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
   let part ← prepare chunk src work profile "bundle.mjs" timings declarations
   let { original := program, bundle := B, spec := S, plan := P, output } := part

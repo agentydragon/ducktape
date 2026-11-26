@@ -21,6 +21,54 @@ private def supportedUnit : Stmt → Bool
   | .decl .const _ value => simpleValue value
   | _ => false
 
+private def strictInitializer (earlier : List Name) : Expr → Bool
+  | .undef => true
+  | .null => true
+  | .bool _ => true
+  | .num _ => true
+  | .str _ => true
+  | .var name => earlier.contains name
+  | _ => false
+
+inductive SourceAdmission where
+  | supported
+  | outsideFragment
+  | sparseUnitIds
+  deriving DecidableEq, Repr
+
+/-- Classify a source using the same constructor fragment checks. Sparse IDs
+are a hard refusal until placement selectors preserve their original ordinals. -/
+def sourceAdmission (source : Program) : SourceAdmission := Id.run do
+  let [m] := source.modules | return .outsideFragment
+  if source.entry != m.name || !m.imports.isEmpty then return .outsideFragment
+  let body := m.body.map Prod.snd
+  if m.body.map Prod.fst != List.range body.length then return .sparseUnitIds
+  if !m.body.all (fun (_, stmt) => supportedUnit stmt) then return .outsideFragment
+  return .supported
+
+/-- Classify whether a decoded source is in this constructor's supported
+fragment. The CLI uses this same predicate to decide whether the constructor
+owns the request; a later refusal for its spec is final and is never sent to a
+different checker. -/
+def supportsSource (source : Program) : Bool := Id.run do
+  return sourceAdmission source == .supported
+
+/-- Strict CLI construction is currently limited to primitive const initializers
+and reads of earlier consts. The latter cannot throw from a temporal-dead-zone
+read, while later reads, calls and effectful initializers need separate
+observation evidence. -/
+def supportsStrictStaticSource (source : Program) : Bool := Id.run do
+  if sourceAdmission source != .supported then return false
+  let [m] := source.modules | return false
+  let mut earlier : List Name := []
+  for (_, stmt) in m.body do
+    match stmt with
+    | .decl .const name value =>
+      if !strictInitializer earlier value then return false
+      earlier := earlier ++ [name]
+    | _ => return false
+  return true
+
 private def summarize (source : Program) : EsmSplit.Bundle :=
   match source.modules with
   | [m] => m.body.map fun (_, stmt) =>
@@ -64,8 +112,12 @@ private theorem forRequest {source output : Program}
 results carry the requested guarantee for every CoreJS world. -/
 def checkedSplit (source : Program) (spec : EsmSplit.Spec) (requested : Guarantee) :
     Except String (Construction source spec requested) := do
-  unless spec.order.isEmpty && !spec.sequential && !spec.privateEntryBody do
-    throw "checked split supports placement without an explicit schedule or private entry body"
+  match sourceAdmission source with
+  | .supported => pure ()
+  | .outsideFragment => throw "source is outside the checked constructor's import-free simple-declaration fragment"
+  | .sparseUnitIds => throw "source has sparse unit identities; placement requires the original ordinals"
+  unless !spec.privateEntryBody do
+    throw "checked split does not support a private entry body"
   EsmSplit.validateModulePaths (spec.modules.map Prod.fst)
   let [m] := source.modules | throw "checked split requires a single source module"
   let stmts := m.body.map Prod.snd

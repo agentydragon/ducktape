@@ -136,7 +136,7 @@ theorem checkOutput_sound {input request decoded} (result : { output : Program /
 def test : IO Unit := do
   let original := source (.num 42)
   match checkedSplit original spec .allOutcomes with
-  | .error "source must be an import-free entry with consecutive unit identities starting at zero" => pure ()
+  | .error "source has sparse unit identities; placement requires the original ordinals" => pure ()
   | .error why => throw (IO.userError s!"unexpected sparse refusal: {why}")
   | .ok _ => throw (IO.userError "dense checked split unexpectedly accepted the sparse fixture")
   let built ← IO.ofExcept (build (.num 42) original spec)
