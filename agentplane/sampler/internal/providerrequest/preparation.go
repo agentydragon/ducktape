@@ -14,12 +14,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// Content is the transaction-local codec access; it cannot commit or dispatch.
-type Content interface {
-	content.ContentReader
-	content.ContentWriter
-}
-
 // Snapshot contains only values read under the conversation lock. No mutable
 // conversation, native context, projection cache or transaction escapes to the builder.
 type Snapshot struct {
@@ -90,7 +84,7 @@ func (p Preparation) AnthropicParams(instructions *string) (anthropic.RequestPar
 	return anthropic.RequestParams{Model: p.ModelConfig.ProviderModel, Effort: effort, Instructions: instructions, Tools: tools}, nil
 }
 
-func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe, error) {
+func Prepare(store content.ReadWriter, snapshot Snapshot, preparation Preparation) (Recipe, error) {
 	if snapshot.API != preparation.ModelConfig.API {
 		return Recipe{}, protocol.ErrInvalid
 	}
@@ -183,7 +177,7 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 	}
 }
 
-func prepareResponses(s Content, snapshot Snapshot, body responses.Request, config responses.Config, encoding protocol.ExecEncoding, compact bool) (Recipe, error) {
+func prepareResponses(s content.ReadWriter, snapshot Snapshot, body responses.Request, config responses.Config, encoding protocol.ExecEncoding, compact bool) (Recipe, error) {
 	var metadata Recipe
 	var err error
 	if snapshot.PreviousProfileID != "" {
@@ -233,7 +227,7 @@ func prepareResponses(s Content, snapshot Snapshot, body responses.Request, conf
 	return metadata, nil
 }
 
-func prepareAnthropic(s Content, snapshot Snapshot, body anthropic.Request) (Recipe, error) {
+func prepareAnthropic(s content.ReadWriter, snapshot Snapshot, body anthropic.Request) (Recipe, error) {
 	var metadata Recipe
 	var err error
 	if snapshot.PreviousProfileID != "" {

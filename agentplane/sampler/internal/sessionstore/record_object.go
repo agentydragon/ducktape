@@ -37,11 +37,7 @@ type ExecutionSnapshotObject struct {
 func (ExecutionSnapshotObject) contentKind() content.ContentKind { return executionSnapshotContentKind }
 
 func putRecordObject(store content.ContentWriter, object RecordObject) (string, error) {
-	payload, err := json.Marshal(object)
-	if err != nil {
-		return "", err
-	}
-	id, err := store.PutContent(object.contentKind(), payload)
+	id, err := content.PutJSON(store, object.contentKind(), object)
 	return string(id), err
 }
 

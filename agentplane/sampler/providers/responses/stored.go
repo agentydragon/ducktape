@@ -136,7 +136,7 @@ func storeRequestProfile(
 	request Request,
 	toolRecords []json.RawMessage,
 ) (content.ContentID, error) {
-	instructionID, err := putString(writer, content.ContentText, request.Instructions)
+	instructionID, err := content.PutJSON(writer, content.ContentText, request.Instructions)
 	if err != nil {
 		return "", fmt.Errorf("store request instructions: %w", err)
 	}
@@ -157,11 +157,7 @@ func storeRequestProfile(
 		Reasoning: request.Reasoning, ParallelToolCall: request.ParallelToolCalls,
 		Instructions: instructionID, Tools: toolIDs,
 	}
-	payload, err := json.Marshal(stored)
-	if err != nil {
-		return "", err
-	}
-	return writer.PutContent(ContentOpenAIRequest, payload)
+	return content.PutJSON(writer, ContentOpenAIRequest, stored)
 }
 
 // RestoreRequest restores a request profile and inserts the already-restored
@@ -209,14 +205,6 @@ type requestWithTools struct {
 	Request
 	Input []json.RawMessage `json:"input"`
 	Tools []json.RawMessage `json:"tools,omitempty"`
-}
-
-func putString(writer content.ContentWriter, kind content.ContentKind, value string) (content.ContentID, error) {
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return "", err
-	}
-	return writer.PutContent(kind, payload)
 }
 
 func restoreString(reader content.ContentReader, id content.ContentID, kind content.ContentKind) (string, error) {
