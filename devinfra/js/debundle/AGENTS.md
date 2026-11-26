@@ -82,7 +82,7 @@ shallow analysis once, don't re-derive it in another stage.
 ## Selector resolution
 
 Read <docs/selector_resolution.md> before touching
-`selectors/resolution/selector_resolve.rs`, `selectors/matching/source_match/`,
+`selectors/resolution/selector_resolve/`, `selectors/matching/source_match/`,
 `selector_ir_lowering` or `selector_constraint_model_builder`. Commands never decide
 exactly-one themselves; they call `selector_resolve`. § Rejected: tree matching as
 solver constraints and § Rejected: localizing a contradiction with assumption cores
