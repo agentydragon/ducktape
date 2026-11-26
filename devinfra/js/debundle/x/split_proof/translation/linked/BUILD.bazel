@@ -284,6 +284,13 @@ js_test(
     shard_count = 6,
 )
 
+js_test(
+    name = "strict_cli_no_write_test",
+    data = ["//devinfra/js/debundle/x/split_proof/lean:lowersplit"],
+    entry_point = "strict_cli_no_write_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
+
 js_library(
     name = "lint_sources",
     srcs = glob(["*.mjs"]),
