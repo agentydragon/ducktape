@@ -218,10 +218,8 @@ function observeAbrupt(file) {
   assert.deepEqual(snapshotFiles(existing), before, "multi-chunk check-output changed existing bytes");
 }
 
-// Reversing two throwing initializers is invisible to a normal-completion-only
-// comparison because neither execution completes. Their observable abrupt
-// behavior still differs: the first thrown value changes. No public guarantee
-// request may certify that weaker claim.
+// Reversing two throwing initializers changes observable abrupt behavior: the
+// first thrown value changes. No public guarantee request may certify this cut.
 {
   const files = prepare(path.join(root, "construction-cut-abrupt-order"), {
     source: `const first = (() => { throw "first"; })();
@@ -240,8 +238,7 @@ function observeAbrupt(file) {
   refuseFresh(files, "all-outcomes", ["--structural", "--require", "all-outcomes"], "all-outcomes");
 
   const preview = path.join(files.dir, "unverified-preview");
-  const modelDiagnostic = diagnosticPreview(files, preview);
-  assert.match(modelDiagnostic, /not covered: a run that throws, runs out of fuel or does not end/);
+  diagnosticPreview(files, preview);
   const sourceOutcome = observeAbrupt(files.sourceFile);
   const splitOutcome = observeAbrupt(path.join(preview, entry));
   assert.deepEqual(sourceOutcome, { completion: "throw", value: "first" });

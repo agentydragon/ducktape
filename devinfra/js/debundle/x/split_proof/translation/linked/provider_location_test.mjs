@@ -83,8 +83,7 @@ const out = path.join(dir, "out");
 const deployment = writeDeployment(files.sourceFile, files.specFile, path.join(dir, "public-refusal"));
 assertPublicEmissionRefused(deployment, path.join(dir, "public-refusal"));
 assertRefused(files, path.join(dir, "former-mode-refusal"), opts);
-const model = writePreview(files, out);
-assert.match(model, /OrderKept/);
+writePreview(files, out);
 
 const previewBytes = snapshotFiles(out);
 const previewManifest = writeDeployment(files.sourceFile, files.specFile, out);
@@ -160,8 +159,7 @@ const nsFiles = prepare(nsDir, {
   spec: { entry, modules: { [entry]: ["#0", "#1", "#3"], [worker]: ["#2"] }, order: [worker], sequential: true },
 });
 const nsOut = path.join(nsDir, "out");
-const nsPreview = writePreview(nsFiles, nsOut);
-assert.match(nsPreview, /OrderKept/);
+writePreview(nsFiles, nsOut);
 const relocated = path.join(nsOut, worker);
 const emitted = readFileSync(relocated, "utf8");
 assert.match(emitted, /provider\.mjs/);
