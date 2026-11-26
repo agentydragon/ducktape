@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "servicecmd",
+    srcs = ["startup.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/internal/servicecmd",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/observability",
+        "//agentplane/postgres/migrate",
+    ],
+)
+
+go_test(
+    name = "servicecmd_test",
+    srcs = ["startup_test.go"],
+    embed = [":servicecmd"],
+)

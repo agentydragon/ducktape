@@ -19,6 +19,7 @@ go_library(
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth",
         "//agentplane/identity/operator",
+        "//agentplane/internal/servicecmd",
         "//agentplane/kubeclient",
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
         "//agentplane/mcp_edge/internal/actionclient",

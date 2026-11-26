@@ -49,6 +49,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
+	"github.com/agentydragon/ducktape/agentplane/internal/servicecmd"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -668,28 +669,11 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	handled, err := migrate.RunOnly(ctx, os.Args[1:], databaseURLSecretEnv, migrations.Up)
-	if err != nil {
-		slog.Error("Action Service migration failed", "error", err)
-		os.Exit(1)
+	command := servicecmd.Command[config]{
+		Name: "Action Service", TraceName: "action-service", DatabaseURLEnv: databaseURLSecretEnv,
+		Migrate: migrations.Up, LoadConfig: loadConfig, Serve: run,
 	}
-	if handled {
-		return
-	}
-	c, err := loadConfig()
-	if err != nil {
-		slog.Error("invalid Action Service configuration", "error", err)
-		os.Exit(2)
-	}
-	shutdownTracing, err := observability.Init(ctx, "action-service")
-	if err != nil {
-		slog.Error("Action Service tracing setup failed", "error", err)
-		os.Exit(1)
-	}
-	err = run(ctx, c)
-	shutdownTracing()
-	if err != nil && !errors.Is(err, context.Canceled) {
-		slog.Error("Action Service stopped", "error", err)
-		os.Exit(1)
+	if code := command.Run(ctx, os.Args[1:]); code != 0 {
+		os.Exit(code)
 	}
 }

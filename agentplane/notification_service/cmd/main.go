@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -25,6 +24,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/internal/servicecmd"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -317,28 +317,11 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	handled, err := migrate.RunOnly(ctx, os.Args[1:], migrationOnlyDatabaseURLEnv, migrations.Up)
-	if err != nil {
-		slog.Error("Notification Service migration failed", "error", err)
-		os.Exit(1)
+	command := servicecmd.Command[config]{
+		Name: "Notification Service", TraceName: "notification-service", DatabaseURLEnv: migrationOnlyDatabaseURLEnv,
+		Migrate: migrations.Up, LoadConfig: loadConfig, Serve: run,
 	}
-	if handled {
-		return
-	}
-	c, err := loadConfig()
-	if err != nil {
-		slog.Error("invalid Notification Service configuration", "error", err)
-		os.Exit(2)
-	}
-	shutdownTracing, err := observability.Init(ctx, "notification-service")
-	if err != nil {
-		slog.Error("Notification Service tracing setup failed", "error", err)
-		os.Exit(1)
-	}
-	err = run(ctx, c)
-	shutdownTracing()
-	if err != nil && !errors.Is(err, context.Canceled) {
-		slog.Error("Notification Service stopped", "error", err)
-		os.Exit(1)
+	if code := command.Run(ctx, os.Args[1:]); code != 0 {
+		os.Exit(code)
 	}
 }

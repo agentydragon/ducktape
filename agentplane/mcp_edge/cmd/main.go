@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
+	"github.com/agentydragon/ducktape/agentplane/internal/servicecmd"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/actionclient"
@@ -230,27 +231,11 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if handled, err := migrate.RunOnly(ctx, os.Args[1:], databaseURLEnv, migrations.Up); handled {
-		if err != nil {
-			slog.Error("MCP edge migration failed", "error", err)
-			os.Exit(1)
-		}
-		return
+	command := servicecmd.Command[config]{
+		Name: "MCP edge", TraceName: "mcp-edge", DatabaseURLEnv: databaseURLEnv,
+		Migrate: migrations.Up, LoadConfig: loadConfig, Serve: run,
 	}
-	c, err := loadConfig()
-	if err != nil {
-		slog.Error("invalid MCP edge configuration", "error", err)
-		os.Exit(2)
-	}
-	shutdownTracing, err := observability.Init(ctx, "mcp-edge")
-	if err != nil {
-		slog.Error("MCP edge tracing setup failed", "error", err)
-		os.Exit(1)
-	}
-	err = run(ctx, c)
-	shutdownTracing()
-	if err != nil && !errors.Is(err, context.Canceled) {
-		slog.Error("MCP edge stopped", "error", err)
-		os.Exit(1)
+	if code := command.Run(ctx, os.Args[1:]); code != 0 {
+		os.Exit(code)
 	}
 }

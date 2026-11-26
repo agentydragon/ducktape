@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/internal/servicecmd"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -262,28 +262,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 // Main loads deployment settings, runs migrations and serves until ctx is canceled.
 // Its return value preserves the command's configuration and runtime exit codes.
 func Main(ctx context.Context, args []string) int {
-	if handled, err := migrate.RunOnly(ctx, args, dispatcherDatabaseURLEnv, migrations.Up); handled {
-		if err != nil {
-			slog.Error("Runner Gateway migration failed", "error", err)
-			return 1
-		}
-		return 0
+	command := servicecmd.Command[config]{
+		Name: "Runner Gateway", TraceName: "runner-gateway", DatabaseURLEnv: dispatcherDatabaseURLEnv,
+		Migrate: migrations.Up, LoadConfig: loadConfig, Serve: run,
 	}
-	c, err := loadConfig()
-	if err != nil {
-		slog.Error("invalid Runner Gateway configuration", "error", err)
-		return 2
-	}
-	shutdownTracing, err := observability.Init(ctx, "runner-gateway")
-	if err != nil {
-		slog.Error("Runner Gateway tracing setup failed", "error", err)
-		return 1
-	}
-	err = run(ctx, c)
-	shutdownTracing()
-	if err != nil && !errors.Is(err, context.Canceled) {
-		slog.Error("Runner Gateway stopped", "error", err)
-		return 1
-	}
-	return 0
+	return command.Run(ctx, args)
 }
