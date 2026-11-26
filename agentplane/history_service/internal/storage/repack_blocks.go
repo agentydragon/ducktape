@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -23,8 +22,8 @@ type rawFrame struct {
 type storedBlock struct {
 	first, last uint64
 	kind        historypb.EventKind
-	cursors     []int64
-	sizes       []int64
+	cursors     pq.Int64Array
+	sizes       pq.Int64Array
 	payload     []byte
 	frames      []rawFrame
 	storedBytes int64
@@ -32,11 +31,9 @@ type storedBlock struct {
 
 func scanStoredBlock(scanner interface{ Scan(...any) error }) (storedBlock, error) {
 	var block storedBlock
-	var cursors, sizes pq.Int64Array
-	if err := scanner.Scan(&block.first, &block.last, &block.kind, &cursors, &sizes, &block.payload, &block.storedBytes); err != nil {
+	if err := block.scan(scanner); err != nil {
 		return storedBlock{}, err
 	}
-	block.cursors, block.sizes = slices.Clone(cursors), slices.Clone(sizes)
 	frames, err := decodeStoredBlock(block.payload)
 	if err != nil {
 		return storedBlock{}, err
@@ -46,6 +43,10 @@ func scanStoredBlock(scanner interface{ Scan(...any) error }) (storedBlock, erro
 	}
 	block.frames = frames
 	return block, nil
+}
+
+func (block *storedBlock) scan(scanner interface{ Scan(...any) error }) error {
+	return scanner.Scan(&block.first, &block.last, &block.kind, &block.cursors, &block.sizes, &block.payload, &block.storedBytes)
 }
 
 func validStoredBlockIndex(block storedBlock, frames []rawFrame) bool {
@@ -99,12 +100,10 @@ func (s *Store) InventoryEventBlocks(ctx context.Context) (BlockInventory, error
 	}
 	for rows.Next() {
 		var block storedBlock
-		var cursors, sizes pq.Int64Array
-		if err := rows.Scan(&block.first, &block.last, &block.kind, &cursors, &sizes, &block.payload, &block.storedBytes); err != nil {
+		if err := block.scan(rows); err != nil {
 			rows.Close()
 			return inventory, err
 		}
-		block.cursors, block.sizes = slices.Clone(cursors), slices.Clone(sizes)
 		inventory.Blocks++
 		inventory.StoredBytes += block.storedBytes
 		frames, decodeErr := decodeStoredBlock(block.payload)

@@ -79,11 +79,6 @@ type repackRawFrame struct {
 	payload []byte
 }
 
-type repackBlock struct {
-	storedBlock
-	storedBytes int64
-}
-
 type repackPlan struct {
 	frames  []repackRawFrame
 	encoded []byte
@@ -264,11 +259,8 @@ func (s *Store) runRepackSession(ctx context.Context, checkpoint *repackSessionC
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		var err error
 		if checkpoint.Phase == repackUnpackPhase {
-			var block repackBlock
-			var found bool
-			block, found, err = s.nextRepackBlock(ctx, *checkpoint)
+			block, found, err := s.findRepackBlock(ctx, *checkpoint, checkpoint.UnpackAfter)
 			if err != nil {
 				return result, err
 			}
@@ -301,7 +293,7 @@ func (s *Store) runRepackSession(ctx context.Context, checkpoint *repackSessionC
 		if checkpoint.Phase != repackPackPhase {
 			return result, fmt.Errorf("unknown History repack phase %d", checkpoint.Phase)
 		}
-		_, found, err := s.findRepackBlockAfter(ctx, checkpoint.SessionID, checkpoint.Kind, checkpoint.PackAfter, checkpoint.Through)
+		_, found, err := s.findRepackBlock(ctx, *checkpoint, checkpoint.PackAfter)
 		if err != nil {
 			return result, err
 		}
@@ -358,9 +350,7 @@ func (s *Store) runRepackSession(ctx context.Context, checkpoint *repackSessionC
 			return result, err
 		}
 		result.Entries += int64(len(frames))
-		for _, frame := range frames {
-			result.UncompressedBytes += int64(frame.meta.size)
-		}
+		result.UncompressedBytes += sourceBytes
 		if plan.pack {
 			result.Blocks++
 			result.PackedBytes += int64(len(plan.encoded))
@@ -372,25 +362,17 @@ func (s *Store) runRepackSession(ctx context.Context, checkpoint *repackSessionC
 	return result, nil
 }
 
-func (s *Store) nextRepackBlock(ctx context.Context, checkpoint repackSessionCursor) (repackBlock, bool, error) {
-	return s.findRepackBlock(ctx, checkpoint.SessionID, checkpoint.Kind, checkpoint.UnpackAfter, checkpoint.Through)
-}
-
-func (s *Store) findRepackBlockAfter(ctx context.Context, sessionID uuid.UUID, kind historypb.EventKind, after, through uint64) (repackBlock, bool, error) {
-	return s.findRepackBlock(ctx, sessionID, kind, after, through)
-}
-
-func (s *Store) findRepackBlock(ctx context.Context, sessionID uuid.UUID, kind historypb.EventKind, after, through uint64) (repackBlock, bool, error) {
+func (s *Store) findRepackBlock(ctx context.Context, checkpoint repackSessionCursor, after uint64) (storedBlock, bool, error) {
 	block, err := scanStoredBlock(s.db.QueryRowContext(ctx, `SELECT first_cursor,last_cursor,kind,cursors,sizes,payload,pg_column_size(payload)
 		FROM session_event_block WHERE session_id=$1 AND kind=$2 AND first_cursor<=$3 AND last_cursor>$4
-		ORDER BY first_cursor LIMIT 1`, sessionID, kind, through, after))
+		ORDER BY first_cursor LIMIT 1`, checkpoint.SessionID, checkpoint.Kind, checkpoint.Through, after))
 	if errors.Is(err, sql.ErrNoRows) {
-		return repackBlock{}, false, nil
+		return storedBlock{}, false, nil
 	}
 	if err != nil {
-		return repackBlock{}, false, err
+		return storedBlock{}, false, err
 	}
-	return repackBlock{storedBlock: block, storedBytes: block.storedBytes}, true, nil
+	return block, true, nil
 }
 
 func advanceRepackKind(checkpoint *repackSessionCursor, kinds []historypb.EventKind) error {
@@ -479,27 +461,21 @@ func (s *Store) runRepackBatchTransaction(ctx context.Context, sessionID uuid.UU
 	return err
 }
 
-func (s *Store) unpackRepackBlock(ctx context.Context, checkpoint repackSessionCursor, block repackBlock) error {
+func (s *Store) unpackRepackBlock(ctx context.Context, checkpoint repackSessionCursor, block storedBlock) error {
 	return s.retryRepackBatch(ctx, checkpoint.SessionID, "unpack", func() error {
 		return s.runRepackBatchTransaction(ctx, checkpoint.SessionID, "unpack", func(txCtx context.Context, tx *sql.Tx) error {
 			var current storedBlock
-			var cursors, sizes pq.Int64Array
 			err := tx.QueryRowContext(txCtx, `SELECT first_cursor,last_cursor,kind,cursors,sizes,payload
 				FROM session_event_block WHERE session_id=$1 AND first_cursor=$2`, checkpoint.SessionID, block.first).
-				Scan(&current.first, &current.last, &current.kind, &cursors, &sizes, &current.payload)
+				Scan(&current.first, &current.last, &current.kind, &current.cursors, &current.sizes, &current.payload)
 			if errors.Is(err, sql.ErrNoRows) {
 				return errStaleRepackCandidate
 			}
 			if err != nil {
 				return err
 			}
-			current.cursors, current.sizes = slices.Clone(cursors), slices.Clone(sizes)
-			if !sameStoredBlock(current, block.storedBlock) {
+			if !sameStoredBlock(current, block) {
 				return errStaleRepackCandidate
-			}
-			cursors = make(pq.Int64Array, len(block.frames))
-			for i, frame := range block.frames {
-				cursors[i] = int64(frame.cursor)
 			}
 			var removed bool
 			if err := tx.QueryRowContext(txCtx, `SELECT EXISTS(
@@ -508,7 +484,7 @@ func (s *Store) unpackRepackBlock(ctx context.Context, checkpoint repackSessionC
 				UNION ALL
 				SELECT FROM session_event_settled_range r WHERE r.session_id=$1 AND EXISTS
 					(SELECT FROM unnest($2::bigint[]) c WHERE c BETWEEN r.first_cursor AND r.last_cursor))`,
-				checkpoint.SessionID, cursors).Scan(&removed); err != nil {
+				checkpoint.SessionID, block.cursors).Scan(&removed); err != nil {
 				return err
 			}
 			if removed {
@@ -562,13 +538,6 @@ func (s *Store) nextRepackRawMeta(ctx context.Context, checkpoint repackSessionC
 	}
 	if err := rows.Err(); err != nil {
 		return nil, false, err
-	}
-	if len(metas) == eventblock.MaxEntries+1 {
-		more = true
-	}
-	// A short page is the only case where the final tail can be flushed with certainty.
-	if !more && len(metas) == eventblock.MaxEntries+1 {
-		more = true
 	}
 	return metas, more, nil
 }
