@@ -1,0 +1,215 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "anonymous_resolution",
+    srcs = ["anonymous_resolution.rs"],
+    crate_root = "anonymous_resolution.rs",
+    edition = "2024",
+    deps = [
+        ":selector_outcome",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle:spec_resolution",
+        "//devinfra/js/debundle/graph",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/resolution/selector_resolve",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
+        "@crates//:anyhow",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "anonymous_resolution_test",
+    crate = ":anonymous_resolution",
+    edition = "2024",
+)
+
+rust_library(
+    name = "selector_outcome",
+    srcs = [
+        "selector_invalid.rs",
+        "selector_outcome.rs",
+    ],
+    crate_root = "selector_outcome.rs",
+    edition = "2024",
+    deps = [
+        ":selector_ir",
+        "//devinfra/js/debundle/selectors/authoring:selector_candidate_index",
+        "//devinfra/js/debundle/selectors/diagnostics:source_mismatch",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:strum",
+        "@crates//:swc_common",
+        "@crates//:thiserror",
+    ],
+)
+
+# Shared selector-program IR: the data boundary between selector lowering and
+# the constraint-solver backends.
+rust_library(
+    name = "selector_ir",
+    srcs = ["selector_ir.rs"],
+    crate_root = "selector_ir.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:source_identity",
+        "@crates//:serde",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "selector_ir_test",
+    crate = ":selector_ir",
+    edition = "2024",
+)
+
+rust_library(
+    name = "selector_constraint_backend",
+    srcs = ["selector_constraint_backend.rs"],
+    crate_root = "selector_constraint_backend.rs",
+    edition = "2024",
+    deps = [
+        ":selector_ir",
+        ":selector_outcome",
+        "//devinfra/js/debundle:source_identity",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "selector_constraint_backend_test",
+    size = "small",
+    crate = ":selector_constraint_backend",
+    edition = "2024",
+)
+
+rust_library(
+    name = "selector_test_fixtures",
+    testonly = True,
+    srcs = ["selector_test_fixtures.rs"],
+    crate_root = "selector_test_fixtures.rs",
+    edition = "2024",
+    deps = [
+        ":selector_ir",
+        "//devinfra/js/debundle:source_identity",
+    ],
+)
+
+rust_library(
+    name = "selector_backend_solver",
+    srcs = ["selector_backend_solver.rs"],
+    crate_root = "selector_backend_solver.rs",
+    edition = "2024",
+    deps = [
+        ":selector_constraint_backend",
+        ":selector_ir",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/selectors/resolution/selector_constraint_model_builder",
+    ],
+)
+
+rust_test(
+    name = "selector_backend_solver_test",
+    size = "small",
+    crate = ":selector_backend_solver",
+    edition = "2024",
+    deps = [
+        ":selector_constraint_backend",
+        ":selector_ir",
+        ":selector_test_fixtures",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/selectors/resolution/selector_constraint_model_builder",
+    ],
+)
+
+rust_library(
+    name = "selector_ortools_cpsat_model",
+    srcs = ["selector_ortools_cpsat_model.rs"],
+    crate_root = "selector_ortools_cpsat_model.rs",
+    edition = "2024",
+    deps = [
+        ":selector_constraint_backend",
+        "//devinfra/js/debundle:cp_model_rust_proto",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_library(
+    name = "selector_ortools_cpsat_backend",
+    srcs = ["selector_ortools_cpsat_backend.rs"],
+    crate_root = "selector_ortools_cpsat_backend.rs",
+    edition = "2024",
+    deps = [
+        ":selector_constraint_backend",
+        ":selector_ir",
+        ":selector_ortools_cpsat_model",
+        "//devinfra/js/debundle:cp_model_rust_proto",
+        "//devinfra/js/debundle:ortools_cpsat_ffi",
+        "//devinfra/js/debundle:sat_parameters_rust_proto",
+        "//devinfra/js/debundle:source_identity",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "selector_ortools_cpsat_backend_test",
+    size = "small",
+    crate = ":selector_ortools_cpsat_backend",
+    edition = "2024",
+    deps = [
+        ":selector_backend_solver",
+        ":selector_ir",
+        ":selector_test_fixtures",
+        "//devinfra/js/debundle:source_identity",
+    ],
+)
+
+rust_test(
+    name = "selector_placement_scope_test",
+    size = "small",
+    srcs = ["selector_placement_scope_test.rs"],
+    crate_root = "selector_placement_scope_test.rs",
+    edition = "2024",
+    deps = [
+        ":selector_outcome",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/resolution/selector_resolve",
+        "//devinfra/js/debundle/spec",
+    ],
+)
+
+rust_library(
+    name = "selector_ir_lowering",
+    srcs = ["selector_ir_lowering.rs"],
+    crate_root = "selector_ir_lowering.rs",
+    edition = "2024",
+    deps = [
+        ":selector_ir",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/spec",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "selector_ir_lowering_test",
+    size = "small",
+    crate = ":selector_ir_lowering",
+    edition = "2024",
+    deps = [
+        ":selector_ir",
+        "//devinfra/js/debundle/spec",
+    ],
+)

@@ -1,0 +1,71 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "source_match_holes",
+    srcs = ["source_match_holes.rs"],
+    crate_root = "source_match_holes.rs",
+    edition = "2024",
+)
+
+rust_test(
+    name = "source_match_holes_test",
+    crate = ":source_match_holes",
+    edition = "2024",
+)
+
+# A faithful, fail-closed projection of a
+# parsed chunk into AST facts (kind/child/str_lit/prop_name/ident_name + the
+# source-unit-ordinal join). The extractor errors loudly on any construct it has not
+# modeled rather than emitting a silently-incomplete fact set. Seed slice; grows
+# construct-by-construct.
+rust_library(
+    name = "chunk_facts",
+    srcs = ["chunk_facts.rs"],
+    crate_root = "chunk_facts.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:source_identity",
+        "@crates//:strum",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "chunk_facts_test",
+    crate = ":chunk_facts",
+    edition = "2024",
+)
+
+# Golden semantics of the fact-based matcher (`selector_match::matches`): match
+# verdicts across identifier modes, holes, and declarator alignment, plus
+# fail-closed `Unsupported` outside the faithful subset.
+rust_test(
+    name = "selector_match_test",
+    srcs = ["selector_match_test.rs"],
+    crate_root = "selector_match_test.rs",
+    edition = "2024",
+    deps = [
+        ":chunk_facts",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle/selectors/matching/selector_match",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+    ],
+)
+
+# Coverage instrument: run over a real chunk to see how many top-level
+# statements fully extract vs. hit a fail-closed Unsupported, with the
+# first-blocker histogram, to grow extraction by real-corpus frequency.
+rust_binary(
+    name = "chunk_facts_coverage",
+    srcs = ["chunk_facts_coverage.rs"],
+    crate_root = "chunk_facts_coverage.rs",
+    edition = "2024",
+    deps = [
+        ":chunk_facts",
+        "//devinfra/js/debundle:js_ast",
+    ],
+)

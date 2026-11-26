@@ -45,7 +45,7 @@ rust_library(
         "//devinfra/js/debundle:js_ast",
         "//devinfra/js/debundle:report_io",
         "//devinfra/js/debundle:source_identity",
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:relative-path",

@@ -178,7 +178,7 @@ debundle_e2e_test(
     deps = [
         "//devinfra/js/debundle:apply_projection_wire_rust_proto",
         "//devinfra/js/debundle:graph_provenance",
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@rules_rust_prost//private/3rdparty/crates:prost",
@@ -258,7 +258,7 @@ debundle_e2e_test(
     name = "initializer_source_only_test",
     saved_analysis_tools = True,
     deps = [
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
@@ -379,7 +379,7 @@ debundle_e2e_test(
     source = "cli/spec_lint/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
     ],
 )
@@ -388,7 +388,7 @@ debundle_graph_e2e_test(
     name = "propose_commutations_cli_test",
     deps = [
         "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
@@ -400,7 +400,7 @@ debundle_e2e_test(name = "rejection_fixture_report_test")
 debundle_e2e_test(
     name = "atomic_group_conflict_witness_test",
     deps = [
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
     ],
 )
@@ -451,9 +451,9 @@ rust_library(
         "//devinfra/js/debundle:binding_targets",
         "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:report_io",
-        "//devinfra/js/debundle:spec",
         "//devinfra/js/debundle/artifacts:artifact",
         "//devinfra/js/debundle/artifacts:output_layout",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
@@ -490,9 +490,9 @@ rust_library(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:graph_provenance",
-        "//devinfra/js/debundle:spec",
         "//devinfra/js/debundle/graph",
         "//devinfra/js/debundle/peel",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
@@ -575,7 +575,7 @@ debundle_graph_e2e_test(
     source = "callbacks/availability/mod.rs",
     deps = [
         "//devinfra/js/debundle:analysis_model",
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
     ],
 )
@@ -590,7 +590,7 @@ debundle_graph_e2e_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
     ],
 )
@@ -714,7 +714,7 @@ debundle_graph_e2e_test(
     name = "initializer_call_effect_input_test",
     deps = [
         "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
@@ -794,7 +794,7 @@ debundle_e2e_test(name = "comma_list_owner_split_test")
 debundle_e2e_test(
     name = "per_atomic_group_test",
     deps = [
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
@@ -803,13 +803,13 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "coarse_atomic_groups_test",
-    deps = ["//devinfra/js/debundle:spec"],
+    deps = ["//devinfra/js/debundle/spec"],
 )
 
 debundle_e2e_test(
     name = "vendor_swap_test",
     deps = [
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde",
         "@crates//:serde_json",
     ],
@@ -997,7 +997,7 @@ debundle_graph_e2e_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
     ],
 )
 
