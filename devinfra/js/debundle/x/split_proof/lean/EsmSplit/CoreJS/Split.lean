@@ -704,6 +704,75 @@ def bundleModule (ss : List Stmt) : Module :=
 def bundleEnv (ss : List Stmt) (frames : List (Nat × List (Name × Addr))) : Env :=
   { vars := (bundleModule ss).scope frames ++ [], this := .undef }
 
+/-- A generated named import resolves to the original declaration's live cell.
+
+The source module and declaration ordinal are obtained from the valid plan, not
+from a comparison of linked executions. `Linkable` currently requires the
+import's source to declare the name directly. The dense `FootprintsOfSyntax`
+representation does not itself represent non-executable export units. -/
+theorem split_import_original_cell {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax ss B)
+    {frames : List (Nat × List (Name × Addr))}
+    (hF : FramesOf ((List.range ss.length).zip ss) frames)
+    {md : EsmSplit.Module} (hmd : md ∈ P.mods) {e : String × List Name} (he : e ∈ md.imports)
+    {u : Name} (hu : u ∈ e.2) :
+    ∃ owner j a, P.find e.1 = some owner ∧ j ∈ owner.stmts ∧
+      S.claimants B j = [owner.name] ∧ u ∈ (B.stmt j).defs ∧
+      (splitProgram ss B P).importCell frames e.1 (EsmSplit.exportNameFor (P.namedExports B e.1) u) = .ok a ∧
+      (bundleEnv ss frames).vars.lookup u = some a := by
+  obtain ⟨hud, -, hfaith, hlink, hexpU, -, -, -, -⟩ := hvalid
+  have hlt : ∀ md ∈ P.mods, ∀ i ∈ md.stmts, i < ss.length := fun md hmd i hi =>
+    hfp.1 ▸ hfaith.2.2.2.2.2.1 md hmd i hi
+  obtain ⟨hdecl, hexp⟩ := ((hlink md hmd).1 e he).2.2 u hu
+  unfold EsmSplit.Plan.declaresIn at hdecl
+  unfold EsmSplit.Plan.exportsName at hexp
+  cases hf : P.find e.1 with
+  | none => rw [hf] at hdecl; cases hdecl
+  | some owner =>
+    rw [hf] at hdecl hexp
+    have howner : owner ∈ P.mods := List.mem_of_find?_eq_some hf
+    obtain ⟨j, hj, hdef⟩ := List.any_eq_true.1 (by simpa using hdecl : owner.declares B u = true)
+    have hdef := List.contains_iff_mem.1 hdef
+    have hjn := hlt owner howner j hj
+    have ha : ∃ a, (frameAt frames j).lookup u = some a :=
+      Option.ne_none_iff_exists'.1 fun hn =>
+        (lookup_none_iff_not_mem_keys.mp hn) ((frame_keys hfp hF).2 ⟨hjn, hdef⟩)
+    obtain ⟨a, ha⟩ := ha
+    have hin : ∃ p ∈ (moduleOf ss B P owner).body, p.1 = j :=
+      ⟨(j, ss[j]), (mem_numbered ss).2 ⟨hj, by simp [hjn]⟩, rfl⟩
+    have hmain : ∃ p ∈ (bundleModule ss).body, p.1 = j := by
+      refine ⟨(j, ss[j]), ?_, rfl⟩
+      show (j, ss[j]) ∈ (List.range ss.length).zip ss
+      rw [← filterMap_numbered_range, mem_numbered]
+      exact ⟨List.mem_range.2 hjn, by simp [hjn]⟩
+    refine ⟨owner, j, a, rfl, hj, (hfaith.2.2.2.2.1 owner howner j ?_).1 hj, hdef, ?_, ?_⟩
+    · exact List.mem_range.2 (hfp.1 ▸ hjn)
+    · rw [EsmSplit.Plan.namedExports, hf]
+      simp only [Option.map_some, Option.getD_some]
+      exact Program.importCell_local (by rw [split_find, hf, Option.map_some])
+        (moduleOf_exports owner (by simpa using hexp) (hexpU owner howner))
+        ((scope_lookup_decl hfp hF hud hin hjn hdef).trans ha)
+    · show ((bundleModule ss).scope frames ++ []).lookup u = some a
+      rw [List.append_nil, scope_lookup_decl hfp hF hud hmain hjn hdef, ha]
+
+/-- Any two generated imports of one source binding alias the same original
+cell, even when they occur in different modules. -/
+theorem split_import_alias {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax ss B)
+    {frames : List (Nat × List (Name × Addr))}
+    (hF : FramesOf ((List.range ss.length).zip ss) frames)
+    {m₁ m₂ : EsmSplit.Module} (hm₁ : m₁ ∈ P.mods) (hm₂ : m₂ ∈ P.mods)
+    {e₁ e₂ : String × List Name} (he₁ : e₁ ∈ m₁.imports) (he₂ : e₂ ∈ m₂.imports)
+    {u : Name} (hu₁ : u ∈ e₁.2) (hu₂ : u ∈ e₂.2) :
+    ∃ a, (bundleEnv ss frames).vars.lookup u = some a ∧
+      (splitProgram ss B P).importCell frames e₁.1 (EsmSplit.exportNameFor (P.namedExports B e₁.1) u) = .ok a ∧
+      (splitProgram ss B P).importCell frames e₂.1 (EsmSplit.exportNameFor (P.namedExports B e₂.1) u) = .ok a := by
+  obtain ⟨_, _, a, _, _, _, _, hc₁, hs₁⟩ := split_import_original_cell hvalid hfp hF hm₁ he₁ hu₁
+  obtain ⟨_, _, b, _, _, _, _, hc₂, hs₂⟩ := split_import_original_cell hvalid hfp hF hm₂ he₂ hu₂
+  rw [hs₁] at hs₂
+  cases hs₂
+  exact ⟨a, hs₁, hc₁, hc₂⟩
+
 /-- **For a plan that `Valid` accepts, the scopes of the split agree with the scope of the bundle**, statement by
 statement, in whatever order the plan runs them. -/
 theorem split_units_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
@@ -712,6 +781,7 @@ theorem split_units_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.S
     ∃ L', (splitProgram ss B P).scopes frames (splitProgram ss B P).loaded = .ok L' ∧
       (unitsOf L').map (fun u => (u.1, u.2.1)) = P.execOrder.filterMap (numbered ss) ∧
       ∀ u ∈ unitsOf L', Agree u.2.1.free (bundleEnv ss frames) u.2.2 := by
+  have hv := hvalid
   obtain ⟨hud, -, hfaith, hlink, hexpU, hhyg, -, ⟨-, -, hperm⟩, -⟩ := hvalid
   have hlt : ∀ md ∈ P.mods, ∀ i ∈ md.stmts, i < ss.length := fun md hmd i hi =>
     hfp.1 ▸ hfaith.2.2.2.2.2.1 md hmd i hi
@@ -744,24 +814,8 @@ theorem split_units_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.S
       (splitProgram ss B P).importCell frames e.1 (EsmSplit.exportNameFor (P.namedExports B e.1) u) = .ok a ∧
         env0.vars.lookup u = some a := by
     intro md hmd e he u hu
-    obtain ⟨hdecl, hexp⟩ := ((hlink md hmd).1 e he).2.2 u hu
-    unfold EsmSplit.Plan.declaresIn at hdecl
-    unfold EsmSplit.Plan.exportsName at hexp
-    cases hf : P.find e.1 with
-    | none => rw [hf] at hdecl; cases hdecl
-    | some md' =>
-      rw [hf] at hdecl hexp
-      have hmd' : md' ∈ P.mods := List.mem_of_find?_eq_some hf
-      obtain ⟨j, hj, hxj⟩ := List.any_eq_true.1 (by simpa using hdecl : md'.declares B u = true)
-      have hxj := List.contains_iff_mem.1 hxj
-      have hjn := hlt md' hmd' j hj
-      obtain ⟨a, ha⟩ := hframe_some hjn hxj
-      refine ⟨a, ?_, (henv_decl hjn hxj).trans ha⟩
-      rw [EsmSplit.Plan.namedExports, hf]
-      simp only [Option.map_some, Option.getD_some]
-      exact Program.importCell_local (by rw [split_find, hf, Option.map_some])
-        (moduleOf_exports md' (by simpa using hexp) (hexpU md' hmd'))
-        ((scope_lookup_decl hfp hF hud (hin md' hj hjn) hjn hxj).trans ha)
+    obtain ⟨_, _, a, _, _, _, _, hc, hs⟩ := split_import_original_cell hv hfp hF hmd he hu
+    exact ⟨a, hc, hs⟩
   have himported : ∀ md ∈ P.mods, ∃ cells,
       (splitProgram ss B P).imported frames (moduleOf ss B P md).imports = .ok cells ∧
         ∀ x, cells.lookup x = if x ∈ md.imports.flatMap (·.2) then env0.vars.lookup x else none := fun md hmd =>
