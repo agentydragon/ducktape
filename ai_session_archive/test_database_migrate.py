@@ -1,6 +1,8 @@
 """The versioned archive history creates the exact schema and is safe to rerun."""
 
 # gazelle:include_dep //testing:postgres_fixtures
+from dataclasses import replace
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -28,8 +30,10 @@ def _schema_drift(connection: Connection) -> list[Any]:
     return cast(list[Any], compare_metadata(context, Base.metadata))
 
 
-def test_fresh_database_matches_models_and_migration_is_idempotent(empty_postgres_url: str) -> None:
-    RUNNER.apply(empty_postgres_url)
+def test_fresh_database_matches_models_and_migration_is_idempotent(empty_postgres_url: str, tmp_path: Path) -> None:
+    history = tmp_path / "100% complete"
+    history.symlink_to(RUNNER.migrations_dir.resolve(), target_is_directory=True)
+    replace(RUNNER, migrations_dir=history).apply(empty_postgres_url)
     RUNNER.apply(empty_postgres_url)
 
     engine = create_engine(RUNNER.sync_url(empty_postgres_url))
