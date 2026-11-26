@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -71,7 +72,11 @@ func TestActionAttributedSendUsesActionsBrokerForIdleSuspendedSandbox(t *testing
 			}
 
 			queueStore := testStore(t, 3)
-			managerOptions := wake.Options{Namespace: namespace, Objects: objects, WakeBudget: queueStore}
+			identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			managerOptions := wake.Options{Namespace: namespace, Objects: objects, Identities: identities, WakeBudget: queueStore}
 			if tc.broker {
 				managerOptions.WakeServiceCallers = []string{peertls.ActionsURI}
 			}

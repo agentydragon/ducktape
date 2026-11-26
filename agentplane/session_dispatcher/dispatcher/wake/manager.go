@@ -15,8 +15,10 @@ import (
 
 // Options grant automatic wake only; explicit-resume roles and policy belong to Environments.
 type Options struct {
-	Namespace          string
-	Objects            client.Client
+	Namespace string
+	Objects   client.Client
+	// Identities resolves the Identities Sandboxes in Namespace name.
+	Identities         auth.IdentityUIDReader
 	WakeBudget         WakeBudget
 	WakeServiceCallers []string
 }
@@ -31,12 +33,8 @@ func NewManager(options Options) (*Manager, error) {
 	if options.WakeBudget == nil {
 		return nil, errors.New("Sandbox namespace, uncached Kubernetes client, and shared wake budget are required")
 	}
-	identities, err := auth.KubernetesIdentityUIDs(options.Objects, options.Namespace)
-	if err != nil {
-		return nil, err
-	}
 	policy, err := lifecycle.NewPolicy(lifecycle.Options{
-		Namespace: options.Namespace, Objects: options.Objects, Identities: identities,
+		Namespace: options.Namespace, Objects: options.Objects, Identities: options.Identities,
 		WakeServiceCallers: options.WakeServiceCallers,
 	})
 	if err != nil {
