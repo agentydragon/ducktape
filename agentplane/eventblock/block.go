@@ -134,9 +134,15 @@ var decoder = sync.OnceValues(func() (*zstd.Decoder, error) {
 	return zstd.NewReader(nil, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(MaxBytes), zstd.WithDecodeAllCapLimit(true))
 })
 
+// ErrUnsupportedVersion identifies an APB prefix without a recognized format version.
+var ErrUnsupportedVersion = errors.New("unsupported APB block version")
+
 // Decode returns views into one decoded allocation. Callers treat the views as immutable.
 func Decode(b []byte) ([][]byte, error) {
 	if len(b) < header || string(b[:len(magic)]) != magic || len(b) > MaxBytes+(64<<10) {
+		if IsBlock(b) && !bytes.HasPrefix(b, []byte(magic)) {
+			return nil, ErrUnsupportedVersion
+		}
 		return nil, errors.New("invalid event block header")
 	}
 	size := binary.BigEndian.Uint32(b[len(magic):header])

@@ -58,8 +58,12 @@ func UnpackPackableEntry(wire []byte) ([]byte, error) {
 	return unpack(wire, eventblock.MaxBytes-FrameHeaderBytes)
 }
 
+func IsGzip(wire []byte) bool {
+	return len(wire) >= 2 && wire[0] == 0x1f && wire[1] == 0x8b
+}
+
 func unpack(wire []byte, limit int) ([]byte, error) {
-	if len(wire) >= 2 && wire[0] == 0x1f && wire[1] == 0x8b {
+	if IsGzip(wire) {
 		reader, err := gzip.NewReader(bytes.NewReader(wire))
 		if err != nil {
 			return nil, err
