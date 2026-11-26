@@ -28,6 +28,8 @@ var (
 )
 
 const (
+	// DefaultRepackBlocksPerTxn caps the number of packer cuts in one packing transaction.
+	DefaultRepackBlocksPerTxn = 4
 	// DefaultRepackBatchBudget bounds each append-lock transaction, including row-lock wait.
 	DefaultRepackBatchBudget       = 5 * time.Second
 	repackLockWaitTimeout          = 250 * time.Millisecond
@@ -312,20 +314,41 @@ func (s *Store) runRepackSession(ctx context.Context, checkpoint *repackSessionC
 		for i, meta := range metas {
 			sizes[i] = meta.size
 		}
-		cut := packer.NextSizes(sizes, !hasMore)
-		if cut.N < 1 {
+		// The metadata page includes one length-only lookahead at the byte
+		// or entry limit. Never consume that lookahead in a later cut.
+		available := len(metas)
+		if hasMore && available > 1 {
+			available--
+		}
+		var cuts []eventblock.Cut
+		n := 0
+		for n < available && len(cuts) < s.options.RepackBlocksPerTxn {
+			cut := packer.NextSizes(sizes[n:], !hasMore)
+			if cut.N == 0 || n+cut.N > available {
+				break
+			}
+			n += cut.N
+			cuts = append(cuts, cut)
+		}
+		if n == 0 {
 			return result, errors.New("event block profile did not advance a bounded repack batch")
 		}
-		frames, err := s.loadRepackRawFrames(ctx, *checkpoint, metas[:cut.N])
+		frames, err := s.loadRepackRawFrames(ctx, *checkpoint, metas[:n])
 		if err != nil {
 			if errors.Is(err, errStaleRepackCandidate) {
 				continue
 			}
 			return result, err
 		}
-		plan, err := buildRepackPlan(packer, frames, cut)
-		if err != nil {
-			return result, err
+		plans := make([]repackPlan, 0, len(cuts))
+		offset := 0
+		for _, cut := range cuts {
+			plan, err := buildRepackPlan(packer, frames[offset:offset+cut.N], cut)
+			if err != nil {
+				return result, err
+			}
+			plans = append(plans, plan)
+			offset += cut.N
 		}
 		var sourceBytes int64
 		for _, frame := range frames {
@@ -337,7 +360,7 @@ func (s *Store) runRepackSession(ctx context.Context, checkpoint *repackSessionC
 			}
 		}
 		last := frames[len(frames)-1].meta.cursor
-		err = s.applyRepackPlan(ctx, *checkpoint, plan)
+		err = s.applyRepackPlans(ctx, *checkpoint, plans, frames)
 		if errors.Is(err, errStaleRepackCandidate) {
 			continue
 		}
@@ -346,11 +369,13 @@ func (s *Store) runRepackSession(ctx context.Context, checkpoint *repackSessionC
 		}
 		result.Entries += int64(len(frames))
 		result.UncompressedBytes += sourceBytes
-		if plan.pack {
-			result.Blocks++
-			result.PackedBytes += int64(len(plan.encoded))
-		} else {
-			result.Skipped += int64(len(frames))
+		for _, plan := range plans {
+			if plan.pack {
+				result.Blocks++
+				result.PackedBytes += int64(len(plan.encoded))
+			} else {
+				result.Skipped += int64(len(plan.frames))
+			}
 		}
 		checkpoint.PackAfter = last
 	}
@@ -622,11 +647,11 @@ func buildRepackPlan(packer *eventblock.Packer, frames []repackRawFrame, cut eve
 	return plan, nil
 }
 
-func (s *Store) applyRepackPlan(ctx context.Context, checkpoint repackSessionCursor, plan repackPlan) error {
+func (s *Store) applyRepackPlans(ctx context.Context, checkpoint repackSessionCursor, plans []repackPlan, frames []repackRawFrame) error {
 	return s.retryRepackBatch(ctx, checkpoint.SessionID, "pack", func() error {
 		return s.runRepackBatchTransaction(ctx, checkpoint.SessionID, "pack", func(txCtx context.Context, tx *sql.Tx) error {
-			cursors := make([]int64, len(plan.frames))
-			for i, frame := range plan.frames {
+			cursors := make([]int64, len(frames))
+			for i, frame := range frames {
 				cursors[i] = int64(frame.meta.cursor)
 			}
 			rows, err := tx.QueryContext(txCtx, `SELECT cursor,kind,payload FROM session_event
@@ -643,8 +668,8 @@ func (s *Store) applyRepackPlan(ctx context.Context, checkpoint repackSessionCur
 					rows.Close()
 					return err
 				}
-				if index >= len(plan.frames) || cursor != plan.frames[index].meta.cursor || kind != checkpoint.Kind ||
-					len(payload) != plan.frames[index].meta.size || plan.frames[index].payload != nil && !bytes.Equal(payload, plan.frames[index].payload) {
+				if index >= len(frames) || cursor != frames[index].meta.cursor || kind != checkpoint.Kind ||
+					len(payload) != frames[index].meta.size || frames[index].payload != nil && !bytes.Equal(payload, frames[index].payload) {
 					rows.Close()
 					return errStaleRepackCandidate
 				}
@@ -657,7 +682,7 @@ func (s *Store) applyRepackPlan(ctx context.Context, checkpoint repackSessionCur
 			if err := rows.Close(); err != nil {
 				return err
 			}
-			if index != len(plan.frames) {
+			if index != len(frames) {
 				return errStaleRepackCandidate
 			}
 			var removed bool
@@ -673,7 +698,15 @@ func (s *Store) applyRepackPlan(ctx context.Context, checkpoint repackSessionCur
 			if removed {
 				return errStaleRepackCandidate
 			}
-			if plan.pack {
+			var packed, skipped []int64
+			for _, plan := range plans {
+				if !plan.pack {
+					for _, frame := range plan.frames {
+						skipped = append(skipped, int64(frame.meta.cursor))
+					}
+					continue
+				}
+
 				values, sizes := make([]int64, len(plan.frames)), make([]int64, len(plan.frames))
 				for i, frame := range plan.frames {
 					values[i], sizes[i] = int64(frame.meta.cursor), int64(frame.meta.indexSize)
@@ -684,12 +717,17 @@ func (s *Store) applyRepackPlan(ctx context.Context, checkpoint repackSessionCur
 					checkpoint.SessionID, first, last, checkpoint.Kind, pq.Array(values), pq.Array(sizes), plan.encoded); err != nil {
 					return err
 				}
-				if _, err := tx.ExecContext(txCtx, `DELETE FROM session_event WHERE session_id=$1 AND cursor=ANY($2)`, checkpoint.SessionID, pq.Array(cursors)); err != nil {
+				packed = append(packed, values...)
+			}
+			if len(packed) > 0 {
+				if _, err := tx.ExecContext(txCtx, `DELETE FROM session_event WHERE session_id=$1 AND cursor=ANY($2)`, checkpoint.SessionID, pq.Array(packed)); err != nil {
 					return err
 				}
-			} else if _, err := tx.ExecContext(txCtx, `UPDATE session_event SET compactable=false WHERE session_id=$1 AND cursor=ANY($2)`,
-				checkpoint.SessionID, pq.Array(cursors)); err != nil {
-				return err
+			}
+			if len(skipped) > 0 {
+				if _, err := tx.ExecContext(txCtx, `UPDATE session_event SET compactable=false WHERE session_id=$1 AND cursor=ANY($2)`, checkpoint.SessionID, pq.Array(skipped)); err != nil {
+					return err
+				}
 			}
 			return nil
 		})
