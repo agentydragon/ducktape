@@ -58,8 +58,10 @@ func (c bearerCredential) GetRequestMetadata(context.Context, ...string) (map[st
 
 func (bearerCredential) RequireTransportSecurity() bool { return false }
 
-func (a *Invocation) ConnectGRPC(Group string) (*grpc.ClientConn, error) {
-	urlVariable, credentialVariable := "AGENTPLANE_"+Group+"_URL", "AGENTPLANE_"+Group+"_CREDENTIAL"
+// Managed endpoints go through the credential-holding sidecar. With HTTPS_PROXY configured,
+// grpc-go can use CONNECT even for an HTTP origin.
+func (a *Invocation) connectGRPC(group string) (*grpc.ClientConn, error) {
+	urlVariable, credentialVariable := "AGENTPLANE_"+group+"_URL", "AGENTPLANE_"+group+"_CREDENTIAL"
 	base, credential := a.getenv(urlVariable), a.getenv(credentialVariable)
 	if base == "" {
 		return nil, UsageFailure("%s not set", urlVariable)

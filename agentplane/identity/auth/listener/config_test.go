@@ -1,40 +1,72 @@
 package listener
 
 import (
-	"reflect"
+	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 )
 
-func TestAuthenticationDecodeHookKeepsVariantsClosed(t *testing.T) {
-	target := reflect.TypeOf((*Authentication)(nil)).Elem()
-	for name, data := range map[string]map[string]any{
-		"unknown field":                  {"mode": "spiffe", "ca_file": "/roots.pem", "ignored": true},
-		"irrelevant empty field":         {"mode": "spiffe", "ca_file": "/roots.pem", "audience": ""},
-		"wrongly cased field":            {"mode": "spiffe", "CAFile": "/roots.pem"},
-		"unknown mode":                   {"mode": "unknown"},
-		"empty required field":           {"mode": "spiffe", "ca_file": ""},
-		"wrong field type":               {"mode": "spiffe", "ca_file": 42},
-		"missing required variant field": {"mode": "spiffe"},
+func TestDecodeListenerAuthentication(t *testing.T) {
+	const valid = "{mode: spiffe, ca_file: /roots.pem}"
+	for _, enclosing := range []struct {
+		key     string
+		options configfile.MapstructureOptions
+	}{
+		{key: "rpc", options: configfile.MapstructureOptions{ExactFieldNames: true}},
+		{key: "RPC", options: configfile.MapstructureOptions{WeaklyTypedInput: true}},
 	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := AuthenticationDecodeHook(reflect.TypeOf(data), target, data); err == nil {
-				t.Fatal("invalid authentication accepted")
-			}
-		})
+		for name, test := range map[string]struct {
+			auth, errorText string
+		}{
+			"valid":               {auth: "[" + valid + "]"},
+			"unknown field":       {auth: "[{mode: spiffe, ca_file: /roots.pem, ignored: true}]", errorText: "invalid keys"},
+			"retired field":       {auth: "[{mode: spiffe, ca_file: /roots.pem, audience: ''}]", errorText: "invalid keys"},
+			"wrong mode key":      {auth: "[{Mode: spiffe, ca_file: /roots.pem}]", errorText: "authentication mode is required"},
+			"wrong case":          {auth: "[{mode: spiffe, CA_FILE: /roots.pem}]", errorText: "invalid keys"},
+			"unknown mode":        {auth: "[{mode: kubernetes_bearer}]", errorText: "unknown authentication mode"},
+			"missing mode":        {auth: "[{ca_file: /roots.pem}]", errorText: "authentication mode is required"},
+			"non-string mode":     {auth: "[{mode: true, ca_file: /roots.pem}]", errorText: "authentication mode must be a string"},
+			"empty trust roots":   {auth: "[{mode: spiffe, ca_file: ''}]", errorText: "must be a non-empty string"},
+			"missing trust roots": {auth: "[{mode: spiffe}]", errorText: "must be a non-empty string"},
+			"non-string roots":    {auth: "[{mode: spiffe, ca_file: 42}]", errorText: "ca_file"},
+		} {
+			t.Run(enclosing.key+"/"+name, func(t *testing.T) {
+				var cfg struct {
+					RPC Config `mapstructure:"rpc"`
+				}
+				yaml := fmt.Sprintf("%s:\n  listen_address: :443\n  tls: {cert_file: /cert, key_file: /key}\n  auth: %s\n",
+					enclosing.key, test.auth)
+				_, err := configfile.DecodeMapstructureYAML([]byte(yaml), &cfg, enclosing.options)
+				if test.errorText != "" {
+					if err == nil || !strings.Contains(err.Error(), test.errorText) {
+						t.Fatalf("error = %v, want %q", err, test.errorText)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := cfg.RPC.Validate(); err != nil {
+					t.Fatal(err)
+				}
+				if got := cfg.RPC.Auth[0].CAFile; got != "/roots.pem" {
+					t.Fatalf("ca_file = %q, want /roots.pem", got)
+				}
+			})
+		}
 	}
+}
 
-	for name, data := range map[string]map[string]any{
-		"SPIFFE": {"mode": "spiffe", "ca_file": "/roots.pem"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			decoded, err := AuthenticationDecodeHook(reflect.TypeOf(data), target, data)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, ok := decoded.(Authentication); !ok {
-				t.Fatalf("decoded value %T does not implement Authentication", decoded)
-			}
-		})
+func TestNullAuthenticationEntryFailsValidation(t *testing.T) {
+	const yaml = "listen_address: :443\ntls: {cert_file: /cert, key_file: /key}\nauth: [null]\n"
+	var cfg Config
+	if _, err := configfile.DecodeMapstructureYAML([]byte(yaml), &cfg, configfile.MapstructureOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "authentication mode is required") {
+		t.Fatalf("auth: [null] validation error = %v", err)
 	}
 }
 
@@ -42,15 +74,15 @@ func TestInvalidAuthenticationConfigurationIsRefused(t *testing.T) {
 	for name, config := range map[string]Config{
 		"empty":                 {},
 		"no auth":               {ListenAddress: ":443"},
-		"nil auth variant":      {ListenAddress: ":443", Auth: []Authentication{(*SPIFFEAuth)(nil)}},
-		"duplicate":             {ListenAddress: ":443", Auth: []Authentication{&SPIFFEAuth{CAFile: "/roots.pem"}, &SPIFFEAuth{CAFile: "/roots.pem"}}},
-		"spiffe without tls":    {ListenAddress: ":443", Auth: []Authentication{&SPIFFEAuth{CAFile: "/roots"}}},
-		"spiffe relative roots": {ListenAddress: ":443", TLS: &TLS{CertFile: "/cert", KeyFile: "/key"}, Auth: []Authentication{&SPIFFEAuth{CAFile: "roots"}}},
-		"relative serving key":  {ListenAddress: ":443", TLS: &TLS{CertFile: "/cert", KeyFile: "key"}, Auth: []Authentication{&SPIFFEAuth{CAFile: "/roots.pem"}}},
+		"nil auth":              {ListenAddress: ":443", Auth: []*SPIFFEAuth{nil}},
+		"duplicate":             {ListenAddress: ":443", Auth: []*SPIFFEAuth{{CAFile: "/roots.pem"}, {CAFile: "/roots.pem"}}},
+		"spiffe without tls":    {ListenAddress: ":443", Auth: []*SPIFFEAuth{{CAFile: "/roots"}}},
+		"spiffe relative roots": {ListenAddress: ":443", TLS: &TLS{CertFile: "/cert", KeyFile: "/key"}, Auth: []*SPIFFEAuth{{CAFile: "roots"}}},
+		"relative serving key":  {ListenAddress: ":443", TLS: &TLS{CertFile: "/cert", KeyFile: "key"}, Auth: []*SPIFFEAuth{{CAFile: "/roots.pem"}}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := config.Validate(); err == nil {
-				t.Fatal("invalid configuration accepted")
+			if cfg, err := config.TLSConfig("spiffe://agentplane/test"); err == nil || cfg != nil {
+				t.Fatalf("invalid configuration allowed TLS setup: config = %v, error = %v", cfg, err)
 			}
 		})
 	}

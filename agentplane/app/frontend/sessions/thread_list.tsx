@@ -117,9 +117,10 @@ function ThreadRow({
           <span className="agentplane-thread-list-row-detail">{sessionMaterializationLabel(thread)}</span>
         )}
         {detailed && (
-          <span className="agentplane-thread-list-row-detail">
-            {harnessLabel(harness)}
-            {model ? ` · ${model}` : ""} · {lastEventAt ? <TimeAgo value={lastEventAt} /> : "no events yet"}
+          <span className="agentplane-thread-list-row-detail agentplane-thread-metadata">
+            <span>{harnessLabel(harness)}</span>
+            <span title={model}>{model}</span>
+            <span>{lastEventAt ? <TimeAgo value={lastEventAt} /> : "no events yet"}</span>
           </span>
         )}
       </span>

@@ -160,9 +160,9 @@ func decodeKnownFields(node *yaml.Node, result any) error {
 
 func decodeProxyAuth(node *yaml.Node) (spiffeProxyAuth, error) {
 	var auth struct {
-		Mode     listener.Mode `yaml:"mode"`
-		CertFile yaml.Node     `yaml:"cert_file"`
-		KeyFile  yaml.Node     `yaml:"key_file"`
+		Mode     string    `yaml:"mode"`
+		CertFile yaml.Node `yaml:"cert_file"`
+		KeyFile  yaml.Node `yaml:"key_file"`
 	}
 	if err := decodeKnownFields(node, &auth); err != nil {
 		return spiffeProxyAuth{}, err

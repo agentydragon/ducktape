@@ -2,7 +2,9 @@ package coordinator
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -186,7 +188,7 @@ func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
 		t.Fatalf("GetStatus after Gateway observer loss: %v", err)
 	}
 	r.mu.Lock()
-	activeCalls := r.activeExecutionCalls
+	activeCalls := len(r.execCalls)
 	r.mu.Unlock()
 	if activeCalls != 2 {
 		t.Fatalf("active execution calls after observer loss = %d, want both native sessions retained", activeCalls)
@@ -196,7 +198,7 @@ func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
 	}
 	waitSignal(t, opened, "new local execution session did not initialize after observer loss")
 	r.mu.Lock()
-	activeCalls = r.activeExecutionCalls
+	activeCalls = len(r.execCalls)
 	r.mu.Unlock()
 	if activeCalls != 3 {
 		t.Fatalf("active execution calls after new OpenSession = %d, want 3", activeCalls)
@@ -219,14 +221,37 @@ func (e *blockingDirectExecutor) StartProcess(ctx context.Context, _ *executorpb
 	}
 }
 
-func TestDirectUnaryExecutionCallHoldsAdmissionUntilCompletion(t *testing.T) {
-	executor := &blockingDirectExecutor{started: make(chan struct{}), release: make(chan struct{})}
+type mixedDirectExecutor struct {
+	*blockingDirectExecutor
+	streamCanceled chan struct{}
+	releaseStream  chan struct{}
+}
+
+func (e *mixedDirectExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream executorpb.Executor_OpenSessionServer) error {
+	if err := stream.Send(&executorpb.OpenSessionResponse{}); err != nil {
+		return err
+	}
+	<-stream.Context().Done()
+	close(e.streamCanceled)
+	<-e.releaseStream
+	return stream.Context().Err()
+}
+
+func TestExecutionDrainWaitsForInterleavedUnaryAndStream(t *testing.T) {
+	executor := &mixedDirectExecutor{
+		blockingDirectExecutor: &blockingDirectExecutor{started: make(chan struct{}), release: make(chan struct{})},
+		streamCanceled:         make(chan struct{}),
+		releaseStream:          make(chan struct{}),
+	}
 	config := executionRuntimeConfig(t, "ws://unused", nil)
 	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
 		return &executionServiceHandle{executor: executor, fence: func(context.Context) error { return nil }}, nil
 	}
 	r := newLifecycleRuntime(t, config)
+	releaseStream := sync.OnceFunc(func() { close(executor.releaseStream) })
+	t.Cleanup(releaseStream)
 	client := startDirectExecutionTestClient(t, r, "incarnation-1")
+
 	completed := make(chan error, 1)
 	go func() {
 		_, err := client.executor.StartProcess(client.callCtx, &executorpb.StartProcessRequest{Scope: client.scope("unary-session")})
@@ -239,26 +264,46 @@ func TestDirectUnaryExecutionCallHoldsAdmissionUntilCompletion(t *testing.T) {
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("public StartProcess did not reach the direct executor")
 	}
+	stream, err := client.open(client.callCtx, "stream-session", "open-while-unary-active")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("OpenSession did not reach the direct executor: %v", err)
+	}
 	r.mu.Lock()
-	admissions, calls := r.activeAdmissions, r.activeExecutionCalls
+	admissions, calls := r.activeAdmissions, len(r.execCalls)
 	r.mu.Unlock()
-	if admissions != 1 || calls != 1 {
-		t.Fatalf("active admission/call = %d/%d, want 1/1 while direct call is active", admissions, calls)
+	if admissions != 1 || calls != 2 {
+		t.Fatalf("active admissions/calls = %d/%d, want 1/2 while both handlers are active", admissions, calls)
 	}
 	close(executor.release)
-	select {
-	case err := <-completed:
-		if err != nil {
-			t.Fatalf("direct StartProcess: %v", err)
-		}
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("direct StartProcess did not finish")
+	if err := waitClose(t, completed); err != nil {
+		t.Fatalf("direct StartProcess: %v", err)
 	}
-	waitRuntime(t, r, func() bool {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		return r.activeAdmissions == 0 && r.activeExecutionCalls == 0
-	}, "direct unary admission release")
+
+	// A canceled drain context distinguishes an unfinished handler from an
+	// empty registry without relying on how long the waiting goroutine ran.
+	drainCtx, cancel := context.WithCancel(client.ctx)
+	cancel()
+	if err := r.drainExecutionCalls(drainCtx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("drain while the stream handler still owns work = %v, want Canceled", err)
+	}
+	waitSignal(t, executor.streamCanceled, "drain did not cancel the remaining stream")
+	r.mu.Lock()
+	admissions, calls = r.activeAdmissions, len(r.execCalls)
+	r.mu.Unlock()
+	if admissions != 0 || calls != 1 {
+		t.Fatalf("active admissions/calls = %d/%d, want 0/1 until the stream handler returns", admissions, calls)
+	}
+
+	releaseStream()
+	if _, err := stream.Recv(); status.Code(err) != codes.Canceled {
+		t.Fatalf("OpenSession after drain = %v, want Canceled", err)
+	}
+	if err := r.waitForExecutionCalls(client.ctx); err != nil {
+		t.Fatalf("joining forwarded execution calls: %v", err)
+	}
 }
 
 type failingAdmissionCountState struct {
@@ -303,10 +348,10 @@ func TestDirectUnaryExecutionAdmissionFailureLeavesNoCall(t *testing.T) {
 	default:
 	}
 	r.mu.Lock()
-	admissions, calls, registered := r.activeAdmissions, r.activeExecutionCalls, len(r.execCalls)
+	admissions, calls := r.activeAdmissions, len(r.execCalls)
 	r.mu.Unlock()
-	if admissions != 0 || calls != 0 || registered != 0 {
-		t.Fatalf("failed admission retained work: active admissions=%d, active execution calls=%d, registered calls=%d", admissions, calls, registered)
+	if admissions != 0 || calls != 0 {
+		t.Fatalf("failed admission retained work: active admissions=%d, registered calls=%d", admissions, calls)
 	}
 }
 

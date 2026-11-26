@@ -133,6 +133,7 @@ known-first-party = [
     "devinfra",
     "util",
     "agent_core",
+    "attendant",
     "cpap",
     "study_casino",
     "props",

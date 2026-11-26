@@ -204,18 +204,9 @@ export function PushSettings(): JSX.Element {
         Register this browser for Action approval notifications and manage the operator&apos;s registered browsers.
       </Text>
       {error && <Text c="red">{error}</Text>}
-      {unavailable && (
-        <Text id="push-registration-status" role="status">
-          {unavailable}
-        </Text>
-      )}
-      {!thisBrowserRegistered && (
-        <Button
-          onClick={() => void enable()}
-          loading={busy}
-          disabled={unavailable !== null}
-          aria-describedby={unavailable ? "push-registration-status" : undefined}
-        >
+      {unavailable && <Text role="status">{unavailable}</Text>}
+      {!thisBrowserRegistered && unavailable === null && (
+        <Button onClick={() => void enable()} loading={busy} style={{ alignSelf: "flex-start" }}>
           Register this browser
         </Button>
       )}

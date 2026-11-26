@@ -48,8 +48,44 @@ class ActionsSettings(BaseModel):
         return self
 
 
-class GitHubSettings(BaseModel):
+class GitHubRetentionSettings(BaseModel):
+    """Maintenance settings also usable without a configured GitHub App."""
+
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    fact_retention_hours: int | None = Field(
+        default=168,
+        exclude_if=lambda value: value == 168,
+        ge=1,
+        le=87600,
+        description=(
+            "Hours to retain GitHub delivery facts (including IDs, digests and subject links) and generated "
+            "mergeability transitions; null retains both indefinitely. This bounds replay and deduplication. "
+            "Raw webhook bodies and inbox payloads have separate lifetimes."
+        ),
+    )
+    raw_body_retention_hours: int | None = Field(
+        default=72,
+        exclude_if=lambda value: value == 72,
+        ge=0,
+        le=87600,
+        description=(
+            "Hours to retain raw GitHub webhook bodies; zero stores no new body and expires existing bodies on the next "
+            "maintenance pass, while null retains bodies indefinitely. Finite retention cannot exceed fact retention."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def retention_windows(self) -> Self:
+        facts_hours = self.fact_retention_hours
+        payload_hours = self.raw_body_retention_hours
+        if payload_hours is None and facts_hours is not None:
+            raise ValueError("infinite GitHub payload retention requires infinite fact_retention_hours")
+        if payload_hours is not None and facts_hours is not None and payload_hours > facts_hours:
+            raise ValueError("raw_body_retention_hours cannot exceed fact_retention_hours")
+        return self
+
+
+class GitHubSettings(GitHubRetentionSettings):
     api_url: HttpEndpointUrl = Field(
         default=AnyHttpUrl("https://api.github.com"),
         description="Trusted GitHub REST API base URL; receives App JWTs and installation tokens. Supports a path prefix.",
@@ -156,16 +192,6 @@ class Settings(BaseModel):
     )
     quotas: QuotaSettings = Field(default_factory=QuotaSettings)
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
-    github_delivery_retention_days: int | None = Field(
-        default=7,
-        ge=1,
-        le=3650,
-        description=(
-            "Days to retain raw GitHub deliveries (including IDs, digests and subject links) and generated "
-            "mergeability transitions; null retains both indefinitely. This bounds raw replay and deduplication. "
-            "Inbox payloads and current pull request snapshots have separate lifetimes."
-        ),
-    )
     unavailable_destination_retry_s: PositiveSeconds = Field(
         default=30, le=3600, description="Seconds before delivery retries after a Dispatcher or History NotFound."
     )
@@ -192,6 +218,6 @@ class Settings(BaseModel):
             raise ValueError("rpc requires SPIFFE client trust")
         return self
 
-    github: GitHubSettings | None = Field(
-        default=None, description="GitHub source configuration. Disabled when absent from the settings file."
+    github: GitHubSettings | GitHubRetentionSettings | None = Field(
+        default=None, description="GitHub App and retention settings. Retention alone does not enable the source."
     )

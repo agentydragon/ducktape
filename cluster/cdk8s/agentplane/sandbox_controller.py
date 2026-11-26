@@ -22,13 +22,8 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from agentplane.crd_group import GROUP
-from agentplane.environments.settings import (
-    EnvironmentService,
-    RuntimeProxy,
-    ServiceDelegation,
-    ServiceDelegator,
-    Settings,
-)
+from agentplane.environments.settings import EnvironmentService, RuntimeProxy, Settings
+from agentplane.identity.auth.delegation import ServiceDelegation, ServiceDelegator
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,

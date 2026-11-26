@@ -11,26 +11,12 @@ import (
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
 const maxEnvironmentPage = 100
-
-type environmentConnection struct {
-	connection *grpc.ClientConn
-	client     environmentpb.EnvironmentServiceClient
-}
-
-func (a *commands) connectEnvironment() (*environmentConnection, error) {
-	connection, err := a.ConnectGRPC("ENVIRONMENTS")
-	if err != nil {
-		return nil, err
-	}
-	return &environmentConnection{connection: connection, client: environmentpb.NewEnvironmentServiceClient(connection)}, nil
-}
 
 func (a *commands) environmentsCommand() *cobra.Command {
 	return invocation.Group("environments", "Discover existing environments this account may use",
@@ -42,6 +28,27 @@ Explicit resume still requires current backend policy.`,
 
 func (a *commands) resumeEnvironmentCommand() *cobra.Command {
 	var resumeToken string
+	resume := a.environmentCommand(func(ctx context.Context, client environmentpb.EnvironmentServiceClient, args []string) error {
+		target := &identitypb.EnvironmentTarget{Namespace: args[0], Name: args[1], Uid: args[2]}
+		response, err := client.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
+			Target:      target,
+			ResumeToken: resumeToken,
+		})
+		if err != nil {
+			return resumeFailure(ctx, err)
+		}
+		if response == nil || response.GetTarget() == nil || response.GetTarget().GetNamespace() != target.GetNamespace() ||
+			response.GetTarget().GetName() != target.GetName() || response.GetTarget().GetUid() != target.GetUid() {
+			return invocation.InvalidResponse("ResumeEnvironment returned a different target")
+		}
+		if a.JSON() {
+			return a.writeProtoJSON(response)
+		}
+		if _, err := fmt.Fprintln(a.Stdout(), environmentResumeText(response)); err != nil {
+			return invocation.ClientFailure(invocation.ExitRefused, "INTERNAL", "write stdout: %v", err)
+		}
+		return nil
+	})
 	command := &cobra.Command{
 		Use:   "resume NAMESPACE NAME UID --resume-token TOKEN",
 		Short: "Request resume of one exact eligible environment",
@@ -51,36 +58,11 @@ REQUESTED is acceptance, not readiness. Refresh with environments get to read cu
 work. If the reply is uncertain, refresh the exact target and use only a fresh descriptor's token for another explicit
 request. This command never retries the mutation or replays an earlier command.`,
 		Args: cobra.ExactArgs(3),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if resumeToken == "" {
 				return invocation.UsageFailure("--resume-token must not be empty")
 			}
-			connected, err := a.connectEnvironment()
-			if err != nil {
-				return err
-			}
-			defer connected.connection.Close()
-			ctx, cancel := a.Deadline()
-			defer cancel()
-			target := &identitypb.EnvironmentTarget{Namespace: args[0], Name: args[1], Uid: args[2]}
-			response, err := connected.client.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
-				Target:      target,
-				ResumeToken: resumeToken,
-			})
-			if err != nil {
-				return resumeFailure(ctx, err)
-			}
-			if response == nil || response.GetTarget() == nil || response.GetTarget().GetNamespace() != target.GetNamespace() ||
-				response.GetTarget().GetName() != target.GetName() || response.GetTarget().GetUid() != target.GetUid() {
-				return invocation.InvalidResponse("ResumeEnvironment returned a different target")
-			}
-			if a.JSON() {
-				return a.writeProtoJSON(response)
-			}
-			if _, err := fmt.Fprintln(a.Stdout(), environmentResumeText(response)); err != nil {
-				return invocation.ClientFailure(invocation.ExitRefused, "INTERNAL", "write stdout: %v", err)
-			}
-			return nil
+			return resume(cmd, args)
 		},
 	}
 	command.Flags().StringVar(&resumeToken, "resume-token", "", "opaque precondition returned by environments get for this exact Sandbox generation")
@@ -127,17 +109,8 @@ func resumeFailure(ctx context.Context, err error) error {
 	return failureErr
 }
 
-func (a *commands) environmentCommand(fn func(context.Context, environmentpb.EnvironmentServiceClient, []string) error) func(*cobra.Command, []string) error {
-	return func(_ *cobra.Command, args []string) error {
-		connected, err := a.connectEnvironment()
-		if err != nil {
-			return err
-		}
-		defer connected.connection.Close()
-		ctx, cancel := a.Deadline()
-		defer cancel()
-		return fn(ctx, connected.client, args)
-	}
+func (a *commands) environmentCommand(run func(context.Context, environmentpb.EnvironmentServiceClient, []string) error) func(*cobra.Command, []string) error {
+	return invocation.GRPCCommand(a.Invocation, "ENVIRONMENTS", environmentpb.NewEnvironmentServiceClient, run)
 }
 
 func (a *commands) listEnvironmentsCommand() *cobra.Command {

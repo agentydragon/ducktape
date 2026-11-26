@@ -165,7 +165,7 @@ func TestSharedListenerRequiresTLS(t *testing.T) {
 		LiteLLMURL:                      "http://127.0.0.1:8100",
 		LiteLLMKey:                      testLiteLLMKey,
 		Attribution:                     defaultAttribution(),
-		RPC:                             listener.Config{ListenAddress: ":8080", Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: "/tls/ca"}}},
+		RPC:                             listener.Config{ListenAddress: ":8080", Auth: []*listener.SPIFFEAuth{{CAFile: "/tls/ca"}}},
 	}
 	if err := validateConfig(&c); err == nil {
 		t.Fatal("shared HTTP/2 listener accepted plaintext")

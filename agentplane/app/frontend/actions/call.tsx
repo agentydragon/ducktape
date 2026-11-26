@@ -11,7 +11,7 @@ import { ActionState, type ActionRequest } from "../../../action_service/api/con
 import { actionArguments, actionCaller, actionIdentity, timestampText, type ActionCaller } from "./presentation";
 import { useActionRendering, type RenderedActionCall } from "./rendering/dispatch";
 
-/** Who asked and when, on one summary line ("claude-ai · 2 minutes ago"), over the request's own
+/** Who asked and when, on one summary line ("claude-ai · 2 min ago"), over the request's own
  * verbose identifiers nobody reads at a glance: the UUID, the caller's namespace, and the later
  * timestamps. */
 function RequestAuditDetails({ request }: { request: ActionRequest }): JSX.Element {

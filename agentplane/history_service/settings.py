@@ -7,22 +7,9 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
+from agentplane.identity.auth.delegation import ServiceDelegation
 from agentplane.identity.auth.listener import Listener
 from agentplane.net.peertls.config import ServiceSPIFFEID
-
-
-class ServiceDelegator(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    spiffe_id: ServiceSPIFFEID
-    connection_provenance: Literal[False] = False
-
-
-class ServiceDelegationSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    actors: tuple[ServiceDelegator, ...] = Field(min_length=1)
-    methods: tuple[str, ...] = Field(
-        min_length=1, description="Exact HistoryService RPC method names that admit service delegation."
-    )
 
 
 class EventBlockProfile(BaseModel):
@@ -81,7 +68,7 @@ class Settings(BaseModel):
         exclude_if=lambda value: not value,
         description="Exact component SVIDs granted backend-wide History read access.",
     )
-    service_delegation: ServiceDelegationSettings | None = Field(
+    service_delegation: ServiceDelegation | None = Field(
         default=None,
         exclude_if=lambda value: not value,
         description="Independent exact service actors allowed to read History as a live effective Identity.",

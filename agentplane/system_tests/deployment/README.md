@@ -114,19 +114,15 @@ generates (`oidc.static_ed25519_keys`); the test process signs the token, so no 
 fixtures keep Dex as the app's issuer, and the stack takes the operator's token from Dex's password
 grant for the app's client ([`operator_tokens.py`](operator_tokens.py)).
 
-The `suites/` package owns Python deployment recipes beside its test entrypoints. Its
-[`suite_recipe.py`](../suites/suite_recipe.py) defines all ten suite fixtures, including each
-runtime, backend and MCP-edge choice; the MCP suites keep their test entrypoints beside them. Recipes call
-`add_*` functions directly, then use the shared finalizer to synthesize the chart, apply the
-bare-k3s fixture edits, and derive runtime metadata from the environment and constructed services.
-One multi-output rendering action runs the recipe for all ten fixtures; it does not select images,
-plugins or executor policy.
-Recipes also add the SVID command-box template through the command component's typed API,
-sharing its sidecar and credential wiring. Finalization does not clone rendered command templates.
-The VM recipe explicitly adds ordinary, OOM and supervision templates, their guest ConfigMaps, and
-typed boot firmware before synthesis.
-The native recovery recipe adds backend services, the central sampler and a bound test caller.
-The History outage recipe also adds App and MCP edge. Neither adds Dex or OAuth fixture servers.
+[`suite_recipe.py`](../suites/suite_recipe.py) selects the runtime, model backend and services for each of
+the eleven fixture manifests. [`suite_deployment.py`](suite_deployment.py) builds the scripted and
+real-model fixtures without OAuth fixture servers. Native recovery adds the central sampler and a
+bound test caller. History outage adds the central sampler, App and MCP edge. The MCP OAuth recipes
+live beside [their test entrypoints](../suites/mcp/).
+The recipes use typed component APIs for the SVID command-box template and VM templates, guest
+ConfigMaps and boot firmware. The shared finalizer synthesizes the charts, applies bare-k3s edits and
+derives runtime metadata from the environment and constructed services. One multi-output Bazel action
+renders all eleven manifests.
 
 Direct native fixture clients reuse the fixture's `app-workload-tls` certificate with the existing
 `APP_URI` service role, which the Controller, History and Gateway already authorize. These calls use mTLS

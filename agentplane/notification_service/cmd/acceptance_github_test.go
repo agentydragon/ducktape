@@ -203,7 +203,7 @@ func TestPendingGitHubCatchupSurvivesServiceRestartAndDeduplicatesLateWebhooks(t
 	historyAddress := grpcserver.ServeRegistered(t, func(server *grpc.Server) { historypb.RegisterHistoryServiceServer(server, history) })
 	dispatcherAddress := grpcserver.ServeRegistered(t, func(server *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(server, dispatcher) })
 	tune := func(c *config) {
-		c.GitHub = fixture.Settings(apiServer.URL)
+		c.GitHub.Settings = fixture.Settings(apiServer.URL)
 		c.GitHub.WebhookSecret = acceptanceWebhookKey
 		c.HistoryService.Target, c.SessionDispatcher.Target = historyAddress, dispatcherAddress
 		c.NoticeDebounce.QuietSeconds = 0

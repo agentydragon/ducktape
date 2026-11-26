@@ -52,6 +52,7 @@ _LONG_TIMEOUT_TESTS = [
     "provider_programs_test",
     "sequence_test",
     "switch_test",
+    "wide_table_reversal_test",
 ]
 
 js_test(
@@ -125,6 +126,91 @@ js_test(
     ),
 )
 
+_UNSHARDED_TESTS = [
+    "arithmetic_observer_test",
+    "arithmetic_test",
+    "arrays_test",
+    "async_methods_test",
+    "bitwise_test",
+    "composition_test",
+    "derived_defaults_test",
+    "derived_fields_test",
+    "derived_object_parameters_test",
+    "function_declaration_test",
+    "hoisted_moves_test",
+    "if_test",
+    "import_cells_test",
+    "initializer_moves_test",
+    "literal_records_test",
+    "logical_test",
+    "member_test",
+    "module_graph_test",
+    "module_metadata_test",
+    "numeric_prefix_test",
+    "object_elements_test",
+    "object_spread_test",
+    "optional_callee_test",
+    "pre_super_test",
+    "prefix_record_creation_test",
+    "provider_location_test",
+    "realm_constructors_test",
+    "record_prefix_test",
+    "record_values_test",
+    "regexp_test",
+    "relational_test",
+    "reordering_test",
+    "resolved_placement_test",
+    "rest_parameters_test",
+    "schedule_moves_test",
+    "slice_strategy_test",
+    "small_records_test",
+    "static_blocks_test",
+    "strict_arguments_test",
+    "string_initializer_test",
+    "structural_intrinsic_number_test",
+    "structural_object_method_test",
+    "switch_test",
+    "symbol_brand_test",
+    "symbol_iterator_test",
+    "symbol_tag_test",
+    "weakmap_constructor_test",
+    "wide_provider_scope_test",
+    "wide_records_test",
+]
+
+_SHARD_COUNTS = {
+    "browser_globals_test": 4,
+    "classes_test": 5,
+    "computed_class_keys_test": 4,
+    "conditional_super_test": 3,
+    "default_parameters_test": 3,
+    "dense_array_batch_test": 2,
+    "flat_patterns_test": 6,
+    "generator_test": 4,
+    "guarded_super_test": 3,
+    "host_profile_test": 3,
+    "identifier_assignment_test": 3,
+    "instanceof_test": 5,
+    "iterators_test": 3,
+    "loops_test": 4,
+    "mutations_test": 3,
+    "new_target_test": 3,
+    "numeric_property_keys_test": 2,
+    "object_parameter_defaults_test": 6,
+    "optional_chain_test": 3,
+    "pre_super_object_test": 5,
+    "private_elements_test": 4,
+    "programs_test": 3,
+    "property_assignment_test": 8,
+    "provider_programs_test": 3,
+    "sequence_test": 3,
+    "spread_arguments_test": 3,
+    "super_members_test": 3,
+    "tagged_templates_test": 3,
+    "templates_test": 3,
+    "wide_table_reversal_test": 2,
+}
+
 [
     js_test(
         name = name,
@@ -136,161 +222,10 @@ js_test(
             _TEST_ENV,
             SPLIT_PROOF_STRATEGY_CENSUS = "1",
         ) if name == "composition_test" else _TEST_ENV,
+        shard_count = _SHARD_COUNTS.get(name),
     )
-    for name in [
-        "arithmetic_observer_test",
-        "arithmetic_test",
-        "arrays_test",
-        "async_methods_test",
-        "bitwise_test",
-        "derived_defaults_test",
-        "derived_object_parameters_test",
-        "derived_fields_test",
-        "composition_test",
-        "function_declaration_test",
-        "hoisted_moves_test",
-        "if_test",
-        "import_cells_test",
-        "initializer_moves_test",
-        "literal_records_test",
-        "logical_test",
-        "member_test",
-        "module_graph_test",
-        "module_metadata_test",
-        "numeric_prefix_test",
-        "object_elements_test",
-        "object_spread_test",
-        "optional_callee_test",
-        "pre_super_test",
-        "prefix_record_creation_test",
-        "provider_location_test",
-        "realm_constructors_test",
-        "record_prefix_test",
-        "record_values_test",
-        "relational_test",
-        "reordering_test",
-        "resolved_placement_test",
-        "rest_parameters_test",
-        "strict_arguments_test",
-        "schedule_moves_test",
-        "slice_strategy_test",
-        "regexp_test",
-        "small_records_test",
-        "structural_intrinsic_number_test",
-        "static_blocks_test",
-        "string_initializer_test",
-        "structural_object_method_test",
-        "switch_test",
-        "symbol_brand_test",
-        "symbol_iterator_test",
-        "symbol_tag_test",
-        "weakmap_constructor_test",
-        "wide_provider_scope_test",
-        "wide_records_test",
-    ]
+    for name in _UNSHARDED_TESTS + _SHARD_COUNTS.keys()
 ]
-
-[
-    js_test(
-        name = name,
-        size = "medium",
-        timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
-        data = _TEST_DATA,
-        entry_point = name + ".mjs",
-        env = _TEST_ENV,
-        shard_count = shards,
-    )
-    for name, shards in [
-        ("browser_globals_test", 4),
-        ("classes_test", 5),
-        ("computed_class_keys_test", 4),
-        ("conditional_super_test", 3),
-        ("default_parameters_test", 3),
-        ("flat_patterns_test", 6),
-        ("generator_test", 4),
-        ("guarded_super_test", 3),
-        ("identifier_assignment_test", 3),
-        ("instanceof_test", 5),
-        ("loops_test", 4),
-        ("new_target_test", 3),
-        ("numeric_property_keys_test", 2),
-        ("object_parameter_defaults_test", 6),
-        ("pre_super_object_test", 5),
-        ("private_elements_test", 4),
-        ("optional_chain_test", 3),
-        ("sequence_test", 3),
-        ("super_members_test", 3),
-        ("templates_test", 3),
-        ("tagged_templates_test", 3),
-    ]
-]
-
-js_test(
-    name = "iterators_test",
-    size = "medium",
-    data = _TEST_DATA,
-    entry_point = "iterators_test.mjs",
-    env = _TEST_ENV,
-    shard_count = 3,
-)
-
-js_test(
-    name = "dense_array_batch_test",
-    size = "medium",
-    data = _TEST_DATA,
-    entry_point = "dense_array_batch_test.mjs",
-    env = _TEST_ENV,
-    shard_count = 2,
-)
-
-js_test(
-    name = "wide_table_reversal_test",
-    size = "medium",
-    timeout = "long",
-    data = _TEST_DATA,
-    entry_point = "wide_table_reversal_test.mjs",
-    env = _TEST_ENV,
-    shard_count = 2,
-)
-
-js_test(
-    name = "spread_arguments_test",
-    size = "medium",
-    data = _TEST_DATA,
-    entry_point = "spread_arguments_test.mjs",
-    env = _TEST_ENV,
-    shard_count = 3,
-)
-
-js_test(
-    name = "provider_programs_test",
-    size = "medium",
-    timeout = "long",
-    data = _TEST_DATA,
-    entry_point = "provider_programs_test.mjs",
-    env = _TEST_ENV,
-    shard_count = 3,
-)
-
-js_test(
-    name = "programs_test",
-    size = "medium",
-    timeout = "long",
-    data = _TEST_DATA,
-    entry_point = "programs_test.mjs",
-    env = _TEST_ENV,
-    shard_count = 3,
-)
-
-js_test(
-    name = "host_profile_test",
-    size = "medium",
-    timeout = "long",
-    data = _TEST_DATA,
-    entry_point = "host_profile_test.mjs",
-    env = _TEST_ENV,
-    shard_count = 3,
-)
 
 # Preserve the 48-reader reduction-budget regression for explicit runs.
 js_test(
@@ -312,26 +247,6 @@ js_test(
         _TEST_ENV,
         SPLIT_PROOF_TIMINGS = "1",
     ),
-)
-
-js_test(
-    name = "mutations_test",
-    size = "medium",
-    timeout = "long",
-    data = _TEST_DATA,
-    entry_point = "mutations_test.mjs",
-    env = _TEST_ENV,
-    shard_count = 3,
-)
-
-js_test(
-    name = "property_assignment_test",
-    size = "medium",
-    timeout = "long",
-    data = _TEST_DATA,
-    entry_point = "property_assignment_test.mjs",
-    env = _TEST_ENV,
-    shard_count = 8,
 )
 
 js_test(

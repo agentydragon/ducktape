@@ -22,13 +22,15 @@ theorem runProgram_singleModuleMetadata (body : List (Nat × CoreJS.Stmt))
   let target : CoreJS.Program := { entry := "main", modules := [targetModule] }
   change CoreJS.runProgram W fuel source = CoreJS.runProgram W fuel target
   have sourceLoaded : source.loaded = [sourceModule] := by
-    simp [CoreJS.Program.loaded, CoreJS.Program.evalOrder, CoreJS.Program.visit, CoreJS.Program.find, source, sourceModule]
+    simp [CoreJS.Program.loaded, CoreJS.Program.evalOrder, CoreJS.Program.visit,
+      EsmSplit.visitImports, CoreJS.Program.find, source, sourceModule]
   have targetLoaded : target.loaded = [targetModule] := by
-    simp [CoreJS.Program.loaded, CoreJS.Program.evalOrder, CoreJS.Program.visit, CoreJS.Program.find, target, targetModule]
+    simp [CoreJS.Program.loaded, CoreJS.Program.evalOrder, CoreJS.Program.visit,
+      EsmSplit.visitImports, CoreJS.Program.find, target, targetModule]
   have hregions : source.regions = target.regions := by
     simp [CoreJS.Program.regions, source, target, sourceModule, targetModule]
   have htops : source.tops = target.tops := by
-    simp [CoreJS.Program.tops, CoreJS.Program.loaded, CoreJS.Program.evalOrder, CoreJS.Program.visit,
+    simp [CoreJS.Program.tops, CoreJS.Program.loaded, CoreJS.Program.evalOrder, CoreJS.Program.visit, EsmSplit.visitImports,
       CoreJS.Program.find, source, target, sourceModule, targetModule]
   have hscopes : CoreJS.ScopesAgree source target := by
     intro frames _

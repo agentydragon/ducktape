@@ -104,11 +104,16 @@ be archived. This check does not prevent new work admitted after the read by ano
 
 ## Thread creation
 
-When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:
+When Create thread is disabled, the phone form shows the reason beside the action. On desktop,
+hovering the button or focusing its wrapper shows the reason:
 Sandbox availability, an unconfirmed Session creation, Session materialization in progress, or model availability.
 When creating a Thread on an existing Sandbox, the form shows that Sandbox's Identity and current
 Identity bindings read-only. It distinguishes an unassigned Identity from a missing Identity resource,
 and keeps policy-watch loading and failures visible.
+
+A Sandbox launch suggests the first free preset-derived Sandbox name. Its new Identity defaults to that
+name and can be renamed. Choosing an existing Identity creates only the Sandbox and leaves that
+Identity and its grants unchanged, including when the launch fails.
 
 ## Sandbox deletion and identity cleanup
 

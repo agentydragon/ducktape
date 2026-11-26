@@ -10,7 +10,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	_ "github.com/lib/pq"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
 const gooseTable = "runner_gateway_dispatcher_goose_version"
@@ -484,16 +484,7 @@ func assertRetainedEvidence(t *testing.T, db *sql.DB) {
 
 func openMigrationDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
-	if err != nil {
-		t.Fatal("open PostgreSQL clone:", err)
-	}
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
-			t.Errorf("close PostgreSQL clone: %v", err)
-		}
-	})
-	return db
+	return postgres.Open(t, integrationDatabase.Clone(t))
 }
 
 func TestSessionActivityUpgradeDoesNotRewriteRows(t *testing.T) {

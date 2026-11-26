@@ -98,9 +98,7 @@ pub(crate) fn annotate_heap_contents(
             heap_native_integrity_uses: BTreeSet::new(),
             native_read_inferences: BTreeMap::new(),
             native_read_inputs: BTreeMap::new(),
-            lazy_depth: 0,
-            past_await: false,
-            may_skip_await_depth: 0,
+            position: LazyPosition::default(),
             checked_factory_call: None,
             direct_root_new_site,
         };
@@ -201,9 +199,7 @@ pub(crate) fn annotate_heap_contents(
                 heap_native_integrity_uses: BTreeSet::new(),
                 native_read_inferences: BTreeMap::new(),
                 native_read_inputs: BTreeMap::new(),
-                lazy_depth: 0,
-                past_await: false,
-                may_skip_await_depth: 0,
+                position: LazyPosition::default(),
                 checked_factory_call: Some(span),
                 direct_root_new_site: None,
             };
@@ -342,9 +338,7 @@ struct ArrayContentCollector<'a> {
     heap_native_integrity_uses: BTreeSet<crate::reports::schema::NativeIntegrityUse>,
     native_read_inferences: BTreeMap<u32, crate::analysis_provenance::InferenceUse>,
     native_read_inputs: BTreeMap<u32, crate::reports::schema::NativeOperationInputUse>,
-    lazy_depth: u32,
-    past_await: bool,
-    may_skip_await_depth: u32,
+    position: LazyPosition,
     checked_factory_call: Option<u32>,
     direct_root_new_site: Option<u32>,
 }
@@ -354,20 +348,20 @@ impl ArrayContentCollector<'_> {
     /// cells, the innermost callable's first-order pre-await body, or none
     /// for code that runs only after a suspension or in an accessor body.
     fn cells(&mut self) -> Option<&mut HeapContentBuilder> {
-        if self.lazy_depth == 0 {
+        if self.position.depth == 0 {
             return Some(&mut self.eager);
         }
-        if self.past_await {
+        if self.position.past_await {
             return None;
         }
         let (key, depth) = *self
             .bodies
             .iter()
             .rev()
-            .find(|(_, depth)| *depth <= self.lazy_depth)?;
+            .find(|(_, depth)| *depth <= self.position.depth)?;
         // Code nested in a body the collector does not key (a getter of an
         // object literal inside a class field) is no callable's body.
-        let key = key.filter(|_| depth == self.lazy_depth)?;
+        let key = key.filter(|_| depth == self.position.depth)?;
         Some(self.callables.entry(key).or_default())
     }
 
@@ -395,7 +389,7 @@ impl ArrayContentCollector<'_> {
     }
 
     fn record_allocation(&mut self, key: HeapContentKey) {
-        if self.lazy_depth > 0 {
+        if self.position.depth > 0 {
             self.deferred_allocations.insert(key.effect_cell());
         }
         if let Some(cells) = self.cells() {
@@ -405,7 +399,7 @@ impl ArrayContentCollector<'_> {
 
     /// Visit a callable as `key`; its body runs one lazy level deeper.
     fn descend_body(&mut self, key: Option<u32>, visit: impl FnOnce(&mut Self)) {
-        self.bodies.push((key, self.lazy_depth + 1));
+        self.bodies.push((key, self.position.depth + 1));
         visit(self);
         self.bodies.pop();
     }
@@ -591,16 +585,8 @@ impl ArrayContentCollector<'_> {
 }
 
 impl LazyBoundary for ArrayContentCollector<'_> {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.lazy_depth
-    }
-
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
-    }
-
-    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
-        Some(&mut self.may_skip_await_depth)
+    fn position(&mut self) -> &mut LazyPosition {
+        &mut self.position
     }
 }
 
@@ -610,7 +596,7 @@ impl Visit for ArrayContentCollector<'_> {
         // allocation cell even when all later observations use an unsupported
         // protocol and therefore cannot name a precise array read.
         self.record_allocation(HeapContentKey::Array(node.span.lo.0));
-        if self.collect_one_shot_arrays && self.lazy_depth == 0 {
+        if self.collect_one_shot_arrays && self.position.depth == 0 {
             self.one_shot_allocations
                 .insert(EffectCell::ArrayContents(node.span.lo.0));
         }
@@ -972,8 +958,8 @@ impl Visit for ArrayContentCollector<'_> {
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {
         node.visit_children_with(self);
-        if self.may_skip_await_depth == 0 {
-            self.past_await = true;
+        if self.position.may_skip_await_depth == 0 {
+            self.position.past_await = true;
         }
     }
 

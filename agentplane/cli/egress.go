@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
@@ -41,19 +42,12 @@ egress policies allow. A rule with a credential also says where to send its plac
 do yourself: the proxy swaps in the real value only where the placeholder is presented. Select a rule from
 the output, for example with jq; the proxy alone decides what matches a call.`,
 			Args: cobra.NoArgs,
-			RunE: func(_ *cobra.Command, _ []string) error {
-				connection, err := a.ConnectGRPC("EGRESS_GRPC")
-				if err != nil {
-					return err
-				}
-				defer connection.Close()
-				ctx, cancel := a.Deadline()
-				defer cancel()
-				response, err := egressrulespb.NewEgressRulesClient(connection).GetRules(ctx, &egressrulespb.GetRulesRequest{})
+			RunE: invocation.GRPCCommand(a.Invocation, "EGRESS_GRPC", egressrulespb.NewEgressRulesClient, func(ctx context.Context, client egressrulespb.EgressRulesClient, _ []string) error {
+				response, err := client.GetRules(ctx, &egressrulespb.GetRulesRequest{})
 				if err != nil {
 					return invocation.GRPCFailure(ctx, err)
 				}
 				return invocation.ShowProto(a.Invocation, []*egressrulespb.GetRulesResponse{response}, rulesText, protojson.MarshalOptions{EmitUnpopulated: true})
-			},
+			}),
 		})
 }

@@ -54,7 +54,7 @@ def test_settings_are_typed_and_include_nested_defaults() -> None:
     assert settings.unavailable_destination_retry_s == 30
     assert settings.request_timeout_s == 15
     assert settings.message_body_limit_bytes == 32 * 1024
-    assert settings.github_delivery_retention_days == 7
+    assert settings.github is None
     assert "operator_reader_services" not in settings.model_dump()
 
 
@@ -165,15 +165,18 @@ def test_generic_environment_does_not_override_static_values(monkeypatch: pytest
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_DATABASE_URL", "postgresql://not-a-setting")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__INBOXES_PER_ACCOUNT", "18")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_ACTIONS__URL", "http://override.invalid")
-    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB_DELIVERY_RETENTION_DAYS", "3")
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__FACT_RETENTION_HOURS", "3")
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__RAW_BODY_RETENTION_HOURS", "0")
     values = static_values()
     values["quotas"] = {"inboxes_per_account": 12}
-    values["github_delivery_retention_days"] = 14
+    values["github"] = {"fact_retention_hours": 85}
 
     settings = Settings.model_validate(values)
     assert settings.quotas.inboxes_per_account == 12
     assert str(settings.actions.url) == "http://actions/"
-    assert settings.github_delivery_retention_days == 14
+    assert settings.github is not None
+    assert settings.github.fact_retention_hours == 85
+    assert settings.github.raw_body_retention_hours == 72
     assert not hasattr(settings, "database_url")
 
 
@@ -205,7 +208,7 @@ def test_github_settings_are_static_and_credentials_are_outside_the_schema() -> 
             },
         }
     )
-    assert settings.github is not None
+    assert isinstance(settings.github, GitHubSettings)
     assert str(settings.github.api_url) == "http://github.test/api/v3"
     assert settings.github.request_timeout_s == 12
     assert settings.github.api_version == date(2026, 1, 1)
@@ -217,13 +220,32 @@ def test_github_settings_are_static_and_credentials_are_outside_the_schema() -> 
 
 
 def test_explicit_null_retention_differs_from_omission() -> None:
-    assert Settings.model_validate(static_values()).github_delivery_retention_days == 7
-    assert (
-        Settings.model_validate(
-            {**static_values(), "github_delivery_retention_days": None}
-        ).github_delivery_retention_days
-        is None
-    )
+    defaults = Settings.model_validate({**static_values(), "github": {}}).github
+    assert defaults is not None
+    assert defaults.fact_retention_hours == 168
+    assert defaults.raw_body_retention_hours == 72
+    configured = Settings.model_validate({**static_values(), "github": {"fact_retention_hours": None}}).github
+    assert configured is not None
+    assert configured.fact_retention_hours is None
+    assert configured.model_dump() == {"fact_retention_hours": None}
+
+
+@pytest.mark.parametrize(
+    ("facts_hours", "payload_hours", "valid"),
+    [(7, 0, True), (7, 3, True), (1, 2, False), (7, None, False), (None, 3, True), (None, None, True)],
+)
+def test_payload_retention_is_independent_but_never_outlives_facts(
+    facts_hours: int | None, payload_hours: int | None, valid: bool
+) -> None:
+    values = {
+        **static_values(),
+        "github": {"fact_retention_hours": facts_hours, "raw_body_retention_hours": payload_hours},
+    }
+    if valid:
+        Settings.model_validate(values)
+    else:
+        with pytest.raises(ValidationError):
+            Settings.model_validate(values)
 
 
 def test_receiver_requires_spiffe_trust() -> None:

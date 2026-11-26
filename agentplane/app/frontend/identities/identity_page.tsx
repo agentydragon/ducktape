@@ -77,7 +77,7 @@ function DeleteIdentity({
         </Alert>
       ) : (
         <Text size="sm" c="dimmed">
-          Nothing references this identity. Deleting it also deletes what it owns: {split.own.length}{" "}
+          No external policy binding references this identity. Deleting it also deletes what it owns: {split.own.length}{" "}
           {split.own.length === 1 ? "binding" : "bindings"}.
         </Text>
       )}

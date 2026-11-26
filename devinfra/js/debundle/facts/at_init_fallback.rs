@@ -500,16 +500,12 @@ struct OpaqueAtInitCallFinder<'a> {
     native_facts: &'a ValidatedNativeOperationFacts,
     graph: &'a ChunkCodeGraph,
     found: bool,
-    lazy_depth: u32,
-    past_await: bool,
+    position: LazyPosition,
 }
 
 impl LazyBoundary for OpaqueAtInitCallFinder<'_> {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.lazy_depth
-    }
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
+    fn position(&mut self) -> &mut LazyPosition {
+        &mut self.position
     }
 }
 
@@ -518,7 +514,7 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
         if self.found {
             return;
         }
-        if self.lazy_depth == 0 {
+        if self.position.depth == 0 {
             let opaque = match expr {
                 Expr::Call(call) if self.native_facts.symbol_literal_proof(call).is_some() => false,
                 Expr::New(construction)
@@ -567,8 +563,7 @@ pub(crate) fn has_opaque_at_init_call(
         native_facts,
         graph,
         found: false,
-        lazy_depth: 0,
-        past_await: false,
+        position: LazyPosition::default(),
     };
     item.visit_with(&mut finder);
     finder.found
@@ -593,9 +588,7 @@ pub(crate) fn no_sync_member_argument_fallback_sources(
     let mut collector = NoSyncMemberArgumentSourceCollector {
         no_sync_callback_members: &hints.assumptions.no_sync_callback_members,
         sources: PositionBucketed::default(),
-        lazy_depth: 0,
-        past_await: false,
-        may_skip_await_depth: 0,
+        position: LazyPosition::default(),
     };
     item.visit_with(&mut collector);
     collector.sources
@@ -641,36 +634,27 @@ fn member_matches_no_sync_callback(
 struct NoSyncMemberArgumentSourceCollector<'a> {
     no_sync_callback_members: &'a BTreeMap<String, BTreeSet<String>>,
     sources: PositionBucketed<BTreeSet<Id>>,
-    lazy_depth: u32,
-    past_await: bool,
-    may_skip_await_depth: u32,
+    position: LazyPosition,
 }
 
 impl NoSyncMemberArgumentSourceCollector<'_> {
     fn collect_no_sync_args(&mut self, args: &[ExprOrSpread]) {
-        if self.lazy_depth > 1 || (self.lazy_depth == 1 && self.past_await) {
+        if !self.position.can_run_at_init() {
             return;
         }
         for arg in args {
             let mut sources = UnresolvedCallSourceCollector::default();
             arg.expr.visit_with(&mut sources);
             for id in sources.idents {
-                self.sources.record(&id, self.lazy_depth, self.past_await);
+                self.sources.record(&id, self.position);
             }
         }
     }
 }
 
 impl LazyBoundary for NoSyncMemberArgumentSourceCollector<'_> {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.lazy_depth
-    }
-
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
-    }
-    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
-        Some(&mut self.may_skip_await_depth)
+    fn position(&mut self) -> &mut LazyPosition {
+        &mut self.position
     }
 }
 
@@ -678,10 +662,7 @@ impl Visit for NoSyncMemberArgumentSourceCollector<'_> {
     impl_lazy_optional_path_visits!();
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        if matches!(
-            node.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if node.op.may_short_circuit() {
             lazy_visit_may_skip(self, node);
         } else {
             node.visit_children_with(self);
@@ -711,8 +692,8 @@ impl Visit for NoSyncMemberArgumentSourceCollector<'_> {
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {
         node.visit_children_with(self);
-        if self.may_skip_await_depth == 0 {
-            self.past_await = true;
+        if self.position.may_skip_await_depth == 0 {
+            self.position.past_await = true;
         }
     }
 

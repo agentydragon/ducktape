@@ -20,20 +20,13 @@ func (s *Service) watchDispatchWorkset(
 	stream grpc.ServerStreamingServer[dispatcherpb.WatchDispatchesResponse],
 ) error {
 	digest := resumetoken.Digest([]byte("dispatch-workset\x00" + sessionID))
-	var after int64
-	if token != "" {
-		var err error
-		after, err = resumetoken.Decode(token, digest)
-		if err != nil {
-			return status.Error(codes.InvalidArgument, err.Error())
-		}
-	}
-	if s.Hub == nil {
-		return status.Error(codes.Unavailable, "dispatcher watch listener unavailable")
-	}
-	changed, unsubscribe, err := s.Hub.SubscribeKey(store.NotifyChannel, sessionID)
+	after, err := resumetoken.Decode(token, digest)
 	if err != nil {
-		return status.Error(codes.Unavailable, "dispatcher watch subscription unavailable")
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	changed, unsubscribe, err := s.subscribeDispatches(sessionID)
+	if err != nil {
+		return err
 	}
 	defer unsubscribe()
 	if s.WatchLease <= 0 {
@@ -51,34 +44,24 @@ func (s *Service) watchDispatchWorkset(
 		}
 		workset, through, err := s.Store.ReadDispatchWorkset(leaseCtx, sessionID, caller, after, resuming)
 		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if leaseCtx.Err() != nil {
-				return nil
-			}
-			return apiError(err)
+			return watchEnd(ctx, leaseCtx, apiError(err))
 		}
 		if !s.Hub.Connected() || generation != s.Hub.Generation() {
 			return status.Error(codes.Unavailable, "dispatcher workset updates disconnected")
 		}
 		if !proto.Equal(previous, workset) {
-			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+			if err := sendWatchDispatch(leaseCtx, stream, &dispatcherpb.WatchDispatchesResponse{
 				Frame:       &dispatcherpb.WatchDispatchesResponse_Workset{Workset: workset},
 				ResumeToken: resumetoken.Encode(through, digest),
-			})
-			if ended || err != nil {
-				return err
+			}); err != nil {
+				return watchEnd(ctx, leaseCtx, err)
 			}
 			previous = workset
 		}
 		after, resuming = through, true
 		select {
 		case <-leaseCtx.Done():
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return nil
+			return ctx.Err()
 		case <-changed:
 		}
 	}

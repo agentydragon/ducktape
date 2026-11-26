@@ -405,6 +405,15 @@ into `no_match` (2026-09-24). Free names bind in their frame like any other
 reference; the matcher only records what each bound to, and reports a name that
 bound two different identifiers as unbound.
 
+### Rejected: replacing registration selectors with templates
+
+[PR #16600](https://github.com/agentydragon/ducktape/pull/16600) tried replacing
+`passed_to_call` with structural templates. Call-only templates mixed class and
+function registrations. Class-only templates matched identical unregistered
+classes. Free receiver names alpha-renamed, so they could not enforce the
+explicit `object` anchor. Preserve callee, receiver, argument-position and
+source-unit kind constraints in any replacement.
+
 ## Interactive budget
 
 Root `AGENTS.md` § Profiling applies. Interactive commands target under 10s on

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
+import { split } from "../translation/testing/split.mjs";
 import { pathToFileURL } from "node:url";
 
 const spec = path.join(process.env.TEST_TMPDIR, "spec.json");
@@ -13,23 +13,14 @@ const provider = "provider.mjs";
 function place(modules) {
   writeFileSync(spec, JSON.stringify({ entry, modules, order: [provider], sequential: true }));
 }
-function check(dir, status, ...args) {
+function check(out, status, { checkOutput = false } = {}) {
   const request = "normal-completion";
-  const run = spawnSync(
-    process.env.LOWERSPLIT,
-    [writeDeployment(source, spec, dir), dir, "--require", request, ...args],
-    {
-      encoding: "utf8",
-    }
-  );
-  assert.equal(run.status, status === "certified" ? 0 : 1, run.stdout + run.stderr);
-  const verdict = JSON.parse(run.stdout);
-  assert.equal(verdict.requested, request);
-  assert.equal(verdict.status, status);
+  const { verdict, log } = split({ source, spec, out, require: request, checkOutput });
+  assert.equal(verdict.status, status, log);
   if (status === "certified") {
-    assert([request, "all-outcomes"].includes(verdict.guarantee));
-    if (verdict.guarantee === "all-outcomes") assert.equal(verdict.scope, "linked-slice-order-kept");
-  } else assert.equal(verdict.guarantee, null);
+    assert([request, "all-outcomes"].includes(verdict.guarantee), log);
+    if (verdict.guarantee === "all-outcomes") assert.equal(verdict.scope, "linked-slice-order-kept", log);
+  } else assert.equal(verdict.guarantee, null, log);
 }
 place({ [provider]: ["#0"], [entry]: ["#1"] });
 const out = path.join(process.env.TEST_TMPDIR, "good");
@@ -56,14 +47,14 @@ function probe() {
   return run.stdout;
 }
 assert.equal(probe(), "1\n");
-check(out, "certified", "--check-output");
+check(out, "certified", { checkOutput: true });
 const file = path.join(out, provider);
 const body = readFileSync(file, "utf8");
 const changed = body.replace("1", "2");
 assert.notEqual(body, changed);
 writeFileSync(file, changed);
 assert.equal(probe(), "2\n");
-check(out, "rejected", "--check-output");
+check(out, "rejected", { checkOutput: true });
 place({ [entry]: ["#0"], [provider]: ["#1"] });
 const bad = path.join(process.env.TEST_TMPDIR, "bad");
 check(bad, "rejected");

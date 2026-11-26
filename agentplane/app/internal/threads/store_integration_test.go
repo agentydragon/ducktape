@@ -22,16 +22,8 @@ func TestMain(m *testing.M) {
 func openStore(t *testing.T) (*Store, *sql.DB, string) {
 	t.Helper()
 	url := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", url)
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := postgres.Open(t, url)
 	db.SetMaxOpenConns(8)
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
-			t.Error(err)
-		}
-	})
 	if err := db.PingContext(t.Context()); err != nil {
 		t.Fatal(err)
 	}

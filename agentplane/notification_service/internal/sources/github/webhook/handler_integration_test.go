@@ -56,12 +56,16 @@ func openDatabase(t *testing.T, url string) *sql.DB {
 }
 
 func newHandler(db *sql.DB, configure func(*settings.Settings)) *Handler {
+	return newHandlerWithRetention(db, settings.DefaultRetention(), configure)
+}
+
+func newHandlerWithRetention(db *sql.DB, retention settings.Retention, configure func(*settings.Settings)) *Handler {
 	settings := testSettings()
 	if configure != nil {
 		configure(&settings)
 	}
 	runner := transaction.New(db)
-	return New(settings, fanout.New(db, runner, inboxstore.New(db, runner, inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})))
+	return New(settings, retention, fanout.New(db, runner, inboxstore.New(db, runner, inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})))
 }
 
 // serve is the URL of the route served over HTTP, as the facade serves it.
@@ -82,9 +86,13 @@ type route struct {
 }
 
 func newRoute(t *testing.T, configure func(*settings.Settings)) route {
+	return newRouteWithRetention(t, settings.DefaultRetention(), configure)
+}
+
+func newRouteWithRetention(t *testing.T, retention settings.Retention, configure func(*settings.Settings)) route {
 	t.Helper()
 	db := openDatabase(t, integrationDatabase.URL)
-	handler := newHandler(db, configure)
+	handler := newHandlerWithRetention(db, retention, configure)
 	return route{Handler: handler, URL: serve(t, handler), db: db}
 }
 
@@ -277,6 +285,35 @@ func TestAcceptedDeliveryIsStoredOnceAndRedeliveredAsDuplicate(t *testing.T) {
 	}
 }
 
+func TestZeroPayloadRetentionStoresOnlyTheFactAndStillDeduplicates(t *testing.T) {
+	r := newRouteWithRetention(t, settings.Retention{Hours: new(7), PayloadHours: new(0)}, nil)
+	d := signedDelivery("issue_comment", issueComment(7, "comment content"))
+	d.post(t, r.URL).expect(t, http.StatusAccepted, receipt{Accepted: true})
+
+	var bodyIsNull bool
+	var fact []byte
+	if err := r.db.QueryRowContext(t.Context(), `
+		SELECT payload IS NULL, fact FROM github_delivery WHERE app_id = $1 AND delivery_id = $2`,
+		testAppID, d.id).Scan(&bodyIsNull, &fact); err != nil {
+		t.Fatal(err)
+	}
+	if !bodyIsNull {
+		t.Fatal("zero payload retention stored a raw webhook body")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(fact, &payload); err != nil {
+		t.Fatal(err)
+	}
+	comment := payload["comment"].(map[string]any)
+	if comment["body"] != "comment content" {
+		t.Fatalf("stored fact = %s, want comment content", fact)
+	}
+	d.post(t, r.URL).expect(t, http.StatusAccepted, receipt{Accepted: true, Duplicate: true})
+	if count := r.stored(t, d.id); count != 1 {
+		t.Fatalf("%d receipts stored after redelivery, want one", count)
+	}
+}
+
 func TestInstallationEventWithoutRepositoryIsAccepted(t *testing.T) {
 	r := newRoute(t, nil)
 	d := signedDelivery("installation", []byte(`{"action":"created","installation":{"id":12}}`))
@@ -315,9 +352,9 @@ func TestPingIsAcceptedUnparsedAndStoresNothing(t *testing.T) {
 // The example of GitHub's "Validating webhook deliveries" documentation, which the other tests' own signing cannot
 // stand in for.
 func TestSignatureIsTheHMACGitHubDocuments(t *testing.T) {
-	settings := testSettings()
-	settings.WebhookSecret = "It's a Secret to Everybody"
-	handler := New(settings, nil)
+	appSettings := testSettings()
+	appSettings.WebhookSecret = "It's a Secret to Everybody"
+	handler := New(appSettings, settings.DefaultRetention(), nil)
 
 	if !handler.signed([]byte("Hello, World!"), "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17") {
 		t.Error("the documented signature was refused")
@@ -325,7 +362,7 @@ func TestSignatureIsTheHMACGitHubDocuments(t *testing.T) {
 }
 
 func TestSignatureRejectsOtherGitHubAlgorithms(t *testing.T) {
-	handler := New(testSettings(), nil)
+	handler := New(testSettings(), settings.DefaultRetention(), nil)
 	body := []byte("signed payload")
 	for name, mac := range map[string]hash.Hash{
 		"sha1":   hmac.New(sha1.New, []byte(testSecret)),

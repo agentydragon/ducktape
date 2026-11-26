@@ -20,6 +20,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 it("launches through the operator APIs with the exact picked PolicySets and Identity", async () => {
   const request = create(CreateEnvironmentRequestSchema, {
+    identity: "launched",
     name: "launched",
     template: "test-template",
     preset: "test-preset",
@@ -61,7 +62,11 @@ it("launches through the operator APIs with the exact picked PolicySets and Iden
 });
 
 it("leaves the Identity when the Environment create outcome is uncertain", async () => {
-  const request = create(CreateEnvironmentRequestSchema, { name: "uncertain", template: "test-template" });
+  const request = create(CreateEnvironmentRequestSchema, {
+    identity: "uncertain",
+    name: "uncertain",
+    template: "test-template",
+  });
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(
@@ -80,7 +85,11 @@ it("leaves the Identity when the Environment create outcome is uncertain", async
 });
 
 it.each([408, 429])("keeps the Identity after an Environment create response with status %i", async (status) => {
-  const request = create(CreateEnvironmentRequestSchema, { name: `uncertain-${status}`, template: "test-template" });
+  const request = create(CreateEnvironmentRequestSchema, {
+    identity: `uncertain-${status}`,
+    name: `uncertain-${status}`,
+    template: "test-template",
+  });
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(
@@ -101,7 +110,11 @@ it.each([408, 429])("keeps the Identity after an Environment create response wit
 });
 
 it("deletes the Identity after a definite Environment create refusal", async () => {
-  const request = create(CreateEnvironmentRequestSchema, { name: "rejected", template: "test-template" });
+  const request = create(CreateEnvironmentRequestSchema, {
+    identity: "rejected",
+    name: "rejected",
+    template: "test-template",
+  });
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(

@@ -36,17 +36,8 @@ const (
 	failureKindPrefix = "SOURCE_FAILURE_KIND_"
 )
 
-func (a *commands) notificationCall(fn func(context.Context, notificationspb.NotificationsClient, []string) error) func(*cobra.Command, []string) error {
-	return func(_ *cobra.Command, args []string) error {
-		conn, err := a.ConnectGRPC("NOTIFICATIONS_GRPC")
-		if err != nil {
-			return err
-		}
-		defer conn.Close()
-		ctx, cancel := a.Deadline()
-		defer cancel()
-		return fn(ctx, notificationspb.NewNotificationsClient(conn), args)
-	}
+func (a *commands) notificationCall(run func(context.Context, notificationspb.NotificationsClient, []string) error) func(*cobra.Command, []string) error {
+	return invocation.GRPCCommand(a.Invocation, "NOTIFICATIONS_GRPC", notificationspb.NewNotificationsClient, run)
 }
 
 var notificationJSONOptions = protojson.MarshalOptions{EmitUnpopulated: true}

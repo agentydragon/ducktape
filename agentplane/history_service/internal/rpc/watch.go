@@ -26,11 +26,9 @@ type watchStream = grpc.ServerStreamingServer[historypb.WatchSessionSummariesRes
 // it follows is in the tables, so a notification lost on a replica or a dropped LISTEN connection costs at most a
 // spurious `changed`.
 func (s *Service) WatchSessionSummaries(request *historypb.WatchSessionSummariesRequest, stream watchStream) error {
-	if request.GetSelected() != nil {
-		if request.RecordedAfter != nil {
-			return status.Error(codes.InvalidArgument, "selected summaries cannot be combined with recorded_after")
-		}
-		return s.watchSelectedSummaries(request.GetSelected(), stream)
+	selected := request.GetSelected()
+	if selected != nil && request.RecordedAfter != nil {
+		return status.Error(codes.InvalidArgument, "selected summaries cannot be combined with recorded_after")
 	}
 	ctx := stream.Context()
 	reader, err := s.scopedReader(ctx)
@@ -48,16 +46,24 @@ func (s *Service) WatchSessionSummaries(request *historypb.WatchSessionSummaries
 	}
 	defer unsubscribe()
 	recordedAfter := request.RecordedAfter
+	var previous map[string]*historypb.SessionSummary
 	for {
-		if err := s.send(leased, stream, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Changed{Changed: &emptypb.Empty{}}}); err != nil {
-			return err
-		}
-		if recordedAfter != nil {
-			position, err := s.announceSessions(leased, stream, reader, *recordedAfter)
+		if selected != nil {
+			previous, err = s.sendSelectedSummaries(leased, stream, reader, selected, previous)
 			if err != nil {
 				return err
 			}
-			recordedAfter = &position
+		} else {
+			if err := s.send(leased, stream, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Changed{Changed: &emptypb.Empty{}}}); err != nil {
+				return err
+			}
+			if recordedAfter != nil {
+				position, err := s.announceSessions(leased, stream, reader, *recordedAfter)
+				if err != nil {
+					return err
+				}
+				recordedAfter = &position
+			}
 		}
 		select {
 		case <-changed:
@@ -114,67 +120,44 @@ func sendWithin[Response any](ctx context.Context, stream interface{ Send(*Respo
 	return streaming.SendWithinStatus(ctx, timeout, stream.Send, response, "history stream write deadline expired")
 }
 
-// watchSelectedSummaries sends an initial snapshot and changed rows, rereading on each
-// wakeup and after listener recovery. The subscription precedes the snapshot.
-func (s *Service) watchSelectedSummaries(request *historypb.SelectedSessionSummaries, stream watchStream) error {
-	ctx := stream.Context()
-	reader, err := s.scopedReader(ctx)
+// sendSelectedSummaries sends a snapshot on the first read and changes on later reads.
+func (s *Service) sendSelectedSummaries(
+	ctx context.Context,
+	stream watchStream,
+	reader *reads.Reader,
+	request *historypb.SelectedSessionSummaries,
+	previous map[string]*historypb.SessionSummary,
+) (map[string]*historypb.SessionSummary, error) {
+	if !s.wakeups.Connected() {
+		return nil, status.Error(codes.Unavailable, "summary change listener is disconnected")
+	}
+	readCtx, cancel := context.WithTimeout(ctx, s.requestTimeout)
+	result, err := reader.BatchGetSessionSummaries(readCtx, &historypb.BatchGetSessionSummariesRequest{SessionIds: request.GetSessionIds()})
+	cancel()
 	if err != nil {
-		return failure(ctx, err)
+		return nil, failure(stream.Context(), err)
 	}
-	leased, cancel := context.WithTimeout(ctx, s.lease)
-	defer cancel()
-	defer context.AfterFunc(s.draining, cancel)()
-	changed, unsubscribe, err := s.wakeups.Subscribe(projection.ChannelSummaries, storage.ChannelSessions)
-	if err != nil {
-		return failure(ctx, err)
+	next := make(map[string]*historypb.SessionSummary, len(result.GetSummaries()))
+	for _, row := range result.GetSummaries() {
+		next[row.GetSessionId()] = row
 	}
-	defer unsubscribe()
-	previous := map[string]*historypb.SessionSummary{}
-	initial := true
-	for {
-		if !s.wakeups.Connected() {
-			return status.Error(codes.Unavailable, "summary change listener is disconnected")
-		}
-		readCtx, end := context.WithTimeout(leased, s.requestTimeout)
-		result, readErr := reader.BatchGetSessionSummaries(readCtx, &historypb.BatchGetSessionSummariesRequest{SessionIds: request.GetSessionIds()})
-		end()
-		if readErr != nil {
-			return failure(ctx, readErr)
-		}
-		next := map[string]*historypb.SessionSummary{}
-		for _, row := range result.GetSummaries() {
-			next[row.GetSessionId()] = row
-		}
-		if initial {
-			if err := sendWithin(leased, stream, s.requestTimeout, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Snapshot{Snapshot: result}}); err != nil {
-				return err
+	if previous == nil {
+		err := s.send(ctx, stream, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Snapshot{Snapshot: result}})
+		return next, err
+	}
+	for id, row := range next {
+		if !proto.Equal(row, previous[id]) {
+			if err := s.send(ctx, stream, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Summary{Summary: row}}); err != nil {
+				return nil, err
 			}
-			initial = false
-		} else {
-			for id, row := range next {
-				if !proto.Equal(row, previous[id]) {
-					if err := sendWithin(leased, stream, s.requestTimeout, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Summary{Summary: row}}); err != nil {
-						return err
-					}
-				}
-			}
-			for id := range previous {
-				if next[id] == nil {
-					if err := sendWithin(leased, stream, s.requestTimeout, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_RemovedSessionId{RemovedSessionId: id}}); err != nil {
-						return err
-					}
-				}
-			}
-		}
-		previous = next
-		select {
-		case <-changed:
-		case <-leased.Done():
-			if ctx.Err() != nil {
-				return status.FromContextError(ctx.Err()).Err()
-			}
-			return sendWithin(ctx, stream, s.requestTimeout, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}})
 		}
 	}
+	for id := range previous {
+		if next[id] == nil {
+			if err := s.send(ctx, stream, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_RemovedSessionId{RemovedSessionId: id}}); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return next, nil
 }

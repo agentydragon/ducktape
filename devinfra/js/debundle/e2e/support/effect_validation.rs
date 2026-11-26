@@ -21,15 +21,12 @@ pub fn native_constructor_input(
     binding: &str,
     operation: NativeOperationKind,
 ) -> NativeOperationInputContract {
-    NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(source_match_selector(
-            declaration.trim(),
-            &[binding],
-        )),
+    native_operation_input(
+        source,
+        declared_source_unit(declaration.trim(), binding),
         operation,
-        audited_source_sha256: source_sha256(source),
-        note: Some("Neutral fixture audits one direct empty native constructor.".to_string()),
-    }
+        "Neutral fixture audits one direct empty native constructor.",
+    )
 }
 
 pub fn binding_execution_report(fixture: &Fixture, binding: &str) -> Value {

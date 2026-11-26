@@ -61,11 +61,7 @@ fn primitive_result(expression: &Expr, scalar: &HashSet<Id>) -> bool {
             Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_))
             | Expr::Tpl(_)
             | Expr::Unary(_) => {}
-            Expr::Bin(binary)
-                if !matches!(
-                    binary.op,
-                    BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-                ) => {}
+            Expr::Bin(binary) if !binary.op.may_short_circuit() => {}
             Expr::Ident(identifier) if scalar.contains(&identifier.to_id()) => {}
             Expr::Cond(conditional) => {
                 pending.push(&conditional.cons);

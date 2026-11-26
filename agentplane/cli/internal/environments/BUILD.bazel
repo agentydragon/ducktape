@@ -14,7 +14,6 @@ go_library(
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
         "@com_github_spf13_cobra//:cobra",
-        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",

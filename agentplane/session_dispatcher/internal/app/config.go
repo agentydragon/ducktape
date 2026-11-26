@@ -29,28 +29,22 @@ const (
 type config struct {
 	Namespace string `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
-	PolicyNamespace             string                   `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL       string                   `mapstructure:"-"`
-	RunnerTokenFile             string                   `mapstructure:"runner_token_file"`
-	Kubeconfig                  string                   `mapstructure:"kubeconfig"`
-	KubernetesClientQPS         float32                  `mapstructure:"kubernetes_client_qps"`
-	RPC                         listener.Config          `mapstructure:"rpc"`
-	GatewayTLS                  *peertls.ClientTLS       `mapstructure:"gateway_tls"`
-	RunnerControlTargetTemplate string                   `mapstructure:"runner_control_target_template"`
-	WakeServiceCallers          []string                 `mapstructure:"wake_service_callers"`
-	DispatcherServiceCallers    []string                 `mapstructure:"dispatcher_service_callers"`
-	DispatcherServiceDelegation *serviceDelegationConfig `mapstructure:"dispatcher_service_delegation"`
-	QueueCap                    int                      `mapstructure:"max_queued_per_session"`
-	WatchLeaseSeconds           int                      `mapstructure:"dispatcher_watch_lease_seconds"`
-	RunnerTimeoutSeconds        int                      `mapstructure:"runner_request_timeout_seconds"`
+	PolicyNamespace             string                        `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL       string                        `mapstructure:"-"`
+	RunnerTokenFile             string                        `mapstructure:"runner_token_file"`
+	Kubeconfig                  string                        `mapstructure:"kubeconfig"`
+	KubernetesClientQPS         float32                       `mapstructure:"kubernetes_client_qps"`
+	RPC                         listener.Config               `mapstructure:"rpc"`
+	GatewayTLS                  *peertls.ClientTLS            `mapstructure:"gateway_tls"`
+	RunnerControlTargetTemplate string                        `mapstructure:"runner_control_target_template"`
+	WakeServiceCallers          []string                      `mapstructure:"wake_service_callers"`
+	DispatcherServiceCallers    []string                      `mapstructure:"dispatcher_service_callers"`
+	DispatcherServiceDelegation *auth.ServiceDelegationConfig `mapstructure:"dispatcher_service_delegation"`
+	QueueCap                    int                           `mapstructure:"max_queued_per_session"`
+	WatchLeaseSeconds           int                           `mapstructure:"dispatcher_watch_lease_seconds"`
+	RunnerTimeoutSeconds        int                           `mapstructure:"runner_request_timeout_seconds"`
 
 	CentralSampler *dispatcher.CentralTarget `mapstructure:"central_sampler"`
-}
-
-// serviceDelegationConfig is a separate certificate actor grant scoped to exact methods.
-type serviceDelegationConfig struct {
-	Actors  []auth.ServiceDelegator `mapstructure:"actors"`
-	Methods []string                `mapstructure:"methods"`
 }
 
 func defaultConfig() config {
@@ -66,9 +60,7 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("%s is required", settingPrefix+"CONFIG_FILE")
 	}
 	c := defaultConfig()
-	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
-		DecodeHook: listener.AuthenticationDecodeHook,
-	}); err != nil {
+	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{}); err != nil {
 		return config{}, configfile.RedactMapstructureError("Runner Gateway", err)
 	}
 	c.DispatcherDatabaseURL = os.Getenv(dispatcherDatabaseURLEnv)
@@ -88,25 +80,20 @@ func (c *config) validate() error {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 	}
-	if c.DispatcherServiceDelegation != nil {
-		if len(c.DispatcherServiceDelegation.Actors) == 0 || len(c.DispatcherServiceDelegation.Methods) == 0 {
-			return errors.New("dispatcher_service_delegation requires actors and methods")
+	if d := c.DispatcherServiceDelegation; d != nil {
+		if err := d.Validate(); err != nil {
+			return fmt.Errorf("dispatcher_service_delegation: %w", err)
 		}
 		dispatcherMethods := dispatcher.Methods(auth.Rule{})
-		for _, method := range c.DispatcherServiceDelegation.Methods {
+		for _, method := range d.Methods {
 			if _, ok := dispatcherMethods[method]; !ok {
 				return fmt.Errorf("dispatcher_service_delegation method %q must belong to SessionDispatcher", method)
 			}
 		}
-		var actors []string
-		for _, actor := range c.DispatcherServiceDelegation.Actors {
+		for _, actor := range d.Actors {
 			if actor.ConnectionProvenance {
 				return errors.New("Dispatcher service delegation requires Action provenance")
 			}
-			actors = append(actors, actor.SPIFFEID)
-		}
-		if err := auth.ValidateServiceCallers(actors); err != nil {
-			return err
 		}
 	}
 

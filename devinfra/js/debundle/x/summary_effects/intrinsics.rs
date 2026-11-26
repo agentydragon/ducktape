@@ -610,12 +610,7 @@ fn passed_through<'e>(expr: &'e Expr, out: &mut Vec<&'e Expr>) {
             passed_through(&cond.cons, out);
             passed_through(&cond.alt, out);
         }
-        Expr::Bin(binary)
-            if matches!(
-                binary.op,
-                BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing
-            ) =>
-        {
+        Expr::Bin(binary) if binary.op.may_short_circuit() => {
             passed_through(&binary.left, out);
             passed_through(&binary.right, out);
         }
@@ -1420,10 +1415,7 @@ impl Visit for Visitor<'_> {
 
     fn visit_assign_expr(&mut self, assign: &AssignExpr) {
         let outer = self.conditional;
-        self.conditional |= matches!(
-            assign.op,
-            AssignOp::OrAssign | AssignOp::AndAssign | AssignOp::NullishAssign
-        );
+        self.conditional |= assign.op.may_short_circuit();
         // `G.m ||= v` stores only when `G.m` is missing.
         let own = match (&assign.op, &assign.left) {
             (

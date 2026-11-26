@@ -38,12 +38,13 @@ export function SandboxesLiveProvider({ children }: { children: ReactNode }): JS
       },
       onFrame: (result) => {
         const { frame } = fromJson(WatchEnvironmentsResponseSchema, result);
-        const sandboxes = collection.apply<EnvironmentChunk>(frame, (chunk) => chunk.environments);
-        if (sandboxes === null) return;
-        sandboxes.sort(
-          (a, b) =>
-            a.target!.namespace.localeCompare(b.target!.namespace) || a.target!.name.localeCompare(b.target!.name)
-        );
+        if (!collection.apply<EnvironmentChunk>(frame, (chunk) => chunk.environments)) return;
+        const sandboxes = collection
+          .snapshotValues()
+          .sort(
+            (a, b) =>
+              a.target!.namespace.localeCompare(b.target!.namespace) || a.target!.name.localeCompare(b.target!.name)
+          );
         setSnapshot(sandboxes);
         if (frame.case === "snapshotComplete") setReady(true);
       },

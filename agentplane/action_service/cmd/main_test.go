@@ -104,7 +104,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	c.DatabaseURL = integrationDatabase.Clone(t)
 	ca := transporttesting.NewCA(t)
 	serving := ca.Issue(t, peertls.ActionsURI)
-	c.RPC = listener.Config{ListenAddress: "127.0.0.1:0", TLS: &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}, Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}}}
+	c.RPC = listener.Config{ListenAddress: "127.0.0.1:0", TLS: &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}, Auth: []*listener.SPIFFEAuth{{CAFile: ca.RootFile}}}
 	c.ServiceReaders = []string{peertls.NotificationsURI}
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
 	c.PolicyNamespace = policyNamespace
@@ -138,19 +138,12 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		t.Fatal(err)
 	}
 	if c.RPC.TLS != nil {
-		if !c.RPC.Has(listener.SPIFFE) {
+		if !c.RPC.HasSPIFFE() {
 			t.Fatal("test TLS listener must supply SPIFFE roots for its client")
 		}
-		for _, method := range c.RPC.Auth {
-			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
-				clientCredentials, err = (&peertls.ClientTLS{
-					CAFile: spiffe.CAFile, ServerURI: peertls.ActionsURI,
-				}).Credentials()
-				if err != nil {
-					t.Fatal(err)
-				}
-				break
-			}
+		clientCredentials, err = (&peertls.ClientTLS{CAFile: c.RPC.Auth[0].CAFile, ServerURI: peertls.ActionsURI}).Credentials()
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 	connection := dialService(t, rpcListener.Addr().String(), clientCredentials)

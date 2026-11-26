@@ -78,8 +78,8 @@ func newExecutionControllerRuntime(t *testing.T, start func(context.Context, Con
 		config:         Config{ExecutionBackend: &backend.Config{URL: "ws://127.0.0.1:1"}},
 		desired:        lifecycle.EnvironmentDesired{Mode: lifecycle.Running, IncarnationUID: "incarnation", Generation: 1},
 		lifecycleState: store, changes: make(chan struct{}), fatal: make(chan error, 1),
-		execCalls: make(map[uint64]context.CancelFunc), execStreams: make(map[uint64]context.CancelFunc),
-		deps: runtimeDeps{startExecution: start},
+		execCalls: make(map[uint64]context.CancelFunc),
+		deps:      runtimeDeps{startExecution: start},
 	}
 	r.executionLifecycle = &executionLifecycle{parent: r, ctx: ctx, state: store}
 	for _, wrap := range parents {

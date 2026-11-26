@@ -242,7 +242,7 @@ Delivered job facts contain the accepted job/run IDs, steps, status and conclusi
 
 GitHub subscriptions consider accepted deliveries after their creation boundary. Catch-up,
 late PR/commit association matching and delivery-ID deduplication are bounded by the configured
-[receipt/fact retention](../README.md#github-event-retention). A receipt that expires before
+[fact retention](../README.md#github-event-retention). A receipt that expires before
 matching is no longer available for catch-up. Redelivery after expiry is accepted as new, but an
 inbox already containing the event still deduplicates it. Delivered inbox payload copies have
 their own 30-day lifetime.
@@ -251,8 +251,8 @@ Webhook `payload` is a normalized event-specific projection, not the signed requ
 action, repository and subject/revision details, plus notification content such as original comment/review text,
 check and job identifiers, status/conclusion, steps, URLs and full SHAs. The projection is explicitly defined by
 the [GitHub notification guide](agents/github.md#follow-github-activity); arbitrary fields from the upstream body
-are omitted. The raw body remains stored with its receipt under the existing receipt retention setting and is never
-read to match or render ordinary notifications.
+are omitted. The signed raw body is an optional archive with a separate retention setting and may already be absent.
+It is never read to match or render ordinary notifications.
 
 PR, issue, exact branch and fixed-commit subjects use native GitHub event/action names. Default CI means completed
 `check_run` and `status`; `check_suite`, `workflow_run` and `workflow_job` require explicit selection. PR comments/reviews,
@@ -302,7 +302,7 @@ Transient/rate-limit failures retry with backoff. Access and subject observation
 and absolute `retry_at` values; these are not runner-delivery deadlines. A cancelled subscription
 can still show shared observations maintained for another active subscriber.
 
-Accepted webhooks remain durable within the raw receipt retention window while a source is backing off. New ingress does not shorten that
+Accepted webhooks remain durable within the fact receipt retention window while a source is backing off. New ingress does not shorten that
 source's retry deadline; workers resume matching retained receipts after the deadline, including
 after restart, and clear the error on success. No client-side resubscription or reconciliation is
 needed for this recovery. Webhook deliveries GitHub never successfully submitted are outside that

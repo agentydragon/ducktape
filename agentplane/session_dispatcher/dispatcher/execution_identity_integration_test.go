@@ -78,7 +78,7 @@ func serveIdentitySVIDsWithPolicy(
 	listenerConfig := listener.Config{
 		ListenAddress: ":8080",
 		TLS:           &listener.TLS{CertFile: serverCredential.CertFile, KeyFile: serverCredential.KeyFile},
-		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+		Auth:          []*listener.SPIFFEAuth{{CAFile: ca.RootFile}},
 	}
 	serverTLS, err := listenerConfig.TLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {

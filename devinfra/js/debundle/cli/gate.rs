@@ -34,12 +34,11 @@ use std::path::{Path, PathBuf};
 
 use ::gate::{
     AtInitReadPosition, BlockingRejection, BlockingSccEntry, CutEdgeExplanation, CycleEdge,
-    render_explanations,
+    initializer_reason, render_binding_pairs,
 };
 use analysis::{
     CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DependencyEdgeId,
-    DependencyGraphInput, EdgeRole, EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
-    SourceUnitReport,
+    DependencyGraphInput, EdgeRole, EdgeRoleReport, ModuleKey, Purity,
 };
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
@@ -773,44 +772,6 @@ fn inspection_root_args(roots: &CurrentRoots) -> Vec<String> {
     args
 }
 
-#[cfg(test)]
-mod inspection_command_tests {
-    use super::inspection_root_args;
-    use graph_provenance::CurrentRoots;
-    use std::collections::BTreeMap;
-    use std::path::PathBuf;
-
-    #[test]
-    fn inspection_roots_keep_spaced_paths_whole_and_sort_package_roots() {
-        let roots = CurrentRoots {
-            spec: Some(PathBuf::from("spec root")),
-            source: Some(PathBuf::from("graph source root")),
-            ownership_subset: Some(PathBuf::from("subset root")),
-            packages: BTreeMap::from([
-                ("package one".to_owned(), PathBuf::from("package root one")),
-                ("package two".to_owned(), PathBuf::from("package root two")),
-            ]),
-        };
-
-        assert_eq!(
-            inspection_root_args(&roots),
-            [
-                "--spec-root",
-                "spec root",
-                "--graph-source-root",
-                "graph source root",
-                "--graph-ownership-subset-root",
-                "subset root",
-                "--graph-package-root",
-                "package one=package root one",
-                "--graph-package-root",
-                "package two=package root two",
-            ]
-        );
-        assert!(inspection_root_args(&CurrentRoots::default()).is_empty());
-    }
-}
-
 fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {
     out.push_str(&format!(
         "binding {}: returned {} of {} trace(s){}\n",
@@ -1020,30 +981,8 @@ fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
     }
 
     if !report.evidence.is_empty() {
-        // Group evidence by binding-pair blame key, same shape as
-        // `render_cycle_summary`'s stderr block. Anonymous endpoints
-        // fall back to `<anon stmt #ord>` / `<side-effect>` so every
-        // row has a stable label.
-        let mut groups: BTreeMap<BlamePairKey, Vec<&CycleEdge>> = BTreeMap::new();
-        for edge in &report.evidence {
-            groups.entry(BlamePairKey::of(edge)).or_default().push(edge);
-        }
-        let mut ranked: Vec<(BlamePairKey, Vec<&CycleEdge>)> = groups.into_iter().collect();
-        ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
-
         out.push_str("  evidence (grouped by binding pair, then why each edge constrains):\n");
-        for (key, edges) in &ranked {
-            out.push_str(&format!(
-                "    {n:>4}x  {fb} ({fm})  --{k}-->  {tb} ({tm})\n",
-                n = edges.len(),
-                fb = key.from_label,
-                fm = key.from,
-                k = edges[0].kind.diagnostic_label(),
-                tb = key.to_label,
-                tm = key.to,
-            ));
-            render_explanations(edges, out);
-        }
+        render_binding_pairs(&report.evidence, None, out);
     }
 }
 
@@ -1092,34 +1031,14 @@ fn render_inert_edges(edges: &[CycleEdge], out: &mut String) {
 }
 
 fn render_edge(edge: &CycleEdge, out: &mut String) {
-    let from_b = match &edge.from_binding {
-        Some(a) => a.as_ref().to_string(),
-        None => format!("<anon stmt #{}>", edge.statement_ordinal.0),
-    };
-    let to_b = match &edge.binding {
-        Some(a) => a.as_ref().to_string(),
-        None => "<side-effect>".to_string(),
-    };
-    out.push_str(&format!(
-        "    {from_b} ({fm})  --{k}-->  {to_b} ({tm})  [stmt #{ord}]\n",
-        fm = edge.from,
-        k = edge.kind.diagnostic_label(),
-        tm = edge.to,
-        ord = edge.statement_ordinal.0,
-    ));
+    edge.render_header(out);
     if let Some(explanation) = &edge.explanation {
         out.push_str(&format!("      why: {explanation}\n"));
     }
     if let Some(premise) = &edge.commuting_premise {
         out.push_str(&format!("      inert: made inert by premise {premise}\n"));
     }
-    let target_cause = match &edge.explanation {
-        Some(CutEdgeExplanation::Sequenced {
-            target_source_unit, ..
-        }) => target_source_unit.as_deref(),
-        _ => None,
-    };
-    for cause in edge.sequenced_source_unit.iter().chain(target_cause) {
+    for cause in edge.sequenced_causes() {
         if let Some(heap_frontier) = &cause.heap_frontier {
             out.push_str(&format!("      heap frontier: {heap_frontier}\n"));
         }
@@ -1127,39 +1046,9 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
             continue;
         };
         for reason in reasons {
-            let binding = if cause.binding_names.is_empty() {
-                cause.source_unit_id.clone()
-            } else {
-                cause
-                    .binding_names
-                    .iter()
-                    .map(Atom::as_ref)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
-            let location = reason
-                .source_location
-                .as_ref()
-                .or(cause.source_location.as_ref())
-                .map(|loc| {
-                    format!(
-                        "{}:{}:{}",
-                        loc.source_path,
-                        loc.start_line,
-                        loc.start_column
-                            .map_or_else(|| "?".to_string(), |column| column.to_string())
-                    )
-                })
-                .unwrap_or_else(|| "<location unavailable>".to_string());
             out.push_str(&format!(
-                "      impure initializer `{binding}` at {location}: {}{}{}\n",
-                reason.rule,
-                reason
-                    .detail
-                    .as_deref()
-                    .map(|detail| format!(" ({detail})"))
-                    .unwrap_or_default(),
-                incomplete_execution_suffix(cause),
+                "      impure initializer {}\n",
+                initializer_reason(cause, reason)
             ));
             if let Some(guidance) = &reason.author_guidance {
                 out.push_str(&format!("        {guidance}\n"));
@@ -1294,7 +1183,7 @@ fn recompute_evidence(
                     .clone()
                     .map(|cause| CutEdgeExplanation::Sequenced {
                         cause,
-                        target_source_unit: impure_source_unit_cause(target).map(Box::new),
+                        target_source_unit: target.sequenced_endpoint_cause().map(Box::new),
                     })
             }
             _ => None,
@@ -1309,7 +1198,7 @@ fn recompute_evidence(
             from_binding,
             kind: edge_kind,
             sequenced_source_unit: (edge_kind == DepKind::Sequenced)
-                .then(|| impure_source_unit_cause(source))
+                .then(|| source.sequenced_endpoint_cause())
                 .flatten(),
             explanation,
             commuting_premise: edge.commuting_premise.clone(),
@@ -1319,66 +1208,40 @@ fn recompute_evidence(
     Ok(out)
 }
 
-/// Marks a statement whose sequencing edges are the conservative flood
-/// of an incomplete synchronous execution.
-fn incomplete_execution_suffix(cause: &SequencedSourceUnitCause) -> &'static str {
-    match cause.synchronous_execution_complete {
-        Some(false) => "; synchronous execution incomplete",
-        _ => "",
-    }
-}
+#[cfg(test)]
+mod inspection_command_tests {
+    use super::inspection_root_args;
+    use graph_provenance::CurrentRoots;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
 
-/// Report-side twin of `analysis::reports::schema::impure_source_unit_cause`
-/// over a `dependency_graph.json.gz` node. Pure nodes are included when their
-/// report carries non-empty heap evidence.
-fn impure_source_unit_cause(node: &SourceUnitReport) -> Option<SequencedSourceUnitCause> {
-    let heap_frontier = node
-        .synchronous_execution
-        .as_ref()
-        .and_then(|execution| execution.heap_frontier.clone());
-    if matches!(&node.purity, Purity::Pure { .. }) && heap_frontier.is_none() {
-        return None;
-    }
-    Some(SequencedSourceUnitCause {
-        source_unit_id: node.id.clone(),
-        binding_names: node
-            .declared_bindings
-            .iter()
-            .map(|binding| binding.binding.clone())
-            .collect(),
-        source_location: node.source_location.clone(),
-        purity: node.purity.clone(),
-        synchronous_execution_complete: node
-            .synchronous_execution
-            .as_ref()
-            .map(|execution| execution.complete),
-        heap_frontier,
-    })
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-struct BlamePairKey {
-    from_label: String,
-    from: ModulePath,
-    to: ModulePath,
-    to_label: String,
-}
-
-impl BlamePairKey {
-    fn of(edge: &CycleEdge) -> Self {
-        let from_label = match &edge.from_binding {
-            Some(a) => a.as_ref().to_string(),
-            None => format!("<anon stmt #{}>", edge.statement_ordinal.0),
+    #[test]
+    fn inspection_roots_keep_spaced_paths_whole_and_sort_package_roots() {
+        let roots = CurrentRoots {
+            spec: Some(PathBuf::from("spec root")),
+            source: Some(PathBuf::from("graph source root")),
+            ownership_subset: Some(PathBuf::from("subset root")),
+            packages: BTreeMap::from([
+                ("package one".to_owned(), PathBuf::from("package root one")),
+                ("package two".to_owned(), PathBuf::from("package root two")),
+            ]),
         };
-        let to_label = match &edge.binding {
-            Some(a) => a.as_ref().to_string(),
-            None => "<side-effect>".to_string(),
-        };
-        Self {
-            from_label,
-            from: edge.from.clone(),
-            to: edge.to.clone(),
-            to_label,
-        }
+
+        assert_eq!(
+            inspection_root_args(&roots),
+            [
+                "--spec-root",
+                "spec root",
+                "--graph-source-root",
+                "graph source root",
+                "--graph-ownership-subset-root",
+                "subset root",
+                "--graph-package-root",
+                "package one=package root one",
+                "--graph-package-root",
+                "package two=package root two",
+            ]
+        );
+        assert!(inspection_root_args(&CurrentRoots::default()).is_empty());
     }
 }

@@ -210,7 +210,7 @@ func TestForwardListenerUsesOneExplicitSPIFFEAllowlist(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.Forward.ListenAddress != "127.0.0.1:5555" || c.Forward.TLS == nil ||
-		!c.Forward.Has(listener.SPIFFE) {
+		!c.Forward.HasSPIFFE() {
 		t.Fatalf("unexpected SPIFFE-only forward listener: %+v", c.Forward)
 	}
 	invalid := map[string]string{
@@ -272,7 +272,8 @@ func TestAdminGRPCRequiresTLSAndSPIFFETrust(t *testing.T) {
 	for _, forward := range []listener.Config{
 		{},
 		{TLS: &listener.TLS{CertFile: "cert", KeyFile: "key"}},
-		{Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: "ca"}}},
+		{TLS: &listener.TLS{CertFile: "cert", KeyFile: "key"}, Auth: []*listener.SPIFFEAuth{nil}},
+		{Auth: []*listener.SPIFFEAuth{{CAFile: "ca"}}},
 	} {
 		c := config{Forward: forward, AdminGRPCServiceCallers: []string{"spiffe://agentplane/app"}}
 		if err := c.validateAdminGRPC(); err == nil {

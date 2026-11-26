@@ -79,15 +79,12 @@ fn analysis_projection_preserves_semantic_note_keys_and_ignores_author_notes() {
     let purity = ChunkExportPurityBuilder::new("note")
         .with_no_reentry_members("note", &["note"])
         .build();
-    let native_input = NativeOperationInputContract {
-        selector: SourceUnitSelector::SourceMatch(source_match_selector(
-            "const value = Symbol('value');",
-            &["value"],
-        )),
-        operation: NativeOperationKind::Symbol,
-        audited_source_sha256: source_sha256(APP),
-        note: Some("native rationale before edit".to_owned()),
-    };
+    let native_input = native_operation_input(
+        APP,
+        declared_source_unit("const value = Symbol('value');", "value"),
+        NativeOperationKind::Symbol,
+        "native rationale before edit",
+    );
     let (staged, _fixture) = staged(
         FixtureOpts::new(APP, vec![logical_module("all", &[Member::new("value")])])
             .with_extra_chunks(&[("note", PROVIDER)])

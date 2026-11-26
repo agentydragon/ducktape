@@ -41,6 +41,19 @@ type ServiceDelegator struct {
 	ConnectionProvenance bool   `mapstructure:"connection_provenance" yaml:"connection_provenance" json:"connection_provenance"`
 }
 
+// ServiceDelegationConfig scopes certificate actors to methods selected by the receiving service.
+type ServiceDelegationConfig struct {
+	Actors  []ServiceDelegator `mapstructure:"actors"`
+	Methods []string           `mapstructure:"methods"`
+}
+
+func (c ServiceDelegationConfig) Validate() error {
+	if len(c.Actors) == 0 || len(c.Methods) == 0 {
+		return fmt.Errorf("service delegation requires actors and methods")
+	}
+	return validateDelegators(c.Actors)
+}
+
 type delegatorGrant struct {
 	connectionProvenance bool
 }
@@ -88,17 +101,21 @@ func (r Rule) AllowServiceCallers(callers []string) (Rule, error) {
 	return r, nil
 }
 
+func validateDelegators(actors []ServiceDelegator) error {
+	callers := make([]string, 0, len(actors))
+	for _, actor := range actors {
+		callers = append(callers, actor.SPIFFEID)
+	}
+	return ValidateServiceCallers(callers)
+}
+
 // AllowServiceDelegationFrom grants only service actors, independently of direct
 // callers. The effective caller always remains an Identity.
 func (r Rule) AllowServiceDelegationFrom(actors []ServiceDelegator, identities IdentityUIDReader) (Rule, error) {
 	if (!r.admitsIdentityCallers() && r.kind != ruleServices) || identities == nil || len(actors) == 0 {
 		return Rule{}, fmt.Errorf("service delegation requires a service or Identity-admitting rule, Identity reader and actors")
 	}
-	callers := make([]string, 0, len(actors))
-	for _, actor := range actors {
-		callers = append(callers, actor.SPIFFEID)
-	}
-	if err := ValidateServiceCallers(callers); err != nil {
+	if err := validateDelegators(actors); err != nil {
 		return Rule{}, err
 	}
 	grants := make(map[string]delegatorGrant, len(actors))

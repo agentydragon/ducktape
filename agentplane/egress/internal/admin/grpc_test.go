@@ -114,7 +114,7 @@ func serveServicePeer(t *testing.T, methods auth.Methods, register func(*grpc.Se
 	rpc := listener.Config{
 		ListenAddress: "127.0.0.1:0",
 		TLS:           &listener.TLS{CertFile: svid.CertFile, KeyFile: svid.KeyFile},
-		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+		Auth:          []*listener.SPIFFEAuth{{CAFile: ca.RootFile}},
 	}
 	serverCredentials, err := rpc.ServerCredentialsWithServices(peertls.EgressProxyURI)
 	if err != nil {

@@ -126,7 +126,7 @@ func testRulesAuthWithCA(t *testing.T, ca *environmentruntimetransporttesting.CA
 	forward := listener.Config{
 		ListenAddress: "127.0.0.1:0",
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
-		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+		Auth:          []*listener.SPIFFEAuth{{CAFile: ca.RootFile}},
 	}
 	authentication, err := identity.NewAuthenticator(forward, testResolver(t))
 	if err != nil {
@@ -141,7 +141,7 @@ func TestAdminServicePeerTLSIsMethodScopedAndRejectsBearerAccess(t *testing.T) {
 	forward := listener.Config{
 		ListenAddress: "127.0.0.1:0",
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
-		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+		Auth:          []*listener.SPIFFEAuth{{CAFile: ca.RootFile}},
 	}
 	valid, err := api.TokenReviews().Create(t.Context(), &authenticationv1.TokenReview{
 		Spec: authenticationv1.TokenReviewSpec{Token: testToken, Audiences: []string{testAudience}},
@@ -260,7 +260,7 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 		Forward: listener.Config{
 			ListenAddress: "127.0.0.1:0",
 			TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
-			Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+			Auth:          []*listener.SPIFFEAuth{{CAFile: ca.RootFile}},
 		},
 	}
 	authentication, index := testRulesAuthWithCA(t, ca)
@@ -342,7 +342,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 	forward := listener.Config{
 		ListenAddress: "127.0.0.1:0",
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
-		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+		Auth:          []*listener.SPIFFEAuth{{CAFile: ca.RootFile}},
 	}
 	workloadAuth, err := identity.NewAuthenticator(forward, testResolver(t))
 	if err != nil {

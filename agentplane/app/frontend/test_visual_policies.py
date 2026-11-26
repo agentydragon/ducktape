@@ -1266,6 +1266,19 @@ async def test_sandbox_form_test_coder_preset_layout(view: VisualPage, app: Agen
 
 
 @DESKTOP_AND_MOBILE
+async def test_launch_with_existing_identity(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.bind_sandbox_identity("ready-sandbox", "referenced-identity")
+    await app.mount_app("/sandboxes?preset=test-coder")
+    await view.page.get_by_role("combobox", name="Identity name", exact=True).fill("referenced")
+    await view.page.get_by_role("option", name="referenced-identity", exact=True).click()
+    await expect(view.page.get_by_role("combobox", name="Policy sets")).to_have_count(0)
+    await expect(view.page.get_by_role("textbox", name="Name", exact=True)).to_have_attribute(
+        "placeholder", "test-coder-1"
+    )
+    await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
 async def test_sandbox_policy_grant_pick_updates_options(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=policy&rules=ready-sandbox-github-public")
     await expect(view.page.get_by_text(re.compile("GitHub API access"))).to_be_visible()

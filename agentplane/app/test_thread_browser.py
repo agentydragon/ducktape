@@ -1874,6 +1874,10 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     await page.reload()
     await open_retained_reason()
     await page.screenshot(path=undeclared_outputs_dir() / f"command-{outcome}-retained.png")
+    # Escape can reach the trigger before the popover takes focus.
+    await details_button.press("Escape")
+    await expect(details).to_have_count(0)
+    await expect(details_button).to_be_focused()
     assert source.runner.commands.empty()
 
 
@@ -2442,6 +2446,8 @@ async def test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_c
     page, source = thread_browser.page, thread_browser.source
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    # The sidebar's first snapshot can arrive after the open thread has rendered its retained prefix.
+    await expect(page.locator("nav.agentplane-sidebar").get_by_text("Browser thread", exact=True)).to_be_visible()
     # Electric's connection is separate from the shared Threads snapshot. Its indicator
     # reports the outage, while both dots use the same Threads verdict (not an Electric-specific label).
     indicator = page.get_by_role("img", name=re.compile(r"\bThread: reconnecting since "))
