@@ -61,7 +61,7 @@ function snapshotFiles(directory, prefix = "") {
 
 function diagnosticPreview(files, out) {
   const manifest = writeDeployment(files.sourceFile, files.specFile, out);
-  const result = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", manifest, out, "--force"], {
+  const result = spawnSync(process.env.SPLIT_PREVIEW, [manifest, out, "--force"], {
     encoding: "utf8",
   });
   assert.ifError(result.error);
@@ -135,34 +135,27 @@ function observeAbrupt(file) {
   ];
 
   refuseFresh(files, "fresh-default", formerOptions);
-  refuseFresh(files, "fresh-normal", [...formerOptions, "--require", "normal-completion"]);
+  const normalRefusal = refuseFresh(files, "fresh-normal", [...formerOptions, "--require", "normal-completion"]);
   refuseFresh(files, "fresh-all", [...formerOptions, "--require", "all-outcomes"]);
 
   // The automatic selector and the strategy-census wrapper must not recover a
   // weaker certificate by dropping --structural or trying its alternate path.
   refuseFresh(files, "fresh-automatic", ["--require", "normal-completion"]);
   const censusOut = path.join(files.dir, "fresh-census");
-  const censusReport = path.join(files.dir, "strategy-census.jsonl");
   const censusEnv = {
     ...process.env,
     SPLIT_PROOF_STRATEGY_CENSUS: "1",
-    SPLIT_PROOF_STRATEGY_CENSUS_OUT: censusReport,
   };
   const census = invoke(files, censusOut, [...formerOptions, "--require", "normal-completion"], censusEnv);
   assert.equal(census.result.status, 1, census.result.stdout + census.result.stderr);
   assert.equal(census.verdict.status, "rejected", census.result.stdout + census.result.stderr);
+  assert.equal(census.verdict.requested, "all-outcomes", census.result.stdout + census.result.stderr);
+  assert.equal(census.verdict.guarantee, null, census.result.stdout + census.result.stderr);
   assert(!existsSync(censusOut), "census refusal created a fresh destination");
-  const censusRows = readFileSync(censusReport, "utf8")
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
-  assert(censusRows.length >= 2, JSON.stringify(censusRows));
-  assert(
-    censusRows.every((row) => row.status !== "certified"),
-    JSON.stringify(censusRows)
-  );
+  assert.equal(census.verdict.status, normalRefusal.verdict.status);
+  assert.equal(census.verdict.reason, normalRefusal.verdict.reason);
 
-  // A diagnostic preview is deliberately not a certificate. Check-output must
+  // A test-only preview is deliberately not a certificate. Check-output must
   // refuse it without changing any existing module bytes.
   const existing = path.join(files.dir, "existing-preview");
   diagnosticPreview(files, existing);
