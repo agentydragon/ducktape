@@ -1,8 +1,9 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("@rules_lean//lean:defs.bzl", "lean_binary", "lean_library", "lean_proof_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
-load(":build_rules.bzl", "lean_axiom_test", "lean_binary", "lean_compiler", "lean_library", "lean_source_copy", "lean_test")
 load(":generated_proof_toolchain.bzl", "generated_proof_toolchain")
 load(":splitter_launcher.bzl", "splitter_launcher")
 
@@ -28,7 +29,10 @@ lean_library(
         "EsmSplit/Split.lean",
         "EsmSplit/Cli.lean",
     ],
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__",
+    ],
     deps = [":plan"],
 )
 
@@ -63,32 +67,42 @@ lean_library(
     ],
 )
 
-lean_binary(
-    name = "analysis_inventory",
+lean_library(
+    name = "analysis_inventory_modules",
     srcs = ["AnalysisInventory.lean"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    visibility = ["//visibility:private"],
     deps = [
         ":effects",
         ":estree",
     ],
 )
 
-lean_library(
-    name = "example_proof",
-    srcs = [
-        # Keep import order for the native Lean rule.
-        ":generated_instance_source",
-        "EsmSplit/Controls.lean",
-    ],
-    deps = [":planner"],
+lean_binary(
+    name = "analysis_inventory",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    deps = [":analysis_inventory_modules"],
 )
 
-lean_axiom_test(
-    name = "axioms_test",
-    # Compile the root module locally so rules_lean can find it beside the merged EsmSplit/ imports.
+lean_library(
+    name = "example_proof",
+    srcs = ["EsmSplit/Controls.lean"],
+    deps = ["//devinfra/js/debundle/x/split_proof/lean/generated:instance_module"],
+)
+
+lean_library(
+    name = "axioms_test_modules",
+    testonly = True,
     srcs = ["EsmSplit.lean"],
-    imports = ["EsmSplit"],
-    theorems = [
+    visibility = ["//visibility:private"],
+    deps = [":example_proof"],
+)
+
+# Import-only audit modules may be empty; the patched gate requires named declarations.
+lean_proof_test(
+    name = "axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit"],
+    required_theorems = [
         "EsmSplit.Bundle.conflict_symm",
         "EsmSplit.inverted_conflict_rejected",
         "EsmSplit.Bundle.exec_reorder",
@@ -110,7 +124,7 @@ lean_axiom_test(
         "Example.effect_order_observes_differently",
         "Example.cycle_tdz_observes_differently",
     ],
-    deps = [":example_proof"],
+    deps = [":axioms_test_modules"],
 )
 
 lean_library(
@@ -119,14 +133,20 @@ lean_library(
     deps = [":planner"],
 )
 
-lean_binary(
-    name = "render",
+lean_library(
+    name = "render_modules",
     srcs = ["Main.lean"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/fuzz:__pkg__"],
+    visibility = ["//visibility:private"],
     deps = [
         ":example_proof",
         ":fixture_renderer",
     ],
+)
+
+lean_binary(
+    name = "render",
+    visibility = ["//devinfra/js/debundle/x/split_proof/fuzz:__pkg__"],
+    deps = [":render_modules"],
 )
 
 sh_test(
@@ -151,17 +171,35 @@ diff_test(
     file2 = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
 )
 
-lean_binary(
-    name = "translate",
+lean_library(
+    name = "translate_modules",
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/Translate.lean",
         "EsmSplit/TranslateMain.lean",
     ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":effects",
+        ":planner",
+    ],
+)
+
+lean_binary(
+    name = "translate",
     visibility = [
         "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],
+    deps = [":translate_modules"],
+)
+
+lean_library(
+    name = "lower_modules",
+    srcs = [
+        "EsmSplit/LowerMain.lean",
+    ],
+    visibility = ["//visibility:private"],
     deps = [
         ":effects",
         ":planner",
@@ -170,9 +208,6 @@ lean_binary(
 
 lean_binary(
     name = "lower",
-    srcs = [
-        "EsmSplit/LowerMain.lean",
-    ],
     visibility = [
         "//devinfra/js/debundle/x/split_proof:__pkg__",
         "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
@@ -182,10 +217,7 @@ lean_binary(
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],
-    deps = [
-        ":effects",
-        ":planner",
-    ],
+    deps = [":lower_modules"],
 )
 
 exports_files(
@@ -331,10 +363,11 @@ lean_library(
     deps = [":static_provider_boundary"],
 )
 
-lean_axiom_test(
+lean_proof_test(
     name = "shared_provider_boundary_axioms_test",
-    imports = ["EsmSplit.CoreJS.SharedProviderBoundary"],
-    theorems = [
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.SharedProviderBoundary"],
+    required_theorems = [
         "CoreJS.LinkedBehavior.runUnits_append",
         "CoreJS.LinkedBehavior.SharedProvider.run_eq",
         "CoreJS.LinkedBehavior.SharedProvider.sameExports",
@@ -492,14 +525,21 @@ lean_library(
     ],
 )
 
-lean_binary(
-    name = "sparse_checked_split_test_runner",
+lean_library(
+    name = "sparse_checked_split_test_runner_modules",
     testonly = True,
     srcs = ["SparseCheckedSplitTest.lean"],
+    visibility = ["//visibility:private"],
     deps = [
         ":corejs_sparse_checked_split",
         ":lowersplit_support",
     ],
+)
+
+lean_binary(
+    name = "sparse_checked_split_test_runner",
+    testonly = True,
+    deps = [":sparse_checked_split_test_runner_modules"],
 )
 
 sh_test(
@@ -510,10 +550,11 @@ sh_test(
     use_bash_launcher = True,
 )
 
-lean_axiom_test(
+lean_proof_test(
     name = "sparse_checked_split_axioms_test",
-    imports = ["EsmSplit.CoreJS.SparseCheckedSplit"],
-    theorems = [
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.SparseCheckedSplit"],
+    required_theorems = [
         "CoreJS.SparseCheckedSplit.checkOutput_sound",
         "CoreJS.SparseCheckedSplit.construct",
         "CoreJS.SparseCheckedSplit.construct_sound",
@@ -521,14 +562,21 @@ lean_axiom_test(
     deps = [":corejs_sparse_checked_split"],
 )
 
-lean_binary(
-    name = "resolved_placement_test_runner",
+lean_library(
+    name = "resolved_placement_test_runner_modules",
     testonly = True,
     srcs = ["ResolvedPlacementTest.lean"],
+    visibility = ["//visibility:private"],
     deps = [
         ":corejs_checked_split",
         ":corejs_resolved_placement",
     ],
+)
+
+lean_binary(
+    name = "resolved_placement_test_runner",
+    testonly = True,
+    deps = [":resolved_placement_test_runner_modules"],
 )
 
 sh_test(
@@ -539,10 +587,11 @@ sh_test(
     use_bash_launcher = True,
 )
 
-lean_axiom_test(
+lean_proof_test(
     name = "resolved_placement_axioms_test",
-    imports = ["EsmSplit.CoreJS.ResolvedPlacement"],
-    theorems = [
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.ResolvedPlacement"],
+    required_theorems = [
         "CoreJS.ResolvedPlacement.dense_compatible",
         "CoreJS.ResolvedPlacement.dense_sound",
         "CoreJS.ResolvedPlacement.resolve",
@@ -551,11 +600,18 @@ lean_axiom_test(
     deps = [":corejs_resolved_placement"],
 )
 
+lean_library(
+    name = "checked_split_test_runner_modules",
+    testonly = True,
+    srcs = ["CheckedSplitTest.lean"],
+    visibility = ["//visibility:private"],
+    deps = [":corejs_checked_split"],
+)
+
 lean_binary(
     name = "checked_split_test_runner",
     testonly = True,
-    srcs = ["CheckedSplitTest.lean"],
-    deps = [":corejs_checked_split"],
+    deps = [":checked_split_test_runner_modules"],
 )
 
 sh_test(
@@ -566,10 +622,11 @@ sh_test(
     use_bash_launcher = True,
 )
 
-lean_axiom_test(
+lean_proof_test(
     name = "checked_split_axioms_test",
-    imports = ["EsmSplit.CoreJS.CheckedSplit"],
-    theorems = [
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.CheckedSplit"],
+    required_theorems = [
         "CoreJS.CheckedSplit.checkedSplit_sound",
         "CoreJS.CheckedSplit.checkOutput_sound",
     ],
@@ -585,11 +642,18 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "checked_move_split_test_runner_modules",
+    testonly = True,
+    srcs = ["CheckedMoveSplitTest.lean"],
+    visibility = ["//visibility:private"],
+    deps = [":corejs_checked_move_split"],
+)
+
 lean_binary(
     name = "checked_move_split_test_runner",
     testonly = True,
-    srcs = ["CheckedMoveSplitTest.lean"],
-    deps = [":corejs_checked_move_split"],
+    deps = [":checked_move_split_test_runner_modules"],
 )
 
 sh_test(
@@ -600,10 +664,11 @@ sh_test(
     use_bash_launcher = True,
 )
 
-lean_axiom_test(
+lean_proof_test(
     name = "checked_move_split_axioms_test",
-    imports = ["EsmSplit.CoreJS.CheckedMoveSplit"],
-    theorems = [
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.CheckedMoveSplit"],
+    required_theorems = [
         "CoreJS.CheckedMoveSplit.checkedMoveSplit",
         "CoreJS.CheckedMoveSplit.checkedMoveSplit_sound",
     ],
@@ -630,10 +695,11 @@ lean_library(
     ],
 )
 
-lean_axiom_test(
+lean_proof_test(
     name = "sparse_checked_artifact_axioms_test",
-    imports = ["EsmSplit.LowerSplit.SparseArtifact"],
-    theorems = [
+    allow_empty = True,
+    modules = ["EsmSplit.LowerSplit.SparseArtifact"],
+    required_theorems = [
         "EsmSplit.LowerSplit.SparseArtifact.prepare",
         "EsmSplit.LowerSplit.SparseArtifact.verify",
         "EsmSplit.LowerSplit.SparseArtifact.verify_sound",
@@ -641,11 +707,11 @@ lean_axiom_test(
     deps = [":sparse_checked_artifact"],
 )
 
-lean_binary(
-    name = "checked_artifact_test_runner",
+lean_library(
+    name = "checked_artifact_test_runner_modules",
     testonly = True,
     srcs = ["CheckedSplitArtifactMain.lean"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    visibility = ["//visibility:private"],
     deps = [
         ":checked_artifact",
         ":lowersplit_support",
@@ -654,10 +720,18 @@ lean_binary(
     ],
 )
 
-lean_axiom_test(
+lean_binary(
+    name = "checked_artifact_test_runner",
+    testonly = True,
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [":checked_artifact_test_runner_modules"],
+)
+
+lean_proof_test(
     name = "checked_artifact_axioms_test",
-    imports = ["EsmSplit.LowerSplit.CheckedArtifact"],
-    theorems = ["EsmSplit.LowerSplit.CheckedArtifact.verify_sound"],
+    allow_empty = True,
+    modules = ["EsmSplit.LowerSplit.CheckedArtifact"],
+    required_theorems = ["EsmSplit.LowerSplit.CheckedArtifact.verify_sound"],
     deps = [":checked_artifact"],
 )
 
@@ -681,10 +755,11 @@ lean_library(
     ],
 )
 
-lean_axiom_test(
+lean_proof_test(
     name = "slice_certificate_axioms_test",
-    imports = ["EsmSplit.LowerSplit.SliceCertificate"],
-    theorems = [
+    allow_empty = True,
+    modules = ["EsmSplit.LowerSplit.SliceCertificate"],
+    required_theorems = [
         "CoreJS.runProgram_singleModuleMetadata",
         "EsmSplit.LowerSplit.certifySlice_sound",
     ],
@@ -692,10 +767,16 @@ lean_axiom_test(
 )
 
 # Diagnostic runs need no linked certificate evaluator or structural proofs.
+lean_library(
+    name = "lowersplit_diagnostic_core_modules",
+    srcs = ["EsmSplit/LowerSplitDiagnosticMain.lean"],
+    visibility = ["//visibility:private"],
+    deps = [":lowersplit_workflows"],
+)
+
 lean_binary(
     name = "lowersplit_diagnostic_core",
-    srcs = ["EsmSplit/LowerSplitDiagnosticMain.lean"],
-    deps = [":lowersplit_workflows"],
+    deps = [":lowersplit_diagnostic_core_modules"],
 )
 
 generated_proof_toolchain(
@@ -710,24 +791,30 @@ filegroup(
     output_group = "proof_files",
 )
 
-lean_binary(
-    name = "lowersplit_core",
+lean_library(
+    name = "lowersplit_core_modules",
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/LowerSplit.lean",
         ":lowersplit_generated_proof_config",
         "EsmSplit/LowerSplitBazelMain.lean",
     ],
-    data = [":lowersplit_generated_proof_files"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    visibility = ["//visibility:private"],
     deps = [":lowersplit_workflows"],
 )
 
 lean_binary(
-    name = "provider_input_boundary_test_runner",
+    name = "lowersplit_core",
+    data = [":lowersplit_generated_proof_files"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    deps = [":lowersplit_core_modules"],
+)
+
+lean_library(
+    name = "provider_input_boundary_test_runner_modules",
     testonly = True,
     srcs = ["ProviderInputBoundaryTest.lean"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    visibility = ["//visibility:private"],
     deps = [
         ":corejs_linked_input",
         ":corejs_structural",
@@ -735,11 +822,29 @@ lean_binary(
     ],
 )
 
-lean_axiom_test(
-    name = "sparse_metadata_axioms_test",
+lean_binary(
+    name = "provider_input_boundary_test_runner",
+    testonly = True,
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [":provider_input_boundary_test_runner_modules"],
+)
+
+lean_library(
+    name = "sparse_metadata_axioms_test_modules",
+    testonly = True,
     srcs = ["SparseMetadataTest.lean"],
-    imports = ["SparseMetadataTest"],
-    theorems = [
+    visibility = ["//visibility:private"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_structural",
+    ],
+)
+
+lean_proof_test(
+    name = "sparse_metadata_axioms_test",
+    allow_empty = True,
+    modules = ["SparseMetadataTest"],
+    required_theorems = [
         "SparseMetadataExamples.abrupt_region_counterexamples",
         "SparseMetadataExamples.hoisted_region_counterexample",
         "SparseMetadataExamples.sparse_all_outcomes",
@@ -752,26 +857,18 @@ lean_axiom_test(
         "SparseMetadataExamples.terminal_region_counterexample",
         "SparseMetadataExamples.wrong_order_observed",
     ],
-    deps = [
-        ":corejs_linked_input",
-        ":corejs_structural",
-    ],
+    deps = [":sparse_metadata_axioms_test_modules"],
 )
 
-lean_axiom_test(
-    name = "provider_input_boundary_axioms_test",
+lean_library(
+    name = "provider_input_boundary_axioms_test_modules",
+    testonly = True,
     srcs = [
         # Keep import order for the native Lean rule.
         "ProviderInputBoundaryTest.lean",
         "ProviderInputBoundaryAudit.lean",
     ],
-    imports = ["ProviderInputBoundaryAudit"],
-    theorems = [
-        "ProviderBoundaryFixture.certify",
-        "ProviderBoundaryFixture.commonProviderBehavior",
-        "ProviderBoundaryFixture.sourceFreeLinkedBoundary",
-        "ProviderBoundaryFixture.sourceFreeContext",
-    ],
+    visibility = ["//visibility:private"],
     deps = [
         ":corejs_linked_input",
         ":corejs_structural",
@@ -779,11 +876,24 @@ lean_axiom_test(
     ],
 )
 
-lean_binary(
-    name = "joint_static_test_runner",
+lean_proof_test(
+    name = "provider_input_boundary_axioms_test",
+    allow_empty = True,
+    modules = ["ProviderInputBoundaryAudit"],
+    required_theorems = [
+        "ProviderBoundaryFixture.certify",
+        "ProviderBoundaryFixture.commonProviderBehavior",
+        "ProviderBoundaryFixture.sourceFreeLinkedBoundary",
+        "ProviderBoundaryFixture.sourceFreeContext",
+    ],
+    deps = [":provider_input_boundary_axioms_test_modules"],
+)
+
+lean_library(
+    name = "joint_static_test_runner_modules",
     testonly = True,
     srcs = ["JointStaticTest.lean"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    visibility = ["//visibility:private"],
     deps = [
         ":corejs_structural",
         ":lowersplit_workflows",
@@ -791,12 +901,19 @@ lean_binary(
 )
 
 lean_binary(
-    name = "linked_input_test_runner",
+    name = "joint_static_test_runner",
+    testonly = True,
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [":joint_static_test_runner_modules"],
+)
+
+lean_library(
+    name = "linked_input_test_runner_modules",
     testonly = True,
     srcs = [
         "LinkedInputTest.lean",
     ],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    visibility = ["//visibility:private"],
     deps = [
         ":corejs_linked_input",
         ":corejs_runtime",
@@ -805,17 +922,30 @@ lean_binary(
     ],
 )
 
-# The order in which the modules of a plan run. `model/differential.mjs` compares the CoreJS model's with it.
 lean_binary(
-    name = "evalorder",
+    name = "linked_input_test_runner",
+    testonly = True,
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [":linked_input_test_runner_modules"],
+)
+
+# The order in which the modules of a plan run. `model/differential.mjs` compares the CoreJS model's with it.
+lean_library(
+    name = "evalorder_modules",
     srcs = [
         "EsmSplit/EvalOrder.lean",
     ],
+    visibility = ["//visibility:private"],
+    deps = [":plan"],
+)
+
+lean_binary(
+    name = "evalorder",
     visibility = [
         "//devinfra/js/debundle/x/split_proof/es_order:__pkg__",
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
     ],
-    deps = [":plan"],
+    deps = [":evalorder_modules"],
 )
 
 lean_library(
@@ -838,36 +968,57 @@ lean_library(
     deps = [":estree"],
 )
 
+lean_library(
+    name = "error_realm_test_runner_modules",
+    testonly = True,
+    srcs = ["ErrorRealmTest.lean"],
+    visibility = ["//visibility:private"],
+    deps = [":corejs_runtime"],
+)
+
 lean_binary(
     name = "error_realm_test_runner",
     testonly = True,
-    srcs = ["ErrorRealmTest.lean"],
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [":error_realm_test_runner_modules"],
+)
+
+lean_library(
+    name = "global_env_test_runner_modules",
+    testonly = True,
+    srcs = ["GlobalEnvTest.lean"],
+    visibility = ["//visibility:private"],
     deps = [":corejs_runtime"],
 )
 
 lean_binary(
     name = "global_env_test_runner",
     testonly = True,
-    srcs = ["GlobalEnvTest.lean"],
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
-    deps = [":corejs_runtime"],
+    deps = [":global_env_test_runner_modules"],
 )
 
 # The CoreJS model. `model/differential.mjs` runs it against Node.
+lean_library(
+    name = "corejs_modules",
+    srcs = ["EsmSplit/CoreJSMain.lean"],
+    visibility = ["//visibility:private"],
+    deps = [":corejs_linked_input"],
+)
+
 lean_binary(
     name = "corejs",
-    srcs = ["EsmSplit/CoreJSMain.lean"],
     visibility = [
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],
-    deps = [":corejs_linked_input"],
+    deps = [":corejs_modules"],
 )
 
-lean_axiom_test(
-    name = "corejs_axioms_test",
+lean_library(
+    name = "corejs_axioms_test_modules",
+    testonly = True,
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/CoreJS/CellFootprintExamples.lean",
@@ -880,7 +1031,20 @@ lean_axiom_test(
         "EsmSplit/CoreJS/WrapperLinked.lean",
         "EsmSplit/CoreJS/MetadataLink.lean",
     ],
-    imports = [
+    visibility = ["//visibility:private"],
+    deps = [
+        ":corejs_certificates",
+        ":corejs_runtime",
+        ":corejs_structural",
+        ":planner",
+        ":static_provider_boundary",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_axioms_test",
+    allow_empty = True,
+    modules = [
         "EsmSplit.CoreJS.BatchState",
         "EsmSplit.CoreJS.BindingCertificate",
         "EsmSplit.CoreJS.BindingFootprint",
@@ -939,7 +1103,7 @@ lean_axiom_test(
         "EsmSplit.CoreJS.WrapperMove",
         "EsmSplit.CoreJS.WriteExpr",
     ],
-    theorems = [
+    required_theorems = [
         "CoreJS.evaluatorFrames",
         "CoreJS.LinkedBehavior.checkedPivot_move",
         "CoreJS.LinkedBehavior.pivotFrameOk_move",
@@ -1203,13 +1367,7 @@ lean_axiom_test(
         "CoreJS.BindingCertificateExamples.rejects_out_of_bounds_statement",
         "CoreJS.BindingCertificateExamples.rejects_out_of_bounds_footprint",
     ],
-    deps = [
-        ":corejs_certificates",
-        ":corejs_runtime",
-        ":corejs_structural",
-        ":planner",
-        ":static_provider_boundary",
-    ],
+    deps = [":corejs_axioms_test_modules"],
 )
 
 lean_library(
@@ -1217,23 +1375,24 @@ lean_library(
     srcs = [
         # Keep import order for the native Lean rule.
         "CustomMoveExample.lean",
-        ":generated_proof_fixture_source",
         "ProofFixtureChecks.lean",
     ],
     deps = [
         ":corejs_certificate_support",
         ":fixture_renderer",
         ":planner",
+        "//devinfra/js/debundle/x/split_proof/lean/generated:proof_fixture_module",
     ],
 )
 
-lean_axiom_test(
+lean_proof_test(
     name = "proof_fixture_axioms_test",
-    imports = [
+    allow_empty = True,
+    modules = [
         "CustomMoveExample",
         "ProofFixtureChecks",
     ],
-    theorems = [
+    required_theorems = [
         "Example.plan_valid",
         "Example.control_bad_rejected",
         "CoreJS.CustomMoveExample.syntax_refuses",
@@ -1253,10 +1412,16 @@ lean_axiom_test(
     deps = [":proof_fixture"],
 )
 
+lean_library(
+    name = "proof_fixture_render_modules",
+    srcs = ["ProofFixtureMain.lean"],
+    visibility = ["//visibility:private"],
+    deps = [":proof_fixture"],
+)
+
 lean_binary(
     name = "proof_fixture_render",
-    srcs = ["ProofFixtureMain.lean"],
-    deps = [":proof_fixture"],
+    deps = [":proof_fixture_render_modules"],
 )
 
 sh_test(
@@ -1275,52 +1440,78 @@ sh_test(
     use_bash_launcher = True,
 )
 
-lean_axiom_test(
-    name = "weakmap_boundary_test",
+lean_library(
+    name = "weakmap_boundary_test_modules",
+    testonly = True,
     srcs = ["EsmSplit/CoreJS/WeakMapBoundary.lean"],
-    imports = ["EsmSplit.CoreJS.WeakMapBoundary"],
-    theorems = [
-        "CoreJS.WeakMapBoundary.stableRead_newEmpty",
-        "CoreJS.WeakMapBoundary.sameShape_sameObservation",
-    ],
+    visibility = ["//visibility:private"],
     deps = [":corejs_certificate_support"],
 )
 
-lean_test(
-    name = "corejs_uint8_test",
+lean_proof_test(
+    name = "weakmap_boundary_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.WeakMapBoundary"],
+    required_theorems = [
+        "CoreJS.WeakMapBoundary.stableRead_newEmpty",
+        "CoreJS.WeakMapBoundary.sameShape_sameObservation",
+    ],
+    deps = [":weakmap_boundary_test_modules"],
+)
+
+lean_library(
+    name = "corejs_uint8_test_modules",
+    testonly = True,
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/CoreJS/Number.lean",
         "EsmSplit/CoreJS/Uint8Examples.lean",
     ],
-    entry = "EsmSplit/CoreJS/Uint8Examples.lean",
+    visibility = ["//visibility:private"],
+)
+
+build_test(
+    name = "corejs_uint8_test",
+    targets = [":corejs_uint8_test_modules"],
+)
+
+lean_library(
+    name = "replicate_plan_modules",
+    testonly = True,
+    srcs = ["Experiments/ReplicatePlan.lean"],
+    visibility = ["//visibility:private"],
+    deps = [":lowersplit_workflows"],
 )
 
 lean_binary(
     name = "replicate_plan",
     testonly = True,
-    srcs = ["Experiments/ReplicatePlan.lean"],
-    deps = [":lowersplit_workflows"],
+    deps = [":replicate_plan_modules"],
 )
 
-lean_test(
-    name = "experiments_test",
+lean_library(
+    name = "experiments_test_modules",
+    testonly = True,
     srcs = [
         # Keep import order for the native Lean rule.
         "Experiments/Automation.lean",
         "Experiments/Ladder.lean",
         "Experiments.lean",
     ],
-    entry = "Experiments.lean",
     tags = ["manual"],
+    visibility = ["//visibility:private"],
     deps = [":example_proof"],
 )
 
-lean_test(
+build_test(
+    name = "experiments_test",
+    tags = ["manual"],
+    targets = [":experiments_test_modules"],
+)
+
+build_test(
     name = "lowered_example_certificate_test",
-    srcs = [":generated_lowered_example_source"],
-    entry = ":generated_lowered_example_source",
-    deps = [":planner"],
+    targets = ["//devinfra/js/debundle/x/split_proof/lean/generated:lowered_example_module"],
 )
 
 py_library(
@@ -1328,11 +1519,19 @@ py_library(
     srcs = ["strategy_census_wrapper.py"],
 )
 
-lean_axiom_test(
-    name = "shared_stack_string_axioms_test",
+lean_library(
+    name = "shared_stack_string_axioms_test_modules",
+    testonly = True,
     srcs = ["EsmSplit/CoreJS/SharedStackString.lean"],
-    imports = ["EsmSplit.CoreJS.SharedStackString"],
-    theorems = [
+    visibility = ["//visibility:private"],
+    deps = [":corejs_runtime"],
+)
+
+lean_proof_test(
+    name = "shared_stack_string_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.SharedStackString"],
+    required_theorems = [
         "CoreJS.SharedStackString.movedWrite",
         "CoreJS.SharedStackString.mutantLookup",
         "CoreJS.SharedStackString.mutantDistinguished",
@@ -1340,18 +1539,26 @@ lean_axiom_test(
         "CoreJS.SharedStackString.overrideThrows",
         "CoreJS.SharedStackString.isolatedSurrogateRefused",
     ],
-    deps = [":corejs_runtime"],
+    deps = [":shared_stack_string_axioms_test_modules"],
 )
 
-lean_axiom_test(
-    name = "intrinsic_error_reference_axioms_test",
+lean_library(
+    name = "intrinsic_error_reference_axioms_test_modules",
+    testonly = True,
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/CoreJS/StackReadBoundary.lean",
         "EsmSplit/CoreJS/IntrinsicErrorReference.lean",
     ],
-    imports = ["EsmSplit.CoreJS.IntrinsicErrorReference"],
-    theorems = [
+    visibility = ["//visibility:private"],
+    deps = [":corejs_certificate_support"],
+)
+
+lean_proof_test(
+    name = "intrinsic_error_reference_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IntrinsicErrorReference"],
+    required_theorems = [
         "CoreJS.IntrinsicErrorReference.successHasOrigin",
         "CoreJS.IntrinsicErrorReference.unsupportedHasNoOrigin",
         "CoreJS.IntrinsicErrorReference.aliasAllocation",
@@ -1362,14 +1569,22 @@ lean_axiom_test(
         "CoreJS.IntrinsicErrorReference.prototypeThrowRetained",
         "CoreJS.IntrinsicErrorReference.productionStillUnknown",
     ],
-    deps = [":corejs_certificate_support"],
+    deps = [":intrinsic_error_reference_axioms_test_modules"],
 )
 
-lean_axiom_test(
-    name = "stack_read_boundary_axioms_test",
+lean_library(
+    name = "stack_read_boundary_axioms_test_modules",
+    testonly = True,
     srcs = ["EsmSplit/CoreJS/StackReadBoundary.lean"],
-    imports = ["EsmSplit.CoreJS.StackReadBoundary"],
-    theorems = [
+    visibility = ["//visibility:private"],
+    deps = [":corejs_runtime"],
+)
+
+lean_proof_test(
+    name = "stack_read_boundary_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.StackReadBoundary"],
+    required_theorems = [
         "CoreJS.StackReadBoundary.getPropAt",
         "CoreJS.StackReadBoundary.twoReadsAt",
         "CoreJS.StackReadBoundary.evalReadAt",
@@ -1380,19 +1595,27 @@ lean_axiom_test(
         "CoreJS.StackReadBoundary.errorConstructionUnknown",
         "CoreJS.StackReadBoundary.engineErrorReadUnknown",
     ],
-    deps = [":corejs_runtime"],
+    deps = [":stack_read_boundary_axioms_test_modules"],
 )
 
-lean_axiom_test(
-    name = "stack_read_composition_axioms_test",
+lean_library(
+    name = "stack_read_composition_axioms_test_modules",
+    testonly = True,
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/CoreJS/SharedStackString.lean",
         "EsmSplit/CoreJS/StackReadBoundary.lean",
         "EsmSplit/CoreJS/StackReadComposition.lean",
     ],
-    imports = ["EsmSplit.CoreJS.StackReadComposition"],
-    theorems = [
+    visibility = ["//visibility:private"],
+    deps = [":corejs_runtime"],
+)
+
+lean_proof_test(
+    name = "stack_read_composition_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.StackReadComposition"],
+    required_theorems = [
         "CoreJS.StackReadComposition.movedWithReachedReads",
         "CoreJS.StackReadComposition.exampleWithOverride",
         "CoreJS.StackReadComposition.syntheticIdentityOnly",
@@ -1401,28 +1624,5 @@ lean_axiom_test(
         "CoreJS.StackReadComposition.aliasConstructionUnknown",
         "CoreJS.StackReadComposition.shadowConstructionUnknown",
     ],
-    deps = [":corejs_runtime"],
-)
-
-lean_compiler(
-    name = "lean_compiler",
-    visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
-)
-
-lean_source_copy(
-    name = "generated_instance_source",
-    src = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
-    module_path = "EsmSplit/Instance.lean",
-)
-
-lean_source_copy(
-    name = "generated_proof_fixture_source",
-    src = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_proof_fixture",
-    module_path = "ProofFixture/Instance.lean",
-)
-
-lean_source_copy(
-    name = "generated_lowered_example_source",
-    src = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_lowered_example_certificate",
-    module_path = "Experiments/Generated.lean",
+    deps = [":stack_read_composition_axioms_test_modules"],
 )

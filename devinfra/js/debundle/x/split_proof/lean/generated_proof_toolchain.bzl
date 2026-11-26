@@ -1,4 +1,8 @@
-"""Build the fixed verifier runfile map used by the native splitter."""
+"""Build the fixed verifier runfile map used by the native splitter.
+
+rules_lean exposes module artifacts and the selected SDK to build rules, but
+not as a runtime import map. Generated proofs need both beside the executable.
+"""
 
 load("@rules_lean//lean:defs.bzl", "LeanInfo")
 load("@rules_lean//lean:toolchain.bzl", "LEAN_TOOLCHAIN_TYPE")

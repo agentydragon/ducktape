@@ -1,33 +1,11 @@
 --- a/lean/private/rules.bzl
 +++ b/lean/private/rules.bzl
-@@ -133,8 +133,8 @@
-             args.add("-DwarningAsError=true")
-         args.add(src)
-         ctx.actions.run(
--            executable = tc.lean,
--            arguments = [args],
-+            executable = ctx.executable._compile_guard,
-+            arguments = [tc.lean.path, args],
-             inputs = depset([src, setup] + oleans, transitive = [tc.lean_files, dep_oleans]),
-             outputs = [olean, ilean, c_file],
-             mnemonic = "LeanCompile",
-@@ -177,6 +177,13 @@
-                   "Default: the package itself, so `Gala/Eval.lean` is module `Gala.Eval`; " +
-                   "with `strip_prefix = \"src\"`, `src/Gala/Eval.lean` is `Gala.Eval` too.",
-         ),
-+        # Ducktape's existing proof build rejects admitted declarations while
-+        # leaving unrelated Lean warnings non-fatal.
-+        "_compile_guard": attr.label(
-+            default = Label("@@//devinfra/js/debundle/x/split_proof/lean/compile_guard:guard_runner"),
-+            executable = True,
-+            cfg = "exec",
-+        ),
-         "warnings_as_errors": attr.bool(
-             default = False,
-             doc = "Fail the build on any Lean warning (an unused variable, a deprecated " +
-@@ -274,9 +281,16 @@
-     let bad := axioms.filter (fun a => !rulesLeanAllowedAxioms.contains a)
-     unless bad.isEmpty do
+@@ -126,2 +126,4 @@
+         args = ctx.actions.args()
++        # Promote Lean's admission diagnostic without failing unrelated warnings.
++        args.add("--error=hasSorry")
+         args.add("--setup", setup)
+@@ -276,5 +278,12 @@
        failures := failures.push s!"  {{name}} ({{mod}}) depends on {{bad.toList}}"
 +  -- Named obligations may be imported from outside the scanned modules.
 +  -- Audit each one too; merely checking its existence would weaken the gate.
@@ -42,5 +20,9 @@
 +    unless bad.isEmpty do
 +      failures := failures.push s!"  {{name}} depends on {{bad.toList}}"
    if failures.isEmpty then
-     if checked == 0 && !{allow_empty} then
-       throwError "lean_proof_test: no declarations found in {{rulesLeanTargetModules}}"
+@@ -291,2 +300,5 @@
+ def _lean_proof_check_impl(ctx):
++    # An import-only audit must name obligations or it could pass vacuously.
++    if ctx.attr.allow_empty and not ctx.attr.required_theorems:
++        fail("{}: an empty-module audit needs named declarations".format(ctx.label))
+     tc = _toolchain(ctx)

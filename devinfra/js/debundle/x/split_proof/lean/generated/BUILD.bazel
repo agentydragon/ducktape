@@ -1,3 +1,4 @@
+load("@rules_lean//lean:defs.bzl", "lean_library")
 load(":certificate.bzl", "lowered_certificate")
 
 _ROOT = "//devinfra/js/debundle/x/split_proof:"
@@ -47,4 +48,25 @@ lowered_certificate(
     spec = _EXAMPLE + "spec.json",
     splitter = _SPLITTER,
     visibility = _VISIBILITY,
+)
+
+lean_library(
+    name = "instance_module",
+    srcs = [":generate_instance"],
+    visibility = _VISIBILITY,
+    deps = ["//devinfra/js/debundle/x/split_proof/lean:planner"],
+)
+
+lean_library(
+    name = "proof_fixture_module",
+    srcs = [":generate_proof_fixture"],
+    visibility = _VISIBILITY,
+    deps = ["//devinfra/js/debundle/x/split_proof/lean:planner"],
+)
+
+lean_library(
+    name = "lowered_example_module",
+    srcs = [":generate_lowered_example_certificate"],
+    visibility = _VISIBILITY,
+    deps = ["//devinfra/js/debundle/x/split_proof/lean:planner"],
 )
