@@ -12,6 +12,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/proto/sessionplacement"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
@@ -321,10 +322,7 @@ func (e *Executor) sessionForRead(ctx context.Context, ref contract.SandboxRef, 
 	// The incarnations the Session's session and its history tie it to, as far as each is known.
 	var tied []string
 	if session != nil {
-		target := session.GetSession().GetPlacement().GetEnvironmentHosted().GetEnvironment()
-		if session.GetSession().GetPlacement().GetCentralSamplerV1() != nil {
-			target = session.GetSession().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
-		}
+		target := sessionplacement.Target(session.GetSession().GetPlacement())
 		tied = append(tied, target.GetUid())
 	}
 	if written := summary.GetSandbox(); written != nil && written.Uid != nil {

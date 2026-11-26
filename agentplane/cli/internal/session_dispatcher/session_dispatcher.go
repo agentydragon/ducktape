@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/proto/sessionplacement"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
@@ -64,10 +65,7 @@ prints the Dispatcher Session resource; it does not wait for History.`,
 			request := &dispatcherpb.CreateSessionRequest{
 				SessionId: args[0], Spec: spec,
 			}
-			target := spec.GetPlacement().GetEnvironmentHosted().GetEnvironment()
-			if spec.GetPlacement().GetCentralSamplerV1() != nil {
-				target = spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
-			}
+			target := sessionplacement.Target(spec.GetPlacement())
 			if target.GetName() != sandbox || target.GetUid() != sandboxUID {
 				return invocation.UsageFailure("--spec placement must match --sandbox and --sandbox-uid")
 			}
@@ -289,10 +287,7 @@ func sessionLine(session *dispatcherpb.Session) (string, error) {
 	if session.GetStatus() == nil {
 		return "", invocation.InvalidResponse("no materialization status in the Session")
 	}
-	target := session.GetPlacement().GetEnvironmentHosted().GetEnvironment()
-	if session.GetPlacement().GetCentralSamplerV1() != nil {
-		target = session.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
-	}
+	target := sessionplacement.Target(session.GetPlacement())
 	if target.GetName() == "" || target.GetUid() == "" {
 		return "", invocation.InvalidResponse("no exact environment target in the Session")
 	}

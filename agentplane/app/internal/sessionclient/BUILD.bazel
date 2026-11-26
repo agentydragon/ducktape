@@ -15,6 +15,7 @@ go_library(
         "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/proto:session_go_proto",
+        "//agentplane/proto/sessionplacement",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//codes",

@@ -11,6 +11,7 @@ go_library(
     deps = [
         "//agentplane/cli/internal/invocation",
         "//agentplane/proto:session_go_proto",
+        "//agentplane/proto/sessionplacement",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
         "@com_github_google_uuid//:uuid",

@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "sessionplacement",
+    srcs = ["target.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/sessionplacement",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = ["//agentplane/proto:session_go_proto"],
+)

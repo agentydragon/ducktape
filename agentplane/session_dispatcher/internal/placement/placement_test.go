@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/proto/sessionplacement"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
 	"google.golang.org/grpc/codes"
@@ -59,8 +60,8 @@ func TestPlacementRequestRequiresExactTargetAndNativeHarness(t *testing.T) {
 			if err != nil || got != test.want {
 				t.Fatalf("PlacementFromRequest = %q, %v; want %q", got, err, test.want)
 			}
-			if !proto.Equal(placement.RequestTarget(test.request), target) {
-				t.Fatalf("RequestTarget = %v, want %v", placement.RequestTarget(test.request), target)
+			if got := sessionplacement.Target(test.request.GetSpec().GetPlacement()); !proto.Equal(got, target) {
+				t.Fatalf("Target = %v, want %v", got, target)
 			}
 		})
 	}
