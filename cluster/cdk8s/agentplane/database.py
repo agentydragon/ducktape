@@ -105,7 +105,18 @@ class Db(Construct):
             # Every service Deployment's pools and LISTEN connections, summed at full overflow over
             # its replicas plus a rollout's surge Pod, exceed the default 100; a rejected connection
             # fails requests and can stop background loops such as the History Service fold.
-            postgresql=ClusterSpecPostgresql(parameters={"max_slot_wal_keep_size": "512MB", "max_connections": "300"}),
+            postgresql=ClusterSpecPostgresql(
+                parameters={
+                    "max_slot_wal_keep_size": "512MB",
+                    "max_connections": "300",
+                    # Capture the blocker before the sampler's journal deadline. Keep bind values out
+                    # of both successful statement logs and error reports.
+                    "deadlock_timeout": "1s",
+                    "log_lock_waits": "on",
+                    "log_parameter_max_length": "0",
+                    "log_parameter_max_length_on_error": "0",
+                }
+            ),
             initdb=cnpg.same_owner_initdb("app"),
             wal_archive=props.wal_archive,
             managed=ClusterSpecManaged(
