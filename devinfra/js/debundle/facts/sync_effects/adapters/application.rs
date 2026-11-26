@@ -3,7 +3,7 @@
 
 use super::super::alternatives::execution_state::ExecutionPath;
 use super::super::array_transfer::{self, ArrayMethodSelection};
-use super::super::effect_coverage::{EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt};
+use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::{
     Call, CallKind, ExecutionIndex, MemberValueWrite, native_own_data_read_slots,
 };
@@ -14,6 +14,7 @@ use super::super::kernel::context::{
     BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
     NativeContext, Unproved,
 };
+use crate::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
 // Module-qualified: the builtin table's `Invocation` also has a
 // tagged-template form the kernel never requests.
 use super::super::kernel::frame::{

@@ -116,6 +116,7 @@ mod array_spreads;
 mod at_init_fallback;
 #[cfg(test)]
 mod at_init_fallback_tests;
+pub mod binding_effect_coverage;
 mod callable_inference;
 mod cell_overlap;
 mod collector;

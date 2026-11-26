@@ -6,8 +6,8 @@ use super::value_model::{AbstractValue, CallSite, HeapAddress, ValueExpr, Values
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::initialization_effects::CompletedInitialization;
 use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
-use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use swc_common::{Span, Spanned};
@@ -139,55 +139,37 @@ impl NativeConstructorCandidate {
     }
 }
 
-/// Terminal evidence for this source owner only. Never composed through a
-/// child ledger, generic Evaluate result, callee outcome or invocation memo.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct CompletedInitialization {
+/// Seal only the exact normally completed root initializer. Child operations
+/// and invocation memos carry fragments, never this evidence.
+pub(super) fn completed_root_initialization(
+    source: &InitializationSourceIdentity,
     owner: SourceUnitOrdinal,
-    dependencies: ProofDependencies,
+    binding: &Id,
+    initializer_span: Span,
+    initialized: &BTreeSet<Id>,
+    effects: &EffectCoverageFragment,
+) -> Option<CompletedInitialization> {
+    if !source.matches(owner, binding, initializer_span) || !initialized.contains(binding) {
+        return None;
+    }
+    Some(CompletedInitialization::new(
+        owner,
+        effects.normal_dependencies()?,
+    ))
 }
 
-impl CompletedInitialization {
-    /// Seal only the exact normally completed root initializer. Child
-    /// operations and invocation memos carry fragments, never this evidence.
-    pub(super) fn from_root_effects(
-        source: &InitializationSourceIdentity,
-        owner: SourceUnitOrdinal,
-        binding: &Id,
-        initializer_span: Span,
-        initialized: &BTreeSet<Id>,
-        effects: &EffectCoverageFragment,
-    ) -> Option<Self> {
-        if !source.matches(owner, binding, initializer_span) || !initialized.contains(binding) {
-            return None;
-        }
-        Some(Self {
-            owner,
-            dependencies: effects.normal_dependencies()?,
-        })
-    }
-
-    /// Seal an admitted root expression statement (`roots/operands`) whose
-    /// ordered execution completed normally with every operation covered.
-    /// The statement initializes no binding; its binding reads and rebinds
-    /// stay the owner's syntactic cells.
-    pub(super) fn from_root_statement_effects(
-        owner: SourceUnitOrdinal,
-        effects: &EffectCoverageFragment,
-    ) -> Option<Self> {
-        Some(Self {
-            owner,
-            dependencies: effects.normal_dependencies()?,
-        })
-    }
-
-    pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
-        self.owner == owner
-    }
-
-    pub(crate) fn dependencies(&self) -> &ProofDependencies {
-        &self.dependencies
-    }
+/// Seal an admitted root expression statement (`roots/operands`) whose
+/// ordered execution completed normally with every operation covered.
+/// The statement initializes no binding; its binding reads and rebinds
+/// stay the owner's syntactic cells.
+pub(super) fn completed_root_statement(
+    owner: SourceUnitOrdinal,
+    effects: &EffectCoverageFragment,
+) -> Option<CompletedInitialization> {
+    Some(CompletedInitialization::new(
+        owner,
+        effects.normal_dependencies()?,
+    ))
 }
 
 fn refusal_for_non_variable_owner(item: &ModuleItem) -> OwnerInitializationCoverageRefusalReason {
@@ -753,10 +735,7 @@ impl OriginalInitializer {
             .matches(owner, self.identity.binding(), evaluated.initializer_span)
             && evaluated.owner == owner
             && initialized.contains(self.identity.binding()))
-        .then_some(CompletedInitialization {
-            owner,
-            dependencies: evaluated.dependencies,
-        })
+        .then(|| CompletedInitialization::new(owner, evaluated.dependencies))
     }
 }
 

@@ -3,9 +3,10 @@
 //! It executes no source operation: it reads the inputs and queries and
 //! writes only the execution state and the run-level observations it drains.
 
-use super::super::effect_coverage::BindingEffectCoverage;
 use super::super::interpreter::{ExecutionInputs, ExecutionState, Observations, Outcome};
-use super::super::noninvoking_initialization::CompletedInitialization;
+use super::super::noninvoking_initialization::{
+    completed_root_initialization, completed_root_statement,
+};
 use super::super::runtime_inference::RuntimeQueries;
 use super::super::value_model::AbstractValue;
 use super::assignment::RootAssignment;
@@ -13,6 +14,7 @@ use super::body::expected_root_calls;
 use super::operands::RootOperands;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::binding_effect_coverage::BindingEffectCoverage;
 use crate::facts::evaluation_effects::EvaluationEffects;
 use crate::facts::statement_facts::SynchronousCalls;
 
@@ -216,7 +218,7 @@ pub(super) fn finalize(
         && outcome.effects.uninitialized_reads.is_empty()
         && let Some((source, binding, span)) = effect_initializer_source
     {
-        outcome.effects.completed_initialization = CompletedInitialization::from_root_effects(
+        outcome.effects.completed_initialization = completed_root_initialization(
             source,
             owner,
             binding,
@@ -228,7 +230,7 @@ pub(super) fn finalize(
     // The body phase keeps an attempted statement only when it seals.
     if outcome.effects.completed_initialization.is_none() && ordered_statement.is_some() {
         outcome.effects.completed_initialization =
-            CompletedInitialization::from_root_statement_effects(owner, &outcome.effect_coverage);
+            completed_root_statement(owner, &outcome.effect_coverage);
     }
     // A private declaration whose every operation the ledger covers ran
     // no user code and exposed no capability: its own callables and the

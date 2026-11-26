@@ -394,6 +394,7 @@ rust_library(
         "facts/array_spreads.rs",
         "facts/at_init_fallback.rs",
         "facts/at_init_fallback_tests.rs",
+        "facts/binding_effect_coverage.rs",
         "facts/callable_inference.rs",
         "facts/cell_overlap.rs",
         "facts/collector.rs",

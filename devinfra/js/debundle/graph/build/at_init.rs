@@ -783,18 +783,18 @@ fn promote_synchronous_effects(
         ));
     }
     match synchronous.binding_effect_authority() {
-        analysis::facts::sync_effects::BindingEffectAuthority::Unclassified => {}
-        analysis::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
+        analysis::facts::binding_effect_coverage::BindingEffectAuthority::Unclassified => {}
+        analysis::facts::binding_effect_coverage::BindingEffectAuthority::LegacyExecution {
             complete: true,
         }
-        | analysis::facts::sync_effects::BindingEffectAuthority::AuthorSourceOnly
-        | analysis::facts::sync_effects::BindingEffectAuthority::OperationReceipt => {
+        | analysis::facts::binding_effect_coverage::BindingEffectAuthority::AuthorSourceOnly
+        | analysis::facts::binding_effect_coverage::BindingEffectAuthority::OperationReceipt => {
             return true;
         }
-        analysis::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
+        analysis::facts::binding_effect_coverage::BindingEffectAuthority::LegacyExecution {
             complete: false,
         }
-        | analysis::facts::sync_effects::BindingEffectAuthority::OrderedRootInitializerUncovered => {
+        | analysis::facts::binding_effect_coverage::BindingEffectAuthority::OrderedRootInitializerUncovered => {
         }
     }
     false

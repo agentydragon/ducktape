@@ -9,7 +9,12 @@ fn admitted(statement: &str) -> bool {
     ));
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
-    let graph = ChunkCodeGraph::build(&body, &shadowed, &BTreeSet::new());
+    let graph = ChunkCodeGraph::build(
+        &body,
+        &shadowed,
+        &BTreeSet::new(),
+        &crate::facts::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+    );
     safe_plain_array_at_init_fallback_sources(
         body.last().expect("statement").as_module_item(),
         &shadowed,

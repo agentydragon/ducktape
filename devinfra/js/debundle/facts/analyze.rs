@@ -457,8 +457,12 @@ fn analyze_chunk_with_policy_and_sync(
         &per_statement,
         &imported_bindings,
     );
-    let redundant_purity_hints =
-        detect_redundant_purity_hints(&body, &shadowed, &hints.assumptions.declared_pure);
+    let redundant_purity_hints = detect_redundant_purity_hints(
+        &body,
+        &shadowed,
+        &hints.assumptions.declared_pure,
+        &super::sync_effects::interpreter::synchronous_calls::SynchronousShapeRefinement,
+    );
     let redundant_pure_member_hints =
         detect_redundant_pure_member_hints(&hints.assumptions.declared_pure_members, &shadowed);
     let mut seen_vars = BTreeSet::new();
