@@ -70,9 +70,10 @@ CLI overrides, and unknown keys or additional YAML documents fail startup. The s
 virtual key is supplied separately through the Secret-backed `AGENTPLANE_LLM_INGRESS_LITELLM_KEY`
 environment input; it is not part of the settings file or ConfigMap.
 
-The required `policy_namespace` names the namespace holding Identities. An SVID whose
+The required `policy_service` block (mutual TLS to the Policy Controller) supplies live Identities through
+`WatchIdentities`, with a read-through `GetIdentity` on a miss. An SVID whose
 `WorkloadCredential` (in an `allowed_service_account_namespaces` namespace) names an `Identity` is
-served only while that live Identity is the incarnation the credential names. Any live Identity there may infer. Its attribution includes `identity`, `identity_uid` and the
+served only while that live Identity is the incarnation the credential names. Any live Identity may infer. Its attribution includes `identity`, `identity_uid` and the
 credential's Pod when one is recorded. Only configured service actors with typed delegation may
 claim a central Session. TLS is required because inference HTTP and
 native gRPC share the listener. Kubernetes exec probes use `/healthprobe` against its verified TLS
