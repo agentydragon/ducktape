@@ -821,6 +821,11 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "vendor_swap_test",
+    srcs = glob(
+        ["vendor_swap/*.rs"],
+        exclude = ["vendor_swap/mod.rs"],
+    ),
+    source = "vendor_swap/mod.rs",
     deps = [
         "//devinfra/js/debundle/spec",
         "@crates//:serde",
