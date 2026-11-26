@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -223,6 +224,14 @@ func (r *streamingRoutes) historyFacade(w http.ResponseWriter, request *http.Req
 	if r.deps.HistoryHTTP == nil {
 		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "History facade is not configured")
 		return
+	}
+	if request.Method == http.MethodPost && strings.HasSuffix(path, "/entities") {
+		if session, ok := auth.SessionFromContext(request.Context()); ok && session.Login != nil {
+			// A stable storage namespace, not a credential. Base64 keeps arbitrary OIDC
+			// identifiers safe in an HTTP header.
+			account, _ := json.Marshal([2]string{session.Login.Issuer, session.Login.Subject})
+			w.Header().Set("Agentplane-Cache-Account", base64.RawURLEncoding.EncodeToString(account))
+		}
 	}
 	r.forwardFacade(w, request, request.Context(), r.deps.HistoryHTTP, path, "")
 }

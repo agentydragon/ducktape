@@ -723,11 +723,22 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "thread_cache",
+    srcs = ["thread_cache.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@electric-sql/client",
+    ],
+)
+
+ts_library(
     name = "electric_sync",
     srcs = ["electric_sync.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":thread_cache",
         ":thread_entity",
         ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",

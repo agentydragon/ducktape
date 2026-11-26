@@ -200,6 +200,15 @@ browser on desktop and phone.
   reveals earlier messages without stopping at an empty edge.
 - **Returning to a retained thread** shows its saved messages immediately. A status at the end of
   the history says it is checking for updates until the window catches up.
+- **Reloading or opening a second tab in the same login** resumes a saved window after History
+  confirms its scope. The browser stores the rows, page boundary and Electric resume position
+  together in IndexedDB. Complete payload revisions live separately and load as their rows are
+  displayed. Missing bodies are fetched individually or in batches.
+- **Local storage is disposable.** Saved history is plain IndexedDB data, scoped to the operator's
+  account, thread and projection epoch. Opening a thread requires a successful scope read. Explicit sign-out removes
+  the profile’s thread-history bucket, including copies held on disk by other tabs. Browsers without
+  named storage buckets keep history in memory. Storage pressure sheds cold bodies before windows.
+  Unavailable storage falls back to live reads; drafts and pending input are outside this cache.
 - **An appended message, reader at the bottom**: the view follows it into view. "At the bottom"
   tolerates a small amount of slack — a reader a few pixels off the exact bottom (scroll momentum,
   subpixel rounding) still counts as following.

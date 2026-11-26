@@ -24,6 +24,7 @@ from playwright.async_api import (
     Locator,
     Page,
     Request,
+    Response,
     Route,
     TimeoutError as PlaywrightTimeoutError,
     expect,
@@ -343,6 +344,84 @@ def _bodies_read(requests: list[Request]) -> int:
     )
 
 
+async def test_disk_cache_resumes_rows_and_reads_only_the_missing_body(page: Page, navigation: Navigation) -> None:
+    threads, _, ingress = navigation
+    thread = threads[0]
+    await page.goto(f"{ingress.url}/#/threads/{thread}")
+    tail = page.get_by_text("Thread 0 message 129", exact=True)
+    await expect(tail).to_be_visible()
+    # Wait for the first checkpoint and the 90 complete bodies. Opening a second document below
+    # discards all in-memory thread windows.
+    await page.wait_for_function("""async () => {
+      if (!(await navigator.storageBuckets.keys()).includes("agentplane-history")) return false;
+      const {indexedDB} = await navigator.storageBuckets.open("agentplane-history");
+      if (!(await indexedDB.databases()).some(db => db.name === "agentplane-history-v1")) return false;
+      const db = await new Promise(resolve => {
+        const r = indexedDB.open("agentplane-history-v1"); r.onsuccess = () => resolve(r.result);
+      });
+      const ids = await new Promise(resolve => {
+        const r = db.transaction("entries").objectStore("entries").getAllKeys();
+        r.onsuccess = () => resolve(r.result);
+      });
+      db.close();
+      return ids.length >= 91 && ids.some(id => id.endsWith("window"));
+    }""")
+    # Drop one complete revision while leaving its row in the saved window.
+    await page.evaluate("""async () => {
+      const {indexedDB} = await navigator.storageBuckets.open("agentplane-history");
+      const db = await new Promise(resolve => {
+        const r = indexedDB.open("agentplane-history-v1"); r.onsuccess = () => resolve(r.result);
+      });
+      const tx = db.transaction(["entries", "usage"], "readwrite");
+      const req = tx.objectStore("entries").getAllKeys();
+      req.onsuccess = () => {
+        const id = req.result.find(key => key.includes('"test-navigation-item-128"'));
+        tx.objectStore("entries").delete(id);
+        tx.objectStore("usage").delete(id);
+      };
+      await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onabort = reject; });
+      db.close();
+    }""")
+    requests: list[Request] = []
+
+    def record(request: Request) -> None:
+        requests.append(request)
+
+    page.on("request", record)
+    release = asyncio.Event()
+
+    async def hold_log(route: Route) -> None:
+        await release.wait()
+        await route.continue_()
+
+    await route_once(page, f"**/threads/{thread}/sync/entities?*", hold_log)
+    try:
+        async with page.expect_request(f"**/threads/{thread}/sync/entities?*") as log:
+            await page.reload(wait_until="domcontentloaded")
+        query = parse_qs(urlsplit((await log.value).url).query)
+        assert query["handle"]
+        assert query["offset"][0] not in {"now", "-1"}
+        await expect(tail).to_be_visible()
+        await expect(page.get_by_text("Thread 0 message 128", exact=True)).to_be_visible()
+        assert not any(request.method == "POST" and "/sync/entities?" in request.url for request in requests)
+        assert _bodies_read(requests) == 1
+    finally:
+        release.set()
+
+    # Sign out from another tab while the restored window still has an open database.
+    logout = await page.context.new_page()
+    await logout.goto(f"{ingress.url}/auth/me")
+    await logout.evaluate("""async () => {
+      localStorage.setItem("test-pending-input", "draft");
+      await fetch("/auth/logout", {method: "POST", redirect: "manual"});
+    }""")
+    await logout.wait_for_function(
+        "async () => !(await navigator.storageBuckets.keys()).includes('agentplane-history')"
+    )
+    assert await logout.evaluate("localStorage.getItem('test-pending-input')") == "draft"
+    await logout.close()
+
+
 async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away(
     page: Page, navigation: Navigation, history: History
 ) -> None:
@@ -628,6 +707,13 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
             if all(any(f'"{owner}"' in read for read in body_reads) for owner in ("reasoning", "tool")):
                 closed_disclosures_read.set()
 
+    successful_body_reads: list[str] = []
+
+    def record_body_response(response: Response) -> None:
+        if response.ok and response.request.method == "POST" and "/sync/chunks/" in response.url:
+            successful_body_reads.append(response.request.post_data or "")
+
+    page.on("response", record_body_response)
     page.on("request", observe)
     thread = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread, "Streamed thread")
@@ -739,7 +825,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
                 entry => entry.name.includes('/sync/entities?') && entry.nextHopProtocol === 'h2')"""
         )
         await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reloaded.png")
-        reads_before_disconnect = len(body_reads)
+        reads_before_disconnect = len(successful_body_reads)
         await page.context.set_offline(True)
         await ingress.drop_connections()
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
@@ -750,8 +836,21 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         await expect(
             page.get_by_text("Projected browser prefix and streamed suffix after reconnect", exact=True)
         ).to_have_count(1)
-        # The delta arrives on the live log; the body is not read again.
-        assert len(body_reads) == reads_before_disconnect
+        # A restored complete revision needs no payload stream until it grows. Reconnecting
+        # may fetch the new revision of "first", but no other saved bodies.
+        reconnect_reads = successful_body_reads[reads_before_disconnect:]
+        assert len(reconnect_reads) <= 1
+        if reconnect_reads:
+            owner, generation = json.loads(reconnect_reads[0])["params"].values()
+            assert owner == "first"
+            assert int(generation) > 0
+        # Once following this payload, subsequent deltas arrive without further subset requests.
+        following = len(body_reads)
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" again")))
+        await expect(
+            page.get_by_text("Projected browser prefix and streamed suffix after reconnect again", exact=True)
+        ).to_have_count(1)
+        assert len(body_reads) == following
         await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reconnected.png")
 
 
@@ -2095,6 +2194,12 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await drop_reply.wait()
         await route.abort()
 
+    # This case exercises the individual recovery lookup. The independent ownership
+    # observer can otherwise recover the batch receipt before the conversation mounts.
+    async def unavailable_batch(route: Route) -> None:
+        await route.fulfill(status=503)
+
+    await page.route("**/upstream/dispatcher/v1/sessions/*/dispatches:batchGet?*", unavailable_batch)
     await route_once(page, "**/upstream/dispatcher/v1/sessions/*:submitInput", lose_committed_reply)
     try:
         composer = message_composer(page)
@@ -2134,7 +2239,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
         await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
         await expect(pending.locator('[data-stage="admitted"]')).to_be_visible()
-        await expect(page.get_by_text("Catching up thread…", exact=True)).to_be_visible()
+        await expect(page.locator("[data-thread-catchup]")).to_be_visible()
         assert source.runner.commands.empty(), "reload must not manufacture a second command"
 
         app.release_replay()
