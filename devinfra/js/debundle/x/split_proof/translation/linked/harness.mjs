@@ -328,6 +328,12 @@ export function assertRejected({ verdict, log, out }, reason) {
   assert(!existsSync(out), out);
 }
 
+export function assertNoConstructedRule({ verdict, log, out }) {
+  assert.equal(verdict.status, "rejected", log);
+  assert.equal(verdict.reason_code, "no_constructed_rule", log);
+  assert(!existsSync(out), out);
+}
+
 // Order-kept slices prove the stronger all-outcomes result for these cases.
 export function assertRejectedOrOrderKeptSlice({ verdict, log, out }, reason) {
   if (verdict.status === "certified" && verdict.scope === "linked-slice-order-kept") {

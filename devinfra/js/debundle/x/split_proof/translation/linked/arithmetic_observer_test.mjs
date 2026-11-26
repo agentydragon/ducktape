@@ -1,17 +1,13 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import {
   arrow,
-  assertCertifiedResult,
+  assertNoConstructedRule,
   binary,
   call,
   exportNamed,
-  forcePreview,
   id,
   literal,
   member,
-  moduleEvaluationOrder,
   observe,
   sequentialSplit,
   program,
@@ -28,12 +24,18 @@ function split(name, source, modules = oneCall, order = [owner, observer]) {
   return sequentialSplit(name, source, modules, order);
 }
 
+function assertOriginalOnly(test, result) {
+  assertNoConstructedRule(test);
+  assert.deepEqual(observe(test.files.sourceFile, "result"), { result }, test.files.sourceFile);
+}
+
 const position = `function position(index, values) {
   return values.length === 1 ? "single" : index === 0 ? "first" : index === values.length - 1 ? "last" : "middle";
 }`;
 
-// The exported Boolean records an eager call through the split's import.
-assertCertifiedResult(
+// This function declaration is outside the current constructor's admitted form.
+// Keep the original Node result as a source-semantics check and require refusal.
+assertOriginalOnly(
   split(
     "position-observer",
     `${position}
@@ -66,11 +68,11 @@ for (const [name, length, index, result] of [
     ),
     exportNamed([["result", "result"]]),
   ]);
-  assertCertifiedResult(split(name, source), result);
+  assertOriginalOnly(split(name, source), result);
 }
 
-// Both schedules finish. In the forced split, the eager call sees the hoisted
-// length cell before the write, so its subtraction produces NaN.
+// The source result remains checked in Node, while the reordered request is
+// refused because this program is outside the named-declaration constructor.
 {
   const source = `${position}
     var length;
@@ -79,16 +81,9 @@ for (const [name, length, index, result] of [
     export { result };`;
   const state = "state.mjs";
   const modules = { [owner]: ["#0"], [state]: ["#1", "#2"], [observer]: ["#3"], [entry]: ["#4"] };
-  assertCertifiedResult(split("after-length-write", source, modules, [owner, state, observer]), true);
+  assertOriginalOnly(split("after-length-write", source, modules, [owner, state, observer]), true);
 
   const order = [owner, observer, state];
   const early = split("before-length-write", source, modules, order);
-  assert.equal(early.verdict.status, "rejected", early.log);
-  assert.match(early.verdict.reason, /probe executions completed normally with different final states/, early.log);
-  assert(!existsSync(early.out));
-  const preview = path.join(early.dir, "preview");
-  forcePreview(early.files, preview);
-  assert.deepEqual(moduleEvaluationOrder(preview, entry), [...order, entry]);
-  assert.deepEqual(observe(early.files.sourceFile, "result"), { result: true });
-  assert.deepEqual(observe(path.join(preview, entry), "result"), { result: false });
+  assertOriginalOnly(early, true);
 }

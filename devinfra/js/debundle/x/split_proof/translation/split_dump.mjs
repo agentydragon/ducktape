@@ -1,5 +1,5 @@
 // The ESTree Program as `lowersplit` reads it (`translation/annotated_estree.mjs`), with the parser and the scope
-// analysis of this package. `model/differential.mjs` splits its programs with it.
+// analysis of this package. Excalidraw uses the same parser/scope projection.
 import { acorn, eslintScope } from "./parser.mjs";
 import { dumpParsed } from "./annotated_estree.mjs";
 import { parseModule, topLevelStatements } from "./scope_metadata.mjs";

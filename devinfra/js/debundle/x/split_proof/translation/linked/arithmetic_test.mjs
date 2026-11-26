@@ -1,18 +1,13 @@
 import assert from "node:assert/strict";
-import path from "node:path";
 import {
   array,
   arrow,
-  assertCertifiedResult,
-  assertRejected,
-  assertRejectedOrOrderKeptSlice,
+  assertNoConstructedRule,
   binary,
   block,
   exportNamed,
-  forcePreview,
   id,
   literal,
-  moduleEvaluationOrder,
   observe,
   primitive,
   program,
@@ -26,7 +21,12 @@ import {
 const entry = "entry.mjs";
 const worker = "worker.mjs";
 
-assertCertifiedResult(
+function assertOriginalOnly(test, expected) {
+  assertNoConstructedRule(test);
+  assert.deepEqual(observe(test.files.sourceFile, "result"), { result: expected }, test.files.sourceFile);
+}
+
+assertOriginalOnly(
   sequentialSplit(
     "length-offset",
     `const last = (index, values) => index === values.length - 1;
@@ -36,12 +36,12 @@ assertCertifiedResult(
   [true, false, true]
 );
 
-assertCertifiedResult(
+assertOriginalOnly(
   sequentialSplit("eager-subtraction", "const length = 5; const result = length - 1; export { result };"),
   4
 );
 
-assertCertifiedResult(
+assertOriginalOnly(
   sequentialSplit(
     "arithmetic-operand-order",
     `const run = (fail) => {
@@ -81,7 +81,7 @@ function requireEqual(actual, expected) {
   };
 }
 
-// Check both value and type when calling the relocated closure. A zero is
+// Check arithmetic values and types in the source JavaScript. A zero is
 // observed via its reciprocal so Node's JSON serialization preserves its sign.
 const cases = [
   ["+", 0.1, 0.2, 0.30000000000000004],
@@ -120,7 +120,7 @@ const generated = program([
   variable("const", "result", id("run")),
   exportNamed([["result", "result"]]),
 ]);
-assertCertifiedResult(sequentialSplit("generated-arithmetic", generated), expected);
+assertOriginalOnly(sequentialSplit("generated-arithmetic", generated), expected);
 
 // CoreJS cannot run valueOf. It refuses the initialization even with a catch
 // that handles the actual JavaScript exception.
@@ -134,14 +134,14 @@ const conversion = sequentialSplit(
   export { result };`
 );
 assert.deepEqual(observe(conversion.files.sourceFile, "result"), { result: "conversion" });
-assertRejectedOrOrderKeptSlice(conversion, /an object is converted to a primitive/);
+assertNoConstructedRule(conversion);
 
 const bigint = sequentialSplit("mixed-bigint", "const run = () => 1n + 1; const result = run(); export { result };");
 assert.deepEqual(observe(bigint.files.sourceFile, "result"), { error: "TypeError" });
-assertRejectedOrOrderKeptSlice(bigint, /unsupported literal/);
+assertNoConstructedRule(bigint);
 
-// An early read sees the already allocated var cell's undefined value, so both
-// schedules complete. The arithmetic exposes the different initialization order.
+// The original source result remains observable, but neither order is admitted
+// by the named-declaration constructor because the split contains var and assignment.
 {
   const source = `var factor;
     factor = 2;
@@ -149,12 +149,8 @@ assertRejectedOrOrderKeptSlice(bigint, /unsupported literal/);
     export { result };`;
   const reader = "reader.mjs";
   const modules = { [worker]: ["#0", "#1"], [reader]: ["#2"], [entry]: ["#3"] };
-  assertCertifiedResult(sequentialSplit("ordered-arithmetic", source, modules, [worker, reader]), true);
+  assertOriginalOnly(sequentialSplit("ordered-arithmetic", source, modules, [worker, reader]), true);
   const early = sequentialSplit("early-arithmetic", source, modules, [reader, worker]);
-  assertRejected(early, /probe executions completed normally with different final states/);
-  const preview = path.join(early.dir, "preview");
-  forcePreview(early.files, preview);
-  assert.deepEqual(moduleEvaluationOrder(preview, entry), [reader, worker, entry]);
+  assertNoConstructedRule(early);
   assert.deepEqual(observe(early.files.sourceFile, "result"), { result: true });
-  assert.deepEqual(observe(path.join(preview, entry), "result"), { result: false });
 }

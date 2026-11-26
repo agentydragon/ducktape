@@ -79,7 +79,7 @@ export function split({
     throw new Error(`lowersplit returned no JSON verdict: ${log}`, { cause: error });
   }
   assert(["certified", "rejected"].includes(verdict.status), log);
-  assert.equal(verdict.requested, guarantee ?? "normal-completion", log);
+  assert.equal(verdict.requested, guarantee ?? "all-outcomes", log);
   assert.equal(result.status, verdict.status === "certified" ? 0 : 1, log);
 
   const files = filesUnder(out);
