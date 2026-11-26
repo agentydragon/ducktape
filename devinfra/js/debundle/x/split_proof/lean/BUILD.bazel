@@ -1675,3 +1675,43 @@ lean_proof_test(
     ],
     deps = [":entry_export_cells"],
 )
+
+lean_library(
+    name = "corejs_declaring_owner",
+    srcs = ["EsmSplit/CoreJS/DeclaringOwner.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "corejs_declaring_owner_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.DeclaringOwner"],
+    required_theorems = ["CoreJS.DeclaringOwner.declared_in_original_owner"],
+    deps = [":corejs_declaring_owner"],
+)
+
+lean_library(
+    name = "local_export_unit",
+    srcs = ["EsmSplit/LocalExportUnit.lean"],
+    deps = [":planner"],
+)
+
+executable_test(
+    name = "local_export_unit_test",
+    src = "LocalExportUnitTest.lean",
+    deps = [
+        ":local_export_unit",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "local_export_unit_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.LocalExportUnit"],
+    required_theorems = [
+        "EsmSplit.LocalExportUnit.exact_footprint",
+        "EsmSplit.LocalExportUnit.local_use_and_public",
+    ],
+    deps = [":local_export_unit"],
+)
