@@ -496,7 +496,6 @@ lean_binary(
     name = "sparse_checked_split_test_runner",
     testonly = True,
     srcs = ["SparseCheckedSplitTest.lean"],
-    entry = "SparseCheckedSplitTest.lean",
     deps = [
         ":corejs_sparse_checked_split",
         ":lowersplit_support",
