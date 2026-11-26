@@ -26,9 +26,9 @@ use anyhow::{Context, Result, bail, ensure};
 use artifact::reports::{ImportSpecifierKind, StaticModuleRequest, StaticModuleRequestMode};
 use artifact::{ArtifactIndexes, ChunkBundle};
 use cross_module_purity::{
-    CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedCallableSummaries,
-    resolve_export_primitives, resolve_imported_callable_summaries, resolve_imported_purities,
-    resolve_stable_imports,
+    CallableSummaryInputs, ExportPrimitiveValue, ExportValueSource, ModulePurityFacts,
+    ResolvedCallableSummaries, resolve_export_primitives, resolve_imported_callable_summaries,
+    resolve_imported_purities, resolve_stable_imports,
 };
 use graph_provenance::{CurrentRoots, GraphProvenance, InputRoot};
 use swc_common::{Span, Spanned};
@@ -326,7 +326,241 @@ pub fn collect_program_summary(
     let chunk_analysis_inputs = projection.chunk_analysis_inputs.as_ref();
     let predefined_globals = projection.host_behavior.predefined_globals;
     let declared_pure_new_bindings = &projection.declared_pure_new();
-    // Assemble oracle inputs from the prepared syntax and matching manifests.
+    let ProgramModules {
+        modules,
+        export_value_sources,
+        lexically_closed_modules,
+        static_requests,
+    } = program_modules(artifact, indexes, chunk_filter, replacement_packages);
+    let bindings = ProgramBindings::new(
+        modules.iter().map(|(module, facts)| facts.bindings(module)),
+        export_value_sources
+            .keys()
+            .cloned()
+            .chain(export_value_sources.values().flat_map(|source| {
+                source
+                    .copies
+                    .iter()
+                    .map(|copy| (copy.module.clone(), copy.export.clone()))
+            })),
+    );
+    let export_primitives = resolve_export_primitives(&bindings, export_value_sources);
+    let export_values: BTreeMap<_, _> = export_primitives
+        .iter()
+        .map(|(export, primitive)| (export.clone(), Value::Prim(primitive.kinds)))
+        .collect();
+    let static_dependencies = resolved_static_dependency_graph(
+        artifact,
+        indexes,
+        &static_requests,
+        &modules.keys().cloned().collect(),
+        projection.host_behavior,
+    );
+    let initializer_call_effect_inputs = resolve_initializer_call_effect_inputs(
+        artifact,
+        &modules,
+        chunk_analysis_inputs,
+        &projection.source_sites,
+        ProgramSummaryOptions {
+            graph_provenance,
+            vendor_plan,
+            replacement_packages,
+        },
+        &static_dependencies,
+    )?;
+    let primitive_reads =
+        imported_primitive_reads(&modules, &export_primitives, &static_dependencies);
+    let values = admitted_imported_values(&modules, &primitive_reads, &export_values);
+    validate_analysis_source_sites(
+        artifact,
+        &projection.source_sites,
+        &projection.native_operation_inputs,
+        graph_provenance,
+        chunk_filter,
+    )?;
+    let SelectedInputs {
+        value_inputs,
+        native_operation_inputs,
+        argument_inputs,
+        no_accessor_install_callables,
+    } = resolve_selected_inputs(
+        artifact,
+        &modules,
+        projection,
+        graph_provenance,
+        chunk_filter,
+    )?;
+    let constructors = imported_pure_new_constructors(&modules, declared_pure_new_bindings);
+    macro_rules! members {
+        ($field:ident, $contract:ident) => {
+            project_onto_importers(
+                &modules,
+                &scoped(chunk_export_purity, &modules, |p| &p.$field),
+                ExportContract::$contract,
+                diagnostics,
+            )
+        };
+    }
+    // Project each policy once. Raw namespace privacy needs the same complete
+    // potentially aliasing family as normal execution, before source flow.
+    let namespace_independent_members =
+        members!(namespace_independent_members, NamespaceIndependentMembers);
+    let callback_factory_members = members!(callback_factory_members, CallbackFactoryMembers);
+    let retained_callback_factory_members = members!(
+        retained_callback_factory_members,
+        RetainedCallbackFactoryMembers
+    );
+    let no_reentry_members = members!(no_reentry_members, NoReentryMembers);
+    let no_reentry_record_members = members!(no_reentry_record_members, NoReentryRecordMembers);
+    let mut namespace_privacy_members = namespace_independent_members.clone();
+    for module in modules.keys() {
+        let family = namespace_privacy_members.entry(module.clone()).or_default();
+        for root in callback_factory_members[module]
+            .keys()
+            .chain(retained_callback_factory_members[module].keys())
+            .chain(no_reentry_members[module].keys())
+            .chain(no_reentry_record_members[module].keys())
+        {
+            family.entry(root.clone()).or_default();
+        }
+    }
+    let closed_factory_imports = closed_factory_imports(
+        &modules,
+        projection,
+        &lexically_closed_modules,
+        &static_dependencies,
+    );
+    let requested_original_provider_exports = initializer_call_effect_inputs
+        .values()
+        .flatten()
+        .map(|input| (input.provider_chunk.clone(), input.provider_export.clone()))
+        .collect();
+    let mut callable_summaries = resolve_imported_callable_summaries(
+        &bindings,
+        &modules,
+        &scoped(chunk_export_purity, &modules, |p| {
+            &p.callback_factory_exports
+        }),
+        &scoped(chunk_export_purity, &modules, |p| {
+            &p.descriptor_copy_factory_exports
+        }),
+        CallableSummaryInputs {
+            closed_factory_imports: &closed_factory_imports,
+            namespace_privacy_members: &namespace_privacy_members,
+            callback_factory_members: &callback_factory_members,
+            requested_original_provider_exports: &requested_original_provider_exports,
+            selected_value_inputs: &value_inputs,
+            selected_native_operation_inputs: &native_operation_inputs,
+            selected_imported_primitive_array_spread_inputs: &projection
+                .source_sites
+                .imported_primitive_array_spread_inputs,
+            argument_inputs: &argument_inputs,
+            predefined_globals,
+            no_accessor_install_callables: &no_accessor_install_callables,
+            intrinsics_never_written: projection
+                .intrinsics_never_written
+                .map(|premise| {
+                    premise
+                        .families
+                        .families()
+                        .into_iter()
+                        .map(Into::into)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        },
+        diagnostics,
+    )?;
+    let asserted_pure = scoped(chunk_export_purity, &modules, |p| &p.pure_exports);
+    let mut stable_imports = resolve_stable_imports(&bindings, &modules, &asserted_pure);
+    let imported_purities = resolve_imported_purities(
+        &stable_imports,
+        &modules,
+        &asserted_pure,
+        &mut callable_summaries,
+        diagnostics,
+    )?;
+    // A proved imported primitive read names a provider binding declared once
+    // and never written (`StableExportValue`).
+    for (chunk, reads) in &primitive_reads {
+        stable_imports
+            .entry(chunk.clone())
+            .or_default()
+            .extend(reads.keys().cloned());
+    }
+    check_provider_closures(
+        &initializer_call_effect_inputs,
+        &modules,
+        &callable_summaries,
+        &static_dependencies,
+    )?;
+    macro_rules! exports {
+        ($field:ident, $contract:ident) => {
+            project_export_set(
+                &modules,
+                &scoped(chunk_export_purity, &modules, |p| &p.$field),
+                ExportContract::$contract,
+                diagnostics,
+            )
+        };
+    }
+    Ok(ProgramSummary {
+        structural_flows: callable_summaries.structural_flows,
+        no_reentry_callback_exports: members!(
+            no_reentry_callback_exports,
+            NoReentryCallbackExports
+        ),
+        retained_callback_constructors: members!(
+            retained_callback_constructor_exports,
+            RetainedCallbackConstructorExports
+        ),
+        retained_callback_factories: members!(
+            retained_callback_factory_exports,
+            RetainedCallbackFactoryExports
+        ),
+        retained_callback_factory_members,
+        values,
+        primitive_reads,
+        bindings: imported_purities,
+        stable_imports,
+        fluent: exports!(fluent_exports, FluentExports),
+        constructors,
+        imported_callables: callable_summaries.imported_callables,
+        native_integrity: callable_summaries.native_integrity,
+        bundle_globals: callable_summaries.bundle_globals,
+        value_inputs: callable_summaries.value_inputs,
+        native_operation_inputs: callable_summaries.native_operation_inputs,
+        initializer_call_effect_inputs,
+        imported_primitive_array_spread_inputs: callable_summaries
+            .imported_primitive_array_spread_inputs,
+        inferred_set_constructions: callable_summaries.inferred_set_constructions,
+        argument_inputs: callable_summaries.argument_inputs,
+        inline_callback_factories: exports!(
+            inline_callback_factory_exports,
+            InlineCallbackFactoryExports
+        ),
+        namespace_independent_members,
+        callback_factory_members,
+        no_reentry_members,
+        no_reentry_record_members,
+        no_reentry_exports: exports!(no_reentry_exports, NoReentryExports),
+    })
+}
+
+/// Oracle inputs assembled from the prepared syntax and matching manifests.
+struct ProgramModules<'a> {
+    modules: BTreeMap<String, ModulePurityFacts<'a>>,
+    export_value_sources: BTreeMap<(String, String), ExportValueSource>,
+    lexically_closed_modules: BTreeSet<String>,
+    static_requests: BTreeMap<String, (ChunkId, String, Vec<StaticModuleRequest>)>,
+}
+
+fn program_modules<'a>(
+    artifact: &'a ChunkBundle,
+    indexes: &ArtifactIndexes,
+    chunk_filter: Option<&BTreeSet<ChunkId>>,
+    replacement_packages: &BTreeMap<ChunkId, BTreeMap<String, String>>,
+) -> ProgramModules<'a> {
     let mut modules = BTreeMap::new();
     let mut local_export_values =
         BTreeMap::<(String, String), (PrimKinds, BTreeSet<String>)>::new();
@@ -509,43 +743,20 @@ pub fn collect_program_summary(
             );
         }
     }
-    let bindings = ProgramBindings::new(
-        modules.iter().map(|(module, facts)| facts.bindings(module)),
-        export_value_sources
-            .keys()
-            .cloned()
-            .chain(export_value_sources.values().flat_map(|source| {
-                source
-                    .copies
-                    .iter()
-                    .map(|copy| (copy.module.clone(), copy.export.clone()))
-            })),
-    );
-    let export_primitives = resolve_export_primitives(&bindings, export_value_sources);
-    let export_values: BTreeMap<_, _> = export_primitives
-        .iter()
-        .map(|(export, primitive)| (export.clone(), Value::Prim(primitive.kinds)))
-        .collect();
-    let static_dependencies = resolved_static_dependency_graph(
-        artifact,
-        indexes,
-        &static_requests,
-        &modules.keys().cloned().collect(),
-        projection.host_behavior,
-    );
-    let initializer_call_effect_inputs = resolve_initializer_call_effect_inputs(
-        artifact,
-        &modules,
-        chunk_analysis_inputs,
-        &projection.source_sites,
-        ProgramSummaryOptions {
-            graph_provenance,
-            vendor_plan,
-            replacement_packages,
-        },
-        &static_dependencies,
-    )?;
-    let primitive_reads: BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>> = modules
+    ProgramModules {
+        modules,
+        export_value_sources,
+        lexically_closed_modules,
+        static_requests,
+    }
+}
+
+fn imported_primitive_reads(
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    export_primitives: &BTreeMap<(String, String), ExportPrimitiveValue>,
+    static_dependencies: &ResolvedStaticDependencies,
+) -> BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>> {
+    modules
         .iter()
         .map(|(importer, module)| {
             let reads = module
@@ -561,7 +772,7 @@ pub fn collect_program_summary(
                         importer,
                         &target.module,
                         &target.source_specifier,
-                        &static_dependencies,
+                        static_dependencies,
                     )?;
                     if !primitive.source_cells.iter().all(|cell| {
                         dependency_closure.contains(&cell.module)
@@ -584,17 +795,24 @@ pub fn collect_program_summary(
                 .collect();
             (importer.clone(), reads)
         })
-        .collect();
-    // Raw stable export kinds are useful while resolving copy and re-export
-    // chains, but they do not prove that an imported binding's GetValue is
-    // available at its consumer. Keep the existing dependency-closure read
-    // capability as the single join at the candidate-input boundary.
-    let values = modules
+        .collect()
+}
+
+/// Raw stable export kinds are useful while resolving copy and re-export
+/// chains, but they do not prove that an imported binding's GetValue is
+/// available at its consumer. Keep the existing dependency-closure read
+/// capability as the single join at the candidate-input boundary.
+fn admitted_imported_values(
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    primitive_reads: &BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>>,
+    export_values: &BTreeMap<(String, String), Value>,
+) -> BTreeMap<String, BTreeMap<String, Value>> {
+    modules
         .iter()
         .map(|(name, module)| {
             let proved_reads = primitive_reads.get(name);
             let values = module
-                .imported_values(&export_values)
+                .imported_values(export_values)
                 .into_iter()
                 .filter(|(local, value)| {
                     proved_reads
@@ -604,17 +822,28 @@ pub fn collect_program_summary(
                 .collect();
             (name.clone(), values)
         })
-        .collect();
-    validate_analysis_source_sites(
-        artifact,
-        &projection.source_sites,
-        &projection.native_operation_inputs,
-        graph_provenance,
-        chunk_filter,
-    )?;
+        .collect()
+}
+
+/// Source-resolved author inputs that callable summaries consume.
+struct SelectedInputs {
+    value_inputs: BTreeMap<String, Vec<SelectedBindingValueInput>>,
+    native_operation_inputs: BTreeMap<String, Vec<SelectedNativeOperationInput>>,
+    argument_inputs: BTreeMap<String, Vec<ResolvedArgumentInput>>,
+    no_accessor_install_callables: BTreeMap<String, Vec<ResolvedNoAccessorInstall>>,
+}
+
+fn resolve_selected_inputs(
+    artifact: &ChunkBundle,
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    projection: &AnalysisProjection<'_>,
+    graph_provenance: Option<&GraphProvenance>,
+    chunk_filter: Option<&BTreeSet<ChunkId>>,
+) -> Result<SelectedInputs> {
+    let chunk_analysis_inputs = projection.chunk_analysis_inputs.as_ref();
     let value_inputs = resolve_value_inputs(
         artifact,
-        &modules,
+        modules,
         chunk_analysis_inputs,
         &projection.source_sites.value_inputs,
         graph_provenance,
@@ -622,7 +851,7 @@ pub fn collect_program_summary(
     )?;
     let native_operation_inputs = resolve_native_operation_inputs(
         artifact,
-        &modules,
+        modules,
         chunk_analysis_inputs,
         graph_provenance,
         chunk_filter,
@@ -631,7 +860,7 @@ pub fn collect_program_summary(
     )?;
     let argument_inputs = resolve_argument_inputs(
         artifact,
-        &modules,
+        modules,
         chunk_analysis_inputs,
         &projection.source_sites.argument_inputs,
         graph_provenance,
@@ -639,15 +868,27 @@ pub fn collect_program_summary(
     )?;
     let no_accessor_install_callables = resolve_no_accessor_install_callables(
         artifact,
-        &modules,
+        modules,
         chunk_analysis_inputs,
         &projection.source_sites.no_accessor_install_callables,
         chunk_filter,
     )?;
-    // A structurally selected member's trusted constructor contract follows
-    // every export of that resolved binding. The importer sees its local
-    // binding name; neither spec nor analysis needs the minified export name.
-    let constructors = modules
+    Ok(SelectedInputs {
+        value_inputs,
+        native_operation_inputs,
+        argument_inputs,
+        no_accessor_install_callables,
+    })
+}
+
+/// A structurally selected member's trusted constructor contract follows
+/// every export of that resolved binding. The importer sees its local
+/// binding name; neither spec nor analysis needs the minified export name.
+fn imported_pure_new_constructors(
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    declared_pure_new_bindings: &BTreeMap<String, BTreeSet<String>>,
+) -> BTreeMap<String, BTreeSet<String>> {
+    modules
         .iter()
         .map(|(importer, facts)| {
             let locals = facts
@@ -663,44 +904,20 @@ pub fn collect_program_summary(
                 .collect();
             (importer.clone(), locals)
         })
-        .collect();
-    macro_rules! members {
-        ($field:ident, $contract:ident) => {
-            project_onto_importers(
-                &modules,
-                &scoped(chunk_export_purity, &modules, |p| &p.$field),
-                ExportContract::$contract,
-                diagnostics,
-            )
-        };
-    }
-    // Project each policy once. Raw namespace privacy needs the same complete
-    // potentially aliasing family as normal execution, before source flow.
-    let namespace_independent_members =
-        members!(namespace_independent_members, NamespaceIndependentMembers);
-    let callback_factory_members = members!(callback_factory_members, CallbackFactoryMembers);
-    let retained_callback_factory_members = members!(
-        retained_callback_factory_members,
-        RetainedCallbackFactoryMembers
-    );
-    let no_reentry_members = members!(no_reentry_members, NoReentryMembers);
-    let no_reentry_record_members = members!(no_reentry_record_members, NoReentryRecordMembers);
-    let mut namespace_privacy_members = namespace_independent_members.clone();
-    for module in modules.keys() {
-        let family = namespace_privacy_members.entry(module.clone()).or_default();
-        for root in callback_factory_members[module]
-            .keys()
-            .chain(retained_callback_factory_members[module].keys())
-            .chain(no_reentry_members[module].keys())
-            .chain(no_reentry_record_members[module].keys())
-        {
-            family.entry(root.clone()).or_default();
-        }
-    }
-    // A fresh result cannot be allocated at an importer AST site when all
-    // provider code is in this complete static closure, which excludes that
-    // importer. Dynamic scope cannot supply the missing identity proof.
-    let closed_factory_imports: BTreeMap<_, BTreeSet<_>> = modules
+        .collect()
+}
+
+/// A fresh result cannot be allocated at an importer AST site when all
+/// provider code is in this complete static closure, which excludes that
+/// importer. Dynamic scope cannot supply the missing identity proof.
+fn closed_factory_imports(
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    projection: &AnalysisProjection<'_>,
+    lexically_closed_modules: &BTreeSet<String>,
+    static_dependencies: &ResolvedStaticDependencies,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let chunk_export_purity = projection.chunk_export_purity;
+    modules
         .iter()
         .map(|(module, facts)| {
             let mut closures = BTreeMap::new();
@@ -725,7 +942,7 @@ pub fn collect_program_summary(
                                 module,
                                 &target.module,
                                 &target.source_specifier,
-                                &static_dependencies,
+                                static_dependencies,
                             )
                             .is_some_and(|closure| {
                                 closure
@@ -738,72 +955,26 @@ pub fn collect_program_summary(
                 .collect();
             (module.clone(), imports)
         })
-        .collect();
-    let requested_original_provider_exports = initializer_call_effect_inputs
-        .values()
-        .flatten()
-        .map(|input| (input.provider_chunk.clone(), input.provider_export.clone()))
-        .collect();
-    let mut callable_summaries = resolve_imported_callable_summaries(
-        &bindings,
-        &modules,
-        &scoped(chunk_export_purity, &modules, |p| {
-            &p.callback_factory_exports
-        }),
-        &scoped(chunk_export_purity, &modules, |p| {
-            &p.descriptor_copy_factory_exports
-        }),
-        CallableSummaryInputs {
-            closed_factory_imports: &closed_factory_imports,
-            namespace_privacy_members: &namespace_privacy_members,
-            callback_factory_members: &callback_factory_members,
-            requested_original_provider_exports: &requested_original_provider_exports,
-            selected_value_inputs: &value_inputs,
-            selected_native_operation_inputs: &native_operation_inputs,
-            selected_imported_primitive_array_spread_inputs: &projection
-                .source_sites
-                .imported_primitive_array_spread_inputs,
-            argument_inputs: &argument_inputs,
-            predefined_globals,
-            no_accessor_install_callables: &no_accessor_install_callables,
-            intrinsics_never_written: projection
-                .intrinsics_never_written
-                .map(|premise| {
-                    premise
-                        .families
-                        .families()
-                        .into_iter()
-                        .map(Into::into)
-                        .collect()
-                })
-                .unwrap_or_default(),
-        },
-        diagnostics,
-    )?;
-    let asserted_pure = scoped(chunk_export_purity, &modules, |p| &p.pure_exports);
-    let mut stable_imports = resolve_stable_imports(&bindings, &modules, &asserted_pure);
-    let imported_purities = resolve_imported_purities(
-        &stable_imports,
-        &modules,
-        &asserted_pure,
-        &mut callable_summaries,
-        diagnostics,
-    )?;
-    // A proved imported primitive read names a provider binding declared once
-    // and never written (`StableExportValue`).
-    for (chunk, reads) in &primitive_reads {
-        stable_imports
-            .entry(chunk.clone())
-            .or_default()
-            .extend(reads.keys().cloned());
-    }
+        .collect()
+}
+
+/// Rejects initializer-call-effect inputs that a source-known original
+/// provider write contradicts, and imported primitive array spreads whose
+/// providers lack a complete static initialization closure before the
+/// consumer.
+fn check_provider_closures(
+    initializer_call_effect_inputs: &BTreeMap<String, Vec<ResolvedInitializerCallEffectInput>>,
+    modules: &BTreeMap<String, ModulePurityFacts<'_>>,
+    callable_summaries: &ResolvedCallableSummaries,
+    static_dependencies: &ResolvedStaticDependencies,
+) -> Result<()> {
     for inputs in initializer_call_effect_inputs.values() {
         for input in inputs {
             if let Some((module, export, reason)) = known_original_provider_write(
                 &input.provider_chunk,
                 &input.provider_export,
-                &modules,
-                &callable_summaries,
+                modules,
+                callable_summaries,
                 &mut BTreeSet::new(),
             ) {
                 anyhow::bail!(
@@ -822,7 +993,7 @@ pub fn collect_program_summary(
                         consumer,
                         &operand.provider_module,
                         &operand.source_specifier,
-                        &static_dependencies,
+                        static_dependencies,
                     )
                     .is_some(),
                     "{} requires direct provider {} to have a complete acyclic ordinary static initialization closure before consumer {}",
@@ -833,57 +1004,7 @@ pub fn collect_program_summary(
             }
         }
     }
-    macro_rules! exports {
-        ($field:ident, $contract:ident) => {
-            project_export_set(
-                &modules,
-                &scoped(chunk_export_purity, &modules, |p| &p.$field),
-                ExportContract::$contract,
-                diagnostics,
-            )
-        };
-    }
-    Ok(ProgramSummary {
-        structural_flows: callable_summaries.structural_flows,
-        no_reentry_callback_exports: members!(
-            no_reentry_callback_exports,
-            NoReentryCallbackExports
-        ),
-        retained_callback_constructors: members!(
-            retained_callback_constructor_exports,
-            RetainedCallbackConstructorExports
-        ),
-        retained_callback_factories: members!(
-            retained_callback_factory_exports,
-            RetainedCallbackFactoryExports
-        ),
-        retained_callback_factory_members,
-        values,
-        primitive_reads,
-        bindings: imported_purities,
-        stable_imports,
-        fluent: exports!(fluent_exports, FluentExports),
-        constructors,
-        imported_callables: callable_summaries.imported_callables,
-        native_integrity: callable_summaries.native_integrity,
-        bundle_globals: callable_summaries.bundle_globals,
-        value_inputs: callable_summaries.value_inputs,
-        native_operation_inputs: callable_summaries.native_operation_inputs,
-        initializer_call_effect_inputs,
-        imported_primitive_array_spread_inputs: callable_summaries
-            .imported_primitive_array_spread_inputs,
-        inferred_set_constructions: callable_summaries.inferred_set_constructions,
-        argument_inputs: callable_summaries.argument_inputs,
-        inline_callback_factories: exports!(
-            inline_callback_factory_exports,
-            InlineCallbackFactoryExports
-        ),
-        namespace_independent_members,
-        callback_factory_members,
-        no_reentry_members,
-        no_reentry_record_members,
-        no_reentry_exports: exports!(no_reentry_exports, NoReentryExports),
-    })
+    Ok(())
 }
 
 fn known_original_provider_write(
