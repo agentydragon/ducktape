@@ -1,0 +1,89 @@
+import EsmSplit.CoreJS.ExactLiteralMove
+
+/-! Check a finite sequence of adjacent literal swaps against actual linked
+units. This is a schedule lemma; construction of a plan and its links is a
+separate obligation. -/
+
+namespace CoreJS.LiteralSwapCheck
+
+open ExactLiteralMove
+
+/-- Recognize a primitive literal and retain its exact source expression. -/
+def literal (e : Expr) : Option { v : Literal // v.expr = e } :=
+  match e with
+  | .undef => some ⟨.undef, rfl⟩
+  | .null => some ⟨.null, rfl⟩
+  | .bool b => some ⟨.bool b, rfl⟩
+  | .num n => some ⟨.num n, rfl⟩
+  | .str s => some ⟨.str s, rfl⟩
+  | _ => none
+
+/-- One checked step uses the linked addresses of the actual units. It cannot
+move a read, a throw, or two declarations of the same linked cell. -/
+def adjacent (units : List LinkedUnit) (index : Nat) : Except String { out // SafeReorder units out } := do
+  match hrem : units.drop index with
+  | (i, .decl .const x ex, envX) :: (j, .decl .const y ey, envY) :: tail =>
+    let some ⟨vx, hx⟩ := literal ex | throw "first initializer is not a primitive literal"
+    let some ⟨vy, hy⟩ := literal ey | throw "second initializer is not a primitive literal"
+    match hX : envX.vars.lookup x, hY : envY.vars.lookup y with
+    | some cx, some cy =>
+      if distinct : cx ≠ cy then
+        have source : units = units.take index ++ (i, decl x vx, envX) :: (j, decl y vy, envY) :: tail := by
+          rw [decl, hx, decl, hy, ← hrem, List.take_append_drop]
+        have safe := SafeReorder.swap (units.take index) tail i j envX envY x y vx vy cx cy hX hY distinct
+        return ⟨_, source.symm ▸ safe⟩
+      else throw "declarations share a linked cell"
+    | _, _ => throw "declaration has no linked cell"
+  | _ => throw "adjacent units must be const declarations"
+
+/-- Apply the caller's finite swap script without executing either program. -/
+def sequence (units : List LinkedUnit) : List Nat → Except String { out // SafeReorder units out }
+  | [] => .ok ⟨units, .refl units⟩
+  | index :: rest => do
+    let ⟨next, step⟩ ← adjacent units index
+    let ⟨out, more⟩ ← sequence next rest
+    pure ⟨out, .trans step more⟩
+
+/-- Every accepted script preserves every bounded modeled outcome. -/
+theorem sequence_sound {units : List LinkedUnit} {script : List Nat}
+    {result : { out // SafeReorder units out }}
+    (_accepted : sequence units script = .ok result) {W : World} (fuel : Nat) (state : State W) :
+    runUnits fuel units state = runUnits fuel result.val state :=
+  reorder_exact fuel result.property state
+
+/-- A read cannot be admitted as a primitive initializer. -/
+theorem refuses_read :
+    (match adjacent [(0, decl "a" (.bool true), (⟨[("a", ⟨1, 0⟩)], .undef, none⟩ : Env)),
+      (1, .decl .const "b" (.var "a"), (⟨[("b", ⟨2, 0⟩)], .undef, none⟩ : Env))] 0 with
+    | .error _ => True
+    | .ok _ => False) := by cbv
+
+/-- A throw cannot be crossed, so its order and effects remain observable. -/
+theorem refuses_throw :
+    (match adjacent [(0, decl "a" (.bool true), (⟨[("a", ⟨1, 0⟩)], .undef, none⟩ : Env)),
+      (1, .throw (.str "stop"), (⟨[], .undef, none⟩ : Env))] 0 with
+    | .error _ => True
+    | .ok _ => False) := by cbv
+
+private def thrown {w : World} (result : Res w Unit) : Option Val :=
+  match result with
+  | .throw value _ => some value
+  | _ => none
+
+/-- Reversing two throws changes the first observed abrupt outcome. -/
+theorem throw_order (w : World) :
+    thrown (runUnits 16 [(0, .throw (.str "first"), (⟨[], .undef, none⟩ : Env)),
+      (1, .throw (.str "second"), (⟨[], .undef, none⟩ : Env))] (initialState w 2)) = some (.str "first") ∧
+    thrown (runUnits 16 [(1, .throw (.str "second"), (⟨[], .undef, none⟩ : Env)),
+      (0, .throw (.str "first"), (⟨[], .undef, none⟩ : Env))] (initialState w 2)) = some (.str "second") := by
+  constructor <;> cbv
+
+#print axioms throw_order
+#print axioms refuses_read
+#print axioms refuses_throw
+#print axioms literal
+#print axioms adjacent
+#print axioms sequence
+#print axioms sequence_sound
+
+end CoreJS.LiteralSwapCheck
