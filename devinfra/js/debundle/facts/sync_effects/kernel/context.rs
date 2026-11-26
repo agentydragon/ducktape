@@ -2,9 +2,7 @@
 //! operation order and semantics.
 
 use super::super::alternatives::PathState;
-use super::super::execution_index::ExecutionIndex;
-use super::super::runtime_heap::NativeIterableUse;
-use super::closure::{CapturePolicy, ClosureAdmission};
+use super::closure::{CaptureCensus, CapturePolicy, ClosureAdmission};
 use super::frame::{LocalCallRequest, LocalFrame, LocalValueResult, RemainderDisposition};
 use analysis_vocabulary::execution_evidence::OrderedFieldReadRefusal;
 use analysis_vocabulary::inputs::ProofDependencies;
@@ -13,12 +11,25 @@ use swc_common::Span;
 use swc_ecma_ast::Id;
 use value_model::local_operations::DeferredCallableCreation;
 use value_model::own_data_transfer::OwnDataContext;
-use value_model::{CallSite, CapturedContext, LexicalCaptures, ValueExpr, Values};
+use value_model::{
+    CallSite, CapturedContext, LexicalCaptures, LiteralPropertyKind, ValueExpr, Values,
+};
 use world::World;
-use world::allocation_transfer::AllocationValue;
 use world::allocation_transfer::NativeIterableReceipt;
+use world::allocation_transfer::NativeIterableUse;
+use world::allocation_transfer::{AllocationValue, LiteralLayout};
 use world::array_transfer::ArrayMethodSelection;
 use world::effect_coverage::EffectCoverageFragment;
+
+/// The canonical census facts the kernel reads, which `ExecutionIndex`
+/// collects before any execution.
+pub(crate) trait IndexReads {
+    fn callable_creation(&self, callable: u32) -> Option<DeferredCallableCreation>;
+    /// `None` when `callable` has no callable census.
+    fn capture_census(&self, callable: u32) -> Option<CaptureCensus<'_>>;
+    fn allocation_layout(&self, allocation: u32) -> LiteralLayout;
+    fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind;
+}
 
 pub(crate) trait BindingContext {
     fn read_binding(
@@ -89,7 +100,7 @@ pub(crate) trait CallContext: BindingContext {
 }
 
 pub(crate) trait HeapContext: OwnDataContext {
-    fn index(&self) -> &ExecutionIndex;
+    fn index(&self) -> &dyn IndexReads;
     /// The stores this body mutates in place. Observations never go here;
     /// the kernel returns them in its ledger.
     fn world(&self) -> &World;

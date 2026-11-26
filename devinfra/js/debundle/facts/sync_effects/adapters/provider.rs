@@ -10,7 +10,7 @@ use super::super::execution_index::ExecutionIndex;
 use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
 use super::super::kernel::context::{
     BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
-    NativeContext, Unproved,
+    IndexReads, NativeContext, Unproved,
 };
 use super::super::kernel::continuation::{self, LocalContinuation};
 use super::super::kernel::driver;
@@ -430,7 +430,7 @@ impl OwnDataContext for ProviderContext<'_> {
 }
 
 impl HeapContext for ProviderContext<'_> {
-    fn index(&self) -> &ExecutionIndex {
+    fn index(&self) -> &dyn IndexReads {
         self.index
     }
     fn world(&self) -> &World {

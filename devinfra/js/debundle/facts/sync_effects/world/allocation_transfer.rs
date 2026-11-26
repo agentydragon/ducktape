@@ -995,6 +995,16 @@ pub(crate) fn array<'a, C: AllocationContext, E: 'a>(
     Some(transfer.finish(context))
 }
 
+/// A native iterator-protocol use the adapter proves a receipt for.
+#[derive(Debug, Clone, Copy)]
+pub enum NativeIterableUse {
+    ArraySpread(Span),
+    SetConstruction {
+        site: CallSite,
+        input: NativeIterableInput,
+    },
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum NativeIterableInput {
     Borrowed,

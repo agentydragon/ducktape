@@ -2,7 +2,6 @@
 //! callable's address in the creating world plus the lexical captures it
 //! retains; the adapter supplies only the capture and admission policy.
 
-use super::super::execution_index::ExecutionIndex;
 use super::context::KernelContext;
 use super::frame::{LocalFrame, LocalValueResult, RemainderDisposition};
 use analysis_vocabulary::value::Value;
@@ -42,44 +41,28 @@ pub(crate) struct ClosureAdmission {
     pub(crate) judgment: AllocationJudgment,
 }
 
-/// The lexical captures of `callable` created in `environment`: a captured
+/// What `lexical_captures` reads of one callable's census.
+pub(crate) struct CaptureCensus<'a> {
+    pub(crate) home_object: Option<u32>,
+    /// Bindings the callable or a closure nested in it reads, rebinds or
+    /// writes without binding them itself, each with whether the callable's
+    /// own body reads or rebinds it. May repeat.
+    pub(crate) free: Vec<(&'a Id, bool)>,
+}
+
+/// The lexical captures of a callable created in `environment`: a captured
 /// binding with an active cell is shared by identity, any other is a snapshot.
 pub(crate) fn lexical_captures(
-    index: &ExecutionIndex,
+    census: CaptureCensus<'_>,
     active_cells: &OrdMap<Id, LexicalCellId>,
     environment: &Context,
-    callable: u32,
     policy: CapturePolicy<'_>,
 ) -> LexicalCaptures {
-    let Some(body) = index.callables.get(&callable) else {
-        return LexicalCaptures::default();
-    };
-    // This canonical census also contains nested closures' references. An
-    // intermediate closure must retain cells needed by its children.
-    let reads = index
-        .prototype_callable_reads
-        .get(&callable)
-        .unwrap_or(&body.reads);
     let mut captured = LexicalCaptures {
-        home_object: index.callable_home_object(callable),
+        home_object: census.home_object,
         ..Default::default()
     };
-    // A nested closure's write needs the cell as much as a read does.
-    let writes = index.nested_callable_writes.get(&callable);
-    for id in reads
-        .iter()
-        .chain(body.rebinds.iter())
-        .chain(writes.into_iter().flatten())
-    {
-        if body.declared_locals.contains(id)
-            || body.local_functions.contains_key(id)
-            || body
-                .params
-                .iter()
-                .any(|parameter| parameter.binding.as_ref() == Some(id))
-        {
-            continue;
-        }
+    for (id, own) in census.free {
         if let CapturePolicy::Application {
             module_bindings, ..
         } = policy
@@ -100,8 +83,7 @@ pub(crate) fn lexical_captures(
                 Values::from([AbstractValue::Value(Value::Top)])
             }
             CapturePolicy::Application { .. }
-                if captured.snapshots.len() + captured.cells.len() >= CAPTURE_BUDGET
-                    || (!body.reads.contains(id) && !body.rebinds.contains(id)) =>
+                if captured.snapshots.len() + captured.cells.len() >= CAPTURE_BUDGET || !own =>
             {
                 // Past the budget, or for a descendant-only snapshot a
                 // source-summary activation supplied (not a live binding
@@ -128,18 +110,16 @@ pub(super) fn create(
 ) -> Result<LocalValueResult, RemainderDisposition> {
     let callable = creation.callable();
     let index = context.index();
-    if index.callable_creation(callable) != Some(creation)
-        || !index.callables.contains_key(&callable)
-    {
+    let census = match index.capture_census(callable) {
+        Some(census) if index.callable_creation(callable) == Some(creation) => census,
         // Lowering names only canonical creations; anything else has no
         // callable census to capture from.
-        return Err(RemainderDisposition::NeedsSummary);
-    }
+        _ => return Err(RemainderDisposition::NeedsSummary),
+    };
     let captures = lexical_captures(
-        index,
+        census,
         &context.world().active_cells,
         &frame.environment,
-        callable,
         context.capture_policy(),
     );
     let ClosureAdmission { effects, judgment } =

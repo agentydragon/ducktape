@@ -18,7 +18,7 @@ use super::execution_index::{
 };
 use super::kernel::closure::{CapturePolicy, lexical_captures};
 use super::kernel::construct;
-use super::kernel::context::ControlContext;
+use super::kernel::context::{ControlContext, IndexReads};
 use super::kernel::continuation::LocalContinuation;
 use super::kernel::driver;
 use super::kernel::frame::{
@@ -35,7 +35,7 @@ use super::runtime_callbacks::{
     BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
     CallbackResult,
 };
-use super::runtime_heap::{HeapOperation, HeapResult, NativeIterableUse};
+use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_inference::{
     CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
 };
@@ -103,6 +103,7 @@ use value_model::{
 };
 use world::World;
 use world::allocation_transfer::MAX_EXACT_ARRAY_SPREAD_SLOTS;
+use world::allocation_transfer::NativeIterableUse;
 use world::allocation_transfer::{
     NativeIterableInput, NativeIterableReceipt, NativeIterableYields,
 };

@@ -2,15 +2,13 @@
 //! application `Executor`, for ordered root initializers and callable bodies.
 
 use super::super::alternatives::execution_state::ExecutionPath;
-use super::super::execution_index::{
-    Call, CallKind, ExecutionIndex, MemberValueWrite, native_own_data_read_slots,
-};
+use super::super::execution_index::{Call, CallKind, MemberValueWrite, native_own_data_read_slots};
 use super::super::interpreter::{Executor, Outcome, unknown};
 use super::super::kernel::cells::missing_activation_binding;
 use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
 use super::super::kernel::context::{
     BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
-    NativeContext, Unproved,
+    IndexReads, NativeContext, Unproved,
 };
 use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
 use world::array_transfer::{self, ArrayMethodSelection};
@@ -21,7 +19,6 @@ use super::super::kernel::frame::{
     self as kernel_frame, EvaluatedCallee, LocalCallRequest, LocalFrame, LocalValueResult,
     RemainderDisposition,
 };
-use super::super::runtime_heap::NativeIterableUse;
 use super::super::runtime_inference::{CallOperands, CallTransfer, RuntimeOperation, RuntimeValue};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::abstract_domain::builtins;
@@ -45,6 +42,7 @@ use value_model::{
 };
 use world::World;
 use world::allocation_transfer::NativeIterableReceipt;
+use world::allocation_transfer::NativeIterableUse;
 
 #[derive(Clone, Copy)]
 pub(crate) enum LocalExecutionScope {
@@ -903,7 +901,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
 }
 
 impl HeapContext for LocalExecutionContext<'_, '_, '_> {
-    fn index(&self) -> &ExecutionIndex {
+    fn index(&self) -> &dyn IndexReads {
         self.executor.inputs.index
     }
     fn world(&self) -> &World {

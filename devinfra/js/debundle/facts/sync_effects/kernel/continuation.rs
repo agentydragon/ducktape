@@ -2,7 +2,6 @@
 //! a call yields after its callee and operands have run, and the driver
 //! resumes the same stack with the adapter's result.
 
-use super::super::runtime_heap::NativeIterableUse;
 use super::branch;
 use super::cells;
 use super::closure;
@@ -30,6 +29,7 @@ use value_model::{
     PropertyDefinition, ValueExpr, Values,
 };
 use world::allocation_transfer::NativeIterableReceipt;
+use world::allocation_transfer::NativeIterableUse;
 use world::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, ArrayTransfer, LiteralHeap,
     LiteralLayout, RecordTransfer, SequenceTransfer,

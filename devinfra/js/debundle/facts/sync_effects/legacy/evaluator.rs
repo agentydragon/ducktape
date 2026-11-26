@@ -10,7 +10,7 @@
 
 use super::super::execution_index::CallKind;
 use super::super::interpreter::{Executor, from_flow, unknown};
-use super::super::runtime_heap::NativeIterableUse;
+use super::super::kernel::context::IndexReads;
 use analysis::facts::abstract_domain::builtins::IntrinsicOp;
 use analysis::facts::evaluation_effects::GlobalAccessKind;
 use analysis_vocabulary::report_schema::CallbackFactoryUseKind;
@@ -21,6 +21,7 @@ use value_model::{
     AbstractValue, Context, HeapAddress, InstanceOrigin, RetainedResultKind, ValueExpr, Values,
 };
 use world::allocation_transfer::NativeIterableReceipt;
+use world::allocation_transfer::NativeIterableUse;
 use world::allocation_transfer::{self, AllocationContext};
 
 pub(crate) struct ApplicationAllocationContext<'a, 'source, 'rule> {
