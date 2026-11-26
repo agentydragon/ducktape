@@ -302,8 +302,14 @@ func (s *Sampler) validateModelChange(state sessionstore.AdmissionState, current
 
 func checkModelChangeSettled(state sessionstore.AdmissionState) error {
 	session, conversation := state.Session, state.Conversation
-	if session.ActiveTurn != nil || session.ActiveCommand != nil || conversation.Pending != nil ||
-		conversation.Transcript.CheckSettled() != nil || conversation.Context().CheckSettled() != nil {
+	if session.ActiveTurn != nil || session.ActiveCommand != nil || conversation.Pending != nil {
+		return errModelChangeUnsettled
+	}
+	conversation, err := state.LoadConversation()
+	if err != nil {
+		return err
+	}
+	if conversation.Transcript.CheckSettled() != nil || conversation.Context().CheckSettled() != nil {
 		return errModelChangeUnsettled
 	}
 	return nil

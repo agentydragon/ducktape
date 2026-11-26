@@ -23,12 +23,13 @@ var (
 	ErrInterruptOwnerMissing = fmt.Errorf("interrupt target has no sampler owner: %w", protocol.ErrPrecondition)
 )
 
-// AdmissionState holds the projected session and evidence read under its admission lock.
-// ProviderRoutes is only valid during the validation callback.
+// AdmissionState holds the projected session and conversation header read under its admission lock.
+// LoadConversation and ProviderRoutes are only valid during the validation callback.
 type AdmissionState struct {
 	Session           *Session
 	Conversation      *Conversation
 	HasQueuedCommands bool
+	LoadConversation  func() (*Conversation, error)
 	ProviderRoutes    func() ([]ProviderRequest, error)
 }
 
@@ -42,7 +43,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 	}
 	var admission *eventlogpb.EventEntry
 	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, session, err := lockSession(ctx, tx, id)
+		conversation, session, err := lockSessionHeader(ctx, tx, id)
 		if err != nil {
 			return err
 		}
@@ -100,10 +101,21 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				return err
 			}
 			rows.Close()
+			conversationLoaded := false
+			loadConversation := func() (*Conversation, error) {
+				if !conversationLoaded {
+					if err := loadConversationItems(ctx, tx, conversation); err != nil {
+						return nil, err
+					}
+					conversationLoaded = true
+				}
+				return conversation, nil
+			}
 			if err := validate(AdmissionState{
 				Session:           &projected,
 				Conversation:      conversation,
 				HasQueuedCommands: hasQueuedCommands,
+				LoadConversation:  loadConversation,
 				ProviderRoutes: func() ([]ProviderRequest, error) {
 					return providerRoutes(ctx, tx, conversation.ID)
 				},

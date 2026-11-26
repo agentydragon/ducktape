@@ -288,6 +288,9 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	expireLease(t, store, session)
+	if _, err := store.HasSteeringInput(t.Context(), owner, session.ID); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("expired owner checked steering input: %v", err)
+	}
 	if err := store.Renew(t.Context(), owner, time.Minute); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("expired owner renewed lease: %v", err)
 	}
@@ -1963,6 +1966,9 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 		t.Fatalf("first drain=%v err=%v", drained, err)
 	}
 	// Input admitted behind a model change waits for a later turn, and nothing drains twice.
+	if found, err := store.HasSteeringInput(t.Context(), owner, session.ID); err != nil || found {
+		t.Fatalf("input behind a model change found=%v err=%v", found, err)
+	}
 	if drained, err := store.DrainSteeringInput(t.Context(), owner, session.ID); err != nil || drained {
 		t.Fatalf("second drain=%v err=%v", drained, err)
 	}
@@ -2041,6 +2047,9 @@ func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
 		t.Fatal(err)
 	}
 	admitInput(t, store, session.ID, "steer", "too late")
+	if found, err := store.HasSteeringInput(t.Context(), owner, session.ID); err != nil || found {
+		t.Fatalf("steering input during pending interrupt found=%v err=%v", found, err)
+	}
 	if drained, err := store.DrainSteeringInput(t.Context(), owner, session.ID); err != nil || drained {
 		t.Fatalf("drain during pending interrupt=%v err=%v", drained, err)
 	}
