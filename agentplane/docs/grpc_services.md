@@ -60,7 +60,8 @@ follows it; code that differs converges on it.
 
 ## Deadlines
 
-- Set unary deadlines from client settings and bound server-side backend work.
+- Set unary deadlines from client settings and bound server-side backend work (use
+  `asyncio.timeout` in Python).
 - Long-lived streams carry no overall deadline. Bound the handshake and each write separately
   with Python's `asyncio.timeout` or a Go context. [`streaming.SendWithin`](../grpc/streaming/send.go)
   bounds a Go server's write under transport backpressure.
@@ -85,9 +86,9 @@ follows it; code that differs converges on it.
   Partial or mixed settings fail validation. Certificate and trust files reload on replacement,
   and gRPC connections close at either certificate's expiry.
 - Runtime model config uses the local sidecar or VM relay, which verifies the LLM ingress SVID
-  through CONNECT. See [model configuration routing](system_overview.md#llm-ingress-certificate-admission).
+  through CONNECT. See [model configuration](../llm_ingress/README.md#per-model-client-configuration).
   The separate [telemetry route](system_overview.md#telemetry) sends plaintext OTLP to Alloy.
-  [Runtime History export](../history_service/README.md#runner-ingress) uses workload
+  [Runtime journal delivery](../history_service/README.md#runner-ingress) uses workload
   mTLS. The [ingress supervisor](../env/runtime/ingress/supervisor.go) retains a legacy plaintext
   bearer branch that the current History listener refuses. Runtime tests use a plaintext peer.
 - See [Runtime test transport](runner_control.md#authentication-and-incarnation-binding),
@@ -106,7 +107,8 @@ follows it; code that differs converges on it.
   Tests bind `127.0.0.1:0` and use zero grace. Use five seconds of grace on service shutdown.
 - Use standard gRPC Health. Native Kubernetes probes call plaintext health listeners, and
   [`healthprobe`](../grpc/healthprobe/main.go) verifies the server SVID for TLS listeners.
-  Separate health-only listeners expose no application methods. Do not add HTTP health.
+  Separate health-only listeners expose no application methods. HTTP application listeners own
+  their own health routes, such as [LLM ingress's public `/healthz`](../llm_ingress/README.md).
 
 ## HTTP/JSON facades
 
