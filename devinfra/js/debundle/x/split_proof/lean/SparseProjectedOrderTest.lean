@@ -26,6 +26,10 @@ private def request : EsmSplit.Spec := {
 
 private def plan := EsmSplit.mkPlan bundle request
 private def constructed := splitProgramIndexed sourceRows bundle plan
+private def sourceProgram : Program := {
+  entry := "entry.mjs"
+  modules := [{ name := "entry.mjs", imports := [], body := sourceRows, exports := [] }]
+}
 
 private theorem samplePlanValid : EsmSplit.Valid bundle request plan := by decide
 
@@ -40,6 +44,36 @@ example : ((constructed.loaded.flatMap (·.body)).map Prod.fst) = [0, 2] := by
   simpa [sourceRows, constructed] using h
 
 example : constructed.loaded.flatMap (·.body) = sourceRows := by rfl
+
+example : constructed.tops = sourceRows := by
+  have h := split_indexed_tops_eq_source (source := sourceRows) (B := bundle) (P := plan)
+    sampleProjection (by decide)
+  simpa [constructed] using h
+
+example : constructed.regions = sourceProgram.regions := by
+  have h := split_indexed_regions_eq_source (source := sourceRows) (B := bundle) (P := plan)
+    sampleProjection
+  simpa [constructed, Program.regions, sourceProgram, sourceRows] using h
+
+private theorem samplePathsSafe : ∀ m ∈ plan.mods, EsmSplit.safeModulePath m.name = true := by
+  native_decide
+
+example : constructed.fileUnitPlacements = [(0, "worker.mjs"), (2, "entry.mjs")] := by
+  change (splitProgramIndexed sourceRows bundle plan).fileUnitPlacements = _
+  rw [split_indexed_fileUnitPlacements (source := sourceRows) (B := bundle) (P := plan) samplePathsSafe]
+  decide
+
+example : ∀ id owner, (id, owner) ∈ constructed.fileUnitPlacements →
+    EsmSplit.Spec.claimants request bundle id = [owner] := by
+  intro id owner member
+  exact split_indexed_authored_owner samplePlanValid.2.2.1 samplePathsSafe member
+
+example :
+    declareTops constructed.tops (initialState World.probe constructed.regions) =
+      declareTops sourceRows (initialState World.probe sourceProgram.regions) := by
+  have h := split_indexed_declareTops_initial (source := sourceRows) (B := bundle) (P := plan)
+    sampleProjection (by decide) World.probe
+  simpa [constructed, Program.regions, sourceProgram, sourceRows] using h
 
 example : (plan.find "worker.mjs").map (·.stmts) = some [0] := by decide
 
