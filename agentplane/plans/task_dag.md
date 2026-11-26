@@ -3550,7 +3550,7 @@ flowchart LR
     STANDING_WORKLOAD_IDENTITY[Standing workloads run as Identities; proxy observation remains]
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
     IDENTITY_OWNERSHIP_DESIGN[Decision: Identity binding, store, delete rule and agent teardown]
-    IDENTITY_READERS_BEHIND_POLICY_SERVICE[Approved: Identity readers behind PolicyService]
+    IDENTITY_READERS_BEHIND_POLICY_SERVICE[In flight: Identity readers behind PolicyService]
     SESSION_SUBAGENT_DELEGATION[Design: a Session creates and messages a sub-Session]
     SESSION_ACCESS_GROUPING_DESIGN --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox target, grant and migration]
     SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
@@ -3588,13 +3588,15 @@ question with
 
 ### `IDENTITY_READERS_BEHIND_POLICY_SERVICE` — only PolicyService touches Identity CRs
 
-**Approved by the operator, 2026-11-26; not started.** Every service reads Identities through a shared
+**In flight, 2026-11-26 (this agent session).** Every service reads Identities through a shared
 `WatchIdentities`-fed client that refuses when not current, instead of Kubernetes informers and
 per-request GETs; `orchestration_v1` writes through PolicyService. Pays off whether or not the
-Identity record later leaves Kubernetes. Readers, client design and PR sequence:
-[Identity ownership § readers](identity_ownership.md#readers-behind-policyservice). **Exit:** only the
-Policy Controller holds `identities` RBAC, and the verifier contract documents watch-propagated
-revocation.
+Identity record later leaves Kubernetes. Done: the client, injectable library sources, and an optional
+`policy_service` block in eight services; the MCP edge runs on it in staging. Next: manifests for the
+other seven, then per-service contract, the Sandbox Controller reconciler and the `orchestration_v1`
+writer. State and remaining steps: [Identity ownership § readers](identity_ownership.md#readers-behind-policyservice).
+**Exit:** only the Policy Controller holds `identities` RBAC, and the verifier contract documents
+watch-propagated revocation.
 
 ### `IDENTITY_SYSTEM_TESTS` — finish automated identity-boundary acceptance
 
