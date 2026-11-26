@@ -1,0 +1,20 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+
+package(default_visibility = ["//attendant:__pkg__"])
+
+js_library(
+    name = "viewer",
+    srcs = [
+        "main.js",
+        "viewer.css",
+    ],
+    deps = ["//:node_modules/@novnc/novnc"],
+)
+
+spa_bundle(
+    name = "bundle",
+    entry_point = "main.js",
+    sourcemap = False,
+    deps = [":viewer"],
+)

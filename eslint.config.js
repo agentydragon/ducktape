@@ -96,6 +96,11 @@ export default [
 
   js.configs.recommended,
 
+  {
+    files: ["attendant/viewer/*.js"],
+    languageOptions: { globals: browserGlobals },
+  },
+
   // These scripts execute in browser pages or service workers.
   {
     files: [
