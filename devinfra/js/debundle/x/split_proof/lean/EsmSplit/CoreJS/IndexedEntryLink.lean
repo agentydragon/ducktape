@@ -217,6 +217,24 @@ theorem link_after_const_allocation {program : Program} {body : List (Nat × Stm
 
 #print axioms link_after_const_allocation
 
+/-- A failure of the shared declaration pass propagates through the actual
+linker unchanged. This includes throws, unknown results, and fuel exhaustion. -/
+theorem link_allocation_failure {program : Program} {body : List (Nat × Stmt)} {start : State W}
+    (tops : program.tops = body) (unique : (body.map Prod.fst).Nodup) :
+    match declareTops body start with
+    | .ok _ _ => True
+    | .throw v state => link program start = .throw v state
+    | .unknown why state => link program start = .unknown why state
+    | .fuel => link program start = .fuel := by
+  have checked : (checkIdentities body : M W Unit) start = .ok () start := by
+    simp [checkIdentities, unique, pure]
+  unfold link linkUsingScopes
+  rw [tops]
+  simp only [M.bind_apply, checked]
+  cases allocated : declareTops body start <;> simp [allocated, M.bind_apply]
+
+#print axioms link_allocation_failure
+
 /-- Selecting an entry from the actual list returned by `Program.scopes`
 selects the same first named module as the loaded-module list and pairs it
 with exactly the scope and imports produced by the CoreJS linker. -/
@@ -431,6 +449,76 @@ theorem row_actual_links_from_allocation {body : List (Nat × Stmt)} {B : EsmSpl
   have targetLink := link_after_const_allocation candidateTops footprints.uniqueIds targetAllocation targetScopes targetInit
   exact ⟨targetLinked, table, sourceLink, targetLink, owned, before, after, present⟩
 
+/-- The public entry tables agree after successful linking; all modeled
+link-time failures and their states agree exactly. -/
+def EntryLinkOutcomesAgree (source candidate : Program) (w : World) : Prop :=
+  match link source (initialState w source.regions), link candidate (initialState w candidate.regions) with
+  | .ok sourceLinked sourceState, .ok candidateLinked candidateState =>
+      sourceState = candidateState ∧ ∃ table,
+        EntryExports.resolve source.entry sourceLinked = .ok table ∧
+        EntryExports.resolve candidate.entry candidateLinked = .ok table
+  | .throw x s, .throw y t => x = y ∧ s = t
+  | .unknown x s, .unknown y t => x = y ∧ s = t
+  | .fuel, .fuel => True
+  | _, _ => False
+
+/-- For every modeled world, actual source and candidate link outcomes agree,
+including allocation failures. On successful links their exact ordered public
+entry-address tables agree. Structural candidate tops/regions are source/plan
+proof obligations, not comparisons of executions. -/
+theorem row_link_outcomes_from_plan {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
+    (sourceImports : source.imports = []) (sourceFind : sourceProgram.find sourceProgram.entry = some source)
+    (ordered : body.Pairwise (fun a b => a.1 ≤ b.1))
+    (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init)
+    (candidateTops : (splitProgramIndexed body B P).tops = body)
+    (candidateRegions : (splitProgramIndexed body B P).regions = sourceProgram.regions)
+    {row : EsmSplit.LocalExportUnit} (sourceRow : InteriorExportNames.SourceRow source row)
+    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
+    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods) (rowWithin : row.ordinal < B.length)
+    (planEntry : P.find P.entry = some owner)
+    (authored : S.claimants B row.ordinal = [owner.name]) (unitsUnique : owner.stmts.Nodup)
+    (glue : owner.exports = [])
+    (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
+    (sourceDefs : ∀ pair ∈ row.names, ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs) :
+    ∀ w : World, EntryLinkOutcomesAgree sourceProgram (splitProgramIndexed body B P) w := by
+  intro w
+  have sourceOrdered : source.body.Pairwise (fun a b => a.1 ≤ b.1) := by rw [sourceBody]; exact ordered
+  have sourceTops : sourceProgram.tops = body := (import_free_source_tops sourceFind sourceImports sourceOrdered).trans sourceBody
+  cases allocation : declareTops body (initialState w sourceProgram.regions) with
+  | ok frames ready =>
+    obtain ⟨targetLinked, table, sourceLink, targetLink, _, sourceTable, targetTable, _⟩ :=
+      row_actual_links_from_allocation valid footprints complete sourceBody sourceImports sourceFind ordered
+        sourceConsts candidateTops candidateRegions allocation sourceRow rowFootprint ownerIn rowWithin planEntry
+        authored unitsUnique glue onlyRow sourceDefs
+    unfold EntryLinkOutcomesAgree
+    rw [sourceLink, targetLink]
+    exact ⟨rfl, table, sourceTable, targetTable⟩
+  | throw value state =>
+    have sourceFail := link_allocation_failure (W := w) (start := initialState w sourceProgram.regions) sourceTops footprints.uniqueIds
+    have targetFail := link_allocation_failure (W := w) (start := initialState w sourceProgram.regions) candidateTops footprints.uniqueIds
+    rw [allocation] at sourceFail targetFail
+    unfold EntryLinkOutcomesAgree
+    rw [candidateRegions, sourceFail, targetFail]
+    exact ⟨rfl, rfl⟩
+  | unknown why state =>
+    have sourceFail := link_allocation_failure (W := w) (start := initialState w sourceProgram.regions) sourceTops footprints.uniqueIds
+    have targetFail := link_allocation_failure (W := w) (start := initialState w sourceProgram.regions) candidateTops footprints.uniqueIds
+    rw [allocation] at sourceFail targetFail
+    unfold EntryLinkOutcomesAgree
+    rw [candidateRegions, sourceFail, targetFail]
+    exact ⟨rfl, rfl⟩
+  | fuel =>
+    have sourceFail := link_allocation_failure (W := w) (start := initialState w sourceProgram.regions) sourceTops footprints.uniqueIds
+    have targetFail := link_allocation_failure (W := w) (start := initialState w sourceProgram.regions) candidateTops footprints.uniqueIds
+    rw [allocation] at sourceFail targetFail
+    unfold EntryLinkOutcomesAgree
+    rw [candidateRegions, sourceFail, targetFail]
+    trivial
+
+#print axioms row_link_outcomes_from_plan
 #print axioms row_actual_links_from_allocation
 #print axioms row_resolved_from_plan
 #print axioms row_resolved_entries
