@@ -189,7 +189,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	dispatchEnvironmentRules := access.NewIndex()
 	dispatchPolicyHealth := watchhealth.New()
 	dispatchPolicyWatches := reader.NewWatches(config, dispatchPolicyHealth)
-	if err := reader.WatchRules(dispatchPolicyWatches, dispatchEnvironmentRules, c.PolicyNamespace, access.Ready); err != nil {
+	if err := reader.WatchRules(dispatchPolicyWatches, dispatchEnvironmentRules, c.PolicyNamespace, access.Ready, reader.KubernetesIdentities{}); err != nil {
 		return fmt.Errorf("configure Dispatcher environment policy watches: %w", err)
 	}
 	go dispatchPolicyWatches.Run(ctx)

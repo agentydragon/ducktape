@@ -31,6 +31,8 @@ type Watches struct {
 	config    *rest.Config
 	informers []cache.SharedIndexInformer
 	synced    []cache.InformerSynced
+	// feeds run beside the informers, applying sources that are not informers.
+	feeds []func(context.Context)
 	// afterSync runs once every kind has listed and its objects are applied.
 	afterSync []func(context.Context)
 	// shutdown runs when Run returns, whether or not the first sync completed.
@@ -89,6 +91,9 @@ func (w *Watches) Run(ctx context.Context) {
 	}
 	for _, informer := range w.informers {
 		group.StartWithContext(ctx, informer.RunWithContext)
+	}
+	for _, feed := range w.feeds {
+		group.StartWithContext(ctx, feed)
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), w.synced...) {
 		return

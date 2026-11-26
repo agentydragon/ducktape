@@ -35,6 +35,9 @@ type Cache struct {
 	synced     bool
 	// brokenAt is when the last stream that had completed a snapshot ended; zero while that stream is live.
 	brokenAt time.Time
+	// graceEnd signals Changed when the grace after brokenAt runs out and the view turns stale.
+	graceEnd *time.Timer
+	changed  chan struct{}
 }
 
 // New returns a view that is stale until Run completes its first snapshot. grace is how long the view keeps
@@ -43,7 +46,22 @@ func New(policy policypb.PolicyServiceClient, grace time.Duration) (*Cache, erro
 	if policy == nil || grace < 0 {
 		return nil, errors.New("identitycache: PolicyService client and a non-negative grace are required")
 	}
-	return &Cache{policy: policy, grace: grace, now: time.Now, identities: map[string]auth.Identity{}}, nil
+	return &Cache{policy: policy, grace: grace, now: time.Now, identities: map[string]auth.Identity{}, changed: make(chan struct{})}, nil
+}
+
+// Changed closes after the next change to what Lookup and List answer, including the view turning stale when a
+// broken stream's grace runs out; it may also close with no visible change. Obtain it before reading to avoid
+// missing a change.
+func (c *Cache) Changed() <-chan struct{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.changed
+}
+
+// notifyChangedLocked is called with mu held.
+func (c *Cache) notifyChangedLocked() {
+	close(c.changed)
+	c.changed = make(chan struct{})
 }
 
 // Lookup returns the live, not-deleting Identity of a name.
@@ -115,6 +133,11 @@ func (c *Cache) follow(ctx context.Context) (bool, error) {
 		if synced {
 			c.mu.Lock()
 			c.brokenAt = c.now()
+			c.graceEnd = time.AfterFunc(c.grace, func() {
+				c.mu.Lock()
+				defer c.mu.Unlock()
+				c.notifyChangedLocked()
+			})
 			c.mu.Unlock()
 		}
 	}()
@@ -131,6 +154,10 @@ func (c *Cache) follow(ctx context.Context) (bool, error) {
 		case *policypb.WatchIdentitiesResponse_SnapshotComplete:
 			c.mu.Lock()
 			c.identities, c.synced, c.brokenAt = pending, true, time.Time{}
+			if c.graceEnd != nil {
+				c.graceEnd.Stop()
+			}
+			c.notifyChangedLocked()
 			c.mu.Unlock()
 			synced = true
 		case *policypb.WatchIdentitiesResponse_Upsert:
@@ -151,6 +178,7 @@ func (c *Cache) apply(synced bool, pending map[string]auth.Identity, edit func(m
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	defer c.notifyChangedLocked()
 	edit(c.identities)
 }
 
