@@ -13,6 +13,7 @@ from agentplane.net.peertls.config import (
     NOTIFICATIONS_URI,
     SESSION_DISPATCHER_URI,
     ClientTLS,
+    PolicyServicePeer,
     ServiceSPIFFEID,
 )
 from util.urls import HttpEndpointUrl
@@ -210,12 +211,22 @@ class Settings(BaseModel):
         default=8081, ge=1, le=65535, description="The HTTP listener's port, used only for the signed GitHub webhook."
     )
 
+    # CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
+    #   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+    policy_service: PolicyServicePeer | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="PolicyService, where every Identity reader learns the live Identities; unset, they read the namespace's Identity resources.",
+    )
+
     @model_validator(mode="after")
     def service_operator_readers(self) -> Settings:
         if len(set(self.operator_reader_services)) != len(self.operator_reader_services):
             raise ValueError("operator_reader_services must not contain duplicates")
         if not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth):
             raise ValueError("rpc requires SPIFFE client trust")
+        if self.policy_service is not None:
+            self.policy_service.tls.validate_caller(None, NOTIFICATIONS_URI)
         return self
 
     github: GitHubSettings | GitHubRetentionSettings | None = Field(

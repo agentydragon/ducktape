@@ -72,10 +72,10 @@ func NewPolicy() *Policy {
 }
 
 // Watch returns the watches that keep the policy equal to the namespace's PolicySets and PolicyBindings, and Ready
-// on each binding, from Run on.
-func (p *Policy) Watch(base *rest.Config, namespace string) (*reader.Watches, error) {
+// on each binding, from Run on. identities says which incarnation of each bound Identity is live.
+func (p *Policy) Watch(base *rest.Config, namespace string, identities reader.IdentitySource) (*reader.Watches, error) {
 	watches := reader.NewWatches(base, p.Health)
-	return watches, reader.WatchRules(watches, p.Rules, namespace, Ready, reader.KubernetesIdentities{})
+	return watches, reader.WatchRules(watches, p.Rules, namespace, Ready, identities)
 }
 
 // PermitsSend reports whether a binding of the sender, a ServiceAccount or an Identity incarnation, grants a rule
