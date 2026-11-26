@@ -34,7 +34,6 @@ go_library(
         "//agentplane/policy/client:informer_version",
         "//agentplane/policy/identitycache",
         "//agentplane/policy/reader",
-        "//agentplane/policy/v1:policy_service_go_proto",
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/probes",

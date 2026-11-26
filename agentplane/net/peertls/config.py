@@ -134,6 +134,26 @@ class ClientTLS(BaseModel):
             raise ValueError("a bearer token file or service SVID is required")
 
 
+class PolicyServicePeer(BaseModel):
+    """A service's `policy_service` block: PolicyService over mutual TLS with the service's SVID.
+
+    Mirrors `identitycache.Peer`; each service's settings check `tls.client_uri` is its own.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    target: str = Field(min_length=1)
+    tls: ClientTLS
+
+    @model_validator(mode="after")
+    def mutual_tls_to_policy_controller(self) -> Self:
+        if not self.tls.uses_svid:
+            raise ValueError("policy_service.tls requires the caller's service SVID")
+        if self.tls.server_uri != POLICY_CONTROLLER_URI:
+            raise ValueError(f"policy_service.tls.server_uri must be {POLICY_CONTROLLER_URI!r}")
+        return self
+
+
 class ServerTLSListener(BaseModel):
     """An additional gRPC listener serving a workload-CA server SVID and bearer-authenticated RPCs."""
 
