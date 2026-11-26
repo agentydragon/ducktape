@@ -184,3 +184,18 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "//agentplane/identity/auth:listener",
+        "//agentplane/net/peertls:config",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

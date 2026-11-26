@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 
 from agentplane.identity.auth.listener import Listener
 from agentplane.log_levels import LogLevels
-from agentplane.net.peertls.config import ServiceSPIFFEID
+from agentplane.net.peertls.config import EGRESS_PROXY_URI, PolicyServicePeer, ServiceSPIFFEID
 
 
 class APIServer(BaseModel):
@@ -99,6 +99,14 @@ class Settings(BaseModel):
         default_factory=list,
         description="Networks an admitted host may resolve into although they are not globally reachable.",
     )
+    # CLEANUP(added 2026-11-26): require policy_service and drop the Kubernetes Identity reads once the staging
+    #   manifests set it (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+    policy_service: PolicyServicePeer | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="PolicyService, which every Identity read goes to when set; unset, Identities are read "
+        "from the Identity resources in rules_namespace.",
+    )
 
     @model_validator(mode="after")
     def require_tls(self) -> Settings:
@@ -106,4 +114,6 @@ class Settings(BaseModel):
             raise ValueError("admin_grpc_service_callers requires forward SPIFFE client trust")
         if self.forward.tls is None:
             raise ValueError("forward listener requires TLS")
+        if self.policy_service is not None:
+            self.policy_service.tls.validate_caller(None, EGRESS_PROXY_URI)
         return self
