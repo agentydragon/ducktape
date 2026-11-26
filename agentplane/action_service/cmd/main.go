@@ -491,7 +491,6 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			}
 			defer environmentConnection.Close()
 		}
-		// validateOrchestration requires policy_service with the orchestration groups that call the Dispatcher.
 		policyConnection, err := c.PolicyService.Dial()
 		if err != nil {
 			return fmt.Errorf("dial PolicyService: %w", err)
