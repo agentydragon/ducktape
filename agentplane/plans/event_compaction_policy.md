@@ -1,11 +1,37 @@
 # Storing and repacking Sampler and History events in PostgreSQL
 
 **Decision status: proposed; no writer-default change yet.** Keep each service's journal in
-its own PostgreSQL database. Start with a different grouping key for each service. In Sampler,
-pack adjacent sequence numbers from one session. In History, pack eligible entries by session
-and event kind; give repeated tool catalogs an exact-byte representation independent of the
-block size. Compare both with PostgreSQL-managed compression on identical windows before choosing
-the writer profile. A change of profile must be usable on data already stored.
+its own PostgreSQL database. Use PostgreSQL rows and B-tree indexes as the baseline. Where
+cross-event compression pays, group original frames without interpreting their contents. The
+first candidate for cold History boundary evidence is **same session + kind, 2 MiB or 32 entries,
+Zstandard level 3**: it saved 72–73% against the current stored datums on two large-boundary
+samples without extracting a single field. Keep a smaller read unit for other History streams.
+Prefer a database-managed layout if it meets the same read, space and operations requirements.
+Any winning policy must apply to existing data as well as new writes.
+
+## Capacity comes before the rewrite
+
+At 16:28 PST on November 25, kubelet reported **18.65 GiB available on the primary** and
+**18.82 GiB on the standby**, each on a 48 GiB claim. A six-hour linear fit to available
+bytes showed consumption of 9.39 and 8.98 GiB/day respectively; a 24-hour fit showed available
+space **increasing** on both. At the short-window rate the primary would reach a 20% reserve
+in about **23 hours** and fill in about **48 hours**. This is a burst scenario, not a forecast.
+Recompute from kubelet_volume_stats_available_bytes per claim (use deriv over 6h and 24h);
+do not add the two replicas' capacity or use the object-store backup slope for PVC growth.
+
+1. Track the smaller of the two reserves and the time to exhaust it. As an operating trigger,
+   if the six-hour slope predicts crossing 20% within 24 hours, verify the slope and available
+   underlying storage now; prepare a declarative CNPG volume expansion. If growth continues,
+   add headroom before starting a rewrite. Do not count projected compression as free space.
+2. Canary the **new writer on incoming events** first. Measure stored bytes and WAL per million
+   new events, append CPU/latency, replica lag and available bytes. This slows growth without
+   duplicating the historical corpus. Preserve the ordinary fallback for a frame over the hard
+   decoder cap. Roll out compatible readers before writing a new codec or block format.
+3. Repack a small cold range only after both volumes can accommodate replacement blocks, WAL
+   and the rollback/operating reserve. Stop if the budget shrinks. Normal vacuum enables page
+   reuse; it does not promise filesystem space back. Do not run a full table rewrite to make
+   room for itself. If there is insufficient runway, capacity expansion buys time independently
+   of the long-term choice between native rows, database-managed compression and service blocks.
 
 ## What we are optimizing
 
@@ -33,8 +59,8 @@ compared encodings on the same sampled values. Sizes are per PostgreSQL instance
 A [follow-up standby experiment](../debug/2026_11_25_postgres_event_compaction.md) verified exact
 reconstruction on 94/94 and 110/110 JavaScript sends in two sets of 12 session windows. A
 session-local catalog plus the remaining frame used **92.3–92.4% fewer encoded bytes than the
-existing PostgreSQL datums**. Favor this representation for large sends; benchmark the lookup
-cost before setting the admission cutoff. In a separate sample, 140 ordinary History datums
+existing PostgreSQL datums**. Use this as an upper-bound comparison for sharing the field. Generic zstd
+blocks already captured nearly all of that modeled saving on the same sends at an 8 MiB target. In a separate sample, 140 ordinary History datums
 already compressed by PGLZ occupied 6.83 MB for 24.76 MB logical. PostgreSQL is a meaningful
 control for the rest of the stream.
 
@@ -61,7 +87,7 @@ JavaScript sends versus other evidence. A split below kind requires a stream dis
 index and a predecessor seek per stream: two substreams can have overlapping spans of the same kind.
 Charge those seeks to the split. Do not make each tool name or each call ID a grouping key.
 
-**Repeated fields.** A sequence of large tool catalogs may exceed the codec's backward reference
+**Deferred alternative: repeated fields.** Try this only if generic blocks fail the point-read or storage budget. A sequence of large tool catalogs may exceed the codec's backward reference
 window even when every catalog is adjacent. For a recognized JavaScript send, find the exact
 serialized catalog slice, keep its surrounding frame bytes and lengths, and look up an immutable
 catalog by session and digest. Verify length and byte equality before reuse. Keep the full frame
@@ -90,12 +116,15 @@ stored version also declares a hard entry-count limit. T and N are writer settin
 
 The [ordered-window sweep](../debug/2026_11_25_postgres_event_compaction.md#grouping-and-sealing-on-ordered-journal-windows)
 gives concrete starting profiles: **64 KiB / 128 entries, session order, for Sampler** and
-**64 KiB / 32 entries, per kind, for History**. The Sampler profile cut block count from 128
+**64 KiB / 32 entries, per kind, for ordinary History streams**. The Sampler profile cut block count from 128
 to 56 compared with the 2 MiB / 32 control while keeping mean point decode within 2 KiB.
 The History profile trades a 4.0% encoded size premium over the smallest same-kind arm for
 about one ninth of its mean point decode. Test 64 KiB / 256 if the extra index rows or scans
 dominate real History read costs. Treat these as recommendations for the physical storage trial;
-a block-size floor was not established, and the tool-catalog change can move the optimum.
+a block-size floor was not established. For cold History boundary records, use the separate
+[large-event experiment](../debug/2026_11_25_postgres_event_compaction.md#can-generic-blocks-capture-the-large-records-without-parsing-the-catalog):
+2 MiB / 32 zstd-3 admits large singletons and brings repeated bytes within codec reach. Test 8 MiB
+for scans, but its roughly 7 MiB average point decode is a material cost.
 
 Carry these controls and challengers into the remaining trials:
 
@@ -130,14 +159,34 @@ column and compare pg_total_relation_size after identical loads, including auxil
 indexes. Measure WAL on an otherwise idle instance. pg_column_size alone excludes row and index
 overhead; an in-process LZ4 run is not a measurement of PostgreSQL LZ4.
 
-Start with built-in compression. Consider a PostgreSQL extension only for a measured deficit
-(e.g. a better cold codec without a service-owned encoder). Check that the pinned PostgreSQL
-image contains the matching extension binaries or that CNPG supports a pinned extension image
-for this cluster version. The [CNPG Database helper](../../cluster/cdk8s/cnpg/cluster.py) already
-accepts declarative extensions; the [index service's vector setup](../../cluster/cdk8s/agentplane_index/README.md)
-is a packaging precedent, not evidence of another extension's availability. Require the same
-image on replicas and in restore tests. A SQL compression function does not replace TOAST's
-compression method just because the extension is installed.
+**What can replace the packer?** First test ordinary rows with a primary key on (session, cursor)
+and, for History, an index on (session, kind, cursor). Use bytea with EXTENDED storage and compare
+PGLZ and LZ4. The planner can satisfy page, filter and point queries directly. This removes our
+block locators, decoder, sparse cursor merge and split/rewrite machinery; the engine handles
+vacuum, recovery and failover. Prefer it wherever the measured physical size and growth fit the
+capacity budget. Core PostgreSQL does not compress values across different rows. Declarative
+partitioning helps prune partitions and drop an expired partition; it does not change this
+compression boundary. pg_repack reclaims fragmentation by rewriting relations and needs scratch
+space; it is not a journal codec or a first response to a nearly full volume.
+
+For **engine-managed cross-row compression**, test a TimescaleDB hypertable with a row-oriented
+hot tail and its columnstore on closed chunks, using session as a segment key and cursor as the
+ordering key (also test session + kind for History). This could replace application grouping,
+codecs and cold repacking with extension-managed chunks and let reads use ordinary SQL. Validate
+that point reads prune chunks, sparse sessions fill useful segments, replay preserves cursor order,
+range deletions work, and the partitioning column permits the required uniqueness constraint.
+A time partition key cannot silently weaken uniqueness of (session, cursor). Measure the need
+for a global locator; it could erase the simplicity advantage. A bytea containing an opaque
+protobuf does not automatically get cross-event deduplication from a columnstore.
+
+There is a [declarative CNPG TimescaleDB deployment](../../cluster/cdk8s/cdviz/timescale.py)
+in this repository: pinned PG18 operand and extension images, preload, and a
+[Database extension declaration](../../cluster/cdk8s/cdviz/database.py). It uses the OSS build;
+do not infer that a columnstore API from a differently licensed distribution ships in it. Prove
+feature availability, licensing, PG/image compatibility, upgrades, standby replay and restore
+on a disposable cluster before proposing it for the shared Agentplane database. Do not put
+an extension rollout on the critical path to slowing growth. An SQL compression function by
+itself still needs someone to select, index and replace groups.
 
 ## Selecting a production profile
 

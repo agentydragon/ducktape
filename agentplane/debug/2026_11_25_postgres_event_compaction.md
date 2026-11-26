@@ -51,8 +51,7 @@ This prices a reconstructible encoding without pretending we wrote a new Postgre
 |   26 |              12 |        110/110 |                                  14 |           27,862,732 |           16,118,007 |         2,040,004 + 94,392 = 2,134,396 |
 
 Session-scoped reuse saved **92.4% and 92.3% against the stored values** and **86.8% in
-both cohorts against independent gzip**. No cross-session lookup was needed. Favor an
-exact session-local representation for this subtype. These are comparisons for qualifying
+both cohorts against independent gzip**. No cross-session lookup was needed. This prices a specialized alternative to generic blocks. These are comparisons for qualifying
 sends, not for all History data. Selection favors sessions with large ordinary boundaries;
 index space, row headers, lookup latency, WAL, disk allocation and delete cost were not measured.
 A writable isolated database trial must include all of them.
@@ -147,3 +146,47 @@ The size and CPU columns isolate layout in one encoder. Neither reproduces the d
 encoder or its existing eligibility rules. This probe packed all kinds and used four-byte framing
 in both services; it did not price PostgreSQL tuples, indexes, seeks, or the cost of reading an
 actual filtered page. No family of unmeasured read frequencies is implicitly assigned a weight.
+
+## Can generic blocks capture the large records without parsing the catalog?
+
+Yes. Reuse the two 12-session History samples above. For each session, collect the same 20
+ordinary boundary records from the anchor, up to 2 MiB per original value. Keep full wire
+frames in cursor order. Append four-byte lengths, seal after crossing the target or 32 entries,
+flush the tail, and enforce a separate 8 MiB framed limit before append. No digest, catalog
+parser, delta template or shared field participates in encoding. Run Python gzip level 6 and
+libzstd level 3 on the identical bytes. Repeat for just the JavaScript sends from these windows
+to isolate the benefit of a finer grouping key. Identify that subtype from the event envelope;
+do not transform its body. The two cohorts can overlap. Sizes below are encoded bytes only.
+
+| Seed | Stream   | Events (>128 KiB) | Target KiB | Stored PostgreSQL |     Gzip 6 |     Zstd 3 | Blocks (singletons) | Mean point decode MiB |
+| ---- | -------- | ----------------: | ---------: | ----------------: | ---------: | ---------: | ------------------: | --------------------: |
+| 25   | boundary |         240 (140) |         64 |        29,770,131 | 18,145,353 | 18,479,108 |           240 (240) |                  0.38 |
+| 25   | boundary |         240 (140) |        512 |        29,770,131 | 18,178,983 | 16,464,324 |            103 (37) |                  0.97 |
+| 25   | boundary |         240 (140) |       2048 |        29,770,131 | 18,135,098 |  8,053,099 |              46 (0) |                  2.14 |
+| 25   | boundary |         240 (140) |       8192 |        29,770,131 | 18,126,081 |  3,386,376 |              14 (0) |                  6.77 |
+| 25   | js       |           94 (94) |         64 |        23,807,654 | 13,769,404 | 13,926,904 |             94 (94) |                  0.79 |
+| 25   | js       |           94 (94) |        512 |        23,807,654 | 13,769,404 | 13,926,904 |             94 (94) |                  0.79 |
+| 25   | js       |           94 (94) |       2048 |        23,807,654 | 13,717,208 |  5,065,500 |              34 (3) |                  2.28 |
+| 25   | js       |           94 (94) |       8192 |        23,807,654 | 13,700,934 |  2,112,626 |              14 (1) |                  5.87 |
+| 26   | boundary |         240 (183) |         64 |        34,168,266 | 20,653,807 | 21,024,815 |           240 (240) |                  0.45 |
+| 26   | boundary |         240 (183) |        512 |        34,168,266 | 20,686,826 | 19,115,042 |            129 (68) |                  0.90 |
+| 26   | boundary |         240 (183) |       2048 |        34,168,266 | 20,640,923 |  9,454,368 |              53 (3) |                  2.17 |
+| 26   | boundary |         240 (183) |       8192 |        34,168,266 | 20,624,633 |  4,655,853 |              16 (0) |                  6.97 |
+| 26   | js       |         110 (110) |         64 |        27,862,732 | 16,118,971 | 16,302,031 |           110 (110) |                  0.79 |
+| 26   | js       |         110 (110) |        512 |        27,862,732 | 16,118,971 | 16,302,031 |           110 (110) |                  0.79 |
+| 26   | js       |         110 (110) |       2048 |        27,862,732 | 16,059,173 |  6,148,496 |              41 (5) |                  2.25 |
+| 26   | js       |         110 (110) |       8192 |        27,862,732 | 16,037,863 |  2,517,819 |              15 (0) |                  6.32 |
+
+**Production candidate for cold History boundary evidence: same session and kind, 2 MiB soft
+target, 32 entries, Zstandard level 3.** Against current stored datums it saved 72–73% on all
+boundary records in these selected windows. An 8 MiB target increased that to 86–89%, but a
+uniform point fetch would inflate about 7 MiB instead of 2.2 MiB. Reserve the larger target for
+a cold-scan trial. With only JavaScript sends, 8 MiB generic zstd was within 1.2–1.4 percentage
+points of the specialized catalog model as a fraction of current storage. That narrow incremental
+opportunity does not justify maintaining a field dictionary without a separate read-path win.
+Gzip's smaller match window explains why merely raising its block target did little. On the
+full boundary samples at 2 MiB the zstd encoder consumed 0.14/0.17 CPU seconds vs 1.82/2.07 for
+gzip; these are local library calls, not service append latency.
+
+These windows deliberately target formerly excluded rows and do not estimate fleet-wide savings.
+They justify a boundary-specific trial, not larger blocks for sparse ordinary History point reads.
