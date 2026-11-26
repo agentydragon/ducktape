@@ -73,20 +73,9 @@ For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
 `--migrate-only` as the sole argument. Normal service startup performs the same migration before
 it serves.
 
-Migration 21 adds the sampler journal's block table. The existing `event_block_writes` setting
-controls a background worker that packs completed 32-cursor windows, including windows from before
-a restart. Migration 22 records each Session's last processed window. The worker prepares and
-verifies frame bytes before acquiring the Session lock for its atomic replacement. Each legacy
-gzip block contains up to 32 consecutive exact event frames and decodes to at most 2 MiB. The
-incomplete tail, oversized frames and groups with no compression savings stay in standalone rows.
-Readers and the exporter understand both standalone rows and legacy blocks.
-
-Migration 23 only changes the event-block range constraint to permit spans of up to 256 entries.
-The new `event_block_v2_writes` setting is a separate, default-off gate for live APB v1 writes; its
-profile defaults to 64 KiB, 128 entries and zstd level 3. Enabling
-`event_block_writes` does not enable APB writes. Staging enables both settings. To stop creating APB blocks, disable
-`event_block_v2_writes` and roll the sampler. Keep readers that understand both encodings
-so previously written blocks remain readable.
+Migrations 21–23 add journal blocks, record background compaction progress and allow APB blocks
+of up to 256 entries. See [journal packing and verification](#apb-v1-journal-repacking-and-verification)
+for writer settings, rollback and manual maintenance.
 
 `context_source_writes` enables sourced context entries. Deploy the reader to every sampler
 replica before enabling writes. With the setting omitted, the sampler reads both formats and
@@ -189,26 +178,33 @@ container limits stop meeting the production resource contract.
 
 ## APB v1 journal repacking and verification
 
-For the reader and live-writer rollout checks, see [Verify new journal blocks](../eventblock/rollout.md).
-Migration 23 must be present and all replicas must read both formats before enabling
-`event_block_v2_writes`. The old `event_block_writes` flag remains the legacy gzip background
-worker; keep it independent from the APB gate.
+The Sampler reader and exporter support standalone rows, legacy gzip blocks and APB v1 blocks.
+Two settings control writes.
+
+- `event_block_writes` runs the background gzip worker. It prepares completed 32-cursor windows
+  outside the Session lock and resumes after a restart. Each block decodes to at most 2 MiB.
+  Incomplete windows, oversized frames and groups without compression savings stay in standalone rows.
+- `event_block_v2_writes` enables live APB v1 writes and defaults to false. Apply migration 23 and
+  deploy mixed-format readers to every replica before enabling it. To stop new APB writes, disable the setting and
+  roll the Sampler with a mixed-format reader. [Staging configuration](../../cluster/cdk8s/agentplane/staging.py) · [Writer rollout checks](../eventblock/rollout.md)
 
 The `compact-journal` command transcodes retained standalone rows and legacy gzip blocks into the
 configured APB v1 profile. For each Session, it captures a fixed opening cursor and processes batches
 of at most 256 entries and 8 MiB. Its cursor exists only in process memory and advances after each
-batch commits. Frame preparation and compression run outside the Session lock; apply matches exact
-source rows and payloads before atomically replacing them. Session-lock acquisition waits at most
-100 ms and measured lock holds are bounded to 250 ms. After interruption, a new invocation scans
-from the beginning, validates the committed storage, and skips batches that already match the
-profile; it stores no progress table or column. `--all` inventories every retained Session in keyset
-order and defers busy Sessions after bounded retries, so repeat the pass until all Sessions finish.
-Sampler and History share the nested `event_block_profile` settings: `target_bytes`,
-`target_entries`, `codec` (zstd), and `level`. An omitted entry target uses 128 for Sampler
-and 32 for History.
+batch commits. The repacker prepares frames and compresses them outside the Session lock. Under
+the lock, it matches the exact source rows and payloads before replacing them in one transaction.
+PostgreSQL limits lock waits to 100 ms. The repacker requests cancellation after 250 ms holding
+the lock. On restart, it scans from the beginning and skips batches whose stored bytes already
+match the profile. `--all` visits retained Sessions in keyset order and defers busy Sessions after
+bounded retries. Repeat the pass until all Sessions finish.
 
-Use the same `--event-block-target-bytes`, `--event-block-target-entries`, and
-`--event-block-level` values for live writes and every repack pass.
+Sampler and History share the nested `event_block_profile` settings. The base profile targets 64 KiB
+with zstd level 3 and 128 entries for Sampler or 32 for History. History can override the byte
+target by event kind.
+
+Set the repack flags `--event-block-target-bytes`, `--event-block-target-entries` and
+`--event-block-level` to match the live writer’s `target_bytes`, `target_entries` and `level`. The
+`codec` setting accepts zstd.
 
 Preview a canary, then apply the same scope:
 
@@ -219,11 +215,11 @@ compact-journal --all --apply
 ```
 
 The command requires an explicit `--dry-run` or `--apply`. Optional delay and pause-file settings
-control pacing; each invocation processes its full opening watermark. The APB live-write gate stays
-off by default, and activating it remains a separate rollout change. The sampler image includes the separate manual
-[`compact-journal` Job template](ops/compact-journal-job.yaml) and
-[`verify-journal` Job template](ops/verify-journal-job.yaml); neither is part of Flux. Use the
-repack Job for canaries and the full fleet pass, then run a separate verification Job after the
+control pacing. Each invocation processes its full opening watermark. For a manual Kubernetes
+run, set the image in the
+[`compact-journal` Job template](ops/compact-journal-job.yaml) or
+[`verify-journal` Job template](ops/verify-journal-job.yaml) to the deployed Sampler image.
+Run the repack Job manually for canaries and the full fleet pass. Run the verification Job after the
 repack and APB writer cutover, with the legacy background writer disabled so it cannot create new
 legacy blocks during the final pass. Verification inventories every retained owner and Session
 from one repeatable-read snapshot, reports row encodings and coverage gaps, and fails if any legacy
