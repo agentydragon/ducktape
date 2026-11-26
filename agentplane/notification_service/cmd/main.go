@@ -77,7 +77,7 @@ const (
 )
 
 // kubeDeps is what the service reads from Kubernetes: live workload credentials, Sandboxes, and
-// the API server its send grants are watched on.
+// the API server its send grants are watched on. Without a policy_service block, Identities are read through Sandboxes.
 type kubeDeps struct {
 	Sandboxes client.Reader
 	Policies  *rest.Config
@@ -142,16 +142,16 @@ func newRoutes(webhookHandler http.Handler) http.Handler {
 
 // serve answers until ctx ends or a worker or a listener fails: the gRPC servicers and signed webhook.
 func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
-	// The namespace holds the workload credentials and their live Identity subjects.
-	identities, err := auth.KubernetesIdentityUIDs(deps.Sandboxes, c.Namespace)
+	identities, stopIdentities, err := startIdentities(ctx, c, deps)
 	if err != nil {
 		return err
 	}
-	callers, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, identities)
+	defer stopIdentities()
+	callers, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, identities.uids)
 	if err != nil {
 		return err
 	}
-	sandboxes, err := sandboxreader.New(c.Namespace, deps.Sandboxes, identities)
+	sandboxes, err := sandboxreader.New(c.Namespace, deps.Sandboxes, identities.uids)
 	if err != nil {
 		return err
 	}
@@ -192,7 +192,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	}
 	defer actionsConnection.Close()
 	sendPolicy := inboxaccess.NewPolicy()
-	policyWatches, err := sendPolicy.Watch(deps.Policies, c.Namespace)
+	policyWatches, err := sendPolicy.Watch(deps.Policies, c.Namespace, identities.rules)
 	if err != nil {
 		return err
 	}

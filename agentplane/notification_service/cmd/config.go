@@ -19,6 +19,7 @@ import (
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 )
 
 const settingPrefix = "AGENTPLANE_NOTIFICATIONS_"
@@ -47,6 +48,11 @@ type config struct {
 	// HTTPPort is reserved for the signed GitHub webhook.
 	HTTPPort int             `mapstructure:"http_port"`
 	RPC      listener.Config `mapstructure:"rpc"`
+	// PolicyService, when set, is where every Identity reader learns the live Identities; unset, they read the
+	// Identity resources of Namespace.
+	// CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
+	//   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+	PolicyService *identitycache.Peer `mapstructure:"policy_service"`
 }
 
 // peer is another Agentplane service the service calls over gRPC as a workload.
@@ -198,6 +204,11 @@ func (c *config) validate() error {
 		}
 		if caller.tls != nil && !slices.Contains(caller.expectedServerURIs, caller.tls.ServerURI) {
 			return fmt.Errorf("%s tls.server_uri must be one of %q", caller.name, caller.expectedServerURIs)
+		}
+	}
+	if c.PolicyService != nil {
+		if err := c.PolicyService.Validate(peertls.NotificationsURI); err != nil {
+			return err
 		}
 	}
 	if c.HTTPPort < 1 || c.HTTPPort > 65535 {
