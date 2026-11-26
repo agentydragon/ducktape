@@ -10,9 +10,7 @@ load("@rules_lean//lean:defs.bzl", _lean_binary = "lean_binary", _lean_library =
 
 lean_library = _lean_library
 
-def lean_binary(name, srcs, entry, deps = [], **kwargs):
-    if not entry:
-        fail("lean_binary %s needs an entry" % name)
+def lean_binary(name, srcs, deps = [], **kwargs):
     lib = name + "_modules"
     _lean_library(
         name = lib,
@@ -24,9 +22,7 @@ def lean_binary(name, srcs, entry, deps = [], **kwargs):
     )
     _lean_binary(name = name, deps = [":" + lib], **kwargs)
 
-def lean_test(name, srcs, entry, deps = [], **kwargs):
-    if not entry:
-        fail("lean_test %s needs an entry" % name)
+def lean_test(name, srcs, deps = [], **kwargs):
     lib = name + "_modules"
     _lean_library(
         name = lib,

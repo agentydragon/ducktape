@@ -66,7 +66,6 @@ lean_library(
 lean_binary(
     name = "analysis_inventory",
     srcs = ["AnalysisInventory.lean"],
-    entry = "AnalysisInventory.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
     deps = [
         ":effects",
@@ -123,7 +122,6 @@ lean_library(
 lean_binary(
     name = "render",
     srcs = ["Main.lean"],
-    entry = "Main.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/fuzz:__pkg__"],
     deps = [
         ":example_proof",
@@ -160,7 +158,6 @@ lean_binary(
         "EsmSplit/Translate.lean",
         "EsmSplit/TranslateMain.lean",
     ],
-    entry = "EsmSplit/TranslateMain.lean",
     visibility = [
         "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
@@ -176,7 +173,6 @@ lean_binary(
     srcs = [
         "EsmSplit/LowerMain.lean",
     ],
-    entry = "EsmSplit/LowerMain.lean",
     visibility = [
         "//devinfra/js/debundle/x/split_proof:__pkg__",
         "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
@@ -491,7 +487,6 @@ lean_binary(
     name = "resolved_placement_test_runner",
     testonly = True,
     srcs = ["ResolvedPlacementTest.lean"],
-    entry = "ResolvedPlacementTest.lean",
     deps = [
         ":corejs_checked_split",
         ":corejs_resolved_placement",
@@ -522,7 +517,6 @@ lean_binary(
     name = "checked_split_test_runner",
     testonly = True,
     srcs = ["CheckedSplitTest.lean"],
-    entry = "CheckedSplitTest.lean",
     deps = [":corejs_checked_split"],
 )
 
@@ -557,7 +551,6 @@ lean_binary(
     name = "checked_move_split_test_runner",
     testonly = True,
     srcs = ["CheckedMoveSplitTest.lean"],
-    entry = "CheckedMoveSplitTest.lean",
     deps = [":corejs_checked_move_split"],
 )
 
@@ -593,7 +586,6 @@ lean_binary(
     name = "checked_artifact_test_runner",
     testonly = True,
     srcs = ["CheckedSplitArtifactMain.lean"],
-    entry = "CheckedSplitArtifactMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [
         ":checked_artifact",
@@ -643,7 +635,6 @@ lean_axiom_test(
 lean_binary(
     name = "lowersplit_diagnostic_core",
     srcs = ["EsmSplit/LowerSplitDiagnosticMain.lean"],
-    entry = "EsmSplit/LowerSplitDiagnosticMain.lean",
     deps = [":lowersplit_workflows"],
 )
 
@@ -668,7 +659,6 @@ lean_binary(
         "EsmSplit/LowerSplitBazelMain.lean",
     ],
     data = [":lowersplit_generated_proof_files"],
-    entry = "EsmSplit/LowerSplitBazelMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
     deps = [":lowersplit_workflows"],
 )
@@ -677,7 +667,6 @@ lean_binary(
     name = "provider_input_boundary_test_runner",
     testonly = True,
     srcs = ["ProviderInputBoundaryTest.lean"],
-    entry = "ProviderInputBoundaryTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [
         ":corejs_linked_input",
@@ -734,7 +723,6 @@ lean_binary(
     name = "joint_static_test_runner",
     testonly = True,
     srcs = ["JointStaticTest.lean"],
-    entry = "JointStaticTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [
         ":corejs_structural",
@@ -748,7 +736,6 @@ lean_binary(
     srcs = [
         "LinkedInputTest.lean",
     ],
-    entry = "LinkedInputTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [
         ":corejs_linked_input",
@@ -764,7 +751,6 @@ lean_binary(
     srcs = [
         "EsmSplit/EvalOrder.lean",
     ],
-    entry = "EsmSplit/EvalOrder.lean",
     visibility = [
         "//devinfra/js/debundle/x/split_proof/es_order:__pkg__",
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
@@ -796,7 +782,6 @@ lean_binary(
     name = "error_realm_test_runner",
     testonly = True,
     srcs = ["ErrorRealmTest.lean"],
-    entry = "ErrorRealmTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [":corejs_runtime"],
 )
@@ -805,7 +790,6 @@ lean_binary(
     name = "global_env_test_runner",
     testonly = True,
     srcs = ["GlobalEnvTest.lean"],
-    entry = "GlobalEnvTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [":corejs_runtime"],
 )
@@ -814,7 +798,6 @@ lean_binary(
 lean_binary(
     name = "corejs",
     srcs = ["EsmSplit/CoreJSMain.lean"],
-    entry = "EsmSplit/CoreJSMain.lean",
     visibility = [
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
@@ -1213,7 +1196,6 @@ lean_axiom_test(
 lean_binary(
     name = "proof_fixture_render",
     srcs = ["ProofFixtureMain.lean"],
-    entry = "ProofFixtureMain.lean",
     deps = [":proof_fixture"],
 )
 
@@ -1251,14 +1233,12 @@ lean_test(
         "EsmSplit/CoreJS/Number.lean",
         "EsmSplit/CoreJS/Uint8Examples.lean",
     ],
-    entry = "EsmSplit/CoreJS/Uint8Examples.lean",
 )
 
 lean_binary(
     name = "replicate_plan",
     testonly = True,
     srcs = ["Experiments/ReplicatePlan.lean"],
-    entry = "Experiments/ReplicatePlan.lean",
     deps = [":lowersplit_workflows"],
 )
 
@@ -1270,7 +1250,6 @@ lean_test(
         "Experiments/Ladder.lean",
         "Experiments.lean",
     ],
-    entry = "Experiments.lean",
     tags = ["manual"],
     deps = [":example_proof"],
 )
@@ -1278,7 +1257,6 @@ lean_test(
 lean_test(
     name = "lowered_example_certificate_test",
     srcs = [":generated_lowered_example_source"],
-    entry = "Experiments/Generated.lean",
     deps = [":planner"],
 )
 
