@@ -4,6 +4,7 @@
 
 use super::chunk_resolver::{item_facts, single_declarator_item};
 use super::*;
+use std::ops::ControlFlow;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -102,6 +103,52 @@ pub fn explain_range(
     selected: &[ModuleItem],
     kind: ExplainRangeKind,
 ) -> RangeExplanation {
+    let (ControlFlow::Break(explanation) | ControlFlow::Continue(explanation)) =
+        explain_range_phases(parsed, selected, kind);
+    explanation
+}
+
+/// The phases of [`explain_range`]; a phase breaks with an early verdict.
+fn explain_range_phases(
+    parsed: &ParsedSourceMatchSelector,
+    selected: &[ModuleItem],
+    kind: ExplainRangeKind,
+) -> ControlFlow<RangeExplanation, RangeExplanation> {
+    let needle = index_needle(parsed)?;
+    check_range_limits(parsed, selected, kind, &needle.indices)?;
+    let (authoritative, multiple_group_alignments) = authoritative_binding(parsed, selected, kind)?;
+    let (best, any_limited) = compare_subject_variants(
+        parsed,
+        selected,
+        kind,
+        &needle,
+        authoritative.as_ref(),
+        multiple_group_alignments,
+    )?;
+    ControlFlow::Continue(unmatched_explanation(
+        kind,
+        authoritative,
+        best,
+        any_limited,
+    ))
+}
+
+/// The selector body projected for the matcher, with its free identifiers and
+/// identifier mode.
+struct Needle {
+    indices: Vec<selector_match::Index>,
+    free: BTreeSet<String>,
+    mode: selector_match::Mode,
+}
+
+/// A binding the production candidate path matched, with its free bindings.
+type AuthoritativeBinding = (String, BTreeMap<String, String>);
+
+/// The diagnostic comparison of the subject variant that got furthest, with
+/// the declarator it substituted, if any.
+type BestComparison = (selector_match::ExactRangeMatch, Option<usize>);
+
+fn index_needle(parsed: &ParsedSourceMatchSelector) -> ControlFlow<RangeExplanation, Needle> {
     let needle_indices = match parsed
         .body()
         .iter()
@@ -109,17 +156,32 @@ pub fn explain_range(
         .collect::<Result<Vec<_>>>()
     {
         Ok(indices) => indices,
-        Err(err) => return RangeExplanation::unsupported(err.to_string()),
+        Err(err) => return ControlFlow::Break(RangeExplanation::unsupported(err.to_string())),
     };
     let free = free_identifiers(&needle_indices);
     let mode = selector_mode(parsed.selector());
     if let Some(target) = parsed.selector().target_binding.as_ref()
         && free.contains(target)
     {
-        return RangeExplanation::unsupported(format!(
+        return ControlFlow::Break(RangeExplanation::unsupported(format!(
             "target `{target}` is a free reference whose declaration cannot be checked locally; use --anonymous with the inline pattern to compare only its use-site shape"
-        ));
+        )));
     }
+    ControlFlow::Continue(Needle {
+        indices: needle_indices,
+        free,
+        mode,
+    })
+}
+
+/// Bound the work of this diagnostic API before it enters the unbudgeted
+/// production candidate resolver.
+fn check_range_limits(
+    parsed: &ParsedSourceMatchSelector,
+    selected: &[ModuleItem],
+    kind: ExplainRangeKind,
+    needle_indices: &[selector_match::Index],
+) -> ControlFlow<RangeExplanation> {
     // The member candidate resolver is the production matcher and has no work
     // budget. Constrain this diagnostic API before entering it. The limits do
     // not affect normal selector resolution.
@@ -127,13 +189,13 @@ pub fn explain_range(
     const MAX_RANGE_NODES: usize = 2_048;
     const MAX_RANGE_DECLARATORS: usize = 32;
     if needle_indices.len() > MAX_RANGE_STATEMENTS || selected.len() > MAX_RANGE_STATEMENTS {
-        return RangeExplanation::limited(format!(
+        return ControlFlow::Break(RangeExplanation::limited(format!(
             "selector or selected source exceeds {MAX_RANGE_STATEMENTS} statements"
-        ));
+        )));
     }
     let subject_indices = match selected.iter().map(index_item).collect::<Result<Vec<_>>>() {
         Ok(indices) => indices,
-        Err(err) => return RangeExplanation::unsupported(err.to_string()),
+        Err(err) => return ControlFlow::Break(RangeExplanation::unsupported(err.to_string())),
     };
     let nodes: usize = needle_indices
         .iter()
@@ -141,16 +203,18 @@ pub fn explain_range(
         .map(selector_match::Index::node_count)
         .sum();
     if nodes > MAX_RANGE_NODES {
-        return RangeExplanation::limited(format!(
+        return ControlFlow::Break(RangeExplanation::limited(format!(
             "selector plus selected source exceeds {MAX_RANGE_NODES} matcher nodes"
-        ));
+        )));
     }
     if needle_indices
         .iter()
         .chain(&subject_indices)
         .any(|index| !selector_match::diagnostic_shape_bounded(index))
     {
-        return RangeExplanation::limited("selected range exceeds the nesting or hole limit");
+        return ControlFlow::Break(RangeExplanation::limited(
+            "selected range exceeds the nesting or hole limit",
+        ));
     }
     let declarators: usize = selected
         .iter()
@@ -158,9 +222,9 @@ pub fn explain_range(
         .map(|var| var.decls.len())
         .sum();
     if declarators > MAX_RANGE_DECLARATORS {
-        return RangeExplanation::limited(format!(
+        return ControlFlow::Break(RangeExplanation::limited(format!(
             "selected source exceeds {MAX_RANGE_DECLARATORS} declarators"
-        ));
+        )));
     }
 
     // Group candidate enumeration lists all placements before the traced
@@ -174,11 +238,21 @@ pub fn explain_range(
         bound.saturating_mul(selected.len().saturating_add(1))
     });
     if kind == ExplainRangeKind::BindingGroup && placement_bound > 50_000 {
-        return RangeExplanation::limited(
+        return ControlFlow::Break(RangeExplanation::limited(
             "top-level hole placements exceed the local group-enumeration limit",
-        );
+        ));
     }
+    ControlFlow::Continue(())
+}
 
+/// The production candidate path's verdict for a member or binding group,
+/// and whether a binding group fit more than one alignment. Anonymous ranges
+/// have no authoritative path.
+fn authoritative_binding(
+    parsed: &ParsedSourceMatchSelector,
+    selected: &[ModuleItem],
+    kind: ExplainRangeKind,
+) -> ControlFlow<RangeExplanation, (Option<AuthoritativeBinding>, bool)> {
     let mut multiple_group_alignments = false;
     let authoritative = match kind {
         ExplainRangeKind::Member => {
@@ -199,7 +273,7 @@ pub fn explain_range(
                         .filter(|candidate| matched && candidate.body_idx < selected.len());
                     let first = candidates.next();
                     if candidates.next().is_some() {
-                        return RangeExplanation {
+                        return ControlFlow::Break(RangeExplanation {
                             status: RangeExplanationStatus::Matched,
                             aligned_statements: Vec::new(),
                             matched_binding: None,
@@ -209,18 +283,20 @@ pub fn explain_range(
                                 "multiple bindings in the selected range fit this member selector"
                                     .into(),
                             ),
-                        };
+                        });
                     }
                     first.map(|candidate| (candidate.binding, candidate.free_bindings))
                 }
-                Err(err) => return RangeExplanation::unsupported(err.to_string()),
+                Err(err) => {
+                    return ControlFlow::Break(RangeExplanation::unsupported(err.to_string()));
+                }
             }
         }
         ExplainRangeKind::BindingGroup => {
             let Some(target) = parsed.selector().target_binding.as_ref() else {
-                return RangeExplanation::unsupported(
+                return ControlFlow::Break(RangeExplanation::unsupported(
                     "binding-group explanation needs target_binding",
-                );
+                ));
             };
             let group = parsed.with_target_binding(None);
             let exports = BTreeMap::from([(target.clone(), target.clone())]);
@@ -244,53 +320,68 @@ pub fn explain_range(
                     multiple_group_alignments = candidates.next().is_some();
                     first
                 }
-                Err(err) => return RangeExplanation::unsupported(err.to_string()),
+                Err(err) => {
+                    return ControlFlow::Break(RangeExplanation::unsupported(err.to_string()));
+                }
             }
         }
         ExplainRangeKind::Anonymous => None,
     };
+    ControlFlow::Continue((authoritative, multiple_group_alignments))
+}
 
+/// Run the traced comparison over every subject variant. Breaks with the
+/// verdict on the first match; otherwise returns the variant that got
+/// furthest and whether any comparison hit the diagnostic limit.
+fn compare_subject_variants(
+    parsed: &ParsedSourceMatchSelector,
+    selected: &[ModuleItem],
+    kind: ExplainRangeKind,
+    needle: &Needle,
+    authoritative: Option<&AuthoritativeBinding>,
+    multiple_group_alignments: bool,
+) -> ControlFlow<RangeExplanation, (Option<BestComparison>, bool)> {
     let variants = diagnostic_subject_variants(parsed, selected, kind);
     let mut best = None;
     let mut any_limited = false;
     for (variant, replaced_declarator) in variants {
         let subject_indices = match variant.iter().map(index_item).collect::<Result<Vec<_>>>() {
             Ok(indices) => indices,
-            Err(err) => return RangeExplanation::unsupported(err.to_string()),
+            Err(err) => return ControlFlow::Break(RangeExplanation::unsupported(err.to_string())),
         };
         let result = match selector_match::explain_exact_range_indexed(
-            &needle_indices,
+            &needle.indices,
             &subject_indices,
-            mode,
-            &free,
+            needle.mode,
+            &needle.free,
         ) {
             Ok(result) => result,
-            Err(err) => return RangeExplanation::unsupported(err.reason),
+            Err(err) => return ControlFlow::Break(RangeExplanation::unsupported(err.reason)),
         };
         any_limited |= result.diagnostic_limited;
         if result.matched {
             if let ExplainRangeKind::Anonymous = kind {
-                return RangeExplanation {
+                return ControlFlow::Break(RangeExplanation {
                     status: RangeExplanationStatus::Matched,
                     aligned_statements: result.alignment,
                     matched_binding: None,
                     free_bindings: result.free_bindings,
                     failure: None,
                     reason: None,
-                };
+                });
             }
-            if let Some((binding, free_bindings)) = authoritative.as_ref() {
+            if let Some((binding, free_bindings)) = authoritative {
                 let binding_is_local = !multiple_group_alignments
                     && !(kind == ExplainRangeKind::BindingGroup
                         && parsed.body().len() != selected.len());
-                return RangeExplanation {
+                return ControlFlow::Break(RangeExplanation {
                     status: RangeExplanationStatus::Matched,
                     aligned_statements: result.alignment,
                     matched_binding: binding_is_local.then(|| binding.clone()),
                     free_bindings: if binding_is_local { free_bindings.clone() } else { BTreeMap::new() },
                     failure: None,
                     reason: (!binding_is_local).then(|| "binding-group target cannot be assigned uniquely within the selected range".into()),
-                };
+                });
             }
         }
         let score = result.failure.as_ref().map_or(0, |failure| {
@@ -303,7 +394,19 @@ pub fn explain_range(
             best = Some((score, result, replaced_declarator));
         }
     }
+    ControlFlow::Continue((
+        best.map(|(_, result, replaced_declarator)| (result, replaced_declarator)),
+        any_limited,
+    ))
+}
 
+/// The verdict when no diagnostic variant matched.
+fn unmatched_explanation(
+    kind: ExplainRangeKind,
+    authoritative: Option<AuthoritativeBinding>,
+    best: Option<BestComparison>,
+    any_limited: bool,
+) -> RangeExplanation {
     // A member's candidate path is authoritative even when a diagnostic
     // variant missed a special projection. Keep that success honest and leave
     // alignment empty rather than inventing one.
@@ -319,7 +422,7 @@ pub fn explain_range(
             reason: Some("member matched through a declarator projection".into()),
         };
     }
-    let Some((_, result, replaced_declarator)) = best else {
+    let Some((result, replaced_declarator)) = best else {
         return RangeExplanation {
             status: RangeExplanationStatus::Mismatch,
             aligned_statements: Vec::new(),
