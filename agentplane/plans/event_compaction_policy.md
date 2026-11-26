@@ -1,6 +1,6 @@
 # Storing and repacking Sampler and History events in PostgreSQL
 
-**Decision status: proposed; no writer-default change yet.** Keep each service's journal in
+**Decision status: History writes versioned blocks in staging; Sampler rollout pending.** Keep each service's journal in
 its own PostgreSQL database. Use PostgreSQL rows and B-tree indexes as the baseline. Where
 cross-event compression pays, group original frames without interpreting their contents. The
 first candidate for History boundary evidence is **same session + kind, 2 MiB or 32 entries,
@@ -8,6 +8,20 @@ Zstandard level 3**: it saved 72–73% against the current stored datums on two 
 samples without extracting a single field. Keep a smaller read unit for other History streams.
 Prefer a database-managed layout if it meets the same read, space and operations requirements.
 Any winning policy must apply to existing data as well as new writes.
+
+## Staging rollout (November 25, 2026)
+
+Both database volume claims were expanded to 96 GiB ([#20058](https://github.com/agentydragon/ducktape/pull/20058)).
+History's mixed reader and new writer are deployed, and the staging writer is enabled
+([#20073](https://github.com/agentydragon/ducktape/pull/20073)). Before historical repacking,
+942 of 2,048 sampled History blocks on the standby had the APB v1 prefix. That confirms new
+blocks replicated; the sample is not an estimate of legacy blocks remaining.
+
+Sampler's existing packing switch still selects the legacy writer. Deploy its mixed reader
+everywhere before enabling APB writes. Neither service has started its historical APB repack.
+For each service independently, the next step after deploying its updated maintenance command
+is an inventory and dry run, then a bounded trial on an active session with a replay comparison.
+See the [writer rollout checks](../eventblock/rollout.md).
 
 ## Capacity comes before the rewrite
 
@@ -27,7 +41,7 @@ do not add the two replicas' capacity or use the object-store backup slope for P
    new events, append CPU/latency, replica lag and available bytes. This slows growth without
    duplicating the historical corpus. Preserve the ordinary fallback for a frame over the hard
    decoder cap. Roll out compatible readers before writing a new codec or block format.
-3. Repack a small cold range only after both volumes can accommodate replacement blocks, WAL
+3. Repack a bounded range only after both volumes can accommodate replacement blocks, WAL
    and the rollback/operating reserve. Stop if the budget shrinks. Normal vacuum enables page
    reuse; it does not promise filesystem space back. Do not run a full table rewrite to make
    room for itself. If there is insufficient runway, capacity expansion buys time independently
