@@ -562,7 +562,7 @@ What is owed beyond the steps above. Each is a known gap, not a plan.
 
 **In the model and its proofs**
 
-- `Program.evalOrder` is the same function as `Plan.visit` of the proved checker: tested on every program of the model's test, not proved.
+- The planner and CoreJS share `visitImports` for synchronous module order. `split_evalOrder` proves that their graphs agree when the model is built from a plan. [The Node sweep](es_order/check.mjs) checks the traversal against engine behavior.
 - The table of 88 host functions (`worldFunction` in [`Value.lean`](lean/EsmSplit/CoreJS/Value.lean)) is an assumption about the engine: called on primitives, each returns a primitive or throws and reads nothing the program can change. It was checked from memory of the specification, not against its text.
 - A world with one state orders every pair of host calls. The model cannot yet say that `Math.abs` does not read or change the world, which a split that moves code needs.
 - Read-only imports rest on the front end: [`to_core.mjs`](model/to_core.mjs) decides from the text which assignment targets are imports (`Target.frozen`).

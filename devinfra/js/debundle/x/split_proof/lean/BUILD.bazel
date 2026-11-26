@@ -11,12 +11,18 @@ load(":splitter_launcher.bzl", "splitter_launcher")
 _EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
 
 lean_library(
+    name = "module_order",
+    srcs = ["EsmSplit/ModuleOrder.lean"],
+)
+
+lean_library(
     name = "plan",
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/Bundle.lean",
         "EsmSplit/Plan.lean",
     ],
+    deps = [":module_order"],
 )
 
 lean_library(
@@ -950,7 +956,10 @@ lean_library(
         "EsmSplit/CoreJS/Eval.lean",
         "EsmSplit/CoreJS/Run.lean",
     ],
-    deps = [":estree"],
+    deps = [
+        ":estree",
+        ":module_order",
+    ],
 )
 
 test_runner(
