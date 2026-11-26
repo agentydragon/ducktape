@@ -76,6 +76,10 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 	return &policypb.GrantSandboxPolicyBindingResponse{Binding: message}, nil
 }
 
+// errBindingNameTaken is a PolicyBinding create that met an object of its name: a generated name's collision, which
+// a retry resolves, or for a keyed grant, the binding an earlier call may have created.
+var errBindingNameTaken = status.Error(codes.Aborted, "PolicyBinding creation conflicted; try again")
+
 func (s *Service) createPolicyBinding(ctx context.Context, binding *policyapi.PolicyBinding, expiresAt *timestamppb.Timestamp) error {
 	if expiresAt != nil {
 		if err := expiresAt.CheckValid(); err != nil {
@@ -85,10 +89,10 @@ func (s *Service) createPolicyBinding(ctx context.Context, binding *policyapi.Po
 		binding.Spec.ExpiresAt = &converted
 	}
 	if err := s.objects.Create(ctx, binding); err != nil {
-		slog.ErrorContext(ctx, "PolicyService PolicyBinding creation failed", "error", err)
 		if apierrors.IsAlreadyExists(err) {
-			return status.Error(codes.Aborted, "PolicyBinding creation conflicted; try again")
+			return errBindingNameTaken
 		}
+		slog.ErrorContext(ctx, "PolicyService PolicyBinding creation failed", "error", err)
 		return status.Error(codes.Unavailable, "PolicyBinding could not be created")
 	}
 	return nil

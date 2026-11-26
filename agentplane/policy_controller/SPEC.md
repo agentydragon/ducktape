@@ -86,6 +86,19 @@ Identity owner UID as well as the caller UID, so this remains true before garbag
 and when another owner retains the binding. A declarative binding without an Identity owner
 continues to follow its subject name.
 
+Both creates take an optional `idempotency_key` of 1 to 200 characters of UTF-8 (AIP-155). Without
+one, behavior is as above. With one, an identical retry answers with the original result: the same
+Identity incarnation, or the same binding. The key reused for a different request is
+`ALREADY_EXISTS`, as is a key whose object is being deleted, which is never adopted. A
+CreateIdentity key is scoped by the Identity name; an Identity of that name the key did not create
+is `ALREADY_EXISTS` too. A grant key is scoped by the Identity incarnation: its binding is named
+after the Identity with a suffix derived from the Identity UID and the key, so a retry meets the
+first call's binding and never creates a second. While Identities and PolicyBindings are custom
+resources, the created object records the key and a SHA-256 digest of the rest of the request in
+the `agentplane.allegedly.works/{idempotency-key,request-digest}` annotations, which PolicyService
+owns; a retry that meets an existing object compares them. If this record moves into a database,
+the key becomes a unique key there.
+
 `PolicyService.DeleteIdentity`, behind the same writer allowlist, deletes one Identity by name and
 observed UID with UID and resourceVersion preconditions; garbage collection then removes what the
 Identity owns. It refuses an Identity carrying Flux's `kustomize.toolkit.fluxcd.io/name` label,
