@@ -322,6 +322,27 @@ errors and completion. For example, Codex can emit `item/commandExecution/output
 command completion; Sampler's `exec_command` can yield a process handle and return more output
 on a later `write_stdin` call. A lone final stdout string cannot reproduce either interaction.
 
+For central Sampler, wrap the [typed executor client](../env/runtime/execution/executor.proto).
+In record mode, forward each call and save its request, response or RPC error. For
+`OpenSession`, also capture the ordered stream of wakeups, native frames and stream closure.
+For `ReadProcess`, retain the requested cursor, output chunk sequences and bytes, next cursor
+and exit status, including successful empty reads. On replay, inject a client that serves the
+recording. Sampler then runs its real polling, tool-result formatting, journal and export paths.
+Use an isolated fixture with one command that yields a handle, produces output in two parts
+and exits. Replay without a live executor and compare the observed tool results and journal
+events. Actions use a separate client and need their own recording if part of the workload.
+
+For Codex, put the recorder between its app-server and the
+[exec-server WebSocket](../env/runtime/execution/docs/codex_executor.md). In an isolated
+benchmark runtime, point the runtime-owned `CODEX_EXEC_SERVER_URL` at a relay that forwards
+to the real backend while recording. In replay mode that endpoint serves the recorded protocol
+with no upstream connection. Preserve connection boundaries, JSON-RPC request/reply correlation,
+unsolicited notifications, and relative delivery times independently in both directions.
+Let the real app-server turn these messages into command output deltas and completion events.
+Start with the same two-part command fixture; verify that replay reaches completion and that the
+runner sends the expected events to History. This covers tools routed through exec-server;
+model traffic and any tools that bypass that endpoint need their own replay inputs.
+
 On replay, drive the real App and selected harness with those commands. Match model and tool
 calls to their recorded responses, map new process and call IDs to their recorded counterparts,
 and stop on an unexpected call. Let Sampler's exporter or the Codex runner drive History through
