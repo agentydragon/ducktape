@@ -53,11 +53,12 @@ const incompatibleOrder = prepareLinkedFixture("resolved-sequential", source, {
   order: ["value.mjs", "reader.mjs"],
   sequential: true,
 });
-assertPublicInputRefused(
-  incompatibleOrder.manifest,
-  incompatibleOrder.out,
-  /source placement or module linkage checks failed/
-);
+assertPublicEmissionRefused(incompatibleOrder.manifest, incompatibleOrder.out);
+await withSplitPreview({ manifest: incompatibleOrder.manifest, expectedExit: 1 }, async ({ directory, entryFile }) => {
+  assert.deepEqual(moduleEvaluationOrder(directory, "source.mjs"), ["value.mjs", "reader.mjs", "source.mjs"]);
+  const { before } = await import(pathToFileURL(entryFile).href);
+  assert.equal(before, "function");
+});
 
 for (const [name, invalid, why] of [
   ["hash", { ...spec, source_sha256: "0".repeat(64) }, /source_sha256/],
