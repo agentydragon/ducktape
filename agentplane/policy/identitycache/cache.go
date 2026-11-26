@@ -57,6 +57,12 @@ func (c *Cache) Lookup(name string) (auth.Identity, bool, error) {
 	return identity, ok, nil
 }
 
+// GetIdentityUID implements auth.IdentityUIDReader; a stale view returns ErrStale.
+func (c *Cache) GetIdentityUID(_ context.Context, name string) (string, bool, error) {
+	identity, ok, err := c.Lookup(name)
+	return identity.UID, ok, err
+}
+
 // List returns every live, not-deleting Identity, sorted by name.
 func (c *Cache) List() ([]auth.Identity, error) {
 	c.mu.RLock()
