@@ -437,8 +437,9 @@ lean_library(
 lean_library(
     name = "corejs_certificate_probe",
     srcs = [
-        "EsmSplit/CoreJS/LinkedCertificate/Probe.lean",
+        # Keep import order for the native Lean rule.
         "EsmSplit/CoreJS/LinkedCertificate/QuoteCoreJS.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/Probe.lean",
     ],
     deps = [
         ":corejs_certificate_proof",
