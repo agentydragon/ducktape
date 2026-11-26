@@ -252,7 +252,7 @@ function conditionLines(conditions: RawCondition[]): string[] {
       );
     }
   }
-  for (const [age, names] of healthy) lines.push([`✓ ${names.join(", ")}`, age].filter(Boolean).join(" · "));
+  for (const [age, names] of healthy) lines.push([`True: ${names.join(", ")}`, age].filter(Boolean).join(" · "));
   return lines;
 }
 
