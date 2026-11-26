@@ -1,10 +1,11 @@
 import EsmSplit.CoreJS.CheckedSplit
 import EsmSplit.CoreJS.ResolvedPlacement
 
-/-! A model-only construction for arbitrary lists of unique constant
-bindings. Initializers are primitive values or reads of earlier bindings.
-The supplied sequential placement is used unchanged by the existing planner.
-This rule does not parse source JavaScript or emit files. -/
+/-! A construction for actual source modules containing unique `const`
+bindings and initialized lexical `let` bindings. Initializers are primitive
+values or reads of earlier bindings. The supplied sequential placement is used
+unchanged by the existing planner. No assignment statements are admitted, so
+the proof does not cover later mutations or reordered evaluation. -/
 
 namespace CoreJS.NamedDeclarationSplit
 
@@ -23,10 +24,14 @@ inductive EarlierInitializer (earlier : List Name) : Expr → Prop where
 for every declaration, for lists of any length. -/
 inductive Declarations : List Name → List (Nat × Stmt) → Prop where
   | nil (earlier) : Declarations earlier []
-  | cons {earlier id name value rest} :
+  | const {earlier id name value rest} :
       name ∉ earlier → EarlierInitializer earlier value →
       Declarations (name :: earlier) rest →
       Declarations earlier ((id, .decl .const name value) :: rest)
+  | initializedLet {earlier id name value rest} :
+      name ∉ earlier → value ≠ .undef → EarlierInitializer earlier value →
+      Declarations (name :: earlier) rest →
+      Declarations earlier ((id, .decl .let_ name value) :: rest)
 
 private def checkInitializer (earlier : List Name) : (expr : Expr) → Option (PLift (EarlierInitializer earlier expr))
   | .undef => some ⟨.undef⟩
@@ -37,6 +42,16 @@ private def checkInitializer (earlier : List Name) : (expr : Expr) → Option (P
   | .var name => if h : name ∈ earlier then some ⟨.read name h⟩ else none
   | _ => none
 
+private def initializedValue : Expr → Bool
+  | .undef => false
+  | _ => true
+
+private theorem initializedValue_ne_undef {value : Expr} (h : initializedValue value = true) :
+    value ≠ .undef := by
+  intro equal
+  subst value
+  simp [initializedValue] at h
+
 /-- Decide admission without evaluating an initializer or running Lean on a
 particular input. A duplicate, forward read or unsupported statement refuses. -/
 def checkDeclarations : (earlier : List Name) → (units : List (Nat × Stmt)) →
@@ -46,7 +61,15 @@ def checkDeclarations : (earlier : List Name) → (units : List (Nat × Stmt)) �
     if fresh : name ∉ earlier then
       let ⟨init⟩ ← checkInitializer earlier value
       let ⟨tail⟩ ← checkDeclarations (name :: earlier) rest
-      return ⟨.cons fresh init tail⟩
+      return ⟨.const fresh init tail⟩
+    else none
+  | earlier, (_, .decl .let_ name value) :: rest => do
+    if initialized : initializedValue value = true then
+      if fresh : name ∉ earlier then
+        let ⟨init⟩ ← checkInitializer earlier value
+        let ⟨tail⟩ ← checkDeclarations (name :: earlier) rest
+        return ⟨.initializedLet fresh (initializedValue_ne_undef initialized) init tail⟩
+      else none
     else none
   | _, _ => none
 
@@ -83,7 +106,7 @@ def construct (source : Program) (request : EsmSplit.Spec) : Except String (Cons
   match single : source.modules with
   | [module] =>
     let some ⟨admitted⟩ := checkDeclarations [] module.body |
-      throw "expected unique const declarations with only primitive initializers or earlier reads"
+      throw "expected unique const or initialized let declarations with only primitive initializers or earlier reads"
     let ⟨normalized, selected, ⟨selection⟩⟩ ← selectionWitness module request
     let .isTrue unique := (inferInstance : Decidable ((selected.map Prod.fst).Nodup)) |
       throw "an original unit is selected more than once"
