@@ -15,7 +15,6 @@ from starlette.websockets import WebSocket
 from attendant.runtime import Operation, Provider, Reply, SessionError, Tab, valid_target
 from platform_sessions.provider.interactive_browser import InteractiveBrowserRuntime
 
-
 logger = logging.getLogger(__name__)
 
 
