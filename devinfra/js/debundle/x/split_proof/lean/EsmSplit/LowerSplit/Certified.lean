@@ -323,8 +323,6 @@ private def tryTerminalDeclarations (chunk : DeploymentChunk) (src : BundleInput
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural &&
       options.deploymentOrigin.isNone do return none
-  if (← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS") == some "1" &&
-      (← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED") == some "1" then return none
   let .authored spec := chunk.placement | return none
   unless spec.sequential && spec.modules.all (fun row => row.1.endsWith ".mjs") do return none
   let .ok nodes := ESTreeUnits.checkedNodes src.program src.source | return none
