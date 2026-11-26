@@ -1,19 +1,21 @@
 use std::collections::{HashMap, VecDeque};
 use std::ops::ControlFlow;
 
+use super::{AppliedCommutingPremise, DependencyEdge, PremiseVerdict};
+use analysis_model::DepKind;
 use source_identity::SourceUnitId;
 
 /// Temporal constraints only: co-location and rebind edges do not order
 /// statements within their shared destination.
 #[derive(Debug, Clone, Copy)]
-pub struct TemporalEdge {
-    pub from: SourceUnitId,
-    pub to: SourceUnitId,
-    pub constraint: TemporalConstraint,
+struct TemporalEdge {
+    from: SourceUnitId,
+    to: SourceUnitId,
+    constraint: TemporalConstraint,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum TemporalConstraint {
+enum TemporalConstraint {
     Fixed,
     Inertable,
     Commuting(usize),
@@ -53,10 +55,38 @@ fn unordered_pair(a: SourceUnitId, b: SourceUnitId) -> (SourceUnitId, SourceUnit
 }
 
 impl CommutationOrder {
-    pub fn new(node_count: usize, input: impl Iterator<Item = TemporalEdge>) -> Self {
+    /// A live graph carries verdicts on its edges. Saved graphs retain them in
+    /// the corresponding report rows.
+    pub fn from_edges<'a>(
+        node_count: usize,
+        input: impl Iterator<Item = (&'a DependencyEdge, Option<&'a PremiseVerdict>)>,
+        premises: &[AppliedCommutingPremise],
+    ) -> Self {
         let mut edges: Vec<TemporalEdge> = Vec::new();
         let mut edge_by_pair = HashMap::new();
-        for edge in input {
+        for (edge, verdict) in input {
+            if !matches!(edge.reason.kind(), DepKind::EagerUse | DepKind::Sequenced) {
+                continue;
+            }
+            let constraint = if let Some(reference) = edge.reason.commuting_premise() {
+                TemporalConstraint::Commuting(
+                    premises
+                        .iter()
+                        .position(|premise| &premise.reference == reference)
+                        .expect("every inert edge has a retained premise"),
+                )
+            } else if !edge.reason.constrains_init_order() {
+                continue;
+            } else if matches!(verdict, Some(PremiseVerdict::Inertable)) {
+                TemporalConstraint::Inertable
+            } else {
+                TemporalConstraint::Fixed
+            };
+            let edge = TemporalEdge {
+                from: edge.from,
+                to: edge.to,
+                constraint,
+            };
             match edge_by_pair.get(&(edge.from, edge.to)) {
                 Some(&index) => {
                     let previous: &mut TemporalEdge = &mut edges[index];

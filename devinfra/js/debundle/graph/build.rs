@@ -987,48 +987,19 @@ fn preserve_commuting_order(
     edges: &mut Vec<DependencyEdge>,
     applied: &mut [AppliedCommutingPremise],
 ) {
-    use super::{CommutationOrder, TemporalConstraint, TemporalEdge};
+    use super::CommutationOrder;
     use std::ops::ControlFlow;
 
-    let references: Vec<_> = applied
-        .iter()
-        .map(|premise| premise.reference.clone())
-        .collect();
     let pairs: Vec<_> = applied
         .iter()
         .map(|premise| (premise.a, premise.b))
         .collect();
-    let order = CommutationOrder::new(
+    let order = CommutationOrder::from_edges(
         nodes.len(),
-        edges.iter().filter_map(|edge| {
-            if !matches!(edge.reason.kind, DepKind::EagerUse | DepKind::Sequenced) {
-                return None;
-            }
-            let constraint = if let Some(reference) = edge.reason.commuting_premise() {
-                TemporalConstraint::Commuting(
-                    references
-                        .iter()
-                        .position(|item| item == reference)
-                        .expect("every inert edge has an applied premise"),
-                )
-            } else if edge.reason.constrains_init_order() {
-                if matches!(
-                    edge.reason.premise_verdict(),
-                    Some(PremiseVerdict::Inertable)
-                ) {
-                    TemporalConstraint::Inertable
-                } else {
-                    TemporalConstraint::Fixed
-                }
-            } else {
-                return None;
-            };
-            Some(TemporalEdge {
-                from: edge.from,
-                to: edge.to,
-                constraint,
-            })
-        }),
+        edges
+            .iter()
+            .map(|edge| (edge, edge.reason.premise_verdict())),
+        applied,
     );
     order.preserve(&pairs, |preserved| {
         let id = DependencyEdgeId(edges.len());
@@ -1036,11 +1007,11 @@ fn preserve_commuting_order(
             nodes[preserved.from.0].statement_ordinal,
             SequencedCause::PreservedOrder {
                 via: nodes[preserved.via.0].statement_ordinal,
-                commuting_premise: references[preserved.by_premise].clone(),
+                commuting_premise: applied[preserved.by_premise].reference.clone(),
             },
         );
         if let Some(index) = preserved.inerted_by {
-            reason.inerted_by = Some(references[index].clone());
+            reason.inerted_by = Some(applied[index].reference.clone());
             applied[index].inerted_edges.push(id);
         }
         edges.push(DependencyEdge {
