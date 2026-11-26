@@ -1,9 +1,7 @@
-load(
-    "//agentplane/env/e2e/testing:exec_properties.bzl",
-    "NATIVE_RUNNER_DOCKER_ENV",
-    "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
-)
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
+load(":defs.bzl", "runtime_integration_test")
+
+# gazelle:map_kind py_test runtime_integration_test //agentplane/env/e2e:defs.bzl
 
 package(
     default_testonly = True,
@@ -25,21 +23,13 @@ py_library(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_attach",
     size = "large",
     srcs = ["test_attach.py"],
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
-    ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
-    target_compatible_with = [
-        # keep: the pinned native harnesses are Linux/x86_64 only.
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
@@ -58,7 +48,7 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_native_resources",
     size = "medium",
     srcs = ["test_native_resources.py"],
@@ -66,15 +56,8 @@ py_test(
         "@agentplane_codex_cli_linux_x64//:files",  # keep: actual pinned native harness process
         "@claude_code_cli_linux_x64//:claude",  # keep: actual pinned native harness process
     ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
     shard_count = 2,
     tags = ["manual"],
-    target_compatible_with = [
-        "@platforms//cpu:x86_64",  # keep: pinned harness binaries
-        "@platforms//os:linux",  # keep: kernel process accounting
-    ],
     deps = [
         ":conftest",
         "//:conftest",
@@ -93,7 +76,7 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_restart",
     size = "large",
     srcs = ["test_restart.py"],
@@ -101,14 +84,6 @@ py_test(
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
-    ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
-    target_compatible_with = [
-        # keep: the pinned native harnesses are Linux/x86_64 only.
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
@@ -132,21 +107,13 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_codex_shared_process",
     # Cold RBE setup for real History's Postgres DB and TokenReview API server exceeds the small budget.
     size = "medium",
     srcs = ["test_codex_shared_process.py"],
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harness the runner drives
-    ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
-    target_compatible_with = [
-        # keep: the pinned native harnesses are Linux/x86_64 only.
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
@@ -165,21 +132,13 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_turns",
     size = "large",
     srcs = ["test_turns.py"],
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
-    ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
-    target_compatible_with = [
-        # keep: the pinned native harnesses are Linux/x86_64 only.
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
@@ -196,20 +155,12 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_codex_code_mode",
     size = "medium",
     srcs = ["test_codex_code_mode.py"],
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harness the runner drives
-    ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
-    target_compatible_with = [
-        # keep: the pinned native harness is Linux/x86_64 only.
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
@@ -228,20 +179,12 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_codex_catalog",
     size = "medium",
     srcs = ["test_codex_catalog.py"],
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harness the runner drives
-    ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
-    target_compatible_with = [
-        # keep: the pinned native harness is Linux/x86_64 only.
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
@@ -261,7 +204,7 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_initialize",
     # Cold RBE runs load the real History test's Postgres image before the 8-case suite.
     size = "medium",
@@ -269,14 +212,6 @@ py_test(
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
-    ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
-    target_compatible_with = [
-        # keep: the pinned native harnesses are Linux/x86_64 only.
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
@@ -292,7 +227,7 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_instructions",
     # Two launches per agent harness; 16s on an idle worker.
     size = "medium",
@@ -300,14 +235,6 @@ py_test(
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
-    ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
-    target_compatible_with = [
-        # keep: the pinned native harnesses are Linux/x86_64 only.
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
@@ -328,20 +255,13 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_subagents",
     size = "medium",
     srcs = ["test_subagents.py"],
     data = [
         "@agentplane_codex_cli_linux_x64//:files",
         "@claude_code_cli_linux_x64//:claude",
-    ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
-    target_compatible_with = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
@@ -361,20 +281,13 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_executor_container",
     size = "medium",
     srcs = ["test_executor_container.py"],
     data = [
         "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",  # keep: the companion PID-1 process
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned Codex executor
-    ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
-    target_compatible_with = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
     ],
     deps = [
         ":conftest",
@@ -409,7 +322,7 @@ py_test(
     ],
 )
 
-py_test(
+runtime_integration_test(
     name = "test_pid1_container",
     size = "medium",
     srcs = ["test_pid1_container.py"],
@@ -421,10 +334,8 @@ py_test(
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
         "//agentplane/env/runtime/supervision:runner_pid1_fixture",
     ],
-    env = NATIVE_RUNNER_DOCKER_ENV,
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
-    requires_docker = True,
     shard_count = 4,
+    uses_pinned_cli = False,
     deps = [
         ":conftest",
         "//:conftest",

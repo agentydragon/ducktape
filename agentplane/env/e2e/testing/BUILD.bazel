@@ -1,5 +1,6 @@
 # gazelle:resolve py agentplane.llm_ingress.v1.model_config_pb2 //agentplane/llm_ingress/v1:model_config_pb2
 # gazelle:resolve py agentplane.llm_ingress.v1.model_config_pb2_grpc //agentplane/llm_ingress/v1:model_config_pb2_grpc
+# gazelle:map_kind py_test py_test //devinfra/python:defs.bzl
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
