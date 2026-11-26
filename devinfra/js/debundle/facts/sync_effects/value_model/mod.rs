@@ -1,9 +1,14 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
-use super::world::WorldScope;
+pub mod callable_body_facts;
+pub mod local_operations;
+pub mod own_data_transfer;
+pub mod property_inference;
+
 use analysis::facts::abstract_domain::builtins::IterationRow;
 use analysis::facts::value_flow::static_prop as static_string_prop;
 use analysis_model::PrimKinds;
+use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
 use inference::{FactContext, IterativeFacts, IterativeInference, IterativeRules};
@@ -15,7 +20,7 @@ use std::sync::{Arc, Weak};
 use swc_common::{BytePos, Span};
 use swc_ecma_ast::*;
 
-pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
+pub fn static_prop(property: &MemberProp) -> Option<String> {
     static_string_prop(property).or_else(|| match property {
         MemberProp::Computed(computed) => match computed.expr.unwrap_parens() {
             Expr::Lit(Lit::Num(number))
@@ -55,11 +60,11 @@ impl Hash for Values {
 }
 
 impl Values {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
-    pub(super) fn first(&self) -> Option<&AbstractValue> {
+    pub fn first(&self) -> Option<&AbstractValue> {
         self.as_slice().first()
     }
 
@@ -67,19 +72,19 @@ impl Values {
         self.0.as_deref().map_or(&[], Vec::as_slice)
     }
 
-    pub(super) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.as_slice().len()
     }
 
-    pub(super) fn iter(&self) -> std::slice::Iter<'_, AbstractValue> {
+    pub fn iter(&self) -> std::slice::Iter<'_, AbstractValue> {
         self.as_slice().iter()
     }
 
-    pub(super) fn contains(&self, value: &AbstractValue) -> bool {
+    pub fn contains(&self, value: &AbstractValue) -> bool {
         self.as_slice().binary_search(value).is_ok()
     }
 
-    pub(super) fn ptr_eq(&self, other: &Self) -> bool {
+    pub fn ptr_eq(&self, other: &Self) -> bool {
         match (&self.0, &other.0) {
             (None, None) => true,
             (Some(left), Some(right)) => Arc::ptr_eq(left, right),
@@ -87,7 +92,7 @@ impl Values {
         }
     }
 
-    pub(super) fn insert(&mut self, value: AbstractValue) -> bool {
+    pub fn insert(&mut self, value: AbstractValue) -> bool {
         let Err(index) = self.as_slice().binary_search(&value) else {
             return false;
         };
@@ -100,7 +105,7 @@ impl Values {
 
     /// Insert the values not already present and report whether any was.
     /// Duplicate-only inputs leave shared storage untouched.
-    pub(super) fn extend_absent<'v>(
+    pub fn extend_absent<'v>(
         &mut self,
         values: impl IntoIterator<Item = &'v AbstractValue>,
     ) -> bool {
@@ -114,7 +119,7 @@ impl Values {
         changed
     }
 
-    pub(super) fn remove(&mut self, value: &AbstractValue) -> bool {
+    pub fn remove(&mut self, value: &AbstractValue) -> bool {
         let Ok(index) = self.as_slice().binary_search(value) else {
             return false;
         };
@@ -126,11 +131,11 @@ impl Values {
         true
     }
 
-    pub(super) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.0.is_none()
     }
 
-    pub(super) fn is_disjoint(&self, other: &Self) -> bool {
+    pub fn is_disjoint(&self, other: &Self) -> bool {
         self.iter().all(|value| !other.contains(value))
     }
 }
@@ -138,9 +143,7 @@ impl Values {
 /// A transient value set as a sorted, deduplicated vector: the elements and
 /// iteration order of the `Values` the same items would build, without
 /// persistent-set insertion. For inputs that are only iterated.
-pub(super) fn ordered_values(
-    values: impl IntoIterator<Item = AbstractValue>,
-) -> Vec<AbstractValue> {
+pub fn ordered_values(values: impl IntoIterator<Item = AbstractValue>) -> Vec<AbstractValue> {
     let mut values: Vec<_> = values.into_iter().collect();
     values.sort_unstable();
     values.dedup();
@@ -258,7 +261,7 @@ impl DoubleEndedIterator for ValuesIntoIter {
 impl ExactSizeIterator for ValuesIntoIter {}
 impl std::iter::FusedIterator for ValuesIntoIter {}
 
-pub(super) type Context = OrdMap<Id, Values>;
+pub type Context = OrdMap<Id, Values>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CallSite {
@@ -276,24 +279,24 @@ impl From<Span> for CallSite {
 }
 
 impl AbstractValue {
-    pub(super) const UNDEFINED: Self = Self::Value(Value::Prim(PrimKinds::UNDEFINED));
+    pub const UNDEFINED: Self = Self::Value(Value::Prim(PrimKinds::UNDEFINED));
     /// A primitive of untracked type.
-    pub(super) const PRIMITIVE: Self = Self::Value(Value::Prim(PrimKinds::ANY));
+    pub const PRIMITIVE: Self = Self::Value(Value::Prim(PrimKinds::ANY));
 
     /// Whether this value is a primitive. `Top` and `Unavailable` are
     /// excluded: either can represent a non-primitive result or a throwing
     /// evaluation.
-    pub(super) fn is_primitive(&self) -> bool {
+    pub fn is_primitive(&self) -> bool {
         matches!(self, Self::Value(Value::Prim(_)))
     }
 }
 
 impl CallSite {
-    pub(super) fn allocation_id(self) -> u32 {
+    pub fn allocation_id(self) -> u32 {
         self.start
     }
 
-    pub(super) fn source_span(self) -> Span {
+    pub fn source_span(self) -> Span {
         Span::new(BytePos(self.start), BytePos(self.end))
     }
 }
@@ -304,22 +307,22 @@ impl CallSite {
 #[derive(Debug, Clone)]
 pub struct Captured<T> {
     identity: usize,
-    pub(super) values: Arc<T>,
+    pub values: Arc<T>,
 }
 
 impl<T> Captured<T> {
-    pub(super) fn with_identity(identity: usize, values: Arc<T>) -> Self {
+    pub(crate) fn with_identity(identity: usize, values: Arc<T>) -> Self {
         Self { identity, values }
     }
 
-    pub(super) fn cache_identity(&self) -> usize {
+    pub fn cache_identity(&self) -> usize {
         self.identity
     }
 }
 
 /// Canonical descriptions stay interned while an actual value or semantic
 /// root owns them. The table itself never keeps their payloads alive.
-pub(super) struct CaptureInterner<T> {
+pub struct CaptureInterner<T> {
     buckets: BTreeMap<u64, Vec<WeakCapture<T>>>,
     next_identity: usize,
     sweep_after: Option<u64>,
@@ -341,7 +344,7 @@ impl<T> Default for CaptureInterner<T> {
 }
 
 impl<T: Eq + Hash> CaptureInterner<T> {
-    pub(super) fn intern(&mut self, description: T) -> Captured<T> {
+    pub fn intern(&mut self, description: T) -> Captured<T> {
         let mut hash = DefaultHasher::new();
         description.hash(&mut hash);
         let bucket = self.buckets.entry(hash.finish()).or_default();
@@ -365,7 +368,7 @@ impl<T: Eq + Hash> CaptureInterner<T> {
 
     /// Payloads drop with their last strong owner. Retire a bounded batch of
     /// dead table entries too, without scanning all live captures per owner.
-    pub(super) fn sweep_dead(&mut self) {
+    pub fn sweep_dead(&mut self) {
         const BATCH: usize = 64;
         let lower = self.sweep_after.map_or(Unbounded, Excluded);
         let keys: Vec<_> = self
@@ -393,14 +396,14 @@ impl<T> Hash for Captured<T> {
 
 /// One instantiated lexical cell, not a source binding or structural cache key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct LexicalCellId(pub(super) usize);
+pub struct LexicalCellId(pub usize);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LexicalCaptures {
-    pub(super) snapshots: Context,
-    pub(super) cells: OrdMap<Id, LexicalCellId>,
+    pub snapshots: Context,
+    pub cells: OrdMap<Id, LexicalCellId>,
     /// Source containment only, never a trusted receiver or instance identity.
-    pub(super) home_object: Option<u32>,
+    pub home_object: Option<u32>,
 }
 
 impl Hash for LexicalCaptures {
@@ -420,12 +423,12 @@ impl Hash for LexicalCaptures {
 }
 
 impl LexicalCaptures {
-    pub(super) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.snapshots.is_empty() && self.cells.is_empty() && self.home_object.is_none()
     }
 }
 
-pub(super) type CapturedContext = Captured<LexicalCaptures>;
+pub type CapturedContext = Captured<LexicalCaptures>;
 
 impl<T> PartialEq for Captured<T> {
     fn eq(&self, other: &Self) -> bool {
@@ -456,10 +459,10 @@ pub enum RetainedResultKind {
 /// Query ownership, not a stable provider or runtime allocation identity. These
 /// opaque values become argument positions and never enter importer state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct ProviderScopeId(u64);
+pub struct ProviderScopeId(u64);
 
 impl ProviderScopeId {
-    pub(super) fn fresh() -> Option<Self> {
+    pub fn fresh() -> Option<Self> {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
         NEXT.try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
@@ -471,15 +474,15 @@ impl ProviderScopeId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) enum ProviderInput {
+pub enum ProviderInput {
     Argument(usize),
     Capture(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SymbolicInputId {
-    pub(super) scope: ProviderScopeId,
-    pub(super) input: ProviderInput,
+    pub scope: ProviderScopeId,
+    pub input: ProviderInput,
 }
 
 /// A callable's function allocation in one world. The scope keeps an
@@ -487,8 +490,8 @@ pub struct SymbolicInputId {
 /// both create the same source callable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HeapAddress {
-    pub(super) scope: WorldScope,
-    pub(super) callable: u32,
+    pub scope: WorldScope,
+    pub callable: u32,
 }
 
 /// Provenance of a local class capability; neither variant proves allocation identity.
@@ -544,26 +547,26 @@ pub enum AbstractValue {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ArrayIteration {
-    pub(super) row: &'static IterationRow,
-    pub(super) source: ValueExpr,
-    pub(super) callback: ValueExpr,
+pub struct ArrayIteration {
+    pub row: &'static IterationRow,
+    pub source: ValueExpr,
+    pub callback: ValueExpr,
     /// `reduce`'s initial accumulator.
-    pub(super) initial: Option<ValueExpr>,
-    pub(super) result: Option<u32>,
+    pub initial: Option<ValueExpr>,
+    pub result: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct ArrayElement {
-    pub(super) spread: Option<swc_common::Span>,
-    pub(super) value: ValueExpr,
+pub struct ArrayElement {
+    pub spread: Option<swc_common::Span>,
+    pub value: ValueExpr,
 }
 
 /// Slot values are an ordered overapproximation. The ordinary Object origin
 /// remains the identity used by every mutation, publication and taint lane.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct DenseArray {
-    pub(super) slots: Vec<Values>,
+pub struct DenseArray {
+    pub slots: Vec<Values>,
 }
 
 /// Result of transferring the ordinary Array iterator over a settled dense
@@ -572,22 +575,22 @@ pub(super) struct DenseArray {
 /// ordered heap slots. Operand evaluation keeps possible throws in its
 /// existing `Unavailable` path; a transfer refuses any non-singleton value.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum DenseArrayIterationTransfer {
+pub enum DenseArrayIterationTransfer {
     Refused,
     Yielded { source: u32, slots: Vec<Values> },
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct FromEntriesMappedProof {
-    pub(super) source: ValueExpr,
-    pub(super) key: String,
-    pub(super) map_call_site: CallSite,
-    pub(super) object_intrinsic: Id,
+pub struct FromEntriesMappedProof {
+    pub source: ValueExpr,
+    pub key: String,
+    pub map_call_site: CallSite,
+    pub object_intrinsic: Id,
 }
 
 /// Ordered literal definitions keep accessor payloads distinct from data values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum LiteralPropertyKind {
+pub enum LiteralPropertyKind {
     Data,
     Method,
     Getter,
@@ -596,7 +599,7 @@ pub(super) enum LiteralPropertyKind {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum PropertyDefinition<T> {
+pub enum PropertyDefinition<T> {
     Data { name: Option<String>, value: T },
     Method { name: Option<String>, value: T },
     Getter { name: Option<String>, value: T },
@@ -605,7 +608,7 @@ pub(super) enum PropertyDefinition<T> {
 }
 
 impl<T> PropertyDefinition<T> {
-    pub(super) fn kind(&self) -> LiteralPropertyKind {
+    pub fn kind(&self) -> LiteralPropertyKind {
         match self {
             Self::Data { .. } => LiteralPropertyKind::Data,
             Self::Method { .. } => LiteralPropertyKind::Method,
@@ -614,7 +617,7 @@ impl<T> PropertyDefinition<T> {
             Self::Opaque { .. } => LiteralPropertyKind::Opaque,
         }
     }
-    pub(super) fn new(kind: LiteralPropertyKind, name: Option<String>, value: T) -> Self {
+    pub fn new(kind: LiteralPropertyKind, name: Option<String>, value: T) -> Self {
         match kind {
             LiteralPropertyKind::Data => Self::Data { name, value },
             LiteralPropertyKind::Method => Self::Method { name, value },
@@ -623,7 +626,7 @@ impl<T> PropertyDefinition<T> {
             LiteralPropertyKind::Opaque => Self::Opaque { name, value },
         }
     }
-    pub(super) fn name(&self) -> Option<&str> {
+    pub fn name(&self) -> Option<&str> {
         match self {
             Self::Data { name, .. }
             | Self::Method { name, .. }
@@ -632,7 +635,7 @@ impl<T> PropertyDefinition<T> {
             | Self::Opaque { name, .. } => name.as_deref(),
         }
     }
-    pub(super) fn value(&self) -> &T {
+    pub fn value(&self) -> &T {
         match self {
             Self::Data { value, .. }
             | Self::Method { value, .. }
@@ -646,7 +649,7 @@ impl<T> PropertyDefinition<T> {
 /// Syntax-only shape of one statically named own property. Evaluated values
 /// stay in the executor's ordinary object identity store.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum OwnPropertyDescriptorSyntax {
+pub enum OwnPropertyDescriptorSyntax {
     Data,
     Accessor {
         getter: Option<u32>,
@@ -658,16 +661,16 @@ pub(super) enum OwnPropertyDescriptorSyntax {
 /// The map carries descriptor syntax; `creation_order` preserves insertion
 /// order for ECMAScript own-key enumeration.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct OwnPropertyShape {
-    pub(super) properties: BTreeMap<String, OwnPropertyDescriptorSyntax>,
-    pub(super) creation_order: Vec<String>,
+pub struct OwnPropertyShape {
+    pub properties: BTreeMap<String, OwnPropertyDescriptorSyntax>,
+    pub creation_order: Vec<String>,
 }
 
 /// Returns ECMAScript's own string-key order for a source-ordered ordinary
 /// object shape: array-index keys numerically first, followed by other string
 /// keys in their original insertion order. `BTreeMap` order is never a proxy
 /// for JavaScript property order.
-pub(super) fn ordered_own_property_names(creation_order: &[String]) -> Vec<String> {
+pub(crate) fn ordered_own_property_names(creation_order: &[String]) -> Vec<String> {
     let mut indices = Vec::new();
     let mut strings = Vec::new();
     let mut seen = BTreeSet::new();
@@ -691,7 +694,7 @@ pub(super) fn ordered_own_property_names(creation_order: &[String]) -> Vec<Strin
 
 /// Whether a property name has the canonical spelling and range of an ECMAScript
 /// array index. `u32::MAX` is reserved and is not an array index.
-pub(super) fn canonical_array_index(name: &str) -> Option<u32> {
+pub fn canonical_array_index(name: &str) -> Option<u32> {
     name.parse::<u32>()
         .ok()
         .filter(|index| *index != u32::MAX && index.to_string() == name)
@@ -699,7 +702,7 @@ pub(super) fn canonical_array_index(name: &str) -> Option<u32> {
 
 /// How a member read names its property.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum MemberKey {
+pub enum MemberKey {
     /// `object.name`.
     Static,
     /// `object[expression]`; the identifier when the expression is one.
@@ -707,7 +710,7 @@ pub(super) enum MemberKey {
 }
 
 impl MemberKey {
-    pub(super) fn of(property: &MemberProp) -> Self {
+    pub fn of(property: &MemberProp) -> Self {
         match property {
             MemberProp::Ident(_) => Self::Static,
             MemberProp::Computed(key) => match key.expr.unwrap_parens() {
@@ -718,13 +721,13 @@ impl MemberKey {
         }
     }
 
-    pub(super) fn is_static(&self) -> bool {
+    pub fn is_static(&self) -> bool {
         *self == Self::Static
     }
 
     /// A literal index needs no key evaluation. Computed identifiers and
     /// other dynamic keys cannot use the present own-data read proof.
-    pub(super) fn supports_own_data_read(&self, property: &str) -> bool {
+    pub fn supports_own_data_read(&self, property: &str) -> bool {
         matches!(self, Self::Static)
             || (matches!(self, Self::Computed(None)) && canonical_array_index(property).is_some())
     }
@@ -733,7 +736,7 @@ impl MemberKey {
 // Lowered syntax is immutable. Cloned facts share recursive children while
 // each evaluation keeps its own interpreter state.
 #[derive(Debug, Clone)]
-pub(super) enum ValueExpr {
+pub enum ValueExpr {
     Binding(Id),
     /// A source allocation site. RegExp literals use this form but do not
     /// imply ordinary own properties, prototype methods, or protocol behavior.
@@ -770,35 +773,35 @@ pub(super) enum ValueExpr {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(super) struct ClassValueFacts {
-    pub(super) instance_fields: BTreeMap<String, ValueExpr>,
-    pub(super) ordinary_instance_methods: BTreeSet<String>,
-    pub(super) default_has_instance: bool,
-    pub(super) static_fields: BTreeMap<String, ValueExpr>,
-    pub(super) super_class: Option<ValueExpr>,
+pub struct ClassValueFacts {
+    pub instance_fields: BTreeMap<String, ValueExpr>,
+    pub ordinary_instance_methods: BTreeSet<String>,
+    pub default_has_instance: bool,
+    pub static_fields: BTreeMap<String, ValueExpr>,
+    pub super_class: Option<ValueExpr>,
     /// Reads in the original heritage, including operands omitted by value lowering.
-    pub(super) super_class_inputs: BTreeSet<Id>,
+    pub super_class_inputs: BTreeSet<Id>,
     /// Inline callables and classes need the enclosing-environment fallback.
-    pub(super) super_class_inputs_incomplete: bool,
+    pub super_class_inputs_incomplete: bool,
     /// A discarded direct call followed by a lexical superclass read. Its
     /// argument inputs can be dropped only after proving the callee inert.
-    pub(super) discarded_heritage_call: Option<DiscardedHeritageCall>,
-    pub(super) lexical_heritage: Option<LexicalClassHeritage>,
-    pub(super) opaque_instance: bool,
-    pub(super) opaque_static: bool,
-    pub(super) allocation_without_user_code: bool,
+    pub discarded_heritage_call: Option<DiscardedHeritageCall>,
+    pub lexical_heritage: Option<LexicalClassHeritage>,
+    pub opaque_instance: bool,
+    pub opaque_static: bool,
+    pub allocation_without_user_code: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct DiscardedHeritageCall {
-    pub(super) callee: Id,
-    pub(super) base: Id,
-    pub(super) argument_reads: BTreeSet<Id>,
-    pub(super) remaining_inputs: BTreeSet<Id>,
+pub struct DiscardedHeritageCall {
+    pub callee: Id,
+    pub base: Id,
+    pub argument_reads: BTreeSet<Id>,
+    pub remaining_inputs: BTreeSet<Id>,
 }
 
 impl DiscardedHeritageCall {
-    pub(super) fn collect(expression: &Expr) -> Option<Self> {
+    pub fn collect(expression: &Expr) -> Option<Self> {
         let Expr::Seq(sequence) = expression.unwrap_parens() else {
             return None;
         };
@@ -857,12 +860,12 @@ impl DiscardedHeritageCall {
 /// values alone cannot establish this: a sequence or assignment can retain
 /// its final binding while erasing earlier evaluation.
 #[derive(Debug, Clone)]
-pub(super) struct LexicalClassHeritage {
+pub struct LexicalClassHeritage {
     binding: Id,
 }
 
 impl LexicalClassHeritage {
-    pub(super) fn collect(expression: &Expr) -> Option<Self> {
+    pub fn collect(expression: &Expr) -> Option<Self> {
         let Expr::Ident(binding) = expression.unwrap_parens() else {
             return None;
         };
@@ -871,18 +874,18 @@ impl LexicalClassHeritage {
         })
     }
 
-    pub(super) fn binding(&self) -> &Id {
+    pub fn binding(&self) -> &Id {
         &self.binding
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum ClassSurface {
+pub enum ClassSurface {
     Constructor,
     Instance,
 }
 
 #[derive(Debug, Clone, Default)]
-pub(super) struct NamespaceValueFacts {
+pub struct NamespaceValueFacts {
     classes: BTreeMap<u32, ClassValueFacts>,
     verified_data_objects: BTreeSet<u32>,
     /// A binding is resolved only when the retained syntax has exactly one
@@ -1037,7 +1040,7 @@ fn set_iterator_prototype_expression(call: &CallExpr) -> bool {
 
 impl ValueExpr {
     /// Possible returned values; the conditional test is evaluated separately.
-    pub(super) fn result_alternatives(&self) -> Option<&[Self]> {
+    pub fn result_alternatives(&self) -> Option<&[Self]> {
         match self {
             Self::Alternatives(values) => Some(values),
             Self::Sequence(values) => Some(&values[values.len().saturating_sub(1)..]),
@@ -1046,14 +1049,14 @@ impl ValueExpr {
         }
     }
 
-    pub(super) fn from_expr(expr: &Expr) -> Self {
+    pub fn from_expr(expr: &Expr) -> Self {
         Self::from_expr_with_coverage(expr).0
     }
 
     /// Preserve coverage in the same recursive lowering that produces values.
     /// This is syntax coverage only; input access and runtime transfer evidence
     /// are required before any allocation-only judgment may be issued.
-    pub(super) fn from_expr_with_coverage(expr: &Expr) -> (Self, bool) {
+    pub fn from_expr_with_coverage(expr: &Expr) -> (Self, bool) {
         let mut covered = true;
         let value = Self::lower(expr, &mut covered);
         (value, covered)
@@ -1338,7 +1341,7 @@ impl ValueExpr {
         }
     }
 
-    pub(super) fn bindings(&self, result: &mut BTreeSet<Id>) {
+    pub fn bindings(&self, result: &mut BTreeSet<Id>) {
         match self {
             Self::Binding(id) => {
                 result.insert(id.clone());
@@ -1387,7 +1390,7 @@ impl ValueExpr {
     /// A function or class allocation can capture locals without naming them
     /// in the value expression; computed keys and unknown syntax can also
     /// hide their operands.
-    pub(super) fn bindings_may_be_incomplete(&self) -> bool {
+    pub fn bindings_may_be_incomplete(&self) -> bool {
         match self {
             Self::Unknown | Self::Alloc(Kind::Function | Kind::Class, _) => true,
             Self::Binding(_) | Self::Alloc(..) | Self::Undefined | Self::NonCallable(_) => false,
@@ -1422,7 +1425,7 @@ impl ValueExpr {
     /// a binding already proven to carry that path. Unrelated call/constructor
     /// results are covered by the namespace contract's author audit, while
     /// their use as mutation receivers is handled separately below.
-    pub(super) fn carries_namespace(&self, id: &Id, aliases: &BTreeSet<Id>) -> bool {
+    pub fn carries_namespace(&self, id: &Id, aliases: &BTreeSet<Id>) -> bool {
         match self {
             Self::Binding(binding) => binding == id || aliases.contains(binding),
             Self::ArrayIteratorPrototype(expression) | Self::SetIteratorPrototype(expression) => {
@@ -1472,7 +1475,7 @@ impl ValueExpr {
     /// syntax and unsupported projections remain possible namespace values;
     /// aliases to those values are propagated by `infer_namespace_aliases` so
     /// the uncertainty reaches a later sink.
-    pub(super) fn may_publish_namespace(
+    pub fn may_publish_namespace(
         &self,
         id: &Id,
         aliases: &BTreeSet<Id>,
@@ -1683,7 +1686,7 @@ impl ValueExpr {
     /// write receiver. Unknown call and constructor results remain possible
     /// receivers here, even though merely storing or returning those unrelated
     /// results does not establish namespace provenance.
-    pub(super) fn may_be_namespace_mutation_receiver(
+    pub fn may_be_namespace_mutation_receiver(
         &self,
         id: &Id,
         aliases: &BTreeSet<Id>,
@@ -1698,7 +1701,7 @@ impl ValueExpr {
         )
     }
 
-    pub(super) fn may_be_namespace_mutation_receiver_with_alias_query(
+    pub fn may_be_namespace_mutation_receiver_with_alias_query(
         &self,
         id: &Id,
         aliases: &BTreeSet<Id>,
@@ -1777,7 +1780,7 @@ impl ValueExpr {
     /// ordinary data-property values. That exception applies only to the
     /// direct returned object graph; aliases and other unknown shapes remain
     /// subject to the ordinary publication check.
-    pub(super) fn may_publish_namespace_in_factory_result(
+    pub fn may_publish_namespace_in_factory_result(
         &self,
         id: &Id,
         aliases: &BTreeSet<Id>,
@@ -1796,7 +1799,7 @@ impl ValueExpr {
     }
 }
 
-pub(super) fn infer_namespace_aliases(
+pub fn infer_namespace_aliases(
     namespace: &Id,
     assignments: &[&(Id, ValueExpr)],
     facts: &NamespaceValueFacts,
@@ -1844,19 +1847,19 @@ pub(super) fn infer_namespace_aliases(
 }
 
 impl NamespaceValueFacts {
-    pub(super) fn class_allocation_without_user_code(&self, span: u32) -> bool {
+    pub fn class_allocation_without_user_code(&self, span: u32) -> bool {
         self.classes
             .get(&span)
             .is_some_and(|class| class.allocation_without_user_code)
     }
 
-    pub(super) fn has_instance_field(&self, span: u32, property: &str) -> bool {
+    pub fn has_instance_field(&self, span: u32, property: &str) -> bool {
         self.classes
             .get(&span)
             .is_some_and(|class| class.instance_fields.contains_key(property))
     }
 
-    pub(super) fn from_assignments(
+    pub fn from_assignments(
         classes: BTreeMap<u32, ClassValueFacts>,
         verified_data_objects: BTreeSet<u32>,
         assignments: &[&(Id, ValueExpr)],
@@ -1934,7 +1937,7 @@ impl NamespaceValueFacts {
         matches!(object, ValueExpr::ObjectLiteral(_, _)).then_some(object)
     }
 
-    pub(super) fn resolve_class(
+    pub fn resolve_class(
         &self,
         value: &ValueExpr,
         visiting: &mut BTreeSet<Id>,
@@ -2013,7 +2016,7 @@ impl NamespaceValueFacts {
         result
     }
 }
-pub(super) fn static_property_name(name: &PropName) -> Option<String> {
+pub fn static_property_name(name: &PropName) -> Option<String> {
     match name {
         PropName::Ident(ident) => Some(ident.sym.to_string()),
         PropName::Str(string) => Some(string.value.to_string_lossy().into_owned()),
@@ -2027,7 +2030,7 @@ pub(super) fn static_property_name(name: &PropName) -> Option<String> {
     }
 }
 
-pub(super) fn object_data_property_name(name: &PropName) -> Option<String> {
+pub fn object_data_property_name(name: &PropName) -> Option<String> {
     match name {
         PropName::Ident(ident) if ident.sym == "__proto__" => None,
         PropName::Str(string) if string.value.to_string_lossy() == "__proto__" => None,
@@ -2035,12 +2038,54 @@ pub(super) fn object_data_property_name(name: &PropName) -> Option<String> {
     }
 }
 
+/// Who owns this world. The scope decides heap policy as a bundle: whether
+/// literal writability is followed and whether a body's heap cells reach a
+/// caller's effects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum WorldScope {
+    /// The chunk's own prefix: literal writability is tracked and heap cells
+    /// become the owner's effects.
+    Application,
+    /// A fresh heap for one provider query: no writability proof, and heap
+    /// cells stay private to the query.
+    IsolatedProvider,
+}
+
+/// Nonterminal provenance of an actually selected abstract callable. This
+/// proves neither fresh allocation nor complete invocation effects.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CallableSelection {
+    pub target: AbstractValue,
+    pub dependencies: Box<ProofDependencies>,
+}
+
+impl CallableSelection {
+    pub fn observed(values: &Values, dependencies: Box<ProofDependencies>) -> Option<Self> {
+        if values.len() != 1 {
+            return None;
+        }
+        let target = values.first()?.clone();
+        matches!(
+            &target,
+            AbstractValue::Closure(..) | AbstractValue::Value(Value::Alloc(Kind::Function, _))
+        )
+        .then_some(Self {
+            target,
+            dependencies,
+        })
+    }
+
+    pub fn matches(&self, values: &Values) -> bool {
+        values.len() == 1 && values.first() == Some(&self.target)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::WorldScope;
     use super::{
         AbstractValue, CaptureInterner, HeapAddress, InstanceOrigin, LexicalCaptures, Values,
     };
-    use crate::world::WorldScope;
     use imbl::OrdSet;
     use std::hash::{DefaultHasher, Hash, Hasher};
     use std::sync::Arc;

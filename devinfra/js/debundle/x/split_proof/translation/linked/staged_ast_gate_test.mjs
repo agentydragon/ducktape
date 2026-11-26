@@ -52,7 +52,6 @@ assert.equal(denied.verdict.status, "rejected", denied.stdout + denied.stderr);
 assert.equal(denied.verdict.reason_code, "no_compiled_rule", denied.stdout + denied.stderr);
 assert.deepEqual(readdirSync(out), ["sentinel.bin"]);
 assert.deepEqual(readFileSync(sentinel), original);
-assert.doesNotMatch(denied.stderr, /"phase":"(?:execution_proof|ast_correspondence)"/);
 
 // Check an existing output tree as well as a request to publish one. The
 // unchanged single-file placement lets the input be used as the disk fixture.

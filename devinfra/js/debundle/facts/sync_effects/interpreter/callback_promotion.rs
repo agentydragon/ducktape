@@ -359,13 +359,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     pub(crate) fn closure_captures(&mut self, key: u32, captures: &Context) -> CapturedContext {
-        let captured = lexical_captures(
-            self.inputs.index,
-            &self.state.world.active_cells,
-            captures,
-            key,
-            self.inputs.capture_policy(),
-        );
+        let captured = self
+            .inputs
+            .index
+            .capture_census(key)
+            .map(|census| {
+                lexical_captures(
+                    census,
+                    &self.state.world.active_cells,
+                    captures,
+                    self.inputs.capture_policy(),
+                )
+            })
+            .unwrap_or_default();
         self.intern_captures(captured)
     }
 

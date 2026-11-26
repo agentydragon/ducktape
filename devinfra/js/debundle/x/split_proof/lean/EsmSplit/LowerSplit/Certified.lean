@@ -221,8 +221,6 @@ continue through the existing certified routes; printer refusals remain final. -
 private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
     (out work : System.FilePath) (options : CertifiedOptions) (timings : Bool) : IO (Option UInt32) := do
   unless options.profile == .empty && options.intrinsics.isEmpty && !options.structural do return none
-  if (← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS") == some "1" &&
-      (← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED") == some "1" then return none
   let .authored spec := chunk.placement | return none
   unless spec.sequential do return none
   let .ok source := CoreJS.LinkedInput.decodeSingletonSource src.program spec.entry | return none
@@ -264,13 +262,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         pure (path.fileName.getD "bundle.mjs", path.parent)
       else pure ("bundle.mjs", none)
     Json.mkObj <$> loadProviders entry (Std.HashMap.ofList [(entry, program)]) root work (allowEntryImport := false)
-  -- The opt-in census wrapper must be able to measure linked execution even
-  -- when the ordinary selector would take the closed-declaration fast path.
-  let censusLinked ← do
-    let enabled ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
-    let forceLinked ← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED"
-    pure (enabled == some "1" && forceLinked == some "1")
-  let declaration := if structural || censusLinked then none else declarations.bind fun groups =>
+  let declaration := if structural then none else declarations.bind fun groups =>
     CoreJS.DeclarationArtifacts.prepare? program (CoreJS.DeclarationProgram.statements groups) B S P
   if let some prepared := declaration then
     let level := prepared.level

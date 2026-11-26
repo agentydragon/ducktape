@@ -61,7 +61,6 @@ rust_library(
         "//devinfra/js/debundle/chunk_analysis",
         "//devinfra/js/debundle/esm_schedule",
         "//devinfra/js/debundle/graph",
-        "//devinfra/js/debundle/selectors/matching/source_match",
         "//devinfra/js/debundle/selectors/resolution:selector_outcome",
         "//devinfra/js/debundle/selectors/resolution/selector_resolve",
         "//devinfra/js/debundle/spec",

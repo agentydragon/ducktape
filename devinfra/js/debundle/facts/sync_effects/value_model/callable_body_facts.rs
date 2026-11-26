@@ -1,12 +1,12 @@
 //! Named projections of source-derived callable body facts.
 
-use super::local_operations::LocalBody;
-use super::value_model::{CallSite, ValueExpr};
+use crate::local_operations::LocalBody;
+use crate::{CallSite, ValueExpr};
 use swc_common::Spanned;
 use swc_ecma_ast::Expr;
 
 #[derive(Debug, Clone, Default)]
-pub(super) struct CallableBodyFacts {
+pub struct CallableBodyFacts {
     value_flow: ValueFlowProjection,
     direct_return_candidate: Option<CallSite>,
     /// Present only when ordered lowering covers every live source operation.
@@ -16,7 +16,7 @@ pub(super) struct CallableBodyFacts {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(super) struct ValueFlowProjection {
+pub struct ValueFlowProjection {
     /// Broad, intentionally lossy returned-value facts, retained independently
     /// of whether the ordered plan can represent the complete body.
     returns: Vec<ValueExpr>,
@@ -30,11 +30,11 @@ pub(super) struct ValueFlowProjection {
 struct CoveredAllocationReturn(ValueExpr);
 
 impl ValueFlowProjection {
-    pub(super) fn returns(&self) -> &[ValueExpr] {
+    pub fn returns(&self) -> &[ValueExpr] {
         &self.returns
     }
 
-    pub(super) fn direct_allocation_return(&self) -> Option<&ValueExpr> {
+    pub fn direct_allocation_return(&self) -> Option<&ValueExpr> {
         self.direct_allocation_return
             .as_ref()
             .map(|returned| &returned.0)
@@ -42,30 +42,30 @@ impl ValueFlowProjection {
 }
 
 impl CallableBodyFacts {
-    pub(super) fn value_flow(&self) -> &ValueFlowProjection {
+    pub fn value_flow(&self) -> &ValueFlowProjection {
         &self.value_flow
     }
 
-    pub(super) fn ordered_plan(&self) -> Option<&LocalBody> {
+    pub fn ordered_plan(&self) -> Option<&LocalBody> {
         self.ordered_plan.as_ref()
     }
 
-    pub(super) fn set_ordered_plan(&mut self, plan: Option<LocalBody>) {
+    pub fn set_ordered_plan(&mut self, plan: Option<LocalBody>) {
         self.ordered_plan = plan;
     }
 
-    pub(super) fn take_ordered_plan(&mut self) -> Option<LocalBody> {
+    pub fn take_ordered_plan(&mut self) -> Option<LocalBody> {
         self.ordered_plan.take()
     }
 
     /// The collector admits only a whole-body direct-return shape here. That
     /// source-shape fact gates the narrow value projection, independently of
     /// ordered-plan lowering.
-    pub(super) fn set_direct_return_candidate(&mut self, candidate: Option<CallSite>) {
+    pub fn set_direct_return_candidate(&mut self, candidate: Option<CallSite>) {
         self.direct_return_candidate = candidate;
     }
 
-    pub(super) fn record_return(&mut self, expression: &Expr) -> ValueExpr {
+    pub fn record_return(&mut self, expression: &Expr) -> ValueExpr {
         let (value, covered) = ValueExpr::from_expr_with_coverage(expression);
         self.value_flow.returns.push(value.clone());
         let exact_direct_return = self
@@ -78,7 +78,7 @@ impl CallableBodyFacts {
         value
     }
 
-    pub(super) fn record_undefined_return(&mut self) {
+    pub fn record_undefined_return(&mut self) {
         self.value_flow.returns.push(ValueExpr::Undefined);
     }
 }

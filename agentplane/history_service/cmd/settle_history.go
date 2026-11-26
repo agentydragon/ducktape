@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	"github.com/agentydragon/ducktape/agentplane/history_service/backfill"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/google/uuid"
@@ -19,6 +20,7 @@ type historyMaintenanceOptions struct {
 	all                bool
 	apply              bool
 	bytesPerSecond     int64
+	maxBlocksPerTxn    int
 	batchBudget        time.Duration
 	pauseFile          string
 	guardFile          string
@@ -34,11 +36,13 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 	apply := flags.Bool("apply", false, "commit changes")
 	dryRun := flags.Bool("dry-run", false, "preview without writes")
 	var bytesPerSecond, maxReplicaLagBytes, minFreeBytes int64
+	var maxBlocksPerTxn int
 	var batchBudget time.Duration
 	var pauseFile, guardFile string
 	var guardMaxAge time.Duration
 	if command == "compact-history" {
 		flags.Int64Var(&bytesPerSecond, "bytes-per-second", 1<<20, "maximum source bytes processed per second")
+		flags.IntVar(&maxBlocksPerTxn, "max-blocks-per-txn", storage.DefaultRepackBlocksPerTxn, "maximum output blocks per packing transaction")
 		flags.DurationVar(&batchBudget, "batch-transaction-budget", storage.DefaultRepackBatchBudget,
 			"maximum elapsed time for one append-lock transaction")
 		flags.StringVar(&pauseFile, "pause-file", "", "pause while this file exists")
@@ -55,10 +59,13 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 		return historyMaintenanceOptions{}, errors.New("use exactly one of --session UUID / --all and --dry-run / --apply")
 	}
 	options := historyMaintenanceOptions{
-		all: *all, apply: *apply, bytesPerSecond: bytesPerSecond, batchBudget: batchBudget, pauseFile: pauseFile, guardFile: guardFile,
+		all: *all, apply: *apply, bytesPerSecond: bytesPerSecond, maxBlocksPerTxn: maxBlocksPerTxn, batchBudget: batchBudget, pauseFile: pauseFile, guardFile: guardFile,
 		maxReplicaLagBytes: maxReplicaLagBytes, minFreeBytes: minFreeBytes, guardMaxAge: guardMaxAge,
 	}
 	if command == "compact-history" {
+		if options.maxBlocksPerTxn < 1 || options.maxBlocksPerTxn > eventblock.MaxEntries {
+			return historyMaintenanceOptions{}, fmt.Errorf("max-blocks-per-txn must be in [1,%d]", eventblock.MaxEntries)
+		}
 		if options.bytesPerSecond <= 0 || options.batchBudget <= 0 || options.maxReplicaLagBytes < 0 ||
 			options.minFreeBytes < 0 || options.guardMaxAge <= 0 {
 			return historyMaintenanceOptions{}, errors.New("invalid repack rate, transaction budget, or guard threshold")

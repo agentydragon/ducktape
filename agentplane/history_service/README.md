@@ -233,8 +233,9 @@ Apply holds the opening `recorded_position`, each Session cursor watermark, and 
 memory only. It enumerates `session_history` directly, including inactive Sessions, in pages of 100. Candidate decoding and compression happen outside the append lock. A short transaction then
 acquires the Session row with a 250 ms lock timeout and
 a 5 second transaction budget (`--batch-transaction-budget`), revalidates the exact source and
-settlement/removal state, and atomically replaces one bounded candidate (at most 256 frames and
-8 MiB decoded). PostgreSQL `transaction_timeout` and the transaction context enforce the budget;
+settlement/removal state, and atomically installs up to four output blocks (`--max-blocks-per-txn`). The whole
+packing transaction is bounded to 256 frames and 8 MiB of block input. Set the flag to 1
+to install a single block per commit. PostgreSQL `transaction_timeout` and the transaction context enforce the budget;
 an expired batch rolls back and retries the same candidate up to three times. Existing blocks are
 unpacked in bounded units before their frames are merged with ordinary rows and repacked, which
 handles sparse cursors, interleaved kinds, partial block boundaries and mixed formats without

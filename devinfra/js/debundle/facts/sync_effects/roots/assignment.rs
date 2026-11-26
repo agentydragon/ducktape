@@ -4,10 +4,10 @@
 use super::super::interpreter::{Executor, Outcome};
 use super::super::noninvoking_initialization::EvaluatedInitializer;
 use super::super::runtime_inference::{RuntimeOperation, RuntimeValue};
-use super::super::value_model::AbstractValue;
 use super::body::RootBody;
 use super::operands::RootOperands;
 use analysis_vocabulary::value::Value;
+use value_model::AbstractValue;
 
 pub(super) struct RootAssignment {
     pub(super) outcome: Outcome,

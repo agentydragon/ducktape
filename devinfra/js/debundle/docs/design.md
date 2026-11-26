@@ -3409,14 +3409,14 @@ this remains separate from the prepared/completed publication boundary.
 
 `facts/sync_effects/` is laid out by role:
 
-| Module          | Owns                                                                                                                                                                                   |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kernel/`       | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ.               |
-| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                                            |
-| `alternatives/` | `Family`, the leaves of a forked body, and the join of their path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                                  |
-| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary.     |
-| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer; root `x.p = v` and `x = v` statements as kernel attempts. |
-| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                    |
+| Module          | Owns                                                                                                                                                                                                                                                                                                  |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kernel/`       | Crate. The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ; `Family`, the leaves of a forked body (`alternatives`). Reads the execution index only through `context::IndexReads`. |
+| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                                                                                                                                                           |
+| `alternatives/` | The join of a family's path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                                                                                                                                                                                       |
+| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary.                                                                                                                    |
+| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer; root `x.p = v` and `x = v` statements as kernel attempts.                                                                                                                |
+| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                                                                                                                                   |
 
 **Adapters implement only five narrow traits** (`kernel/context.rs`):
 `BindingContext`, `CallContext`, `HeapContext`, `NativeContext` and
@@ -4054,8 +4054,10 @@ contract is in <../SPEC.md>
   [selector resolver](../selectors/resolution/).
 - [`facts/analyze.rs`](../facts/analyze.rs) analyzes `StatementFacts`.
   [`facts/sync_effects/execution_index.rs`](../facts/sync_effects/execution_index.rs)
-  collects synchronous execution facts with the adjacent value model and
-  interpreter. [`facts/abstract_domain/builtins.rs`](../facts/abstract_domain/builtins.rs)
+  collects synchronous execution facts with the adjacent interpreter. The
+  value model ([`value_model/`](../facts/sync_effects/value_model/)) and the
+  world with its transfers ([`world/`](../facts/sync_effects/world/)) are
+  crates below it. [`facts/abstract_domain/builtins.rs`](../facts/abstract_domain/builtins.rs)
   models native operations.
 - [`graph/`](../graph/) (its own crate above `analysis`) builds dependency
   graphs, module quotients and their wire reports.

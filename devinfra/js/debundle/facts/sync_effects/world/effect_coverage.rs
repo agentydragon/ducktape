@@ -1,6 +1,6 @@
 //! Nonterminal receipts from operations executed by the ordered local kernel.
 
-use super::completion::Completion;
+use crate::completion::Completion;
 use analysis::facts::binding_effect_coverage::{
     LexicalBindingEffectReceipt, LocalBodyIdentity, LocalCallReceipt, RootInitializerIdentity,
 };
@@ -8,7 +8,7 @@ use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default)]
-pub(super) enum DomainCoverage {
+pub(crate) enum DomainCoverage {
     #[default]
     Unknown,
     Covered(Box<ProofDependencies>),
@@ -40,7 +40,7 @@ impl DomainCoverage {
 /// or certifies a whole source owner, and may travel through invocation memos.
 #[must_use]
 #[derive(Debug, Clone, Default)]
-pub(super) struct EffectCoverageFragment {
+pub struct EffectCoverageFragment {
     initialization: Option<Box<InitializationEffectCoverage>>,
     lexical: Option<Box<LexicalEffectCoverage>>,
     completion: Completion<(), ()>,
@@ -70,7 +70,7 @@ impl EffectCoverageFragment {
     /// Explicit receipt for an operation that touches none of these domains,
     /// such as GetBindingValue of an initialized module declarative cell.
     /// Source identity and actual binding effects remain separate evidence.
-    pub(super) fn no_effects() -> Self {
+    pub fn no_effects() -> Self {
         Self {
             initialization: Some(Box::new(InitializationEffectCoverage {
                 global_properties: DomainCoverage::Covered(Box::default()),
@@ -89,7 +89,7 @@ impl EffectCoverageFragment {
     /// Checked native body with no application callback, accessor, host
     /// operation or exterior write. Callee and operand evaluation remain with
     /// the caller; this receipt grants no lexical binding-effect authority.
-    pub(super) fn native_operation(dependencies: &ProofDependencies) -> Self {
+    pub fn native_operation(dependencies: &ProofDependencies) -> Self {
         Self {
             initialization: Some(Box::new(InitializationEffectCoverage {
                 global_properties: DomainCoverage::Covered(Box::new(dependencies.clone())),
@@ -104,10 +104,7 @@ impl EffectCoverageFragment {
 
     /// Add the audited nonlexical domains of one selected initializer call.
     /// This author input does not change completion or lexical coverage.
-    pub(super) fn audited_initializer_call_domains(
-        mut self,
-        dependencies: &ProofDependencies,
-    ) -> Self {
+    pub fn audited_initializer_call_domains(mut self, dependencies: &ProofDependencies) -> Self {
         let merged = |prior: Option<&DomainCoverage>| {
             let mut covered = dependencies.clone();
             if let Some(DomainCoverage::Covered(prior)) = prior {
@@ -127,7 +124,7 @@ impl EffectCoverageFragment {
     /// The separate exact initializer-purity assertion excludes throws. The
     /// caller also checks its actual normal result and execution path; an
     /// already observed abrupt completion cannot be replaced by this proof.
-    pub(super) fn normal_completion_from_pure_initializer(&mut self) {
+    pub fn normal_completion_from_pure_initializer(&mut self) {
         if !self.completion.has_no_normal_path() {
             self.completion = Completion::Normal(());
         }
@@ -138,7 +135,7 @@ impl EffectCoverageFragment {
     /// this is body coverage, not completion of operand evaluation. The
     /// intact protocol reads and rebinds no lexical cell, under the same
     /// intrinsic premises; the operand's own reads are the caller's.
-    pub(super) fn native_iterable_protocol(dependencies: &ProofDependencies) -> Self {
+    pub fn native_iterable_protocol(dependencies: &ProofDependencies) -> Self {
         let mut fragment = Self::native_operation(dependencies);
         fragment.lexical = Some(Box::new(LexicalEffectCoverage {
             reads: DomainCoverage::Covered(Box::new(dependencies.clone())),
@@ -153,7 +150,7 @@ impl EffectCoverageFragment {
     /// arguments and provider-private cells, and writes only its own
     /// allocations, so it touches no domain and no importer lexical cell.
     /// Callee and operand evaluation remain with the caller.
-    pub(super) fn provider_summary(dependencies: &ProofDependencies) -> Self {
+    pub fn provider_summary(dependencies: &ProofDependencies) -> Self {
         let covered = || DomainCoverage::Covered(Box::new(dependencies.clone()));
         Self {
             initialization: Some(Box::new(InitializationEffectCoverage {
@@ -172,7 +169,7 @@ impl EffectCoverageFragment {
 
     /// A top-level module-cell read has no global/heap/host effect, and its
     /// lexical read/rebind behavior is accounted for by the caller.
-    pub(super) fn initialized_module_read() -> Self {
+    pub fn initialized_module_read() -> Self {
         let mut fragment = Self::no_effects();
         fragment
             .lexical
@@ -186,7 +183,7 @@ impl EffectCoverageFragment {
     /// binding no closure reads: no global, heap or host effect. The rebind
     /// is the owner's syntactic binding write; lexical coverage stays
     /// unknown, so this never seals a lexical binding-effect receipt.
-    pub(super) fn module_binding_store() -> Self {
+    pub fn module_binding_store() -> Self {
         Self {
             initialization: Some(Box::new(InitializationEffectCoverage {
                 global_properties: DomainCoverage::Covered(Box::default()),
@@ -200,7 +197,7 @@ impl EffectCoverageFragment {
 
     /// Proof prerequisites for a successfully consumed own-data selection.
     /// Unknown lexical coverage never becomes positive through dependencies.
-    pub(super) fn lexical_selection_dependencies(&self) -> Option<Box<ProofDependencies>> {
+    pub fn lexical_selection_dependencies(&self) -> Option<Box<ProofDependencies>> {
         if !self.completion.is_exact_normal() {
             return None;
         }
@@ -217,7 +214,7 @@ impl EffectCoverageFragment {
         Some(dependencies)
     }
 
-    pub(super) fn compose(&mut self, next: &Self) {
+    pub fn compose(&mut self, next: &Self) {
         match (&mut self.initialization, &next.initialization) {
             (Some(current), Some(next)) => {
                 current.global_properties.compose(&next.global_properties);
@@ -245,7 +242,7 @@ impl EffectCoverageFragment {
 
     /// Prerequisites of selecting an already covered operation. Conditions
     /// never turn an unknown domain into a covered one.
-    pub(super) fn depend_on(&mut self, dependencies: &ProofDependencies) {
+    pub fn depend_on(&mut self, dependencies: &ProofDependencies) {
         if let Some(initialization) = &mut self.initialization {
             for domain in [
                 &mut initialization.global_properties,
@@ -270,7 +267,7 @@ impl EffectCoverageFragment {
     }
 
     /// Add one selected call edge without expanding child paths.
-    pub(super) fn selected_local_call(&mut self, call: LocalCallReceipt) {
+    pub fn selected_local_call(&mut self, call: LocalCallReceipt) {
         if let Some(lexical) = &mut self.lexical {
             lexical
                 .calls
@@ -280,7 +277,7 @@ impl EffectCoverageFragment {
         }
     }
 
-    pub(super) fn lexical_effect_dependencies(
+    pub(crate) fn lexical_effect_dependencies(
         &self,
     ) -> Option<(ProofDependencies, ProofDependencies)> {
         if !self.completion.is_exact_normal() {
@@ -299,7 +296,7 @@ impl EffectCoverageFragment {
         ))
     }
 
-    pub(super) fn seal_lexical_binding_effects(
+    pub fn seal_lexical_binding_effects(
         &self,
         identity: RootInitializerIdentity,
         expected_root_calls: &std::collections::BTreeSet<(u32, u32)>,
@@ -368,7 +365,7 @@ impl EffectCoverageFragment {
     /// the lexical receipt survives only when every path selected the same
     /// edges; a call on some paths only leaves it unknown. Completion is kept
     /// only where every path agrees.
-    pub(super) fn join_alternatives(fragments: &[&Self]) -> Self {
+    pub fn join_alternatives(fragments: &[&Self]) -> Self {
         let Some(first) = fragments.first() else {
             return Self::default();
         };
@@ -429,15 +426,15 @@ impl EffectCoverageFragment {
         }
     }
 
-    pub(super) fn abrupt(&mut self) {
+    pub fn abrupt(&mut self) {
         self.completion = Completion::Abrupt(());
     }
 
-    pub(super) fn uncertain_completion(&mut self) {
+    pub fn uncertain_completion(&mut self) {
         self.completion = Completion::default();
     }
 
-    pub(super) fn normal_dependencies(&self) -> Option<ProofDependencies> {
+    pub fn normal_dependencies(&self) -> Option<ProofDependencies> {
         if !self.completion.is_exact_normal() {
             return None;
         }

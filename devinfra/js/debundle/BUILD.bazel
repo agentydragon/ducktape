@@ -449,7 +449,6 @@ rust_library(
         ":binding_targets",
         ":graph_provenance",
         ":js_ast",
-        ":report_io",
         ":saved_purity_rust_proto",
         ":source_identity",
         ":work_metrics",
@@ -481,7 +480,6 @@ rust_test(
     edition = "2024",
     deps = [
         ":raw_js_test_support",
-        ":telemetry",
         "@crates//:rmp-serde",
         "@crates//:swc_ecma_parser",
         "@crates//:tempfile",
@@ -691,7 +689,6 @@ rust_library(
     crate_root = "prepare_chunks.rs",
     edition = "2024",
     deps = [
-        ":analysis",
         ":js_ast",
         ":program_analysis",
         ":source_identity",
@@ -885,7 +882,6 @@ rust_library(
         "//devinfra/js/debundle/artifacts:write_tree",
         "//devinfra/js/debundle/lowering",
         "//devinfra/js/debundle/spec",
-        "//devinfra/js/debundle/spec:spec_modules",
         "//devinfra/js/debundle/spec:spec_tree",
         "//devinfra/js/debundle/vendor",
         "@crates//:anyhow",

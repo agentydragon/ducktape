@@ -3,11 +3,6 @@
 use super::super::execution_index::{
     Call, CallKind, ExecutionIndex, native_call_identity_key, native_own_data_read_slots,
 };
-use super::super::value_model::{
-    AbstractValue, CallSite, CaptureInterner, MemberKey, ValueExpr, Values,
-};
-use super::super::world::prefix_values::{PrefixValues, TopBindings};
-use super::super::world::{World, WorldScope};
 use super::{
     CallbackFallbackSummary, ExecutionInputs, ExecutionState, ExportCallbackMemos, Outcome,
 };
@@ -40,6 +35,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::*;
+use value_model::WorldScope;
+use value_model::{AbstractValue, CallSite, CaptureInterner, MemberKey, ValueExpr, Values};
+use world::World;
+use world::prefix_values::{PrefixValues, TopBindings};
 
 pub(super) struct TopLevelEffectView<'source> {
     pub(super) reads: Vec<&'source Id>,

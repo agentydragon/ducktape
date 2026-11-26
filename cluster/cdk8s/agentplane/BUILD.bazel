@@ -626,6 +626,7 @@ py_library(
         ":database",
         ":environment",
         ":mcp_routes",
+        ":policy_controller",
         ":service_workload",
         ":workload_tls",
         "//agentplane:crd_group",

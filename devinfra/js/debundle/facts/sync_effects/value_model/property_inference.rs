@@ -4,7 +4,7 @@
 //! a shorter lifetime: callers provide one object's current state for one
 //! native call, and the projection borrows it only while deriving that result.
 
-use super::value_model::{
+use crate::{
     AbstractValue, HeapAddress, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
     ordered_own_property_names,
 };
@@ -17,7 +17,7 @@ use analysis_vocabulary::value::{Kind, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
-pub(super) enum OwnPropertyRequest {
+pub enum OwnPropertyRequest {
     Ordinary,
     /// Provider identity and exact Object/prototype slots are an independent
     /// author premise checked against the whole-program raw write census.
@@ -34,42 +34,42 @@ pub(super) enum OwnPropertyRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum CapturedPropertyDescriptor {
+pub enum CapturedPropertyDescriptor {
     Data(Values),
     Accessor { getter: Values, setter: Values },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct OwnPropertyNamesProjection {
-    pub(super) names: Vec<String>,
+pub struct OwnPropertyNamesProjection {
+    pub names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct OwnPropertyDescriptorProjection {
-    pub(super) source_object: u32,
+pub struct OwnPropertyDescriptorProjection {
+    pub source_object: u32,
     /// ECMAScript own-key order, including canonical integer indices first.
-    pub(super) ordered_names: Vec<String>,
-    pub(super) properties: BTreeMap<String, CapturedPropertyDescriptor>,
-    pub(super) retained_values: Values,
+    pub ordered_names: Vec<String>,
+    pub properties: BTreeMap<String, CapturedPropertyDescriptor>,
+    pub retained_values: Values,
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum OwnPropertyProjection {
+pub enum OwnPropertyProjection {
     Ordinary { source_object: u32 },
     Names(OwnPropertyNamesProjection),
     Descriptors(OwnPropertyDescriptorProjection),
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct OwnPropertyProof {
-    pub(super) projection: OwnPropertyProjection,
+pub struct OwnPropertyProof {
+    pub projection: OwnPropertyProjection,
     conclusion: InferenceRule,
     derivation_rules: BTreeSet<InferenceRule>,
-    pub(super) dependencies: ProofDependencies,
+    pub dependencies: ProofDependencies,
 }
 
 impl OwnPropertyProof {
-    pub(super) fn inference_use(&self) -> InferenceUse {
+    pub fn inference_use(&self) -> InferenceUse {
         InferenceUse {
             conclusion: self.conclusion,
             derivation_rules: self.derivation_rules.clone(),
@@ -182,7 +182,7 @@ fn require_native_certificate(
     Some(())
 }
 
-pub(super) fn infer_own_property_projection(
+pub fn infer_own_property_projection(
     source_object: u32,
     source_values: &Values,
     shape: &OwnPropertyShape,
@@ -275,7 +275,7 @@ pub(super) fn infer_own_property_projection(
 #[cfg(test)]
 mod tests {
     use super::{OwnPropertyProjection, OwnPropertyRequest, infer_own_property_projection};
-    use crate::value_model::{
+    use crate::{
         AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values,
         ordered_own_property_names,
     };

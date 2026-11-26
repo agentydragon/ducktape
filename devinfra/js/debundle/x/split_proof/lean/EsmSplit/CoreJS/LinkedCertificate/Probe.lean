@@ -1,6 +1,6 @@
 import EsmSplit.CoreJS.LinkedCertificate.Proof
 import EsmSplit.CoreJS.LinkedCertificate.QuoteCoreJS
-import EsmSplit.CoreJS.LinkedPivotCertificate
+import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.ProbeReplay
 import EsmSplit.CoreJS.StateMatch
 
@@ -64,16 +64,6 @@ theorem probeObservationMismatchRefutesEquivalent (profile : HostPremises) {sour
   apply different_probe_states_refute_equivalence sourceRun candidateRun
   rintro rfl
   simp [probeStatesEqual] at different
-
-/-- The canonical links shared by strategy checks on the same decoded pair. -/
-structure CheckedProbePair (source candidate : Program) where
-  before : CheckedLink source World.probe
-  after : CheckedLink candidate World.probe
-
-def checkProbePair (source candidate : Program) : Except String (CheckedProbePair source candidate) := do
-  let before ← (checkLink source).mapError ("original linker: " ++ ·)
-  let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
-  return ⟨before, after⟩
 
 /-- Typed syntax categories for the linked schedules used by replay. -/
 def CheckedProbePair.replayBlockers {source candidate : Program}
@@ -148,13 +138,6 @@ private theorem replayPremisedEquivalentFor {premises : HostPremises} {source ca
       ⟨fuel, sourceRunAtWorld, by simp⟩,
       ⟨fuel, candidateRunAtWorld, by simp⟩⟩
 
-theorem CheckedProbePair.sameExports {source candidate : Program} (pair : CheckedProbePair source candidate)
-    (exportsMatched : exportsMatchFrom pair.before pair.after = true) : SameExports source candidate := by
-  apply sameExports_of_match
-  intro w
-  rw [exportsMatch_from_checked (pair.before.forWorld w) (pair.after.forWorld w)]
-  exact exportsMatched
-
 /-- A compiled replay check. It accepts only when both programs have a
 successful probe run, their complete probe states match, both reached schedules
 have replay witnesses, and their public exports match. -/
@@ -174,7 +157,6 @@ def replayPremisedPrograms {source candidate : Program}
 
 #audit_linked_programs probeObservationMismatchRefutesEquivalent
 #audit_linked_programs replayPremisedEquivalentFor
-#print axioms CheckedProbePair.sameExports
 #audit_linked_programs CheckedProbePair.sameExports
 #audit_linked_programs replayPremisedPrograms
 

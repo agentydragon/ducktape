@@ -10,6 +10,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
@@ -19,6 +20,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	"github.com/sethvargo/go-retry"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // ErrStale means the view cannot vouch for any Identity: it has no complete snapshot, or its stream broke longer
@@ -75,10 +78,30 @@ func (c *Cache) Lookup(name string) (auth.Identity, bool, error) {
 	return identity, ok, nil
 }
 
-// GetIdentityUID implements auth.IdentityUIDReader; a stale view returns ErrStale.
-func (c *Cache) GetIdentityUID(_ context.Context, name string) (string, bool, error) {
+// GetIdentityUID implements auth.IdentityUIDReader; a stale view returns ErrStale. A name the view lacks is read
+// through PolicyService.GetIdentity, so an Identity created moments ago resolves before its watch event arrives.
+// Hits never leave the process, and the view still decides revocation: a deleted Identity the view holds stays
+// resolvable until its removal arrives, as before.
+//
+// TODO: the read-through exists because Identities live in the API server, whose writes reach WatchIdentities
+// asynchronously. If Identity ownership moves into Agentplane's database, make CreateIdentity return only once its
+// transaction has committed and readers' views reflect it, then delete the read-through and GetIdentity.
+func (c *Cache) GetIdentityUID(ctx context.Context, name string) (string, bool, error) {
 	identity, ok, err := c.Lookup(name)
-	return identity.UID, ok, err
+	if err != nil || ok {
+		return identity.UID, ok, err
+	}
+	response, err := c.policy.GetIdentity(ctx, &policypb.GetIdentityRequest{Name: name})
+	if status.Code(err) == codes.NotFound {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("identitycache: read Identity %q through PolicyService: %w", name, err)
+	}
+	fresh := map[string]auth.Identity{}
+	put(fresh, response.GetIdentity())
+	identity, ok = fresh[name]
+	return identity.UID, ok, nil
 }
 
 // List returns every live, not-deleting Identity, sorted by name.
