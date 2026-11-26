@@ -702,59 +702,19 @@ unchanged. With no filter every materialized chunk can export.
 The Bazel pipeline exposes the same opt-in through `effect_conflicts_jsonl`
 and `effect_conflicts_chunks`; only its final run action receives these flags,
 and streams remain inside the existing reports tree.
-Full per-chunk report emission also writes
-`candidate_relocation_assessment.json`. It pairs the effect decision and exact
-statement order from the existing single sweep with typed cross-destination
-rebind and split-atomic-group obligations from the same assignment validation,
-plus typed source/destination projection evidence from the final plan.
-Candidate assessment and normal lowering share one checked projection over the
-retained source-unit layout, whole-statement requests, binding catalogue,
-destructuring and nested-`var` groups, and stable Set intervals. Its maps are
-available to lowering only when the projection is mappable; a projection failure
-for a finalized assignment that reaches this seam can still report typed
-blockers and unresolved checks without manufacturing an emission placement.
-Conflicting destructuring and nested-`var` requests are retained through plan
-construction and checked here against the hygienic per-binding ownership
-catalogue, so candidate assessment and normal emission share their typed
-placement decision. Request planning uses the same destructuring owner
-classifier to retain existing fixed-point pulls of unclaimed or residual-owned
-siblings when a group has one explicit owner; split requests remain intact for
-final projection. Nested-`var` planning and projection share the classifier over
-retained statement identities, explicit binding owners and whole-statement
-requests. Consistent whole-statement routing remains unchanged.
-Semantic-order SCCs remain distinct from structural causes such as rebind,
-co-declaration, co-location and local effects; mixed or unclassified causes
-remain blockers. `placement.projection_violations` retains typed identities for
-structural inconsistencies found by those checks. `placement.coverage.unresolved_checks`
-names the structural checks whose complete input domain was unavailable:
-destructuring-declarator grouping, source-unit-to-body mapping, binding and
-shared-var destination projection, and whole-statement destination projection.
-Completeness is derived from an empty unresolved set. `accepted_within_checked_scope`
-requires an accepted effect decision and all four placement checks complete
-without a known structural blocker; it is not overall acceptance. The candidate
-status names effect and placement blockers separately. An ordering-only veto
-from the still-authoritative legacy gate is reported by
-`legacy_gate_ordering_veto` and does not count as a structural blocker; the
-legacy gate remains the authority to emit runnable output.
-Full semantic precision remains incomplete; see
-<docs/wire_format.md#translation-validation>.
-The report's `full_semantic_precision: false` is a policy-level field, not a
-computed per-chunk completeness verdict. Interpret each chunk through its
-unknown-coverage and refusal counts and its actual conflict rows.
-
-The typed effect relocation decision is scoped to statement-order commutation
-for the exact emitter order. `accepted/no_reordering` proves only that this
-candidate order has no statement inversion. For a reordered accepted
-candidate, every inverted pair has closed effect domains or crosses a
-statement proved to have no evaluation effects. Open effect sets are Havoc
-against every nonempty partner, so an open statement crossing a proved-empty
-statement needs no assumption about the open side. An uncovered modeled
-may-conflict or contradictory premise is `conflict`; an uncovered Havoc pair
-or a pair conditioned by an authored premise is `incomplete`. The assessment
-retains typed `relocation_dependencies` for covered owners among inverted
-participants and typed `premise_dependencies` for premises used by conflicting
-pairs. It does not replace the legacy gate and does not establish cross-rebind,
-importability, vendor replacement, privacy or singleton obligations.
+Full per-chunk report emission also writes `effect_translation_validation.json`
+and `candidate_relocation_assessment.json`: a typed statement-order commutation
+decision for the exact emitter order, paired with typed structural placement
+obligations from the same assignment validation. Both are diagnostic. Neither
+replaces the legacy gate, which remains the authority to emit runnable output;
+an ordering-only legacy veto is reported as `legacy_gate_ordering_veto`, not as
+a structural blocker. `accepted_within_checked_scope` is a scoped assessment,
+not overall acceptance. `full_semantic_precision: false` is a policy-level
+field, not a per-chunk completeness verdict; interpret each chunk through its
+unknown-coverage and refusal counts and its conflict rows. Candidate assessment
+and normal lowering share one checked source/destination projection, so their
+placement decisions agree. Field semantics:
+[wire format § Translation validation](docs/wire_format.md#translation-validation).
 
 `bindings assign` and `bindings unassign` can return this assessment for their
 exact in-memory post-edit candidates with `--dry-run --analysis <artifact>`.
