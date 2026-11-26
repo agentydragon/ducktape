@@ -567,3 +567,37 @@ func TestInventoryReportsOverlappingJournalStorage(t *testing.T) {
 		t.Fatalf("overlap verification error=%v", err)
 	}
 }
+
+func TestRepackBlockLimitPreservesCrossingSourceBetweenCommits(t *testing.T) {
+	store := newTestStore(t)
+	store.eventBlockProfile = eventblock.Profile{TargetBytes: 64 << 10, TargetEntries: 16, Level: 3}
+	session := openSessionForStore(t, store, "")
+	const opening = 96
+	appendAPBTestJournalThrough(t, store, session.ID, opening)
+	want := eventFrames(t, store, session.ID, 1, opening)
+	// The first 16-entry output ends inside a 32-entry gzip source.
+	replaceRowsWithBlock(t, store, session.ID, 9, 40, true)
+	options := JournalCompactionOptions{MaxBlocksPerTxn: 1}
+	preview, err := store.CompactJournalWithOptions(t.Context(), session.ID, false, options)
+	if err != nil || preview.Blocks < 2 || preview.Batches != preview.Blocks {
+		t.Fatalf("preview: %+v, %v", preview, err)
+	}
+	migrationExec(t, store.DB(), `CREATE FUNCTION reject_next_block() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.first_sequence > 16 THEN RAISE EXCEPTION 'second transaction'; END IF; RETURN NEW; END; $$`)
+	migrationExec(t, store.DB(), `CREATE TRIGGER reject_next_block BEFORE INSERT ON sampler_event_block FOR EACH ROW EXECUTE FUNCTION reject_next_block()`)
+	partial, err := store.CompactJournalWithOptions(t.Context(), session.ID, true, options)
+	if err == nil || partial.Batches != 1 || partial.Blocks != 1 {
+		t.Fatalf("first transaction: %+v, %v", partial, err)
+	}
+	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, opening), want)
+	migrationExec(t, store.DB(), `DROP TRIGGER reject_next_block ON sampler_event_block`)
+	result, err := store.CompactJournalWithOptions(t.Context(), session.ID, true, JournalCompactionOptions{})
+	if err != nil || !result.Completed || result.Batches >= preview.Batches {
+		t.Fatalf("multi-block restart: %+v, %v", result, err)
+	}
+	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, opening), want)
+	maxInstalled := postgres.Count(t, store.DB(), `SELECT max(n) FROM (SELECT count(*) AS n FROM sampler_event_block WHERE session_id=$1 GROUP BY xmin) AS batches`, session.ID)
+	if maxInstalled != DefaultJournalBlocksPerTxn {
+		t.Fatalf("largest committed group = %d, want %d", maxInstalled, DefaultJournalBlocksPerTxn)
+	}
+}
