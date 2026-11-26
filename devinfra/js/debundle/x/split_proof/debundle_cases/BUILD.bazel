@@ -18,12 +18,16 @@ _RUNNER_ENV = {
     "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
 }
 
+_SPLIT_PREVIEW = "//devinfra/js/debundle/x/split_proof/lean:split_preview"
+
 js_binary(
     name = "debundle_cases",
     testonly = True,
-    data = _RUNNER_DATA,
+    data = _RUNNER_DATA + [
+        _SPLIT_PREVIEW,
+    ],
     entry_point = "run_cases.mjs",
-    env = _RUNNER_ENV,
+    env = _RUNNER_ENV | {"SPLIT_PREVIEW": "$(rootpath " + _SPLIT_PREVIEW + ")"},
     tags = ["manual"],
 )
 
@@ -35,33 +39,6 @@ js_test(
     entry_point = "run_cases.mjs",
     env = _RUNNER_ENV,
     shard_count = 6,
-)
-
-js_test(
-    name = "strategy_census_cases_test",
-    size = "large",
-    timeout = "long",
-    args = ["--strategy-census"],
-    data = _RUNNER_DATA,
-    entry_point = "run_cases.mjs",
-    env = _RUNNER_ENV,
-    shard_count = 6,
-    tags = ["manual"],
-)
-
-js_test(
-    name = "strategy_census_pinned_test",
-    size = "large",
-    timeout = "long",
-    args = [
-        "--strategy-census",
-        "--check-certificates",
-    ],
-    data = _RUNNER_DATA + ["results/certificates.jsonl"],
-    entry_point = "run_cases.mjs",
-    env = _RUNNER_ENV,
-    shard_count = 6,
-    tags = ["manual"],
 )
 
 js_binary(

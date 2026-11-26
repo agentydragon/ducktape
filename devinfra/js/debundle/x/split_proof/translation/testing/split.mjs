@@ -110,11 +110,11 @@ export function generateInstance({ source, ast, manifest, spec, out, preview }) 
   assert(manifest || spec, "spec is required when source or ast is provided");
   assert(out, "out is required");
   assert(preview, "preview path is required");
-  assert(process.env.LOWERSPLIT, "LOWERSPLIT is required");
+  assert(process.env.SPLIT_INSTANCE_GENERATOR, "SPLIT_INSTANCE_GENERATOR is required");
   assert(!existsSync(preview), "preview path must not exist before instance generation");
   const input = source ?? ast;
   const deployment = manifest ?? writeDeployment(input, spec, preview);
-  const result = spawnSync(process.env.LOWERSPLIT, ["--generate-instance", deployment, out], {
+  const result = spawnSync(process.env.SPLIT_INSTANCE_GENERATOR, [deployment, out], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });

@@ -104,17 +104,13 @@ assert.notEqual(callbacks[0].params[0].b, callbacks[1].params[0].b);
 for (const callback of callbacks) assert.equal(callback.params[0].b, callback.body.b);
 const leanCertificate = path.join(temp, "generated.lean");
 generateInstance({ ast, spec, out: leanCertificate, preview: path.join(temp, "instance-generator-preview") });
-const emitted = run(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(ast, spec, out), out]);
+const emitted = run(process.env.SPLIT_PREVIEW, [writeDeployment(ast, spec, out), out]);
 assert.equal(emitted.status, 0, `annotated emitter must accept: ${emitted.stdout}\n${emitted.stderr}`);
 assert.match(emitted.stdout, /pass\s+OrderOk/);
 const legacyInput = path.join(temp, "legacy-ast.json");
 writeFileSync(legacyInput, legacyDump(parsed));
 const upgradedOut = path.join(temp, "upgraded");
-const upgraded = run(process.env.LOWERSPLIT, [
-  "--diagnostic",
-  writeDeployment(legacyInput, spec, upgradedOut),
-  upgradedOut,
-]);
+const upgraded = run(process.env.SPLIT_PREVIEW, [writeDeployment(legacyInput, spec, upgradedOut), upgradedOut]);
 assert.equal(upgraded.status, 0, `${upgraded.stdout}\n${upgraded.stderr}`);
 for (const file of ["entry.mjs", "side.mjs"])
   assert.equal(readFileSync(path.join(upgradedOut, file), "utf8"), readFileSync(path.join(out, file), "utf8"));
@@ -269,7 +265,7 @@ console.log(import.meta.url, result);`;
   mkdirSync(dir, { recursive: true });
   writeFileSync(input, JSON.stringify(dump(codeWithFallback)));
   writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2"] } }));
-  const result = run(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(input, spec, dir), dir]);
+  const result = run(process.env.SPLIT_PREVIEW, [writeDeployment(input, spec, dir), dir]);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /1 with fallback nodes/);
 }

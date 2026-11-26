@@ -337,7 +337,13 @@ Compare the same fixture, proof mode and runner across revisions. Record peak me
 
 ### Inspect an uncertified preview
 
-`lowersplit --diagnostic deployment.json output` runs the structural checks and prints model diagnostics. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
+The test-only preview tool runs structural checks and prints model diagnostics.
+
+```sh
+bb run //devinfra/js/debundle/x/split_proof/lean:split_preview -- deployment.json scratch-output
+```
+
+Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
 
 ## The example
 
@@ -493,7 +499,7 @@ The abstract theorem assumes footprint soundness for the supplied program.
 [`Lower.lean`](lean/EsmSplit/Lower.lean) scans declarations, eager and deferred
 names, and assignment sites. [The Effects analysis](effects/README.md) supplies
 writes, indirect reads and world effects under its printed premises.
-`lowersplit --generate-instance` uses both to write the checked-in example's Lean source without rendering JavaScript modules.
+The standalone `split_instance_generator` uses both to write the checked-in example's Lean source without rendering JavaScript modules.
 
 `Meaning` models one flat environment. Using that theorem for JavaScript assumes
 that `Hygienic` justifies flattening and that `Plan.visit` agrees with module

@@ -7,7 +7,7 @@ _EXAMPLE = _ROOT + "example/"
 
 _PROOF_FIXTURE = _ROOT + "proof_fixture/"
 
-_SPLITTER = "//devinfra/js/debundle/x/split_proof/lean:lowersplit"
+_GENERATOR = "//devinfra/js/debundle/x/split_proof/lean:split_instance_generator"
 
 _VISIBILITY = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"]
 
@@ -20,10 +20,10 @@ lowered_certificate(
         _EXAMPLE + "controls/effect_order.json",
     ],
     entry = "main.mjs",
+    generator = _GENERATOR,
     namespace = "Example",
     source = _EXAMPLE + "input/bundle.mjs",
     spec = _EXAMPLE + "spec.json",
-    splitter = _SPLITTER,
     variants = [_EXAMPLE + "variants/cycle.json"],
     visibility = _VISIBILITY,
 )
@@ -33,10 +33,10 @@ lowered_certificate(
     out = "ProofFixture/Instance.lean",
     controls = [_PROOF_FIXTURE + "bad.json"],
     entry = "main.mjs",
+    generator = _GENERATOR,
     namespace = "Example",
     source = _PROOF_FIXTURE + "bundle.mjs",
     spec = _PROOF_FIXTURE + "spec.json",
-    splitter = _SPLITTER,
     visibility = _VISIBILITY,
 )
 
@@ -44,9 +44,9 @@ lowered_certificate(
     name = "generate_lowered_example_certificate",
     out = "Experiments/Generated.lean",
     entry = "main.mjs",
+    generator = _GENERATOR,
     source = _ROOT + "example_ast",
     spec = _EXAMPLE + "spec.json",
-    splitter = _SPLITTER,
     visibility = _VISIBILITY,
 )
 

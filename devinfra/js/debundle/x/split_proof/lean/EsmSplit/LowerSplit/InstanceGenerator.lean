@@ -11,7 +11,7 @@ private def parseInstanceGeneratorArgs (args : List String) : IO (System.FilePat
   | manifest :: output :: options =>
     return (manifest, output, ← InstanceSource.parseOptions {} options)
   | _ => do
-    IO.eprintln "usage: lowersplit --generate-instance <deployment.json> <Generated.lean> [--namespace NAME] [--variant SPEC]... [--control SPEC]..."
+    IO.eprintln "usage: split_instance_generator <deployment.json> <Generated.lean> [--namespace NAME] [--variant SPEC]... [--control SPEC]..."
     throw (IO.userError "usage")
 
 /-- Generate the proof-source example without rendering JavaScript modules. -/

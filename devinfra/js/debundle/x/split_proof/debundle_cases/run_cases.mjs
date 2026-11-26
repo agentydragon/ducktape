@@ -7,7 +7,7 @@
 // A case is `main.js` (one ESM chunk), a spec, and `expect.yaml` (accept or reject per spec). For every spec entry:
 //   1. translate the spec to a `lowersplit` spec: the Rust resolver supplies authored source-unit owners,
 //      unclaimed statements follow `unassigned_mode`, `import_order` becomes the import priority;
-//   2. `lowersplit --diagnostic --force` checks the split and writes the modules even when it rejects them;
+//   2. `split_preview --force` checks the split and writes the modules even when it rejects them;
 //   3. run the original and the emitted entry in Node;
 //   4. compare with the expectation.
 // What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
@@ -41,6 +41,9 @@ const resolver = path.resolve(
   process.env.DEBUNDLE_RESOLVER ?? "bazel-bin/devinfra/js/debundle/debundle_resolve_placement"
 );
 const lowersplit = path.resolve(process.env.LOWERSPLIT ?? path.join(here, "../lean/.lake/build/bin/lowersplit"));
+const splitPreview = path.resolve(
+  process.env.SPLIT_PREVIEW ?? path.join(here, "../lean/.lake/build/bin/split_preview")
+);
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
   const at = args.indexOf(`--${name}`);
@@ -49,9 +52,7 @@ const option = (name, fallback) => {
 const casesRoot = path.resolve(here, option("cases", "../../../e2e/cases"));
 const filter = option("filter", "");
 const checkCertificates = args.includes("--check-certificates");
-const strategyCensus = args.includes("--strategy-census");
-if (strategyCensus) process.env.SPLIT_PROOF_STRATEGY_CENSUS = "1";
-const certification = checkCertificates || args.includes("--certify") || strategyCensus;
+const certification = checkCertificates || args.includes("--certify");
 const outFile = path.resolve(
   option(
     "out",
@@ -169,7 +170,7 @@ function translate(spec, chunk, statements, placement) {
 // ---------------------------------------------------------------- running
 
 // Keep Lean subprocesses bounded while allowing the slowest valid corpus cases to finish.
-const subprocessTimeoutMs = strategyCensus ? 180_000 : 90_000;
+const subprocessTimeoutMs = 90_000;
 
 function run(cmd, cmdArgs, options = {}) {
   const start = performance.now();
@@ -305,36 +306,6 @@ function runCase(dir, specName, expected, id) {
       path.join(stage, "lean_spec.json"),
       JSON.stringify({ entry: plan.entry, modules: plan.modules, order: plan.order })
     );
-    if (strategyCensus) {
-      const output = path.join(stage, "strategy-census-output");
-      const manifest = writeDeployment(path.join(stage, chunkFile), path.join(stage, "lean_spec.json"), output);
-      const previousCase = process.env.SPLIT_PROOF_STRATEGY_CENSUS_CASE;
-      process.env.SPLIT_PROOF_STRATEGY_CENSUS_CASE = id;
-      let checked;
-      try {
-        checked = run(lowersplit, [manifest, output]);
-      } finally {
-        if (previousCase === undefined) delete process.env.SPLIT_PROOF_STRATEGY_CENSUS_CASE;
-        else process.env.SPLIT_PROOF_STRATEGY_CENSUS_CASE = previousCase;
-      }
-      if (checked.failure || ![0, 1].includes(checked.code)) {
-        return {
-          id,
-          outcome: "error:strategy-census",
-          detail: checked.failure ?? checked.stderr.trim().split("\n").pop(),
-        };
-      }
-      const verdict = JSON.parse(checked.stdout.trim());
-      return {
-        id,
-        outcome: "strategy-census",
-        status: verdict.status,
-        scope: verdict.scope,
-        reason_code: verdict.reason_code,
-        reason: verdict.reason,
-        elapsed_ms: checked.elapsedMs,
-      };
-    }
     if (certification) {
       return {
         id,
@@ -351,12 +322,11 @@ function runCase(dir, specName, expected, id) {
       };
     }
     const checkerArgs = [
-      "--diagnostic",
       writeDeployment(path.join(stage, "bundle.json"), path.join(stage, "lean_spec.json"), path.join(stage, "split")),
       path.join(stage, "split"),
       "--force",
     ];
-    const checked = run(lowersplit, checkerArgs);
+    const checked = run(splitPreview, checkerArgs);
     if (checked.code === 3)
       return unsupported("statement kind the model rejects", checked.stderr.trim().split("\n").pop());
     if (checked.code !== 0 && checked.code !== 1)
@@ -365,7 +335,7 @@ function runCase(dir, specName, expected, id) {
         outcome: "error:lowersplit",
         detail: checked.failure ?? checked.stderr.trim().split("\n").pop(),
         processFailure: {
-          ...describeProcessFailure("lowersplit", lowersplit, checkerArgs, stage, checked),
+          ...describeProcessFailure("split_preview", splitPreview, checkerArgs, stage, checked),
           stdoutTail: checked.stdout.trimEnd().slice(-2048),
         },
       };
@@ -452,10 +422,8 @@ const baseline =
         .map((line) => JSON.parse(line))
     : [];
 if (certification && regression) throw new Error("diagnostic --regression and --certify are separate runs");
-let selected = strategyCensus
-  ? baseline
-  : baseline.filter((r) => r.outcome === (checkCertificates ? "certified" : "agree-accept"));
-if ((checkCertificates || strategyCensus) && process.env.TEST_SHARD_STATUS_FILE) {
+let selected = baseline.filter((r) => r.outcome === (checkCertificates ? "certified" : "agree-accept"));
+if (checkCertificates && process.env.TEST_SHARD_STATUS_FILE) {
   writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
   selected = selected.filter(
     (_, i) => i % Number(process.env.TEST_TOTAL_SHARDS) === Number(process.env.TEST_SHARD_INDEX)
@@ -481,12 +449,7 @@ for (const dir of discover()) {
 }
 writeFileSync(outFile, `${lines.map((row) => JSON.stringify(row)).join("\n")}\n`);
 console.log(`${lines.length} cases -> ${outFile}`);
-if (strategyCensus) {
-  if (!filter && cohort.size) throw new Error("missing strategy census cases: " + [...cohort].join(", "));
-  const failures = lines.filter((row) => row.outcome.startsWith("error:"));
-  for (const row of failures) console.error(JSON.stringify(row));
-  if (!lines.length || failures.length) process.exitCode = 1;
-} else if (certification) {
+if (certification) {
   if (!filter && cohort.size) throw new Error("missing cohort cases: " + [...cohort].join(", "));
   const failures = lines.filter((r) => r.outcome !== "certified" && (checkCertificates || r.outcome !== "rejected"));
   for (const row of failures) console.error(JSON.stringify(row));

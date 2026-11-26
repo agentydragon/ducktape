@@ -47,7 +47,7 @@
 // reached code the model does not define; what it printed before must be the start of what Node prints) or "fuel".
 // Fails on any disagreement, on "fuel", and on an "unknown" the model blames on itself.
 //
-// `COREJS`, `LOWERSPLIT` and `EVALORDER` are the executables (default: Lake's build).
+// The executable paths default to Lake's build.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -100,6 +100,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const built = (name) => path.join(here, "../lean/.lake/build/bin", name);
 const corejs = process.env.COREJS ?? built("corejs");
 const lowersplit = process.env.LOWERSPLIT ?? built("lowersplit");
+const splitPreview = process.env.SPLIT_PREVIEW ?? built("split_preview");
 const lower = process.env.LOWER ?? built("lower");
 const evalorder = process.env.EVALORDER ?? built("evalorder");
 const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "corejs_differential_"));
@@ -797,9 +798,8 @@ function split(job, bundle, dump, kind, spec, named) {
   const heritageReport = path.join(dir, "heritage-report.json");
   const hasHeritageExpectation = named?.certifiedHeritage || named?.uncertifiedHeritage;
   const run = spawnSync(
-    lowersplit,
+    splitPreview,
     [
-      "--diagnostic",
       writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), out),
       out,
       "--plan",
@@ -881,9 +881,8 @@ function split(job, bundle, dump, kind, spec, named) {
     const replay = () => {
       writeFileSync(footprintPath, footprints.map((fp) => JSON.stringify(fp)).join("\n") + "\n");
       return spawnSync(
-        lowersplit,
+        splitPreview,
         [
-          "--diagnostic",
           writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), path.join(dir, "replay")),
           path.join(dir, "replay"),
           "--corejs",

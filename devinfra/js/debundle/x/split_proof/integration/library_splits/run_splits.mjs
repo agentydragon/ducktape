@@ -10,7 +10,7 @@
 //             random: k ∈ {2, 3, 5, 8} modules, `seeds` random assignments each
 //
 // The bundle's footprints are computed once (`lower`, or the file given with `--footprints`); each split is checked
-// with `lowersplit --diagnostic --force --footprints` (checks, writes the modules even when rejected), then
+// with `split_preview --force --footprints` (checks, writes the modules even when rejected), then
 // `smoke.mjs` on the entry module. One JSON line per split:
 //   { bundle, strategy, args, verdict: "accept"|"reject", failed: [check…], node: "same"|"different"|"error", detail }
 // Soundness claim under test: no split that is accepted behaves differently.
@@ -25,7 +25,7 @@ import { writeDeployment } from "../../translation/testing/deployment_manifest.m
 import { smoke } from "./smoke.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const lowersplit = path.resolve(process.env.LOWERSPLIT ?? path.join(here, "../../lean/.lake/build/bin/lowersplit"));
+const preview = path.resolve(process.env.SPLIT_PREVIEW ?? path.join(here, "../../lean/.lake/build/bin/split_preview"));
 const lower = path.resolve(process.env.LOWER ?? path.join(here, "../../lean/.lake/build/bin/lower"));
 
 const [bundle, strategy, ...rest] = process.argv.slice(2);
@@ -88,8 +88,7 @@ async function worker() {
     try {
       const spec = makeSpec(n, plan.strategy, plan.args);
       await writeFile(path.join(dir, "spec.json"), JSON.stringify(spec));
-      const checked = await run(lowersplit, [
-        "--diagnostic",
+      const checked = await run(preview, [
         writeDeployment(path.join(lowering, `${bundle}.json`), path.join(dir, "spec.json"), path.join(dir, "out")),
         path.join(dir, "out"),
         "--footprints",
@@ -103,7 +102,7 @@ async function worker() {
           what.match(/^statement \d+ is an `(Import|Export)/)?.[1].concat("OutsideEntry") ?? what.split(/\s+/)[0]
       );
       if (checked.code !== 0 && checked.code !== 1)
-        throw new Error(`lowersplit exit ${checked.code}: ${checked.stderr.trim()}`);
+        throw new Error(`split_preview exit ${checked.code}: ${checked.stderr.trim()}`);
       const verdict = checked.code === 0 ? "accept" : "reject";
       const got = await smoke(family, path.join(dir, "out", spec.entry));
       const node = JSON.stringify(got) === baseline ? "same" : "different";

@@ -5,7 +5,7 @@
 ## Run
 
 ```bash
-cd ../lean && lake build lower translate lowersplit
+cd ../lean && lake build lower translate split_preview
 cd ../translation && cp package.json.in package.json && npm ci --no-audit --no-fund
 node ../effects/run.mjs [--show]                      # golden cases
 node ../effects/run.mjs --permutations 20 --seed 1    # and random permutations of every case's units
@@ -14,12 +14,12 @@ node frontend.mjs bundle <bundle.js> --out bundle.json
 ../lean/.lake/build/bin/lower bundle.json --premises premises.json              # a footprint per unit, as JSON lines
 ../lean/.lake/build/bin/translate bundle.json output.json cert.json --premises premises.json [--table t.json]
 jq '{entry, chunks:[{path:.entry, source:"ast.json", spec:"spec.json"}]}' spec.json > deployment.json
-../lean/.lake/build/bin/lowersplit --diagnostic deployment.json outdir [--premises premises.json | --footprints footprints.jsonl] [--plan plan.json]
+../lean/.lake/build/bin/split_preview deployment.json outdir [--premises premises.json | --footprints footprints.jsonl] [--plan plan.json]
 ```
 
 This is a diagnostic invocation. Plan output and any emitted files are uncertified previews, even when the structural checks pass.
 
-`effects:effects_cases_test` and `translation:fixtures_test` run the golden cases and fixtures in Bazel. `lowersplit --footprints` reads what `lower` printed instead of analyzing again: the analysis does not depend on the split, so a run of many splits of one big bundle computes it once.
+`effects:effects_cases_test` and `translation:fixtures_test` run the golden cases and fixtures in Bazel. `split_preview --footprints` reads what `lower` printed instead of analyzing again: the analysis does not depend on the split, so a run of many splits of one big bundle computes it once.
 
 Run the generated Effects matrix with `bbr test //devinfra/js/debundle/x/split_proof/effects:effects_targeted_fuzz_test`. The CI run uses seed `20261121` and checks the named reorders, including stdout-changing reorders for uncaught throws. Append `--test_arg=--seed --test_arg=77` for another seed or `--test_arg=--permutations --test_arg=3` to sample random reorders. When `CASES` is relative, `run.mjs` resolves it from its own directory.
 
@@ -52,7 +52,7 @@ The list of members the standard objects have comes from the Node that ran [`gen
 
 ## Cost
 
-On the large production bundle (private, 9,707 units): 114 s for the analysis, 318,332 abstract objects, 1.45 GB peak for the whole `translate` run. 135 units run out of the 100,000-step budget and become unknown code. `zod` (1,072 units) takes 200 to 350 s depending on the load, minified 60 to 70 s; where the time goes is not profiled (`TODO.md`). A split of one big bundle should be analyzed once: `lowersplit --footprints` reads what `lower` printed. Bazel's `lean_binary` runs the Lean interpreter, about ten times slower than the native build, so the Bazel tests use small inputs.
+On the large production bundle (private, 9,707 units): 114 s for the analysis, 318,332 abstract objects, 1.45 GB peak for the whole `translate` run. 135 units run out of the 100,000-step budget and become unknown code. `zod` (1,072 units) takes 200 to 350 s depending on the load, minified 60 to 70 s; where the time goes is not profiled (`TODO.md`). A split of one big bundle should be analyzed once: `split_preview --footprints` reads what `lower` printed. Bazel's `lean_binary` runs the Lean interpreter, about ten times slower than the native build, so the Bazel tests use small inputs.
 
 ## Tests
 

@@ -780,7 +780,7 @@ assert.equal((await certifyFixture(blockSplit)).result, 3);
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {
   const ast = file("bundle.json", JSON.stringify(dumpSource(source)));
-  return execFileSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(ast, spec, dir), dir, ...args], {
+  return execFileSync(process.env.SPLIT_PREVIEW, [writeDeployment(ast, spec, dir), dir, ...args], {
     encoding: "utf8",
   });
 }
@@ -806,8 +806,7 @@ const badRange = dumpSource("/*😀*/ var a = 1, b = a;");
 badRange.body[0].declarations[0].start = 3;
 const invalid = file("bad-range.json", JSON.stringify(badRange));
 assert.throws(
-  () =>
-    execFileSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(invalid, spec, dir), dir], { stdio: "pipe" }),
+  () => execFileSync(process.env.SPLIT_PREVIEW, [writeDeployment(invalid, spec, dir), dir], { stdio: "pipe" }),
   /surrogate pair/
 );
 const moves = path.join(dir, "moves.json");

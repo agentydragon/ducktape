@@ -104,7 +104,7 @@ const refused = certificate(request);
 assert.equal(refused.status, "rejected");
 assert(!existsSync(request.out));
 const preview = path.join(tmp, "uncertified-preview");
-const rendered = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", request.manifest, preview, "--force"], {
+const rendered = spawnSync(process.env.SPLIT_PREVIEW, [request.manifest, preview, "--force"], {
   encoding: "utf8",
 });
 if (rendered.error) throw rendered.error;

@@ -1,8 +1,8 @@
-"""Generate Lean certificate source with the runfiles-aware splitter."""
+"""Generate Lean certificate source with the standalone generator."""
 
 def _lowered_certificate_impl(ctx):
     certificate = ctx.outputs.out
-    splitter = ctx.attr.splitter[DefaultInfo].files_to_run
+    generator = ctx.attr.generator[DefaultInfo].files_to_run
     manifest = ctx.actions.declare_file(ctx.label.name + ".deployment.json")
     prefix = "../" * len(manifest.dirname.split("/"))
     ctx.actions.write(manifest, json.encode({
@@ -14,14 +14,14 @@ def _lowered_certificate_impl(ctx):
         }],
     }))
     args = ctx.actions.args()
-    args.add_all(["--generate-instance", manifest, certificate])
+    args.add_all([manifest, certificate])
     if ctx.attr.namespace:
         args.add("--namespace", ctx.attr.namespace)
     args.add_all(ctx.files.variants, before_each = "--variant")
     args.add_all(ctx.files.controls, before_each = "--control")
     ctx.actions.run(
         inputs = [manifest, ctx.file.source, ctx.file.spec] + ctx.files.variants + ctx.files.controls,
-        executable = splitter,
+        executable = generator,
         outputs = [certificate],
         env = {"BAZEL_BINDIR": ctx.bin_dir.path},
         arguments = [args],
@@ -37,7 +37,7 @@ lowered_certificate = rule(
         "out": attr.output(mandatory = True),
         "source": attr.label(allow_single_file = [".json", ".mjs"], mandatory = True),
         "spec": attr.label(allow_single_file = [".json"], mandatory = True),
-        "splitter": attr.label(cfg = "exec", executable = True, mandatory = True),
+        "generator": attr.label(cfg = "exec", executable = True, mandatory = True),
         "variants": attr.label_list(allow_files = [".json"]),
     },
 )

@@ -59,9 +59,8 @@ for (const [chunk, spec] of [
   for (const name of owners.values()) mkdirSync(path.join(rendered, path.dirname(name)), { recursive: true });
   const planFile = path.join(dir, "plan.json");
   const r = spawnSync(
-    process.env.LOWERSPLIT,
+    process.env.SPLIT_PREVIEW,
     [
-      "--diagnostic",
       writeDeployment(ast, spec, rendered),
       rendered,
       "--corejs",

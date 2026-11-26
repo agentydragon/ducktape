@@ -12,9 +12,9 @@ export const run = (binary, args) => spawnSync(binary, args, { encoding: "utf8" 
 export function renderDiagnostic({ manifest, input, spec, out }, ...flags) {
   assert(manifest || (input && spec), "provide a deployment manifest or an input and spec");
   assert(out, "out is required");
-  assert(process.env.LOWERSPLIT, "LOWERSPLIT is required");
+  assert(process.env.SPLIT_PREVIEW, "SPLIT_PREVIEW is required");
   const deployment = manifest ?? writeDeployment(input, spec, out);
-  const result = run(process.env.LOWERSPLIT, ["--diagnostic", deployment, out, ...flags]);
+  const result = run(process.env.SPLIT_PREVIEW, [deployment, out, ...flags]);
   if (result.error) throw result.error;
   assert.match(result.stdout, /model diagnostic: /, result.stdout + result.stderr);
   return result;

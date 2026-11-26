@@ -111,8 +111,8 @@ if (process.argv[2] !== "--worker") {
       writeFileSync(path.join(dir, "source.mjs"), source);
       writeFileSync(path.join(dir, "ast.json"), JSON.stringify(program));
       writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, order }));
-      const args = ["--diagnostic", writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir), dir];
-      const checked = run(process.env.LOWERSPLIT, args);
+      const args = [writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir), dir];
+      const checked = run(process.env.SPLIT_PREVIEW, args);
       writeFileSync(path.join(dir, "checker.log"), checked.stdout + checked.stderr);
       if (checked.status === 0) {
         stats.accepted++;
@@ -130,7 +130,7 @@ if (process.argv[2] !== "--worker") {
         stats.rejected++;
         if (existsSync(path.join(dir, "entry.mjs")))
           preserve(dir, seed, round, plan, "unforced rejection emitted a module");
-        const forced = run(process.env.LOWERSPLIT, [...args, "--force"]);
+        const forced = run(process.env.SPLIT_PREVIEW, [...args, "--force"]);
         if (forced.status !== 1 || !existsSync(path.join(dir, "entry.mjs")))
           preserve(dir, seed, round, plan, "forced rejected plan failed to emit");
         const emitted = run(process.execPath, [path.join(dir, "entry.mjs")]);

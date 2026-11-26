@@ -149,9 +149,8 @@ for (const chunk of selected) {
     const specFile = path.join(dir, `${name}.json`);
     writeFileSync(specFile, JSON.stringify({ entry, modules }));
     const r = await run(
-      process.env.LOWERSPLIT,
+      process.env.SPLIT_PREVIEW,
       [
-        "--diagnostic",
         writeDeployment(astFile, specFile, path.join(dir, name)),
         path.join(dir, name),
         "--footprints",

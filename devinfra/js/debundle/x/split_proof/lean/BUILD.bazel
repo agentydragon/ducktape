@@ -1,11 +1,9 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@rules_lean//lean:defs.bzl", "lean_binary", "lean_library", "lean_proof_test")
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load(":executable_test.bzl", "executable_test", "test_runner")
-load(":splitter_launcher.bzl", "splitter_launcher")
+load(":splitter_launcher.bzl", "splitter_tool")
 
 _EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
 
@@ -235,42 +233,41 @@ exports_files(
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants/no_writes:__pkg__"],
 )
 
-splitter_launcher(
-    name = "lowersplit_launcher",
-    out = "lowersplit_launcher.sh",
-    core = ":lowersplit_core",
-    diagnostic = ":lowersplit_diagnostic_core",
-    module_io = "//devinfra/js/debundle/x/split_proof/translation:module_io",
-    strategy_census = ":strategy_census_runner",
-    template = "lowersplit.sh",
-)
-
-py_binary(
-    name = "strategy_census_runner",
-    srcs = ["strategy_census_wrapper.py"],
-    main = "strategy_census_wrapper.py",
-)
-
-sh_binary(
+splitter_tool(
     name = "lowersplit",
-    srcs = [":lowersplit_launcher"],
-    data = [
-        ":lowersplit_core",
-        ":lowersplit_diagnostic_core",
-        ":strategy_census_runner",
-        "//devinfra/js/debundle/x/split_proof/translation:module_io",
-    ],
-    use_bash_launcher = True,
+    core = ":lowersplit_core",
     visibility = [
         "//devinfra/js/debundle/x/split_proof:__pkg__",
         "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
+    ],
+)
+
+splitter_tool(
+    name = "split_preview",
+    testonly = True,
+    core = ":split_preview_core",
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+    ],
+)
+
+splitter_tool(
+    name = "split_instance_generator",
+    core = ":split_instance_generator_core",
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],
 )
 
@@ -506,7 +503,6 @@ lean_library(
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/ESTreeEmit.lean",
-        "EsmSplit/InstanceSource.lean",
         "EsmSplit/SplitFiles.lean",
         "EsmSplit/ReadDeployment.lean",
     ],
@@ -764,8 +760,6 @@ lean_library(
     name = "lowersplit_workflows",
     srcs = [
         # Keep import order for the native Lean rule.
-        "EsmSplit/LowerSplit/Diagnostic.lean",
-        "EsmSplit/LowerSplit/InstanceGenerator.lean",
         "EsmSplit/LowerSplit/SliceCertificate.lean",
         "EsmSplit/LowerSplit/Certified.lean",
     ],
@@ -791,17 +785,48 @@ lean_proof_test(
     deps = [":lowersplit_workflows"],
 )
 
-# Diagnostic runs need no linked certificate evaluator or structural proofs.
 lean_library(
-    name = "lowersplit_diagnostic_core_modules",
-    srcs = ["EsmSplit/LowerSplitDiagnosticMain.lean"],
+    name = "split_preview_core_modules",
+    testonly = True,
+    srcs = [
+        "EsmSplit/LowerSplit/Diagnostic.lean",
+        "EsmSplit/LowerSplitDiagnosticMain.lean",
+    ],
     visibility = ["//visibility:private"],
-    deps = [":lowersplit_workflows"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_runtime",
+        ":lowersplit_input",
+        ":lowersplit_support",
+        ":planner",
+    ],
 )
 
 lean_binary(
-    name = "lowersplit_diagnostic_core",
-    deps = [":lowersplit_diagnostic_core_modules"],
+    name = "split_preview_core",
+    testonly = True,
+    deps = [":split_preview_core_modules"],
+)
+
+lean_library(
+    name = "split_instance_generator_core_modules",
+    srcs = [
+        "EsmSplit/InstanceSource.lean",
+        "EsmSplit/LowerSplit/InstanceGenerator.lean",
+        "EsmSplit/SplitInstanceGeneratorMain.lean",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":effects",
+        ":lowersplit_input",
+        ":lowersplit_support",
+        ":planner",
+    ],
+)
+
+lean_binary(
+    name = "split_instance_generator_core",
+    deps = [":split_instance_generator_core_modules"],
 )
 
 lean_library(
@@ -1475,11 +1500,6 @@ build_test(
 build_test(
     name = "lowered_example_certificate_test",
     targets = ["//devinfra/js/debundle/x/split_proof/lean/generated:lowered_example_module"],
-)
-
-py_library(
-    name = "strategy_census_wrapper",
-    srcs = ["strategy_census_wrapper.py"],
 )
 
 lean_library(

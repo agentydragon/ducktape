@@ -2,10 +2,9 @@
 # gazelle:exclude experiments
 # gazelle:exclude fuzz
 
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/lint:linters.bzl", "eslint_test")
-load("//devinfra/python:defs.bzl", "py_library")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -68,36 +67,4 @@ js_run_binary(
     stdout = "generated/example.json",
     tool = "//devinfra/js/debundle/x/split_proof/translation:dump_ast",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
-)
-
-js_test(
-    name = "certified_fixture_census_test",
-    size = "large",
-    timeout = "long",
-    args = [
-        "$(rootpath :example_ast)",
-        "$(rootpath example/spec.json)",
-        "$(rootpath proof_fixture/bundle.mjs)",
-        "$(rootpath proof_fixture/spec.json)",
-    ],
-    data = [
-        "example/spec.json",
-        "proof_fixture/bundle.mjs",
-        "proof_fixture/spec.json",
-        ":example_ast",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
-    entry_point = "strategy_census_fixtures_test.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
-    tags = ["manual"],
-)
-
-py_library(
-    name = "strategy_census_report",
-    srcs = ["strategy_census_report.py"],
-)
-
-py_library(
-    name = "download_strategy_census",
-    srcs = ["download_strategy_census.py"],
 )

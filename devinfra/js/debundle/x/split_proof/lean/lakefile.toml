@@ -23,6 +23,14 @@ name = "lowersplit"
 root = "EsmSplit.LowerSplitMain"
 
 [[lean_exe]]
+name = "split_preview"
+root = "EsmSplit.LowerSplitDiagnosticMain"
+
+[[lean_exe]]
+name = "split_instance_generator"
+root = "EsmSplit.SplitInstanceGeneratorMain"
+
+[[lean_exe]]
 name = "evalorder"
 root = "EsmSplit.EvalOrder"
 

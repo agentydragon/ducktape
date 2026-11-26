@@ -33,10 +33,14 @@ js_test(
 
 _TEST_DATA = [
     ":harness",
+    "//devinfra/js/debundle/x/split_proof/lean:split_preview",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
-_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
+_TEST_ENV = {
+    "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    "SPLIT_PREVIEW": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:split_preview)",
+}
 
 # These valid Lean-backed shards exceed the medium budget or have timed out in CI.
 _LONG_TIMEOUT_TESTS = [
@@ -218,10 +222,7 @@ _SHARD_COUNTS = {
         timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
         data = _TEST_DATA,
         entry_point = name + ".mjs",
-        env = dict(
-            _TEST_ENV,
-            SPLIT_PROOF_STRATEGY_CENSUS = "1",
-        ) if name == "composition_test" else _TEST_ENV,
+        env = _TEST_ENV,
         shard_count = _SHARD_COUNTS.get(name),
     )
     for name in _UNSHARDED_TESTS + _SHARD_COUNTS.keys()

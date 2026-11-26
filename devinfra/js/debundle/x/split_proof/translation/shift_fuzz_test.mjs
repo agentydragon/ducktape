@@ -291,8 +291,8 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   writeFileSync(path.join(dir, "ast.json"), JSON.stringify(dump));
   writeFileSync(path.join(dir, "spec.json"), JSON.stringify(spec));
   const emitter = spawnSync(
-    process.env.LOWERSPLIT,
-    ["--diagnostic", writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), out), out],
+    process.env.SPLIT_PREVIEW,
+    [writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), out), out],
     {
       encoding: "utf8",
       // A cold Lean process loads the compiler before the splitter can read the case.

@@ -274,8 +274,8 @@ export function forcePreview(files, directory) {
   assert.equal(certification.status, "refused");
   assert.equal(certification.files.length, 0, certification.log);
   const preview = spawnSync(
-    process.env.LOWERSPLIT,
-    ["--diagnostic", writeDeployment(files.sourceFile, files.specFile, directory), directory, "--force"],
+    process.env.SPLIT_PREVIEW,
+    [writeDeployment(files.sourceFile, files.specFile, directory), directory, "--force"],
     { encoding: "utf8" }
   );
   assert([0, 1].includes(preview.status), preview.error?.message ?? preview.stdout + preview.stderr);

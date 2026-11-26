@@ -235,9 +235,9 @@ for (const moved of [selected, selected.slice(0, 1)]) {
   const candidate = path.join(process.env.TEST_TMPDIR, "candidate-" + tag + ".json");
   writeFileSync(candidate, JSON.stringify(placement(moved)));
   const plan = path.join(process.env.TEST_TMPDIR, "plan-" + tag + ".json");
-  const args = ["--diagnostic", writeDeployment(ast, candidate, diagnostic), diagnostic, "--force", "--plan", plan];
+  const args = [writeDeployment(ast, candidate, diagnostic), diagnostic, "--force", "--plan", plan];
   if (moved.length === 1) args.push("--all-conflicts");
-  const render = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
+  const render = spawnSync(process.env.SPLIT_PREVIEW, args, { encoding: "utf8" });
   if (render.error) throw render.error;
   assert([0, 1].includes(render.status), render.stdout + render.stderr);
   const output = parseModule(readFileSync(path.join(diagnostic, entry), "utf8"), acorn.parse);

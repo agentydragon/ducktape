@@ -37,6 +37,7 @@ _DIFFERENTIAL_DATA = [
     "//devinfra/js/debundle/x/split_proof/lean:evalorder",
     "//devinfra/js/debundle/x/split_proof/lean:lower",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    "//devinfra/js/debundle/x/split_proof/lean:split_preview",
 ]
 
 _DIFFERENTIAL_ENV = {
@@ -44,6 +45,7 @@ _DIFFERENTIAL_ENV = {
     "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:evalorder)",
     "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
     "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    "SPLIT_PREVIEW": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:split_preview)",
 }
 
 js_test(

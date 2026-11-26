@@ -1,4 +1,4 @@
-// A bundle in the CoreJS model, as `lowersplit --diagnostic --corejs` reads it to name the model diagnostic for a split.
+// A bundle in the CoreJS model, as `split_preview --corejs` reads it to name the model diagnostic for a split.
 //
 //   node core_program.mjs <bundle.mjs> > program.json
 //

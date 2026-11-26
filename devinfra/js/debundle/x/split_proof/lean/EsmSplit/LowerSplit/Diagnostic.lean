@@ -296,7 +296,7 @@ private def parseDiagnosticOptions (args : List String) : IO (System.FilePath ×
   let (manifest, out) ← match args with
     | [manifest, out] => pure (manifest, out)
     | _ => do
-      IO.eprintln "usage: lowersplit --diagnostic <deployment.json> <outdir> [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"
+      IO.eprintln "usage: split_preview <deployment.json> <outdir> [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"
       throw (IO.userError "usage")
   return (manifest, out, { prem, footprintPath, planPath, corejsPath, moveReportPath, force, allConflicts })
 
@@ -361,7 +361,7 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
 
 def diagnostic (args : List String) : IO UInt32 := do
   if args.contains "--require" || args.contains "--check-output" || args.contains "--structural" || args.contains "--deployment-origin" then
-    IO.eprintln "certification options cannot be combined with --diagnostic"
+    IO.eprintln "certification options are not supported by split_preview"
     return 1
   IO.println "Diagnostic run. Any emitted files are an uncertified preview."
   IO.FS.withTempDir fun work => do
