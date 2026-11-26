@@ -237,8 +237,8 @@ func lockOwnerWithContextRefs(ctx context.Context, tx *sql.Tx, owner Owner) (*Co
 	return row, nil
 }
 
-// lockOwnerHeader validates an owner while locking only the small mutable header used by
-// evidence appenders. Provider and protocol stream events must not decode the retained transcript.
+// lockOwnerHeader fences an owner while reading the mutable fields needed by header-only paths.
+// Provider and protocol stream events must not decode the retained transcript.
 func lockOwnerHeader(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
 	var (
 		conversation Conversation
@@ -268,6 +268,14 @@ func lockOwnerHeader(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversatio
 }
 
 func lockSession(ctx context.Context, tx *sql.Tx, sessionID string) (*Conversation, *Session, error) {
+	return lockSessionState(ctx, tx, sessionID, true)
+}
+
+func lockSessionHeader(ctx context.Context, tx *sql.Tx, sessionID string) (*Conversation, *Session, error) {
+	return lockSessionState(ctx, tx, sessionID, false)
+}
+
+func lockSessionState(ctx context.Context, tx *sql.Tx, sessionID string, loadItems bool) (*Conversation, *Session, error) {
 	var conversationID string
 	err := tx.QueryRowContext(ctx, `SELECT c.id::text FROM sampler_conversation c
 		JOIN sampler_session s ON s.conversation_id=c.id WHERE s.id=$1 FOR UPDATE OF c`, sessionID).Scan(&conversationID)
@@ -281,8 +289,10 @@ func lockSession(ctx context.Context, tx *sql.Tx, sessionID string) (*Conversati
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := loadConversationItems(ctx, tx, conversation); err != nil {
-		return nil, nil, err
+	if loadItems {
+		if err := loadConversationItems(ctx, tx, conversation); err != nil {
+			return nil, nil, err
+		}
 	}
 	session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, conversation_id::text, COALESCE(service_spiffe_id, account_uid), configuration, model, effort,
 		source_id, cursor, active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason
@@ -291,6 +301,16 @@ func lockSession(ctx context.Context, tx *sql.Tx, sessionID string) (*Conversati
 		return nil, nil, protocol.ErrMissing
 	}
 	return conversation, session, err
+}
+
+func lockSessionForConversation(ctx context.Context, tx *sql.Tx, sessionID, conversationID string) (*Session, error) {
+	session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, conversation_id::text, COALESCE(service_spiffe_id, account_uid), configuration, model, effort,
+		source_id, cursor, active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason
+		FROM sampler_session WHERE id=$1 AND conversation_id=$2 FOR UPDATE`, sessionID, conversationID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, protocol.ErrMissing
+	}
+	return session, err
 }
 
 func scanSession(row rowScanner) (*Session, error) {

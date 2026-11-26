@@ -183,24 +183,59 @@ func steeringInputs(ctx context.Context, tx *sql.Tx, conversation *Conversation,
 	return commands, inputs, rows.Err()
 }
 
-// HasSteeringInput reports whether queued user input can join the session's active turn. A running
-// cell's unresolved intent does not hide it: that is when a foreground observation should yield.
+// HasSteeringInput snapshots the live owner, active turn, pending interrupt and first queued command
+// in one statement. A running cell's unresolved intent does not hide input, so foreground observation
+// can yield. The result is advisory; DrainSteeringInput rechecks and applies under the write lock.
 func (s *Store) HasSteeringInput(ctx context.Context, owner Owner, sessionID string) (bool, error) {
-	found := false
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
-		if err != nil {
-			return err
-		}
-		_, session, err := lockSession(ctx, tx, sessionID)
-		if err != nil {
-			return err
-		}
-		commands, _, err := steeringInputs(ctx, tx, conversation, session)
-		found = len(commands) > 0
-		return err
-	})
-	return found, err
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
+	lease, err := owner.lease()
+	if err != nil {
+		return false, err
+	}
+	var ownerActive, sessionExists bool
+	var wire []byte
+	err = s.db.QueryRowContext(ctx, `SELECT
+		COALESCE(c.owner=$2 AND c.generation=$3 AND c.lease_until>clock_timestamp(),FALSE),
+		s.id IS NOT NULL,
+		head.payload
+		FROM sampler_conversation c
+		LEFT JOIN sampler_session s ON s.conversation_id=c.id AND s.id=$4
+		LEFT JOIN LATERAL (
+			SELECT queued.payload FROM sampler_command queued
+			WHERE s.active_turn IS NOT NULL AND s.active_command=s.active_turn
+				AND queued.session_id=s.id
+				AND queued.outcome=$5
+				AND queued.id<>s.active_command
+				AND NOT EXISTS (
+					SELECT 1 FROM sampler_interrupt pending_interrupt
+					WHERE pending_interrupt.conversation_id=c.id AND pending_interrupt.generation=c.generation
+						AND pending_interrupt.target_turn=s.active_turn AND pending_interrupt.result IS NULL
+				)
+			ORDER BY queued.admission LIMIT 1
+		) head ON TRUE
+		WHERE c.id=$1`, owner.ConversationID, lease.Holder, lease.Generation, sessionID,
+		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED)).Scan(&ownerActive, &sessionExists, &wire)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, &LostOwnershipError{Reason: "conversation no longer exists"}
+	}
+	if err != nil {
+		return false, err
+	}
+	if !ownerActive {
+		return false, &LostOwnershipError{}
+	}
+	if !sessionExists {
+		return false, protocol.ErrMissing
+	}
+	if wire == nil {
+		return false, nil
+	}
+	payload := &commandpb.Command{}
+	if err := proto.Unmarshal(wire, payload); err != nil {
+		return false, err
+	}
+	return payload.GetSubmitInput() != nil, nil
 }
 
 // DrainSteeringInput records queued user input into the active turn and applies its commands.
@@ -211,11 +246,11 @@ func (s *Store) HasSteeringInput(ctx context.Context, owner Owner, sessionID str
 func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID string) (bool, error) {
 	drained := false
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
+		conversation, err := lockOwnerWithContextRefs(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
-		_, session, err := lockSession(ctx, tx, sessionID)
+		session, err := lockSessionForConversation(ctx, tx, sessionID, conversation.ID)
 		if err != nil {
 			return err
 		}
@@ -225,6 +260,9 @@ func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID s
 		}
 		commands, inputs, err := steeringInputs(ctx, tx, conversation, session)
 		if err != nil || len(commands) == 0 {
+			return err
+		}
+		if err := loadConversationItems(ctx, tx, conversation); err != nil {
 			return err
 		}
 		for index, command := range commands {
