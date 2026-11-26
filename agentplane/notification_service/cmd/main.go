@@ -215,14 +215,14 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	providers := map[string]sources.Provider{"actions": actionsSource}
 	var webhookHandler http.Handler
 	if c.githubEnabled() {
-		githubClient, err := githubclient.New(c.GitHub)
+		githubClient, err := githubclient.New(c.GitHub.Settings)
 		if err != nil {
 			return err
 		}
 		sharedState := githubstate.New(db, runner, time.Duration(c.GitHub.FreshnessSeconds)*time.Second, publication.Adapter{})
-		provider := github.NewProvider(githubClient, githubFanout, sharedState, c.GitHub)
+		provider := github.NewProvider(githubClient, githubFanout, sharedState, c.GitHub.Settings)
 		githubAPI, providers["github"] = provider, provider
-		webhookHandler = webhook.New(c.GitHub, c.GitHubRetention, githubFanout)
+		webhookHandler = webhook.New(c.GitHub.Settings, c.GitHub.Retention, githubFanout)
 	}
 
 	options := rpc.Options{
@@ -276,7 +276,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		Settings:   c.Settings,
 	}
 	sourceWorker := &sources.Worker{Store: inboxes, Providers: providers}
-	maintenance := github.Maintenance{Fanout: githubFanout, Retention: c.GitHubRetention}
+	maintenance := github.Maintenance{Fanout: githubFanout, Retention: c.GitHub.Retention}
 	failed := make(chan error, workers*2+4)
 	// The workers outlive the listeners, so a claim in progress is released before the database closes: the
 	// deferred cancel ends them, and the wait after it returns once they have released their claims.

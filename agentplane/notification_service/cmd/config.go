@@ -34,12 +34,11 @@ type config struct {
 	OperatorReaderServices []string          `mapstructure:"operator_reader_services"`
 	Quotas                 inboxstore.Quotas `mapstructure:"quotas"`
 	worker.Settings        `mapstructure:",squash"`
-	GitHubRetention        settings.Retention `mapstructure:",squash"`
-	Actions                actionPeer         `mapstructure:"actions"`
-	HistoryService         peer               `mapstructure:"history_service"`
-	SessionDispatcher      peer               `mapstructure:"session_dispatcher"`
-	// GitHub is on when any of its settings is set.
-	GitHub settings.Settings `mapstructure:"github"`
+	Actions                actionPeer `mapstructure:"actions"`
+	HistoryService         peer       `mapstructure:"history_service"`
+	SessionDispatcher      peer       `mapstructure:"session_dispatcher"`
+	// Retention can be configured even when the source is disabled.
+	GitHub githubConfig `mapstructure:"github"`
 	// RequestTimeoutSeconds bounds a call's backend work and each write to a watch stream.
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
 	// MessageBodyLimitBytes is the most UTF-8 bytes a message body may hold, at most inboxstore.MessageBodyCeiling.
@@ -107,18 +106,22 @@ func (p actionPeer) grpcEndpoint() (actionGRPCEndpoint, error) {
 	return endpoint, nil
 }
 
+type githubConfig struct {
+	settings.Settings `mapstructure:",squash"`
+	Retention         settings.Retention `mapstructure:",squash"`
+}
+
 func defaultConfig() config {
 	return config{
 		Quotas: inboxstore.Quotas{
 			InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000, UnacknowledgedMessagesPerSender: 128,
 		},
-		Settings:        worker.DefaultSettings(),
-		GitHubRetention: settings.DefaultRetention(),
-		Actions:         actionPeer{RequestTimeoutSeconds: 5},
+		Settings: worker.DefaultSettings(),
+		Actions:  actionPeer{RequestTimeoutSeconds: 5},
 		// A delivery reads a page of a Session's entries, which can be large.
 		HistoryService:        peer{RequestTimeoutSeconds: 20},
 		SessionDispatcher:     peer{RequestTimeoutSeconds: 15},
-		GitHub:                settings.DefaultSettings(),
+		GitHub:                githubConfig{Settings: settings.DefaultSettings(), Retention: settings.DefaultRetention()},
 		RequestTimeoutSeconds: 15,
 		MessageBodyLimitBytes: 32 * 1024,
 		Host:                  "0.0.0.0",
@@ -143,12 +146,13 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("Notification Service settings file must contain a YAML mapping")
 	}
 
-	// Preserve absent (default seven days) versus explicit YAML null (retain indefinitely).
-	if value, exists := raw["github_delivery_retention_hours"]; exists && value == nil {
-		c.GitHubRetention.Hours = nil
+	// Preserve the default on omission; explicit YAML null retains indefinitely.
+	github, _ := raw["github"].(map[string]any)
+	if value, exists := github["fact_retention_hours"]; exists && value == nil {
+		c.GitHub.Retention.Hours = nil
 	}
-	if value, exists := raw["github_delivery_payload_retention_hours"]; exists && value == nil {
-		c.GitHubRetention.PayloadHours = nil
+	if value, exists := github["raw_body_retention_hours"]; exists && value == nil {
+		c.GitHub.Retention.PayloadHours = nil
 	}
 	// Only these runtime credentials are read from environment variables; static settings never consult the process environment.
 	c.DatabaseURL = os.Getenv(settingPrefix + "DATABASE_URL")
@@ -160,9 +164,9 @@ func loadConfig() (config, error) {
 	return c, nil
 }
 
-// githubEnabled is whether any GitHub setting differs from its default. The settings without a default are the
+// githubEnabled is whether any GitHub provider setting differs from its default. The settings without a default are the
 // App's ID and secrets, so a block that sets nothing else is not one.
-func (c *config) githubEnabled() bool { return c.GitHub != settings.DefaultSettings() }
+func (c *config) githubEnabled() bool { return c.GitHub.Settings != settings.DefaultSettings() }
 
 func (c *config) validate() error {
 	for _, required := range []struct{ name, value string }{
@@ -243,7 +247,7 @@ func (c *config) validate() error {
 	if err := c.Settings.Validate(); err != nil {
 		return err
 	}
-	if err := c.GitHubRetention.Validate(); err != nil {
+	if err := c.GitHub.Retention.Validate(); err != nil {
 		return err
 	}
 	if c.githubEnabled() {

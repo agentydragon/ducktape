@@ -165,17 +165,26 @@ inbox's acknowledged cursor.
 
 ### GitHub event retention
 
-`github_delivery_retention_hours` defaults to 168 and accepts whole hours from 1 to 87600, or
+Set both windows under `github`, alongside `app_id` if using the webhook source. Retention
+settings also apply when no GitHub App is configured. For example:
+
+```yaml
+github:
+  fact_retention_hours: 168
+  raw_body_retention_hours: 6
+```
+
+`fact_retention_hours` defaults to 168 and accepts whole hours from 1 to 87600, or
 explicit YAML `null` for infinite fact retention. It bounds replay, late association matching and
 delivery-ID deduplication, including for active subscriptions.
 
-`github_delivery_payload_retention_hours` defaults to 72 and accepts 0 to 87600 hours, or explicit
+`raw_body_retention_hours` defaults to 72 and accepts 0 to 87600 hours, or explicit
 YAML `null` for infinite body retention. It cannot exceed fact retention, and null is valid only
 when fact retention is also infinite. Staging uses the three-day default. Zero stores no new raw
 body and begins expiring existing bodies on the next maintenance pass. Expiring a body preserves
 its receipt position, digest, identity, compact fact and subject links. Each pass expires up to 1000
 bodies after backfilling any legacy fact needed by matching. Receipt cleanup at the configured fact
-retention later deletes the whole receipt and its links; `github_delivery_retention_hours: null`
+retention later deletes the whole receipt and its links; `fact_retention_hours: null`
 disables that cleanup while the body setting still applies independently. Inbox payload copies keep
 their independent 30-day retention.
 
