@@ -102,7 +102,7 @@ impl<'a> AuthorInputLocations<'a> {
             .unwrap_or_else(|| panic!("author input chunk {chunk:?} has no analysis options"))
     }
 
-    pub fn render_value_input(&self, evidence: &mut ValueInputEvidence) {
+    pub(crate) fn render_value_input(&self, evidence: &mut ValueInputEvidence) {
         let chunk = &evidence.reference.defining_chunk;
         evidence.note = self.chunk_options(chunk).value_inputs[evidence.reference.input_index]
             .note
@@ -111,7 +111,10 @@ impl<'a> AuthorInputLocations<'a> {
         evidence.spec_location = self.spec_location(&evidence.spec_location);
     }
 
-    pub fn render_native_operation_input(&self, evidence: &mut NativeOperationInputEvidence) {
+    pub(crate) fn render_native_operation_input(
+        &self,
+        evidence: &mut NativeOperationInputEvidence,
+    ) {
         let chunk = &evidence.reference.defining_chunk;
         let options = self.chunk_options(chunk);
         // The reference indexes operation inputs, then call-identity inputs.
@@ -135,7 +138,7 @@ impl<'a> AuthorInputLocations<'a> {
         evidence.spec_location = self.spec_location(&evidence.spec_location);
     }
 
-    pub fn render_inference_use(&self, inference_use: &mut InferenceUseReport) {
+    pub(crate) fn render_inference_use(&self, inference_use: &mut InferenceUseReport) {
         inference_use.argument_input_spec_locations = inference_use
             .argument_input_refs
             .iter()
@@ -148,7 +151,7 @@ impl<'a> AuthorInputLocations<'a> {
             .collect();
     }
 
-    pub fn render_imported_primitive_array_spread_input_use(
+    pub(crate) fn render_imported_primitive_array_spread_input_use(
         &self,
         input_use: &mut analysis_vocabulary::inputs::ImportedPrimitiveArraySpreadInputUse,
     ) {

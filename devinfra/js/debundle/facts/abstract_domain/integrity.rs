@@ -68,7 +68,7 @@ impl IntrinsicSlot {
     }
 
     /// The census family whose writes the slot inherits.
-    pub fn family(self) -> NativeIntrinsic {
+    pub(crate) fn family(self) -> NativeIntrinsic {
         match self {
             Self::Global(family)
             | Self::Static(family, _)

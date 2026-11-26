@@ -1017,11 +1017,11 @@ impl StructuralStatementFacts {
 
 #[derive(Debug, Clone, Default)]
 pub struct ConstructorFacts {
-    pub reads: BTreeSet<Id>,
-    pub rebinds: BTreeSet<Id>,
-    pub calls: BTreeSet<Id>,
-    pub unresolved_sources: BTreeSet<Id>,
-    pub unresolved_inline_fn: bool,
+    pub(crate) reads: BTreeSet<Id>,
+    pub(crate) rebinds: BTreeSet<Id>,
+    pub(crate) calls: BTreeSet<Id>,
+    pub(crate) unresolved_sources: BTreeSet<Id>,
+    pub(crate) unresolved_inline_fn: bool,
 }
 
 /// The policy-independent half of `analyze::analyze_chunk`'s output: the
@@ -1059,10 +1059,10 @@ pub struct StructuralChunkAnalysis<'a> {
 /// value-flow roots supplied by validated author inputs are known.
 #[derive(Clone)]
 pub struct StructuralChunkSourceFacts<'a> {
-    pub body: Vec<TopLevelItemView<'a>>,
+    pub(crate) body: Vec<TopLevelItemView<'a>>,
     pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,
     pub(crate) imported_bindings: BTreeSet<Id>,
-    pub shadowed: BTreeSet<&'static str>,
+    pub(crate) shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
-    pub top_level_await: Option<SourceUnitOrdinal>,
+    pub(crate) top_level_await: Option<SourceUnitOrdinal>,
 }

@@ -119,10 +119,6 @@ impl BindingId {
         Self { chunk_id, swc_id }
     }
 
-    pub fn chunk_id(&self) -> ChunkId {
-        self.chunk_id
-    }
-
     pub fn swc_id(&self) -> &Id {
         &self.swc_id
     }

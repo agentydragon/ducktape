@@ -355,7 +355,7 @@ pub enum UnusedPremiseReason {
 
 impl UnusedPremiseReason {
     /// Clause completing the diagnostic's endpoint sentence.
-    pub fn explanation(self) -> &'static str {
+    pub(crate) fn explanation(self) -> &'static str {
         match self {
             Self::NoSequencedEdge => "are already unordered",
             Self::SummarizedEndpoints => {
