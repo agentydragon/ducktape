@@ -44,7 +44,7 @@ func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) 
         workspace_provenance: DEPLOYMENT_CONFIG
         workspace_root_enforced: false
         creates_missing_cwd: true
-`))
+`+policyServiceSettings))
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)

@@ -327,17 +327,9 @@ type identitySources struct {
 	policy reader.IdentitySource
 }
 
-// startIdentities follows Identities through PolicyService when policy_service is set, else reads them from the API
-// server; stop ends the PolicyService view.
-func startIdentities(ctx context.Context, c config, d deps) (identitySources, func(), error) {
-	if c.PolicyService == nil {
-		uids, err := auth.NewKubernetesIdentityUIDs(d.Kube, c.PolicyNamespace)
-		if err != nil {
-			return identitySources{}, nil, fmt.Errorf("configure Identity checks: %w", err)
-		}
-		return identitySources{uids: uids, policy: reader.KubernetesIdentities{}}, func() {}, nil
-	}
-	cache, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
+// startIdentities follows Identities through PolicyService; stop ends that view.
+func startIdentities(ctx context.Context, c config) (identitySources, func(), error) {
+	cache, stop, err := identitycache.Start(ctx, c.PolicyService, identitycache.StandardGrace)
 	if err != nil {
 		return identitySources{}, nil, fmt.Errorf("start the PolicyService Identity view: %w", err)
 	}
@@ -432,7 +424,7 @@ func actionSessionDelegation(identities auth.IdentityUIDReader) (auth.Methods, e
 // the MCP groups, the refreshes and Web Push delivery drain from then on, beside the listener's shutdown, and serve
 // returns once they have and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
-	identities, stopIdentities, err := startIdentities(ctx, c, d)
+	identities, stopIdentities, err := startIdentities(ctx, c)
 	if err != nil {
 		return err
 	}

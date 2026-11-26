@@ -74,22 +74,19 @@ type config struct {
 	// CentralSamplerIdentityCallers enables the exact service actors to call for a live Identity.
 	CentralSamplerIdentityCallers   bool     `mapstructure:"central_sampler_identity_callers"`
 	AllowedServiceAccountNamespaces []string `mapstructure:"allowed_service_account_namespaces"`
-	// PolicyNamespace holds the Identities a Sandbox SVID may name.
+	// CLEANUP(added 2026-11-26): Remove once the manifests stop setting policy_namespace for llm_ingress (manifest PR after this one).
 	PolicyNamespace string `mapstructure:"policy_namespace"`
-	// PolicyService, when set, supplies Identities through PolicyService.WatchIdentities instead of direct reads in
-	// PolicyNamespace.
-	// CLEANUP(added 2026-11-26): require it and drop PolicyNamespace and the Kubernetes Identity reads once the staging
-	//   manifests set it (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
-	PolicyService         *identitycache.Peer `mapstructure:"policy_service"`
-	LogLLMRequests        bool                `mapstructure:"log_llm_requests"`
-	Models                []modelConfig       `mapstructure:"models"`
-	Attribution           attributionConfig   `mapstructure:"attribution"`
-	CodexModelCatalogFile string              `mapstructure:"codex_model_catalog_file"`
-	LiteLLMURL            string              `mapstructure:"litellm_url"`
-	LiteLLMKey            string              `mapstructure:"-"`
-	LogLevels             map[string]string   `mapstructure:"log_levels"`
-	RPC                   listener.Config     `mapstructure:"rpc"`
-	Kubeconfig            string              `mapstructure:"kubeconfig"`
+	// PolicyService supplies Identities through PolicyService.WatchIdentities.
+	PolicyService         identitycache.Peer `mapstructure:"policy_service"`
+	LogLLMRequests        bool               `mapstructure:"log_llm_requests"`
+	Models                []modelConfig      `mapstructure:"models"`
+	Attribution           attributionConfig  `mapstructure:"attribution"`
+	CodexModelCatalogFile string             `mapstructure:"codex_model_catalog_file"`
+	LiteLLMURL            string             `mapstructure:"litellm_url"`
+	LiteLLMKey            string             `mapstructure:"-"`
+	LogLevels             map[string]string  `mapstructure:"log_levels"`
+	RPC                   listener.Config    `mapstructure:"rpc"`
+	Kubeconfig            string             `mapstructure:"kubeconfig"`
 }
 
 func defaultConfig() config {
@@ -128,13 +125,8 @@ func validateConfig(c *config) error {
 	if len(c.AllowedServiceAccountNamespaces) == 0 {
 		return errors.New("allowed_service_account_namespaces must be non-empty")
 	}
-	if c.PolicyNamespace == "" {
-		return errors.New("policy_namespace is required")
-	}
-	if c.PolicyService != nil {
-		if err := c.PolicyService.Validate(peertls.LLMIngressURI); err != nil {
-			return err
-		}
+	if err := c.PolicyService.Validate(peertls.LLMIngressURI); err != nil {
+		return err
 	}
 	for _, namespace := range c.AllowedServiceAccountNamespaces {
 		if namespace == "" {
@@ -153,7 +145,7 @@ func validateConfig(c *config) error {
 		return err
 	}
 	if !attributesIdentity(c.Attribution) {
-		return errors.New("policy_namespace requires every attribution output to carry the identity claim")
+		return errors.New("every attribution output to carry the identity claim")
 	}
 	if c.CentralSamplerIdentityCallers && len(c.CentralSamplerServices) == 0 {
 		return errors.New("central_sampler_identity_callers requires central_sampler_services")

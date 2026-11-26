@@ -529,6 +529,27 @@ lean_library(
     ],
 )
 
+lean_library(
+    name = "ordered_const_syntax",
+    srcs = ["EsmSplit/CoreJS/OrderedConstSyntax.lean"],
+    deps = [":ordered_region"],
+)
+
+lean_proof_test(
+    name = "ordered_const_syntax_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.OrderedConstSyntax"],
+    required_theorems = [
+        "CoreJS.OrderedConstSyntax.all_const",
+        "CoreJS.OrderedConstSyntax.checkBody",
+        "CoreJS.OrderedConstSyntax.checkEarlierReads",
+        "CoreJS.OrderedConstSyntax.checkRhs",
+        "CoreJS.OrderedConstSyntax.dense_runs",
+        "CoreJS.OrderedConstSyntax.rhs_free",
+    ],
+    deps = [":ordered_const_syntax"],
+)
+
 executable_test(
     name = "ordered_region_test",
     src = "OrderedRegionTest.lean",
@@ -740,7 +761,10 @@ lean_library(
 executable_test(
     name = "checked_move_split_test",
     src = "CheckedMoveSplitTest.lean",
-    deps = [":corejs_checked_move_split"],
+    deps = [
+        ":corejs_checked_move_split",
+        ":literal_reorder_link",
+    ],
 )
 
 lean_proof_test(
@@ -1795,6 +1819,90 @@ lean_proof_test(
     modules = ["EsmSplit.MetadataImports"],
     required_theorems = ["EsmSplit.MetadataImports.external_use_imported"],
     deps = [":metadata_imports"],
+)
+
+lean_library(
+    name = "exact_literal_move",
+    srcs = ["EsmSplit/CoreJS/ExactLiteralMove.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "exact_literal_move_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.ExactLiteralMove"],
+    required_theorems = [
+        "CoreJS.ExactLiteralMove.literal_closed",
+        "CoreJS.ExactLiteralMove.run_literal",
+        "CoreJS.ExactLiteralMove.swap_literals",
+        "CoreJS.ExactLiteralMove.linked_distinct",
+        "CoreJS.ExactLiteralMove.swap_from_link",
+        "CoreJS.ExactLiteralMove.swap_in_context",
+        "CoreJS.ExactLiteralMove.reorder_exact",
+        "CoreJS.ExactLiteralMove.swap_function_in_context",
+        "CoreJS.ExactLiteralMove.preserve_plan",
+        "CoreJS.ExactLiteralMove.CorpusCrossing.resolvedPlan",
+        "CoreJS.ExactLiteralMove.CorpusCrossing.resolvedMoves",
+        "CoreJS.ExactLiteralMove.CorpusCrossing.resolvedExecution",
+        "CoreJS.ExactLiteralMove.run_function",
+        "CoreJS.ExactLiteralMove.swap_literal_function",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.throw_after_swap",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.read_not_admitted",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.read_before_initialization",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.authoredOrder",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.authoredPlacement",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.authoredAllOutcomes",
+        "CoreJS.ExactLiteralMove.AuthoredFixture.sameExports",
+    ],
+    deps = [":exact_literal_move"],
+)
+
+lean_library(
+    name = "literal_swap_check",
+    srcs = ["EsmSplit/CoreJS/LiteralSwapCheck.lean"],
+    deps = [":exact_literal_move"],
+)
+
+lean_proof_test(
+    name = "literal_swap_check_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LiteralSwapCheck"],
+    required_theorems = [
+        "CoreJS.LiteralSwapCheck.refuses_read",
+        "CoreJS.LiteralSwapCheck.refuses_throw",
+        "CoreJS.LiteralSwapCheck.sequence_sound",
+        "CoreJS.LiteralSwapCheck.throw_order",
+    ],
+    deps = [":literal_swap_check"],
+)
+
+lean_library(
+    name = "literal_reorder_link",
+    srcs = ["EsmSplit/CoreJS/LiteralReorderLink.lean"],
+    deps = [
+        ":corejs_linked_input",
+        ":literal_swap_check",
+    ],
+)
+
+lean_proof_test(
+    name = "literal_reorder_link_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LiteralReorderLink"],
+    required_theorems = [
+        "CoreJS.LiteralReorderLink.authored_owners",
+        "CoreJS.LiteralReorderLink.construct",
+        "CoreJS.LiteralReorderLink.fixture_plan",
+        "CoreJS.LiteralReorderLink.outcomes",
+        "CoreJS.LiteralReorderLink.outputLink",
+        "CoreJS.LiteralReorderLink.placement",
+        "CoreJS.LiteralReorderLink.sameExports",
+        "CoreJS.LiteralReorderLink.sound",
+    ],
+    deps = [":literal_reorder_link"],
 )
 
 lean_library(

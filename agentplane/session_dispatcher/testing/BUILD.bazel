@@ -1,3 +1,5 @@
+# gazelle:resolve py agentplane.policy.v1.policy_service_pb2 //agentplane/policy/v1:policy_service_pb2
+# gazelle:resolve py agentplane.policy.v1.policy_service_pb2_grpc //agentplane/policy/v1:policy_service_pb2_grpc
 load("//devinfra/python:defs.bzl", "py_library")
 
 package(
@@ -10,6 +12,7 @@ py_library(
     srcs = ["gateway_process.py"],
     data = ["//agentplane/session_dispatcher/cmd:sessions"],
     deps = [
+        ":policy_service",
         "//agentplane/environments/testing:process",
         "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",
@@ -39,5 +42,20 @@ py_library(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_library(
+    name = "policy_service",
+    srcs = ["policy_service.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane/net/peertls:config",
+        "//agentplane/policy/v1:policy_service_pb2",
+        "//agentplane/policy/v1:policy_service_pb2_grpc",
+        "//agentplane/testing:tls",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
     ],
 )

@@ -32,7 +32,17 @@ const requiredRPC = `rpc:
       ca_file: /test/workload-ca.crt
 `
 
-const requiredFile = requiredRPC + `policy_namespace: test-agentplane
+const requiredPolicyService = `policy_service:
+  target: test-policy-controller:8443
+  tls:
+    ca_file: /test/workload-ca.crt
+    server_uri: ` + peertls.PolicyControllerURI + `
+    cert_file: /test/actions.crt
+    key_file: /test/actions.key
+    client_uri: ` + peertls.ActionsURI + `
+`
+
+const requiredFile = requiredRPC + requiredPolicyService + `policy_namespace: test-agentplane
 caller_service_account_namespaces: [test-agentplane]
 `
 
@@ -164,7 +174,7 @@ func TestOperatorIssuerIsRead(t *testing.T) {
 }
 
 func TestThePolicySettingsAreRead(t *testing.T) {
-	c, err := loadTestConfig(t, requiredRPC+`policy_namespace: test-policies
+	c, err := loadTestConfig(t, requiredRPC+requiredPolicyService+`policy_namespace: test-policies
 caller_service_account_namespaces: [test-callers, test-more-callers]
 `)
 	if err != nil {
@@ -553,11 +563,12 @@ func TestPolicyServiceMustBeACompleteMutualTLSCallerAsActions(t *testing.T) {
 		{"no target", block("", actions, policy), false},
 		{"another caller identity", block("test-policy-controller:8443", peertls.MCPEdgeURI, policy), false},
 		{"another server", block("test-policy-controller:8443", actions, peertls.ActionsURI), false},
+		{"absent", "", false},
 		{"no client SVID", "policy_service:\n  target: test-policy-controller:8443\n  tls:\n    ca_file: /test/workload-ca.crt\n    server_uri: " + policy + "\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := loadTestConfig(t, requiredFile+tc.settings)
-			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "test-policy-controller:8443") {
+			c, err := loadTestConfig(t, strings.Replace(requiredFile, requiredPolicyService, tc.settings, 1))
+			if tc.valid && (err != nil || c.PolicyService.Target != "test-policy-controller:8443") {
 				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
 			}
 			if !tc.valid && err == nil {

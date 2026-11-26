@@ -30,6 +30,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/testing/policyservice"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -269,6 +270,11 @@ func TestNotificationProcessDriver(t *testing.T) {
 	c.Actions = actionPeer{URL: "http://127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
 	c.HistoryService = peer{Target: "127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
 	c.SessionDispatcher = peer{Target: "127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
+	kubeConfig, err := clientcmd.BuildConfigFromFlags("", input.KubeconfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.PolicyService = policyservice.Serve(t, kubeConfig, input.Namespace)
 	if err := c.validate(); err != nil {
 		t.Fatal(err)
 	}

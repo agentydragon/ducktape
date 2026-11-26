@@ -29,7 +29,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 )
 
@@ -126,15 +125,11 @@ func run(c config) error {
 	}
 	ready := healthz.Ping
 	if c.EnvironmentService != nil {
-		var identities reader.IdentitySource = reader.KubernetesIdentities{}
-		if c.PolicyService != nil {
-			cache, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
-			if err != nil {
-				return fmt.Errorf("PolicyService Identity view: %w", err)
-			}
-			defer stop()
-			identities = reader.CachedIdentities{View: cache}
+		identities, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
+		if err != nil {
+			return fmt.Errorf("PolicyService Identity view: %w", err)
 		}
+		defer stop()
 		server, err := serving.New(*c.EnvironmentService, c.Namespace, restConfig, scheme, identities)
 		if err != nil {
 			return err

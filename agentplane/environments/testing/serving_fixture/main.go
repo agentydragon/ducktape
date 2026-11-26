@@ -11,12 +11,12 @@ import (
 	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/internal/serving"
+	"github.com/agentydragon/ducktape/agentplane/environments/testing/identityview"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -67,6 +67,10 @@ func run() error {
 			ExecutorCallers:   split(os.Getenv("ENVIRONMENTS_TEST_RUNTIME_EXECUTOR_CALLERS")),
 		}
 	}
+	identities, err := identityview.Start(ctx, config, namespace)
+	if err != nil {
+		return err
+	}
 	server, err := serving.New(serving.Config{
 		PolicyNamespace: namespace,
 		RPC: listener.Config{
@@ -76,7 +80,7 @@ func run() error {
 		},
 		ServiceReaders: callers, ServiceManagers: callers, ServiceOperators: callers,
 		RuntimeProxy: runtimeProxy,
-	}, namespace, config, scheme, reader.KubernetesIdentities{})
+	}, namespace, config, scheme, identities)
 	if err != nil {
 		return err
 	}

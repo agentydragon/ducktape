@@ -70,14 +70,9 @@ class Settings(BaseModel):
     migration_timeout_s: float = Field(default=600, ge=0.001, le=86400)
     rpc: Listener
     kubeconfig: Path | None = None
-    policy_namespace: str = Field(min_length=1, description="Namespace holding the Identities a Sandbox SVID may name.")
-    # CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
-    #   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
-    policy_service: PolicyServicePeer | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-        description="PolicyService serving every Identity this service resolves, instead of policy_namespace reads.",
-    )
+    # CLEANUP(added 2026-11-26): Remove once the manifests stop setting policy_namespace for History (manifest PR after this one).
+    policy_namespace: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    policy_service: PolicyServicePeer = Field(description="PolicyService serving every Identity this service resolves.")
     ingress: IngressSettings
     fold_concurrency: int = Field(default=4, ge=1, le=64)
     # A backfill advances each Session one page per cycle; the history store serves at most 1000.
@@ -96,6 +91,5 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def policy_service_as_history(self) -> Self:
-        if self.policy_service is not None:
-            self.policy_service.tls.validate_caller(None, HISTORY_SERVICE_URI)
+        self.policy_service.tls.validate_caller(None, HISTORY_SERVICE_URI)
         return self

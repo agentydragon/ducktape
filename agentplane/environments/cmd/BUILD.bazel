@@ -19,7 +19,6 @@ go_library(
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/identitycache",
-        "//agentplane/policy/reader",
         "//agentplane/sandboxes/api",
         "@com_github_go_logr_logr//:logr",
         "@io_k8s_apimachinery//pkg/api/errors",

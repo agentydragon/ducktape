@@ -18,11 +18,9 @@ _POLICY_SERVICE_TLS = {
 }
 
 
-def _settings_source(
-    *, policy_namespace: str = "test-policies", sampler_service_actor: str | None = None
-) -> dict[str, Any]:
+def _settings_source(*, sampler_service_actor: str | None = None) -> dict[str, Any]:
     return {
-        "policy_namespace": policy_namespace,
+        "policy_service": {"target": "test-policy-controller:8443", "tls": _POLICY_SERVICE_TLS},
         "rpc": {
             "listen_address": "0.0.0.0:8080",
             "tls": {"cert_file": "/test/history.crt", "key_file": "/test/history.key"},
@@ -32,13 +30,9 @@ def _settings_source(
     }
 
 
-@pytest.mark.parametrize("value", ["missing", "empty"])
-def test_policy_namespace_is_required(value: str) -> None:
+def test_policy_service_is_required() -> None:
     source = _settings_source()
-    if value == "missing":
-        del source["policy_namespace"]
-    else:
-        source["policy_namespace"] = ""
+    del source["policy_service"]
     with pytest.raises(ValidationError):
         Settings.model_validate(source)
 
@@ -90,12 +84,11 @@ def test_disabled_service_callers_are_absent_from_serialized_settings() -> None:
     assert "service_delegation" not in serialized
     assert "sampler_service_actor" not in serialized["ingress"]
     assert "compact_execution_evidence" not in serialized["ingress"]
-    assert "policy_service" not in serialized
+    assert "policy_namespace" not in serialized
 
 
 def test_policy_service_is_reached_as_history() -> None:
     source = _settings_source()
-    source["policy_service"] = {"target": "test-policy-controller:8443", "tls": _POLICY_SERVICE_TLS}
     assert Settings.model_validate(source).model_dump(mode="json")["policy_service"]["target"] == (
         "test-policy-controller:8443"
     )
@@ -116,9 +109,9 @@ def test_execution_evidence_compaction_can_be_enabled_explicitly() -> None:
 
 
 def test_file_settings_do_not_read_static_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENTPLANE_HISTORY_SERVICE_POLICY_NAMESPACE", "environment-value")
+    monkeypatch.setenv("AGENTPLANE_HISTORY_SERVICE_WATCH_LEASE_S", "1")
     settings = Settings.model_validate(_settings_source())
-    assert settings.policy_namespace == "test-policies"
+    assert settings.watch_lease_s == 300
 
 
 if __name__ == "__main__":
