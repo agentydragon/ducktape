@@ -1681,3 +1681,29 @@ lean_proof_test(
     ],
     deps = [":local_export_unit"],
 )
+
+lean_library(
+    name = "corejs_terminal_source",
+    srcs = ["EsmSplit/CoreJS/TerminalSource.lean"],
+    deps = [
+        ":corejs_projected_order",
+        ":local_export_unit",
+    ],
+)
+
+executable_test(
+    name = "corejs_terminal_source_test",
+    src = "TerminalSourceTest.lean",
+    deps = [":corejs_terminal_source"],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_source_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalSource"],
+    required_theorems = [
+        "CoreJS.TerminalSource.check",
+        "CoreJS.TerminalSource.loaded_ids",
+    ],
+    deps = [":corejs_terminal_source"],
+)
