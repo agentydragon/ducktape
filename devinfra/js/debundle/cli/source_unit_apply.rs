@@ -185,7 +185,7 @@ pub fn run_source_unit_apply(
     }
     let mut docs = original_docs.clone();
     let initial_spec = post_edit_spec_from_docs(&original_docs, &BTreeSet::new())?;
-    let (resolved, claim_projection) = resolve_edit_claims(
+    let claim_projection = resolve_edit_claims(
         stderr,
         &graph_input,
         dependency_graph_path,
@@ -212,7 +212,6 @@ pub fn run_source_unit_apply(
         modules_root,
         &original_docs,
         &initial_spec,
-        &resolved,
         &claim_projection,
         scope.as_ref(),
     )?;
@@ -736,25 +735,15 @@ fn source_unit_claim_locations(
     modules_root: &Path,
     docs: &ModuleDocs,
     post_spec: &crate::edit_gate::PostEditSpec,
-    resolved: &[anonymous_resolution::ResolvedSourceClaims],
     projection: &SourceUnitClaimProjection,
     scope: Option<&ModuleTreeScope>,
 ) -> Result<Vec<SourceUnitClaimLocation>> {
-    anyhow::ensure!(
-        post_spec.modules.len() == resolved.len(),
-        "resolved selector results do not match the current module list"
-    );
     anyhow::ensure!(
         post_spec.modules.len() == projection.modules.len(),
         "projected selector results do not match the current module list"
     );
     let mut locations = Vec::new();
-    for ((module, resolved), projected) in post_spec
-        .modules
-        .iter()
-        .zip(resolved)
-        .zip(&projection.modules)
-    {
+    for (module, projected) in post_spec.modules.iter().zip(&projection.modules) {
         let module_path = module_path_from_file(&module.path, modules_root);
         let logical_module = logical_module_path(&module_path, scope)?;
         let (_, doc) = docs.get(&module_path).with_context(|| {
@@ -764,7 +753,7 @@ fn source_unit_claim_locations(
             )
         })?;
         anyhow::ensure!(
-            doc.members.len() == projected.member_bindings.len(),
+            doc.members.len() == projected.local_name_by_member.len(),
             "projected member claims do not match module {}",
             module.path.display()
         );
@@ -782,15 +771,15 @@ fn source_unit_claim_locations(
                 }
             }
         };
-        for (member_index, binding) in projected.member_bindings.iter().enumerate() {
+        for (member_index, binding) in projected.local_name_by_member.iter().enumerate() {
             if let Some(binding) = binding {
                 record_local(binding, SourceUnitClaimSlot::Member(member_index));
             }
         }
         for (claim_index, claim) in doc.source_matches.iter().enumerate() {
             for (binding_index, binding) in claim.bindings.iter().enumerate() {
-                let resolved_binding = resolved
-                    .member_bindings
+                let resolved_binding = projected
+                    .resolved_member_bindings
                     .get(binding.name())
                     .with_context(|| {
                         format!(
@@ -815,7 +804,7 @@ fn source_unit_claim_locations(
                 selectors.insert(selector.clone()),
                 "module {module_path} repeats an anonymous selector, so its metadata cannot be assigned unambiguously"
             );
-            let source_unit = resolved
+            let source_unit = projected
                 .anonymous_selector_source_units
                 .get(&selector)
                 .with_context(|| {

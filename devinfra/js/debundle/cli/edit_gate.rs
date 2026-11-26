@@ -55,7 +55,7 @@ use anyhow::{Context, Result, bail};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use serde::Serialize;
 use source_identity::SourceUnitId;
-use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
+use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, ModulePath};
 use spec_modules::{
     ModuleClaims, ModuleFile, collect_module_files, ensure_unaliased_module_tree, module_claims,
     module_path_from_file, read_module_claims,
@@ -525,7 +525,10 @@ pub struct UnresolvedDirectBindingSourceClaim {
 pub struct ModuleClaimProjection {
     /// Local name for each authored member, in selector order. Imports have no
     /// local declaration to move. Resolution lives in `local_bindings`.
-    pub member_bindings: Vec<Option<String>>,
+    pub local_name_by_member: Vec<Option<String>>,
+    /// Canonical selector results used to verify names and locate authored edits.
+    pub resolved_member_bindings: BTreeMap<String, String>,
+    pub anonymous_selector_source_units: BTreeMap<AnonymousStatementSelector, SourceUnitId>,
     /// Local binding names contributed by this module, including source-backed
     /// claims, with declaration-site identity preserved.
     pub local_bindings: BTreeMap<String, LocalBindingResolution>,
@@ -630,7 +633,7 @@ pub fn resolve_edit_claims(
     source_root: Option<&Path>,
     source_context: Option<&VerifiedGraphSourceContext>,
     post_spec: &PostEditSpec,
-) -> Result<(Vec<ResolvedSourceClaims>, SourceUnitClaimProjection)> {
+) -> Result<SourceUnitClaimProjection> {
     let claim_sets: Vec<_> = post_spec
         .modules
         .iter()
@@ -652,8 +655,7 @@ pub fn resolve_edit_claims(
             &claim_sets,
         )
     })?;
-    let projection = project_source_unit_claims(input, post_spec, &resolved)?;
-    Ok((resolved, projection))
+    project_source_unit_claims(input, post_spec, resolved)
 }
 
 /// Resolve typed binding claims to source unit identities. Direct imports remain
@@ -662,7 +664,7 @@ pub fn resolve_edit_claims(
 fn project_source_unit_claims(
     input: &DependencyGraphInput,
     post_spec: &PostEditSpec,
-    resolved_claims: &[ResolvedSourceClaims],
+    resolved_claims: Vec<ResolvedSourceClaims>,
 ) -> Result<SourceUnitClaimProjection> {
     anyhow::ensure!(
         post_spec.modules.len() == resolved_claims.len(),
@@ -685,7 +687,7 @@ fn project_source_unit_claims(
                         resolved.direct_binding_checks.get(member_index),
                     );
                     if binding.kind == Some(BindingSourceKind::ImportSpecifier) {
-                        module_projection.member_bindings.push(None);
+                        module_projection.local_name_by_member.push(None);
                         continue;
                     }
                     &binding.name
@@ -706,7 +708,7 @@ fn project_source_unit_claims(
                 binding_index.resolve(binding_name),
             );
             module_projection
-                .member_bindings
+                .local_name_by_member
                 .push(Some(binding_name.clone()));
         }
         for binding_name in &resolved.bindings {
@@ -726,7 +728,11 @@ fn project_source_unit_claims(
         module_projection
             .source_units
             .extend(&resolved.anonymous_source_units);
-        projection.modules.push(module_projection);
+        projection.modules.push(ModuleClaimProjection {
+            resolved_member_bindings: resolved.member_bindings,
+            anonymous_selector_source_units: resolved.anonymous_selector_source_units,
+            ..module_projection
+        });
     }
     Ok(projection)
 }
@@ -937,7 +943,7 @@ fn gate_post_edit_assignment_with_expected(
     // source units they claim. A claim the gate cannot resolve (missing chunk
     // source, unmatched/ambiguous selector) is a hard error — the claimed
     // source unit must never silently fall to residual.
-    let (resolved_claims, claim_projection) = resolve_edit_claims(
+    let claim_projection = resolve_edit_claims(
         stderr,
         input,
         dependency_graph_path,
@@ -997,8 +1003,8 @@ fn gate_post_edit_assignment_with_expected(
                     .with_context(|| {
                         format!("expected module {} is absent", target.module_path.display())
                     })?;
-                let actual = resolved_claims[module_idx]
-                    .member_bindings
+                let actual = claim_projection.modules[module_idx]
+                    .resolved_member_bindings
                     .get(&target.export_name);
                 if actual != Some(&target.binding_name) {
                     bail!(
@@ -1024,7 +1030,7 @@ fn gate_post_edit_assignment_with_expected(
                 .is_ok_and(|path| scope.contains(path))
         });
     }
-    let (_, before_projection) = resolve_edit_claims(
+    let before_projection = resolve_edit_claims(
         stderr,
         input,
         dependency_graph_path,
