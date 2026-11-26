@@ -1,10 +1,10 @@
 //! Nonterminal receipts from operations executed by the ordered local kernel.
 
 use super::completion::Completion;
-use analysis::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use analysis::facts::binding_effect_coverage::{
     LexicalBindingEffectReceipt, LocalBodyIdentity, LocalCallReceipt, RootInitializerIdentity,
 };
+use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default)]
@@ -542,8 +542,8 @@ fn local_call_key(call: &LocalCallReceipt) -> LocalCallKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::analysis_inputs::{ProgramPremiseKey, ValueInputRef};
     use analysis::facts::binding_effect_coverage::{BindingEffectAuthority, BindingEffectCoverage};
+    use analysis_vocabulary::inputs::{ProgramPremiseKey, ValueInputRef};
     use source_identity::SourceUnitOrdinal;
     use swc_common::{BytePos, Span};
 

@@ -8,10 +8,10 @@ use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use analysis::ModuleId;
-use analysis::analysis_inputs::CommutingStatementsRef;
-use analysis::execution_evidence::AssumedEffectReason;
 use analysis::facts::{CellOverlap, CellOverlapLaw, DataflowOpacityCause};
-use analysis::reports::schema::EffectCellReport;
+use analysis_vocabulary::execution_evidence::AssumedEffectReason;
+use analysis_vocabulary::inputs::CommutingStatementsRef;
+use analysis_vocabulary::report_schema::EffectCellReport;
 
 use super::build::PremiseVerdict;
 

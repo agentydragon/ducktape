@@ -56,7 +56,7 @@ impl CoerceOp {
 
 /// What evaluating source can do that the analysis did not discharge. A
 /// statement or function is pure when evaluation has no effect; each effect
-/// projects to the `PurityRule` that reports it (`purity/purity_type.rs`).
+/// projects to the `PurityRule` that reports it (`purity.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Effect {
     /// Writes a binding or a property: assignment, update, or an initializer
@@ -104,14 +104,14 @@ pub enum CoerceSite {
 /// condition on their primitive types under which it runs no user code and
 /// completes normally (plan § 2.3 `Coerce` resolution).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CoerceOperands {
-    pub(crate) operands: Vec<CoerceOperand>,
-    pub(crate) check: CoerceCheck,
+pub struct CoerceOperands {
+    pub operands: Vec<CoerceOperand>,
+    pub check: CoerceCheck,
 }
 
 /// When primitive operands of a coercion cannot throw.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CoerceCheck {
+pub enum CoerceCheck {
     /// Every operand's types are within these.
     Within(PrimKinds),
     /// The two operands of this binary operator combine without throwing

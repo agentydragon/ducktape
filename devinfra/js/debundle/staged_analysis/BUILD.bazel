@@ -18,6 +18,7 @@ rust_library(
         "//devinfra/js/debundle:prepare_chunks",
         "//devinfra/js/debundle:program_analysis",
         "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/analyze",
         "//devinfra/js/debundle/artifacts:artifact",
         "//devinfra/js/debundle/chunk_analysis",

@@ -21,6 +21,7 @@ rust_library(
         "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:report_io",
         "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/esm_schedule",
         "//devinfra/js/debundle/graph",
         "//devinfra/js/debundle/selectors/resolution:anonymous_resolution",

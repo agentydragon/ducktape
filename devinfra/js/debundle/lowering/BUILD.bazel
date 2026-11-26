@@ -55,6 +55,7 @@ rust_library(
         "//devinfra/js/debundle:report_io",
         "//devinfra/js/debundle:source_identity",
         "//devinfra/js/debundle:spec_resolution",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/artifacts:artifact",
         "//devinfra/js/debundle/artifacts:output_layout",
         "//devinfra/js/debundle/chunk_analysis",

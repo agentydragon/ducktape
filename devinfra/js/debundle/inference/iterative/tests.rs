@@ -1,5 +1,5 @@
 use super::*;
-use crate::analysis_inputs::ValueInputRef;
+use analysis_vocabulary::inputs::ValueInputRef;
 
 struct LateTransferRules;
 

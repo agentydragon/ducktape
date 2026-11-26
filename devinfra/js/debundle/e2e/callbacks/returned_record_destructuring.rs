@@ -4,15 +4,15 @@
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 
-fn first_reasons(source: &str) -> Vec<analysis::PurityRule> {
+fn first_reasons(source: &str) -> Vec<analysis_vocabulary::purity::PurityRule> {
     first_reasons_of(split(source))
 }
 
-fn first_reasons_of(opts: FixtureOpts<'_>) -> Vec<analysis::PurityRule> {
+fn first_reasons_of(opts: FixtureOpts<'_>) -> Vec<analysis_vocabulary::purity::PurityRule> {
     let rejected = run_rejection_fixture_with_graphs(opts);
     let graph = rejected.dependency_graph();
     let first = node_declaring(&graph, "first");
-    let analysis::Purity::NotPure { reasons } = &first.purity else {
+    let analysis_vocabulary::purity::Purity::NotPure { reasons } = &first.purity else {
         panic!("first should retain an effect reason");
     };
     reasons.iter().map(|reason| reason.rule).collect()
@@ -108,8 +108,8 @@ fn effectful_factory_keeps_call_order() {
     );
     expect_sequenced_cycle_rejection(split(&source), &["outer", "inner"]);
     let reasons = first_reasons(&source);
-    assert!(reasons.contains(&analysis::PurityRule::ImpureFunctionCall));
-    assert!(!reasons.contains(&analysis::PurityRule::DestructuringPattern));
+    assert!(reasons.contains(&analysis_vocabulary::purity::PurityRule::ImpureFunctionCall));
+    assert!(!reasons.contains(&analysis_vocabulary::purity::PurityRule::DestructuringPattern));
 }
 
 #[test]
@@ -118,7 +118,10 @@ fn getter_factory_keeps_destructuring_order() {
         "function factory() { return { get selected() { console.log('getter'); return () => 1; } }; }",
     );
     expect_sequenced_cycle_rejection(split(&source), &["outer", "inner"]);
-    assert!(first_reasons(&source).contains(&analysis::PurityRule::DestructuringPattern));
+    assert!(
+        first_reasons(&source)
+            .contains(&analysis_vocabulary::purity::PurityRule::DestructuringPattern)
+    );
 }
 
 #[test]
@@ -141,7 +144,10 @@ fn rebound_factory_keeps_destructuring_order() {
     let source = declarations(
         "function factory() { return { selected: () => 1 }; }\nfactory = () => ({ selected: () => 2 });",
     );
-    assert!(first_reasons(&source).contains(&analysis::PurityRule::DestructuringPattern));
+    assert!(
+        first_reasons(&source)
+            .contains(&analysis_vocabulary::purity::PurityRule::DestructuringPattern)
+    );
 }
 
 #[test]
@@ -151,7 +157,7 @@ fn dynamic_scope_keeps_destructuring_order() {
     let source = declarations("function factory() { eval(''); return { selected: () => 1 }; }");
     assert!(
         first_reasons_of(split(&source).with_admission_overrides(&["a1_eval"]))
-            .contains(&analysis::PurityRule::DestructuringPattern)
+            .contains(&analysis_vocabulary::purity::PurityRule::DestructuringPattern)
     );
 }
 
@@ -178,6 +184,9 @@ fn defaults_rest_and_nested_patterns_stay_conservative() {
              console.log(typeof first, typeof middle, typeof last);\n\
              export {{ first, middle, last }};\n"
         );
-        assert!(first_reasons(&source).contains(&analysis::PurityRule::DestructuringPattern));
+        assert!(
+            first_reasons(&source)
+                .contains(&analysis_vocabulary::purity::PurityRule::DestructuringPattern)
+        );
     }
 }

@@ -13,8 +13,8 @@ use super::super::world::descriptor_heap::{
 };
 use analysis::facts::abstract_domain::builtins::{ArgSel, Row};
 use analysis::facts::abstract_domain::heap::Mutation;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
+use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeSet;
 
 /// One heap mutation of an admitted row, fully materialized by `plan`.

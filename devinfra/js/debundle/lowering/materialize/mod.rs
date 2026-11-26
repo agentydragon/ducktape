@@ -1123,7 +1123,7 @@ fn build_chunk_graph_or_report_contradiction(
     context: ChunkContext<'_>,
     facts: &ChunkFactAnalysis,
     graph_options: graph::GraphOptions,
-    commuting_statements: &[analysis::analysis_inputs::ResolvedCommutingStatements],
+    commuting_statements: &[analysis_vocabulary::inputs::ResolvedCommutingStatements],
     builder: &ChunkPlanBuilder,
 ) -> Result<graph::DependencyGraphAndAtomicGroups> {
     let ChunkContext {

@@ -1,7 +1,7 @@
 //! The record-factory assertion supplies only the prototype premises for the
 //! existing checked private-constructor proof.
 
-use analysis::execution_evidence::ExecutionPrecisionLossReason;
+use analysis_vocabulary::execution_evidence::ExecutionPrecisionLossReason;
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 
@@ -1019,7 +1019,7 @@ fn local_factory_result_rejection(
     source: &str,
     anonymous_statements: &[&str],
 ) -> (
-    analysis::reports::schema::RecordFactoryRejectionReason,
+    analysis_vocabulary::report_schema::RecordFactoryRejectionReason,
     Option<usize>,
 ) {
     let members = vec![
@@ -1102,7 +1102,7 @@ fn annotation_admits_a_direct_fresh_record_to_the_checked_constructor_factory() 
 
 #[test]
 fn factory_identity_refusals_report_the_first_guard() {
-    use analysis::reports::schema::RecordFactoryRejectionReason as Reason;
+    use analysis_vocabulary::report_schema::RecordFactoryRejectionReason as Reason;
 
     let escaped = fixture_source(
         "",
@@ -1154,8 +1154,8 @@ fn factory_identity_refusals_report_the_first_guard() {
 
 #[test]
 fn escaped_class_members_report_the_first_global_member_write() {
-    use analysis::execution_evidence::ConstructionRejection;
-    use analysis::reports::schema::{
+    use analysis_vocabulary::execution_evidence::ConstructionRejection;
+    use analysis_vocabulary::report_schema::{
         ClassMembersPublicationWriter as Writer, RecordFactoryRejectionReason,
     };
 
@@ -1360,7 +1360,7 @@ fn assert_forwarding_factory_refused(
     );
     assert_eq!(
         execution.local_record_factory_rejections[0].reason,
-        analysis::reports::schema::RecordFactoryRejectionReason::FactoryEscaped,
+        analysis_vocabulary::report_schema::RecordFactoryRejectionReason::FactoryEscaped,
         "{execution:#?}"
     );
     if let Some(binding) = expected_publication_binding {
@@ -1937,7 +1937,7 @@ fn record_rejection(
     before_command: &str,
     call: &str,
 ) -> (
-    analysis::reports::schema::RecordFactoryRejectionReason,
+    analysis_vocabulary::report_schema::RecordFactoryRejectionReason,
     Option<String>,
 ) {
     let source = fixture_source(
@@ -2129,7 +2129,7 @@ fn logical_not_does_not_hide_an_effectful_constructor_operand() {
     };
     assert_eq!(
         rejection.reason,
-        analysis::reports::schema::RecordFactoryRejectionReason::UnsupportedValue
+        analysis_vocabulary::report_schema::RecordFactoryRejectionReason::UnsupportedValue
     );
 }
 
@@ -2223,7 +2223,7 @@ fn unproven_values_in_admitted_positions_fall_back() {
 
 #[test]
 fn refused_record_shapes_report_a_typed_reason() {
-    use analysis::reports::schema::RecordFactoryRejectionReason as Reason;
+    use analysis_vocabulary::report_schema::RecordFactoryRejectionReason as Reason;
     for (before_command, call, reason, property) in [
         (
             "",

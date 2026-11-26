@@ -5,9 +5,9 @@ use crate::test_support::{
     analyze_facts, analyze_facts_with_hints, hints_with_decorate_helper, test_id,
 };
 use analysis::facts::EffectCell;
-use analysis::{
-    AnalysisAssumptions, AnalysisInputs, KnownEffect, LocalEffectPolicy, StatementFacts,
-    StatementKind,
+use analysis::{StatementFacts, StatementKind};
+use analysis_vocabulary::inputs::{
+    AnalysisAssumptions, AnalysisInputs, KnownEffect, LocalEffectPolicy,
 };
 use raw_js_test_support::{parse, parse_with_source_map};
 use swc_ecma_ast::{ArrayLit, Module};
@@ -1181,7 +1181,7 @@ fn split_comma_list_assigns_per_declarator_source_ranges() {
         let analysis = analyze_chunk(
             &module,
             &AnalysisInputs::default(),
-            Some(analysis::execution_evidence::SourceLocator {
+            Some(analysis_vocabulary::execution_evidence::SourceLocator {
                 source_path: "test.js",
                 lines: &line_index,
             }),

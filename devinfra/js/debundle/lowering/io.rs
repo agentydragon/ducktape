@@ -1,5 +1,5 @@
-use analysis::analysis_inputs::NativeIntegrity;
 use analysis::reports::author_inputs::AuthorInputLocations;
+use analysis_vocabulary::inputs::NativeIntegrity;
 use anyhow::{Result, bail};
 use artifact::paths::{path_from_module_path, relative_module_path};
 use graph::ProgramGraphReport;

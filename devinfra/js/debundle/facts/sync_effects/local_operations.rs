@@ -3,8 +3,8 @@
 use super::value_model::{
     PropertyDefinition, ValueExpr, object_data_property_name, static_property_name,
 };
-use analysis::facts::abstract_domain::value::Kind;
 use analysis_model::PrimKinds;
+use analysis_vocabulary::value::Kind;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::{Span, Spanned};

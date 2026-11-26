@@ -10,15 +10,15 @@ use super::value_model::{
     ValueExpr, Values,
 };
 use super::world::object_surface::ObjectSurfaceStore;
-use analysis::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use analysis::facts::abstract_domain::builtins::{
     ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
 };
-use analysis::facts::abstract_domain::effect::binary_throws;
 use analysis::facts::abstract_domain::integrity::IntrinsicSlot;
 use analysis::facts::abstract_domain::primitive;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
+use analysis_vocabulary::effect::binary_throws;
+use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
+use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;

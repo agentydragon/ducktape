@@ -13,6 +13,7 @@ rust_library(
         "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:report_io",
         "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
         "@crates//:petgraph",

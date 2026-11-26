@@ -12,8 +12,8 @@ pub struct ProgramFlowModule<'a> {
     pub body: &'a [TopLevelItemView<'a>],
     pub fresh_factory_imports: &'a BTreeSet<String>,
     pub fresh_factory_members: &'a BTreeMap<String, BTreeSet<String>>,
-    pub native_operation_inputs: &'a [crate::analysis_inputs::ResolvedNativeOperationInput],
-    pub inferred_sets: &'a BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
+    pub native_operation_inputs: &'a [analysis_vocabulary::inputs::ResolvedNativeOperationInput],
+    pub inferred_sets: &'a BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
 }
 
 /// Transient completed source flow. Saved analysis persists the derived chunk
@@ -133,7 +133,7 @@ impl ProgramValueFlows {
         &self,
         module: &str,
         source: crate::facts::StructuralChunkSourceFacts<'a>,
-        arguments: &[crate::analysis_inputs::ResolvedArgumentInput],
+        arguments: &[analysis_vocabulary::inputs::ResolvedArgumentInput],
     ) -> Option<crate::facts::StructuralChunkAnalysis<'a>> {
         let flow = self.flows.get(module)?.clone();
         Some(super::super::analyze::complete_chunk_structural_with_flow(

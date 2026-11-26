@@ -14,9 +14,9 @@
 //!   warning naming the entry by authored identity, never a failure, and the
 //!   run emits exactly what it emits without the entry.
 
-use analysis::analysis_inputs::CommutingStatementsRef;
 use analysis::reports::spec_lint::UnusedPremiseReason;
 use analysis_model::DepKind;
+use analysis_vocabulary::inputs::CommutingStatementsRef;
 use debundle_e2e_graph_support::{
     FixtureGraphExt, commuting_statements_diagnostics, source_unit_for_binding,
 };

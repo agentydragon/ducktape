@@ -16,9 +16,9 @@ use super::super::value_model::{
     AbstractValue, Context, HeapAddress, InstanceOrigin, RetainedResultKind, ValueExpr, Values,
 };
 use analysis::facts::abstract_domain::builtins::IntrinsicOp;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis::facts::evaluation_effects::GlobalAccessKind;
-use analysis::reports::schema::CallbackFactoryUseKind;
+use analysis_vocabulary::report_schema::CallbackFactoryUseKind;
+use analysis_vocabulary::value::{Kind, Value};
 use swc_common::Span;
 use swc_ecma_ast::*;
 
@@ -435,7 +435,7 @@ impl Executor<'_, '_> {
                     if let Some(&(owner, call_span)) = self.inputs.call_site_owners.get(span) {
                         self.record_returned_record_use(
                             callee,
-                            analysis::reports::schema::ReturnedRecordUseKind::ReturnCapability,
+                            analysis_vocabulary::report_schema::ReturnedRecordUseKind::ReturnCapability,
                             owner,
                             call_span,
                         );

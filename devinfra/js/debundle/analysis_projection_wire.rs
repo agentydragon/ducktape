@@ -1,10 +1,10 @@
 //! Explicit conversion for analysis-only inputs. Authored types use spec_wire.
-use analysis::analysis_inputs::{
+use analysis_projection_wire_proto::debundle::analysis_projection as pb;
+use analysis_vocabulary::inputs::{
     AnalysisAssumptions, AnalysisImportedPrimitiveArrayOperand,
     AnalysisImportedPrimitiveArraySpreadInput, BundleGlobalNames, KnownEffect, LocalEffectPolicy,
     NativeOperationSelectorProvenance, NoAccessorInstallRef, SourceDeclaration,
 };
-use analysis_projection_wire_proto::debundle::analysis_projection as pb;
 use anyhow::{Context, Result, ensure};
 use spec_wire::{required, unique_map, unique_set};
 use std::collections::BTreeMap;

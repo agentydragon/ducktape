@@ -1,10 +1,10 @@
 //! Shared fact computation and loaded-fact validation, independent of lowering.
-use analysis::AnalysisInputs;
-use analysis::analysis_inputs::CallableSummary;
 use analysis::diagnostics::progress::{Phase, State};
-use analysis::execution_evidence::SourceLocator;
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis_projection::AnalysisProjection;
+use analysis_vocabulary::execution_evidence::SourceLocator;
+use analysis_vocabulary::inputs::AnalysisInputs;
+use analysis_vocabulary::inputs::CallableSummary;
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ChunkBundle, chunk_runtime_entry};
 use chunk_analysis::{DynamicImportTarget, check_chunk_facts, compute_chunk_facts};

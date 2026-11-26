@@ -14,12 +14,12 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use analysis::AnalysisAssumptions;
-use analysis::LocalEffectPolicy;
-pub use analysis::analysis_inputs::{
+use analysis_vocabulary::inputs::AnalysisAssumptions;
+use analysis_vocabulary::inputs::LocalEffectPolicy;
+pub use analysis_vocabulary::inputs::{
     AnalysisImportedPrimitiveArrayOperand, AnalysisImportedPrimitiveArraySpreadInput,
 };
-use analysis::analysis_inputs::{NativeOperationSelectorProvenance, SourceDeclaration};
+use analysis_vocabulary::inputs::{NativeOperationSelectorProvenance, SourceDeclaration};
 use anyhow::{Context, Result, ensure};
 use graph::GraphOptions;
 use prost::Message;
@@ -56,7 +56,7 @@ fn validate_declared_assumptions(assumptions: &AnalysisAssumptions) -> Result<()
 /// Native premises after resolving layout-relative references at the selector boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisNativeOperationInput {
-    pub declaration: analysis::analysis_inputs::SourceDeclaration,
+    pub declaration: analysis_vocabulary::inputs::SourceDeclaration,
     pub selector: NativeOperationSelectorProvenance,
     pub operation: NativeOperationKind,
     pub audited_source_sha256: String,

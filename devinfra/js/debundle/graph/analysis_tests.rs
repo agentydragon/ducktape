@@ -5,8 +5,8 @@ use crate::test_support::{
     test_id,
 };
 use crate::*;
-use analysis::*;
 use analysis_model::DepKind;
+use analysis_vocabulary::inputs::{AnalysisAssumptions, AnalysisInputs};
 use raw_js_test_support::parse;
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 

@@ -113,18 +113,22 @@ pub fn report(
     Ok(())
 }
 
-fn render_source_location(location: &analysis::SourceLocation) -> String {
+fn render_source_location(
+    location: &analysis_vocabulary::execution_evidence::SourceLocation,
+) -> String {
     match location.start_column {
         Some(column) => format!("{}:{}:{column}", location.source_path, location.start_line),
         None => format!("{}:{}", location.source_path, location.start_line),
     }
 }
 
-fn render_purity(purity: &analysis::Purity) -> String {
+fn render_purity(purity: &analysis_vocabulary::purity::Purity) -> String {
     match purity {
-        analysis::Purity::Pure { .. } => "pure".to_owned(),
-        analysis::Purity::NotPure { reasons } if reasons.is_empty() => "not pure".to_owned(),
-        analysis::Purity::NotPure { reasons } => format!(
+        analysis_vocabulary::purity::Purity::Pure { .. } => "pure".to_owned(),
+        analysis_vocabulary::purity::Purity::NotPure { reasons } if reasons.is_empty() => {
+            "not pure".to_owned()
+        }
+        analysis_vocabulary::purity::Purity::NotPure { reasons } => format!(
             "not pure ({})",
             reasons
                 .iter()

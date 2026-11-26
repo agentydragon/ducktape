@@ -3,10 +3,10 @@
 use super::value_model::{
     AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values, canonical_array_index,
 };
-use analysis::execution_evidence::OrderedFieldReadRefusal;
 use analysis::facts::EffectCell;
-use analysis::facts::abstract_domain::value::Value;
 use analysis_model::PrimKinds;
+use analysis_vocabulary::execution_evidence::OrderedFieldReadRefusal;
+use analysis_vocabulary::value::Value;
 use std::collections::BTreeSet;
 
 pub(super) trait OwnDataContext {

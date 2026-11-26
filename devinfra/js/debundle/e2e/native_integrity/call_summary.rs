@@ -1,6 +1,6 @@
 //! Guarded native summaries describe both call timing and returned values.
 
-use analysis::analysis_provenance::InferenceRule;
+use analysis_vocabulary::provenance::InferenceRule;
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_binding};
 use debundle_e2e_support::*;
 
