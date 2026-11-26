@@ -804,39 +804,13 @@ pub fn tier0_report_indexed(
     let analysis_ms = elapsed_ms(start);
     let n = analysis.units.len();
 
-    let mut spans = Vec::with_capacity(n);
-    for item in &parsed.module.body {
-        match js_ast::split_var_declarators(item) {
-            Some(declarators) => {
-                spans.extend(declarators.iter().map(|declarator| declarator.span.lo.0))
-            }
-            None => spans.push(swc_common::Spanned::span(item).lo.0),
-        }
-    }
-    let mut kinds = KindCounts::default();
-    let mut impure_causes: BTreeMap<ImpureCause, usize> = BTreeMap::new();
-    let mut impure_examples: BTreeMap<ImpureCause, Vec<String>> = BTreeMap::new();
-    let mut impure_statements = Vec::new();
-    for (ordinal, unit) in analysis.units.iter().enumerate() {
-        match unit.kind {
-            Kind::Inert => kinds.inert += 1,
-            Kind::Hoisted => kinds.hoisted_function += 1,
-            Kind::Pure => kinds.pure_definition += 1,
-            Kind::Contained => kinds.contained += 1,
-            Kind::Confined => kinds.confined += 1,
-            Kind::Impure(cause) => {
-                kinds.impure += 1;
-                *impure_causes.entry(cause).or_default() += 1;
-                let examples = impure_examples.entry(cause).or_default();
-                if with_examples && examples.len() < EXAMPLE_LIMIT {
-                    examples.push(snippet(&source, spans[ordinal], 100));
-                }
-                if with_examples {
-                    impure_statements.push((ordinal, cause, snippet(&source, spans[ordinal], 80)));
-                }
-            }
-        }
-    }
+    let spans = unit_spans(&parsed.module, n);
+    let UnitKinds {
+        kinds,
+        impure_causes,
+        impure_examples,
+        impure_statements,
+    } = kind_counts(&analysis, &source, &spans, with_examples);
 
     let start = Instant::now();
     let mut degree = vec![0usize; n];
@@ -906,56 +880,7 @@ pub fn tier0_report_indexed(
         }
         _ => None,
     };
-    let cycle = options
-        .program
-        .as_ref()
-        .map(|program| program.on_import_cycle());
-    let preconditions = vec![
-        Precondition {
-            name: "no_eval_or_with",
-            holds: Some(analysis.refused == 0),
-            violating_sites: analysis.refused,
-            fallback: "every statement is impure",
-        },
-        Precondition {
-            name: "no_top_level_await",
-            holds: Some(analysis.top_level_awaits == 0),
-            violating_sites: analysis.top_level_awaits,
-            fallback: "the awaiting statement is impure and exports count as reachable",
-        },
-        Precondition {
-            name: "not_on_import_cycle",
-            holds: cycle.map(|cycle| !cycle),
-            violating_sites: usize::from(cycle == Some(true)),
-            fallback: if cycle.is_none() && !options.exports_reachable {
-                "unchecked: assumed to hold; pass --program-chunks or --exports-reachable"
-            } else {
-                "exports count as reachable"
-            },
-        },
-        Precondition {
-            name: "intrinsics_unmodified_by_program_code",
-            holds: Some(analysis.intrinsics_denied == 0),
-            violating_sites: analysis.intrinsics_denied,
-            fallback: if options.program.is_some() {
-                "the intrinsic use is impure; census over every program chunk"
-            } else {
-                "the intrinsic use is impure; census over this chunk only"
-            },
-        },
-        Precondition {
-            name: "escaped_intrinsics_modified_only_through_prototype_stores",
-            holds: None,
-            violating_sites: 0,
-            fallback: "assumed for the globals in intrinsic_families_escaped",
-        },
-        Precondition {
-            name: "intrinsics_unmodified_by_unknown_code",
-            holds: None,
-            violating_sites: 0,
-            fallback: "assumed for the globals in intrinsic_families_used",
-        },
-    ];
+    let preconditions = preconditions(&analysis, options);
     Ok(Tier0Report {
         chunk: file_name(chunk),
         exports_reachable: analysis.exports_reachable,
@@ -1027,22 +952,7 @@ pub fn tier0_report_indexed(
             .count(),
         global_prototype_families_written: families(&analysis.census.prototype_written),
         global_families_written: families(&analysis.census.written),
-        globals_written_detail: [
-            ("", &analysis.census.written),
-            (".prototype", &analysis.census.prototype_written),
-        ]
-        .into_iter()
-        .flat_map(|(suffix, side)| side.iter().map(move |entry| (suffix, entry)))
-        .filter(|_| with_examples)
-        .map(|(suffix, (global, writes))| {
-            let mut props: Vec<String> = writes.props.iter().cloned().collect();
-            props.sort();
-            if writes.any {
-                props.insert(0, "*".to_string());
-            }
-            (format!("{global}{suffix}"), props)
-        })
-        .collect(),
+        globals_written_detail: globals_written_detail(&analysis.census, with_examples),
         intrinsic_families_escaped: analysis
             .families_used
             .keys()
@@ -1051,61 +961,15 @@ pub fn tier0_report_indexed(
             .collect(),
         global_object_written_unnamed: analysis.census.all,
         global_object_unnamed_store_sites: analysis.census.all_sites.clone(),
-        settled_local_refusals: {
-            let mut counts: BTreeMap<crate::derive::SettledRefusal, usize> = BTreeMap::new();
-            for row in &analysis.settled_refusals {
-                *counts.entry(row.reason).or_default() += 1;
-            }
-            counts.into_iter().collect()
-        },
-        settled_local_refusal_sites: {
-            let mut rows: Vec<_> = analysis
-                .settled_refusals
-                .iter()
-                .filter(|row| row.named_reads >= 20)
-                .cloned()
-                .collect();
-            rows.sort_by_key(|row| std::cmp::Reverse(row.named_reads));
-            rows
-        },
+        settled_local_refusals: settled_local_refusals(&analysis.settled_refusals),
+        settled_local_refusal_sites: settled_local_refusal_sites(&analysis.settled_refusals),
         intrinsic_refusals: analysis
             .intrinsic_refusals
             .iter()
             .map(|((family, refusal), count)| (*family, *refusal, *count))
             .collect(),
-        whole_write_sites: analysis
-            .census
-            .whole_write_sites
-            .iter()
-            .filter_map(|site| {
-                Some(WholeWriteSiteRow {
-                    family: site.standard_global()?,
-                    chunk: site.chunk,
-                    offset: site.offset,
-                    kind: site.kind,
-                    mutator: site.mutator,
-                    conditional: site.conditional,
-                    alias_chain: site.chain.clone(),
-                })
-            })
-            .collect(),
-        named_write_sites: analysis
-            .census
-            .named_write_sites
-            .iter()
-            .filter_map(|site| {
-                Some(NamedWriteSiteRow {
-                    family: crate::intrinsics::standard_global(&site.global)?,
-                    prototype: site.prototype,
-                    member: with_examples.then(|| site.member.clone()),
-                    chunk: site.chunk,
-                    offset: site.offset,
-                    mutator: site.mutator,
-                    conditional: site.conditional,
-                    guarded_by_member: site.guarded_by_member,
-                })
-            })
-            .collect(),
+        whole_write_sites: whole_write_sites(&analysis.census),
+        named_write_sites: named_write_sites(&analysis.census, with_examples),
         whole_write_sites_other_globals: analysis
             .census
             .whole_write_sites
@@ -1123,17 +987,222 @@ pub fn tier0_report_indexed(
         current,
         examples,
         impure_examples,
-        declaring_units: {
-            let mut units: BTreeMap<String, Vec<usize>> = BTreeMap::new();
-            if with_examples {
-                for (ordinal, names) in analysis.declared_names.iter().enumerate() {
-                    for name in names {
-                        units.entry(name.clone()).or_default().push(ordinal);
-                    }
-                }
-            }
-            units
-        },
+        declaring_units: declaring_units(&analysis.declared_names, with_examples),
         impure_statements,
     })
+}
+
+/// Per source unit: the byte offset where it starts.
+fn unit_spans(module: &swc_ecma_ast::Module, n: usize) -> Vec<u32> {
+    let mut spans = Vec::with_capacity(n);
+    for item in &module.body {
+        match js_ast::split_var_declarators(item) {
+            Some(declarators) => {
+                spans.extend(declarators.iter().map(|declarator| declarator.span.lo.0))
+            }
+            None => spans.push(swc_common::Spanned::span(item).lo.0),
+        }
+    }
+    spans
+}
+
+/// The `Tier0Report` fields counting units by kind.
+struct UnitKinds {
+    kinds: KindCounts,
+    impure_causes: BTreeMap<ImpureCause, usize>,
+    impure_examples: BTreeMap<ImpureCause, Vec<String>>,
+    impure_statements: Vec<(usize, ImpureCause, String)>,
+}
+
+fn kind_counts(
+    analysis: &tier0::Tier0,
+    source: &str,
+    spans: &[u32],
+    with_examples: bool,
+) -> UnitKinds {
+    let mut kinds = KindCounts::default();
+    let mut impure_causes: BTreeMap<ImpureCause, usize> = BTreeMap::new();
+    let mut impure_examples: BTreeMap<ImpureCause, Vec<String>> = BTreeMap::new();
+    let mut impure_statements = Vec::new();
+    for (ordinal, unit) in analysis.units.iter().enumerate() {
+        match unit.kind {
+            Kind::Inert => kinds.inert += 1,
+            Kind::Hoisted => kinds.hoisted_function += 1,
+            Kind::Pure => kinds.pure_definition += 1,
+            Kind::Contained => kinds.contained += 1,
+            Kind::Confined => kinds.confined += 1,
+            Kind::Impure(cause) => {
+                kinds.impure += 1;
+                *impure_causes.entry(cause).or_default() += 1;
+                let examples = impure_examples.entry(cause).or_default();
+                if with_examples && examples.len() < EXAMPLE_LIMIT {
+                    examples.push(snippet(source, spans[ordinal], 100));
+                }
+                if with_examples {
+                    impure_statements.push((ordinal, cause, snippet(source, spans[ordinal], 80)));
+                }
+            }
+        }
+    }
+    UnitKinds {
+        kinds,
+        impure_causes,
+        impure_examples,
+        impure_statements,
+    }
+}
+
+/// What the verdicts rest on, and whether this input satisfies it.
+fn preconditions(analysis: &tier0::Tier0, options: &tier0::Options) -> Vec<Precondition> {
+    let cycle = options
+        .program
+        .as_ref()
+        .map(|program| program.on_import_cycle());
+    vec![
+        Precondition {
+            name: "no_eval_or_with",
+            holds: Some(analysis.refused == 0),
+            violating_sites: analysis.refused,
+            fallback: "every statement is impure",
+        },
+        Precondition {
+            name: "no_top_level_await",
+            holds: Some(analysis.top_level_awaits == 0),
+            violating_sites: analysis.top_level_awaits,
+            fallback: "the awaiting statement is impure and exports count as reachable",
+        },
+        Precondition {
+            name: "not_on_import_cycle",
+            holds: cycle.map(|cycle| !cycle),
+            violating_sites: usize::from(cycle == Some(true)),
+            fallback: if cycle.is_none() && !options.exports_reachable {
+                "unchecked: assumed to hold; pass --program-chunks or --exports-reachable"
+            } else {
+                "exports count as reachable"
+            },
+        },
+        Precondition {
+            name: "intrinsics_unmodified_by_program_code",
+            holds: Some(analysis.intrinsics_denied == 0),
+            violating_sites: analysis.intrinsics_denied,
+            fallback: if options.program.is_some() {
+                "the intrinsic use is impure; census over every program chunk"
+            } else {
+                "the intrinsic use is impure; census over this chunk only"
+            },
+        },
+        Precondition {
+            name: "escaped_intrinsics_modified_only_through_prototype_stores",
+            holds: None,
+            violating_sites: 0,
+            fallback: "assumed for the globals in intrinsic_families_escaped",
+        },
+        Precondition {
+            name: "intrinsics_unmodified_by_unknown_code",
+            holds: None,
+            violating_sites: 0,
+            fallback: "assumed for the globals in intrinsic_families_used",
+        },
+    ]
+}
+
+/// With `with_examples`: per written global, the property names, or `*`.
+fn globals_written_detail(
+    census: &crate::intrinsics::Census,
+    with_examples: bool,
+) -> BTreeMap<String, Vec<String>> {
+    [
+        ("", &census.written),
+        (".prototype", &census.prototype_written),
+    ]
+    .into_iter()
+    .flat_map(|(suffix, side)| side.iter().map(move |entry| (suffix, entry)))
+    .filter(|_| with_examples)
+    .map(|(suffix, (global, writes))| {
+        let mut props: Vec<String> = writes.props.iter().cloned().collect();
+        props.sort();
+        if writes.any {
+            props.insert(0, "*".to_string());
+        }
+        (format!("{global}{suffix}"), props)
+    })
+    .collect()
+}
+
+fn settled_local_refusals(
+    refusals: &[tier0::SettledRefusalRow],
+) -> Vec<(crate::derive::SettledRefusal, usize)> {
+    let mut counts: BTreeMap<crate::derive::SettledRefusal, usize> = BTreeMap::new();
+    for row in refusals {
+        *counts.entry(row.reason).or_default() += 1;
+    }
+    counts.into_iter().collect()
+}
+
+fn settled_local_refusal_sites(
+    refusals: &[tier0::SettledRefusalRow],
+) -> Vec<tier0::SettledRefusalRow> {
+    let mut rows: Vec<_> = refusals
+        .iter()
+        .filter(|row| row.named_reads >= 20)
+        .cloned()
+        .collect();
+    rows.sort_by_key(|row| std::cmp::Reverse(row.named_reads));
+    rows
+}
+
+fn whole_write_sites(census: &crate::intrinsics::Census) -> Vec<WholeWriteSiteRow> {
+    census
+        .whole_write_sites
+        .iter()
+        .filter_map(|site| {
+            Some(WholeWriteSiteRow {
+                family: site.standard_global()?,
+                chunk: site.chunk,
+                offset: site.offset,
+                kind: site.kind,
+                mutator: site.mutator,
+                conditional: site.conditional,
+                alias_chain: site.chain.clone(),
+            })
+        })
+        .collect()
+}
+
+fn named_write_sites(
+    census: &crate::intrinsics::Census,
+    with_examples: bool,
+) -> Vec<NamedWriteSiteRow> {
+    census
+        .named_write_sites
+        .iter()
+        .filter_map(|site| {
+            Some(NamedWriteSiteRow {
+                family: crate::intrinsics::standard_global(&site.global)?,
+                prototype: site.prototype,
+                member: with_examples.then(|| site.member.clone()),
+                chunk: site.chunk,
+                offset: site.offset,
+                mutator: site.mutator,
+                conditional: site.conditional,
+                guarded_by_member: site.guarded_by_member,
+            })
+        })
+        .collect()
+}
+
+/// With `with_examples`: per declared name, the ordinals of its source units.
+fn declaring_units(
+    declared_names: &[Vec<String>],
+    with_examples: bool,
+) -> BTreeMap<String, Vec<usize>> {
+    let mut units: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    if with_examples {
+        for (ordinal, names) in declared_names.iter().enumerate() {
+            for name in names {
+                units.entry(name.clone()).or_default().push(ordinal);
+            }
+        }
+    }
+    units
 }
