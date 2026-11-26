@@ -5,7 +5,6 @@ mod alternatives;
 pub mod execution_index;
 mod foreign_call;
 pub mod interpreter;
-mod kernel;
 mod legacy;
 mod namespace_wrapper;
 mod native;

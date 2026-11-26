@@ -14,14 +14,14 @@ use world::join::Joined;
 use world::{Revision, World};
 
 /// One completed path of a body.
-pub(crate) struct Leaf {
-    pub(crate) frame: LocalFrame,
-    pub(crate) attempt: LocalExecutionAttempt,
+pub struct Leaf {
+    pub frame: LocalFrame,
+    pub attempt: LocalExecutionAttempt,
 }
 
 /// The completed paths of one body.
 #[must_use]
-pub(crate) enum Family<B> {
+pub enum Family<B> {
     /// No test forked: the adapter's live state is this leaf's.
     One(Box<Leaf>),
     /// Each leaf with the path state it completed in. The adapter's live
@@ -31,7 +31,7 @@ pub(crate) enum Family<B> {
 
 /// The state one path owns: whatever a later operation on the same path reads
 /// back. Its world is exposed so sibling leaves get disjoint identities.
-pub(crate) trait PathState {
+pub trait PathState {
     fn world(&self) -> &World;
 }
 
@@ -66,7 +66,7 @@ impl Identities {
 
 /// After an abandoned attempt left `attempted`, move the restored world past
 /// every cell id and revision the attempt minted, as a later sibling leaf is.
-pub(crate) fn separate_from_abandoned(attempted: &World, restored: &mut World) {
+pub fn separate_from_abandoned(attempted: &World, restored: &mut World) {
     let mut identities = Identities::default();
     identities.observe(attempted);
     identities.separate(restored);
@@ -107,7 +107,7 @@ pub(crate) fn explore<C: KernelContext, K>(
 impl<B> Family<B> {
     /// Whether no leaf was refused: a consumer with no summary to fall back
     /// on can use a family only when this holds.
-    pub(crate) fn all_completed(&self) -> bool {
+    pub fn all_completed(&self) -> bool {
         match self {
             Self::One(leaf) => matches!(leaf.attempt, LocalExecutionAttempt::Completed(_)),
             Self::Forked(leaves) => leaves
@@ -119,14 +119,14 @@ impl<B> Family<B> {
 
 /// The world every leaf of a family may have left. A refusal still carries
 /// the pointwise join, marked incomplete, for the caller's remainder summary.
-pub(crate) fn join_worlds<'a>(worlds: impl IntoIterator<Item = &'a World>) -> Joined {
+pub fn join_worlds<'a>(worlds: impl IntoIterator<Item = &'a World>) -> Joined {
     World::join(&worlds.into_iter().collect::<Vec<_>>())
 }
 
 /// What the leaves' activations may hold between them, for one remainder
 /// summary: every value a binding may have, every input and fresh record.
 /// It carries no ledger; the summary's caller discards coverage.
-pub(crate) fn join_frames(frames: Vec<LocalFrame>) -> LocalFrame {
+pub fn join_frames(frames: Vec<LocalFrame>) -> LocalFrame {
     let mut environment = Context::new();
     for frame in &frames {
         for (binding, values) in &frame.environment {

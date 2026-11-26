@@ -15,7 +15,7 @@ use value_model::local_operations::LocalBody;
 /// end of the body in its own path state, and the family is the caller's to
 /// join; whether a refused leaf refuses the family is the caller's
 /// `Family::all_completed` check.
-pub(crate) fn drive<C: KernelContext>(
+pub fn drive<C: KernelContext>(
     context: &mut C,
     body: &LocalBody,
     mut continuation: LocalContinuation,

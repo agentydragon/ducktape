@@ -23,8 +23,6 @@ use property_keys::{
     property_key_evidence,
 };
 
-use super::kernel::closure::CaptureCensus;
-use super::kernel::context::IndexReads;
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::strict_provider;
@@ -73,6 +71,8 @@ use analysis_vocabulary::report_schema::{
 };
 use analysis_vocabulary::value::{Kind, Value};
 use inference::{FactContext, IterativeInference, IterativeRules};
+use kernel::closure::CaptureCensus;
+use kernel::context::IndexReads;
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
 use std::cell::RefCell;

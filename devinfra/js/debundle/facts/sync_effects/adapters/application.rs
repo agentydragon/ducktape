@@ -4,21 +4,17 @@
 use super::super::alternatives::execution_state::ExecutionPath;
 use super::super::execution_index::{Call, CallKind, MemberValueWrite, native_own_data_read_slots};
 use super::super::interpreter::{Executor, Outcome, unknown};
-use super::super::kernel::cells::missing_activation_binding;
-use super::super::kernel::closure::{CapturePolicy, ClosureAdmission};
-use super::super::kernel::context::{
+use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
+use kernel::cells::missing_activation_binding;
+use kernel::closure::{CapturePolicy, ClosureAdmission};
+use kernel::context::{
     BindingContext, CallContext, CellPolicy, ControlContext, Disposition, ForkPolicy, HeapContext,
     IndexReads, NativeContext, Unproved,
 };
-use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
 use world::array_transfer::{self, ArrayMethodSelection};
 use world::effect_coverage::EffectCoverageFragment;
 // Module-qualified: the builtin table's `Invocation` also has a
 // tagged-template form the kernel never requests.
-use super::super::kernel::frame::{
-    self as kernel_frame, EvaluatedCallee, LocalCallRequest, LocalFrame, LocalValueResult,
-    RemainderDisposition,
-};
 use super::super::runtime_inference::{CallOperands, CallTransfer, RuntimeOperation, RuntimeValue};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::abstract_domain::builtins;
@@ -29,6 +25,10 @@ use analysis_vocabulary::execution_evidence::{
 use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
 use analysis_vocabulary::report_schema::NativeIntegrityGuard;
 use analysis_vocabulary::value::{Kind, Value};
+use kernel::frame::{
+    self as kernel_frame, EvaluatedCallee, LocalCallRequest, LocalFrame, LocalValueResult,
+    RemainderDisposition,
+};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use std::sync::Arc;

@@ -17,7 +17,7 @@ use world::effect_coverage::EffectCoverageFragment;
 
 /// How a closure created now retains a free binding that has no active cell.
 #[derive(Clone, Copy)]
-pub(crate) enum CapturePolicy<'a> {
+pub enum CapturePolicy<'a> {
     /// The application prefix. Module bindings are read live at call time,
     /// so creation captures nothing for them. A binding some closure writes
     /// is unknown (its stores reach a cell or are published); a value past
@@ -36,23 +36,23 @@ pub(crate) enum CapturePolicy<'a> {
 const CAPTURE_BUDGET: usize = 64;
 
 /// What the adapter admits about one closure creation.
-pub(crate) struct ClosureAdmission {
-    pub(crate) effects: EffectCoverageFragment,
-    pub(crate) judgment: AllocationJudgment,
+pub struct ClosureAdmission {
+    pub effects: EffectCoverageFragment,
+    pub judgment: AllocationJudgment,
 }
 
 /// What `lexical_captures` reads of one callable's census.
-pub(crate) struct CaptureCensus<'a> {
-    pub(crate) home_object: Option<u32>,
+pub struct CaptureCensus<'a> {
+    pub home_object: Option<u32>,
     /// Bindings the callable or a closure nested in it reads, rebinds or
     /// writes without binding them itself, each with whether the callable's
     /// own body reads or rebinds it. May repeat.
-    pub(crate) free: Vec<(&'a Id, bool)>,
+    pub free: Vec<(&'a Id, bool)>,
 }
 
 /// The lexical captures of a callable created in `environment`: a captured
 /// binding with an active cell is shared by identity, any other is a snapshot.
-pub(crate) fn lexical_captures(
+pub fn lexical_captures(
     census: CaptureCensus<'_>,
     active_cells: &OrdMap<Id, LexicalCellId>,
     environment: &Context,
@@ -103,7 +103,7 @@ pub(crate) fn lexical_captures(
 /// Create the closure for one canonical callable creation in this frame. Its
 /// body does not run; the address's scope keeps it apart from closures other
 /// worlds create at the same source site.
-pub(super) fn create(
+pub(crate) fn create(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     creation: DeferredCallableCreation,

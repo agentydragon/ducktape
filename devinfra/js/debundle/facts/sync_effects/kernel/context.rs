@@ -23,7 +23,7 @@ use world::effect_coverage::EffectCoverageFragment;
 
 /// The canonical census facts the kernel reads, which `ExecutionIndex`
 /// collects before any execution.
-pub(crate) trait IndexReads {
+pub trait IndexReads {
     fn callable_creation(&self, callable: u32) -> Option<DeferredCallableCreation>;
     /// `None` when `callable` has no callable census.
     fn capture_census(&self, callable: u32) -> Option<CaptureCensus<'_>>;
@@ -31,7 +31,7 @@ pub(crate) trait IndexReads {
     fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind;
 }
 
-pub(crate) trait BindingContext {
+pub trait BindingContext {
     fn read_binding(
         &mut self,
         binding: &Id,
@@ -68,9 +68,9 @@ pub(crate) trait BindingContext {
 /// Which declared bindings get `World` cells. A binding without one lives only
 /// in the frame, so no closure can observe its stores.
 #[derive(Clone, Copy)]
-pub(crate) struct CellPolicy<'a> {
+pub struct CellPolicy<'a> {
     /// The bindings some closure captures.
-    pub(crate) captured: &'a FxHashSet<Id>,
+    pub captured: &'a FxHashSet<Id>,
 }
 
 impl CellPolicy<'_> {
@@ -79,7 +79,7 @@ impl CellPolicy<'_> {
     }
 }
 
-pub(crate) trait CallContext: BindingContext {
+pub trait CallContext: BindingContext {
     /// The one selected direct-import call may prove its module callee read
     /// after source closure validation. Other reads use ordinary coverage.
     fn read_call_callee(
@@ -99,7 +99,7 @@ pub(crate) trait CallContext: BindingContext {
     ) -> Result<LocalValueResult, RemainderDisposition>;
 }
 
-pub(crate) trait HeapContext: OwnDataContext {
+pub trait HeapContext: OwnDataContext {
     fn index(&self) -> &dyn IndexReads;
     /// The stores this body mutates in place. Observations never go here;
     /// the kernel returns them in its ledger.
@@ -131,7 +131,7 @@ pub(crate) trait HeapContext: OwnDataContext {
     }
 }
 
-pub(crate) trait NativeContext {
+pub trait NativeContext {
     /// The native iterator protocol over an already evaluated operand, as a
     /// receipt the adapter proves from its prefix (intact Array intrinsics,
     /// settled dense slots or a primitive-array premise). The kernel's
@@ -196,7 +196,7 @@ pub(crate) trait NativeContext {
 
 /// An operation the kernel could not prove from its own state. Its operands
 /// have already run; the adapter must not evaluate them again.
-pub(crate) enum Unproved<'a> {
+pub enum Unproved<'a> {
     /// The receiver cell was read at this operation and no fresh-local or
     /// module-prefix own-data slot was found.
     FieldRead {
@@ -222,7 +222,7 @@ pub(crate) enum Unproved<'a> {
     CaptureStore { values: &'a Values, span: Span },
 }
 
-pub(crate) enum Disposition {
+pub enum Disposition {
     /// Only for `Unproved::FieldRead`: an established read proof outside the
     /// kernel's own-data transfer supplied the value and the body continues.
     Resolved(AllocationValue),
@@ -233,7 +233,7 @@ pub(crate) enum Disposition {
 }
 
 /// Everything the kernel asks of one adapter.
-pub(crate) trait KernelContext:
+pub trait KernelContext:
     BindingContext + CallContext + HeapContext + NativeContext + ControlContext
 {
 }
@@ -245,7 +245,7 @@ impl<C: BindingContext + CallContext + HeapContext + NativeContext + ControlCont
 
 /// What a consumer does with a body whose next test is undecided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ForkPolicy {
+pub enum ForkPolicy {
     /// A scalar consumer has one result and nowhere to join: the body is
     /// refused at the fork.
     Refuse,
@@ -253,7 +253,7 @@ pub(crate) enum ForkPolicy {
     Explore,
 }
 
-pub(crate) trait ControlContext {
+pub trait ControlContext {
     fn unproved(&mut self, frame: &mut LocalFrame, what: Unproved<'_>) -> Disposition;
     fn fork_policy(&self) -> ForkPolicy;
     /// Everything a later operation on the same path reads back from this

@@ -13,11 +13,7 @@ use world::effect_coverage::EffectCoverageFragment;
 
 /// A self or hoisted-function binding whose value this activation could not
 /// establish from source identity alone.
-pub(crate) fn missing_activation_binding(
-    body: &LocalBody,
-    binding: &Id,
-    frame: &LocalFrame,
-) -> bool {
+pub fn missing_activation_binding(body: &LocalBody, binding: &Id, frame: &LocalFrame) -> bool {
     matches!(
         body.bindings.get(binding),
         Some(LocalBinding::NamedSelf(_) | LocalBinding::HoistedFunction(_))
@@ -26,7 +22,7 @@ pub(crate) fn missing_activation_binding(
 
 /// Parameter cells are created in TDZ before an earlier default expression
 /// can capture a later parameter.
-pub(super) fn instantiate_parameter_cells(
+pub(crate) fn instantiate_parameter_cells(
     context: &mut impl KernelContext,
     body: &LocalBody,
     frame: &LocalFrame,
@@ -51,7 +47,7 @@ pub(super) fn instantiate_parameter_cells(
 }
 
 /// The body's declaration instantiation: a fresh cell per captured binding.
-pub(super) fn instantiate_body_cells(
+pub(crate) fn instantiate_body_cells(
     context: &mut impl KernelContext,
     body: &LocalBody,
     frame: &LocalFrame,
@@ -103,7 +99,7 @@ pub(super) fn instantiate_body_cells(
 
 /// The frame now holds the declared binding's stored value; mirror it into
 /// the binding's cell.
-pub(super) fn declared_binding_stored(
+pub(crate) fn declared_binding_stored(
     context: &mut impl KernelContext,
     body: &LocalBody,
     binding: &Id,
@@ -145,7 +141,7 @@ pub(super) fn declared_binding_stored(
 /// Effects of declarative-cell creation, initialization, or a checked store
 /// to an initialized local. A binding with a live or policy-owned cell can be
 /// observed by a closure, so it has no receipt here.
-pub(super) fn declarative_binding_operation(
+pub(crate) fn declarative_binding_operation(
     context: &impl KernelContext,
     body: &LocalBody,
     binding: &Id,
@@ -166,7 +162,7 @@ pub(super) fn declarative_binding_operation(
 
 /// A store to a binding this body does not declare: through its active cell,
 /// or else an operation the kernel cannot represent.
-pub(super) fn store_captured(
+pub(crate) fn store_captured(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     binding: &Id,

@@ -172,7 +172,7 @@ impl Step {
 }
 
 #[derive(Clone)]
-pub(crate) struct LocalContinuation {
+pub struct LocalContinuation {
     pub(crate) frame: LocalFrame,
     steps: Vec<Step>,
     /// The value of the most recently completed expression, consumed by the
@@ -186,7 +186,7 @@ pub(crate) struct LocalContinuation {
 }
 
 impl LocalContinuation {
-    pub(crate) fn new(frame: LocalFrame) -> Self {
+    pub fn new(frame: LocalFrame) -> Self {
         Self {
             frame,
             steps: vec![Step::Prepare],
@@ -1345,7 +1345,7 @@ impl<C: KernelContext> AllocationContext for LocalValueContext<'_, C> {
 
 /// Transfer one closed value expression in this frame. Scalar consumers
 /// (the strict provider's direct allocation return) enter the kernel here.
-pub(crate) fn value_of(
+pub fn value_of(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     expression: &ValueExpr,

@@ -8,12 +8,12 @@
 //! base-class construction, path selection at conditional and logical
 //! operators, completion accounting) lives here.
 
-pub(super) mod alternatives;
-pub(super) mod branch;
-pub(super) mod cells;
-pub(super) mod closure;
-pub(super) mod construct;
-pub(super) mod context;
-pub(super) mod continuation;
-pub(super) mod driver;
-pub(super) mod frame;
+pub mod alternatives;
+pub(crate) mod branch;
+pub mod cells;
+pub mod closure;
+pub mod construct;
+pub mod context;
+pub mod continuation;
+pub mod driver;
+pub mod frame;

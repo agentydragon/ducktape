@@ -10,11 +10,11 @@
 
 use super::super::execution_index::CallKind;
 use super::super::interpreter::{Executor, from_flow, unknown};
-use super::super::kernel::context::IndexReads;
 use analysis::facts::abstract_domain::builtins::IntrinsicOp;
 use analysis::facts::evaluation_effects::GlobalAccessKind;
 use analysis_vocabulary::report_schema::CallbackFactoryUseKind;
 use analysis_vocabulary::value::{Kind, Value};
+use kernel::context::IndexReads;
 use swc_common::Span;
 use swc_ecma_ast::*;
 use value_model::{
