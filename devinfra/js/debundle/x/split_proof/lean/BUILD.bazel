@@ -2057,3 +2057,23 @@ lean_proof_test(
     ],
     deps = [":corejs_indexed_allocated_cells"],
 )
+
+lean_library(
+    name = "corejs_indexed_entry_link",
+    srcs = ["EsmSplit/CoreJS/IndexedEntryLink.lean"],
+    deps = [
+        ":corejs_indexed_allocated_cells",
+        ":corejs_projected_order",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_entry_link_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedEntryLink"],
+    required_theorems = [
+        "CoreJS.IndexedEntryLink.initFunctions_consts",
+        "CoreJS.IndexedEntryLink.sorted_initFunctions_consts",
+    ],
+    deps = [":corejs_indexed_entry_link"],
+)
