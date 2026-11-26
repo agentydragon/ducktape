@@ -1,7 +1,7 @@
 # Certified main.js renderer split
 
 The main selection moves `strokeEllipseWithRotation` from the canonical
-renderer owner. It now runs in the [joint deployment smoke](joint.md).
+renderer owner. It was included in the [historical joint deployment replay](joint.md).
 [SHA-256 pins](main_static_sha256.json) identify the original main source and
 its static closure. The renderer probe checks the issued `beginPath`,
 `ellipse`, and `stroke` calls.

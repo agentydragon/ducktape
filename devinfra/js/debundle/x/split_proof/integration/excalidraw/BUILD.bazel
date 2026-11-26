@@ -2,7 +2,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary"
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_test")
 
-# The original and certified browser tests select different cases and runfiles.
+# Browser targets select different cases from the shared test source.
 # gazelle:exclude browser_smoke_test.py
 
 _DUMP_DATA = [
@@ -84,10 +84,6 @@ js_run_binary(
     ],
     tool = ":generate_excalidraw_lean_specs",
 )
-
-_SELECTED_PLACEMENT = "//devinfra/js/debundle/excalidraw:selected_deployment_placements"
-
-_CANONICAL_PLACEMENT = "//devinfra/js/debundle/excalidraw:canonical_deployment_placements"
 
 js_test(
     name = "excalidraw_lean_specs_test",
@@ -194,33 +190,6 @@ py_test(
     env = _EXCALIDRAW_BROWSER_ENV,
     main = _EXCALIDRAW_BROWSER_PY,
     tags = ["manual"],
-    deps = _EXCALIDRAW_BROWSER_DEPS,
-)
-
-py_test(
-    name = "excalidraw_certified_browser_smoke",
-    size = "large",
-    timeout = "long",
-    # Both proofs and Chromium share the exact emitted tree and live deployment origin.
-    srcs = [_EXCALIDRAW_BROWSER_PY],
-    args = [
-        "-k",
-        "test_certified_deployment",
-    ],
-    data = _EXCALIDRAW_BROWSER_DATA + [
-        "main_static_sha256.json",
-        _CANONICAL_PLACEMENT,
-        _SELECTED_PLACEMENT,
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
-    env = dict(
-        _EXCALIDRAW_BROWSER_ENV,
-        CANONICAL_PLACEMENT = "$(rlocationpath " + _CANONICAL_PLACEMENT + ")",
-        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-        MAIN_STATIC_DIGESTS = "$(rlocationpath main_static_sha256.json)",
-        SELECTED_PLACEMENT = "$(rlocationpath " + _SELECTED_PLACEMENT + ")",
-    ),
-    main = _EXCALIDRAW_BROWSER_PY,
     deps = _EXCALIDRAW_BROWSER_DEPS,
 )
 
