@@ -143,7 +143,36 @@ pub(crate) fn homo(
     if is_single_node_hole(needle, nid) {
         return Ok(true);
     }
+    if let Some(matched) = match_predicate(needle, nid, subject, sid, bindings) {
+        return Ok(matched);
+    }
+    if let Some(result) = match_shorthand_properties(needle, nid, subject, sid, mode, bindings) {
+        return result;
+    }
 
+    // Structural equality: kind, then non-identifier labels (always exact),
+    // then the identifier label (exact or alpha-bound), then children.
+    if !kind_and_literals_match(needle, nid, subject, sid, bindings)
+        || !identifiers_match(needle, nid, subject, sid, mode, bindings)
+    {
+        return Ok(false);
+    }
+    if nkind == NodeKind::Class && !super_classes_match(needle, nid, subject, sid, mode, bindings)?
+    {
+        return Ok(false);
+    }
+    match_children_in_scope(needle, nid, nkind, subject, sid, mode, bindings)
+}
+
+/// The `homo` verdict for a needle predicate call, or `None` when `nid` is not
+/// a predicate. Checked before the kind comparison: the needle is a `Call`.
+fn match_predicate(
+    needle: &Index,
+    nid: NodeId,
+    subject: &Index,
+    sid: NodeId,
+    bindings: &Bindings,
+) -> Option<bool> {
     // `STR_LITERAL_MATCHING_RE("re")` predicate: matches a string-literal subject
     // whose value matches `re` (an invalid pattern matches nothing), not by
     // structure. Checked before the kind comparison (the needle is a `Call`, the
@@ -159,7 +188,7 @@ pub(crate) fn homo(
                 "string does not satisfy the selector regex".into()
             });
         }
-        return Ok(matched);
+        return Some(matched);
     }
 
     if let Some(expected) = descendant_string_pattern(needle, nid) {
@@ -169,67 +198,87 @@ pub(crate) fn homo(
                 format!("expression does not contain string literal {expected:?}")
             });
         }
-        return Ok(matched);
+        return Some(matched);
     }
+    None
+}
 
-    // Shorthand ⟷ explicit property equivalence (object literals and
-    // destructuring patterns): `{ k }` matches `{ k: k }`, and a destructured
-    // binding can alpha-rename through `{ k: renamed }`. The forms project to
-    // *different* fact node kinds
-    // (`Shorthand`/`KeyValue`, `PatAssign`/`PatKeyValue`), so this is matched
-    // before the structural kind comparison would reject the cross-pair. The key
-    // name is invariant (exact); the value identifier alpha-binds — as a reference
-    // for object literals, as a binding for patterns.
-    if let (Some(n_prop), Some(s_prop)) = (
+/// Shorthand ⟷ explicit property equivalence (object literals and
+/// destructuring patterns): `{ k }` matches `{ k: k }`, and a destructured
+/// binding can alpha-rename through `{ k: renamed }`. The forms project to
+/// *different* fact node kinds
+/// (`Shorthand`/`KeyValue`, `PatAssign`/`PatKeyValue`), so this is matched
+/// before the structural kind comparison would reject the cross-pair. The key
+/// name is invariant (exact); the value identifier alpha-binds — as a reference
+/// for object literals, as a binding for patterns. `None` when either side is
+/// not an identifier-valued property.
+fn match_shorthand_properties(
+    needle: &Index,
+    nid: NodeId,
+    subject: &Index,
+    sid: NodeId,
+    mode: Mode,
+    bindings: &mut Bindings,
+) -> Option<Result<bool, Unsupported>> {
+    let (Some(n_prop), Some(s_prop)) = (
         shorthand_property_view(needle, nid),
         shorthand_property_view(subject, sid),
-    ) {
-        if n_prop.key != s_prop.key {
-            bindings.fail(nid, sid, TraceCategory::Literal, || {
-                format!(
-                    "property key {:?} differs from {:?}",
-                    n_prop.key, s_prop.key
-                )
-            });
-            return Ok(false);
-        }
-        if n_prop.default.is_some() != s_prop.default.is_some() {
-            bindings.fail(nid, sid, TraceCategory::Shape, || {
-                "destructure defaults differ".into()
-            });
-            return Ok(false);
-        }
-        let matched = if n_prop.is_binding {
-            bindings.match_binding(n_prop.value_ident, s_prop.value_ident, mode)
-        } else {
-            bindings.match_ref(n_prop.value_ident, s_prop.value_ident, mode)
-        };
-        if !matched {
-            bindings.fail(nid, sid, TraceCategory::Binding, || {
-                format!(
-                    "identifier {:?} cannot bind to {:?}",
-                    n_prop.value_ident, s_prop.value_ident
-                )
-            });
-        }
-        if !matched {
-            return Ok(false);
-        }
-        return match (n_prop.default, s_prop.default) {
-            (Some(n_default), Some(s_default)) => {
-                homo(needle, n_default, subject, s_default, mode, bindings)
-            }
-            _ => Ok(true),
-        };
+    ) else {
+        return None;
+    };
+    if n_prop.key != s_prop.key {
+        bindings.fail(nid, sid, TraceCategory::Literal, || {
+            format!(
+                "property key {:?} differs from {:?}",
+                n_prop.key, s_prop.key
+            )
+        });
+        return Some(Ok(false));
     }
+    if n_prop.default.is_some() != s_prop.default.is_some() {
+        bindings.fail(nid, sid, TraceCategory::Shape, || {
+            "destructure defaults differ".into()
+        });
+        return Some(Ok(false));
+    }
+    let matched = if n_prop.is_binding {
+        bindings.match_binding(n_prop.value_ident, s_prop.value_ident, mode)
+    } else {
+        bindings.match_ref(n_prop.value_ident, s_prop.value_ident, mode)
+    };
+    if !matched {
+        bindings.fail(nid, sid, TraceCategory::Binding, || {
+            format!(
+                "identifier {:?} cannot bind to {:?}",
+                n_prop.value_ident, s_prop.value_ident
+            )
+        });
+    }
+    if !matched {
+        return Some(Ok(false));
+    }
+    Some(match (n_prop.default, s_prop.default) {
+        (Some(n_default), Some(s_default)) => {
+            homo(needle, n_default, subject, s_default, mode, bindings)
+        }
+        _ => Ok(true),
+    })
+}
 
-    // Structural equality: kind, then non-identifier labels (always exact),
-    // then the identifier label (exact or alpha-bound), then children.
+/// Same node kind and identical non-identifier labels (always exact).
+fn kind_and_literals_match(
+    needle: &Index,
+    nid: NodeId,
+    subject: &Index,
+    sid: NodeId,
+    bindings: &Bindings,
+) -> bool {
+    let nkind = needle.kind_of(nid);
     if nkind != subject.kind_of(sid) {
         bindings.fail(nid, sid, TraceCategory::Shape, || {
             format!("expected {nkind:?}, found {:?}", subject.kind_of(sid))
         });
-        return Ok(false);
+        return false;
     }
     if needle.str_lit_of(nid) != subject.str_lit_of(sid)
         || needle.num_lit_of(nid) != subject.num_lit_of(sid)
@@ -269,15 +318,28 @@ pub(crate) fn homo(
             }
             "an invariant literal differs".into()
         });
-        return Ok(false);
+        return false;
     }
+    true
+}
+
+/// The identifier label: both absent, or both present and exact or
+/// alpha-bound per `mode`.
+fn identifiers_match(
+    needle: &Index,
+    nid: NodeId,
+    subject: &Index,
+    sid: NodeId,
+    mode: Mode,
+    bindings: &mut Bindings,
+) -> bool {
     match (needle.ident_of(nid), subject.ident_of(sid)) {
         (Some(n), Some(s)) => {
             // A binding identifier (declaration) shadows within its frame; a
             // reference resolves against the visible scope stack. Both honor a
             // prebound `target_binding` mapping first (in either mode), then fall
             // back to alpha-binding or exact spelling per `mode`.
-            let consistent = if nkind == NodeKind::BindingIdent {
+            let consistent = if needle.kind_of(nid) == NodeKind::BindingIdent {
                 bindings.match_binding(n, s, mode)
             } else {
                 bindings.match_ref(n, s, mode)
@@ -293,39 +355,55 @@ pub(crate) fn homo(
                         None => format!("identifier {n:?} cannot bind to {s:?}"),
                     }
                 });
-                return Ok(false);
+                return false;
             }
+            true
         }
-        (None, None) => {}
+        (None, None) => true,
         _ => {
             bindings.fail(nid, sid, TraceCategory::Shape, || {
                 "identifier presence differs".into()
             });
-            return Ok(false);
+            false
         }
     }
+}
 
-    // A `Class` node's superclass (`extends`) is a separate relation, not a child
-    // member, so compare it explicitly before the body — both present (and
-    // matched) or both absent. `Class` introduces no alpha frame, so the
-    // superclass reference resolves against the enclosing scope.
-    if nkind == NodeKind::Class {
-        match (needle.super_class_of(nid), subject.super_class_of(sid)) {
-            (Some(n_super), Some(s_super)) => {
-                if !homo(needle, n_super, subject, s_super, mode, bindings)? {
-                    return Ok(false);
-                }
-            }
-            (None, None) => {}
-            _ => {
-                bindings.fail(nid, sid, TraceCategory::Shape, || {
-                    "class superclass presence differs".into()
-                });
-                return Ok(false);
-            }
+/// A `Class` node's superclass (`extends`) is a separate relation, not a child
+/// member, so compare it explicitly before the body — both present (and
+/// matched) or both absent. `Class` introduces no alpha frame, so the
+/// superclass reference resolves against the enclosing scope.
+fn super_classes_match(
+    needle: &Index,
+    nid: NodeId,
+    subject: &Index,
+    sid: NodeId,
+    mode: Mode,
+    bindings: &mut Bindings,
+) -> Result<bool, Unsupported> {
+    match (needle.super_class_of(nid), subject.super_class_of(sid)) {
+        (Some(n_super), Some(s_super)) => homo(needle, n_super, subject, s_super, mode, bindings),
+        (None, None) => Ok(true),
+        _ => {
+            bindings.fail(nid, sid, TraceCategory::Shape, || {
+                "class superclass presence differs".into()
+            });
+            Ok(false)
         }
     }
+}
 
+/// Match the children, opening the node's alpha frame around them in
+/// `AlphaAll` mode.
+fn match_children_in_scope(
+    needle: &Index,
+    nid: NodeId,
+    nkind: NodeKind,
+    subject: &Index,
+    sid: NodeId,
+    mode: Mode,
+    bindings: &mut Bindings,
+) -> Result<bool, Unsupported> {
     if mode != Mode::AlphaAll {
         return match_children(needle, nid, nkind, subject, sid, mode, bindings);
     }
