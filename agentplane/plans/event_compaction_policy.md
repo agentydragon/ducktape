@@ -365,13 +365,14 @@ journal input above when the comparison needs byte-identical inputs across stora
    byte-target override for boundary records. Validate byte-exact replay, append and point-read
    p95, bytes per event and WAL at matched load. Then enable Sampler with its contiguous profile.
 4. Dry-run the explicit repacker over ordinary rows and existing blocks, apply one bounded range,
-   verify it against its original events, and verify a second run makes no changes. Expand in
-   resumable, rate-limited batches while both PVCs have headroom and replica lag remains within budget.
+   verify it against its original events, and verify a second run makes no changes. Process in
+   rate-limited batches while both PVCs have headroom and replica lag remains within budget; after
+   interruption, restart from the beginning and let idempotent checks skip committed ranges.
 
 ## Repack already stored data
 
-Make repacking an explicit operation over a frozen profile fingerprint and per-session high-water
-marks. Enumerate **ordinary rows and existing blocks** in cursor order. Decode, reconstruct and
+Make repacking an explicit operation over a selected profile and a process-local opening cursor
+captured for each Session. Enumerate **ordinary rows and existing blocks** in cursor order. Decode, reconstruct and
 repartition; changing the codec on existing block boundaries alone cannot change grouping or size.
 For sparse History streams expand each work unit to include whole overlapping source blocks in
 the streams being replaced; if the closure exceeds the work budget, stage a replacement generation
@@ -381,11 +382,12 @@ intersecting block.
 Dry-run counts source bytes, target bytes, rewritten and skipped events and peak
 scratch space, without modifying journal rows. Apply outside the append critical path: prepare
 bounded candidates, acquire the session lock with a short timeout, recheck source identities and
-the removal watermark, then atomically replace the source. Advance the in-memory cursor only
+the removal watermark, then atomically replace the source. Advance the process-local cursor only
 after commit. Neither service persists run or checkpoint tables. On restart, scan the selected
-sessions again and inspect the committed rows and blocks; a crash leaves each batch wholly
-applied or wholly unapplied. Readers use one MVCC snapshot. Skip a busy session, finish the opening watermark
-even if new events arrive, and report already-conforming ranges on rerun. An operator can throttle
+sessions from the beginning and inspect the committed rows and blocks; a crash leaves each batch
+wholly applied or wholly unapplied, and exact-storage checks skip ranges already in the selected
+profile. Readers use one MVCC snapshot. Skip a busy session, finish the opening watermark even if
+new events arrive, and report already-conforming ranges on rerun. An operator can throttle
 by bytes per second and concurrent sessions, and pause on replica lag, WAL growth, low disk headroom
 or append/read latency. Keep old readers compatible before switching writers; rollback of the
 writer policy does not roll back stored formats.

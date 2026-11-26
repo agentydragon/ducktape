@@ -81,9 +81,9 @@ gzip block contains up to 32 consecutive exact event frames and decodes to at mo
 incomplete tail, oversized frames and groups with no compression savings stay in standalone rows.
 Readers and the exporter understand both standalone rows and legacy blocks.
 
-Migration 23 permits blocks spanning up to 256 entries and adds profile-specific checkpoints for
-APB v1 repacking. The new `event_block_v2_writes` setting is a separate, default-off gate for live
-APB v1 writes; its profile defaults to 64 KiB, 128 entries and zstd level 3. Enabling
+Migration 23 only changes the event-block range constraint to permit spans of up to 256 entries.
+The new `event_block_v2_writes` setting is a separate, default-off gate for live APB v1 writes; its
+profile defaults to 64 KiB, 128 entries and zstd level 3. Enabling
 `event_block_writes` does not enable APB writes. Staging currently has the legacy setting enabled,
 so its background worker continues to write legacy gzip blocks until the separate APB gate is
 deliberately enabled. Keep readers that understand both encodings throughout the transition.
@@ -195,11 +195,13 @@ Migration 23 must be present and all replicas must read both formats before enab
 worker; keep it independent from the APB gate.
 
 The `compact-journal` command transcodes retained standalone rows and legacy gzip blocks into the
-configured APB v1 profile. It captures a fixed opening cursor for each Session, records resumable
-checkpoints per profile, and processes batches of at most 256 entries and 8 MiB. Frame preparation
-and compression run outside the Session lock; apply matches source rows and payloads before
-committing replacements and progress together. Session-lock acquisition waits at most 100 ms and
-measured lock holds are bounded to 250 ms. `--all` inventories every retained Session in keyset
+configured APB v1 profile. For each Session, it captures a fixed opening cursor and processes batches
+of at most 256 entries and 8 MiB. Its cursor exists only in process memory and advances after each
+batch commits. Frame preparation and compression run outside the Session lock; apply matches exact
+source rows and payloads before atomically replacing them. Session-lock acquisition waits at most
+100 ms and measured lock holds are bounded to 250 ms. After interruption, a new invocation scans
+from the beginning, validates the committed storage, and skips batches that already match the
+profile; it stores no progress table or column. `--all` inventories every retained Session in keyset
 order and defers busy Sessions after bounded retries, so repeat the pass until all Sessions finish.
 Use the same `--event-block-target-bytes`, `--event-block-target-entries`, and
 `--event-block-level` values for live writes and every repack pass.
@@ -212,8 +214,9 @@ compact-journal --session ID --apply
 compact-journal --all --apply
 ```
 
-The command requires an explicit `--dry-run` or `--apply`. Optional batch limits, delay and pause
-file support controlled resumable passes. The sampler image includes the separate manual
+The command requires an explicit `--dry-run` or `--apply`. Optional delay and pause-file settings
+control pacing; each invocation processes its full opening watermark. The APB live-write gate stays
+off by default, and activating it remains a separate rollout change. The sampler image includes the separate manual
 [`compact-journal` Job template](ops/compact-journal-job.yaml) and
 [`verify-journal` Job template](ops/verify-journal-job.yaml); neither is part of Flux. Use the
 repack Job for canaries and the full fleet pass, then run a separate verification Job after the

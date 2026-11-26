@@ -154,8 +154,9 @@ func TestCompactJournalTranscodesLegacyAndCurrentBlocks(t *testing.T) {
 		repeated.Events != 0 || repeated.Blocks != 0 || repeated.Batches != 0 || repeated.StoredBytes != 0 || repeated.PackedBytes != 0 {
 		t.Fatalf("idempotent apply result=%+v err=%v", repeated, err)
 	}
-	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block_checkpoint WHERE session_id=$1`, session.ID); got != 1 {
-		t.Fatalf("profile checkpoint count=%d, want one", got)
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM information_schema.tables
+		WHERE table_schema='public' AND table_name='sampler_event_block_checkpoint'`); got != 0 {
+		t.Fatalf("repack created %d persistent checkpoint tables", got)
 	}
 }
 
@@ -165,12 +166,13 @@ func sameJournalCompactionWork(left, right JournalCompactionResult) bool {
 		left.OpeningCursor == right.OpeningCursor && left.Batches == right.Batches && left.Completed == right.Completed
 }
 
-func TestCompactJournalResumesAtOpeningWatermarkAfterRejectedRange(t *testing.T) {
+func TestCompactJournalRestartRescansCommittedBatchesFromBeginning(t *testing.T) {
 	store := newTestStore(t)
 	store.eventBlockProfile = eventblock.Profile{TargetBytes: 64 << 10, TargetEntries: 64, Level: 3}
 	session := openSessionForStore(t, store, "")
 	const opening = 600
 	appendAPBTestJournalThrough(t, store, session.ID, opening)
+	want := eventFrames(t, store, session.ID, 1, opening)
 	firstFrames := eventFrames(t, store, session.ID, 1, 256)
 
 	migrationExec(t, store.DB(), `CREATE FUNCTION reject_later_event_blocks() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -183,39 +185,27 @@ func TestCompactJournalResumesAtOpeningWatermarkAfterRejectedRange(t *testing.T)
 	if result, err := store.CompactJournal(t.Context(), session.ID, true); err == nil || result.Events != 256 || result.Blocks == 0 {
 		t.Fatalf("first partial apply result=%+v err=%v", result, err)
 	}
-	var savedOpening, savedThrough uint64
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT opening_sequence,through_sequence FROM sampler_event_block_checkpoint
-		WHERE session_id=$1 AND profile_fingerprint=$2`, session.ID, journalProfileFingerprint(store.eventBlockProfile)).Scan(&savedOpening, &savedThrough); err != nil {
-		t.Fatal(err)
-	}
-	if savedOpening != opening || savedThrough != 256 {
-		t.Fatalf("failed range checkpoint=%d/%d, want %d/256", savedOpening, savedThrough, opening)
-	}
 	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, 256), firstFrames)
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1 AND last_sequence<=256`, session.ID); got == 0 {
+		t.Fatal("first batch did not commit before the later range was rejected")
+	}
 
 	migrationExec(t, store.DB(), `DROP TRIGGER reject_later_event_blocks ON sampler_event_block`)
 	migrationExec(t, store.DB(), `DROP FUNCTION reject_later_event_blocks()`)
 	appendAPBTestJournalThrough(t, store, session.ID, opening+1)
-	if _, err := store.CompactJournal(t.Context(), session.ID, true); err != nil {
-		t.Fatalf("resumed apply: %v", err)
+	appended := eventFrames(t, store, session.ID, opening+1, opening+1)
+	result, err := store.CompactJournal(t.Context(), session.ID, true)
+	if err != nil || !result.Completed {
+		t.Fatalf("restart apply result=%+v err=%v", result, err)
 	}
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT opening_sequence,through_sequence FROM sampler_event_block_checkpoint
-		WHERE session_id=$1 AND profile_fingerprint=$2`, session.ID, journalProfileFingerprint(store.eventBlockProfile)).Scan(&savedOpening, &savedThrough); err != nil {
-		t.Fatal(err)
+	if result.OpeningCursor != opening+1 || result.Events != int64(opening+1) {
+		t.Fatalf("restart did not capture and rescan the full current history: %+v", result)
 	}
-	if savedOpening != opening || savedThrough != opening {
-		t.Fatalf("resumed pass moved its opening watermark: %d/%d", savedOpening, savedThrough)
-	}
-	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1 AND sequence=$2`, session.ID, opening+1); got != 1 {
-		t.Fatalf("event appended beyond opening watermark was consumed by resumed pass")
-	}
-
-	store.eventBlockProfile.TargetEntries = 32
-	if _, err := store.CompactJournal(t.Context(), session.ID, true); err != nil {
-		t.Fatalf("new profile pass: %v", err)
-	}
-	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block_checkpoint WHERE session_id=$1`, session.ID); got != 2 {
-		t.Fatalf("profile-specific checkpoint count=%d, want two", got)
+	want = append(want, appended[0])
+	assertFramesEqual(t, eventFrames(t, store, session.ID, 1, opening+1), want)
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM information_schema.tables
+		WHERE table_schema='public' AND table_name='sampler_event_block_checkpoint'`); got != 0 {
+		t.Fatalf("restart created %d persistent checkpoint tables", got)
 	}
 }
 
@@ -238,10 +228,10 @@ func TestRepackCompareAndSwapDetectsLiveWriterSealingPreparedRows(t *testing.T) 
 	session := openSessionForStore(t, store, "")
 	appendAPBTestJournalThrough(t, store, session.ID, 32)
 	want := eventFrames(t, store, session.ID, 1, 32)
-	fingerprint := journalProfileFingerprint(store.eventBlockProfile)
-	state, done, _, err := store.openJournalRepack(t.Context(), session.ID, fingerprint)
-	if err != nil || done || state.opening != 32 {
-		t.Fatalf("open repack state=%+v done=%v err=%v", state, done, err)
+	opening, err := store.CurrentCursor(t.Context(), session.ID)
+	state := journalRepackState{opening: opening}
+	if err != nil || state.opening != 32 {
+		t.Fatalf("open repack state=%+v err=%v", state, err)
 	}
 	plan, err := store.prepareJournalRepack(t.Context(), session.ID, state)
 	if err != nil || len(plan.sources) == 0 {
@@ -259,12 +249,14 @@ func TestRepackCompareAndSwapDetectsLiveWriterSealingPreparedRows(t *testing.T) 
 	if got := postgres.Count(t, live.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1 AND first_sequence=1`, session.ID); got != 1 {
 		t.Fatalf("live writer did not seal the prepared rows: %d blocks", got)
 	}
-	if _, err := store.applyJournalRepack(t.Context(), session.ID, fingerprint, state, plan); !errors.Is(err, ErrJournalBatchChanged) {
+	if _, err := store.applyJournalRepack(t.Context(), session.ID, state, plan); !errors.Is(err, ErrJournalBatchChanged) {
 		t.Fatalf("stale prepared batch error=%v, want ErrJournalBatchChanged", err)
 	}
-	if got := postgres.Count(t, store.DB(), `SELECT through_sequence FROM sampler_event_block_checkpoint
-		WHERE session_id=$1 AND profile_fingerprint=$2`, session.ID, fingerprint); got != 0 {
-		t.Fatalf("stale batch advanced checkpoint to %d", got)
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1 AND first_sequence=1`, session.ID); got != 1 {
+		t.Fatalf("stale batch changed the live writer's replacement block count to %d", got)
+	}
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1 AND sequence=33`, session.ID); got != 1 {
+		t.Fatalf("stale batch lost the live writer's appended row")
 	}
 	result, err := store.CompactJournalWithOptions(t.Context(), session.ID, true, JournalCompactionOptions{})
 	if err != nil || !result.Completed {
@@ -286,13 +278,13 @@ func TestRepackKeepsLiveReadsAndAppendsAvailableDuringBoundedLock(t *testing.T) 
 
 	readerDB := postgres.Open(t, dsn)
 	reader := New(readerDB, 30*time.Second, nil)
-	migrationExec(t, store.DB(), `CREATE FUNCTION delay_repack_checkpoint() RETURNS trigger LANGUAGE plpgsql AS $$
+	migrationExec(t, store.DB(), `CREATE FUNCTION delay_repack_delete() RETURNS trigger LANGUAGE plpgsql AS $$
 		BEGIN
-			IF NEW.through_sequence > OLD.through_sequence THEN PERFORM pg_sleep(0.10); END IF;
-			RETURN NEW;
+			IF OLD.sequence=1 THEN PERFORM pg_sleep(0.10); END IF;
+			RETURN OLD;
 		END; $$`)
-	migrationExec(t, store.DB(), `CREATE TRIGGER delay_repack_checkpoint BEFORE UPDATE ON sampler_event_block_checkpoint
-		FOR EACH ROW EXECUTE FUNCTION delay_repack_checkpoint()`)
+	migrationExec(t, store.DB(), `CREATE TRIGGER delay_repack_delete BEFORE DELETE ON sampler_event
+		FOR EACH ROW EXECUTE FUNCTION delay_repack_delete()`)
 
 	type repackOutcome struct {
 		result JournalCompactionResult
@@ -311,7 +303,7 @@ func TestRepackKeepsLiveReadsAndAppendsAvailableDuringBoundedLock(t *testing.T) 
 		var active bool
 		err := reader.DB().QueryRowContext(t.Context(), `SELECT EXISTS(
 			SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND state='active'
-			AND query LIKE 'UPDATE sampler_event_block_checkpoint SET%through_sequence%')`).Scan(&active)
+			AND query LIKE 'DELETE FROM sampler_event WHERE session_id%')`).Scan(&active)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -319,7 +311,7 @@ func TestRepackKeepsLiveReadsAndAppendsAvailableDuringBoundedLock(t *testing.T) 
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("repack checkpoint transaction did not enter its bounded lock window")
+			t.Fatal("repack batch transaction did not enter its bounded lock window")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -371,15 +363,6 @@ func TestRepackKeepsLiveReadsAndAppendsAvailableDuringBoundedLock(t *testing.T) 
 	post, err := store.VerifyJournalInventory(t.Context())
 	if err != nil || JournalInventoryError(post) != nil {
 		t.Fatalf("post-concurrency inventory=%+v err=%v verify=%v", post, err, JournalInventoryError(post))
-	}
-}
-
-func TestCompactJournalProfileFingerprintChangesWithPolicy(t *testing.T) {
-	one := eventblock.Profile{TargetBytes: 64 << 10, TargetEntries: 128, Level: 3}
-	two := one
-	two.Level = 2
-	if journalProfileFingerprint(one) == journalProfileFingerprint(two) {
-		t.Fatal("profile fingerprint ignored the compression level")
 	}
 }
 

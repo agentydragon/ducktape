@@ -23,7 +23,6 @@ func runCompactJournal(ctx context.Context, args []string) error {
 	apply := flags.Bool("apply", false, "commit journal replacements")
 	dryRun := flags.Bool("dry-run", false, "preview journal replacements without writing")
 	batchDelay := flags.Duration("batch-delay", 50*time.Millisecond, "minimum delay between completed batches")
-	batchLimit := flags.Int("batch-limit", 0, "stop after this many batches per Session; zero processes the full opening watermark")
 	pauseFile := flags.String("pause-file", "", "pause at batch boundaries while this file exists")
 	busyRetries := flags.Int("busy-retries", 3, "retries for Session lock contention or changed inputs")
 	retryDelay := flags.Duration("retry-delay", 250*time.Millisecond, "delay between contention retries")
@@ -36,8 +35,8 @@ func runCompactJournal(ctx context.Context, args []string) error {
 	if flags.NArg() != 0 || *all == (*session != "") || *apply == *dryRun {
 		return errors.New("select exactly one of --session ID / --all and --dry-run / --apply")
 	}
-	if *batchDelay < 0 || *batchDelay > time.Minute || *batchLimit < 0 || *busyRetries < 0 || *busyRetries > 10 || *retryDelay < 0 || *retryDelay > time.Minute {
-		return errors.New("batch delay, batch limit, or contention retry settings are outside supported bounds")
+	if *batchDelay < 0 || *batchDelay > time.Minute || *busyRetries < 0 || *busyRetries > 10 || *retryDelay < 0 || *retryDelay > time.Minute {
+		return errors.New("batch delay or contention retry settings are outside supported bounds")
 	}
 	profile := eventblock.Profile{TargetBytes: *targetBytes, TargetEntries: *targetEntries, Level: *level}
 	if _, err := eventblock.NewPacker(profile); err != nil {
@@ -58,7 +57,7 @@ func runCompactJournal(ctx context.Context, args []string) error {
 		EventBlockTargetBytes: *targetBytes, EventBlockTargetEntries: *targetEntries, EventBlockLevel: *level,
 	})
 	options := sessionstore.JournalCompactionOptions{
-		BatchDelay: *batchDelay, BatchLimit: *batchLimit, PauseFile: *pauseFile,
+		BatchDelay: *batchDelay, PauseFile: *pauseFile,
 		ContentionRetries: *busyRetries, RetryDelay: *retryDelay,
 	}
 	run := func(id string) error {

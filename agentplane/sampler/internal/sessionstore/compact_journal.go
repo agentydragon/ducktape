@@ -3,9 +3,7 @@ package sessionstore
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -38,14 +36,13 @@ var (
 // JournalCompactionOptions controls pacing and bounded maintenance runs.
 type JournalCompactionOptions struct {
 	BatchDelay        time.Duration
-	BatchLimit        int
 	PauseFile         string
 	ContentionRetries int
 	RetryDelay        time.Duration
 }
 
 // JournalCompactionResult records the fixed opening watermark and the work completed
-// under the selected profile. Lock timings include each short checkpoint/CAS transaction.
+// under the selected profile. Lock timings include each short batch transaction.
 type JournalCompactionResult struct {
 	Events, Blocks, StoredBytes, PackedBytes int64
 	OpeningCursor                            uint64
@@ -112,57 +109,31 @@ func (s *Store) ListJournalSessions(ctx context.Context, after string, limit int
 	return ids, rows.Err()
 }
 
-// CompactJournal retains the default paced, resumable behavior for in-process callers.
+// CompactJournal retains the default paced behavior for in-process callers.
 func (s *Store) CompactJournal(ctx context.Context, sessionID string, apply bool) (JournalCompactionResult, error) {
 	return s.CompactJournalWithOptions(ctx, sessionID, apply, JournalCompactionOptions{
 		BatchDelay: 50 * time.Millisecond, ContentionRetries: 3, RetryDelay: 250 * time.Millisecond,
 	})
 }
 
-// CompactJournalWithOptions opens one fixed cursor watermark and repacks it in
+// CompactJournalWithOptions captures one fixed cursor watermark and repacks it in
 // batches of at most 256 entries and 8 MiB. Compression runs without the Session
-// lock. Apply uses the checkpoint plus exact source keys/payloads as a CAS, then
-// replaces data and advances progress in one short transaction.
+// lock. Apply compares exact source keys and payloads, then atomically replaces a
+// batch. Progress stays in memory; a later invocation safely scans from the start.
 func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string, apply bool, options JournalCompactionOptions) (JournalCompactionResult, error) {
 	var result JournalCompactionResult
-	if options.BatchDelay < 0 || options.BatchDelay > time.Minute || options.BatchLimit < 0 ||
+	if options.BatchDelay < 0 || options.BatchDelay > time.Minute ||
 		options.ContentionRetries < 0 || options.ContentionRetries > 10 || options.RetryDelay < 0 || options.RetryDelay > time.Minute {
 		return result, protocol.ErrInvalid
 	}
 	if _, err := eventblock.NewPacker(s.eventBlockProfile); err != nil {
 		return result, err
 	}
-	fingerprint := journalProfileFingerprint(s.eventBlockProfile)
-	state := journalRepackState{}
-	if apply {
-		for attempt := 0; ; attempt++ {
-			var done bool
-			var hold time.Duration
-			var err error
-			state, done, hold, err = s.openJournalRepack(ctx, sessionID, fingerprint)
-			addLockHold(&result, hold)
-			if err == nil {
-				if done {
-					result.OpeningCursor = state.opening
-					result.Completed = true
-					return result, nil
-				}
-				break
-			}
-			if !errors.Is(err, ErrJournalBusy) || attempt >= options.ContentionRetries {
-				return result, err
-			}
-			if err := waitJournalRetry(ctx, options.RetryDelay); err != nil {
-				return result, err
-			}
-		}
-	} else {
-		opening, err := s.CurrentCursor(ctx, sessionID)
-		if err != nil {
-			return result, err
-		}
-		state.opening = opening
+	opening, err := s.CurrentCursor(ctx, sessionID)
+	if err != nil {
+		return result, err
 	}
+	state := journalRepackState{opening: opening}
 	result.OpeningCursor = state.opening
 
 	lastProgress := time.Now()
@@ -186,7 +157,7 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 				return result, fmt.Errorf("journal repack made no progress after cursor %d", state.through)
 			}
 			if apply {
-				hold, err := s.applyJournalRepack(ctx, sessionID, fingerprint, state, plan)
+				hold, err := s.applyJournalRepack(ctx, sessionID, state, plan)
 				addLockHold(&result, hold)
 				if errors.Is(err, ErrJournalBatchChanged) || errors.Is(err, ErrJournalBusy) {
 					if attempt < options.ContentionRetries {
@@ -215,9 +186,6 @@ func (s *Store) CompactJournalWithOptions(ctx context.Context, sessionID string,
 		}
 		if state.through >= state.opening {
 			result.Completed = true
-			return result, nil
-		}
-		if options.BatchLimit > 0 && int(result.Batches) >= options.BatchLimit {
 			return result, nil
 		}
 		if now := time.Now(); now.Sub(lastProgress) >= 30*time.Second {
@@ -280,62 +248,6 @@ func waitForJournalPause(ctx context.Context, path string) error {
 			return err
 		}
 	}
-}
-
-func journalProfileFingerprint(profile eventblock.Profile) string {
-	identity := fmt.Sprintf("sampler-eventblock-repack-v1/apb-v1/zstd-stock/%d/%d/%d",
-		profile.TargetBytes, profile.TargetEntries, profile.Level)
-	digest := sha256.Sum256([]byte(identity))
-	return hex.EncodeToString(digest[:])
-}
-
-func (s *Store) openJournalRepack(ctx context.Context, sessionID, fingerprint string) (journalRepackState, bool, time.Duration, error) {
-	var state journalRepackState
-	var done bool
-	hold, err := s.withJournalSessionLock(ctx, sessionID, func(tx *sql.Tx, cursor uint64) error {
-		var queryErr error
-		state, queryErr = loadJournalCheckpoint(ctx, tx, sessionID, fingerprint)
-		missing := errors.Is(queryErr, sql.ErrNoRows)
-		if queryErr != nil && !missing {
-			return queryErr
-		}
-		if missing {
-			state = journalRepackState{opening: cursor}
-			_, err := tx.ExecContext(ctx, `INSERT INTO sampler_event_block_checkpoint
-				(session_id,profile_fingerprint,opening_sequence,through_sequence) VALUES($1,$2,$3,0)`,
-				sessionID, fingerprint, cursor)
-			return err
-		}
-		if state.through == state.opening {
-			if cursor <= state.opening {
-				done = true
-				return nil
-			}
-			newThrough := state.opening
-			var crossing sql.NullInt64
-			if err := tx.QueryRowContext(ctx, `SELECT min(first_sequence) FROM sampler_event_block
-				WHERE session_id=$1 AND first_sequence<=$2 AND last_sequence>$2`, sessionID, state.opening).Scan(&crossing); err != nil {
-				return err
-			}
-			if crossing.Valid {
-				newThrough = uint64(crossing.Int64 - 1)
-			}
-			state = journalRepackState{opening: cursor, through: newThrough}
-			_, err := tx.ExecContext(ctx, `UPDATE sampler_event_block_checkpoint
-				SET opening_sequence=$3,through_sequence=$4,updated_at=now()
-				WHERE session_id=$1 AND profile_fingerprint=$2`, sessionID, fingerprint, cursor, newThrough)
-			return err
-		}
-		return nil
-	})
-	return state, done, hold, err
-}
-
-func loadJournalCheckpoint(ctx context.Context, tx *sql.Tx, sessionID, fingerprint string) (journalRepackState, error) {
-	var state journalRepackState
-	err := tx.QueryRowContext(ctx, `SELECT opening_sequence,through_sequence FROM sampler_event_block_checkpoint
-		WHERE session_id=$1 AND profile_fingerprint=$2 FOR UPDATE`, sessionID, fingerprint).Scan(&state.opening, &state.through)
-	return state, err
 }
 
 func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, state journalRepackState) (repackPlan, error) {
@@ -455,8 +367,8 @@ func (s *Store) prepareJournalRepack(ctx context.Context, sessionID string, stat
 	}
 	if hasMore && resolvedThrough <= state.through {
 		// The physical batch can end before the profile target (for example, when
-		// stored bytes bound a page). Flush that bounded tail so checkpointing can
-		// make progress without rescanning the same prefix forever.
+		// stored bytes bound a page). Flush that bounded tail so the in-memory cursor
+		// can make progress without rescanning the same prefix during this pass.
 		outputs, resolvedThrough, err = repackJournalEntries(entries, false, state.opening, s.eventBlockProfile)
 		if err != nil {
 			return repackPlan{}, err
@@ -680,17 +592,10 @@ func validateJournalRepackCoverage(entries []repackEntry, outputs []repackOutput
 	return nil
 }
 
-func (s *Store) applyJournalRepack(ctx context.Context, sessionID, fingerprint string, previous journalRepackState, plan repackPlan) (time.Duration, error) {
+func (s *Store) applyJournalRepack(ctx context.Context, sessionID string, previous journalRepackState, plan repackPlan) (time.Duration, error) {
 	hold, err := s.withJournalSessionLock(ctx, sessionID, func(tx *sql.Tx, cursor uint64) error {
 		if cursor < previous.opening {
 			return errors.New("sampler Session cursor regressed below repack opening watermark")
-		}
-		current, err := loadJournalCheckpoint(ctx, tx, sessionID, fingerprint)
-		if err != nil {
-			return ErrJournalBatchChanged
-		}
-		if current != previous {
-			return ErrJournalBatchChanged
 		}
 		if err := compareJournalSources(ctx, tx, sessionID, previous, plan.sources); err != nil {
 			return err
@@ -704,7 +609,7 @@ func (s *Store) applyJournalRepack(ctx context.Context, sessionID, fingerprint s
 				return err
 			}
 		}
-		return updateJournalCheckpoint(ctx, tx, sessionID, fingerprint, previous, plan.state)
+		return nil
 	})
 	return hold, err
 }
@@ -845,23 +750,6 @@ func insertRepackOutputs(ctx context.Context, tx *sql.Tx, sessionID string, outp
 	}
 	if count != int64(len(selected)) {
 		return fmt.Errorf("inserted %d repacked outputs, expected %d", count, len(selected))
-	}
-	return nil
-}
-
-func updateJournalCheckpoint(ctx context.Context, tx *sql.Tx, sessionID, fingerprint string, previous, next journalRepackState) error {
-	result, err := tx.ExecContext(ctx, `UPDATE sampler_event_block_checkpoint SET through_sequence=$3,updated_at=now()
-		WHERE session_id=$1 AND profile_fingerprint=$2 AND opening_sequence=$4 AND through_sequence=$5`,
-		sessionID, fingerprint, next.through, previous.opening, previous.through)
-	if err != nil {
-		return err
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if changed != 1 {
-		return ErrJournalBatchChanged
 	}
 	return nil
 }

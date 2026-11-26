@@ -58,7 +58,7 @@ type journalCoverage struct {
 }
 
 // VerifyJournalInventory scans one repeatable-read snapshot of every retained
-// Session and journal row. It does not trust repack checkpoints or skip busy Sessions.
+// Session and journal row. It does not skip based on repack state or skip busy Sessions.
 func (s *Store) VerifyJournalInventory(ctx context.Context) (JournalInventoryResult, error) {
 	var result JournalInventoryResult
 	err := postgres.Transaction(ctx, s.db, sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(tx *sql.Tx) error {

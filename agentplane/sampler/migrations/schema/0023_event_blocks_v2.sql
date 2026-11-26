@@ -4,18 +4,7 @@ ALTER TABLE sampler_event_block
     ADD CONSTRAINT sampler_event_block_range_check
         CHECK (last_sequence >= first_sequence AND last_sequence - first_sequence < 256);
 
-CREATE TABLE sampler_event_block_checkpoint (
-    session_id VARCHAR NOT NULL REFERENCES sampler_session(id) ON DELETE CASCADE,
-    profile_fingerprint VARCHAR(64) NOT NULL,
-    opening_sequence INTEGER NOT NULL CHECK (opening_sequence >= 0),
-    through_sequence INTEGER NOT NULL CHECK (through_sequence >= 0 AND through_sequence <= opening_sequence),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (session_id, profile_fingerprint)
-);
-
 -- +goose Down
-DROP TABLE sampler_event_block_checkpoint;
-
 DO $$
 BEGIN
     IF EXISTS (
