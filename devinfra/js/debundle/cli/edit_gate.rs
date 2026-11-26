@@ -61,9 +61,23 @@ use spec::member_selectors::MemberSelectorSpec;
 use spec::{BindingSourceKind, ModulePath};
 use spec_modules::{
     ModuleClaims, ModuleFile, collect_module_files, ensure_unaliased_module_tree, module_claims,
-    module_path_from_file, read_module_claims,
+    module_path_from_file, read_module_claims, read_module_file,
 };
 use spec_tree::ModuleTreeScope;
+
+pub type ModuleDocs = BTreeMap<String, (PathBuf, ModuleFile)>;
+
+/// Load one planning snapshot for resolution, collision checks, and edits.
+/// Batch persistence compares against this same pre-edit snapshot.
+pub fn load_module_docs(modules_root: &Path) -> Result<ModuleDocs> {
+    let mut docs = BTreeMap::new();
+    for file in collect_module_files(modules_root)? {
+        let module_path = module_path_from_file(&file, modules_root);
+        let doc = read_module_file(&file)?;
+        docs.insert(module_path, (file, doc));
+    }
+    Ok(docs)
+}
 
 /// Shared CLI contract for edits that may need graph validation.
 #[derive(Debug, clap::Args)]
@@ -93,11 +107,11 @@ pub struct GraphEditArgs {
     pub format: Option<peel::OutputFormat>,
 }
 impl GraphEditArgs {
-    pub(super) fn edits_with_graph(&self) -> bool {
+    pub fn edits_with_graph(&self) -> bool {
         self.dependency_graph_path.is_some()
     }
 
-    pub(super) fn writes_with_graph(&self) -> bool {
+    pub fn writes_with_graph(&self) -> bool {
         self.edits_with_graph() && !self.dry_run
     }
 
@@ -208,15 +222,6 @@ impl<'a> Gate<'a> {
     /// Whether name-collision validation runs.
     pub fn verify_names(&self) -> bool {
         !matches!(self, Self::Skip)
-    }
-
-    /// The [`GateOutcome`] label a successful edit reports for this
-    /// validation mode.
-    pub fn outcome(&self) -> crate::outcome::GateOutcome {
-        match self {
-            Self::Run { .. } => crate::outcome::GateOutcome::ClaimsChecked,
-            Self::Skip => crate::outcome::GateOutcome::Skipped,
-        }
     }
 
     /// The same concrete priority used by graph checking and optional full
@@ -911,7 +916,7 @@ pub fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<
 /// of the gate's view so the gate runs against the same module set
 /// the post-write spec will have.
 pub fn post_edit_spec_from_docs(
-    docs: &BTreeMap<String, (PathBuf, ModuleFile)>,
+    docs: &ModuleDocs,
     deleted_module_paths: &BTreeSet<String>,
 ) -> Result<PostEditSpec> {
     let mut modules: Vec<PostEditModule> = Vec::new();

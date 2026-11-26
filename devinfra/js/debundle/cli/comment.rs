@@ -16,7 +16,7 @@ use spec::annotations::BindingAnnotation;
 use spec::{LogicalModule, ModulePath};
 use spec_modules::read_module_file;
 
-use crate::binding::resolve_unambiguous;
+use binding::resolve_unambiguous;
 use yaml_edit::write_yaml_atomic;
 
 /// Args for `debundle bindings comment <sym> [...]`.

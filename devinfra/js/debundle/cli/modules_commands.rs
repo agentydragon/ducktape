@@ -1,15 +1,15 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
-use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
-use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
-use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, read_assignment_request, run_modules_apply};
 use crate::module_proposals::{GraphCorpusScope, discover_graphs, scope_graphs_to_tree};
 use crate::source_unit_apply::{SourceUnitApplyOptions, run_source_unit_apply};
 use anyhow::{Context, Result, ensure};
 use clap::{Args as ClapArgs, Subcommand};
+use comment::{ModuleCommentArgs, run_module_comment_cmd};
+use edit_gate::GraphEditArgs;
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
+use module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use peel::assignment::{
     AssignmentPlan, AssignmentProblem, AssignmentSnapshot, SourceUnitAssignment, accepted,
 };

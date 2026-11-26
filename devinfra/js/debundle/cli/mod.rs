@@ -1,12 +1,6 @@
-pub mod binding;
-mod candidate_assessment;
-pub mod comment;
-pub mod edit_gate;
 pub mod gate;
 pub mod invocation;
-pub mod module;
 mod module_apply;
-pub mod outcome;
 pub mod scc_cluster;
 pub mod validate;
 
