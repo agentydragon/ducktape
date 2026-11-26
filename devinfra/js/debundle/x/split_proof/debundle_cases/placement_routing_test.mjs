@@ -45,7 +45,8 @@ assert.equal(resolved.status, 0, resolved.stderr);
 const placement = JSON.parse(readFileSync(placementPath, "utf8"));
 assert.equal(placement.chunk_id, "main");
 assert.equal(placement.source_sha256, createHash("sha256").update(source).digest("hex"));
-assert.deepEqual(placement.import_order, ["scene/shape", "rest", "tail"]);
+// The report lists explicit modules; the catchall Rest owner is implicit.
+assert.deepEqual(placement.import_order, ["scene/shape", "tail"]);
 assert.deepEqual(
   placement.units.map(({ ordinal, owner }) => [ordinal, owner]),
   [

@@ -18,7 +18,8 @@ for (const source of sources) {
     assert.equal(result.value.errors.length, 4);
     assert(result.value.errors.every((error) => error.startsWith("SyntaxError:")));
   } else if (library === "semver") {
-    assert.deepEqual(result.value.valid, ["1.2.3", null, "2.0.0-beta.1+build"]);
+    // semver.valid normalizes the v-prefix and omits build metadata.
+    assert.deepEqual(result.value.valid, ["1.2.3", null, "2.0.0-beta.1"]);
     assert.deepEqual(result.value.compare, [true, true, -1]);
     assert.deepEqual(result.value.satisfies, [true, false, true]);
     assert.equal(result.value.maxSatisfying, "1.9.9");
