@@ -1,11 +1,24 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertifiedResult, lower, root, threeUnitFixture as fixture } from "./harness.mjs";
+import { pathToFileURL } from "node:url";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { assertLinkedPreviewResult, expectedModelObservations, prepareLinkedFixture } from "./fixture_preview.mjs";
+import { observe } from "./harness.mjs";
 
-const profile = path.join(root, "browser.json");
-writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
-const options = ["--host-contract", profile];
+const host = { profile: "browser-page" };
+
+function fixture(name, source) {
+  return prepareLinkedFixture(name, source, {
+    entry: "entry.mjs",
+    modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
+    order: ["worker.mjs"],
+    sequential: true,
+  });
+}
+
 const premise =
   "Symbol.iterator returns the well-known iterator symbol without observable effects throughout initialization";
 
@@ -31,18 +44,38 @@ const method = fixture(
   })();
   export { result };`
 );
-assert.match(method.run().reason, /unsupported computed class key/);
-const run = lower(method.sourceFile, method.specFile, method.out, options);
-assertCertifiedResult({ ...run, files: method, out: method.out }, true);
-assert.deepEqual(run.verdict.assumptions, [premise]);
-assert.deepEqual(method.run(...options, "--check-output"), run.verdict);
+async function checkIterator({ manifest, out, sourceFile, specFile }, check) {
+  assertPublicEmissionRefused(manifest, out);
+  assert.deepEqual(observe(sourceFile, "result"), { result: true });
+  await withSplitPreview({ manifest }, ({ directory, entryFile }) => {
+    assert.deepEqual(observe(entryFile, "result"), { result: true });
+    const options = { source: sourceFile, spec: specFile, directory, observe: [["result"]] };
+    const model = probeLinkedModel({ ...options, host });
+    assert.equal(model.status, "matched", JSON.stringify(model));
+    assert(model.fuel > 0);
+    assert.deepEqual(model.observed, expectedModelObservations([[["result"], true]]));
+    assert.deepEqual(model.assumptions, [premise]);
+    check?.(options);
+  });
+}
 
-const owner = path.join(method.out, "worker.mjs");
-const original = readFileSync(owner, "utf8");
-const changed = original.replace(/\[\s*Symbol\.iterator\s*\]/, '["Symbol.iterator"]');
-assert.notEqual(changed, original);
-writeFileSync(owner, changed);
-assert.match(method.run(...options, "--check-output").reason, /worker\.mjs differs from its generated ESTree/);
+await checkIterator(method, (options) => {
+  const missing = probeLinkedModel(options);
+  assert.equal(missing.status, "refused", JSON.stringify(missing));
+  assert.match(missing.reason, /unsupported computed class key/);
+
+  const owner = path.join(options.directory, "worker.mjs");
+  const original = readFileSync(owner, "utf8");
+  const changed = original.replace(/\[\s*Symbol\.iterator\s*\]/, '["Symbol.iterator"]');
+  assert.notEqual(changed, original);
+  writeFileSync(owner, changed);
+  const mutated = probeLinkedModel({ ...options, host });
+  assert.equal(mutated.status, "refused", JSON.stringify(mutated));
+  assert.equal(mutated.reason_code, "linked_input", JSON.stringify(mutated));
+  assert.match(mutated.reason, /emitted syntax differs from original unit 0/);
+  assertPublicEmissionRefused(method.manifest, options.directory);
+  assertPublicRecheckRefused(method.manifest, options.directory);
+});
 
 const shadow = fixture(
   "shadowed-symbol",
@@ -50,9 +83,8 @@ const shadow = fixture(
   const result = ({ [Symbol.iterator]: 42 }).local;
   export { result };`
 );
-const shadowRun = lower(shadow.sourceFile, shadow.specFile, shadow.out, options);
-assertCertifiedResult({ ...shadowRun, files: shadow, out: shadow.out }, 42);
-assert.deepEqual(shadowRun.verdict.assumptions, []);
+assertPublicEmissionRefused(shadow.manifest, shadow.out);
+await assertLinkedPreviewResult(shadow, 42);
 
 const accessors = fixture(
   "iterator-accessors",
@@ -67,9 +99,7 @@ const accessors = fixture(
   })();
   export { result };`
 );
-const accessorRun = lower(accessors.sourceFile, accessors.specFile, accessors.out, options);
-assertCertifiedResult({ ...accessorRun, files: accessors, out: accessors.out }, true);
-assert.deepEqual(accessorRun.verdict.assumptions, [premise]);
+await checkIterator(accessors);
 
 const builtin = fixture(
   "native-array-iterator",
@@ -77,6 +107,13 @@ const builtin = fixture(
   const result = new Path()[Symbol.iterator]();
   export { result };`
 );
-const native = builtin.run(...options);
-assert.equal(native.status, "rejected");
-assert.match(native.reason, /unknown/);
+assertPublicEmissionRefused(builtin.manifest, builtin.out);
+await withSplitPreview({ manifest: builtin.manifest }, async ({ directory, entryFile }) => {
+  for (const file of [builtin.sourceFile, entryFile]) {
+    const { result } = await import(pathToFileURL(file).href);
+    assert.deepEqual(result.next(), { value: undefined, done: true });
+  }
+  const model = probeLinkedModel({ source: builtin.sourceFile, spec: builtin.specFile, directory, host });
+  assert.equal(model.status, "refused", JSON.stringify(model));
+  assert.match(model.reason, /unknown/);
+});
