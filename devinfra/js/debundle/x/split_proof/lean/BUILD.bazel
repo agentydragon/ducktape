@@ -1802,3 +1802,23 @@ lean_proof_test(
     ],
     deps = [":corejs_terminal_plan_link"],
 )
+
+lean_library(
+    name = "corejs_terminal_plan_scope",
+    srcs = ["EsmSplit/CoreJS/TerminalPlanScope.lean"],
+    deps = [
+        ":corejs_metadata_cells",
+        ":corejs_terminal_plan_link",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_plan_scope_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalPlanScope"],
+    required_theorems = [
+        "CoreJS.TerminalPlanScope.module_agreement",
+        "CoreJS.TerminalPlanScope.planned_link",
+    ],
+    deps = [":corejs_terminal_plan_scope"],
+)
