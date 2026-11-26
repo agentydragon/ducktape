@@ -16,8 +16,8 @@ use swc_ecma_ast::{
 
 use binding_targets::{binding_name_strings, top_level_binding_name_strings};
 use js_ast::{
-    ParsedJsModule, emit_module_source, parse_js_module_consuming,
-    source_unit_ordinal_for_statement, split_var_declarators, statements_for_source_unit_ordinals,
+    ParsedJsModule, emit_module_source, parse_js_module, source_unit_ordinal_for_statement,
+    split_var_declarators, statements_for_source_unit_ordinals,
 };
 
 /// A parsed JavaScript source file together with its original text and path.
@@ -32,7 +32,7 @@ impl PreparedSource {
     /// Read and parse one source file using the same parser/resolver as
     /// `debundle spec match-selector`.
     ///
-    /// Like the underlying `js_ast::parse_js_module_consuming`, this must be
+    /// Like the underlying `js_ast::parse_js_module`, this must be
     /// called inside an SWC `GLOBALS` scope. The debundle CLI provides that
     /// scope around the whole command.
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
@@ -51,7 +51,7 @@ impl PreparedSource {
     ) -> Result<Self> {
         let path = physical_path.as_ref().to_path_buf();
         let identity = source_identity.as_ref();
-        let parsed = parse_js_module_consuming(&identity.display().to_string(), source.into())
+        let parsed = parse_js_module(&identity.display().to_string(), source)
             .with_context(|| format!("parsing source file {}", path.display()))?;
         let source = parsed.source_text();
         let line_starts = std::iter::once(0)

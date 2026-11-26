@@ -1177,7 +1177,7 @@ mod tests {
         ] {
             GLOBALS.set(&Default::default(), || {
                 let parsed =
-                    js_ast::parse_js_module("fixture.js", &format!("({source});")).expect("parse");
+                    js_ast::parse_js_module("fixture.js", format!("({source});")).expect("parse");
                 let ModuleItem::Stmt(Stmt::Expr(statement)) = &parsed.module.body[0] else {
                     panic!("expression statement");
                 };

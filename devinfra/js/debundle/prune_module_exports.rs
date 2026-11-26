@@ -200,9 +200,9 @@ mod tests {
     fn pruned_modules(files: &[(&str, &str, FileRole)]) -> Vec<(String, Module)> {
         let mut modules: Vec<_> = files
             .iter()
-            .map(|(path, source, _)| {
+            .map(|&(path, source, _)| {
                 (
-                    (*path).to_string(),
+                    path.to_string(),
                     parse_js_module(path, source).unwrap().module,
                 )
             })

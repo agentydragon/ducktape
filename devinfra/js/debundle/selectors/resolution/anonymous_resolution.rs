@@ -663,7 +663,7 @@ fn read_source_modules(
                 None => fs::read_to_string(&resolved)
                     .with_context(|| format!("reading source file {}", resolved.display()))?,
             };
-            let parsed = js_ast::parse_js_module_consuming(source_path, source)
+            let parsed = js_ast::parse_js_module(source_path, source)
                 .with_context(|| format!("parsing source file {}", resolved.display()))?;
             Ok((source_path.to_owned(), parsed))
         })
