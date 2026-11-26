@@ -3,9 +3,14 @@ package settings
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1116,5 +1121,38 @@ func TestEnvironmentNamespaceIsRequired(t *testing.T) {
 	settings.EnvironmentNamespace = ""
 	if err := settings.Validate(); err == nil {
 		t.Fatal("missing environment namespace accepted")
+	}
+}
+
+func TestProviderClientsReuseConnectionsAcrossRequests(t *testing.T) {
+	var opened atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			opened.Add(1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+	clients := NewProviderClients(map[string]ConnectionConfig{"provider": {BaseURL: server.URL}})
+	for range 3 {
+		client, err := clients.Client("provider")
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := client.Get(server.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.Copy(io.Discard, response.Body); err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+	}
+	if opened.Load() != 1 {
+		t.Fatalf("opened %d connections for three sequential requests, want 1", opened.Load())
+	}
+	if _, err := clients.Client("unconfigured"); err == nil {
+		t.Fatal("returned a client for an unconfigured connection")
 	}
 }
