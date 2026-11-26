@@ -93,6 +93,19 @@ def main : IO Unit := do
   | .ok built =>
     unless built.assignment == [(0, "worker.mjs"), (2, "entry.mjs")] do
       throw (IO.userError "indexed constructor changed the authored owners")
+  let wrongOwner : EsmSplit.Spec := { request with
+    modules := [("worker.mjs", [.stmt 0, .stmt 1]), ("entry.mjs", [.stmt 2])] }
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle wrongOwner row .allOutcomes with
+  | .ok _ => throw (IO.userError "indexed constructor accepted the wrong export-row owner")
+  | .error _ => pure ()
+  let wrongOrder : EsmSplit.Spec := { request with order := ["entry.mjs", "worker.mjs"] }
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle wrongOrder row .allOutcomes with
+  | .ok _ => throw (IO.userError "indexed constructor accepted an invalid sequential order")
+  | .error _ => pure ()
+  let privateEntry : EsmSplit.Spec := { request with privateEntryBody := true }
+  match CoreJS.IndexedCheckedSplit.construct sourceProgram bundle privateEntry row .allOutcomes with
+  | .ok _ => throw (IO.userError "indexed constructor accepted a private entry")
+  | .error _ => pure ()
   unless decide (EsmSplit.Valid bundle request plan) do
     throw (IO.userError "sparse interior plan is invalid")
   unless decide (OrderKept sourceRows plan) do
