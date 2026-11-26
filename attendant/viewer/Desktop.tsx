@@ -4,13 +4,12 @@ import { RFB, type RfbConnection } from "../../util/frontend/rfb";
 
 interface Props {
   attached: boolean;
-  opened: boolean;
   pending: boolean;
   onDetach: () => void;
-  onReconnect: () => void;
+  onConnect: () => void;
 }
 
-export function Desktop({ attached, opened, pending, onDetach, onReconnect }: Props): ReactElement {
+export function Desktop({ attached, pending, onDetach, onConnect }: Props): ReactElement {
   const target = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState("Desktop disconnected");
 
@@ -60,21 +59,16 @@ export function Desktop({ attached, opened, pending, onDetach, onReconnect }: Pr
             Disconnect
           </Button>
         ) : (
-          opened && (
-            <Button size="xs" variant="default" disabled={pending} onClick={onReconnect}>
-              Reconnect desktop
-            </Button>
-          )
+          <Button size="xs" variant="default" disabled={pending} onClick={onConnect}>
+            Connect desktop
+          </Button>
         )}
       </Group>
-      <div className="screen">
-        <div id="display" aria-label="Remote display" ref={target} hidden={!attached} />
-        {!attached && (
-          <Text size="sm" c="dimmed">
-            {opened ? "Reconnect to resume the remote browser." : "Open a provider sign-in to use the remote browser."}
-          </Text>
-        )}
-      </div>
+      {attached && (
+        <div className="screen">
+          <div id="display" aria-label="Remote display" ref={target} />
+        </div>
+      )}
     </Paper>
   );
 }

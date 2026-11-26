@@ -106,7 +106,6 @@ function App() {
   const [notice, setNotice] = useState("");
   const [state, setState] = useState("");
   const [pending, setPending] = useState(false);
-  const [opened, setOpened] = useState(false);
   const [attached, setAttached] = useState(false);
 
   const detach = useCallback(() => setAttached(false), []);
@@ -121,7 +120,6 @@ function App() {
     setNames(null);
     setNotice(message);
     setAttached(false);
-    setOpened(false);
   }
 
   useEffect(() => {
@@ -142,7 +140,7 @@ function App() {
     };
   }, []);
 
-  type Action = "open" | "verify" | "logout" | "reconnect";
+  type Action = "open" | "verify" | "logout" | "connect";
   async function act(action: Action) {
     setPending(true);
     try {
@@ -165,10 +163,9 @@ function App() {
         case "open":
           setState("");
           await post(`${path}/open`);
-          setOpened(true);
           setAttached(true);
           break;
-        case "reconnect":
+        case "connect":
           await providers();
           setAttached(true);
           break;
@@ -223,13 +220,7 @@ function App() {
                 ? "No providers configured."
                 : (messages[state] ?? (state && "Session state could not be determined."))}
             </Text>
-            <Desktop
-              attached={attached}
-              opened={opened}
-              pending={pending}
-              onDetach={detach}
-              onReconnect={() => act("reconnect")}
-            />
+            <Desktop attached={attached} pending={pending} onDetach={detach} onConnect={() => act("connect")} />
           </Stack>
         )}
       </main>
