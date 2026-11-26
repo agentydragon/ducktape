@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.NamedDeclarationSplit
+import EsmSplit.CoreJS.OrderedConstSyntax
 import EsmSplit.CoreJS.TerminalSource
 import EsmSplit.CoreJS.SingleModule
 import EsmSplit.CoreJS.TerminalPlanFamily
@@ -9,43 +9,32 @@ construct or certify an output program. -/
 
 namespace CoreJS.TerminalConstructorInput
 
-/-- The existing declaration checker implies the source-link theorem's
-constant-declaration premise, without a second language checker. -/
-theorem declarations_all_const {earlier : List Name} {units : List (Nat × Stmt)}
-    (decls : NamedDeclarationSplit.Declarations earlier units) :
-    ∀ s ∈ units.map Prod.snd, ∃ name value, s = .decl .const name value := by
-  induction decls with
-  | nil => simp
-  | @cons earlier id name value rest fresh init tail ih =>
-    intro s member
-    simp only [List.map_cons, List.mem_cons] at member
-    rcases member with rfl | member
-    · exact ⟨name, value, rfl⟩
-    · exact ih s member
-
 /-- Facts checked about the exact source program and rows returned by the
 source-only decoder. Nothing here proves a candidate split or its exports. -/
 structure Checked (input : Program × List EsmSplit.LocalExportUnit) where
   terminal : TerminalSource.Checked input
   noImports : terminal.source.imports = []
-  declarations : NamedDeclarationSplit.Declarations [] terminal.source.body
+  grammar : OrderedConstSyntax.Declarations (OrderedConstSyntax.sourceNames terminal.source.body) [] terminal.source.body
+  earlier : OrderedConstSyntax.EarlierReads [] terminal.source.body
 
 /-- Refuse unless the actual source meets both the terminal metadata guard
-and the existing declaration check. A `Program` supplied directly must also
+and the source-defined primitive RHS and earlier-read checks. A `Program` supplied directly must also
 establish the absence of imports. -/
 def check (input : Program × List EsmSplit.LocalExportUnit) : Except String (Checked input) := do
   let terminal ← TerminalSource.check input
   if noImports : terminal.source.imports = [] then
-    let some ⟨decls⟩ := NamedDeclarationSplit.checkDeclarations [] terminal.source.body |
-      throw "expected unique const declarations with only primitive initializers or earlier reads"
-    return ⟨terminal, noImports, decls⟩
+    let some ⟨grammar⟩ := OrderedConstSyntax.checkBody terminal.source.body |
+      throw "expected unique const declarations with closed primitive initializers"
+    let some ⟨earlier⟩ := OrderedConstSyntax.checkEarlierReads [] terminal.source.body |
+      throw "initializer reads a binding before its declaration"
+    return ⟨terminal, noImports, grammar, earlier⟩
   else throw "terminal source must not import modules"
 
 /-- The checked source meets the exact constant premise for
 `link_singleModuleConst`. -/
 theorem all_const {input : Program × List EsmSplit.LocalExportUnit} (checked : Checked input) :
     ∀ s ∈ checked.terminal.source.body.map Prod.snd, ∃ name value, s = .decl .const name value :=
-  declarations_all_const checked.declarations
+  OrderedConstSyntax.all_const checked.grammar
 
 /-- The decoded program is the very singleton source expected by the source
 link theorem. Executable ordinals are not reindexed: the terminal guard proves
@@ -103,7 +92,6 @@ theorem planned_family {input : Program × List EsmSplit.LocalExportUnit} (check
   rw [← shape] at result
   exact result
 
-#print axioms declarations_all_const
 #print axioms check
 #print axioms all_const
 #print axioms source_shape

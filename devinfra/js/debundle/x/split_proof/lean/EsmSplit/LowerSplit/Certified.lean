@@ -333,11 +333,19 @@ private def tryTerminalDeclarations (chunk : DeploymentChunk) (src : BundleInput
   let .ok input := CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
   let bundle := SparseArtifact.sourceBundle nodes
   let .ok built := CoreJS.TerminalConstructor.construct input bundle spec | return none
+  -- Earlier accepted literal/read programs retain their existing readback; the
+  -- wider expression fragment also checks the actual reread CoreJS modules.
+  let exactCoreReadback := (CoreJS.NamedDeclarationSplit.checkDeclarations []
+    built.checked.terminal.source.body).isNone
   try
     let programs ← IO.ofExcept (ESTreeEmit.corePrograms built.program src.source)
     let part : OutputPart := { programs, source := src.source, input := src.input, work }
-    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun _ =>
-      pure (.ok ())
+    let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work options.checkOnly timings fun files =>
+      if exactCoreReadback then
+        pure <| match CoreJS.LinkedInput.checkConstructedOutput files built.program with
+          | .ok _ => .ok ()
+          | .error reason => .error { reason }
+      else pure (.ok ())
     match checked with
     | .ok _ => return some (← emitVerdict options.request.label (.ok .allOutcomes) "terminal-declarations"
         [("strategy", toJson "compiled-constructor")])

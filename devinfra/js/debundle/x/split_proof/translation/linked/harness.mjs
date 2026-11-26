@@ -274,19 +274,19 @@ export function forcePreview(files, directory) {
   return certification;
 }
 
-export function runSplit(name, fixture) {
+export function runSplit(name, fixture, scope = null) {
   const dir = path.join(root, name);
   const files = prepare(dir, fixture);
   const out = path.join(dir, "out");
-  return { dir, files, out, ...lower(files.sourceFile, files.specFile, out) };
+  return { dir, files, out, ...lower(files.sourceFile, files.specFile, out, [], scope) };
 }
 
 const entry = "entry.mjs";
 const worker = "worker.mjs";
 const workerModules = { [worker]: ["#0"], [entry]: ["#1", "#2"] };
 
-export function sequentialSplit(name, source, modules = workerModules, order = [worker], provider = "") {
-  return runSplit(name, { source, provider, spec: { entry, modules, order, sequential: true } });
+export function sequentialSplit(name, source, modules = workerModules, order = [worker], provider = "", scope = null) {
+  return runSplit(name, { source, provider, spec: { entry, modules, order, sequential: true } }, scope);
 }
 
 const owner = "owner.mjs";

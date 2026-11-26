@@ -74,7 +74,7 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
     if id == 0 then (id, .decl .let_ "data0" (.str "value0")) else (id, stmt)
   let badDeclaration : Program := { p with modules := [{ m with body := badBody }] }
   match TerminalConstructorInput.check (badDeclaration, rows) with
-  | .error "expected unique const declarations with only primitive initializers or earlier reads" => pure ()
+  | .error "expected unique const declarations with closed primitive initializers" => pure ()
   | _ => throw (IO.userError "a non-const original statement was not refused")
 
 private def checkOmitted (j : Json) (specText sourceText : String) : IO Unit := do
