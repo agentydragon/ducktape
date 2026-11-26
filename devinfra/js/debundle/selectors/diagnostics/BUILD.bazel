@@ -15,8 +15,8 @@ rust_library(
 
 rust_library(
     name = "selector_debt",
-    srcs = ["selector_debt.rs"],
-    crate_root = "selector_debt.rs",
+    srcs = glob(["selector_debt/*.rs"]),
+    crate_root = "selector_debt/lib.rs",
     edition = "2024",
     deps = [
         "//devinfra/js/debundle:js_ast",
