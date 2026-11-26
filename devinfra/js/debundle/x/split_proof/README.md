@@ -56,9 +56,9 @@ bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- deployment.json o
 
 Publication requires one strict guarantee: the requested placement and entry's public live cells are preserved, and all supported observable CoreJS endings agree, including throws and their effects. This is a claim about the modeled CoreJS programs under the supported JavaScript boundary, not a proof of general JavaScript semantics. The [target and trusted parts](PLAN.md#target) describe that boundary.
 
-**Current acceptance:** no public constructor rule yet proves both the source/output bridge and the strict JavaScript observations. The splitter reports `reason_code: "no_constructed_rule"` when the required constructor evidence is unavailable; it does not publish a fresh output tree. `--check-output` likewise refuses without changing the existing tree. A model diagnostic or a proof of normal completion alone is not a publication certificate. Earlier replay and structural acceptances are not a current coverage promise.
+**Current acceptance:** no public constructor rule yet proves both the source/output bridge and the strict JavaScript observations. The splitter reports `reason_code: "no_constructed_rule"` when the required constructor evidence is unavailable; it does not publish a fresh output tree. `--check-output` is not an accepted option; requests using it are rejected before the output tree is modified. A model diagnostic or a proof of normal completion alone is not a publication certificate. Earlier replay and structural acceptances are not a current coverage promise.
 
-The publishing command no longer accepts research switches to select replay or structural proof, request normal completion, or supply host/deployment premise overrides. There is no unchecked publishing mode.
+The publishing command no longer accepts research switches to select replay or structural proof, request normal completion, supply host/deployment premise overrides, or run `--check-output`. There is no unchecked publishing mode.
 
 ### Developer diagnostics
 
