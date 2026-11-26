@@ -41,9 +41,10 @@ service PolicyService {
     option (google.api.http) = {get: "/v1/identities:watch"};
   }
   // Deletes one Identity incarnation, and with it, by garbage collection, everything it owns. Refused
-  // for an Identity Flux manages, which Flux would recreate, and while a PolicyBinding the Identity
-  // does not own names it: such a binding would grant a later Identity of the same name. The check
-  // is advisory: a binding created concurrently is not fenced.
+  // for an Identity Flux manages, which Flux would recreate; while a PolicyBinding the Identity does
+  // not own names it, since such a binding would grant a later Identity of the same name; and while a
+  // WorkloadCredential acts as it. A refusal is FailedPrecondition with a PreconditionFailure naming
+  // each reference. The check is advisory: a reference created concurrently is not fenced.
   rpc DeleteIdentity(DeleteIdentityRequest) returns (DeleteIdentityResponse) {
     option (google.api.http) = {delete: "/v1/identities/{namespace}/{name}"};
   }
@@ -152,6 +153,8 @@ message DeleteIdentityRequest {
   string namespace = 1;
   string name = 2;
   string uid = 3;
+  // Run every check and return the same refusal, but delete nothing (AIP-163).
+  bool validate_only = 4;
 }
 message DeleteIdentityResponse {}
 

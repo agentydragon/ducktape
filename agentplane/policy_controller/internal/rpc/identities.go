@@ -95,6 +95,9 @@ func (s *Service) DeleteIdentity(ctx context.Context, request *policypb.DeleteId
 		}
 		return nil, refusal.Err()
 	}
+	if request.GetValidateOnly() {
+		return &policypb.DeleteIdentityResponse{}, nil
+	}
 	uid, resourceVersion := identity.UID, identity.ResourceVersion
 	if err := s.objects.Delete(ctx, identity, client.Preconditions{UID: &uid, ResourceVersion: &resourceVersion}); err != nil {
 		if apierrors.IsNotFound(err) {
