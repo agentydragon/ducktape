@@ -4296,6 +4296,37 @@ const visualHarness = {
       }),
     ];
   },
+  setRunningSandboxConditions(name: string): void {
+    const diagnostics = SANDBOXES.find((sandbox) => sandbox.target?.name === name)?.kubernetesDiagnostics;
+    if (!diagnostics?.pod?.status) throw new Error("Expected running Pod");
+    const conditions = [
+      ["Running", "PodRunning", `Pod ${name} is running`, 240],
+      ["WorkloadReady", "PodReady", `Pod ${name} is Ready`, 45],
+      ["EnvironmentRuntimeConnected", "Connected", "The controller recently observed this incarnation", 45],
+      ["Bootstrapped", "BootstrapSucceeded", "The bootstrap ran to success", 242],
+      ["Ready", "Connected", "The controller recently observed this incarnation", 45],
+    ] as const;
+    diagnostics.sandboxStatus = {
+      conditions: conditions.map(([type, reason, message, seconds]) => ({
+        type,
+        reason,
+        message,
+        status: "True",
+        lastTransitionTime: ago(seconds * 1000),
+      })),
+    };
+    diagnostics.pod.status.conditions = [
+      "PodReadyToStartContainers",
+      "Initialized",
+      "Ready",
+      "ContainersReady",
+      "PodScheduled",
+    ].map((type, index) => ({
+      type,
+      status: "True",
+      lastTransitionTime: ago([245, 245, 46, 46, 255][index]! * 1000),
+    }));
+  },
   setSandboxPreset(sandboxName: string, preset: string): void {
     const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName);
     if (!sandbox?.configuration) throw new Error(`Sandbox ${sandboxName} has no configuration fixture`);

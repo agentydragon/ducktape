@@ -10,6 +10,9 @@ a field a harness adds sends every such call to the JSON view while the tests st
 
 ## Thread view UX
 
+The [October disclosure review](../../debug/thread_view_weirdness.md) records remaining feedback on
+wrapped output counts, failure indicators, and the raw-frame layout.
+
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`agentplane/proto/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into Runtime's observation handling, History's `ReadSessionObservations` and

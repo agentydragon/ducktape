@@ -469,6 +469,13 @@ spec:
       name: clickhouse-grafana
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/attendant/**"
+          to: "@artifact/cluster/generated/attendant/"
+        - from: "@repo/cluster/k8s/attendant-image-pins/**"
+          to: "@artifact/cluster/k8s/attendant-image-pins/"
+      name: attendant
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/atuin/**"
           to: "@artifact/cluster/generated/atuin/"
       name: atuin

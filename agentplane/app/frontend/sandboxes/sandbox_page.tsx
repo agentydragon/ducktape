@@ -1,3 +1,4 @@
+import { SandboxStatusTooltip } from "./status_tooltip";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { SessionStatus_Materialization } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { clone, create } from "@bufbuild/protobuf";
@@ -35,14 +36,7 @@ import { usePolicyResources } from "../policy/watch";
 import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";
 import { StatusView } from "./sandbox_status_view";
-import {
-  containerStatuses,
-  hasVmConsole,
-  sandboxReady,
-  sandboxStatusDetail,
-  sandboxSummary,
-  sandboxSuspended,
-} from "./sandbox_status";
+import { containerStatuses, hasVmConsole, sandboxReady, sandboxSummary, sandboxSuspended } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
 import { sessionActivityFresh } from "../sessions/thread_status";
 import { NewThreadForm } from "../sessions/new_thread_form";
@@ -344,7 +338,7 @@ export function SandboxPage({
       <TopbarTitle>
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
           {sandbox && (
-            <Tooltip label={sandboxStatusDetail(sandbox)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+            <Tooltip label={<SandboxStatusTooltip sandbox={sandbox} />} multiline withArrow>
               <span
                 role="img"
                 tabIndex={0}

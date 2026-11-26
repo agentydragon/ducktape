@@ -40,6 +40,7 @@ from agentplane.system_tests.driver.sandbox_diagnostics import (
     container_mount_sources,
 )
 from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
+from agentplane.system_tests.driver.session_spec import environment_session_spec
 from agentplane.system_tests.driver.tls import service_credentials, service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -482,15 +483,12 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 timeout=15,
             )
         assert unregistered.value.code() == grpc.StatusCode.NOT_FOUND
-        spec = session_pb2.SessionSpec(
-            placement=session_pb2.SessionPlacement(
-                environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                    environment=session_pb2.ExactEnvironment(name=sandbox, uid=uid), harness=session_pb2.HARNESS_CODEX
-                )
-            ),
+        spec = environment_session_spec(
+            sandbox,
+            uid,
+            harness=session_pb2.HARNESS_CODEX,
             model="chatgpt-sub/oai-responses/gpt-6-luna",
             cwd="/state/work",
-            reasoning_effort="low",
         )
         created = await stub.CreateSession(pb.CreateSessionRequest(session_id=session, spec=spec), timeout=15)
         assert created.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_WAITING
@@ -915,16 +913,12 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 created = await stub.CreateSession(
                     pb.CreateSessionRequest(
                         session_id=session,
-                        spec=session_pb2.SessionSpec(
-                            placement=session_pb2.SessionPlacement(
-                                environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                                    environment=session_pb2.ExactEnvironment(name=sandbox, uid=uid),
-                                    harness=session_pb2.HARNESS_CODEX,
-                                )
-                            ),
+                        spec=environment_session_spec(
+                            sandbox,
+                            uid,
+                            harness=session_pb2.HARNESS_CODEX,
                             model="chatgpt-sub/oai-responses/gpt-6-luna",
                             cwd="/state/work",
-                            reasoning_effort="low",
                             instructions=f"EARLY_DIAGNOSTIC_PAYLOAD_{sandbox}",
                         ),
                     ),

@@ -2,7 +2,6 @@ package environmentruntimeclient
 
 import (
 	"context"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +10,7 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -31,18 +31,13 @@ func (r *recordingRuntime) GetStatus(ctx context.Context, _ *sessionpb.GetStatus
 func serve(t *testing.T, token string) (Config, *recordingRuntime) {
 	t.Helper()
 	runtime := &recordingRuntime{received: make(chan metadata.MD, 4)}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runtime)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	target := grpcserver.Serve(t, server)
 	tokenFile := filepath.Join(t.TempDir(), "token")
 	writeToken(t, tokenFile, token)
 	return Config{
-		Target:           listener.Addr().String(),
+		Target:           target,
 		TokenFile:        tokenFile,
 		Timeout:          10 * time.Second,
 		SandboxName:      "test-sandbox",

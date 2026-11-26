@@ -769,7 +769,7 @@ pub fn outcomes(report: &Value) -> &[Value] {
 /// return its captured stdio + exit status.
 pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
     let bin = debundler_path();
-    command_result(
+    CommandResult::from(
         case_commands::debundle_fixture_output(
             Command::new(&bin)
                 .args(["spec", "validate", "--spec"])
@@ -786,7 +786,7 @@ pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult
 /// its report; panics on a non-zero exit.
 pub fn spec_lint_json(spec_path: &Path, extra_args: &[&str]) -> Value {
     let bin = debundler_path();
-    let out = command_result(
+    let out = CommandResult::from(
         case_commands::debundle_fixture_output(
             Command::new(&bin)
                 .args(["spec", "lint", "--spec"])
@@ -1212,7 +1212,7 @@ impl StandaloneDebundle {
         }
         let output = case_commands::isolated_debundle_output(&mut command, &hint)
             .unwrap_or_else(|e| panic!("{e}"));
-        command_result(output)
+        CommandResult::from(output)
     }
 }
 
@@ -1222,11 +1222,13 @@ pub struct CommandResult {
     pub status: std::process::ExitStatus,
 }
 
-fn command_result(output: std::process::Output) -> CommandResult {
-    CommandResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        status: output.status,
+impl From<std::process::Output> for CommandResult {
+    fn from(output: std::process::Output) -> Self {
+        Self {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            status: output.status,
+        }
     }
 }
 
@@ -1249,14 +1251,14 @@ pub fn run_source_only_validate(
         source_file,
     )
     .unwrap_or_else(|e| panic!("{e}"));
-    command_result(output)
+    CommandResult::from(output)
 }
 
 /// `debundle spec match-selector --source-file <source_file> --match <selector>
 /// --format json`, parsed; panics on a non-zero exit.
 pub fn run_match_selector(source_file: &Path, selector: &str, extra_args: &[&str]) -> Value {
     let bin = debundler_path();
-    let result = command_result(
+    let result = CommandResult::from(
         debundle_fixture_output(
             Command::new(&bin)
                 .args(["spec", "match-selector", "--source-file"])
@@ -1371,7 +1373,7 @@ pub fn find_outcome<'a>(outcomes: &'a [Value], kind: &str, export_name: &str) ->
 
 fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandResult {
     let bin = debundler_path();
-    command_result(
+    CommandResult::from(
         case_commands::debundle_fixture_output(
             Command::new(&bin)
                 .current_dir(spec_path.parent().expect("fixture spec parent"))
@@ -1410,7 +1412,7 @@ pub fn run_debundler_with_args(
     if !hint.as_os_str().is_empty() {
         command.current_dir(&hint);
     }
-    command_result(
+    CommandResult::from(
         case_commands::debundle_fixture_output(&mut command, spec_path)
             .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
     )

@@ -83,14 +83,9 @@ type proxyHop struct {
 }
 
 func newProxyHop(config proxyConfig) (*proxyHop, error) {
-	client := peertls.Config{
-		CertFile: config.Transport.Auth.CertFile,
-		KeyFile:  config.Transport.Auth.KeyFile,
-		CAFile:   config.Transport.CAFile,
-	}
-	security, err := client.ClientTLSConfig(peertls.EgressProxyURI)
+	security, err := config.SVID.ClientTLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		return nil, fmt.Errorf("configure SPIFFE proxy authentication: %w", err)
 	}
-	return &proxyHop{address: config.Address, transport: tlsProxyTransport{security: security, svid: client}}, nil
+	return &proxyHop{address: config.Address, transport: tlsProxyTransport{security: security, svid: config.SVID}}, nil
 }

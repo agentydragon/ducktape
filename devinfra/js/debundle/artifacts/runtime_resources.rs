@@ -4,7 +4,8 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 use crate::paths::{
-    join_module_path, module_path_dirname, normalize_module_path, relative_module_path,
+    is_path_specifier, join_module_path, module_path_dirname, normalize_module_path,
+    relative_module_specifier,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -43,12 +44,10 @@ impl RuntimeResourceDestination {
             Self::External { url } => return Some(url.clone()),
             Self::Unresolved { .. } => return None,
         };
-        let relative = relative_module_path(&module_path_dirname(caller_file), path);
-        Some(if relative.starts_with('.') {
-            relative
-        } else {
-            format!("./{relative}")
-        })
+        Some(relative_module_specifier(
+            &module_path_dirname(caller_file),
+            path,
+        ))
     }
 }
 
@@ -85,9 +84,7 @@ pub fn local_resource_path(
 ) -> Option<String> {
     if specifier.starts_with("//")
         || url::Url::parse(specifier).is_ok()
-        || (kind == RuntimeResourceKind::DynamicImport
-            && !specifier.starts_with('.')
-            && !specifier.starts_with('/'))
+        || (kind == RuntimeResourceKind::DynamicImport && !is_path_specifier(specifier))
     {
         return None;
     }

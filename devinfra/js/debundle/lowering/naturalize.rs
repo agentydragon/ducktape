@@ -280,23 +280,12 @@ fn naturalize_module_body(
     // nested maps cannot reproduce the scope-sensitive application the
     // clone walk performs (see the ledger module doc's "Derive clone").
     let mut derive_body = body.to_vec();
-    let mut plan_captured = BTreeSet::new();
     let plan_driven_by_id: BTreeMap<Id, Atom> = plan_driven
         .iter()
         .map(|(from, to)| (top_level_id(from, chunk_top_level_mark), to.as_str().into()))
         .collect();
-    if plan_driven_by_id.is_empty() {
-        for item in derive_body.iter_mut() {
-            item.visit_mut_with(&mut ShorthandNaturalizer);
-        }
-    } else {
-        let mut naturalizer =
-            RenameAndShorthandNaturalizer::new(&plan_driven_by_id, unresolved_context);
-        for item in derive_body.iter_mut() {
-            item.visit_mut_with(&mut naturalizer);
-        }
-        plan_captured = naturalizer.captured;
-    }
+    let plan_captured =
+        rename_and_collapse_shorthand(&mut derive_body, &plan_driven_by_id, unresolved_context);
     let mut occupancy = BTreeMap::new();
     let mut deriver = ScopedHeuristicNaturalizer {
         free_allowed: &free_effective,
@@ -334,22 +323,11 @@ fn naturalize_module_body(
         explicit, plan_driven,
         "sealed module-wide explicit renames diverged from the candidate map the derive clone applied",
     );
-    if explicit_by_id.is_empty() {
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut ShorthandNaturalizer);
-        }
-    } else {
-        let mut naturalizer =
-            RenameAndShorthandNaturalizer::new(&explicit_by_id, unresolved_context);
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut naturalizer);
-        }
-        debug_assert!(
-            naturalizer.captured.is_empty(),
-            "module-wide renames captured despite seal validation: {:?}",
-            naturalizer.captured,
-        );
-    }
+    let captured = rename_and_collapse_shorthand(body, &explicit_by_id, unresolved_context);
+    debug_assert!(
+        captured.is_empty(),
+        "module-wide renames captured despite seal validation: {captured:?}",
+    );
     let mut applier = SealedScopeRenameApplier {
         sealed: &sealed,
         unresolved_context,
@@ -373,6 +351,27 @@ fn naturalize_module_body(
         source_by_emitted,
         explicit,
     })
+}
+
+/// Apply the module-wide rename and collapse shorthand during both derivation
+/// and execution. The return value records any captures the rename detected.
+fn rename_and_collapse_shorthand(
+    body: &mut [ModuleItem],
+    renames: &BTreeMap<Id, Atom>,
+    unresolved_context: SyntaxContext,
+) -> BTreeSet<(String, String)> {
+    if renames.is_empty() {
+        for item in body {
+            item.visit_mut_with(&mut ShorthandNaturalizer);
+        }
+        BTreeSet::new()
+    } else {
+        let mut naturalizer = RenameAndShorthandNaturalizer::new(renames, unresolved_context);
+        for item in body {
+            item.visit_mut_with(&mut naturalizer);
+        }
+        naturalizer.captured
+    }
 }
 
 /// The derive pass of the per-scope heuristic pipeline: walks a scratch

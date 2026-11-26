@@ -407,10 +407,15 @@ agentplane_vitest_test(
 
 ts_library(
     name = "sandbox_status",
-    srcs = ["sandbox_status.ts"],
+    srcs = [
+        "sandbox_status.ts",
+        "status_tooltip.tsx",
+    ],
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [
         "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/ui:format_time",
         "//agentplane/app/frontend/ui:status_mark",

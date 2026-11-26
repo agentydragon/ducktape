@@ -18,6 +18,7 @@ from cluster.cdk8s import (
     aiquota,
     airlock,
     alloy_otlp_bearer,
+    attendant,
     buildbuddy_executor,
     buildbuddy_kvm_worker,
     buildbuddy_provider,
@@ -804,7 +805,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     external_secrets_config_artifact = artifact("external-secrets-config", external_secrets_config.OUTPUT_DIR)
-    flux.flux_kustomization(
+    external_secrets_config_kustomization = flux.flux_kustomization(
         flux_chart,
         external_secrets_config.NAME,
         write_directory(root, external_secrets_config_artifact, external_secrets_config.chart),
@@ -1927,6 +1928,14 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )
+    attendant_artifact = artifact(attendant.NAME, attendant.OUTPUT_DIR, attendant.PINS_DIR)
+    attendant.attendant(
+        flux_chart,
+        write_directory(root, attendant_artifact, attendant.chart, include_copied_components=True),
+        external_secrets_config_kustomization,
+        forgejo_images_kustomization,
+        piraeus_cluster_kustomization,
+    )
     platform_sessions_artifact = artifact("platform-sessions", platform_sessions_app.OUTPUT_DIR)
     platform_sessions_kustomization = platform_sessions_app.platform_sessions(
         flux_chart,
@@ -2540,6 +2549,7 @@ def generate_manifests(root: Path) -> None:
             agent_shared_rbac_artifact,
             aiquota_artifact,
             clickhouse_grafana_artifact,
+            attendant_artifact,
             atuin_artifact,
             atuin_user_provisioner_artifact,
             authentik_db_backups_artifact,

@@ -1,6 +1,6 @@
 use crate::imports::EntryExport;
 use crate::rename_ledger::{RenameLedger, RenameScope};
-use artifact::paths::relative_module_path;
+use artifact::paths::relative_module_specifier;
 use js_ast::import_decl_module_item;
 use std::collections::BTreeMap;
 use swc_atoms::Atom;
@@ -95,11 +95,7 @@ pub(crate) fn relative_source(from_file: &str, target_file: &str) -> String {
         .and_then(|parent| parent.to_str())
         .unwrap_or("")
         .replace('\\', "/");
-    let mut rel = relative_module_path(&from_dir, target_file);
-    if !rel.starts_with('.') {
-        rel = format!("./{rel}");
-    }
-    rel
+    relative_module_specifier(&from_dir, target_file)
 }
 
 pub(crate) fn import_decl_for_plan(

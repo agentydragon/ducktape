@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -116,16 +116,11 @@ func (s *typedHistoryServer) ReadThreadEntities(_ context.Context, request *hist
 }
 
 func TestHistoryEntityGeneratedFacade(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	grpcServer := grpc.NewServer()
 	servicer := &typedHistoryServer{requests: make(chan *historypb.ReadThreadEntitiesRequest, 1)}
 	historypb.RegisterHistoryServiceServer(grpcServer, servicer)
-	go func() { _ = grpcServer.Serve(listener) }()
-	t.Cleanup(grpcServer.Stop)
-	generated, err := facade.NewHandler(t.Context(), listener.Addr().String(), time.Second, historypb.RegisterHistoryServiceHandlerFromEndpoint)
+	target := grpcserver.Serve(t, grpcServer)
+	generated, err := facade.NewHandler(t.Context(), target, time.Second, historypb.RegisterHistoryServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,15 +382,10 @@ func (s *typedHistoryServer) WatchSessionSummaries(req *historypb.WatchSessionSu
 }
 
 func TestHistorySelectedSummariesGeneratedFacade(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	grpcServer := grpc.NewServer()
 	historypb.RegisterHistoryServiceServer(grpcServer, &typedHistoryServer{holdSelected: true})
-	go func() { _ = grpcServer.Serve(listener) }()
-	t.Cleanup(grpcServer.Stop)
-	generated, err := facade.NewHandler(t.Context(), listener.Addr().String(), time.Second, historypb.RegisterHistoryServiceHandlerFromEndpoint)
+	target := grpcserver.Serve(t, grpcServer)
+	generated, err := facade.NewHandler(t.Context(), target, time.Second, historypb.RegisterHistoryServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}

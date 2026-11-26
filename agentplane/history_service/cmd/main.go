@@ -84,6 +84,17 @@ func openDatabase(ctx context.Context, databaseURL string, connections int) (*sq
 	return db, nil
 }
 
+func openDatabaseWithApplicationName(ctx context.Context, databaseURL string, connections int, applicationName string) (*sql.DB, error) {
+	target, err := url.Parse(databaseURL)
+	if err != nil {
+		return nil, errors.New("database_url is not a URL")
+	}
+	query := target.Query()
+	query.Set("application_name", applicationName)
+	target.RawQuery = query.Encode()
+	return openDatabase(ctx, target.String(), connections)
+}
+
 // run serves on the configured addresses, authenticating workload certificates against live Kubernetes records.
 func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up, migrate.WithMigrationTimeout(seconds(c.MigrationTimeoutSeconds))); err != nil {
@@ -246,6 +257,13 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "compact-history" {
 		if err := runCompactHistory(ctx, os.Args[2:]); err != nil {
 			slog.Error("History compaction stopped", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "inventory-history" {
+		if err := runInventoryHistory(ctx, os.Args[2:]); err != nil {
+			slog.Error("History event block inventory failed", "error", err)
 			os.Exit(1)
 		}
 		return

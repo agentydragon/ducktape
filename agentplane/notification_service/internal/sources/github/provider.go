@@ -150,6 +150,26 @@ func (p *Provider) reconcile(ctx context.Context, claim inboxstore.Claim, due in
 	})
 }
 
+// Each selected PR resource contributes its own retry deadline to reconciliation.
+func (p *Provider) refreshResource(ctx context.Context, key githubstate.ResourceKey, refresh func(githubstate.RefreshLease) error) (*time.Time, error) {
+	lease, err := p.state.Acquire(ctx, key)
+	if err == nil && lease != nil {
+		err = refresh(*lease)
+	}
+	var deferred *githubstate.RefreshDeferredError
+	if errors.As(err, &deferred) {
+		return &deferred.Until, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	status, err := p.state.ResourceStatus(ctx, key)
+	if err != nil || status == nil {
+		return nil, err
+	}
+	return status.RetryAt, nil
+}
+
 func (p *Provider) earliestFenceExpiry(ctx context.Context, fences []githubstate.AccessFence) (time.Time, error) {
 	var earliest time.Time
 	for _, fence := range fences {

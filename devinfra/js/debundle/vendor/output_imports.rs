@@ -1,7 +1,8 @@
 //! Resolve vendor imports in emitted-output coordinates, including materialized chunk paths.
 use artifact::ArtifactIndexes;
 use artifact::paths::{
-    join_module_path, module_path_dirname, normalize_module_path, relative_module_specifier,
+    join_module_path, module_path_dirname, module_path_from_path, normalize_module_path,
+    relative_module_specifier,
 };
 use source_identity::{ChunkId, ChunkTable};
 use std::collections::HashMap;
@@ -20,7 +21,10 @@ pub fn bundled_facade_import_source(
 ) -> String {
     let caller_output_file = Path::new(chunk_table.name(caller_chunk_id)).join(caller_file_path);
     let caller_output_dir = caller_output_file.parent().unwrap_or_else(|| Path::new(""));
-    relative_module_specifier(caller_output_dir, Path::new(facade_app_path))
+    relative_module_specifier(
+        &module_path_from_path(caller_output_dir),
+        &module_path_from_path(Path::new(facade_app_path)),
+    )
 }
 
 /// Resolve a directive source to its target chunk for swap

@@ -1,5 +1,5 @@
 # Manual maintenance only; this file is not included in Flux.
-# Use an image containing compact-history.
+# Replace the Session UUID and image before applying. The default mode is a read-only canary preview.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -35,12 +35,27 @@ spec:
             - --session
             - "91e0ad22-4ae2-45b0-a499-f617d54eb9ca"
             - --dry-run
+            - --bytes-per-second
+            - "1048576"
+            - --batch-transaction-budget
+            - 5s
+            - --pause-file
+            - /var/run/history-repack/pause
           env:
+            - name: AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE
+              value: /etc/agentplane-history/config.yaml
             - name: AGENTPLANE_HISTORY_SERVICE_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: postgres-sandbox-service
                   key: uri
+          volumeMounts:
+            - name: service-config
+              mountPath: /etc/agentplane-history
+              readOnly: true
+            - name: repack-control
+              mountPath: /var/run/history-repack
+              readOnly: true
           resources:
             requests:
               cpu: 100m
@@ -53,3 +68,14 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+      volumes:
+        - name: service-config
+          configMap:
+            name: history-service-config
+            items:
+              - key: config.yaml
+                path: config.yaml
+        - name: repack-control
+          configMap:
+            name: history-repack-control
+            optional: true

@@ -35,10 +35,9 @@ ordinary representation. Unpacking is required before reverting to a binary with
 `ingress.compact_execution_evidence` defaults to `false` and separately controls live packing of
 BoundaryRecord and ExecutionProgress events. Keep it disabled while History replicas run mixed
 versions: older readers do not index these block kinds. Enable it only after every reader has the
-new block support. Historical compaction includes these kinds only with
-`compact-history --include-execution-evidence`; run that option after the same reader rollout.
-Turning the gate off stops new blocks but does not unpack blocks already written, so retain the
-reader support for as long as those blocks remain.
+new block support. Historical repacking covers every concrete event kind, including these kinds,
+after the same reader rollout. Turning the gate off stops new blocks but does not unpack blocks
+already written, so retain the reader support for as long as those blocks remain.
 
 Blocks contain at most 256 entries and approximately 128 KiB of uncompressed event bodies. Larger
 individual frames remain ordinary entries. A block is never extended with an accumulated prefix;

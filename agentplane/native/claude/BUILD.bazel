@@ -130,6 +130,7 @@ py_test(
         "//agentplane/native/claude/testing:messages",
         "//agentplane/native/claude/testing:model",
         "//agentplane/native/testing:model_endpoint",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

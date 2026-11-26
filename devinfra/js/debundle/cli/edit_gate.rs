@@ -55,7 +55,7 @@ use anyhow::{Context, Result, bail};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use serde::Serialize;
 use source_identity::SourceUnitId;
-use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
+use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, ModulePath};
 use spec_modules::{
     ModuleClaims, ModuleFile, collect_module_files, ensure_unaliased_module_tree, module_claims,
     module_path_from_file, read_module_claims,
@@ -499,27 +499,6 @@ pub enum LocalBindingResolution {
     Ambiguous(BTreeSet<SourceUnitId>),
 }
 
-/// How a member's binding claim reached the source unit projection.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProjectedBindingKind {
-    /// A direct local-name pin.
-    LocalName,
-    /// A direct import claim. Imports are handled as re-exports and do not
-    /// claim a local declaration source unit.
-    ImportSpecifier,
-    /// A non-name selector resolved by the canonical source resolver.
-    SourceResolved,
-}
-
-/// One member's typed projection. `None` resolution is reserved for imports;
-/// local claims always retain either resolved source units or an explicit mismatch.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectedMemberClaim {
-    pub binding_name: String,
-    pub kind: ProjectedBindingKind,
-    pub resolution: Option<LocalBindingResolution>,
-}
-
 /// A local name claim that could not be assigned to a unique declaration
 /// identity using the dependency graph's declaration and co-declaration evidence.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -544,15 +523,17 @@ pub struct UnresolvedDirectBindingSourceClaim {
 /// complete source unit-assignment check used by `modules apply`.
 #[derive(Debug, Clone, Default)]
 pub struct ModuleClaimProjection {
-    /// In the same order as `PostEditModule::claims.member_selectors`.
-    pub members: Vec<ProjectedMemberClaim>,
+    /// Local name for each authored member, in selector order. Imports have no
+    /// local declaration to move. Resolution lives in `local_bindings`.
+    pub local_name_by_member: Vec<Option<String>>,
+    /// Canonical selector results used to verify names and locate authored edits.
+    pub resolved_member_bindings: BTreeMap<String, String>,
+    pub anonymous_selector_source_units: BTreeMap<AnonymousStatementSelector, SourceUnitId>,
     /// Local binding names contributed by this module, including source-backed
     /// claims, with declaration-site identity preserved.
     pub local_bindings: BTreeMap<String, LocalBindingResolution>,
     /// Every local source unit contributed by the module's resolved claims.
     pub source_units: BTreeSet<SourceUnitId>,
-    /// Anonymous statement source units resolved by source location.
-    pub anonymous_source_units: BTreeSet<SourceUnitId>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -652,7 +633,7 @@ pub fn resolve_edit_claims(
     source_root: Option<&Path>,
     source_context: Option<&VerifiedGraphSourceContext>,
     post_spec: &PostEditSpec,
-) -> Result<(Vec<ResolvedSourceClaims>, SourceUnitClaimProjection)> {
+) -> Result<SourceUnitClaimProjection> {
     let claim_sets: Vec<_> = post_spec
         .modules
         .iter()
@@ -674,8 +655,7 @@ pub fn resolve_edit_claims(
             &claim_sets,
         )
     })?;
-    let projection = project_source_unit_claims(input, post_spec, &resolved)?;
-    Ok((resolved, projection))
+    project_source_unit_claims(input, post_spec, resolved)
 }
 
 /// Resolve typed binding claims to source unit identities. Direct imports remain
@@ -684,7 +664,7 @@ pub fn resolve_edit_claims(
 fn project_source_unit_claims(
     input: &DependencyGraphInput,
     post_spec: &PostEditSpec,
-    resolved_claims: &[ResolvedSourceClaims],
+    resolved_claims: Vec<ResolvedSourceClaims>,
 ) -> Result<SourceUnitClaimProjection> {
     anyhow::ensure!(
         post_spec.modules.len() == resolved_claims.len(),
@@ -697,23 +677,7 @@ fn project_source_unit_claims(
         for (member_index, (claim_name, selector)) in
             module.claims.member_selectors.iter().enumerate()
         {
-            match selector {
-                MemberSelectorSpec::Binding(binding)
-                    if binding.kind == Some(BindingSourceKind::ImportSpecifier) =>
-                {
-                    record_direct_binding_source_check(
-                        &mut projection,
-                        &module.path,
-                        claim_name,
-                        binding,
-                        resolved.direct_binding_checks.get(member_index),
-                    );
-                    module_projection.members.push(ProjectedMemberClaim {
-                        binding_name: binding.name.clone(),
-                        kind: ProjectedBindingKind::ImportSpecifier,
-                        resolution: None,
-                    });
-                }
+            let binding_name = match selector {
                 MemberSelectorSpec::Binding(binding) => {
                     record_direct_binding_source_check(
                         &mut projection,
@@ -722,45 +686,30 @@ fn project_source_unit_claims(
                         binding,
                         resolved.direct_binding_checks.get(member_index),
                     );
-                    let resolution = binding_index.resolve(&binding.name);
-                    record_local_binding_claim(
-                        &mut projection,
-                        &mut module_projection,
-                        &module.path,
-                        claim_name,
-                        &binding.name,
-                        resolution.clone(),
-                    );
-                    module_projection.members.push(ProjectedMemberClaim {
-                        binding_name: binding.name.clone(),
-                        kind: ProjectedBindingKind::LocalName,
-                        resolution: Some(resolution),
-                    });
+                    if binding.kind == Some(BindingSourceKind::ImportSpecifier) {
+                        module_projection.local_name_by_member.push(None);
+                        continue;
+                    }
+                    &binding.name
                 }
-                _ => {
-                    let binding_name =
-                        resolved.member_bindings.get(claim_name).with_context(|| {
-                            format!(
-                                "member {claim_name:?} in {} has no resolved binding",
-                                module.path.display()
-                            )
-                        })?;
-                    let resolution = binding_index.resolve(binding_name);
-                    record_local_binding_claim(
-                        &mut projection,
-                        &mut module_projection,
-                        &module.path,
-                        claim_name,
-                        binding_name,
-                        resolution.clone(),
-                    );
-                    module_projection.members.push(ProjectedMemberClaim {
-                        binding_name: binding_name.clone(),
-                        kind: ProjectedBindingKind::SourceResolved,
-                        resolution: Some(resolution),
-                    });
-                }
-            }
+                _ => resolved.member_bindings.get(claim_name).with_context(|| {
+                    format!(
+                        "member {claim_name:?} in {} has no resolved binding",
+                        module.path.display()
+                    )
+                })?,
+            };
+            record_local_binding_claim(
+                &mut projection,
+                &mut module_projection,
+                &module.path,
+                claim_name,
+                binding_name,
+                binding_index.resolve(binding_name),
+            );
+            module_projection
+                .local_name_by_member
+                .push(Some(binding_name.clone()));
         }
         for binding_name in &resolved.bindings {
             if module_projection.local_bindings.contains_key(binding_name) {
@@ -776,11 +725,14 @@ fn project_source_unit_claims(
                 resolution,
             );
         }
-        module_projection.anonymous_source_units = resolved.anonymous_source_units.clone();
         module_projection
             .source_units
-            .extend(module_projection.anonymous_source_units.iter().copied());
-        projection.modules.push(module_projection);
+            .extend(&resolved.anonymous_source_units);
+        projection.modules.push(ModuleClaimProjection {
+            resolved_member_bindings: resolved.member_bindings,
+            anonymous_selector_source_units: resolved.anonymous_selector_source_units,
+            ..module_projection
+        });
     }
     Ok(projection)
 }
@@ -792,17 +744,16 @@ fn record_direct_binding_source_check(
     binding: &spec::BindingSelector,
     check: Option<&Option<DirectBindingSourceCheck>>,
 ) {
-    if binding.kind.is_none() {
+    let Some(expected_kind) = binding.kind else {
         return;
-    }
-    let check =
-        check
-            .and_then(Option::as_ref)
-            .cloned()
-            .unwrap_or_else(|| DirectBindingSourceCheck {
-                expected_kind: binding.kind.expect("checked above"),
-                resolution: DirectBindingSourceResolution::Missing,
-            });
+    };
+    let check = check
+        .and_then(Option::as_ref)
+        .cloned()
+        .unwrap_or(DirectBindingSourceCheck {
+            expected_kind,
+            resolution: DirectBindingSourceResolution::Missing,
+        });
     if !matches!(
         check.resolution,
         DirectBindingSourceResolution::Matched { .. }
@@ -991,7 +942,7 @@ fn gate_post_edit_assignment_with_expected(
     // source units they claim. A claim the gate cannot resolve (missing chunk
     // source, unmatched/ambiguous selector) is a hard error — the claimed
     // source unit must never silently fall to residual.
-    let (resolved_claims, claim_projection) = resolve_edit_claims(
+    let claim_projection = resolve_edit_claims(
         stderr,
         input,
         dependency_graph_path,
@@ -1051,8 +1002,8 @@ fn gate_post_edit_assignment_with_expected(
                     .with_context(|| {
                         format!("expected module {} is absent", target.module_path.display())
                     })?;
-                let actual = resolved_claims[module_idx]
-                    .member_bindings
+                let actual = claim_projection.modules[module_idx]
+                    .resolved_member_bindings
                     .get(&target.export_name);
                 if actual != Some(&target.binding_name) {
                     bail!(
@@ -1078,7 +1029,7 @@ fn gate_post_edit_assignment_with_expected(
                 .is_ok_and(|path| scope.contains(path))
         });
     }
-    let (_, before_projection) = resolve_edit_claims(
+    let before_projection = resolve_edit_claims(
         stderr,
         input,
         dependency_graph_path,

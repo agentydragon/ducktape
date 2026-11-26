@@ -177,7 +177,7 @@ for a second write, its WAL and the larger point reads.
 Keep the profile values in each service's existing typed settings. Sampler owns the dense
 sequence-range index. History owns kind selection, sparse cursor and size indexes, and the
 merge for filtered pages. Each service also owns its legacy reader, SQL transactions, locks,
-and durable repack checkpoint. The shared package needs neither a database handle nor an
+and in-memory repack cursor. The shared package needs neither a database handle nor an
 event-kind enum. A common byte-exact round-trip suite covers both callers; service integration
 tests cover seeks and page boundaries during a concurrent repack.
 
@@ -374,14 +374,16 @@ marks. Enumerate **ordinary rows and existing blocks** in cursor order. Decode, 
 repartition; changing the codec on existing block boundaries alone cannot change grouping or size.
 For sparse History streams expand each work unit to include whole overlapping source blocks in
 the streams being replaced; if the closure exceeds the work budget, stage a replacement generation
-in bounded chunks and swap its manifest atomically. Never move a checkpoint past an unprocessed
+in bounded chunks and swap its manifest atomically. Never advance past an unprocessed
 intersecting block.
 
 Dry-run counts source bytes, target bytes, rewritten and skipped events and peak
 scratch space, without modifying journal rows. Apply outside the append critical path: prepare
 bounded candidates, acquire the session lock with a short timeout, recheck source identities and
-the removal watermark, then atomically replace the source and advance the checkpoint. Readers
-use one MVCC snapshot. Skip a busy session, resume after failure, finish the opening watermark
+the removal watermark, then atomically replace the source. Advance the in-memory cursor only
+after commit. Neither service persists run or checkpoint tables. On restart, scan the selected
+sessions again and inspect the committed rows and blocks; a crash leaves each batch wholly
+applied or wholly unapplied. Readers use one MVCC snapshot. Skip a busy session, finish the opening watermark
 even if new events arrive, and report already-conforming ranges on rerun. An operator can throttle
 by bytes per second and concurrent sessions, and pause on replica lag, WAL growth, low disk headroom
 or append/read latency. Keep old readers compatible before switching writers; rollback of the
@@ -416,3 +418,7 @@ TODO after the rollout: consider storing the block encoding and format version i
 column on the History and Sampler block tables. The column could select the decoder directly,
 so payloads would no longer need a custom APB prefix to identify their format. Account for
 existing blocks and the decoded-size check currently carried by the header when weighing the change.
+Also consider exposing decoded byte size and frame count in SQL to find candidate blocks on a
+rescan without reading each payload. Check what the existing cursor and size indexes already
+provide before adding columns. These values can narrow the scan; by themselves they do not
+identify the encoding, compression level or whether adjacent blocks should be regrouped.

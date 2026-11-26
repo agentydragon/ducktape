@@ -1,0 +1,5 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/attendant
+    newTag: main-20261126091638-4dc7a35 # {"$imagepolicy": "flux-system:attendant:tag"}

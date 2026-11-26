@@ -18,7 +18,7 @@ use selector_resolve::{
     DirectBindingSourceEvidence, EntityIndex, SourceMatchReferenceOrigin, SpecModule,
 };
 use source_identity::SourceUnitId;
-use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec};
+use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, MemberSelectorSpec};
 use spec_resolution::{
     anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,
     resolve_chunks, spec_module as build_spec_module,
@@ -203,130 +203,24 @@ fn resolve_claim_sets(
     {
         return Ok(resolved);
     }
-    let direct_binding_claims = !claim_sets.is_empty()
-        && claim_sets.iter().any(|claims| {
-            claims.module.member_selectors.iter().any(|(_, selector)| {
-                matches!(selector, MemberSelectorSpec::Binding(binding) if binding.kind.is_some())
-            })
-        })
+    let direct_binding_claims = !has_anonymous
         && claim_sets.iter().all(|claims| {
-            claims.module.anonymous_selectors.is_empty()
-                && claims.module.source_matches.is_empty()
+            claims.module.source_matches.is_empty()
                 && claims
                     .module
                     .member_selectors
                     .iter()
                     .all(|(_, selector)| matches!(selector, MemberSelectorSpec::Binding(_)))
         });
-    if direct_binding_claims {
-        let no_sources = "spec contains typed direct, source-backed, or relational binding claims, but \
-             dependency_graph.json.gz has no source_location data; cannot resolve selectors";
-        return js_ast::with_swc_globals(|| {
-            with_source_modules(
-                graph,
-                dependency_graph_path,
-                modules_root,
-                source_root,
-                source_context,
-                no_sources,
-                |parsed_by_source| {
-                    let needs_local_declarations = claim_sets.iter().any(|claims| {
-                        claims.module.member_selectors.iter().any(|(_, selector)| {
-                            matches!(selector, MemberSelectorSpec::Binding(binding)
-                                if binding.kind.is_some_and(|kind| kind != BindingSourceKind::ImportSpecifier))
-                        })
-                    });
-                    // Import-only claims need only the parsed import index. When
-                    // typed local claims are present, the canonical Chunk
-                    // declaration index supplies both local and import evidence.
-                    let chunks = needs_local_declarations.then(|| {
-                        parsed_by_source
-                            .iter()
-                            .map(|(source_path, parsed)| {
-                                selector_resolve::Chunk::analyze(source_path, &parsed.module)
-                            })
-                            .collect::<Vec<_>>()
-                    });
-                    let import_names_by_source = (!needs_local_declarations).then(|| {
-                        parsed_by_source
-                            .iter()
-                            .map(|(source_path, parsed)| {
-                                (
-                                    source_path.clone(),
-                                    selector_resolve::import_specifier_names(&parsed.module),
-                                )
-                            })
-                            .collect::<BTreeMap<_, _>>()
-                    });
-                    for (module_index, claims) in claim_sets.iter().enumerate() {
-                        let Ok(set) = &mut resolved[module_index] else {
-                            continue;
-                        };
-                        set.claims
-                            .direct_binding_checks
-                            .resize(claims.module.member_selectors.len(), None);
-                        for (member_index, (_, selector)) in
-                            claims.module.member_selectors.iter().enumerate()
-                        {
-                            let MemberSelectorSpec::Binding(binding) = selector else {
-                                continue;
-                            };
-                            let Some(expected_kind) = binding.kind else {
-                                continue;
-                            };
-                            let observations = if let Some(chunks) = &chunks {
-                                parsed_by_source
-                                    .iter()
-                                    .zip(chunks)
-                                    .map(|((source_path, _), chunk)| {
-                                        (
-                                            source_path.clone(),
-                                            chunk.direct_binding_source_evidence(binding),
-                                        )
-                                    })
-                                    .collect::<Vec<_>>()
-                            } else {
-                                let import_names_by_source = import_names_by_source
-                                    .as_ref()
-                                    .expect("import index exists without local declarations");
-                                import_names_by_source
-                                    .iter()
-                                    .map(|(source_path, import_names)| {
-                                        let evidence = if import_names.contains(&binding.name) {
-                                            DirectBindingSourceEvidence::Import
-                                        } else {
-                                            DirectBindingSourceEvidence::Missing
-                                        };
-                                        (source_path.clone(), evidence)
-                                    })
-                                    .collect::<Vec<_>>()
-                            };
-                            set.claims.direct_binding_checks[member_index] =
-                                Some(resolve_direct_binding_source(expected_kind, observations));
-                        }
-                    }
-                    Ok(resolved)
-                },
-            )
-        });
-    }
     js_ast::with_swc_globals(|| {
-        let modules = claim_sets
-            .iter()
-            .map(spec_module)
-            .collect::<Result<Vec<_>>>()?;
-        let mut anonymous_source_unit_by_source_ordinal =
-            HashMap::<(String, usize), SourceUnitId>::new();
-        for (idx, node) in graph.nodes.iter().enumerate() {
-            if let (SourceUnitClass::AnonymousStatement, Some(location)) =
-                (node.class(), &node.source_location)
-            {
-                anonymous_source_unit_by_source_ordinal.insert(
-                    (location.source_path.clone(), node.statement_ordinal.0),
-                    SourceUnitId(idx),
-                );
-            }
-        }
+        let modules = (!direct_binding_claims)
+            .then(|| {
+                claim_sets
+                    .iter()
+                    .map(spec_module)
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()?;
         let no_sources = if has_anonymous {
             "spec contains anonymous_statements, but dependency_graph.json.gz has no source_location \
              data; cannot resolve anonymous selectors"
@@ -342,6 +236,36 @@ fn resolve_claim_sets(
             source_context,
             no_sources,
             |parsed_by_source| {
+                // An import-only direct check does not need chunk analysis.
+                if modules.is_none()
+                    && !claim_sets.iter().any(|claims| {
+                        claims.module.member_selectors.iter().any(|(_, selector)| {
+                            matches!(selector, MemberSelectorSpec::Binding(binding)
+                                if binding.kind.is_some_and(|kind| kind != BindingSourceKind::ImportSpecifier))
+                        })
+                    })
+                {
+                    let imports = parsed_by_source
+                        .values()
+                        .map(|parsed| selector_resolve::import_specifier_names(&parsed.module))
+                        .collect::<Vec<_>>();
+                    record_direct_binding_checks(claim_sets, &mut resolved, |binding| {
+                        parsed_by_source
+                            .keys()
+                            .zip(&imports)
+                            .map(|(source_path, names)| {
+                                let evidence = if names.contains(&binding.name) {
+                                    DirectBindingSourceEvidence::Import
+                                } else {
+                                    DirectBindingSourceEvidence::Missing
+                                };
+                                (source_path.clone(), evidence)
+                            })
+                            .collect()
+                    });
+                    return Ok(());
+                }
+
                 // Every source is a chunk every module is scoped to.
                 let chunks = parsed_by_source
                     .iter()
@@ -349,34 +273,31 @@ fn resolve_claim_sets(
                         selector_resolve::Chunk::analyze(source_path, &parsed.module)
                     })
                     .collect::<Vec<_>>();
-                for (module_index, claims) in claim_sets.iter().enumerate() {
-                    let Ok(set) = &mut resolved[module_index] else {
-                        continue;
-                    };
-                    set.claims
-                        .direct_binding_checks
-                        .resize(claims.module.member_selectors.len(), None);
-                    for (member_index, (_, selector)) in
-                        claims.module.member_selectors.iter().enumerate()
+                record_direct_binding_checks(claim_sets, &mut resolved, |binding| {
+                    parsed_by_source
+                        .keys()
+                        .zip(&chunks)
+                        .map(|(source_path, chunk)| {
+                            (
+                                source_path.clone(),
+                                chunk.direct_binding_source_evidence(binding),
+                            )
+                        })
+                        .collect()
+                });
+                let Some(modules) = &modules else {
+                    return Ok(());
+                };
+                let mut anonymous_source_unit_by_source_ordinal =
+                    HashMap::<(String, usize), SourceUnitId>::new();
+                for (idx, node) in graph.nodes.iter().enumerate() {
+                    if let (SourceUnitClass::AnonymousStatement, Some(location)) =
+                        (node.class(), &node.source_location)
                     {
-                        let MemberSelectorSpec::Binding(binding) = selector else {
-                            continue;
-                        };
-                        let Some(expected_kind) = binding.kind else {
-                            continue;
-                        };
-                        let observations = parsed_by_source
-                            .iter()
-                            .zip(&chunks)
-                            .map(|((source_path, _), chunk)| {
-                                (
-                                    source_path.clone(),
-                                    chunk.direct_binding_source_evidence(binding),
-                                )
-                            })
-                            .collect::<Vec<_>>();
-                        set.claims.direct_binding_checks[member_index] =
-                            Some(resolve_direct_binding_source(expected_kind, observations));
+                        anonymous_source_unit_by_source_ordinal.insert(
+                            (location.source_path.clone(), node.statement_ordinal.0),
+                            SourceUnitId(idx),
+                        );
                     }
                 }
                 let resolutions = resolve_chunks(
@@ -473,6 +394,33 @@ fn resolve_claim_sets(
         )
     })?;
     Ok(resolved)
+}
+
+fn record_direct_binding_checks(
+    claim_sets: &[SourceClaimSet<'_>],
+    resolved: &mut [Result<ResolvedClaimSet>],
+    observe: impl Fn(&BindingSelector) -> Vec<(String, DirectBindingSourceEvidence)>,
+) {
+    for (claims, set) in claim_sets.iter().zip(resolved) {
+        let Ok(set) = set else {
+            continue;
+        };
+        set.claims.direct_binding_checks = claims
+            .module
+            .member_selectors
+            .iter()
+            .map(|(_, selector)| {
+                let MemberSelectorSpec::Binding(binding) = selector else {
+                    return None;
+                };
+                let expected_kind = binding.kind?;
+                Some(resolve_direct_binding_source(
+                    expected_kind,
+                    observe(binding),
+                ))
+            })
+            .collect();
+    }
 }
 
 fn resolve_direct_binding_source(

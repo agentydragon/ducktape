@@ -1084,3 +1084,15 @@ export { p1_v, p2_v, m_v };
     );
     assert_entry_output(&fixture, "xxy\n");
 }
+
+#[test]
+fn dot_prefixed_sibling_is_imported_as_a_relative_module() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function answer() { return 42; } function print() { console.log(answer()); } print();",
+        vec![
+            logical_module(".provider", &[Member::new("answer")]),
+            logical_module("printer", &[Member::new("print")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "42\n");
+}

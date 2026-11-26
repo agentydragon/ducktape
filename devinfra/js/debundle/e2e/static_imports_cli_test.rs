@@ -39,9 +39,7 @@ fn query_with_target_source(args: &[&str], target_source: &str) -> Value {
     let output = debundle_e2e_support::process::debundle_output(
         Command::new(debundler_path())
             .arg("static-imports")
-            .args(tree_spec_args(root))
-            .arg("--out-root")
-            .arg(&run.out_root)
+            .args(tree_spec_args(root, &run.out_root))
             .args(args)
             .args(["--format", "json"]),
     )
@@ -153,9 +151,7 @@ fn rejects_target_absent_from_the_input_chunk_table() {
     let output = debundle_e2e_support::process::debundle_output(
         Command::new(debundler_path())
             .arg("static-imports")
-            .args(tree_spec_args(run.root()))
-            .arg("--out-root")
-            .arg(&run.out_root)
+            .args(tree_spec_args(run.root(), &run.out_root))
             .args(["--from", "main", "--target", "absent", "--format", "json"]),
     )
     .expect("run query");
@@ -183,9 +179,7 @@ fn conditional_literal_loader_graph_includes_deferred_return_edge() {
         let mut command = Command::new(debundler_path());
         command
             .arg("static-imports")
-            .args(tree_spec_args(run.root()))
-            .arg("--out-root")
-            .arg(&run.out_root)
+            .args(tree_spec_args(run.root(), &run.out_root))
             .args(["--from", "middle", "--target", "main", "--format", "json"]);
         if include {
             command.args(["--include-host-loader-candidates", "--interop-census"]);
@@ -231,9 +225,7 @@ fn census_keeps_unknown_loader_forms_and_unresolved_literals_visible() {
     let output = debundle_e2e_support::process::debundle_output(
         Command::new(debundler_path())
             .arg("static-imports")
-            .args(tree_spec_args(run.root()))
-            .arg("--out-root")
-            .arg(&run.out_root)
+            .args(tree_spec_args(run.root(), &run.out_root))
             .args([
                 "--from",
                 "main",
