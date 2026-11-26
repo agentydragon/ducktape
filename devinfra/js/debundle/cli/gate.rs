@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 
 use ::gate::{
     AtInitReadPosition, BlockingRejection, BlockingSccEntry, CutEdgeExplanation, CycleEdge,
-    render_binding_pairs,
+    initializer_reason, render_binding_pairs,
 };
 use analysis::{
     CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DependencyEdgeId,
@@ -1077,13 +1077,7 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
     if let Some(premise) = &edge.commuting_premise {
         out.push_str(&format!("      inert: made inert by premise {premise}\n"));
     }
-    let target_cause = match &edge.explanation {
-        Some(CutEdgeExplanation::Sequenced {
-            target_source_unit, ..
-        }) => target_source_unit.as_deref(),
-        _ => None,
-    };
-    for cause in edge.sequenced_source_unit.iter().chain(target_cause) {
+    for cause in edge.sequenced_causes() {
         if let Some(heap_frontier) = &cause.heap_frontier {
             out.push_str(&format!("      heap frontier: {heap_frontier}\n"));
         }
@@ -1091,39 +1085,9 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
             continue;
         };
         for reason in reasons {
-            let binding = if cause.binding_names.is_empty() {
-                cause.source_unit_id.clone()
-            } else {
-                cause
-                    .binding_names
-                    .iter()
-                    .map(Atom::as_ref)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
-            let location = reason
-                .source_location
-                .as_ref()
-                .or(cause.source_location.as_ref())
-                .map(|loc| {
-                    format!(
-                        "{}:{}:{}",
-                        loc.source_path,
-                        loc.start_line,
-                        loc.start_column
-                            .map_or_else(|| "?".to_string(), |column| column.to_string())
-                    )
-                })
-                .unwrap_or_else(|| "<location unavailable>".to_string());
             out.push_str(&format!(
-                "      impure initializer `{binding}` at {location}: {}{}{}\n",
-                reason.rule,
-                reason
-                    .detail
-                    .as_deref()
-                    .map(|detail| format!(" ({detail})"))
-                    .unwrap_or_default(),
-                incomplete_execution_suffix(cause),
+                "      impure initializer {}\n",
+                initializer_reason(cause, reason)
             ));
             if let Some(guidance) = &reason.author_guidance {
                 out.push_str(&format!("        {guidance}\n"));
@@ -1281,15 +1245,6 @@ fn recompute_evidence(
     }
     CycleEdge::sort_for_report(&mut out);
     Ok(out)
-}
-
-/// Marks a statement whose sequencing edges are the conservative flood
-/// of an incomplete synchronous execution.
-fn incomplete_execution_suffix(cause: &SequencedSourceUnitCause) -> &'static str {
-    match cause.synchronous_execution_complete {
-        Some(false) => "; synchronous execution incomplete",
-        _ => "",
-    }
 }
 
 /// Report-side twin of `analysis::reports::schema::impure_source_unit_cause`

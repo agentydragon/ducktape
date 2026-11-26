@@ -16,7 +16,7 @@ use swc_atoms::Atom;
 
 use analysis::analysis_inputs::CommutingStatementsRef;
 use analysis::{
-    DependencyEdge, DependencyGraph, EdgeRole, ModuleId, Purity, SequencedCause,
+    DependencyEdge, DependencyGraph, EdgeRole, ModuleId, Purity, PurityReason, SequencedCause,
     SequencedSourceUnitCause,
 };
 
@@ -382,6 +382,16 @@ fn explain_edge(
 }
 
 impl CycleEdge {
+    pub fn sequenced_causes(&self) -> impl Iterator<Item = &SequencedSourceUnitCause> {
+        let target = match &self.explanation {
+            Some(CutEdgeExplanation::Sequenced {
+                target_source_unit, ..
+            }) => target_source_unit.as_deref(),
+            _ => None,
+        };
+        self.sequenced_source_unit.iter().chain(target)
+    }
+
     /// Render the endpoints, dependency kind and statement ordinal on one line.
     pub fn render_header(&self, out: &mut String) {
         let key = BindingPairKey::of(self);
@@ -1256,16 +1266,51 @@ fn render_string_preview(values: &[String], limit: usize) -> String {
     preview.join(", ")
 }
 
+/// Describe the initializer at the reason's span, falling back to its source unit.
+pub fn initializer_reason(cause: &SequencedSourceUnitCause, reason: &PurityReason) -> String {
+    let names = if cause.binding_names.is_empty() {
+        cause.source_unit_id.clone()
+    } else {
+        cause
+            .binding_names
+            .iter()
+            .map(Atom::as_ref)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let location = reason
+        .source_location
+        .as_ref()
+        .or(cause.source_location.as_ref())
+        .map(|loc| {
+            format!(
+                "{}:{}:{}",
+                loc.source_path,
+                loc.start_line,
+                loc.start_column
+                    .map_or_else(|| "?".to_string(), |col| col.to_string()),
+            )
+        })
+        .unwrap_or_else(|| "<location unavailable>".to_string());
+    let rule = reason.rule;
+    let detail = reason
+        .detail
+        .as_deref()
+        .map(|detail| format!(" ({detail})"))
+        .unwrap_or_default();
+    // A statement whose synchronous execution is incomplete
+    // chains conservatively; say so next to its purity reason.
+    let incomplete = match cause.synchronous_execution_complete {
+        Some(false) => "; synchronous execution incomplete",
+        _ => "",
+    };
+    format!("`{names}` at {location}: {rule}{detail}{incomplete}")
+}
+
 fn sequenced_causes_from_cycle(cycle: &CycleReport) -> Vec<SequencedSourceUnitCause> {
     let mut causes = BTreeMap::new();
     for edge in &cycle.cut {
-        let target = match &edge.explanation {
-            Some(CutEdgeExplanation::Sequenced {
-                target_source_unit, ..
-            }) => target_source_unit.as_deref(),
-            _ => None,
-        };
-        for cause in edge.sequenced_source_unit.iter().chain(target) {
+        for cause in edge.sequenced_causes() {
             causes.insert(cause.source_unit_id.clone(), cause.clone());
         }
     }
@@ -1313,16 +1358,6 @@ fn render_sequenced_source_unit_causes_with_limit(
     out.push_str(":\n");
     let mut rendered = 0;
     'causes: for cause in causes {
-        let names = if cause.binding_names.is_empty() {
-            cause.source_unit_id.clone()
-        } else {
-            cause
-                .binding_names
-                .iter()
-                .map(Atom::as_ref)
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
         let Purity::NotPure { reasons } = &cause.purity else {
             continue;
         };
@@ -1330,35 +1365,7 @@ fn render_sequenced_source_unit_causes_with_limit(
             if rendered == rendered_limit {
                 break 'causes;
             }
-            let location = reason
-                .source_location
-                .as_ref()
-                .or(cause.source_location.as_ref())
-                .map(|loc| {
-                    format!(
-                        "{}:{}:{}",
-                        loc.source_path,
-                        loc.start_line,
-                        loc.start_column
-                            .map_or_else(|| "?".to_string(), |col| col.to_string()),
-                    )
-                })
-                .unwrap_or_else(|| "<location unavailable>".to_string());
-            let rule = reason.rule;
-            let detail = reason
-                .detail
-                .as_deref()
-                .map(|detail| format!(" ({detail})"))
-                .unwrap_or_default();
-            // A statement whose synchronous execution is incomplete
-            // chains conservatively; say so next to its purity reason.
-            let incomplete = match cause.synchronous_execution_complete {
-                Some(false) => "; synchronous execution incomplete",
-                _ => "",
-            };
-            out.push_str(&format!(
-                "    `{names}` at {location}: {rule}{detail}{incomplete}\n"
-            ));
+            out.push_str(&format!("    {}\n", initializer_reason(cause, reason)));
             if let Some(guidance) = &reason.author_guidance {
                 out.push_str(&format!("      {guidance}\n"));
             }

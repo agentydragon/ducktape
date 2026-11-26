@@ -53,7 +53,7 @@ pub use realizability::{
 };
 pub use validation::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,
-    BlockingSccEntry, CutEdgeExplanation, CycleEdge, CycleReport,
+    BlockingSccEntry, CutEdgeExplanation, CycleEdge, CycleReport, initializer_reason,
     render_atomic_group_conflict_summary, render_binding_pairs, render_cycle_summary,
     validate_assignment_with_priority, validate_assignment_with_schedule,
 };
