@@ -83,6 +83,9 @@
   min-width: 0;
   overflow: hidden;
 }
+.agentplane-thread-identity-content > svg {
+  height: 1lh; /* Reserve the full first line even when the name wraps. */
+}
 .agentplane-thread-identity-content > * {
   flex: none;
   white-space: nowrap;
