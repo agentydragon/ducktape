@@ -371,7 +371,13 @@ func loadEntries(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, reference
 			blocks[*reference.block] = true
 		}
 	}
-	byCursor := map[uint64]*eventlogpb.EventEntry{}
+	// Ordinary rows are indexed by their original wire length. Block indexes
+	// store the protobuf size of the decoded entry, which may be smaller.
+	type loadedEntry struct {
+		entry       *eventlogpb.EventEntry
+		indexedSize int
+	}
+	byCursor := map[uint64]loadedEntry{}
 	if len(cursors) > 0 {
 		rows, err := tx.QueryContext(ctx, `SELECT payload FROM session_event WHERE session_id=$1 AND cursor=ANY($2)`, sessionID, pq.Array(cursors))
 		if err != nil {
@@ -388,7 +394,7 @@ func loadEntries(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, reference
 				rows.Close()
 				return nil, err
 			}
-			byCursor[entry.GetCursor()] = entry
+			byCursor[entry.GetCursor()] = loadedEntry{entry, len(payload)}
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
@@ -429,7 +435,7 @@ func loadEntries(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, reference
 					rows.Close()
 					return nil, fmt.Errorf("event block index disagrees at cursor %d", entry.Cursor)
 				}
-				byCursor[entry.GetCursor()] = entry
+				byCursor[entry.GetCursor()] = loadedEntry{entry, int(sizes[index])}
 			}
 		}
 		if err := rows.Err(); err != nil {
@@ -440,11 +446,11 @@ func loadEntries(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, reference
 	}
 	entries := make([]*eventlogpb.EventEntry, 0, len(references))
 	for _, reference := range references {
-		entry := byCursor[reference.cursor]
-		if entry == nil || observationNumber(entry) != int32(reference.kind) || proto.Size(entry) != reference.size {
+		loaded := byCursor[reference.cursor]
+		if loaded.entry == nil || observationNumber(loaded.entry) != int32(reference.kind) || loaded.indexedSize != reference.size {
 			return nil, fmt.Errorf("event %d disagrees with its storage index", reference.cursor)
 		}
-		entries = append(entries, entry)
+		entries = append(entries, loaded.entry)
 	}
 	return entries, nil
 }
