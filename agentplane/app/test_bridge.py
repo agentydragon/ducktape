@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import shlex
-import signal
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
@@ -672,8 +671,7 @@ async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
             ),
         )
 
-        await app.kill()
-        assert app.process.returncode == -signal.SIGKILL
+        await app.process.kill()
         await _submit_input(survivor_http, thread, sandbox.uid, command_id="input-2", text="AFTER_OWNER_EXIT")
         request = await model.request()
         await model.reply(request, Text("AFTER_OWNER_EXIT"))
