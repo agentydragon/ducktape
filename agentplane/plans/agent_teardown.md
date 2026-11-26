@@ -172,8 +172,21 @@ they share a database. Sandboxes and WorkloadCredentials stay CRs, so references
 Loses owner-reference GC of bindings, Flux authoring (needs a reconciler), CEL admission and the
 `policy/reader` informers. Teardown alone does not pay for it.
 
-**Recommendation:** B now; A as the target contract; C only if the decoupling track is chosen. A's
-contract (Terminating, draining, no new references) is store-independent, so C could implement it.
+Operator lean, 2026-11-26, low confidence: the authoritative record in Agentplane's database, with a
+controller reconciling it against an optional Flux-managed Identity CR (git-declared Identities stay
+read-only in the app; deleting the CR requests deletion under the same reference rule). With the
+Session-Sandbox invariant this buys more than teardown: reference checks and new references in one
+transaction, a cancellable "deleting" state, and a group rebind as one write. That holds only if
+Sandbox-to-Identity bindings (`spec.identity`) also move into the database and the Sandbox Controller
+reads them there; otherwise a group rebind is a database write plus CR patches. Also open: which
+service owns the database (PolicyService has none; Dispatcher's would co-locate Session claims) and
+the watch API replacing the `policy/reader` informers. The Identity trace in
+`KUBERNETES_DECOUPLING_DESIGN` should answer the Sandbox-binding question first.
+
+**Recommendation:** B now in any case, since it fixes the visible bug on either store. Choose A or C
+as the target after the Identity trace; C is favored if the trace shows Sandbox bindings can move. The
+draining contract (deleting, no new references, gone once unreferenced) is the same in both; only C
+can make it cancellable.
 
 ## Who runs the sequence
 
