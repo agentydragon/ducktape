@@ -45,10 +45,29 @@ private theorem indexedNumbered_ids (source : List (Nat × Stmt)) : ∀ ids : Li
               subst key
               simp [h, indexedNumbered_ids source ids]
 
-private theorem split_indexed_find (source : List (Nat × Stmt)) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
+theorem split_indexed_find (source : List (Nat × Stmt)) (B : EsmSplit.Bundle) (P : EsmSplit.Plan)
     (m : String) : (splitProgramIndexed source B P).find m = (P.find m).map (moduleOfIndexed source B P) := by
   simp only [Program.find, splitProgramIndexed, EsmSplit.Plan.find, List.find?_map]
   rfl
+
+/-- Membership in a projected module body means that the full plan assigned
+the original ID to this module and the original source lookup supplies the
+same statement. This is the construction premise used by sparse cell proofs. -/
+theorem moduleOfIndexed_body_lookup (source : List (Nat × Stmt)) (B : EsmSplit.Bundle)
+    (P : EsmSplit.Plan) (m : EsmSplit.Module) (id : Nat) (stmt : Stmt) :
+    (id, stmt) ∈ (moduleOfIndexed source B P m).body ↔
+      id ∈ m.stmts ∧ source.lookup id = some stmt := by
+  change (id, stmt) ∈ m.stmts.filterMap (indexedNumbered source) ↔
+    id ∈ m.stmts ∧ source.lookup id = some stmt
+  constructor
+  · intro member
+    rcases List.mem_filterMap.mp member with ⟨planId, inPlan, row⟩
+    have planIdEq : planId = id := (indexedNumbered_key source planId row).symm
+    subst planId
+    exact ⟨inPlan, by simpa [indexedNumbered] using row⟩
+  · rintro ⟨inPlan, found⟩
+    refine List.mem_filterMap.mpr ⟨id, inPlan, ?_⟩
+    simpa [indexedNumbered] using found
 
 private theorem split_indexed_visit (source : List (Nat × Stmt)) (B : EsmSplit.Bundle) (P : EsmSplit.Plan) :
     ∀ (fuel : Nat) (m : String) (st : List String × List String),
@@ -128,6 +147,8 @@ theorem authored_owner {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.P
   CoreJS.PlanPlacement.authored_owner faithful member
 
 #print axioms split_indexed_loaded_flat
+#print axioms split_indexed_find
+#print axioms moduleOfIndexed_body_lookup
 #print axioms split_indexed_loaded_ids
 #print axioms loaded_ids_of_order_kept
 #print axioms loaded_row_lookup

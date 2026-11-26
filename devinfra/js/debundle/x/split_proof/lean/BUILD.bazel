@@ -500,6 +500,8 @@ lean_proof_test(
         "CoreJS.SparseProjectedOrder.authored_owner",
         "CoreJS.SparseProjectedOrder.loaded_ids_of_order_kept",
         "CoreJS.SparseProjectedOrder.loaded_row_lookup",
+        "CoreJS.SparseProjectedOrder.moduleOfIndexed_body_lookup",
+        "CoreJS.SparseProjectedOrder.split_indexed_find",
         "CoreJS.SparseProjectedOrder.split_indexed_loaded_flat",
         "CoreJS.SparseProjectedOrder.split_indexed_loaded_ids",
     ],
