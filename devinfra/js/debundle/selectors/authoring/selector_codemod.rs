@@ -10,10 +10,6 @@
 //! declarator gaps for non-target siblings, then prove it with the selector
 //! resolve every command uses: the selector must resolve on its own selector.
 
-#[path = "synthesis_failure.rs"]
-pub mod synthesis_failure;
-use synthesis_failure::{ProofError, ProofFailure, SynthesisSkipReason};
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,6 +31,7 @@ use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file, 
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
+use synthesis_failure::{ProofError, ProofFailure, SynthesisSkipReason};
 
 // Hole keyword spellings come from `source_match_holes` so the minimizer
 // emits exactly the tokens the matcher resolves.

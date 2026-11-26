@@ -56,11 +56,11 @@ use crate::render::{
     AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
     hole_stmt, holes_present, named_pat, object_props_pat_prop, span_key,
 };
-use crate::synthesis_failure::{ProofFailure, SynthesisSkipReason};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
     matched_body_indices, prove_synthesized_selector, single_ident_pat_name,
 };
+use synthesis_failure::{ProofFailure, SynthesisSkipReason};
 
 // Keep whole-declaration proof work bounded even when its AST is enormous.
 const MAX_EXACT_RELAXATION_PROBES: usize = 128;
