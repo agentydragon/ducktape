@@ -116,6 +116,9 @@ class AgentplaneFixture:
     async def as_vm_sandbox(self, name: str) -> None:
         await self.page.evaluate("name => window.agentplaneVisual.asVmSandbox(name)", name)
 
+    async def set_running_sandbox_conditions(self, name: str) -> None:
+        await self.page.evaluate("name => window.agentplaneVisual.setRunningSandboxConditions(name)", name)
+
     async def set_sandbox_preset(self, sandbox: str, preset: str) -> None:
         await self.page.evaluate(
             "([sandbox, preset]) => window.agentplaneVisual.setSandboxPreset(sandbox, preset)", [sandbox, preset]

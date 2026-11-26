@@ -7,7 +7,7 @@ import {
   type EnvironmentDescriptor,
 } from "../../../environments/v1/environment_service_pb";
 
-import { durationLabel } from "../ui/format_time";
+import { durationLabel, timeAgo } from "../ui/format_time";
 import type { SandboxStatusKind } from "../ui/status_mark";
 
 type RawObject = Record<string, unknown>;
@@ -231,54 +231,74 @@ export function containerStatuses(status: RawObject | null | undefined): Contain
   });
 }
 
-function conditionLine(condition: RawCondition): string {
-  return [
-    `${condition.type}=${condition.status}`,
-    condition.reason,
-    condition.message,
-    condition.lastTransitionTime ? `changed ${condition.lastTransitionTime}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+/** Keep unhealthy diagnostics explicit. Healthy checks that changed together share one line. */
+type StatusRow = { text: string; age?: string; heading?: boolean };
+function conditionLines(conditions: RawCondition[]): StatusRow[] {
+  const healthy = new Map<string, string[]>();
+  const lines: StatusRow[] = [];
+  for (const condition of conditions) {
+    const stamp = condition.lastTransitionTime;
+    const age = stamp && Number.isFinite(Date.parse(stamp)) ? timeAgo(stamp) : "";
+    if (condition.status === "True") {
+      const names = healthy.get(age) ?? [];
+      names.push(condition.type);
+      healthy.set(age, names);
+    } else {
+      lines.push({
+        text: [
+          ...new Set([`${condition.type}: ${condition.status}`, condition.reason, condition.message].filter(Boolean)),
+        ].join(" · "),
+        age,
+      });
+    }
+  }
+  for (const [age, names] of healthy) lines.push({ text: "True: " + names.join(", "), age });
+  return lines;
 }
 
-export function sandboxStatusDetail(sandbox: EnvironmentDescriptor): string {
-  const lines = [`Sandbox: ${sandboxSummary(sandbox).label}`];
+export function sandboxStatusRows(sandbox: EnvironmentDescriptor): StatusRow[] {
+  const lines: StatusRow[] = [{ text: `Sandbox: ${sandboxSummary(sandbox).label}`, heading: true }];
   const reason = suspensionReason(sandbox);
   const idleSuspendAfterSeconds = sandboxIdleSuspendAfterSeconds(sandbox);
   const pod = sandbox.kubernetesDiagnostics?.pod;
   if (reason !== null) {
-    lines.push(
-      reason === "idle" && idleSuspendAfterSeconds
-        ? `Suspended because its runner was idle for ${durationLabel(idleSuspendAfterSeconds)}`
-        : `Suspended ${reason}`
-    );
+    lines.push({
+      text:
+        reason === "idle" && idleSuspendAfterSeconds
+          ? `Suspended because its runner was idle for ${durationLabel(idleSuspendAfterSeconds)}`
+          : `Suspended ${reason}`,
+    });
   }
-  lines.push(
-    ...rawConditions(rawObject(sandbox.kubernetesDiagnostics?.sandboxStatus)).map(
-      (condition) => `Sandbox condition · ${conditionLine(condition)}`
-    )
-  );
+  lines.push(...conditionLines(rawConditions(rawObject(sandbox.kubernetesDiagnostics?.sandboxStatus))));
   if (pod) {
     const status = pod.status;
-    lines.push(`Pod: ${podPhase(sandbox) ?? "phase unknown"}${pod.deleting ? " · deleting" : ""}`);
+    lines.push({
+      heading: true,
+      text: `Pod: ${podPhase(sandbox) ?? "phase unknown"}${pod.deleting ? " · deleting" : ""}`,
+    });
     const controllers = pod.ownerReferences.filter((owner) => owner.controller);
     if (controllers.length !== 1 || controllers[0]?.uid !== sandbox.target?.uid) {
-      lines.push("Pod controller identity does not match this Sandbox");
+      lines.push({ text: "Pod controller identity does not match this Sandbox" });
     }
-    lines.push(...rawConditions(status).map((condition) => `Pod condition · ${conditionLine(condition)}`));
+    lines.push(...conditionLines(rawConditions(status)));
     lines.push(
-      ...containerStatuses(status).map((container) =>
-        [
+      ...containerStatuses(status).map((container) => ({
+        text: [
           `${container.role} ${container.name}: ${container.state}`,
           container.reason,
           container.message,
           container.restartCount > 0 ? `${container.restartCount} restarts` : null,
         ]
           .filter(Boolean)
-          .join(" · ")
-      )
+          .join(" · "),
+      }))
     );
   }
-  return lines.join("\n");
+  return lines;
+}
+
+export function sandboxStatusDetail(sandbox: EnvironmentDescriptor): string {
+  return sandboxStatusRows(sandbox)
+    .map(({ text, age }) => [text, age].filter(Boolean).join(" · "))
+    .join("\n");
 }
