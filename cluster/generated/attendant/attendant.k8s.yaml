@@ -1,0 +1,407 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+  name: attendant
+spec: {}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: attendant
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: profile
+  namespace: attendant
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+  volumeMode: Filesystem
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: owner
+  namespace: attendant
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: owner
+  namespace: attendant
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: owner
+  refreshPolicy: CreatedOnce
+  target:
+    immutable: true
+    name: owner
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: blueshield
+  namespace: attendant
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: blueshield
+  namespace: attendant
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: blueshield
+  refreshPolicy: CreatedOnce
+  target:
+    immutable: true
+    name: blueshield
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: myquest
+  namespace: attendant
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: myquest
+  namespace: attendant
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: myquest
+  refreshPolicy: CreatedOnce
+  target:
+    immutable: true
+    name: myquest
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: quest-scheduler
+  namespace: attendant
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: quest-scheduler
+  namespace: attendant
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: quest-scheduler
+  refreshPolicy: CreatedOnce
+  target:
+    immutable: true
+    name: quest-scheduler
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attendant
+  namespace: attendant
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: attendant-desktop-c8639402
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        attendant.allegedly.works/owner-auth: oidc
+        cdk8s.io/metadata.addr: attendant-desktop-c8639402
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --state-dir
+            - /data/attendant
+            - --host
+            - 0.0.0.0
+            - --public-origin
+            - https://attendant.allegedly.works
+            - --owner-oidc
+          env:
+            - name: HOME
+              value: /tmp
+            - name: ATTENDANT_OWNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: owner
+            - name: ATTENDANT_BLUESHIELD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: blueshield
+            - name: ATTENDANT_MYQUEST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: myquest
+            - name: ATTENDANT_QUEST_SCHEDULER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: quest-scheduler
+            - name: ATTENDANT_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  key: ATTENDANT_ISSUER
+                  name: attendant-oidc
+            - name: ATTENDANT_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: ATTENDANT_CLIENT_ID
+                  name: attendant-oidc
+            - name: ATTENDANT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: ATTENDANT_CLIENT_SECRET
+                  name: attendant-oidc
+            - name: ATTENDANT_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: ATTENDANT_SESSION_SECRET
+                  name: attendant-oidc
+            - name: ATTENDANT_ALLOWED_SUBJECT
+              valueFrom:
+                secretKeyRef:
+                  key: ATTENDANT_ALLOWED_SUBJECT
+                  name: attendant-oidc
+          image: git.allegedly.works/ducktape-ci/attendant:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+          name: attendant
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2048Mi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          startupProbe:
+            failureThreshold: 24
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            periodSeconds: 5
+          volumeMounts:
+            - mountPath: /data
+              name: pvc-profile
+            - mountPath: /tmp
+              name: tmp
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: pvc-profile
+          persistentVolumeClaim:
+            claimName: profile
+            readOnly: false
+        - emptyDir: {}
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: attendant
+  namespace: attendant
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8080
+  selector:
+    cdk8s.io/metadata.addr: attendant-desktop-c8639402
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: owner
+  namespace: attendant
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    attendant.allegedly.works/owner-auth: oidc
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: attendant
+  namespace: attendant
+spec:
+  hostnames:
+    - attendant.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: owner
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+      matches:
+        - path:
+            type: Exact
+            value: /
+        - path:
+            type: Exact
+            value: /main.js
+        - path:
+            type: Exact
+            value: /main.css
+        - path:
+            type: Exact
+            value: /auth/login
+        - path:
+            type: Exact
+            value: /auth/callback
+        - path:
+            type: Exact
+            value: /auth/logout
+        - path:
+            type: Exact
+            value: /auth/signed-out
+        - path:
+            type: PathPrefix
+            value: /owner

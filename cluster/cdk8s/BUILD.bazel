@@ -616,6 +616,28 @@ py_library(
 )
 
 py_library(
+    name = "attendant",
+    srcs = ["attendant.py"],
+    deps = [
+        ":flux",
+        ":gateway",
+        ":manifest_roots",
+        ":namespaces",
+        ":node_scheduling",
+        ":piraeus_storage",
+        ":pod_policy",
+        ":secret_ref",
+        ":service_ref",
+        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/forgejo_registry:image_automation",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "session_backup",
     srcs = ["session_backup.py"],
     deps = [
@@ -1641,6 +1663,7 @@ py_library(
         ":airlock",
         ":alloy_otlp_bearer",
         ":artifact_generators",
+        ":attendant",
         ":buildbuddy_executor",
         ":buildbuddy_kvm_worker",
         ":buildbuddy_provider",

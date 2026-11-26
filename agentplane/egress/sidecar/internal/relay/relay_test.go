@@ -223,10 +223,7 @@ func startTestSidecarWithState(t *testing.T, central *testCentralProxy, proxyAdd
 	s, err := newSidecar(config{
 		Proxy: proxyConfig{
 			Address: proxyAddress,
-			Transport: tlsProxyTransportConfig{
-				CAFile: central.client.CAFile,
-				Auth:   spiffeProxyAuth{CertFile: central.client.CertFile, KeyFile: central.client.KeyFile},
-			},
+			SVID:    central.client,
 		},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
 		WorkloadRoutes:         map[string]workloadRouteConfig{},
@@ -449,10 +446,7 @@ func TestMTLSFailureRefusesWithoutSendingTheRequest(t *testing.T) {
 	s, err := newSidecar(config{
 		Proxy: proxyConfig{
 			Address: listener.Addr().String(),
-			Transport: tlsProxyTransportConfig{
-				CAFile: ca.RootFile,
-				Auth:   spiffeProxyAuth{CertFile: clientCredentials.CertFile, KeyFile: clientCredentials.KeyFile},
-			},
+			SVID:    clientCredentials,
 		},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
 		WorkloadRoutes:         map[string]workloadRouteConfig{},
@@ -510,10 +504,7 @@ func TestNewSidecarFailsClosedWhenMTLSFilesAreUnavailable(t *testing.T) {
 	_, err := newSidecar(config{
 		Proxy: proxyConfig{
 			Address: "proxy.test.invalid:8888",
-			Transport: tlsProxyTransportConfig{
-				CAFile: "/missing/ca",
-				Auth:   spiffeProxyAuth{CertFile: "/missing/cert", KeyFile: "/missing/key"},
-			},
+			SVID:    peertls.Config{CAFile: "/missing/ca", CertFile: "/missing/cert", KeyFile: "/missing/key"},
 		},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
 		WorkloadRoutes:         map[string]workloadRouteConfig{},

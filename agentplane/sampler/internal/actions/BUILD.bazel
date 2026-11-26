@@ -34,6 +34,7 @@ go_test(
         "//agentplane/net/peertls/testing",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:identity_go_proto",
+        "//agentplane/testing/grpcserver",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",

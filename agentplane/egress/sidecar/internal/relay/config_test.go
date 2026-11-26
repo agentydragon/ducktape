@@ -86,9 +86,9 @@ workload_routes:
 	if err != nil {
 		t.Fatal(err)
 	}
-	transport := config.Proxy.Transport
-	if transport.CAFile != "/run/runner/ca.crt" || transport.Auth.CertFile != "/run/runner/tls.crt" || transport.Auth.KeyFile != "/run/runner/tls.key" {
-		t.Fatalf("proxy transport = %#v, want TLS with the CA and SPIFFE files", transport)
+	svid := config.Proxy.SVID
+	if svid.CAFile != "/run/runner/ca.crt" || svid.CertFile != "/run/runner/tls.crt" || svid.KeyFile != "/run/runner/tls.key" {
+		t.Fatalf("proxy transport = %#v, want TLS with the CA and SPIFFE files", svid)
 	}
 	route := config.PlatformRoutes.Routes["egress-rules"]
 	if config.PlatformRoutes.ListenAddress != "127.0.0.1:3130" ||
@@ -127,6 +127,10 @@ func TestSidecarRefusesMalformedOrContradictorySettings(t *testing.T) {
 		"malformed address":                        strings.Replace(required, "p.example:8888", "p.example/path:8888", 1),
 		"invalid port":                             strings.Replace(required, "8888", "70000", 1),
 		"missing transport":                        "proxy: {address: p.example:8888}\n",
+		"null transport":                           "proxy: {address: p.example:8888, transport: null}\n",
+		"null auth":                                strings.Replace(required, "{mode: spiffe, cert_file: /cert, key_file: /key}", "null", 1),
+		"wrong case auth key":                      strings.Replace(required, "cert_file:", "Cert_File:", 1),
+		"non-scalar SPIFFE key":                    strings.Replace(required, "key_file: /key", "key_file: [/key]", 1),
 		"missing auth":                             strings.Replace(required, ", auth: {mode: spiffe, cert_file: /cert, key_file: /key}", "", 1),
 		"TLS missing CA":                           strings.Replace(required, "ca_file: /ca, ", "", 1),
 		"TLS CA relative":                          strings.Replace(required, "/ca", "ca", 1),

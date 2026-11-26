@@ -23,21 +23,6 @@ type ReviewRefreshKey struct {
 	Subject        SubjectKey
 }
 
-// ReviewsState returns the durable review refresh state.
-func (g *State) ReviewsState(ctx context.Context, key ReviewRefreshKey) (RefreshStatus, error) {
-	if err := key.validate(); err != nil {
-		return RefreshStatus{}, err
-	}
-	row, err := loadRefresh(ctx, g.db, key)
-	if errors.Is(err, sql.ErrNoRows) {
-		return RefreshStatus{}, nil
-	}
-	if err != nil {
-		return RefreshStatus{}, err
-	}
-	return row.status()
-}
-
 func (k ReviewRefreshKey) refresh() (lease.Table, []any) {
 	return reviewRefresh, []any{k.AppID, k.InstallationID, k.Subject.RepositoryID, "pull_request", k.Subject.Key}
 }

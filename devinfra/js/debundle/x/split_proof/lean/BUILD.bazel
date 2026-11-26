@@ -111,6 +111,7 @@ lean_proof_test(
     modules = ["EsmSplit"],
     required_theorems = [
         "EsmSplit.Bundle.conflict_symm",
+        "EsmSplit.faithfulB_iff",
         "EsmSplit.inverted_conflict_rejected",
         "EsmSplit.Bundle.exec_reorder",
         "EsmSplit.split_correct",

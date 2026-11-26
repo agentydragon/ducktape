@@ -55,11 +55,10 @@ func (c *Controller) MapInput(ctx context.Context, _ *zap.Logger, r controller.Q
 }
 
 func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr resource.Pointer) error {
-	host := c.host
 	id := ptr.ID()
 	desiredResource, err := safe.ReaderGet[*typed.Resource[DesiredState, resourceExtension[DesiredState]]](ctx, r, resourceFor(c.host.namespace, id, DesiredState{}).Metadata())
 	if state.IsNotFoundError(err) {
-		return c.cleanupDestroyed(ctx, r, id, host)
+		return c.cleanupDestroyed(ctx, r, id)
 	}
 	if err != nil {
 		return err
@@ -89,9 +88,18 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 		return writeResource(ctx, r, c.host.namespace, id, current)
 	}
 
-	snapshot, registered := host.snapshot(id)
+	beginStop := func() error {
+		current.Phase = Stopping
+		if err := write(); err != nil {
+			return err
+		}
+		c.host.requestStop(id)
+		return nil
+	}
+
+	snapshot, registered := c.host.snapshot(id)
 	if desiredResource.Metadata().Phase() == resource.PhaseTearingDown {
-		return c.reconcileTeardown(ctx, r, id, desiredResource, &current, snapshot, registered, host, write)
+		return c.reconcileTeardown(ctx, r, id, desiredResource, &current, snapshot, registered, write)
 	}
 
 	// Terminal status is retained until the owner destroys its desired state.
@@ -119,13 +127,13 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 		// re-read here and defer to the stop path if teardown has started.
 		desiredResource, err = safe.ReaderGet[*typed.Resource[DesiredState, resourceExtension[DesiredState]]](ctx, r, resourceFor(c.host.namespace, id, DesiredState{}).Metadata())
 		if state.IsNotFoundError(err) {
-			return c.cleanupDestroyed(ctx, r, id, host)
+			return c.cleanupDestroyed(ctx, r, id)
 		}
 		if err != nil {
 			return err
 		}
 		if desiredResource.Metadata().Phase() == resource.PhaseTearingDown {
-			return c.reconcileTeardown(ctx, r, id, desiredResource, &current, snapshot, registered, host, write)
+			return c.reconcileTeardown(ctx, r, id, desiredResource, &current, snapshot, registered, write)
 		}
 		if !desiredResource.Metadata().Finalizers().Has(c.Name()) {
 			return errors.New("process finalizer disappeared before launch")
@@ -148,28 +156,24 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 
 		// Consume a completed result before claiming or returning from the start
 		// slot. Otherwise a start completion event could leave status Starting.
-		snapshot, _ = host.snapshot(id)
+		snapshot, _ = c.host.snapshot(id)
 		current = applyProcessFacts(current, snapshot)
 		if snapshot.startDone {
-			return c.finishStart(ctx, r, id, &current, snapshot, host, write)
+			return c.finishStart(ctx, r, id, &current, snapshot, write, beginStop)
 		}
 		// The backend can report an uncertain or pending start while its worker
 		// remains blocked on the process-domain fence.
 		if err := write(); err != nil {
 			return err
 		}
-		return host.start(id)
+		return c.host.start(id)
 	}
 
 	current = applyProcessFacts(current, snapshot)
 	switch current.Phase {
 	case Running:
 		if snapshot.exitObserved {
-			current.Phase = Stopping
-			if err := write(); err != nil {
-				return err
-			}
-			return host.requestStop(id)
+			return beginStop()
 		}
 		return write()
 	case Stopping:
@@ -180,30 +184,17 @@ func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.
 			}
 			return c.removeFinalizer(ctx, r, id)
 		}
-		if snapshot.stopDone && snapshot.stopErr != nil {
-			current.StopError = snapshot.stopErr.Error()
-			return write()
-		}
-		if !snapshot.stopClaimed {
-			if err := host.requestStop(id); err != nil {
-				return err
-			}
-		}
+		c.host.requestStop(id)
 		return write()
 	default:
 		return fmt.Errorf("process %q has invalid nonterminal phase %d", id, current.Phase)
 	}
 }
 
-func (c *Controller) finishStart(ctx context.Context, r controller.QRuntime, id string, current *Status, snapshot processHostSnapshot, host *Host, write func() error) error {
-	*current = applyProcessFacts(*current, snapshot)
+func (c *Controller) finishStart(ctx context.Context, r controller.QRuntime, id string, current *Status, snapshot processHostSnapshot, write, beginStop func() error) error {
 	if snapshot.startErr != nil {
 		if snapshot.hasInstance {
-			current.Phase = Stopping
-			if err := write(); err != nil {
-				return err
-			}
-			return host.requestStop(id)
+			return beginStop()
 		}
 		if snapshot.fenced {
 			current.Phase = Exited
@@ -215,11 +206,7 @@ func (c *Controller) finishStart(ctx context.Context, r controller.QRuntime, id 
 	}
 	if snapshot.started {
 		if snapshot.exitObserved {
-			current.Phase = Stopping
-			if err := write(); err != nil {
-				return err
-			}
-			return host.requestStop(id)
+			return beginStop()
 		}
 		current.Phase = Running
 	}
@@ -234,7 +221,6 @@ func (c *Controller) reconcileTeardown(
 	current *Status,
 	snapshot processHostSnapshot,
 	registered bool,
-	host *Host,
 	write func() error,
 ) error {
 	if !registered {
@@ -251,14 +237,11 @@ func (c *Controller) reconcileTeardown(
 		return nil
 	}
 
-	if err := host.requestStop(id); err != nil {
-		return err
-	}
-	snapshot, _ = host.snapshot(id)
+	c.host.requestStop(id)
+	snapshot, _ = c.host.snapshot(id)
 	*current = applyProcessFacts(*current, snapshot)
-	if snapshot.stopDone && snapshot.stopErr != nil {
+	if snapshot.stopErr != nil {
 		current.Phase = Stopping
-		current.StopError = snapshot.stopErr.Error()
 		return write()
 	}
 	if snapshot.fenced {
@@ -275,22 +258,18 @@ func (c *Controller) reconcileTeardown(
 	return write()
 }
 
-func (c *Controller) cleanupDestroyed(ctx context.Context, r controller.QRuntime, id string, host *Host) error {
-	if host != nil {
-		snapshot, registered := host.snapshot(id)
-		if registered && !snapshot.fenced {
-			if err := host.requestStop(id); err != nil {
-				return err
-			}
-			return nil
-		}
-		retired, err := host.retire(ctx, r, id)
-		if err != nil {
-			return err
-		}
-		if !retired {
-			return nil
-		}
+func (c *Controller) cleanupDestroyed(ctx context.Context, r controller.QRuntime, id string) error {
+	snapshot, registered := c.host.snapshot(id)
+	if registered && !snapshot.fenced {
+		c.host.requestStop(id)
+		return nil
+	}
+	retired, err := c.host.retire(ctx, r, id)
+	if err != nil {
+		return err
+	}
+	if !retired {
+		return nil
 	}
 
 	statusPointer := resource.NewMetadata(c.host.namespace, StatusType, id, resource.VersionUndefined)
@@ -327,7 +306,7 @@ func applyProcessFacts(current Status, snapshot processHostSnapshot) Status {
 	if snapshot.exitObserved && snapshot.exitErr != nil {
 		current.ExitError = snapshot.exitErr.Error()
 	}
-	if snapshot.stopDone && snapshot.stopErr != nil {
+	if snapshot.stopErr != nil {
 		current.StopError = snapshot.stopErr.Error()
 	}
 	return current

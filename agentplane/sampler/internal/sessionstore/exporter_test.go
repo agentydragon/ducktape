@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,6 +13,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
@@ -140,19 +140,14 @@ func (h *fixtureHistory) Push(stream grpc.BidiStreamingServer[ingresspb.PushFram
 
 func startFixtureHistory(t *testing.T, h *fixtureHistory) (string, string) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	ingresspb.RegisterSessionJournalIngressServer(server, h)
-	go server.Serve(listener)
-	t.Cleanup(func() { server.Stop(); listener.Close() })
+	target := grpcserver.Serve(t, server)
 	tokenFile := filepath.Join(t.TempDir(), "history-token")
 	if err := os.WriteFile(tokenFile, []byte("test-history-token"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	return listener.Addr().String(), tokenFile
+	return target, tokenFile
 }
 
 func exportFixtureSession(t *testing.T, store *Store) *Session {

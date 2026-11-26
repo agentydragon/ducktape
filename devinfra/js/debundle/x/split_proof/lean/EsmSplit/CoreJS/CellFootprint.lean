@@ -223,11 +223,14 @@ theorem cellFootprint_setCell (a : Addr) (v : Val) :
   cases h
   exact ⟨[(a, v)], by simp [CellPatch.Supported], rfl, fun _ _ => rfl⟩
 
-theorem cellFootprint_readCell (a : Addr) :
-    CellFootprint (fun c => c = a) (fun _ => False) (readCell a : M W Val) := by
+private theorem cellFootprint_readInitialized (a : Addr) (tdz : String) :
+    CellFootprint (fun c => c = a) (fun _ => False) (show M W Val from do
+      match (← getState).cellAt a with
+      | some { value := some v, .. } => pure v
+      | _ => throwErr .reference tdz) := by
   have h := cellFootprint_inspect (W := W) a (fun b => match b with
     | some { value := some v, .. } => pure v
-    | _ => throwErr .reference "cannot access a binding before initialization") (rd := fun _ => False) (wr := fun _ => False) (by
+    | _ => throwErr .reference tdz) (rd := fun _ => False) (wr := fun _ => False) (by
       intro b
       cases b with
       | none => exact cellFootprint_throwErr _ _
@@ -236,11 +239,15 @@ theorem cellFootprint_readCell (a : Addr) :
         cases value <;> first | exact cellFootprint_throwErr _ _ | exact cellFootprint_pure _)
   exact h.mono (fun _ h => h.elim id False.elim) (fun _ h => h)
 
-theorem cellFootprint_writeCell (a : Addr) (v : Val) :
-    CellFootprint (fun _ => False) (fun c => c = a) (writeCell a v : M W Unit) := by
+private theorem cellFootprint_writeInitialized (a : Addr) (v : Val) (tdz : String) :
+    CellFootprint (fun _ => False) (fun c => c = a) (show M W Unit from do
+      match (← getState).cellAt a with
+      | some { value := some _, mutable := true } => setCell a v
+      | some { value := some _, mutable := false } => throwErr .type "assignment to constant variable"
+      | _ => throwErr .reference tdz) := by
   constructor
   intro s b s' h
-  simp only [writeCell, M.bind_apply, getState] at h
+  simp only [M.bind_apply, getState] at h
   cases hc : s.cellAt a with
   | none => simp [hc, throwErr, throwVal] at h
   | some binding =>
@@ -255,8 +262,16 @@ theorem cellFootprint_writeCell (a : Addr) (v : Val) :
         obtain ⟨p, hp, hs, ht⟩ := (cellFootprint_setCell (W := W) a v).replay s b s' h
         refine ⟨p, hp, hs, fun t ha => ?_⟩
         have hc' : t.cellAt a = some { value := some old, mutable := true } := (ha a (Or.inr rfl)).symm.trans hc
-        simp only [writeCell, M.bind_apply, getState, hc']
+        simp only [M.bind_apply, getState, hc']
         exact ht t ha
+
+theorem cellFootprint_readCell (a : Addr) :
+    CellFootprint (fun c => c = a) (fun _ => False) (readCell a : M W Val) :=
+  cellFootprint_readInitialized a "cannot access a binding before initialization"
+
+theorem cellFootprint_writeCell (a : Addr) (v : Val) :
+    CellFootprint (fun _ => False) (fun c => c = a) (writeCell a v : M W Unit) :=
+  cellFootprint_writeInitialized a v "cannot access a binding before initialization"
 
 /-- Name lookup is fixed by the environment, independently of the runtime store. -/
 theorem cellFootprint_readVar (env : Env) (x : Name) :
@@ -264,23 +279,10 @@ theorem cellFootprint_readVar (env : Env) (x : Name) :
   cases hx : env.vars.lookup x with
   | none => simpa only [readVar, hx, reduceCtorEq] using (cellFootprint_throwErr (W := W) .reference s!"{x} is not defined")
   | some a =>
-    let f : Option Binding → M W Val := fun b => match b with
-      | some { value := some v, .. } => pure v
-      | _ => throwErr .reference s!"cannot access '{x}' before initialization"
-    have hf : ∀ b, CellFootprint (fun _ => False) (fun _ => False) (f b) := by
-      intro b
-      cases b with
-      | none => exact cellFootprint_throwErr _ _
-      | some b =>
-        rcases b with ⟨value, mutable⟩
-        cases value <;> first | exact cellFootprint_throwErr _ _ | exact cellFootprint_pure _
-    have he : readVar env x = (fun s => f (s.cellAt a) s) := by
-      funext s
-      simp only [readVar, hx, M.bind_apply, getState]
-      rfl
-    rw [he]
-    exact (cellFootprint_inspect a f hf).mono
-      (fun c hc => hc.elim (fun he => congrArg some he.symm) False.elim) (fun _ h => h)
+    simp only [readVar, hx]
+    exact
+      (cellFootprint_readInitialized (W := W) a s!"cannot access '{x}' before initialization").mono
+        (rd' := fun c => some a = some c) (fun c hc => congrArg some hc.symm) (fun _ h => h)
 
 theorem cellFootprint_initVar (env : Env) (x : Name) (v : Val) :
     CellFootprint (fun _ => False) (fun c => env.vars.lookup x = some c) (initVar env x v : M W Unit) := by
@@ -295,26 +297,10 @@ theorem cellFootprint_writeVar (env : Env) (x : Name) (v : Val) :
   cases hx : env.vars.lookup x with
   | none => simpa only [writeVar, hx, reduceCtorEq] using (cellFootprint_throwErr (W := W) .reference s!"{x} is not defined")
   | some a =>
-    constructor
-    intro s b s' h
-    simp only [writeVar, hx, M.bind_apply, getState] at h
-    cases hc : s.cellAt a with
-    | none => simp [hc, throwErr, throwVal] at h
-    | some binding =>
-      rcases binding with ⟨value, mutable⟩
-      cases value with
-      | none => simp [hc, throwErr, throwVal] at h
-      | some old =>
-        cases mutable with
-        | false => simp [hc, throwErr, throwVal] at h
-        | true =>
-          simp only [hc] at h
-          obtain ⟨p, hp, hs, ht⟩ := (cellFootprint_setCell (W := W) a v).replay s b s' h
-          refine ⟨p, fun q hq => ?_, hs, fun t ha => ?_⟩
-          · exact congrArg some (hp q hq).symm
-          · have hc' : t.cellAt a = some { value := some old, mutable := true } := (ha a (Or.inr rfl)).symm.trans hc
-            simp only [writeVar, hx, M.bind_apply, getState, hc']
-            exact ht t (ha.mono fun c h => h.elim False.elim (fun he => Or.inr (congrArg some he.symm)))
+    simp only [writeVar, hx]
+    exact
+      (cellFootprint_writeInitialized (W := W) a v s!"cannot access '{x}' before initialization").mono
+        (wr' := fun c => some a = some c) (fun _ h => h) (fun c hc => congrArg some hc.symm)
 
 /-- The two computations cannot write a binding which the other reads or writes. -/
 theorem CellFootprint.commute {rd wr rd' wr' : Addr → Prop} {m : M W α} {n : M W β}

@@ -372,7 +372,14 @@ fn primitive_function(
         })
         .collect::<Option<_>>()?;
     let mut reads = Vec::new();
-    over_primitives(body, &params, bindings, primitives, &mut reads).then_some(reads)
+    primitive(
+        body,
+        bindings,
+        primitives,
+        PrimitiveScope::FunctionParameters(&params),
+        &mut reads,
+    )
+    .then_some(reads)
 }
 
 /// The expression of a body that is one `return`.
@@ -384,48 +391,6 @@ fn returned(statements: &[Stmt]) -> Option<&Expr> {
             }),
         ] => Some(value),
         _ => None,
-    }
-}
-
-/// The grammar of `primitive`, with parameters standing for primitives.
-fn over_primitives(
-    expr: &Expr,
-    params: &FxHashSet<Id>,
-    bindings: &FxHashMap<Id, Binding>,
-    primitives: &FxHashSet<Binding>,
-    reads: &mut Vec<Binding>,
-) -> bool {
-    let mut recurse = |expr: &Expr| over_primitives(expr, params, bindings, primitives, reads);
-    match expr {
-        Expr::Paren(paren) => recurse(&paren.expr),
-        Expr::Lit(Lit::Num(_) | Lit::Str(_) | Lit::Bool(_) | Lit::Null(_)) => true,
-        Expr::Ident(ident) if params.contains(&ident.to_id()) => true,
-        Expr::Ident(ident) => match bindings.get(&ident.to_id()) {
-            Some(binding) if primitives.contains(binding) => {
-                reads.push(*binding);
-                true
-            }
-            _ => false,
-        },
-        Expr::Tpl(template) => template.exprs.iter().all(|expr| recurse(expr)),
-        Expr::Unary(unary) => {
-            matches!(
-                unary.op,
-                UnaryOp::Minus
-                    | UnaryOp::Plus
-                    | UnaryOp::Bang
-                    | UnaryOp::Tilde
-                    | UnaryOp::Void
-                    | UnaryOp::TypeOf
-            ) && recurse(&unary.arg)
-        }
-        Expr::Bin(binary) => {
-            !matches!(binary.op, BinaryOp::In | BinaryOp::InstanceOf)
-                && recurse(&binary.left)
-                && recurse(&binary.right)
-        }
-        Expr::Cond(cond) => recurse(&cond.test) && recurse(&cond.cons) && recurse(&cond.alt),
-        _ => false,
     }
 }
 
@@ -897,6 +862,13 @@ impl ResolvedPremises {
     }
 }
 
+/// Which additional primitive leaves are known at the evaluation site.
+#[derive(Clone, Copy)]
+enum PrimitiveScope<'a> {
+    FunctionParameters(&'a FxHashSet<Id>),
+    Initialization(&'a Settled),
+}
+
 /// Whether `expr` evaluates to a number, string, boolean, `null` or
 /// `undefined` without running code or throwing, given the primitive
 /// bindings; collects the bindings it reads.
@@ -904,18 +876,19 @@ fn primitive(
     expr: &Expr,
     bindings: &FxHashMap<Id, Binding>,
     primitives: &FxHashSet<Binding>,
-    settled: &Settled,
+    scope: PrimitiveScope<'_>,
     reads: &mut Vec<Binding>,
 ) -> bool {
-    let mut recurse = |expr: &Expr| primitive(expr, bindings, primitives, settled, reads);
-    match expr {
+    let mut recurse = |expr: &Expr| primitive(expr, bindings, primitives, scope, reads);
+    match expr.unwrap_parens() {
         // A member of a settled import, written as a primitive.
         Expr::Member(MemberExpr {
             obj,
             prop: MemberProp::Ident(key),
             ..
         }) => {
-            let Expr::Ident(table) = &**obj else {
+            let (PrimitiveScope::Initialization(settled), Expr::Ident(table)) = (scope, &**obj)
+            else {
                 return false;
             };
             let Some(binding) = bindings.get(&table.to_id()) else {
@@ -931,15 +904,21 @@ fn primitive(
             }
             primitive
         }
-        Expr::Paren(paren) => recurse(&paren.expr),
         Expr::Lit(Lit::Num(_) | Lit::Str(_) | Lit::Bool(_) | Lit::Null(_)) => true,
-        Expr::Ident(ident) => match bindings.get(&ident.to_id()) {
-            Some(binding) if primitives.contains(binding) => {
-                reads.push(*binding);
-                true
+        Expr::Ident(ident) => {
+            let id = ident.to_id();
+            if matches!(scope, PrimitiveScope::FunctionParameters(params) if params.contains(&id)) {
+                return true;
             }
-            _ => false,
-        },
+            let Some(binding) = bindings
+                .get(&id)
+                .filter(|binding| primitives.contains(binding))
+            else {
+                return false;
+            };
+            reads.push(*binding);
+            true
+        }
         Expr::Tpl(template) => template.exprs.iter().all(|expr| recurse(expr)),
         Expr::Unary(unary) => {
             matches!(
@@ -1105,7 +1084,7 @@ impl Classifier<'_> {
             expr,
             self.bindings,
             self.primitives,
-            self.settled,
+            PrimitiveScope::Initialization(self.settled),
             &mut reads,
         );
         if ok {
@@ -1835,7 +1814,7 @@ impl Classifier<'_> {
             expr,
             self.bindings,
             self.primitives,
-            self.settled,
+            PrimitiveScope::Initialization(self.settled),
             &mut reads,
         ) {
             self.eager.extend(reads);
@@ -2701,7 +2680,13 @@ pub fn analyze_indexed(
             let before = primitives.len();
             for (binding, init) in &candidates {
                 let holds_primitive = init.is_none_or(|init| {
-                    primitive(init, &bindings, &primitives, &settled, &mut Vec::new())
+                    primitive(
+                        init,
+                        &bindings,
+                        &primitives,
+                        PrimitiveScope::Initialization(&settled),
+                        &mut Vec::new(),
+                    )
                 });
                 if holds_primitive {
                     primitives.insert(*binding);

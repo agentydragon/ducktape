@@ -48,6 +48,7 @@ def chart(app: App) -> Chart:
                     # keep-sorted end
                 ),
             ),
+            ("attendant-secrets", "attendant", (), ("attendant-oidc",)),
             ("study-casino-secrets", "study-casino", (), ("study-casino-oidc",)),
             ("quest-diagnostics-secrets", "quest-diagnostics", (), ("quest-diagnostics-oidc",)),
             ("platform-sessions-secrets", "platform-sessions", (), ("platform-sessions-oidc",)),

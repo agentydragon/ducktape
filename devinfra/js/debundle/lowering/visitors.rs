@@ -1,10 +1,8 @@
 //! AST visitors used by the lowering pipeline.
 //!
-//! - `IdentifierRenamer` rewrites local identifiers per a rename map.
-//! - `RenameAndShorthandNaturalizer` combines that with shorthand collapse.
-//! - `ShorthandNaturalizer` is the standalone shorthand-only pass.
-//!
-//! The `naturalize_object_*_shorthand` helpers are shared between them.
+//! `BindingRenamer` rewrites local identifiers per a rename map. Its
+//! naturalizing mode also collapses shorthand, which `ShorthandNaturalizer`
+//! can do on its own when the rename map is empty.
 //!
 //! ## Scope-aware renaming
 //!
@@ -13,7 +11,7 @@
 //! method/catch/block introduces a binding whose name is a rename source,
 //! that name inside the subtree refers to the inner binding, not the
 //! top-level binding the rename targets — rewriting it (or its inner
-//! declaration) would change runtime behavior. Both renaming visitors
+//! declaration) would change runtime behavior. The renamer and the capture probe
 //! maintain a scope stack (`RenameScopeStack`) and suppress a name's
 //! rename for the duration of any subtree that shadows it. This mirrors
 //! the heap scan's (`facts/abstract_domain/heap.rs`) `shadowed_by_params` + `with_scope`
@@ -67,7 +65,7 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 /// Stack of per-scope shadow sets. A name is "shadowed at this point in
 /// the traversal" iff it appears in any active stack entry; while shadowed
 /// its rename is suppressed (and renames INTO it are captures). Shared by
-/// both renaming visitors.
+/// the renamer and capture probe.
 #[derive(Default)]
 pub(super) struct RenameScopeStack {
     scopes: Vec<BTreeSet<String>>,
@@ -162,191 +160,209 @@ fn shadowed_by_block_decls(stmts: &[Stmt], names: &RenameNames<'_>) -> BTreeSet<
     out
 }
 
-/// Generates the shared `VisitMut` methods that apply an `Id`-keyed
-/// rename map to identifiers, import specifiers, computed property/member
-/// keys, and named exports, suppressing renames in subtrees that re-bind
-/// the same name and recording target captures (see module docs). Used by
-/// both `IdentifierRenamer` (rename-only) and
-/// `RenameAndShorthandNaturalizer` (rename + shorthand collapse).
-///
-/// Expects `self.renames: &BTreeMap<Id, Atom>`,
-/// `self.sources` and `self.targets: BTreeSet<String>`, `self.scopes: RenameScopeStack`, and
-/// `self.captured: BTreeSet<(String, String)>` and
-/// `self.unresolved_context: SyntaxContext`.
-macro_rules! impl_rename_visit_mut {
-    () => {
-        fn visit_mut_ident(&mut self, ident: &mut Ident) {
-            self.record_unresolved_target_capture(&ident.to_id());
-            if self.scopes.is_shadowed(ident.sym.as_ref()) {
-                return;
-            }
-            if let Some(to) = self.rename_target_for(&ident.to_id()) {
-                ident.sym = to;
-            }
-        }
+/// Rename a body while preserving its existing shorthand where possible.
+pub(super) type IdentifierRenamer<'a> = BindingRenamer<'a, false>;
+/// Rename a body and collapse eligible object fields to shorthand.
+pub(super) type RenameAndShorthandNaturalizer<'a> = BindingRenamer<'a, true>;
 
-        fn visit_mut_import_named_specifier(&mut self, spec: &mut ImportNamedSpecifier) {
-            let original_local = spec.local.sym.clone();
-            if self.scopes.is_shadowed(original_local.as_ref()) {
-                return;
-            }
-            let Some(to) = self.rename_target_for(&spec.local.to_id()) else {
-                return;
-            };
-            if spec.imported.is_none() {
-                spec.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                    original_local,
-                    DUMMY_SP,
-                )));
-            }
-            spec.local.sym = to;
-        }
-
-        fn visit_mut_prop_name(&mut self, prop_name: &mut PropName) {
-            if let PropName::Computed(computed) = prop_name {
-                computed.visit_mut_children_with(self);
-            }
-        }
-
-        fn visit_mut_member_prop(&mut self, member_prop: &mut MemberProp) {
-            if let MemberProp::Computed(computed) = member_prop {
-                computed.visit_mut_children_with(self);
-            }
-        }
-
-        // `{ a }` reads binding `a` under property key `a`; renaming the
-        // binding must keep the key, so expand to `{ a: <renamed> }`
-        // instead of letting `visit_mut_ident` rewrite the coupled ident.
-        fn visit_mut_prop(&mut self, prop: &mut Prop) {
-            let Prop::Shorthand(ident) = prop else {
-                prop.visit_mut_children_with(self);
-                return;
-            };
-            self.record_unresolved_target_capture(&ident.to_id());
-            if self.scopes.is_shadowed(ident.sym.as_ref()) {
-                return;
-            }
-            let Some(to) = self.rename_target_for(&ident.to_id()) else {
-                return;
-            };
-            let key = PropName::Ident(IdentName::new(ident.sym.clone(), ident.span));
-            let mut value = ident.clone();
-            value.sym = to;
-            *prop = Prop::KeyValue(KeyValueProp {
-                key,
-                value: Box::new(Expr::Ident(value)),
-            });
-        }
-
-        // `const { a } = o` / `const { a = d } = o` declare binding `a`
-        // from property `a`; renaming the binding must keep the key, so
-        // expand to `{ a: <renamed> }` / `{ a: <renamed> = d }`.
-        fn visit_mut_object_pat_prop(&mut self, prop: &mut ObjectPatProp) {
-            let ObjectPatProp::Assign(assign) = prop else {
-                prop.visit_mut_children_with(self);
-                return;
-            };
-            // The default expr holds ordinary references; rename them.
-            if let Some(value) = &mut assign.value {
-                value.visit_mut_with(self);
-            }
-            if self.scopes.is_shadowed(assign.key.id.sym.as_ref()) {
-                return;
-            }
-            let Some(to) = self.rename_target_for(&assign.key.id.to_id()) else {
-                return;
-            };
-            let key = PropName::Ident(IdentName::new(
-                assign.key.id.sym.clone(),
-                assign.key.id.span,
-            ));
-            let mut binding = assign.key.clone();
-            binding.id.sym = to;
-            let value = match assign.value.take() {
-                Some(default) => Pat::Assign(AssignPat {
-                    span: assign.span,
-                    left: Box::new(Pat::Ident(binding)),
-                    right: default,
-                }),
-                None => Pat::Ident(binding),
-            };
-            *prop = ObjectPatProp::KeyValue(KeyValuePatProp {
-                key,
-                value: Box::new(value),
-            });
-        }
-
-        // Labels live in a separate namespace from bindings: never rename
-        // a label declaration or its `break`/`continue` references.
-        fn visit_mut_labeled_stmt(&mut self, labeled: &mut LabeledStmt) {
-            labeled.body.visit_mut_with(self);
-        }
-
-        fn visit_mut_break_stmt(&mut self, _break_stmt: &mut BreakStmt) {}
-
-        fn visit_mut_continue_stmt(&mut self, _continue_stmt: &mut ContinueStmt) {}
-
-        fn visit_mut_named_export(&mut self, named: &mut NamedExport) {
-            if named.src.is_none() {
-                named.specifiers.visit_mut_with(self);
-            }
-        }
-
-        fn visit_mut_export_named_specifier(&mut self, spec: &mut ExportNamedSpecifier) {
-            spec.orig.visit_mut_with(self);
-        }
-
-        fn visit_mut_function(&mut self, function: &mut Function) {
-            let names = self.rename_names();
-            let mut scope = shadowed_by_params(function.params.iter().map(|p| &p.pat), &names);
-            if let Some(body) = &function.body {
-                scope.extend(shadowed_by_block_decls(&body.stmts, &names));
-            }
-            self.with_rename_scope(scope, |s| function.visit_mut_children_with(s));
-        }
-
-        fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
-            let names = self.rename_names();
-            let mut scope = shadowed_by_params(arrow.params.iter(), &names);
-            if let ArrowFunctionBody::FunctionBody(body) = arrow.body.as_ref() {
-                scope.extend(shadowed_by_block_decls(&body.stmts, &names));
-            }
-            self.with_rename_scope(scope, |s| arrow.visit_mut_children_with(s));
-        }
-
-        fn visit_mut_constructor(&mut self, constructor: &mut Constructor) {
-            let names = self.rename_names();
-            let params = constructor.params.iter().filter_map(|p| match p {
-                ParamOrTsParamProp::Param(param) => Some(&param.pat),
-                ParamOrTsParamProp::TsParamProp(_) => None,
-            });
-            let mut scope = shadowed_by_params(params, &names);
-            if let Some(body) = &constructor.body {
-                scope.extend(shadowed_by_block_decls(&body.stmts, &names));
-            }
-            self.with_rename_scope(scope, |s| constructor.visit_mut_children_with(s));
-        }
-
-        fn visit_mut_catch_clause(&mut self, clause: &mut CatchClause) {
-            let scope = match &clause.param {
-                Some(pat) => {
-                    let mut out = BTreeSet::new();
-                    collect_shadowed_by_pat(pat, &self.rename_names(), &mut out);
-                    out
-                }
-                None => BTreeSet::new(),
-            };
-            self.with_rename_scope(scope, |s| clause.visit_mut_children_with(s));
-        }
-
-        fn visit_mut_block_stmt(&mut self, block: &mut BlockStmt) {
-            let scope = shadowed_by_block_decls(&block.stmts, &self.rename_names());
-            self.with_rename_scope(scope, |s| block.visit_mut_children_with(s));
-        }
-    };
+pub(super) struct BindingRenamer<'a, const NATURALIZE_SHORTHAND: bool> {
+    pub(super) renames: &'a BTreeMap<Id, Atom>,
+    sources: BTreeSet<String>,
+    targets: BTreeSet<String>,
+    scopes: RenameScopeStack,
+    unresolved_context: SyntaxContext,
+    /// `(source, target)` pairs whose rename changes reference resolution.
+    /// Non-empty after a pass means the body cannot be emitted as mutated
+    /// (see the module docs' "Binding-resolution changes").
+    pub(super) captured: BTreeSet<(String, String)>,
 }
 
-/// Generates the shared non-`VisitMut` helpers both renaming visitors use:
+impl<const NATURALIZE_SHORTHAND: bool> VisitMut for BindingRenamer<'_, NATURALIZE_SHORTHAND> {
+    fn visit_mut_ident(&mut self, ident: &mut Ident) {
+        self.record_unresolved_target_capture(&ident.to_id());
+        if self.scopes.is_shadowed(ident.sym.as_ref()) {
+            return;
+        }
+        if let Some(to) = self.rename_target_for(&ident.to_id()) {
+            ident.sym = to;
+        }
+    }
+
+    fn visit_mut_import_named_specifier(&mut self, spec: &mut ImportNamedSpecifier) {
+        let original_local = spec.local.sym.clone();
+        if self.scopes.is_shadowed(original_local.as_ref()) {
+            return;
+        }
+        let Some(to) = self.rename_target_for(&spec.local.to_id()) else {
+            return;
+        };
+        if spec.imported.is_none() {
+            spec.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                original_local,
+                DUMMY_SP,
+            )));
+        }
+        spec.local.sym = to;
+    }
+
+    fn visit_mut_prop_name(&mut self, prop_name: &mut PropName) {
+        if let PropName::Computed(computed) = prop_name {
+            computed.visit_mut_children_with(self);
+        }
+    }
+
+    fn visit_mut_member_prop(&mut self, member_prop: &mut MemberProp) {
+        if let MemberProp::Computed(computed) = member_prop {
+            computed.visit_mut_children_with(self);
+        }
+    }
+
+    // `{ a }` reads binding `a` under property key `a`; renaming the
+    // binding must keep the key, so expand to `{ a: <renamed> }`
+    // instead of letting `visit_mut_ident` rewrite the coupled ident.
+    fn visit_mut_prop(&mut self, prop: &mut Prop) {
+        let Prop::Shorthand(ident) = prop else {
+            prop.visit_mut_children_with(self);
+            return;
+        };
+        self.record_unresolved_target_capture(&ident.to_id());
+        if self.scopes.is_shadowed(ident.sym.as_ref()) {
+            return;
+        }
+        let Some(to) = self.rename_target_for(&ident.to_id()) else {
+            return;
+        };
+        let key = PropName::Ident(IdentName::new(ident.sym.clone(), ident.span));
+        let mut value = ident.clone();
+        value.sym = to;
+        *prop = Prop::KeyValue(KeyValueProp {
+            key,
+            value: Box::new(Expr::Ident(value)),
+        });
+    }
+
+    // `const { a } = o` / `const { a = d } = o` declare binding `a`
+    // from property `a`; renaming the binding must keep the key, so
+    // expand to `{ a: <renamed> }` / `{ a: <renamed> = d }`.
+    fn visit_mut_object_pat_prop(&mut self, prop: &mut ObjectPatProp) {
+        let ObjectPatProp::Assign(assign) = prop else {
+            prop.visit_mut_children_with(self);
+            return;
+        };
+        // The default expr holds ordinary references; rename them.
+        if let Some(value) = &mut assign.value {
+            value.visit_mut_with(self);
+        }
+        if self.scopes.is_shadowed(assign.key.id.sym.as_ref()) {
+            return;
+        }
+        let Some(to) = self.rename_target_for(&assign.key.id.to_id()) else {
+            return;
+        };
+        let key = PropName::Ident(IdentName::new(
+            assign.key.id.sym.clone(),
+            assign.key.id.span,
+        ));
+        let mut binding = assign.key.clone();
+        binding.id.sym = to;
+        let value = match assign.value.take() {
+            Some(default) => Pat::Assign(AssignPat {
+                span: assign.span,
+                left: Box::new(Pat::Ident(binding)),
+                right: default,
+            }),
+            None => Pat::Ident(binding),
+        };
+        *prop = ObjectPatProp::KeyValue(KeyValuePatProp {
+            key,
+            value: Box::new(value),
+        });
+    }
+
+    // Labels live in a separate namespace from bindings: never rename
+    // a label declaration or its `break`/`continue` references.
+    fn visit_mut_labeled_stmt(&mut self, labeled: &mut LabeledStmt) {
+        labeled.body.visit_mut_with(self);
+    }
+
+    fn visit_mut_break_stmt(&mut self, _break_stmt: &mut BreakStmt) {}
+
+    fn visit_mut_continue_stmt(&mut self, _continue_stmt: &mut ContinueStmt) {}
+
+    fn visit_mut_named_export(&mut self, named: &mut NamedExport) {
+        if named.src.is_none() {
+            named.specifiers.visit_mut_with(self);
+        }
+    }
+
+    fn visit_mut_export_named_specifier(&mut self, spec: &mut ExportNamedSpecifier) {
+        spec.orig.visit_mut_with(self);
+    }
+
+    fn visit_mut_function(&mut self, function: &mut Function) {
+        let names = self.rename_names();
+        let mut scope = shadowed_by_params(function.params.iter().map(|p| &p.pat), &names);
+        if let Some(body) = &function.body {
+            scope.extend(shadowed_by_block_decls(&body.stmts, &names));
+        }
+        self.with_rename_scope(scope, |s| function.visit_mut_children_with(s));
+    }
+
+    fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
+        let names = self.rename_names();
+        let mut scope = shadowed_by_params(arrow.params.iter(), &names);
+        if let ArrowFunctionBody::FunctionBody(body) = arrow.body.as_ref() {
+            scope.extend(shadowed_by_block_decls(&body.stmts, &names));
+        }
+        self.with_rename_scope(scope, |s| arrow.visit_mut_children_with(s));
+    }
+
+    fn visit_mut_constructor(&mut self, constructor: &mut Constructor) {
+        let names = self.rename_names();
+        let params = constructor.params.iter().filter_map(|p| match p {
+            ParamOrTsParamProp::Param(param) => Some(&param.pat),
+            ParamOrTsParamProp::TsParamProp(_) => None,
+        });
+        let mut scope = shadowed_by_params(params, &names);
+        if let Some(body) = &constructor.body {
+            scope.extend(shadowed_by_block_decls(&body.stmts, &names));
+        }
+        self.with_rename_scope(scope, |s| constructor.visit_mut_children_with(s));
+    }
+
+    fn visit_mut_catch_clause(&mut self, clause: &mut CatchClause) {
+        let scope = match &clause.param {
+            Some(pat) => {
+                let mut out = BTreeSet::new();
+                collect_shadowed_by_pat(pat, &self.rename_names(), &mut out);
+                out
+            }
+            None => BTreeSet::new(),
+        };
+        self.with_rename_scope(scope, |s| clause.visit_mut_children_with(s));
+    }
+
+    fn visit_mut_block_stmt(&mut self, block: &mut BlockStmt) {
+        let scope = shadowed_by_block_decls(&block.stmts, &self.rename_names());
+        self.with_rename_scope(scope, |s| block.visit_mut_children_with(s));
+    }
+
+    fn visit_mut_object_pat(&mut self, object: &mut ObjectPat) {
+        object.visit_mut_children_with(self);
+        if NATURALIZE_SHORTHAND {
+            naturalize_object_pattern_shorthand(object);
+        }
+    }
+
+    fn visit_mut_object_lit(&mut self, object: &mut ObjectLit) {
+        object.visit_mut_children_with(self);
+        if NATURALIZE_SHORTHAND {
+            naturalize_object_literal_shorthand(object);
+        }
+    }
+}
+
+/// Generates the helpers shared by the renamer and capture probe:
 /// scope push/pop, the source/target name universe, and the
 /// capture checks. The lookup returns the rename target for `name` only
 /// when applying it is safe at the current traversal point; when the target
@@ -394,7 +410,22 @@ macro_rules! impl_rename_helpers {
     };
 }
 
-/// Read-only mirror of the renaming visitors: walks the same reference
+impl<'a, const NATURALIZE_SHORTHAND: bool> BindingRenamer<'a, NATURALIZE_SHORTHAND> {
+    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>, unresolved_context: SyntaxContext) -> Self {
+        Self {
+            renames,
+            sources: rename_sources(renames),
+            targets: rename_targets(renames),
+            scopes: RenameScopeStack::default(),
+            unresolved_context,
+            captured: BTreeSet::new(),
+        }
+    }
+
+    impl_rename_helpers!();
+}
+
+/// Read-only mirror of `BindingRenamer`: walks the same reference
 /// sites with the same shadow tracking, but instead of mutating it only
 /// records the `(source, target)` pairs the rename map would withhold
 /// (a target shadowed at a source reference, or an introduced target
@@ -404,16 +435,15 @@ macro_rules! impl_rename_helpers {
 /// then `debug_assert!`s that its own `captured` set is empty, pinning
 /// the probe and the executor to the same verdict.
 ///
-/// MUST stay traversal-identical to `impl_rename_visit_mut!`: every site
-/// the mutating visitors consult the rename map at, the probe consults
-/// it at too, with the same scope pushes.
+/// Keep the reference sites and scope pushes in sync with
+/// `BindingRenamer`'s `VisitMut` implementation.
 pub(super) struct RenameCaptureProbe<'a> {
     renames: &'a BTreeMap<Id, Atom>,
     unresolved_context: SyntaxContext,
     sources: BTreeSet<String>,
     targets: BTreeSet<String>,
     scopes: RenameScopeStack,
-    /// See [`IdentifierRenamer::captured`].
+    /// See [`BindingRenamer::captured`].
     pub(super) captured: BTreeSet<(String, String)>,
 }
 
@@ -549,76 +579,6 @@ impl Visit for RenameCaptureProbe<'_> {
     fn visit_block_stmt(&mut self, block: &BlockStmt) {
         let scope = shadowed_by_block_decls(&block.stmts, &self.rename_names());
         self.with_rename_scope(scope, |s| block.visit_children_with(s));
-    }
-}
-
-pub(super) struct IdentifierRenamer<'a> {
-    pub(super) renames: &'a BTreeMap<Id, Atom>,
-    sources: BTreeSet<String>,
-    targets: BTreeSet<String>,
-    scopes: RenameScopeStack,
-    unresolved_context: SyntaxContext,
-    /// `(source, target)` pairs whose rename changes reference resolution.
-    /// Non-empty after a pass means the body cannot be emitted as mutated
-    /// (see the module docs' "Binding-resolution changes").
-    pub(super) captured: BTreeSet<(String, String)>,
-}
-
-impl<'a> IdentifierRenamer<'a> {
-    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>, unresolved_context: SyntaxContext) -> Self {
-        Self {
-            renames,
-            sources: rename_sources(renames),
-            targets: rename_targets(renames),
-            scopes: RenameScopeStack::default(),
-            unresolved_context,
-            captured: BTreeSet::new(),
-        }
-    }
-
-    impl_rename_helpers!();
-}
-
-impl VisitMut for IdentifierRenamer<'_> {
-    impl_rename_visit_mut!();
-}
-
-pub(super) struct RenameAndShorthandNaturalizer<'a> {
-    pub(super) renames: &'a BTreeMap<Id, Atom>,
-    sources: BTreeSet<String>,
-    targets: BTreeSet<String>,
-    scopes: RenameScopeStack,
-    unresolved_context: SyntaxContext,
-    /// See [`IdentifierRenamer::captured`].
-    pub(super) captured: BTreeSet<(String, String)>,
-}
-
-impl<'a> RenameAndShorthandNaturalizer<'a> {
-    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>, unresolved_context: SyntaxContext) -> Self {
-        Self {
-            renames,
-            sources: rename_sources(renames),
-            targets: rename_targets(renames),
-            scopes: RenameScopeStack::default(),
-            unresolved_context,
-            captured: BTreeSet::new(),
-        }
-    }
-
-    impl_rename_helpers!();
-}
-
-impl VisitMut for RenameAndShorthandNaturalizer<'_> {
-    impl_rename_visit_mut!();
-
-    fn visit_mut_object_pat(&mut self, object: &mut ObjectPat) {
-        object.visit_mut_children_with(self);
-        naturalize_object_pattern_shorthand(object);
-    }
-
-    fn visit_mut_object_lit(&mut self, object: &mut ObjectLit) {
-        object.visit_mut_children_with(self);
-        naturalize_object_literal_shorthand(object);
     }
 }
 

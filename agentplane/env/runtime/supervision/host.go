@@ -91,10 +91,8 @@ type processHostSnapshot struct {
 	exitObserved bool
 	exitErr      error
 
-	stopClaimed bool
-	stopDone    bool
-	stopErr     error
-	fenced      bool
+	stopErr error
+	fenced  bool
 }
 
 // NewHost binds generic supervision to the caller's state, lifetime and worker barrier.
@@ -198,11 +196,9 @@ func (h *Host) snapshot(id string) (processHostSnapshot, bool) {
 		snapshot.exitObserved = exit.observed
 		snapshot.exitErr = exit.err
 	}
-	if stop := entry.stop; stop != nil {
-		snapshot.stopClaimed = true
-		snapshot.stopDone = processSlotDone(stop.done)
+	if stop := entry.stop; stop != nil && processSlotDone(stop.done) {
 		snapshot.stopErr = stop.err
-		if snapshot.stopDone && stop.err == nil {
+		if stop.err == nil {
 			snapshot.fenced = true
 		}
 	}
@@ -297,7 +293,7 @@ func (h *Host) runStart(entry *processHostEntry, start *processStartSlot) {
 	h.notify(publishErr)
 
 	if stopForUnusableStart {
-		_ = h.requestStop(entry.id)
+		h.requestStop(entry.id)
 	}
 }
 
@@ -359,16 +355,12 @@ func (h *Host) observe(ctx context.Context, entry *processHostEntry, instance *I
 
 // requestStop installs the only stop slot and cancels a launch that is still
 // resolving. The stop worker joins the launch before fencing a late instance.
-func (h *Host) requestStop(id string) error {
+func (h *Host) requestStop(id string) {
 	h.mu.Lock()
 	entry := h.entries[id]
-	if entry == nil {
+	if entry == nil || entry.stop != nil {
 		h.mu.Unlock()
-		return nil
-	}
-	if entry.stop != nil {
-		h.mu.Unlock()
-		return nil
+		return
 	}
 	start := entry.start
 	if start == nil {
@@ -387,7 +379,6 @@ func (h *Host) requestStop(id string) error {
 		startCancel()
 	}
 	go owner.runStop(entry, start, stop)
-	return nil
 }
 
 func (h *Host) runStop(entry *processHostEntry, start *processStartSlot, stop *processStopSlot) {

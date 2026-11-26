@@ -7,7 +7,7 @@ use binding_targets::{binding_names, declaration_ids};
 use selector_outcome::{Declaration, DeclarationKind};
 use source_identity::StatementId;
 
-use crate::source_ast::{RuntimeImportFacts, RuntimeImportInfo, record_runtime_imports};
+use crate::source_ast::{RuntimeImportFacts, RuntimeImportInfo, runtime_import_bindings};
 use analysis::{DestructuringDeclaratorGroup, NestedVarStatement, SourceUnitSyntaxLocation};
 use anyhow::{Context, Result, bail};
 use js_ast::post_split_top_level_count;
@@ -147,7 +147,10 @@ pub fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
                 exported,
             });
         }
-        record_runtime_imports(item, &mut imports);
+        if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
+            imports
+                .extend(runtime_import_bindings(import).map(|(local, info)| (local.to_id(), info)));
+        }
     }
     let mut declaration_by_name = HashMap::<Id, Vec<StatementId>>::new();
     for decl in &declarations {

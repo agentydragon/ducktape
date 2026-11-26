@@ -50,21 +50,6 @@ func (k CommitRefreshKey) validate() error {
 	return nil
 }
 
-// CommitState returns the durable refresh state.
-func (g *State) CommitState(ctx context.Context, key CommitRefreshKey) (RefreshStatus, error) {
-	if err := key.validate(); err != nil {
-		return RefreshStatus{}, err
-	}
-	row, err := loadRefresh(ctx, g.db, key)
-	if errors.Is(err, sql.ErrNoRows) {
-		return RefreshStatus{}, nil
-	}
-	if err != nil {
-		return RefreshStatus{}, err
-	}
-	return row.status()
-}
-
 // CommitTargets returns only repositories that hold the current PR head SHA. Historical head revisions are
 // retained for delayed webhook matching, but are not polled as part of current commit observation recovery.
 func (g *State) CommitTargets(ctx context.Context, subject SubjectKey) ([]githubmodel.HeadRevision, error) {

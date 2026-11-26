@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/history_service/backfill"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
@@ -14,10 +15,16 @@ import (
 )
 
 type historyMaintenanceOptions struct {
-	session                  uuid.UUID
-	all                      bool
-	apply                    bool
-	includeExecutionEvidence bool
+	session            uuid.UUID
+	all                bool
+	apply              bool
+	bytesPerSecond     int64
+	batchBudget        time.Duration
+	pauseFile          string
+	guardFile          string
+	maxReplicaLagBytes int64
+	minFreeBytes       int64
+	guardMaxAge        time.Duration
 }
 
 func parseHistoryMaintenanceOptions(command string, args []string) (historyMaintenanceOptions, error) {
@@ -26,10 +33,20 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 	all := flags.Bool("all", false, "scan every retained Session")
 	apply := flags.Bool("apply", false, "commit changes")
 	dryRun := flags.Bool("dry-run", false, "preview without writes")
-	var includeExecutionEvidence bool
+	var bytesPerSecond, maxReplicaLagBytes, minFreeBytes int64
+	var batchBudget time.Duration
+	var pauseFile, guardFile string
+	var guardMaxAge time.Duration
 	if command == "compact-history" {
-		flags.BoolVar(&includeExecutionEvidence, "include-execution-evidence", false,
-			"also pack BoundaryRecord and ExecutionProgress events; use only after all readers support these blocks")
+		flags.Int64Var(&bytesPerSecond, "bytes-per-second", 1<<20, "maximum source bytes processed per second")
+		flags.DurationVar(&batchBudget, "batch-transaction-budget", storage.DefaultRepackBatchBudget,
+			"maximum elapsed time for one append-lock transaction")
+		flags.StringVar(&pauseFile, "pause-file", "", "pause while this file exists")
+		flags.StringVar(&guardFile, "guard-file", "", "JSON control file with updated_at, replica_lag_bytes, and free_bytes")
+		flags.Int64Var(&maxReplicaLagBytes, "max-replica-lag-bytes", 0, "pause above this replica replay lag (requires --guard-file)")
+		flags.Int64Var(&minFreeBytes, "min-free-bytes", 0, "pause below this free-space value (requires --guard-file)")
+		flags.DurationVar(&guardMaxAge, "guard-max-age", 60*time.Second, "maximum age of the guard file before pausing")
+		guardMaxAge = 60 * time.Second
 	}
 	if err := flags.Parse(args); err != nil {
 		return historyMaintenanceOptions{}, err
@@ -37,7 +54,19 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 	if flags.NArg() != 0 || *apply == *dryRun || *all == (*session != "") {
 		return historyMaintenanceOptions{}, errors.New("use exactly one of --session UUID / --all and --dry-run / --apply")
 	}
-	options := historyMaintenanceOptions{all: *all, apply: *apply, includeExecutionEvidence: includeExecutionEvidence}
+	options := historyMaintenanceOptions{
+		all: *all, apply: *apply, bytesPerSecond: bytesPerSecond, batchBudget: batchBudget, pauseFile: pauseFile, guardFile: guardFile,
+		maxReplicaLagBytes: maxReplicaLagBytes, minFreeBytes: minFreeBytes, guardMaxAge: guardMaxAge,
+	}
+	if command == "compact-history" {
+		if options.bytesPerSecond <= 0 || options.batchBudget <= 0 || options.maxReplicaLagBytes < 0 ||
+			options.minFreeBytes < 0 || options.guardMaxAge <= 0 {
+			return historyMaintenanceOptions{}, errors.New("invalid repack rate, transaction budget, or guard threshold")
+		}
+		if (options.maxReplicaLagBytes > 0 || options.minFreeBytes > 0) && options.guardFile == "" {
+			return historyMaintenanceOptions{}, errors.New("--max-replica-lag-bytes and --min-free-bytes require --guard-file")
+		}
+	}
 	if !*all {
 		id, err := uuid.Parse(*session)
 		if err != nil || id == uuid.Nil {

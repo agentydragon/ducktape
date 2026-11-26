@@ -134,9 +134,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
     let original = debundle_e2e_support::process::debundle_output(
         Command::new(debundler_path())
             .args(["run", "--graphs"])
-            .args(tree_spec_args(fixture.root()))
-            .arg("--out-root")
-            .arg(&original_out),
+            .args(tree_spec_args(fixture.root(), &original_out)),
     )
     .unwrap();
     process::assert_success(&original);

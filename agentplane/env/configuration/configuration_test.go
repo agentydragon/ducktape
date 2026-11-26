@@ -77,6 +77,18 @@ func TestConfigurationAcceptsModelConfigTarget(t *testing.T) {
 	}
 }
 
+func TestConfigurationRejectsSVIDProxyPortOutsideRange(t *testing.T) {
+	value, path, launch := configurationFixture(t)
+	value["ingress"] = Endpoint{Target: "history.test:8081", SVID: &SVIDEndpoint{
+		ServerURI: "spiffe://agentplane/history-ingress", ProxyAddress: "[::1]:65536",
+	}}
+	writeJSONFixture(t, path, value)
+	_, _, _, err := load(path, launch)
+	if err == nil || err.Error() != "SVID ingress proxy_address must be host:port" {
+		t.Fatalf("load error = %v, want the SVID proxy address diagnostic", err)
+	}
+}
+
 func configurationPodExecutor() map[string]any {
 	return map[string]any{
 		"url": "ws://127.0.0.1:4501", "placement": backend.PlacementDirect,

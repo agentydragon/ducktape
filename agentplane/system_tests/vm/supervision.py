@@ -6,6 +6,7 @@ from uuid import uuid4
 from agentplane.proto import session_pb2
 from agentplane.system_tests.driver.native_platform import NativePlatformClients
 from agentplane.system_tests.driver.session import Session
+from agentplane.system_tests.driver.session_spec import environment_session_spec
 from agentplane.system_tests.vm.configuration import CPU_QUOTA_PERIOD_MICROS, RESOURCES
 
 _SETUP = r"""set -eu
@@ -56,16 +57,7 @@ async def session_setup_is_supervised(
     session_id = uuid4()
     # A fresh nested path exercises Runner's workspace helper rather than a pre-created cwd.
     cwd = f"/state/workspaces/{session_id}/nested"
-    spec = session_pb2.SessionSpec(
-        placement=session_pb2.SessionPlacement(
-            environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                environment=session_pb2.ExactEnvironment(name=sandbox_name, uid=sandbox_uid), harness=harness
-            )
-        ),
-        model=model,
-        reasoning_effort="low",
-        cwd=cwd,
-    )
+    spec = environment_session_spec(sandbox_name, sandbox_uid, harness=harness, model=model, cwd=cwd)
     session = await Session.create(
         platform.dispatcher, platform.history, spec=spec, session_id=session_id, setup_script=_SETUP
     )

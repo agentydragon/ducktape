@@ -17,11 +17,10 @@ import {
   electricLive,
   electricShape,
   electricSubset,
-  liveEventStream,
+  eventStream,
   liveNdjsonWatch,
   ndjsonWatch,
   publishStreams,
-  type ServerSentEvent,
 } from "./network";
 import {
   ActionGroupSchema,
@@ -3741,31 +3740,6 @@ routes.push(
   ]
 );
 
-/** What the live stream at `url` sends, when it opens and whenever a fixture publishes it again. */
-function liveEvents(url: URL): ServerSentEvent[] {
-  if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
-    return [{ event: "output", data: btoa("guest console output\r\n") }];
-  }
-  throw new Error(`Unexpected event stream route: ${url.pathname}`);
-}
-
-/** Whether the stream at `url` drops once it has sent its events. */
-function drops(url: URL): boolean {
-  if (url.pathname === "/live/threads") return flags.has("threadStreamDropped");
-  if (url.pathname === "/upstream/environments/v1/environments:watch")
-    return flags.has("inventoryStreamDropped") || flags.has("watchStale");
-  if (/^\/upstream\/notifications\/v1\/sessions\//.test(url.pathname))
-    return (
-      flags.has("notificationStatusUnavailable") ||
-      (url.pathname.endsWith("/inbox:watch") && flags.has("notificationStreamDropped"))
-    );
-  return false;
-}
-
-// A dropped stream is not answered again while its drop flag stays set, as on a network that stays
-// down; once the flag is cleared it is served afresh.
-const droppedStreams = new Set<string>();
-
 const unrecordedSessions = new Map<string, Session>();
 const sessionActivityOverrides = new Map<string, SessionActivity>();
 
@@ -3925,32 +3899,36 @@ routes.unshift(
   ]
 );
 
-routes.unshift([
-  "GET",
-  /^\/(live\/.+|upstream\/notifications\/v1\/sessions\/[^/]+\/(?:inbox:watch|inbox\/entries:watch|subscriptions:watch)|sandboxes\/[^/]+\/console\/stream)$/,
-  (match, query, signal) => {
-    const url = new URL(`${match[0]}?${query.toString()}`, "http://harness");
-    const key = `${url.pathname}${url.search}`;
-    const drop = drops(url);
-    if (!drop) droppedStreams.delete(key);
-    else if (droppedStreams.has(key)) return UNANSWERED;
-    else droppedStreams.add(key);
-    const notice = url.pathname.match(
-      /^\/upstream\/notifications\/v1\/sessions\/([^/]+)\/(inbox:watch|inbox\/entries:watch|subscriptions:watch)$/
-    );
-    if (notice) {
-      const session = decodeURIComponent(notice[1]);
+// Fail each Notification watch once, then leave its retries unanswered until the outage ends.
+const droppedNotificationStreams = new Set<string>();
+routes.unshift(
+  [
+    "GET",
+    /^\/upstream\/notifications\/v1\/sessions\/([^/]+)\/(inbox:watch|inbox\/entries:watch|subscriptions:watch)$/,
+    (match, query, signal) => {
+      const session = decodeURIComponent(match[1]!);
+      const kind = match[2]!;
+      const unavailable = flags.has("notificationStatusUnavailable");
+      const drop = unavailable || (kind === "inbox:watch" && flags.has("notificationStreamDropped"));
+      const key = `${match[0]}?${query.toString()}`;
+      if (!drop) droppedNotificationStreams.delete(key);
+      else if (droppedNotificationStreams.has(key)) return UNANSWERED;
+      else droppedNotificationStreams.add(key);
       return liveNdjsonWatch(
-        url.pathname,
-        flags.has("notificationStatusUnavailable") ? [] : notificationFrames(session, notice[2], false),
-        () => notificationFrames(session, notice[2], true),
+        match[0],
+        unavailable ? [] : notificationFrames(session, kind, false),
+        () => notificationFrames(session, kind, true),
         signal,
         drop
       );
-    }
-    return liveEventStream(url.pathname, () => liveEvents(url), signal, drop);
-  },
-]);
+    },
+  ],
+  [
+    "GET",
+    /^\/sandboxes\/[^/]+\/console\/stream$/,
+    (_match, _query, signal) => eventStream("output", btoa("guest console output\r\n"), signal),
+  ]
+);
 
 routes.unshift([
   "GET",
@@ -4295,6 +4273,37 @@ const visualHarness = {
         controller: true,
       }),
     ];
+  },
+  setRunningSandboxConditions(name: string): void {
+    const diagnostics = SANDBOXES.find((sandbox) => sandbox.target?.name === name)?.kubernetesDiagnostics;
+    if (!diagnostics?.pod?.status) throw new Error("Expected running Pod");
+    const conditions = [
+      ["Running", "PodRunning", `Pod ${name} is running`, 240],
+      ["WorkloadReady", "PodReady", `Pod ${name} is Ready`, 45],
+      ["EnvironmentRuntimeConnected", "Connected", "The controller recently observed this incarnation", 45],
+      ["Bootstrapped", "BootstrapSucceeded", "The bootstrap ran to success", 242],
+      ["Ready", "Connected", "The controller recently observed this incarnation", 45],
+    ] as const;
+    diagnostics.sandboxStatus = {
+      conditions: conditions.map(([type, reason, message, seconds]) => ({
+        type,
+        reason,
+        message,
+        status: "True",
+        lastTransitionTime: ago(seconds * 1000),
+      })),
+    };
+    diagnostics.pod.status.conditions = [
+      "PodReadyToStartContainers",
+      "Initialized",
+      "Ready",
+      "ContainersReady",
+      "PodScheduled",
+    ].map((type, index) => ({
+      type,
+      status: "True",
+      lastTransitionTime: ago([245, 245, 46, 46, 255][index]! * 1000),
+    }));
   },
   setSandboxPreset(sandboxName: string, preset: string): void {
     const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName);

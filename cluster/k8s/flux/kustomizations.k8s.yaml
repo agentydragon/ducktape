@@ -3847,6 +3847,32 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Owner-operated Chrome desktop with a persistent profile.
+  name: attendant
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
+    - name: piraeus-cluster
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/attendant
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: attendant
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Authenticated upstream sessions and scoped proxies.
   name: platform-sessions
   namespace: ducktape-flux
