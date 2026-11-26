@@ -49,7 +49,7 @@ function PolicySetRules({
   credentials,
 }: {
   policySet: PolicySet;
-  credentials: Map<string, Credential> | null;
+  credentials: ReadonlyMap<string, Credential> | null;
 }): JSX.Element {
   return (
     <Stack gap={4}>
