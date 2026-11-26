@@ -34,7 +34,7 @@ use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD,
     AST_CONTAINS_STRING_PREDICATE, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
     SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, expr_hole_name,
-    hole_name_for, is_hole_keyword, stmt_hole_name,
+    hole_name_for, is_hole_keyword, is_run_hole_keyword, stmt_hole_name,
 };
 
 /// A needle construct whose faithful encoding this matcher has not implemented.
@@ -754,25 +754,6 @@ fn is_single_node_hole(index: &Index, node: NodeId) -> bool {
         }
         _ => false,
     }
-}
-
-const RUN_HOLE_KEYWORDS: [&str; 6] = [
-    STMT_LIST_HOLE_KEYWORD,
-    ARGS_HOLE_KEYWORD,
-    ARRAY_ELEMENTS_HOLE_KEYWORD,
-    CASE_REST_HOLE_KEYWORD,
-    DECLARATORS_HOLE_KEYWORD,
-    SEQ_EXPRS_HOLE_KEYWORD,
-];
-
-/// A run-hole keyword in any (bare/named) form. Used only as a fail-closed net:
-/// a run hole that reaches the node matcher was *not* consumed as a list carrier
-/// by its parent, i.e. it sits in an unsupported position, so the match errors
-/// rather than treating the keyword as an ordinary identifier.
-fn is_run_hole_keyword(name: &str) -> bool {
-    RUN_HOLE_KEYWORDS
-        .iter()
-        .any(|kw| hole_name_for(name, kw).is_some())
 }
 
 fn node_ident_hole(index: &Index, node: NodeId, keyword: &str) -> bool {
@@ -1727,6 +1708,8 @@ fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
         if name == AST_CONTAINS_STRING_PREDICATE && !consumed.contains(&node) {
             return Some("malformed AST_CONTAINS_STRING predicate");
         }
+        // A run hole its parent did not consume as a list carrier sits in an
+        // unsupported position: fail closed instead of matching an identifier.
         if is_run_hole_keyword(name) && !consumed.contains(&node) {
             return Some("run-hole keyword outside a list position");
         }

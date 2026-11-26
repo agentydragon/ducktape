@@ -44,10 +44,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Result};
 use readoff_render::kept_spans_for_anchor_set;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD,
-    AST_CONTAINS_STRING_PREDICATE, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
-    SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_keyword,
-    is_hole_keyword,
+    ANYTHING_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, is_hole_keyword, is_predicate_keyword,
+    is_run_hole_keyword,
 };
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
@@ -226,24 +224,11 @@ pub(crate) fn collapse_statement_hole_runs(source: &str) -> Result<String> {
 }
 
 fn selector_keyword_collision(name: &str) -> bool {
-    is_hole_keyword(name)
-        || name == STRING_LITERAL_REGEX_PREDICATE
-        || name == AST_CONTAINS_STRING_PREDICATE
+    is_hole_keyword(name) || is_predicate_keyword(name)
 }
 
 fn selector_run_keyword_collision(name: &str) -> bool {
-    hole_keyword(name).is_some_and(|keyword| {
-        [
-            ARGS_HOLE_KEYWORD,
-            ARRAY_ELEMENTS_HOLE_KEYWORD,
-            CASE_REST_HOLE_KEYWORD,
-            DECLARATORS_HOLE_KEYWORD,
-            SEQ_EXPRS_HOLE_KEYWORD,
-            STMT_LIST_HOLE_KEYWORD,
-        ]
-        .contains(&keyword)
-    }) || name == STRING_LITERAL_REGEX_PREDICATE
-        || name == AST_CONTAINS_STRING_PREDICATE
+    is_run_hole_keyword(name) || is_predicate_keyword(name)
 }
 
 fn selector_prop_name_collision(name: &PropName) -> bool {
