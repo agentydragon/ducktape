@@ -148,34 +148,35 @@ if (runCase("grouped-declarations-and-placement")) {
   // A printer can keep consecutive module-scope declarators in one statement.
   prepare("const a = 1, b = a; export const result = b;", { [entry]: ["#2"], [left]: ["#0", "#1"] }, [left]);
   const groupedOut = path.join(root, "grouped-declarators");
-  check(groupedOut, normal, "certified");
+  const groupedVerdict = check(groupedOut, all, "certified");
+  assert.equal(groupedVerdict.scope, "named-declarations");
+  assert.equal(groupedVerdict.guarantee, all);
+  assert.equal(groupedVerdict.strategy, "compiled-constructor");
   const groupedFile = path.join(groupedOut, left);
   const groupedCode = fs.readFileSync(groupedFile, "utf8").replace("const a = 1;\nconst b = a;", "const a = 1, b = a;");
   assert.match(groupedCode, /const a = 1, b = a;/);
   fs.writeFileSync(groupedFile, groupedCode);
-  check(groupedOut, normal, "certified", "--check-output");
+  assert.deepEqual(check(groupedOut, all, "certified", "--check-output"), groupedVerdict);
+  assert.deepEqual(await observe(pathToFileURL(path.join(groupedOut, entry))), [["result", 1]]);
   for (const changed of ["const b = a, a = 1;", "let a = 1, b = a;", "const a = 2, b = a;"]) {
     fs.writeFileSync(groupedFile, groupedCode.replace("const a = 1, b = a;", changed));
-    check(groupedOut, normal, "rejected", "--check-output");
+    check(groupedOut, all, "rejected", "--check-output");
   }
-  // This cyclic placement needs the entry to expose a previously private binding to its peer.
-  // Even an order-preserving CoreJS plan with all nine structural checks cannot certify that change.
+  // This cyclic placement includes a var declaration outside the constructor's admitted form.
+  // It must refuse without creating the requested output.
   const leakingSource = "const first = later; var later = 1; export const publicValue = first;";
   prepare(leakingSource, { [left]: ["#0"], [entry]: ["#1", "#2"] }, [left]);
   const leakage = path.join(root, "leakage");
   const leakageRefusal = check(leakage, undefined, "rejected");
-  assert.match(leakageRefusal.reason, /entry public exports/);
+  assert.equal(leakageRefusal.reason_code, "no_constructed_rule");
   assert(!fs.existsSync(leakage));
 
   const reordered = path.join(root, "reordered");
+  assert.deepEqual(await observe("data:text/javascript," + encodeURIComponent(source)), [["result", 1]]);
   prepare(source, placement3, [right, left]);
-  assert.match(check(reordered, all, "rejected").reason, /normal-completion/);
+  const movedRefusal = check(reordered, all, "rejected");
+  assert.equal(movedRefusal.reason_code, "no_constructed_rule");
   assert(!fs.existsSync(reordered));
-  const movedVerdict = check(reordered, normal, "certified");
-  assert.equal(movedVerdict.scope, "closed-declarations");
-  assert.equal(movedVerdict.guarantee, normal);
-  assert.deepEqual(check(reordered, normal, "certified", "--check-output"), movedVerdict);
-  assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["result", 1]]);
 }
 
 if (runCase("browser-and-path-contracts")) {
