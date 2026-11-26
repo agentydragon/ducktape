@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -214,6 +215,19 @@ func (r *streamingRoutes) connectionFacade(w http.ResponseWriter, request *http.
 	r.operatorFacade(w, request, r.deps.ConnectionHTTP, "Connection facade")
 }
 
+// Only a successful unary scope response may unlock a cached thread.
+type scopeResponse struct {
+	http.ResponseWriter
+	key string
+}
+
+func (w *scopeResponse) WriteHeader(status int) {
+	if status >= 200 && status < 300 {
+		w.Header().Set("Agentplane-Thread-Cache-Key", w.key)
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
 func (r *streamingRoutes) historyFacade(w http.ResponseWriter, request *http.Request) {
 	path := request.PathValue("path")
 	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
@@ -223,6 +237,13 @@ func (r *streamingRoutes) historyFacade(w http.ResponseWriter, request *http.Req
 	if r.deps.HistoryHTTP == nil {
 		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "History facade is not configured")
 		return
+	}
+	if thread, ok := strings.CutPrefix(path, "v1/sessions/"); ok && request.Method == http.MethodPost {
+		if id, ok := strings.CutSuffix(thread, "/entities"); ok && id != "" && !strings.Contains(id, "/") {
+			if key := r.deps.Auth.ThreadCacheKey(request.Context(), id); key != "" {
+				w = &scopeResponse{ResponseWriter: w, key: key}
+			}
+		}
 	}
 	r.forwardFacade(w, request, request.Context(), r.deps.HistoryHTTP, path, "")
 }

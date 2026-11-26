@@ -724,7 +724,10 @@ agentplane_vitest_test(
 
 ts_library(
     name = "electric_sync",
-    srcs = ["electric_sync.tsx"],
+    srcs = [
+        "electric_sync.tsx",
+        "thread_cache.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":client",

@@ -343,6 +343,68 @@ def _bodies_read(requests: list[Request]) -> int:
     )
 
 
+async def test_disk_cache_resumes_rows_and_reads_only_the_missing_body(page: Page, navigation: Navigation) -> None:
+    threads, _, ingress = navigation
+    thread = threads[0]
+    await page.goto(f"{ingress.url}/#/threads/{thread}")
+    tail = page.get_by_text("Thread 0 message 129", exact=True)
+    await expect(tail).to_be_visible()
+    # Wait for the first checkpoint and the 90 complete bodies. Opening a second document below
+    # discards all in-memory thread windows.
+    await page.wait_for_function("""async () => {
+      if (!(await indexedDB.databases()).some(db => db.name === "agentplane-history-v1")) return false;
+      const db = await new Promise(resolve => {
+        const r = indexedDB.open("agentplane-history-v1"); r.onsuccess = () => resolve(r.result);
+      });
+      const ids = await new Promise(resolve => {
+        const r = db.transaction("entries").objectStore("entries").getAllKeys();
+        r.onsuccess = () => resolve(r.result);
+      });
+      db.close();
+      return ids.length >= 91 && ids.some(id => id.endsWith("window"));
+    }""")
+    # Drop one complete revision while leaving its row in the saved window.
+    await page.evaluate("""async () => {
+      const db = await new Promise(resolve => {
+        const r = indexedDB.open("agentplane-history-v1"); r.onsuccess = () => resolve(r.result);
+      });
+      const tx = db.transaction(["entries", "usage"], "readwrite");
+      const req = tx.objectStore("entries").getAllKeys();
+      req.onsuccess = () => {
+        const id = req.result.find(key => key.includes('"test-navigation-item-128"'));
+        tx.objectStore("entries").delete(id);
+        tx.objectStore("usage").delete(id);
+      };
+      await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onabort = reject; });
+      db.close();
+    }""")
+    requests: list[Request] = []
+
+    def record(request: Request) -> None:
+        requests.append(request)
+
+    page.on("request", record)
+    release = asyncio.Event()
+
+    async def hold_log(route: Route) -> None:
+        await release.wait()
+        await route.continue_()
+
+    await route_once(page, f"**/threads/{thread}/sync/entities?*", hold_log)
+    try:
+        async with page.expect_request(f"**/threads/{thread}/sync/entities?*") as log:
+            await page.reload(wait_until="domcontentloaded")
+        query = parse_qs(urlsplit((await log.value).url).query)
+        assert query["handle"]
+        assert query["offset"][0] not in {"now", "-1"}
+        await expect(tail).to_be_visible()
+        await expect(page.get_by_text("Thread 0 message 128", exact=True)).to_be_visible()
+        assert not any(request.method == "POST" and "/sync/entities?" in request.url for request in requests)
+        assert _bodies_read(requests) == 1
+    finally:
+        release.set()
+
+
 async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away(
     page: Page, navigation: Navigation, history: History
 ) -> None:
@@ -2134,7 +2196,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
         await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
         await expect(pending.locator('[data-stage="admitted"]')).to_be_visible()
-        await expect(page.get_by_text("Catching up thread…", exact=True)).to_be_visible()
+        await expect(page.locator("[data-thread-catchup]")).to_be_visible()
         assert source.runner.commands.empty(), "reload must not manufacture a second command"
 
         app.release_replay()
