@@ -172,7 +172,7 @@ touch (`frontier_after_cell`, 119 edges). Of the 1,051 constraining
 cross-module heap edges, 958 are `after_barrier` and 93 are
 `frontier_after_cell`.
 
-**Why they are barriers.** `graph/build.rs::emit_heap_content_order` treats
+**Why they are barriers.** `graph/build/cell_order.rs::emit_heap_content_order` treats
 every eager opaque call as a barrier once tracked array contents are live.
 They are live from statement 0, because some callables allocate array
 literals lazily. Lazy allocations are conservatively live (SPEC

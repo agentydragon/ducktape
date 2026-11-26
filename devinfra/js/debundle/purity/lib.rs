@@ -5,7 +5,7 @@
 //! statement fire observable user code?" against that index, the
 //! builtin summary table, and the spec author's declared-purity hints.
 //!
-//! The module is split by responsibility; submodules share the imports
+//! The crate is split by responsibility; submodules share the imports
 //! and crate-internal items re-exported below via `pub(crate) use`, so
 //! each submodule only needs `use super::*;`:
 //!
@@ -28,8 +28,9 @@
 //!   projection.
 //! - `semantic_inference`, `callable_inference` — positive certificates
 //!   over closed source/native facts.
-//! - `set_iterables`, `local_class_construction`, `array_spreads` — the
-//!   shape proofs `ChunkCodeGraph::build` queries.
+//! - `set_iterables`, `local_class_construction`, `array_spreads`,
+//!   `fresh_record` — the shape proofs `ChunkCodeGraph::build` queries.
+//! - `saved` — protobuf purity verdicts.
 
 pub(crate) use analysis_vocabulary::inputs::ProofDependencies;
 pub(crate) use std::collections::{BTreeMap, BTreeSet};

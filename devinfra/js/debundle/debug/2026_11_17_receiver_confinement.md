@@ -33,7 +33,7 @@ parameter to `host` instead must retain refusal: the peer can invoke
   target; it supplies neither a foreign-call confinement proof nor normal
   completion. `extend_with_remainder` collects later indexed references and
   callable sites, without proving their effects disjoint from a receiver.
-- `interpreter.rs::local_operation_fallback` publishes `frame.inputs`, the
+- `interpreter/evaluation.rs::local_operation_fallback` publishes `frame.inputs`, the
   environment, active cells and fresh records. Thus an implicit iteration
   input can reach the stored callback without having been an opaque operand.
   `bounded_invocation_fallback_transfer` unsettles those values and promotes
@@ -41,7 +41,7 @@ parameter to `host` instead must retain refusal: the peer can invoke
 - `roots/body.rs` separately calls `unsettle_incomplete_reach` for an incomplete
   top-level owner. Preserving a slot only inside the native row would not
   survive this finalization boundary.
-- `graph/build.rs::promote_at_init_calls` retains unresolved source-read closure
+- `graph/build/at_init.rs::promote_at_init_calls` retains unresolved source-read closure
   promotion for incomplete owners. `HavocReach` is diagnostic, not authority
   for dropping those edges. The array exemption in `facts/at_init_fallback.rs`
   is restricted to call-free callbacks and cannot discharge this fixture.

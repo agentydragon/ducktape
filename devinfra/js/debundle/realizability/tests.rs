@@ -1246,8 +1246,8 @@ fn filter_verdict_touching(
 /// Reach inside the `RealizabilityIndex` to assert that the
 /// `IncrementalQuotient`'s cached base simulator (when populated)
 /// matches a from-scratch `EsmEvaluationSimulator::build` against
-/// the live `i_graph` + `constraining_buckets`. Lives in the
-/// realizability.rs `mod tests` so it can name the private types
+/// the live `i_graph` + `constraining_buckets`. Lives in realizability's
+/// `tests` module so it can name the private types
 /// (`IncrementalQuotient`, `EsmEvaluationSimulator`).
 fn assert_cached_simulator_matches_rebuild(index: &RealizabilityIndex, label: &str, phase: &str) {
     let quotient = &index.quotient;

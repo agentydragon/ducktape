@@ -114,7 +114,7 @@ accepted, the effect verdict was `incomplete` (uncovered havoc), and Node
 printed `1 0` for the emitted entry against `1 1` for the source.
 
 Mechanism: the strict S-chain and the dataflow-aware chain order only
-statements whose purity is not `Pure` (`emit_s_chain`, `graph/build.rs`). The
+statements whose purity is not `Pure` (`emit_s_chain`, `graph/build/cell_order.rs`). The
 cross-module purity oracle classified `peek` as `Pure` because its body
 writes nothing, and the importer's graph has no node for `count`, so nothing
 ordered `second` against `first`. The same held for a direct read of an
