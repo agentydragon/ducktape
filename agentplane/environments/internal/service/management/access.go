@@ -16,7 +16,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/internal/service/view"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
@@ -24,7 +23,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
@@ -35,25 +33,23 @@ const maxBootstrapCharacters = 65_536
 
 // Access scopes Sandbox operations to one namespace and caller identity.
 type Access struct {
-	namespace string
-	objects   client.Client
-	reader    *sandboxreader.Reader
-	actor     Actor
+	namespace  string
+	objects    client.Client
+	identities auth.IdentityUIDReader
+	reader     *sandboxreader.Reader
+	actor      Actor
 }
 
 // Actor is the service principal whose idempotent creation receipt is recorded.
 type Actor struct{ ServiceSPIFFEID string }
 
-// New creates access for a directly admitted service principal.
-func New(namespace string, objects client.Client, actor Actor) (*Access, error) {
-	if namespace == "" || objects == nil || actor.ServiceSPIFFEID == "" {
-		return nil, errors.New("Sandbox namespace, Kubernetes client and service actor are required")
+// New creates access for a directly admitted service principal. identities resolves the live incarnation of
+// Identities in namespace.
+func New(namespace string, objects client.Client, identities auth.IdentityUIDReader, actor Actor) (*Access, error) {
+	if namespace == "" || objects == nil || identities == nil || actor.ServiceSPIFFEID == "" {
+		return nil, errors.New("Sandbox namespace, Kubernetes client, Identity reader and service actor are required")
 	}
 	if err := auth.ValidateServiceCallers([]string{actor.ServiceSPIFFEID}); err != nil {
-		return nil, err
-	}
-	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
-	if err != nil {
 		return nil, err
 	}
 	reader, err := sandboxreader.New(namespace, objects, identities)
@@ -61,7 +57,7 @@ func New(namespace string, objects client.Client, actor Actor) (*Access, error) 
 		return nil, err
 	}
 	return &Access{
-		namespace: namespace, objects: objects, reader: reader,
+		namespace: namespace, objects: objects, identities: identities, reader: reader,
 		actor: actor,
 	}, nil
 }
@@ -173,15 +169,14 @@ func (a *Access) ResolveIdentity(ctx context.Context, name string) (*identitypb.
 	if name == "" {
 		return nil, nil
 	}
-	identity := &policyapi.Identity{}
-	err := a.objects.Get(ctx, types.NamespacedName{Namespace: a.namespace, Name: name}, identity)
-	if client.IgnoreNotFound(err) != nil {
+	uid, found, err := a.identities.GetIdentityUID(ctx, name)
+	if err != nil {
 		return nil, fmt.Errorf("read Identity %s: %w", name, err)
 	}
-	if err != nil || identity.UID == "" || identity.DeletionTimestamp != nil {
+	if !found || uid == "" {
 		return nil, &InvalidSandboxError{Reason: fmt.Sprintf("Identity %s is unavailable", name)}
 	}
-	return &identitypb.Identity{Name: name, Uid: string(identity.UID)}, nil
+	return &identitypb.Identity{Name: name, Uid: uid}, nil
 }
 
 // SetIdentity patches only spec.identity with the Sandbox UID and resourceVersion.
@@ -275,15 +270,12 @@ func (a *Access) beginTeardown(ctx context.Context, resource *sandboxapi.Sandbox
 
 // requireIdentity checks that the Identity a new Sandbox will act as exists and is not being deleted.
 func (a *Access) requireIdentity(ctx context.Context, name string) error {
-	identity := &policyapi.Identity{}
-	if err := a.objects.Get(ctx, client.ObjectKey{Namespace: a.namespace, Name: name}, identity); err != nil {
-		if apierrors.IsNotFound(err) {
-			return &InvalidSandboxError{Reason: fmt.Sprintf("Identity %s does not exist", name)}
-		}
+	_, found, err := a.identities.GetIdentityUID(ctx, name)
+	if err != nil {
 		return fmt.Errorf("read Identity: %w", err)
 	}
-	if identity.DeletionTimestamp != nil {
-		return &InvalidSandboxError{Reason: fmt.Sprintf("Identity %s is being deleted", name)}
+	if !found {
+		return &InvalidSandboxError{Reason: fmt.Sprintf("Identity %s does not exist or is being deleted", name)}
 	}
 	return nil
 }

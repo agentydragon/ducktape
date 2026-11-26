@@ -111,7 +111,7 @@ func newConfiguredHarness(
 	t.Helper()
 	budget := &testWakeBudget{}
 	service, err := resume.NewManager(lifecycle.Options{
-		Namespace: testNamespace, Objects: object,
+		Namespace: testNamespace, Objects: object, Identities: kubernetesIdentities(t, object, testNamespace),
 		WakeServiceCallers:     []string{peertls.NotificationsURI},
 		OperatorServiceCallers: operatorServiceCallers,
 		EnvironmentRules:       rules, PolicyReady: policyReady,
@@ -154,7 +154,7 @@ func serveEnvironmentService(
 			t.Fatal(err)
 		}
 	}
-	apiService, err := environmentservice.New(testNamespace, object, runtimeconfig.Catalog{}, lifecycleManager, environmentservice.Options{})
+	apiService, err := environmentservice.New(testNamespace, object, kubernetesIdentities(t, object, testNamespace), runtimeconfig.Catalog{}, lifecycleManager, environmentservice.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,7 +624,7 @@ func TestNewManagerRequiresWakeBudget(t *testing.T) {
 func TestEnvironmentServiceManagerResumesWithoutWakeBudget(t *testing.T) {
 	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4), executionUID)
 	manager, err := resume.NewManager(lifecycle.Options{
-		Namespace: testNamespace, Objects: objects,
+		Namespace: testNamespace, Objects: objects, Identities: kubernetesIdentities(t, objects, testNamespace),
 		WakeServiceCallers:     []string{peertls.NotificationsURI},
 		OperatorServiceCallers: []string{peertls.AppURI},
 	})
@@ -1049,4 +1049,14 @@ func TestAutomaticWakeLostPatchReplyIsUnknownAndNeverReplayed(t *testing.T) {
 	if patches != 1 || len(h.budget.calls) != 1 || current.Spec.WakeGeneration != 10 {
 		t.Fatalf("patches=%d budget=%+v generation=%d, want one attempt with committed generation 10", patches, h.budget.calls, current.Spec.WakeGeneration)
 	}
+}
+
+// kubernetesIdentities reads namespace's Identities through objects, as the Kubernetes-backed production wiring does.
+func kubernetesIdentities(t *testing.T, objects client.Reader, namespace string) auth.IdentityUIDReader {
+	t.Helper()
+	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identities
 }

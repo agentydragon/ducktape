@@ -40,7 +40,7 @@ func (s *Service) managementAccess(ctx context.Context, origin *environmentpb.En
 				return nil, err
 			}
 		}
-		return management.New(s.namespace, s.objects, management.Actor{ServiceSPIFFEID: admitted.Caller.SPIFFEID})
+		return management.New(s.namespace, s.objects, s.identities, management.Actor{ServiceSPIFFEID: admitted.Caller.SPIFFEID})
 	default:
 		return nil, status.Error(codes.PermissionDenied, "environment management requires a direct caller")
 	}
@@ -66,7 +66,7 @@ func (s *Service) templateAccess(ctx context.Context) (*management.Access, error
 		if !s.serviceLaunchers.Has(admitted.Caller.SPIFFEID) && !s.serviceManagers.Has(admitted.Caller.SPIFFEID) {
 			return nil, status.Error(codes.PermissionDenied, "service caller cannot list environment templates")
 		}
-		return management.New(s.namespace, s.objects, management.Actor{ServiceSPIFFEID: admitted.Caller.SPIFFEID})
+		return management.New(s.namespace, s.objects, s.identities, management.Actor{ServiceSPIFFEID: admitted.Caller.SPIFFEID})
 	default:
 		return nil, status.Error(codes.PermissionDenied, "caller cannot list environment templates")
 	}

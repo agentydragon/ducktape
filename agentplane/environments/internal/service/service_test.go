@@ -50,10 +50,20 @@ const (
 	delegatedIdentityUID  = "delegated-identity-uid"
 )
 
+// kubernetesIdentities reads namespace's Identities through objects, as the Kubernetes-backed production wiring does.
+func kubernetesIdentities(t *testing.T, objects client.Reader, namespace string) auth.IdentityUIDReader {
+	t.Helper()
+	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identities
+}
+
 func discoveryLifecycle(t *testing.T, objects client.WithWatch, wakeServiceCallers []string) *resume.Manager {
 	t.Helper()
 	manager, err := resume.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects, WakeServiceCallers: wakeServiceCallers,
+		Namespace: discoveryNamespace, Objects: objects, Identities: kubernetesIdentities(t, objects, discoveryNamespace), WakeServiceCallers: wakeServiceCallers,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +101,7 @@ func serveFixture(t *testing.T, methods auth.Methods, register func(*grpc.Server
 
 func serveDiscoveryWithOptions(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, delegatedMethods []string, wakeServiceCallers []string) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeServiceCallers), Options{
+	service, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), catalog, discoveryLifecycle(t, objects, wakeServiceCallers), Options{
 		ServiceManagers: sets.New(peertls.ActionsURI), ServiceLaunchers: sets.New(peertls.RuntimeProxyURI),
 	})
 	if err != nil {
@@ -114,7 +124,7 @@ func serveDiscoveryWithOptions(t *testing.T, objects client.WithWatch, catalog r
 
 func serveDiscoveryWithComponentReader(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, wakeServiceCallers []string) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeServiceCallers), Options{
+	service, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), catalog, discoveryLifecycle(t, objects, wakeServiceCallers), Options{
 		ServiceReaders: sets.New(peertls.ActionsURI), ServiceManagers: sets.New(peertls.ActionsURI), ServiceLaunchers: sets.New(peertls.RuntimeProxyURI),
 	})
 	if err != nil {
@@ -277,7 +287,7 @@ func serveIdentityDiscoveryWithLifecycle(
 	readers sets.Set[string], manager *resume.Manager,
 ) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, manager, Options{ServiceReaders: readers})
+	service, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), catalog, manager, Options{ServiceReaders: readers})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +389,7 @@ func TestWorkloadSVIDInventoryAllowsZeroAndMultipleSandboxAttachments(t *testing
 					t.Fatal(err)
 				}
 			}
-			service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{})
+			service, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -535,7 +545,7 @@ func TestDirectComponentReaderListAndGetReturnTheExecutionAccountIdentity(t *tes
 
 func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	objects := baseReader(t)
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{})
+	service, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1100,7 +1110,7 @@ func TestServiceInventoryRequiresHandlerReaderRole(t *testing.T) {
 	terminating.Finalizers = []string{"test.example/retain"}
 	terminating.Status.OperatingMode = sandboxapi.OperatingModeSuspended
 	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other, terminating)
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{ServiceReaders: sets.New(peertls.ActionsURI)})
+	service, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{ServiceReaders: sets.New(peertls.ActionsURI)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1141,7 +1151,7 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	other.Name = "other"
 	other.Spec.Identity = &sandboxapi.IdentityRef{Name: "other-identity"}
 	objects := readerWithObjects(t, first, executionAccountObject(first.UID), ownedRecord, other, otherIdentity)
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{ServiceReaders: sets.New(peertls.ActionsURI)})
+	service, err := New(discoveryNamespace, objects, kubernetesIdentities(t, objects, discoveryNamespace), runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{ServiceReaders: sets.New(peertls.ActionsURI)})
 	if err != nil {
 		t.Fatal(err)
 	}

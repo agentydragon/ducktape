@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -30,8 +31,13 @@ func NewManager(options Options) (*Manager, error) {
 	if options.WakeBudget == nil {
 		return nil, errors.New("Sandbox namespace, uncached Kubernetes client, and shared wake budget are required")
 	}
+	identities, err := auth.KubernetesIdentityUIDs(options.Objects, options.Namespace)
+	if err != nil {
+		return nil, err
+	}
 	policy, err := lifecycle.NewPolicy(lifecycle.Options{
-		Namespace: options.Namespace, Objects: options.Objects, WakeServiceCallers: options.WakeServiceCallers,
+		Namespace: options.Namespace, Objects: options.Objects, Identities: identities,
+		WakeServiceCallers: options.WakeServiceCallers,
 	})
 	if err != nil {
 		return nil, err

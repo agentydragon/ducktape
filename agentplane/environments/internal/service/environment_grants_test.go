@@ -28,7 +28,7 @@ func TestIdentityResumeProjectionAndDelegatedAdmissionFollowCurrentGrant(t *test
 	rules.PutIdentity(identity)
 	var policyError error
 	manager, err := resume.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects,
+		Namespace: discoveryNamespace, Objects: objects, Identities: kubernetesIdentities(t, objects, discoveryNamespace),
 		EnvironmentRules: rules, PolicyReady: func() error { return policyError },
 	})
 	if err != nil {

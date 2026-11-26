@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/internal/service/view"
@@ -46,7 +48,7 @@ func newAccess(t *testing.T, objects ...client.Object) (*Access, client.Client) 
 	t.Helper()
 	underlying := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(append(objects, testAgent())...).Build()
 	objectsClient := &assigningClient{Client: underlying}
-	access, err := New(namespace, objectsClient, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
+	access, err := New(namespace, objectsClient, kubernetesIdentities(t, objectsClient), Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +72,7 @@ func TestCreateNamesTheIdentityAndCallerIntentAndIsIdempotent(t *testing.T) {
 	).Build()
 	objects := &assigningClient{Client: base}
 	caller := Actor{ServiceSPIFFEID: "spiffe://agentplane/app"}
-	access, err := New(namespace, objects, caller)
+	access, err := New(namespace, objects, kubernetesIdentities(t, objects), caller)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +105,7 @@ func TestCreateNamesTheIdentityAndCallerIntentAndIsIdempotent(t *testing.T) {
 	if err != nil || retry.GetUid() != created.GetUid() {
 		t.Fatalf("same Create retry = %#v, %v", retry, err)
 	}
-	otherCaller, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/notifications"})
+	otherCaller, err := New(namespace, objects, kubernetesIdentities(t, objects), Actor{ServiceSPIFFEID: "spiffe://agentplane/notifications"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +243,7 @@ func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 	resource := testSandbox("replaceable", "old-uid", sandboxapi.OperatingModeRunning)
 	underlying := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(resource).Build()
 	conflicts := &conflictOnceClient{Client: underlying}
-	access, err := New(namespace, conflicts, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
+	access, err := New(namespace, conflicts, kubernetesIdentities(t, conflicts), Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +256,7 @@ func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 
 	underlying = clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(resource.DeepCopy()).Build()
 	replacing := &replaceBeforeRetryClient{Client: underlying}
-	access, err = New(namespace, replacing, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
+	access, err = New(namespace, replacing, kubernetesIdentities(t, replacing), Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +275,7 @@ func TestIdentityPatchRetriesWithCurrentResourceVersion(t *testing.T) {
 	identity.UID = "identity-uid"
 	base := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(resource, identity).Build()
 	objects := &concurrentPolicyClient{Client: base}
-	access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
+	access, err := New(namespace, objects, kubernetesIdentities(t, objects), Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +372,7 @@ func TestCreateRetryMatchesRecordedIntentSemantically(t *testing.T) {
 		testAgent(),
 	).Build()
 	objects := &assigningClient{Client: base}
-	access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
+	access, err := New(namespace, objects, kubernetesIdentities(t, objects), Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +427,7 @@ func TestCreateAdoptsItsOwnUncertainCreate(t *testing.T) {
 		testAgent(),
 	).Build()
 	objects := &lostCreateClient{assigningClient: assigningClient{Client: base}}
-	access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
+	access, err := New(namespace, objects, kubernetesIdentities(t, objects), Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +509,7 @@ func TestCreateReturnsPersistedIdentityAcrossUncertainWritesAndReplacement(t *te
 				}
 				return nil
 			}
-			access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
+			access, err := New(namespace, objects, kubernetesIdentities(t, objects), Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -543,7 +545,7 @@ func TestCreateDoesNotInferPersistenceFromAnUncertainWrite(t *testing.T) {
 		}
 		return context.DeadlineExceeded
 	}
-	access, err := New(namespace, objects, Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
+	access, err := New(namespace, objects, kubernetesIdentities(t, objects), Actor{ServiceSPIFFEID: "spiffe://agentplane/app"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,4 +558,15 @@ func TestCreateDoesNotInferPersistenceFromAnUncertainWrite(t *testing.T) {
 // testAgent is the Identity created Sandboxes act as.
 func testAgent() *policyapi.Identity {
 	return &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: "agent", Namespace: namespace}, Spec: policyapi.IdentitySpec{Description: "Test agent"}}
+}
+
+// kubernetesIdentities reads the test namespace's Identities through objects, as the Kubernetes-backed production
+// wiring does.
+func kubernetesIdentities(t *testing.T, objects client.Reader) auth.IdentityUIDReader {
+	t.Helper()
+	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identities
 }
