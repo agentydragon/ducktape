@@ -29,7 +29,7 @@ private def emitRefusal (requested : String) (refusal : CertificationRefusal)
   emitVerdict requested (.error (IO.userError refusal.reason).toString) scope (reasonCodeFields ++ observationFields)
 
 private def noConstructedRule (requested : String) : IO UInt32 :=
-  emitRefusal requested { reason := "no compiled constructor supports this split; no JavaScript was written"
+  emitRefusal requested { reason := "no compiled constructor supports this split; no JavaScript was written",
                          reasonCode := some "no_constructed_rule" }
 
 /-- Apply the named-declaration constructor to its actual decoded source and
@@ -50,8 +50,7 @@ private def runNamedDeclarations (requested : String) (chunk : DeploymentChunk)
   let checked ← certifyOutput (α := Unit) [part] (Json.mkObj []) out work checkOnly timings fun _ =>
     pure (.ok ())
   match checked with
-  | .ok _ => emitVerdict requested (.ok .allOutcomes) "named-declarations"
-      [("strategy", toJson "compiled-constructor")]
+  | .ok _ => emitVerdict requested (.ok .allOutcomes) "named-declarations" [("strategy", toJson "compiled-constructor")]
   | .error refusal => emitRefusal requested refusal "named-declarations"
 
 /-- Unsupported requests refuse; supported requests use the compiled constructor. -/
