@@ -56,10 +56,11 @@ use ownership_subset::{OwnershipSubset, SelectedModule};
 use imports::VendorReimportOracle;
 use io::{ProgramGraphOutput, prepare_output_dir, write_chunk_report_json};
 
+use materialize::assignment::{GraphConstructionContext, finalize_claimed_selected_assignment};
 use materialize::{
-    ChunkContext, ChunkSpec, EmissionChunkOutputs, FinishedLogicalChunk, GraphConstructionContext,
+    ChunkContext, ChunkSpec, EmissionChunkOutputs, FinishedLogicalChunk,
     MaterializeLogicalChunkInputs, claim_prepared_chunk, collect_materialized_logical_chunks,
-    finalize_claimed_selected_assignment, finish_logical_chunk, prepare_logical_chunk,
+    finish_logical_chunk, prepare_logical_chunk,
 };
 use staged_analysis::{
     ExportReentryReport, export_reentry_reports, load_analysis, loader_surface, program_summary,
