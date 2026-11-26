@@ -314,6 +314,21 @@ Compare writer versions on the identical corpus, verify ordered frame bytes on r
 record physical footprint and WAL after the same number of turns. This benchmark can follow
 the rollout independently of the live-session canary.
 
+For an end-to-end load test, record the inputs that caused those frames. Capture user commands
+at the App API (including steering, approvals and cancellation), provider responses where each
+harness consumes its model stream (including the LLM ingress for Codex), and tool outcomes at
+the executor or harness boundary. Preserve the order and relative timing of observable chunks,
+errors and completion. For example, Codex can emit `item/commandExecution/outputDelta` before
+command completion; Sampler's `exec_command` can yield a process handle and return more output
+on a later `write_stdin` call. A lone final stdout string cannot reproduce either interaction.
+
+On replay, drive the real App and selected harness with those commands. Match model and tool
+calls to their recorded responses, map new process and call IDs to their recorded counterparts,
+and stop on an unexpected call. Let Sampler's exporter or the Codex runner drive History through
+its normal ingress; injecting the recorded History frames as well would count that work twice.
+Compare the resulting frame counts and bytes by kind against the capture. Use the frozen
+journal input above when the comparison needs byte-identical inputs across storage versions.
+
 ## Implementation order
 
 1. Land the shared Go packer and versioned decoder with exact-byte and boundary tests.
