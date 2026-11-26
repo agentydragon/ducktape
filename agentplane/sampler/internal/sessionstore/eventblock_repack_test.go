@@ -102,6 +102,29 @@ func assertFramesEqual(t *testing.T, got, want [][]byte) {
 	}
 }
 
+func TestLegacyJournalWorkerRejectsOverlapWithLongAPBBlock(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	const first = 2*journalWindowSize + 1
+	const last = 3 * journalWindowSize
+	appendAPBTestJournalThrough(t, store, session.ID, last)
+	// Simulate retained storage with one cursor present in both tables.
+	duplicate := eventFrames(t, store, session.ID, first, first)[0]
+	replaceRowsWithBlock(t, store, session.ID, 1, first, false)
+	migrationExec(t, store.DB(), `INSERT INTO sampler_event(session_id,sequence,entry) VALUES ($1,$2,$3)`,
+		session.ID, first, duplicate)
+	err := store.compactPendingJournal(t.Context(), pendingJournalCompaction{id: session.ID, cursor: last, after: first - 1})
+	if err == nil || !strings.Contains(err.Error(), "existing journal block overlaps") {
+		t.Fatalf("packing a window starting inside an APB block returned %v", err)
+	}
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1`, session.ID); got != journalWindowSize {
+		t.Fatalf("rejected window left %d source rows, want %d", got, journalWindowSize)
+	}
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); got != 1 {
+		t.Fatalf("rejected window left %d blocks, want the original APB block", got)
+	}
+}
+
 func TestCompactJournalTranscodesLegacyAndCurrentBlocks(t *testing.T) {
 	store := newTestStore(t)
 	store.eventBlockProfile = eventblock.Profile{TargetBytes: 64 << 10, TargetEntries: 64, Level: 3}

@@ -65,17 +65,24 @@ func readJournalRange(ctx context.Context, q journalQueryer, sessionID string, f
 	return entries, nil
 }
 
+// Both replay and the legacy writer must find any stored block intersecting
+// [first, last], including APB blocks longer than a legacy writer window.
+// The lower bound on first_sequence keeps the lookup on the primary key.
+const overlappingJournalBlocks = `session_id=$1 AND first_sequence BETWEEN $4 AND $3 AND last_sequence >= $2`
+
+func earliestJournalBlockStart(first uint64) uint64 {
+	return max(first, eventblock.MaxEntries) - eventblock.MaxEntries + 1
+}
+
 func journalFrames(ctx context.Context, q journalQueryer, sessionID string, first, last uint64) ([]journalFrame, error) {
 	// One MVCC snapshot sees either a sealed block or all its former standalone rows.
-	// The maximum span lets both parts of the union use their session/sequence index.
-	oldestBlock := max(first, eventblock.MaxEntries) - eventblock.MaxEntries + 1
 	rows, err := q.QueryContext(ctx, `
 		SELECT sequence,sequence,entry FROM sampler_event
 		WHERE session_id=$1 AND sequence BETWEEN $2 AND $3
 		UNION ALL
 		SELECT first_sequence,last_sequence,payload FROM sampler_event_block
-		WHERE session_id=$1 AND first_sequence BETWEEN $4 AND $3 AND last_sequence >= $2
-		ORDER BY 1`, sessionID, first, last, oldestBlock)
+		WHERE `+overlappingJournalBlocks+`
+		ORDER BY 1`, sessionID, first, last, earliestJournalBlockStart(first))
 	if err != nil {
 		return nil, err
 	}

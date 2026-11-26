@@ -111,16 +111,15 @@ func replaceJournalBlock(ctx context.Context, tx *sql.Tx, sessionID string, bloc
 	if count != int64(len(block.versions)) {
 		return errJournalWindowChanged
 	}
-	oldestBlock := max(block.first, journalWindowSize) - journalWindowSize + 1
 	var verified bool
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO sampler_event_block(session_id,first_sequence,last_sequence,payload)
-		SELECT $1::varchar,$2::integer,$3::integer,$4::bytea WHERE NOT EXISTS (
+		SELECT $1::varchar,$2::integer,$3::integer,$5::bytea WHERE NOT EXISTS (
 			SELECT 1 FROM sampler_event_block
-			WHERE session_id=$1 AND first_sequence BETWEEN $5 AND $3 AND last_sequence>=$2
+			WHERE `+overlappingJournalBlocks+`
 		)
-		RETURNING first_sequence=$2 AND last_sequence=$3 AND payload=$4`,
-		sessionID, block.first, block.last, block.payload, oldestBlock).Scan(&verified)
+		RETURNING first_sequence=$2 AND last_sequence=$3 AND payload=$5`,
+		sessionID, block.first, block.last, earliestJournalBlockStart(block.first), block.payload).Scan(&verified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("existing journal block overlaps cursors %d–%d", block.first, block.last)
 	}
