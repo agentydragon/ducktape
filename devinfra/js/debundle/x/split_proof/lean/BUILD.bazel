@@ -980,6 +980,7 @@ lean_library(
     ],
     deps = [
         ":corejs_certificates",
+        ":corejs_indexed_checked_split",
         ":corejs_runtime",
         ":corejs_single_module",
         ":corejs_structural",
