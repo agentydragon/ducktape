@@ -49,6 +49,7 @@ pub struct ModuleAssignmentBatch {
 }
 
 impl ModuleAssignmentBatch {
+    #[cfg(test)]
     /// Build a simultaneous batch from its final per-source-unit mapping.
     pub fn from_destinations(destinations: BTreeMap<SourceUnitId, ModuleId>) -> Self {
         Self { destinations }
