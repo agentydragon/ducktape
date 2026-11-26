@@ -24,7 +24,7 @@ import (
 func appendAPBTestJournalThrough(t *testing.T, store *Store, id string, through uint64) {
 	t.Helper()
 	shareable := []byte(strings.Repeat("shared event evidence ", 28))
-	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
+	if err := store.transaction(t.Context(), "sampler.test_fixture", func(ctx context.Context, tx *sql.Tx) error {
 		_, session, err := lockSession(ctx, tx, id)
 		if err != nil {
 			return err
@@ -79,7 +79,7 @@ func replaceRowsWithBlock(t *testing.T, store *Store, sessionID string, first, l
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
+	if err := store.transaction(t.Context(), "sampler.test_fixture", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM sampler_event WHERE session_id=$1 AND sequence BETWEEN $2 AND $3`, sessionID, first, last); err != nil {
 			return err
 		}
@@ -220,7 +220,7 @@ func TestCompactJournalResumesAtOpeningWatermarkAfterRejectedRange(t *testing.T)
 }
 
 func appendOneJournalEvent(ctx context.Context, store *Store, sessionID string) error {
-	return store.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return store.transaction(ctx, "sampler.test_fixture", func(ctx context.Context, tx *sql.Tx) error {
 		_, session, err := lockSession(ctx, tx, sessionID)
 		if err != nil {
 			return err
