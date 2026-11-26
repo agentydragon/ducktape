@@ -25,7 +25,7 @@ func (r *Runtime) runQuiesce(ctx, engineCtx context.Context, request *runtimeTra
 		r.mu.Unlock()
 		return status.Error(codes.Unavailable, "environment Runtime is unavailable")
 	}
-	if !r.state.Lameduck() && request.HasIdleSince && (facts.IdleSince == nil || facts.IdleSince.AsTime().UnixMicro() != request.IdleSinceMicros || r.activeAdmissions != 0 || r.activeExecutionCalls != 0 || r.executionOwner.recovering() || r.idleSince == nil || r.idleSince.AsTime().UnixMicro() != request.IdleSinceMicros) {
+	if !r.state.Lameduck() && request.HasIdleSince && (facts.IdleSince == nil || facts.IdleSince.AsTime().UnixMicro() != request.IdleSinceMicros || r.activeAdmissions != 0 || len(r.execCalls) != 0 || r.executionOwner.recovering() || r.idleSince == nil || r.idleSince.AsTime().UnixMicro() != request.IdleSinceMicros) {
 		r.mu.Unlock()
 		return status.Error(codes.Aborted, "the Sandbox is busy or its idle_since differs")
 	}

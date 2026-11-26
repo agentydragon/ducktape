@@ -24,8 +24,7 @@ func newExecutionProxy(r *Runtime) *executionProxy { return &executionProxy{runt
 func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.ExecutionScope) (executorpb.ExecutorServer, context.Context, func(), error) {
 	var client executorpb.ExecutorServer
 	var outgoing context.Context
-	var cancel context.CancelFunc
-	var callID uint64
+	var finish func()
 	err := r.control.Admit(ctx, func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -51,25 +50,32 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 		if err := r.changeAdmissionsLocked(1); err != nil {
 			return err
 		}
+		var cancel context.CancelFunc
 		outgoing, cancel = context.WithCancel(ctx)
-		r.execCallID++
-		callID = r.execCallID
-		r.execCalls[callID] = cancel
-		r.activeExecutionCalls++
-		r.idleSince = nil
-		r.changedLocked()
+		finish = r.registerExecutionCallLocked(cancel, true)
 		return nil
 	})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	finish := func() {
+	return client, outgoing, finish, nil
+}
+
+// registerExecutionCallLocked tracks a forwarded RPC until its handler returns. Unary
+// callers have already published an admission count and release it when the handler returns.
+func (r *Runtime) registerExecutionCallLocked(cancel context.CancelFunc, releaseAdmission bool) func() {
+	r.execCallID++
+	id := r.execCallID
+	r.execCalls[id] = cancel
+	r.idleSince = nil
+	r.changedLocked()
+	return func() {
 		cancel()
 		r.mu.Lock()
-		delete(r.execCalls, callID)
-		admissionErr := r.changeAdmissionsLocked(-1)
-		if r.activeExecutionCalls > 0 {
-			r.activeExecutionCalls--
+		delete(r.execCalls, id)
+		var admissionErr error
+		if releaseAdmission {
+			admissionErr = r.changeAdmissionsLocked(-1)
 		}
 		r.changedLocked()
 		r.mu.Unlock()
@@ -77,7 +83,6 @@ func (r *Runtime) admitExecutionCall(ctx context.Context, scope *executorpb.Exec
 			r.fail(admissionErr)
 		}
 	}
-	return client, outgoing, finish, nil
 }
 
 func validateExecutionScope(scope *executorpb.ExecutionScope, sandbox configuration.SandboxIdentity, sandboxUID, incarnationUID string) error {
@@ -111,8 +116,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 	r := p.runtime
 	var client executorpb.ExecutorServer
 	var streamCtx context.Context
-	var cancel context.CancelFunc
-	var streamID uint64
+	var finish func()
 	var unconfigured bool
 	err := r.control.Admit(stream.Context(), func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
@@ -138,16 +142,13 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 		if found && progress.Generation == r.desired.Generation && progress.NativeStopped {
 			return status.Error(codes.FailedPrecondition, "environment native work has stopped")
 		}
+		var cancel context.CancelFunc
 		streamCtx, cancel = context.WithCancel(stream.Context())
 		stopIdentity := context.AfterFunc(authorization.Context(), cancel)
-		oldCancel := cancel
-		cancel = func() { stopIdentity(); oldCancel() }
-		r.execStreamID++
-		streamID = r.execStreamID
-		r.execStreams[streamID] = cancel
-		r.activeExecutionCalls++
-		r.idleSince = nil
-		r.changedLocked()
+		finish = r.registerExecutionCallLocked(func() {
+			stopIdentity()
+			cancel()
+		}, false)
 		return nil
 	})
 	if err != nil {
@@ -159,16 +160,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 			Message: "Environment Runtime has no configured Codex executor",
 		}})
 	}
-	defer func() {
-		cancel()
-		r.mu.Lock()
-		delete(r.execStreams, streamID)
-		if r.activeExecutionCalls > 0 {
-			r.activeExecutionCalls--
-		}
-		r.changedLocked()
-		r.mu.Unlock()
-	}()
+	defer finish()
 	return client.OpenSession(request, directExecutionStream{Executor_OpenSessionServer: stream, ctx: streamCtx})
 }
 
