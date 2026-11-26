@@ -188,6 +188,8 @@ one to an unassociated legacy Session. Configured platform readers can still rea
 
 ## Incremental storage compaction
 
+For the APB writer rollout, see [Verify new journal blocks](../eventblock/rollout.md).
+
 `ingress.compact_deltas: true` losslessly packs native frames and streamed deltas into bounded
 compressed blocks during ingress, before an item completes. The default is false. Original events,
 native JSON, cursors and evidence references are reconstructed by every reader, including after the
