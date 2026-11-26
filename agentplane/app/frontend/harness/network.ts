@@ -115,27 +115,10 @@ export function ndjsonWatch(results: readonly unknown[], signal: AbortSignal | u
   return streamResponse("application/x-ndjson", ndjson(results), signal, null, false);
 }
 
-/** One server-sent event; `data` goes as JSON. */
-export interface ServerSentEvent {
-  event: string;
-  data: unknown;
-}
-
-/**
- * A live event stream: `events()` when it opens and again whenever a fixture publishes its path.
- * With `drop`, the body fails once the first events are read, as on a dropped network.
- */
-export function liveEventStream(
-  path: string,
-  events: () => readonly ServerSentEvent[],
-  signal: AbortSignal | undefined,
-  drop: boolean
-): Response {
-  const text = (): string =>
-    events()
-      .map(({ event, data }) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-      .join("");
-  return streamResponse("text/event-stream", text(), signal, drop ? null : { path, updates: text }, drop);
+/** Emit one server-sent event and hold the connection open until the reader leaves. */
+export function eventStream(event: string, data: unknown, signal: AbortSignal | undefined): Response {
+  const text = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  return streamResponse("text/event-stream", text, signal, null, false);
 }
 
 function streamResponse(
