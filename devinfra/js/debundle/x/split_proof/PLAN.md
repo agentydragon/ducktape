@@ -1,5 +1,7 @@
 # Plan
 
+See the [CoreJS construction roadmap](CONSTRUCTION_ROADMAP.md) for proof interfaces, implementation order, observable boundaries and the retirement gate. The measurements below include historical approaches; only an accepted run of the production constructor counts toward the new splitter.
+
 The goal is to turn the production bundle in `gaffer-private` into runnable, readable modules following its authored spec, with a machine-checked guarantee that the split behaves like the original.
 
 ## Acceptance contract
