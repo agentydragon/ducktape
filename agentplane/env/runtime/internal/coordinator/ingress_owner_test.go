@@ -180,7 +180,7 @@ func TestRuntimeRecoveryFailureNeverStartsHistoryDelivery(t *testing.T) {
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.failed
+		return r.failureErr != nil
 	}, "Runtime to observe failed Session recovery")
 	if err := r.waitForInitialSessions(ctx); !errors.Is(err, recoveryErr) {
 		t.Fatalf("initial Host wait after Runtime failure = %v, want recovery failure", err)
@@ -237,7 +237,7 @@ func TestRuntimeHistoryFailureFencesAdmissionAndCloses(t *testing.T) {
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.failed
+		return r.failureErr != nil
 	}, "fatal History failure")
 	r.mu.Lock()
 	admissionOpen := r.admissionOpen
@@ -514,7 +514,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	waitRuntime(t, r, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.failed
+		return r.failureErr != nil
 	}, "Runtime to observe History delivery failure")
 	select {
 	case err := <-closed:

@@ -44,7 +44,7 @@ func (r *Runtime) executionStartAllowed(uid string, recovery bool, lossBinding u
 }
 
 func (r *Runtime) executionStartAllowedLocked(uid string, recovery bool, lossBinding uint64) bool {
-	return !r.closing && !r.failed && (!recovery || r.executionRecoveryAllowedLocked(uid, lossBinding))
+	return !r.closing && r.failureErr == nil && (!recovery || r.executionRecoveryAllowedLocked(uid, lossBinding))
 }
 
 func (r *Runtime) startExecution(ctx context.Context, uid string) (executionHandle, error) {
@@ -114,12 +114,12 @@ func (r *Runtime) drainExecutionCalls(ctx context.Context) error {
 func (r *Runtime) executionChanges() (changed, done <-chan struct{}, failure error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.changes, r.lifecycleDone, r.failureLocked()
+	return r.changes, r.lifecycleDone, r.failureErr
 }
 
 // Execution already owns an admitted native lifetime while Session preparation
 // keeps its admission gate closed. A durable seal revokes recovery immediately,
 // including the interval before Quiescing desired state is published.
 func (r *Runtime) executionRecoveryAllowedLocked(uid string, generation uint64) bool {
-	return !r.closing && !r.failed && !r.state.Lameduck() && r.desired.Mode == lifecycle.Running && r.desired.IncarnationUID == uid && (generation == 0 || r.desired.Generation == generation)
+	return !r.closing && r.failureErr == nil && !r.state.Lameduck() && r.desired.Mode == lifecycle.Running && r.desired.IncarnationUID == uid && (generation == 0 || r.desired.Generation == generation)
 }

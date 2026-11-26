@@ -282,7 +282,7 @@ func TestCanceledInitialStartupCanResumeSameIncarnationAfterFence(t *testing.T) 
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.failed || !r.admissionOpen || r.desired.Mode != lifecycle.Running || r.desired.IncarnationUID != "initial" {
-		t.Fatalf("same incarnation did not recover admission: failed=%t open=%t desired=%+v", r.failed, r.admissionOpen, r.desired)
+	if r.failureErr != nil || !r.admissionOpen || r.desired.Mode != lifecycle.Running || r.desired.IncarnationUID != "initial" {
+		t.Fatalf("same incarnation did not recover admission: failure=%v open=%t desired=%+v", r.failureErr, r.admissionOpen, r.desired)
 	}
 }

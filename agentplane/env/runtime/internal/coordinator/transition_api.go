@@ -55,7 +55,7 @@ func (r *Runtime) requestTransition(ctx context.Context, kind runtimeTransitionK
 		r.mu.Unlock()
 		return status.Error(codes.Unavailable, "environment Runtime is closing")
 	}
-	if failure := r.failureLocked(); failure != nil {
+	if failure := r.failureErr; failure != nil {
 		r.mu.Unlock()
 		return failure
 	}
@@ -117,7 +117,7 @@ func (r *Runtime) coordinatorFailure(boundary string) error {
 	if r.lifecycleControllerErr != nil {
 		return r.lifecycleControllerErr
 	}
-	if failure := r.failureLocked(); failure != nil {
+	if failure := r.failureErr; failure != nil {
 		return failure
 	}
 	return fmt.Errorf("Runtime lifecycle engine exited before %s", boundary)

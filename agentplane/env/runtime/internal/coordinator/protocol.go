@@ -24,7 +24,7 @@ func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.E
 		r.mu.Unlock()
 		return err
 	}
-	if r.closing || r.failed || !r.admissionOpen || r.suspendPrepared || r.desired != expected || expected.Mode != lifecycle.Running {
+	if r.closing || r.failureErr != nil || !r.admissionOpen || r.suspendPrepared || r.desired != expected || expected.Mode != lifecycle.Running {
 		r.mu.Unlock()
 		return nil
 	}
@@ -67,7 +67,7 @@ func (r *Runtime) admitCodexRequest(ctx context.Context, effect func(context.Con
 // finishes and Runtime accepts that exact revision.
 func (r *Runtime) publishDesired(ctx context.Context, mode lifecycle.Mode, uid, sealUID string) (uint64, error) {
 	r.mu.Lock()
-	if r.closing || r.failed || !r.startupComplete {
+	if r.closing || r.failureErr != nil || !r.startupComplete {
 		r.mu.Unlock()
 		return 0, status.Error(codes.Unavailable, "environment Runtime is unavailable")
 	}
@@ -76,19 +76,13 @@ func (r *Runtime) publishDesired(ctx context.Context, mode lifecycle.Mode, uid, 
 	// Reserve the revision even on a failed write: its durable outcome can be
 	// unknown, so a later Close must never reuse it for a different desire.
 	r.desired = desired
-	err := lifecycle.PublishEnvironmentDesired(ctx, r.lifecycleState, desired)
-	if err != nil {
-		r.failed = true
-		if r.failureErr == nil {
-			r.failureErr = err
-		}
+	if err := lifecycle.PublishEnvironmentDesired(ctx, r.lifecycleState, desired); err != nil {
+		r.failLocked(fmt.Errorf("publish environment lifecycle: %w", err))
+		r.mu.Unlock()
+		return 0, err
 	}
 	r.changedLocked()
 	r.mu.Unlock()
-	if err != nil {
-		r.fail(fmt.Errorf("publish environment lifecycle: %w", err))
-		return 0, err
-	}
 	if mode == lifecycle.Running {
 		if err := r.sessions.ResetDemand(); err != nil {
 			r.fail(err)
@@ -113,7 +107,7 @@ func (r *Runtime) publishDesired(ctx context.Context, mode lifecycle.Mode, uid, 
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.closing || r.failed || r.desired != desired {
+	if r.closing || r.failureErr != nil || r.desired != desired {
 		return 0, status.Error(codes.Unavailable, "environment lifecycle changed before acceptance")
 	}
 	r.admissionOpen = mode == lifecycle.Running
@@ -129,7 +123,7 @@ func (r *Runtime) publishDesired(ctx context.Context, mode lifecycle.Mode, uid, 
 func (r *Runtime) environment() session.Environment {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return session.Environment{IncarnationUID: r.desired.IncarnationUID, Quiesced: r.desired.Mode != lifecycle.Running || r.failed || r.closing}
+	return session.Environment{IncarnationUID: r.desired.IncarnationUID, Quiesced: r.desired.Mode != lifecycle.Running || r.failureErr != nil || r.closing}
 }
 
 func (r *Runtime) waitBootstrapForSession(ctx context.Context) error {
@@ -153,7 +147,7 @@ func (r *Runtime) executionReady(ctx context.Context) (bool, error) {
 	if r.config.ExecutionBackend == nil {
 		return true, nil
 	}
-	return !r.closing && !r.failed && r.executionOwner.executor(r.desired.IncarnationUID) != nil, nil
+	return !r.closing && r.failureErr == nil && r.executionOwner.executor(r.desired.IncarnationUID) != nil, nil
 }
 
 func (r *Runtime) launchSessionProcess(ctx context.Context, owner string, supervisor *supervision.Supervisor, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
@@ -179,7 +173,7 @@ func (r *Runtime) waitForExecutionCalls(ctx context.Context) error {
 	return r.waitForLifecycle(ctx, func() (bool, error) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if failure := r.failureLocked(); failure != nil && !r.closing {
+		if failure := r.failureErr; failure != nil && !r.closing {
 			return false, failure
 		}
 		return len(r.execCalls) == 0, nil
@@ -202,7 +196,7 @@ func (r *Runtime) waitSessionStage(ctx context.Context, minimum lifecycle.Stage)
 				return true, nil
 			}
 		}
-		return false, r.failureLocked()
+		return false, r.failureErr
 	})
 }
 
@@ -234,7 +228,7 @@ func (r *Runtime) observeNativeStop(ctx context.Context, reader controller.Reade
 	if closing {
 		return false, nil
 	}
-	return false, r.failureLocked()
+	return false, r.failureErr
 }
 
 func (r *Runtime) waitForLifecycle(ctx context.Context, predicate func() (bool, error)) error {

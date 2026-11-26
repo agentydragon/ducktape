@@ -815,7 +815,7 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 		t.Fatal("command did not reach admission accounting")
 	}
 	r.mu.Lock()
-	failure := r.failureLocked()
+	failure := r.failureErr
 	r.mu.Unlock()
 	if !state.IsNotFoundError(failure) {
 		t.Fatalf("accounting failure = %v, want original NotFound cause", failure)
