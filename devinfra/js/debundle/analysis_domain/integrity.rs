@@ -68,7 +68,7 @@ impl IntrinsicSlot {
     }
 
     /// The census family whose writes the slot inherits.
-    pub(crate) fn family(self) -> NativeIntrinsic {
+    pub fn family(self) -> NativeIntrinsic {
         match self {
             Self::Global(family)
             | Self::Static(family, _)
@@ -746,7 +746,7 @@ impl IntegrityFlags {
 
     /// The completed census's own refinements, for a rule that checks exact
     /// slots against the raw write census itself.
-    pub(crate) fn closed_census(&self) -> Option<&ProofDependencies> {
+    pub fn closed_census(&self) -> Option<&ProofDependencies> {
         self.census_closed.then_some(&self.census_dependencies)
     }
 

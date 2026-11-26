@@ -921,7 +921,7 @@ globalThis`) marks the bindings it flows into (transitively,
   effect. The shared local-class proof supplies accepted field shapes and stable
   construction sites; the canonical native index validates every native field's
   identity/integrity premise, and the keyed-collection rows of the builtin
-  table (`facts/abstract_domain/builtins.rs`, `allocates`) separately supply
+  table (`analysis_domain/builtins.rs`, `allocates`) separately supply
   the fresh-allocation heap capability for zero-argument collection
   construction.
   This is not derived from purity or synchronous-call completeness.
@@ -1521,7 +1521,7 @@ truncated roots are expanded once per source statement
 without adding them to the persistent escaped-callback cache. Incomplete
 reachability retains whole-body fallback.
 
-**Builtin member rows.** `MEMBER_ROWS` in `facts/abstract_domain/builtins.rs`
+**Builtin member rows.** `MEMBER_ROWS` in `analysis_domain/builtins.rs`
 summarizes host methods selected by property name on any receiver. A call
 `x.addEventListener("type", listener)` with a string-literal type and no spread
 selects the `addEventListener` row, which invokes no argument at call time: the
@@ -4004,7 +4004,7 @@ exploration before crossing the relevant phase.
    added.
 2. **Lazy-position completeness.** `reads_at_init` is implemented
    as a visitor that descends into eager positions and stops at
-   lazy positions (<../facts/lazy_boundary.rs>). Function, arrow, method,
+   lazy positions (<../analysis_domain/lazy_boundary.rs>). Function, arrow, method,
    getter/setter and constructor bodies and instance class-field initializers
    are lazy; `extends` clauses, decorator expressions, computed member keys,
    static fields and static blocks are eager. Open: an exhaustive table of unit
@@ -4057,7 +4057,7 @@ contract is in <../SPEC.md>
   collects synchronous execution facts with the adjacent interpreter. The
   value model ([`value_model/`](../facts/sync_effects/value_model/)) and the
   world with its transfers ([`world/`](../facts/sync_effects/world/)) are
-  crates below it. [`facts/abstract_domain/builtins.rs`](../facts/abstract_domain/builtins.rs)
+  crates below it. [`analysis_domain/builtins.rs`](../analysis_domain/builtins.rs)
   models native operations.
 - [`graph/`](../graph/) (its own crate above `analysis`) builds dependency
   graphs, module quotients and their wire reports.

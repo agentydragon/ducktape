@@ -17,7 +17,7 @@ use analysis_model::DepKind;
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::StatementKind;
+use analysis_domain::item_views::StatementKind;
 use analysis_vocabulary::execution_evidence::SourceLocation;
 use analysis_vocabulary::purity::Purity;
 use graph::{

@@ -14,8 +14,8 @@ use super::super::execution_index::ExecutionIndex;
 use super::super::interpreter::MAX_SYNCHRONOUS_INVOCATIONS;
 use super::operation::{self, IterationResultArray};
 use analysis::facts::EffectCell;
-use analysis::facts::abstract_domain::builtins::IterationResult;
 use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
+use analysis_domain::builtins::IterationResult;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::execution_evidence::{
     ExecutionOperation, ExecutionPrecisionLossReason, OrderedCallAdmissionRefusal,

@@ -26,7 +26,7 @@ inherit the global `Array.isArray` rule.
 ## Admission rule: builtin summary rows
 
 Purity classifies an intrinsic call or read through the builtin summary table,
-<../facts/abstract_domain/builtins.rs> (`ROWS` for calls, constructions and
+<../analysis_domain/builtins.rs> (`ROWS` for calls, constructions and
 tags; `DATA_PROPERTIES` for static reads), projected by
 <../purity/native_rows.rs>. A row that admits more than the operation does —
 a missed coercion, iteration, trap, accessor read, mutation or throw — drops S
@@ -96,7 +96,7 @@ Synchronous callback analysis excludes an exact `new Map()`, `new Set()`,
 unshadowed global identifier and there are no arguments. Under A11 intrinsic
 integrity, each constructor allocates its empty internal collection and
 returns before looking up an adder or invoking iterator/user code; the
-constructors' rows in `facts/abstract_domain/builtins.rs` cite the algorithms.
+constructors' rows in `analysis_domain/builtins.rs` cite the algorithms.
 The shared intrinsic-write census disables this
 shortcut after a visible write to the corresponding global constructor or
 global-object property, including writes through aliases and unknown computed
@@ -251,7 +251,7 @@ No member precision, purity or exception-free execution is asserted.
 ## Guarded native call summaries
 
 The synchronous interpreter uses one builtin summary table,
-`facts/abstract_domain/builtins.rs`, for both returned values and callback
+`analysis_domain/builtins.rs`, for both returned values and callback
 timing. Each row names one intrinsic operation and its ECMA-262 section
 (`cite`), the argument counts it admits, the coercion and internal-method steps
 it performs on each operand (`coerces`), the operands it invokes, the fresh
@@ -625,7 +625,7 @@ provider-write/dynamic-scope controls.
 
 Chunk-top `const` bindings whose primitive type is Symbol are safe computed
 property keys: `ToPropertyKey` returns a Symbol unchanged. The type comes from
-the `%Symbol%` row of `facts/abstract_domain/builtins.rs` for an unshadowed
+the `%Symbol%` row of `analysis_domain/builtins.rs` for an unshadowed
 callee with at most one spread-free argument proven primitive, or from an
 immutable alias of such a binding. The declaration's evaluation effects remain
 classified separately. Recognized direct writes to `Symbol` and static
@@ -720,7 +720,7 @@ visible intrinsic changes, own-method mutation, argument getters, escapes,
 retained callbacks and reads after mutation.
 
 The synchronous-effects executor models direct static calls of the
-`ITERATION_ROWS` methods in `facts/abstract_domain/builtins.rs` (`forEach`,
+`ITERATION_ROWS` methods in `analysis_domain/builtins.rs` (`forEach`,
 `map`, `filter`, `flatMap`, `some`, `every`, `find`, `findIndex`, `reduce`)
 with one callback, no spread and no `thisArg`; `reduce` may add an initial
 value. This is an effect model, not a purity admission: each known synchronous

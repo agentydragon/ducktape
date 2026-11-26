@@ -17,8 +17,8 @@ use world::effect_coverage::EffectCoverageFragment;
 // tagged-template form the kernel never requests.
 use super::super::runtime_inference::{CallOperands, CallTransfer, RuntimeOperation, RuntimeValue};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
-use analysis::facts::abstract_domain::builtins;
 use analysis::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
+use analysis_domain::builtins;
 use analysis_vocabulary::execution_evidence::{
     AssumedEffectReason, ExecutionOperation, ExecutionPrecisionLossReason,
 };

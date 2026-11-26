@@ -3,53 +3,6 @@ use analysis_vocabulary::execution_evidence::{AssumedEffectReason, ExecutionPrec
 use analysis_vocabulary::report_schema::EffectCellReport;
 use source_identity::SourceUnitOrdinal;
 
-/// One value per syntactic position bucket. Collapses the repeated
-/// eager / lazy / first-order-lazy triples (reads, rebinds, calls)
-/// into a single shape so the "first-order ⊆ lazy" subset invariant
-/// lives in one place ([`Self::record`]) instead of at every
-/// construction site.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PositionBucketed<T> {
-    /// At-init position: outside any function/arrow/method/getter/
-    /// setter body, constructor body, or instance class-field
-    /// initializer.
-    pub eager: T,
-    /// Inside a lazy syntactic position, at any nesting depth. May
-    /// overlap with `eager` if the same name appears in both eager
-    /// and lazy positions of the statement.
-    pub lazy: T,
-    /// Subset of `lazy` whose sites sit in a function's
-    /// **first-order, pre-await** body (depth 1 from this statement).
-    /// Used by at-init call promotion: a synchronous call to the
-    /// function only runs its immediate pre-await body, so sites
-    /// inside nested function/arrow definitions or past an `await`
-    /// don't promote to the caller.
-    pub first_order_lazy: T,
-}
-
-impl PositionBucketed<BTreeSet<Id>> {
-    /// Record `id` in the bucket the cursor position selects: `eager`
-    /// at depth 0; `lazy` at depth ≥ 1, additionally `first_order_lazy`
-    /// at depth 1 before the body's first `await`. Maintains the
-    /// `first_order_lazy ⊆ lazy` invariant structurally.
-    pub(crate) fn record(&mut self, id: &Id, position: LazyPosition) {
-        if position.depth == 0 {
-            self.eager.insert(id.clone());
-            return;
-        }
-        self.lazy.insert(id.clone());
-        if position.can_run_at_init() {
-            self.first_order_lazy.insert(id.clone());
-        }
-    }
-
-    pub(crate) fn extend(&mut self, other: Self) {
-        self.eager.extend(other.eager);
-        self.lazy.extend(other.lazy);
-        self.first_order_lazy.extend(other.first_order_lazy);
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct StatementFacts {
     pub ordinal: SourceUnitOrdinal,
@@ -846,28 +799,6 @@ impl ChunkFactAnalysis {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::IntoStaticStr, strum::Display,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum StatementKind {
-    /// `var X = ...`, `let X = ...`, `const X = ...`. RHS reads at-init.
-    VarDecl,
-    /// `function X() { ... }`. Hoisted; no at-init reads from body.
-    FnDecl,
-    /// `class X { ... }`. Extends, decorators, computed keys, and
-    /// static blocks read at-init.
-    ClassDecl,
-    /// `export { ... }`, `export X`, etc. Lazy reads (re-exports).
-    Export,
-    /// `import { ... } from ...`. Linked, no at-init body code.
-    Import,
-    /// Bare expression / control-flow / etc. that doesn't declare a
-    /// top-level binding.
-    SideEffect,
-}
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportLinkage {
@@ -1036,7 +967,7 @@ pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub imported_bindings: BTreeSet<Id>,
     pub value_flow: std::sync::Arc<super::ChunkValueFlow>,
-    pub dynamic_scope: super::DynamicScopeFact,
+    pub dynamic_scope: analysis_domain::dynamic_scope::DynamicScopeFact,
     pub set_iterable_shapes: super::SetIterableShapes,
     pub stable_array_spread_shapes: super::StableArraySpreadShapes,
     pub local_class_shapes: super::LocalClassConstructionShapes,

@@ -8,7 +8,6 @@
 //! operation after callee and argument evaluation. Nothing else in the crate
 //! names a builtin's semantics.
 
-use super::heap::Mutation;
 use super::integrity::IntrinsicSlot;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::effect::CoerceOp;
@@ -18,6 +17,35 @@ use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 use std::sync::LazyLock;
 use swc_ecma_ast::{Expr, ExprOrSpread, Lit, MemberProp, OptChainBase, Tpl};
+
+/// A write a builtin row performs. Writes to the fresh allocation are its
+/// initial contents; the row's `allocates` names that allocation's kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mutation {
+    /// `SetIntegrityLevel(O, frozen)` on the argument: it becomes
+    /// non-extensible with every own property non-configurable and, for data
+    /// properties, non-writable.
+    Integrity(ArgSel),
+    /// `[[DefineOwnProperty]]` on `target` for every own enumerable key of the
+    /// `descriptors` record.
+    DefineProperties { target: ArgSel, descriptors: ArgSel },
+    /// One `[[DefineOwnProperty]]` on `target` under `ToPropertyKey(key)`
+    /// with `ToPropertyDescriptor(descriptor)`.
+    DefineProperty {
+        target: ArgSel,
+        key: ArgSel,
+        descriptor: ArgSel,
+    },
+    /// The fresh allocation receives the argument's own property descriptors:
+    /// data values and accessor functions by identity, never invoked.
+    FreshOwnDescriptorsOf(ArgSel),
+    /// The fresh allocation receives the argument's own string keys as dense
+    /// elements in `[[OwnPropertyKeys]]` order.
+    FreshOwnKeysOf(ArgSel),
+    /// An internal slot of the fresh allocation retains the argument without
+    /// invoking it.
+    FreshRetains(ArgSel),
+}
 
 /// An operand of the operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,7 +204,7 @@ pub struct Row {
     /// an unshadowed spelling alone. Otherwise purity reaches the operation
     /// only through a certificate proving `requires`: the census or a
     /// `native_operation_inputs` site.
-    pub(crate) assumed_intact: bool,
+    pub assumed_intact: bool,
     /// Slots the callee's identity reads: its global binding and, for a
     /// static member, that data property. The row applies only when every
     /// slot's integrity flag is intact or author-asserted at the call site.
@@ -915,7 +943,7 @@ pub struct MemberRow {
     /// Steps that run user code unless the operand is proved silent.
     pub(crate) coerces: &'static [(ArgSel, CoerceOp)],
     /// Operands invoked synchronously.
-    pub(crate) invokes: &'static [ArgSel],
+    pub invokes: &'static [ArgSel],
 }
 
 pub(crate) const MEMBER_ROWS: &[MemberRow] = &[
@@ -937,7 +965,7 @@ pub(crate) const MEMBER_ROWS: &[MemberRow] = &[
 /// The member row a static-member call selects, when its arity matches, no
 /// argument is spread and every listed coercion is silent. Only a string
 /// literal operand is proved silent: the consumers are syntactic.
-pub(crate) fn member_call_row(callee: &Expr, args: &[ExprOrSpread]) -> Option<&'static MemberRow> {
+pub fn member_call_row(callee: &Expr, args: &[ExprOrSpread]) -> Option<&'static MemberRow> {
     let member = match callee.unwrap_parens() {
         Expr::Member(member) => member,
         Expr::OptChain(chain) => match chain.base.as_ref() {

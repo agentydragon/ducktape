@@ -1,7 +1,7 @@
 //! Source-only callback admission, independent of ordered runtime facts.
 use analysis::facts::at_init_fallback::safe_plain_array_at_init_fallback_sources;
-use analysis::facts::*;
 use analysis::purity::code_graph::ChunkCodeGraph;
+use analysis_domain::item_views::{compute_shadowed_globals, top_level_item_views};
 use raw_js_test_support::parse;
 use std::collections::BTreeSet;
 use swc_common::SyntaxContext;

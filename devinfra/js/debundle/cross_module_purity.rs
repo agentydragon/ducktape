@@ -54,11 +54,12 @@ use analysis_vocabulary::inputs::{
     SelectedNativeOperationInput,
 };
 
-use analysis::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
+use analysis::facts::ChunkValueFlow;
 use analysis::program_bindings::{
     BindingId, ExportId, ModuleBindings, ProgramBindings, ResolvedImport, SourceModuleKey,
 };
 use analysis::purity::{ChunkCodeGraph, PurityEffectRules, PurityMode};
+use analysis_domain::item_views::{TopLevelItemView, top_level_item_views};
 use analysis_vocabulary::purity::Purity;
 use analysis_vocabulary::value::Value;
 use inference::{FactContext, IterativeInference, IterativeRules};
@@ -1439,7 +1440,12 @@ pub fn resolve_imported_callable_summaries(
             if diagnostics.metrics().enabled() {
                 let owned = views
                     .iter()
-                    .filter(|view| matches!(view, analysis::facts::TopLevelItemView::Owned { .. }))
+                    .filter(|view| {
+                        matches!(
+                            view,
+                            analysis_domain::item_views::TopLevelItemView::Owned { .. }
+                        )
+                    })
                     .count();
                 diagnostics.metrics().statement_views(views.len(), owned);
             }

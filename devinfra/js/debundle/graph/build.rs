@@ -14,7 +14,8 @@ use analysis::facts::{
 use analysis::reports::spec_lint::{
     CommutingStatementsUnused, UnusedCommutingEndpoint, UnusedPremiseReason,
 };
-use analysis::{StatementEffectSummary, StatementFacts, StatementKind};
+use analysis::{StatementEffectSummary, StatementFacts};
+use analysis_domain::item_views::StatementKind;
 use analysis_vocabulary::execution_evidence::SourceLocation;
 use analysis_vocabulary::inputs::{CommutingEndpoint, ResolvedCommutingStatements};
 use analysis_vocabulary::report_schema::EffectCellReport;

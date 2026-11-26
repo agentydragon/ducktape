@@ -4,7 +4,7 @@ use super::*;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DynamicScopeFact {
-    pub(crate) present: bool,
+    pub present: bool,
 }
 
 impl DynamicScopeFact {

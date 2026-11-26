@@ -70,7 +70,7 @@ use super::*;
 /// a `param.X = primLit` data-property write, the outer is a
 /// data-property write keyed by the primitive that inner evaluates
 /// to. Both writes are sound.
-pub(crate) fn is_ts_enum_iife_init_for_binding(expr: &Expr, binding: &str) -> bool {
+pub fn is_ts_enum_iife_init_for_binding(expr: &Expr, binding: &str) -> bool {
     let mut cur = expr;
     while let Expr::Paren(p) = cur {
         cur = &p.expr;
@@ -85,7 +85,7 @@ pub(crate) fn is_ts_enum_iife_init_for_binding(expr: &Expr, binding: &str) -> bo
 /// both from the var-init admission and by the heap scan (`heap.rs`) to
 /// exempt the vetted `X || (X = {})` argument occurrence of the enum
 /// binding from the escape scan.
-pub(crate) fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -> bool {
+pub fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -> bool {
     let Callee::Expr(callee_expr) = &call.callee else {
         return false;
     };
@@ -140,7 +140,7 @@ pub(crate) fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -
 /// scan. This is a prefilter, not admission: the caller must still run the full
 /// IIFE recognizer, including agreement of nested short-circuit/assignment names.
 /// A bare `{}` contains no candidate reference and needs no exemption.
-pub(crate) fn ts_enum_iife_argument_binding(call: &CallExpr) -> Option<&str> {
+pub fn ts_enum_iife_argument_binding(call: &CallExpr) -> Option<&str> {
     if call.args.len() != 1 || call.args[0].spread.is_some() {
         return None;
     }

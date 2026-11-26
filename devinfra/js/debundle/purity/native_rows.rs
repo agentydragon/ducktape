@@ -1,5 +1,5 @@
 //! Purity projection of the builtin summary table
-//! (`facts/abstract_domain/builtins.rs`). A native call is pure when its row
+//! (`analysis_domain/builtins.rs`). A native call is pure when its row
 //! invokes nothing, writes only fresh allocations or its plain-data operands,
 //! and every listed coercion and type check runs no user code and completes
 //! normally on the call's syntactic operands. Callee identity is the
@@ -9,8 +9,9 @@
 
 use super::*;
 use crate::facts::TopLevelNativeIterableOperandProjection;
-use crate::facts::abstract_domain::builtins::{self, ArgSel, Invocation, Row, Throws};
-use crate::facts::abstract_domain::heap::{Mutation, is_plain_data_prop};
+use analysis_domain::allocation_roots::is_plain_data_prop;
+use analysis_domain::builtins::Mutation;
+use analysis_domain::builtins::{self, ArgSel, Invocation, Row, Throws};
 use analysis_model::PrimKinds;
 use analysis_vocabulary::effect::{CoerceCheck, CoerceOp};
 

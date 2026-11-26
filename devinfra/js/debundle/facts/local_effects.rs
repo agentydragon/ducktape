@@ -7,11 +7,9 @@ use binding_targets::{
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use super::{
-    ChunkValueFlow, StructuralStatementFacts, TopLevelItemView, collect_declared_names,
-    metadata_decorate_call, var_decl_of_item,
-};
+use super::{ChunkValueFlow, StructuralStatementFacts, metadata_decorate_call};
 use crate::purity::{ChunkCodeGraph, classify_expr_purity};
+use analysis_domain::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
 use analysis_vocabulary::inputs::{KnownEffect, LocalEffectPolicy};
 
 #[derive(Debug, Default)]

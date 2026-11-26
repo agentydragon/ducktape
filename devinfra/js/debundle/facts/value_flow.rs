@@ -45,16 +45,18 @@ use roaring::{
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use super::abstract_domain::primitive::{NoBindings, evaluate};
+use analysis_domain::primitive::{NoBindings, evaluate};
 use analysis_model::PrimKinds;
 use analysis_vocabulary::value::{Kind, Value};
 use inference::{FactContext, IterativeInference, IterativeRules};
 
-use super::{
-    LazyBoundary, LazyPosition, PositionBucketed, StatementFacts, TopLevelItemView,
-    lazy_visit_arrow_expr, lazy_visit_bin_expr, lazy_visit_class, lazy_visit_class_member,
-    lazy_visit_cond_expr, lazy_visit_function, lazy_visit_getter_prop, lazy_visit_if_stmt,
-    lazy_visit_may_skip, lazy_visit_method_prop, lazy_visit_setter_prop,
+use super::StatementFacts;
+use analysis_domain::item_views::TopLevelItemView;
+use analysis_domain::lazy_boundary::{
+    LazyBoundary, LazyPosition, PositionBucketed, lazy_visit_may_skip,
+};
+use analysis_domain::{
+    impl_lazy_callable_visits, impl_lazy_class_visits, impl_lazy_optional_path_visits,
 };
 
 pub(crate) fn native_set_allocation_roots(
@@ -1541,7 +1543,7 @@ impl ChunkValueFlow {
             }
             fact.calls.extend(collector.calls);
             if let (Some(class), Some(constructor)) = (
-                super::class_of_item(item.as_module_item()),
+                analysis_domain::item_views::class_of_item(item.as_module_item()),
                 fact.constructor.as_mut(),
             ) {
                 let mut ctor_calls = FlowCallCollector {
@@ -2380,8 +2382,10 @@ impl FlowProgram {
         inferred: &BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
         fresh_factory_imports: Arc<FreshFactoryImports>,
     ) -> Self {
-        let mut candidates = super::abstract_domain::heap::tracked_allocation_roots(body);
-        candidates.extend(super::heap_contents::array_candidate_roots(body));
+        let mut candidates = analysis_domain::allocation_roots::tracked_allocation_roots(body);
+        candidates.extend(analysis_domain::allocation_roots::array_candidate_roots(
+            body,
+        ));
         let allocations = native_set_allocation_roots(inputs, inferred);
         candidates.extend(
             allocations
@@ -2439,7 +2443,8 @@ impl FlowProgram {
         let mut imports = Vec::new();
         let mut initialization = InitializationCensus::default();
         for (ordinal, item) in body.iter().enumerate() {
-            let declared = super::item_views::collect_declared_names(item.as_module_item());
+            let declared =
+                analysis_domain::item_views::collect_declared_names(item.as_module_item());
             initialization.record(
                 item.as_module_item(),
                 &declared,
@@ -4803,7 +4808,7 @@ mod bitmap_join_tests {
             ));
         }
         let parsed = raw_js_test_support::parse(&source);
-        let views = crate::facts::top_level_item_views(&parsed.body);
+        let views = analysis_domain::item_views::top_level_item_views(&parsed.body);
         let (flow, work) = ChunkValueFlow::analyze_with_stats(&views);
         assert_eq!(work.bitmap_join_memo_hits, 12);
         assert_eq!(work.bitmap_join_memo_misses, 12);

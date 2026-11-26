@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
 use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};
-use super::{DataflowOpacityCause, EffectCell, ExportLinkage, StatementFacts, StatementKind};
+use super::{DataflowOpacityCause, EffectCell, ExportLinkage, StatementFacts};
+use analysis_domain::item_views::StatementKind;
 use analysis_vocabulary::execution_evidence::{
     AssumedEffectReason, ExecutionPrecisionLoss, SourceLocation,
 };
