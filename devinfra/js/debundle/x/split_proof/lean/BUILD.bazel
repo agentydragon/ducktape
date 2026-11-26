@@ -1012,6 +1012,7 @@ lean_binary(
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
     ],
     deps = [":corejs_modules"],
 )
