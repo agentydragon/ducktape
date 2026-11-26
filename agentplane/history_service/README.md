@@ -137,8 +137,10 @@ Each entries frame holds at most 128 entries or 1 MiB of encoded response, with 
 sent alone. Indexed cursor/kind/size metadata selects entries and applies byte bounds before their
 payloads are loaded; packed blocks are decompressed only for selected entries.
 The server reads a bounded entries/settlements page, waits for its frames to finish sending, then
-reads the next; it holds no database transaction while sending. It reads all intersecting removal
-ranges once per catch-up and sends those the stream has not yet reported. Backend reads and waiting for each stream `Send` to clear transport
+reads the next; it holds no database transaction while sending. Each removal has a per-Session
+position, drawn under the Session's history row lock so positions commit in order. A catch-up reads
+the removals after the last position the stream reported, stopping before the first one that starts
+past its cursor, so each stream reports each removal once. Backend reads and waiting for each stream `Send` to clear transport
 backpressure have `request_timeout_s` bounds. A bound does not guarantee when a queued frame reaches
 the peer.
 Each replica subscribes followers to the wakeup hub's

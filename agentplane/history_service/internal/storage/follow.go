@@ -187,27 +187,41 @@ func (s *Store) ReadFollowEntries(ctx context.Context, sessionID uuid.UUID, afte
 	return page, err
 }
 
-// ReadFollowRemoved returns every removal intersecting the covered window in one query. Cleanup can
-// remove a range behind the stream's cursor at any time, so each catch-up checks the full window.
-func (s *Store) ReadFollowRemoved(ctx context.Context, sessionID uuid.UUID, coveredAfter, through uint64) ([]*historypb.CursorRange, error) {
-	predicate, scopeArgs := s.sessionPredicate("h", 4)
-	args := []any{sessionID, coveredAfter, through}
-	args = append(args, scopeArgs...)
-	rows, err := s.db.QueryContext(ctx, `SELECT removed.first_cursor, removed.last_cursor FROM session_event_removed_range removed
-		WHERE removed.session_id = $1 AND removed.first_cursor <= $3 AND removed.last_cursor > $2
+// FollowRemovals are the removals a follower has not yet reported. Position is the last one's, or the
+// requested position when there are none.
+type FollowRemovals struct {
+	Ranges   []*historypb.CursorRange
+	Position uint64
+}
+
+// ReadFollowRemoved returns the removals after position, in position order, up to the first that starts past
+// through. Cleanup can remove a range behind the stream's cursor at any time; it gets the next position, so
+// a follower finds it without re-reading earlier removals. A removal past through waits, with every later
+// one, until the follower has covered its cursors.
+func (s *Store) ReadFollowRemoved(ctx context.Context, sessionID uuid.UUID, position, through uint64) (FollowRemovals, error) {
+	predicate, scopeArgs := s.sessionPredicate("h", 3)
+	args := append([]any{sessionID, position}, scopeArgs...)
+	rows, err := s.db.QueryContext(ctx, `SELECT removed.position, removed.first_cursor, removed.last_cursor
+		FROM session_event_removed_range removed
+		WHERE removed.session_id = $1 AND removed.position > $2
 		AND EXISTS (SELECT FROM session_history h WHERE h.id = removed.session_id AND `+predicate+`)
-		ORDER BY removed.first_cursor`, args...)
+		ORDER BY removed.position`, args...)
 	if err != nil {
-		return nil, err
+		return FollowRemovals{}, err
 	}
 	defer rows.Close()
-	var removed []*historypb.CursorRange
+	removals := FollowRemovals{Position: position}
 	for rows.Next() {
+		var next uint64
 		cursorRange := &historypb.CursorRange{}
-		if err := rows.Scan(&cursorRange.First, &cursorRange.Last); err != nil {
-			return nil, err
+		if err := rows.Scan(&next, &cursorRange.First, &cursorRange.Last); err != nil {
+			return FollowRemovals{}, err
 		}
-		removed = append(removed, cursorRange)
+		if cursorRange.GetFirst() > through {
+			break
+		}
+		removals.Ranges = append(removals.Ranges, cursorRange)
+		removals.Position = next
 	}
-	return removed, rows.Err()
+	return removals, rows.Err()
 }
