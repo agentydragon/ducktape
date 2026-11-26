@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { split } from "../testing/split.mjs";
 import { observe, prepare, root } from "./harness.mjs";
@@ -115,6 +115,17 @@ assert.equal(terminalExportRefusal.verdict.guarantee, null, terminalExportRefusa
 assert.equal(terminalExportRefusal.verdict.every_ending_matches, false, terminalExportRefusal.log);
 assert.deepEqual(readFileSync(terminalExportSentinel), terminalExportPrior);
 assert.deepEqual(readdirSync(terminalExportOut), [entry]);
+const terminalExportFresh = path.join(root, "terminal-export-row-fresh");
+const terminalExportFreshRefusal = split({
+  source: terminalExport.sourceFile,
+  spec: terminalExport.specFile,
+  out: terminalExportFresh,
+  require: "all-outcomes",
+});
+assert.equal(terminalExportFreshRefusal.status, "refused", terminalExportFreshRefusal.log);
+assert.equal(terminalExportFreshRefusal.verdict.guarantee, null, terminalExportFreshRefusal.log);
+assert.equal(terminalExportFreshRefusal.verdict.every_ending_matches, false, terminalExportFreshRefusal.log);
+assert(!existsSync(terminalExportFresh), "unsupported terminal export move created output");
 
 const callableSource = `function read() { return 42; }\nexport const value = read();\n`;
 const callable = prepare(path.join(root, "callable"), {
