@@ -3,6 +3,18 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
 
 rust_library(
+    name = "graph_compatibility",
+    srcs = ["graph_compatibility.rs"],
+    crate_root = "graph_compatibility.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle/selectors/resolution:anonymous_resolution",
+        "@crates//:anyhow",
+    ],
+)
+
+rust_library(
     name = "cli",
     srcs = [
         "binding.rs",
@@ -37,6 +49,7 @@ rust_library(
     crate_root = "mod.rs",
     edition = "2024",
     deps = [
+        ":graph_compatibility",
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:analyze_command",

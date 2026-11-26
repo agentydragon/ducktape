@@ -123,7 +123,7 @@ impl GraphEditArgs {
         let Some(graph) = &self.dependency_graph_path else {
             return Ok(None);
         };
-        crate::verify_graph_compatibility(
+        graph_compatibility::verify_graph_compatibility(
             graph,
             &self.modules_root,
             self.source_root.as_deref(),
