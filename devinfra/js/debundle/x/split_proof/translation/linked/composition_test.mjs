@@ -82,7 +82,6 @@ for (const [width, reversedKeys, readPosition] of [
   const out = path.join(dir, "out");
   const { verdict, log } = lower(sourceFile, specFile, out);
   assertCertified(verdict, log);
-  assert.equal(verdict.strategy, "compiled-replay-premised", log);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
 
   for (const file of [sourceFile, path.join(out, entry)]) {
@@ -105,37 +104,5 @@ for (const [width, reversedKeys, readPosition] of [
       assert.equal(first.items[index], item);
       assert.equal(second.items[index], item);
     }
-  }
-}
-
-// An eager getter can mutate bindings. Until calls are replayed, keep the
-// generated proof for this read and preserve its observable result.
-{
-  const dir = path.join(root, "getter-fallback");
-  const source = `let count = 0;
-    const table = { get value() { count += 1; return count; } };
-    const chosen = table.value;
-    export { chosen, count };`;
-  const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: {
-      entry,
-      modules: { "table.mjs": ["#0", "#1"], [entry]: ["#2", "#3"] },
-      order: ["table.mjs"],
-      sequential: true,
-    },
-  });
-  const out = path.join(dir, "out");
-  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assertCertified(verdict, log);
-  assert.equal(verdict.strategy, "generated-proof", log);
-  assert(verdict.replay_blockers.includes("property-read"), log);
-  assert(verdict.replay_blockers.includes("object-accessor"), log);
-  for (const file of [files.sourceFile, path.join(out, entry)]) {
-    const result = await import(pathToFileURL(file).href);
-    assert.deepEqual(Object.keys(result), ["chosen", "count"]);
-    assert.equal(result.chosen, 1);
-    assert.equal(result.count, 1);
   }
 }

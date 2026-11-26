@@ -1,7 +1,6 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_lean//lean:defs.bzl", "lean_binary", "lean_library", "lean_proof_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load(":executable_test.bzl", "executable_test", "test_runner")
 load(":generated_proof_toolchain.bzl", "generated_proof_toolchain")
 load(":splitter_launcher.bzl", "splitter_launcher")
@@ -168,14 +167,7 @@ splitter_launcher(
     core = ":lowersplit_core",
     diagnostic = ":lowersplit_diagnostic_core",
     module_io = "//devinfra/js/debundle/x/split_proof/translation:module_io",
-    strategy_census = ":strategy_census_runner",
     template = "lowersplit.sh",
-)
-
-py_binary(
-    name = "strategy_census_runner",
-    srcs = ["strategy_census_wrapper.py"],
-    main = "strategy_census_wrapper.py",
 )
 
 sh_binary(
@@ -184,7 +176,6 @@ sh_binary(
     data = [
         ":lowersplit_core",
         ":lowersplit_diagnostic_core",
-        ":strategy_census_runner",
         "//devinfra/js/debundle/x/split_proof/translation:module_io",
     ],
     use_bash_launcher = True,
@@ -1514,11 +1505,6 @@ build_test(
     name = "experiments_test",
     tags = ["manual"],
     targets = [":experiments_test_modules"],
-)
-
-py_library(
-    name = "strategy_census_wrapper",
-    srcs = ["strategy_census_wrapper.py"],
 )
 
 lean_library(
