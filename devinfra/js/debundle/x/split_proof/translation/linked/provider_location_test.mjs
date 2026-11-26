@@ -139,7 +139,7 @@ const linked = spawnSync(
   { encoding: "utf8" }
 );
 assert.equal(linked.status, 1, linked.error?.message ?? linked.stdout + linked.stderr);
-assert.match(linked.stderr, /does not provide an export named ['\"]missing['\"]/);
+assert.match(linked.stderr, /does not provide an export named ['"]missing['"]/);
 const original = readFileSync(path.join(dir, provider), "utf8");
 writeFileSync(path.join(dir, provider), original.replace('import("./lazy.mjs")', 'import("./provider.mjs")'));
 const direct = assertRefused(files, path.join(dir, "direct"));
