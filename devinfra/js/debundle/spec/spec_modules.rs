@@ -116,11 +116,9 @@ pub fn module_path_from_file(path: &Path, root: &Path) -> String {
 }
 
 pub fn collect_module_files(root: &Path) -> Result<Vec<PathBuf>> {
-    let mut out = Vec::new();
-    collect_module_files_into(root, &mut out)?;
-    out.sort();
-    graph_provenance::record_yaml_membership(root, &out)?;
-    Ok(out)
+    let mut files = graph_provenance::yaml_files(root)?;
+    files.retain(|file| is_module_yaml(file));
+    Ok(files)
 }
 
 /// Writing through one alias can change an untouched module's claims, and
@@ -136,20 +134,6 @@ pub fn ensure_unaliased_module_tree(root: &Path) -> Result<()> {
         );
         if kind.is_dir() {
             ensure_unaliased_module_tree(&entry.path())?;
-        }
-    }
-    Ok(())
-}
-
-fn collect_module_files_into(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
-        let path = entry
-            .with_context(|| format!("walking {}", root.display()))?
-            .path();
-        if path.is_dir() {
-            collect_module_files_into(&path, out)?;
-        } else if is_module_yaml(&path) {
-            out.push(path);
         }
     }
     Ok(())
@@ -229,6 +213,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
         write(root, "ui/a.yaml", "members: []\n");
+        write(root, "ui/.yaml", "members: []\n");
+        write(root, "ui/b.yml", "ignored\n");
         write(root, "ui/c.txt", "ignored\n");
         write(root, "ui/d.yaml.bak", "ignored\n");
         let files = collect_module_files(root).unwrap();
@@ -236,7 +222,7 @@ mod tests {
             .iter()
             .map(|p| p.strip_prefix(root).unwrap().to_string_lossy().to_string())
             .collect();
-        assert_eq!(names, vec!["ui/a.yaml"]);
+        assert_eq!(names, vec!["ui/.yaml", "ui/a.yaml"]);
     }
 
     #[test]
