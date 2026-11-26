@@ -32,7 +32,7 @@
 
 mod swc_parallel;
 
-use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract, progress};
+use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract};
 use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -54,16 +54,18 @@ use analysis_vocabulary::inputs::{
     SelectedNativeOperationInput,
 };
 
-use analysis::facts::ChunkValueFlow;
-use analysis::program_bindings::{
-    BindingId, ExportId, ModuleBindings, ProgramBindings, ResolvedImport, SourceModuleKey,
-};
 use analysis::purity::{ChunkCodeGraph, PurityEffectRules, PurityMode};
 use analysis_domain::item_views::{TopLevelItemView, top_level_item_views};
 use analysis_vocabulary::purity::Purity;
 use analysis_vocabulary::value::Value;
 use inference::{FactContext, IterativeInference, IterativeRules};
-use sync_effects::execution_index::{InferredCallableCapabilities, PreparedCallableCapabilities};
+use sync_effects::execution_index::callable_capabilities::{
+    InferredCallableCapabilities, PreparedCallableCapabilities,
+};
+use value_flow::ChunkValueFlow;
+use value_flow::program_bindings::{
+    BindingId, ExportId, ModuleBindings, ProgramBindings, ResolvedImport, SourceModuleKey,
+};
 
 /// A stable export after its imports resolved: its own types and the exports
 /// it copies.
@@ -1081,7 +1083,7 @@ pub struct ResolvedCallableSummaries {
     /// Structural value flows already solved while deriving summaries, which
     /// the purity oracle's census of the same body takes instead of solving
     /// again.
-    pub structural_flows: analysis::facts::ProgramValueFlows,
+    pub structural_flows: value_flow::ProgramValueFlows,
     /// Negative facts from the already prepared original provider callables.
     /// Missing entries are unknown, not proof that a provider is effect free.
     known_original_external_writes: BTreeMap<SourceModuleKey, BTreeMap<String, String>>,
@@ -1283,24 +1285,25 @@ pub fn resolve_imported_callable_summaries(
                 .map(|(_, local)| local.clone())
                 .collect();
             let views = top_level_item_views(facts.body);
-            let mut prepared_module = sync_effects::execution_index::prepare_callable_capabilities(
-                &views,
-                locals,
-                selected_value_inputs
-                    .get(module)
-                    .cloned()
-                    .unwrap_or_default(),
-                selected_native_operation_inputs
-                    .get(module)
-                    .cloned()
-                    .unwrap_or_default(),
-                predefined_globals,
-                bundle_globals.clone(),
-                namespace_privacy_members
-                    .get(module)
-                    .cloned()
-                    .unwrap_or_default(),
-            );
+            let mut prepared_module =
+                sync_effects::execution_index::callable_capabilities::prepare_callable_capabilities(
+                    &views,
+                    locals,
+                    selected_value_inputs
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
+                    selected_native_operation_inputs
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
+                    predefined_globals,
+                    bundle_globals.clone(),
+                    namespace_privacy_members
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
             if !prepared_module.value_input_errors().is_empty() {
                 bail!(
                     "invalid captured value input for provider {module}: {}",
@@ -1453,11 +1456,11 @@ pub fn resolve_imported_callable_summaries(
         })
         .collect();
     let empty_sets = BTreeMap::new();
-    let mut structural_flows = analysis::facts::program_value_flows(
+    let mut structural_flows = value_flow::program_value_flows(
         bindings,
         flow_views
             .iter()
-            .map(|(module, views)| analysis::facts::ProgramFlowModule {
+            .map(|(module, views)| value_flow::ProgramFlowModule {
                 module,
                 fresh_factory_imports: &fresh_factory_imports[*module],
                 fresh_factory_members: &fresh_factory_members[*module],
@@ -1469,7 +1472,8 @@ pub fn resolve_imported_callable_summaries(
                     .get(*module)
                     .unwrap_or(&empty_sets),
             }),
-        diagnostics,
+        diagnostics.metrics(),
+        diagnostics.progress_observer(),
     );
     diagnostics.progress("*", progress::Phase::ProgramValueFlow, progress::State::End);
     add_inferred_wrapper_summaries(
@@ -1531,7 +1535,7 @@ pub fn resolve_imported_callable_summaries(
                 .collect();
             (
                 module,
-                sync_effects::execution_index::infer_callable_capabilities(
+                sync_effects::execution_index::callable_capabilities::infer_callable_capabilities(
                     views,
                     prepared,
                     &native_integrity,
@@ -1804,7 +1808,7 @@ fn add_inferred_wrapper_summaries(
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
     flow_views: &BTreeMap<&SourceModuleKey, Vec<TopLevelItemView<'_>>>,
-    structural_flows: &analysis::facts::ProgramValueFlows,
+    structural_flows: &value_flow::ProgramValueFlows,
     export_summaries: &mut BTreeMap<ExportId, CallableExportProof>,
 ) {
     // Argument/entry coverage is structural and independent of the native

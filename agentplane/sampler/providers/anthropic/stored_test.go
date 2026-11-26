@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providertest"
 )
 
 func TestStoreRecordSharesCompleteAnthropicBlocksAndPreservesProviderFields(t *testing.T) {
@@ -27,7 +27,7 @@ func TestStoreRecordSharesCompleteAnthropicBlocksAndPreservesProviderFields(t *t
 		"usage":{"input_tokens":900719925474099312345,"output_tokens":7,"unknown_usage":{"count":900719925474099312345}},
 		"unknown_envelope":{"keep":"metadata"}
 	}`)
-	store := providerfixture.MemoryContent{}
+	store := providertest.MemoryContent{}
 	id, err := StoreRecord(store, record)
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func TestStoreRecordSharesCompleteAnthropicBlocksAndPreservesProviderFields(t *t
 		if err != nil {
 			t.Fatal(err)
 		}
-		providerfixture.AssertJSONEqual(t, native.Content[index], block.Payload)
+		providertest.AssertJSONEqual(t, native.Content[index], block.Payload)
 	}
 	if got := len(store); got != 1+len(native.Content) {
 		t.Fatalf("stored %d rows, want one message and %d complete blocks", got, len(native.Content))
@@ -77,17 +77,17 @@ func TestStoreRecordSharesCompleteAnthropicBlocksAndPreservesProviderFields(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	providerfixture.AssertJSONEqual(t, projected, projectedRecord)
+	providertest.AssertJSONEqual(t, projected, projectedRecord)
 
 	restored, err := RestoreRecord(store, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	providerfixture.AssertJSONEqual(t, record, restored)
+	providertest.AssertJSONEqual(t, record, restored)
 }
 
 func TestStoreRequestSeparatesReusableProfileAndOrderedMessages(t *testing.T) {
-	store := providerfixture.MemoryContent{}
+	store := providertest.MemoryContent{}
 	messageA := json.RawMessage(`{"role":"user","content":[{"type":"text","text":"first"}]}`)
 	messageB := json.RawMessage(`{"role":"assistant","content":[{"type":"thinking","thinking":"signed prefix","signature":"opaque-sig"},{"type":"text","text":"answer"}]}`)
 	var tool Tool
@@ -158,11 +158,11 @@ func TestStoreRequestSeparatesReusableProfileAndOrderedMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	providerfixture.AssertJSONEqual(t, wantRequestA, restored)
+	providertest.AssertJSONEqual(t, wantRequestA, restored)
 }
 
 func TestRestoreRecordChecksReferencedContent(t *testing.T) {
-	store := providerfixture.MemoryContent{}
+	store := providertest.MemoryContent{}
 	messageID, err := StoreRecord(store, json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"payload"}]}`))
 	if err != nil {
 		t.Fatal(err)

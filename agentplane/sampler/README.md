@@ -32,7 +32,7 @@ JavaScript host is the pinned upstream Codex binary. Python is used only by the 
 `internal/sessionstore` owns durable Session state, transactions, request preparation and recovery.
 The runtime supplies a concrete provider-request recipe; the Store prepares and commits it under
 the existing ownership and context fences before the runtime performs network I/O. History's
-integration tests use the sampler-owned `testing/exportfixture` source without importing Store
+integration tests use the sampler-owned `testing/exporttest` source without importing Store
 internals.
 
 `internal/residentruntime` owns replica scheduling, capacity, recovery scans and coordinated drain.
@@ -203,6 +203,20 @@ bounded retries. Repeat the pass until all Sessions finish.
 Sampler and History share the nested `event_block_profile` settings. The base profile targets 64 KiB
 with zstd level 3 and 128 entries for Sampler or 32 for History. History can override the byte
 target by event kind.
+
+The Sampler reads its journal in pages. Configure the following settings independently of the
+on-disk block profile; none changes the event format or the cursor used to resume.
+
+| Setting                         | Default | Meaning                                                                                       |
+| ------------------------------- | ------: | --------------------------------------------------------------------------------------------- |
+| `history_export_page_entries`   |      16 | Maximum events read and sent before the exporter waits for the page acknowledgement (1–4096). |
+| `history_export_pages_per_turn` |      16 | Maximum pages before a worker yields the Session to the queue (positive integer).             |
+| `follow_events_page_entries`    |     256 | Maximum events fetched per admin stream read (1–4096). Each event is streamed separately.     |
+
+For example, 64 export entries × 4 pages keeps the existing 256-event ceiling per turn and
+reduces catch-up round trips. A larger page can retain more bytes in memory per active worker;
+the exporter reads available events immediately without waiting to fill a page. See the
+[sequential read model](../debug/2026_11_25_postgres_event_compaction.md#sampler-sequential-read-model).
 
 Set the repack flags `--event-block-target-bytes`, `--event-block-target-entries` and
 `--event-block-level` to match the live writer’s `target_bytes`, `target_entries` and `level`. The

@@ -1,6 +1,5 @@
 //! Structured, invocation-owned diagnostics; analysis never chooses an output stream.
 
-pub mod progress;
 pub use work_metrics::WorkMetrics;
 
 use crate::{RedundantPureMemberHint, RedundantPurityHint};
@@ -78,13 +77,11 @@ impl<'a> Diagnostics<'a> {
     }
 
     pub fn progress(&self, chunk: &str, phase: progress::Phase, state: progress::State) {
-        if let Some(observer) = self.progress {
-            observer.observe(progress::Event {
-                chunk,
-                phase,
-                state,
-            });
-        }
+        progress::report(self.progress, chunk, phase, state);
+    }
+
+    pub fn progress_observer(&self) -> Option<&'a dyn progress::Observer> {
+        self.progress
     }
 
     pub fn record_purity_completion_disagreements(

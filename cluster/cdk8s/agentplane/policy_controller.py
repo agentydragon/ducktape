@@ -118,7 +118,9 @@ class PolicyController(Construct):
                     SANDBOX_CONTROLLER_URI,
                 }
             ),
-            writer_services=frozenset({APP_URI}),
+            # The Action Service's orchestration_v1 launcher creates, binds and rolls back launch
+            # Identities through PolicyService.
+            writer_services=frozenset({ACTIONS_URI, APP_URI}),
         )
         settings_file = SettingsFile(
             self,

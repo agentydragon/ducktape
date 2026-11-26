@@ -16,13 +16,23 @@ import grpc
 import yaml
 from python.runfiles import Runfiles
 
-from agentplane.environments.testing.process import EnvironmentServiceProcess, run_environment_service
+from agentplane.environments.testing.environment_service_process import (
+    EnvironmentServiceProcess,
+    run_environment_service,
+)
 from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls import config as runtime_transport
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.settings import Settings
 from agentplane.session_dispatcher.testing.policy_service import serve_identities
-from agentplane.testing.go_process import GoProcess, RestartGoProcess, WhileStopped, go_process, restartable_go_process
+from agentplane.testing.go_process import (
+    GoProcess,
+    GrpcHealth,
+    RestartGoProcess,
+    WhileStopped,
+    go_process,
+    restartable_go_process,
+)
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
@@ -210,10 +220,9 @@ async def run_gateway(
                     binary,
                     env=environment,
                     stderr=generation_log,
-                    health_port=rpc_listener.port,
+                    readiness=GrpcHealth(port=rpc_listener.port, credentials=credentials),
                     grace_s=10,
                     pass_fds=(rpc_listener.socket.fileno(),),
-                    health_credentials=credentials,
                 )
 
             async with restartable_go_process(process_context) as (started, restart_process):

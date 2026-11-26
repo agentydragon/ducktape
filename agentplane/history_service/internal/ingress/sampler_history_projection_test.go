@@ -20,7 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exportfixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exporttest"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -228,7 +228,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 						t.Fatalf("recovery changed earlier context record %d", index)
 					}
 				}
-				if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("late")}, false); !exportfixture.LostOwnership(err) {
+				if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("late")}, false); !exporttest.LostOwnership(err) {
 					t.Fatalf("late provider evidence was not fenced: %v", err)
 				}
 				if err := scenario.Release(t.Context()); err != nil {

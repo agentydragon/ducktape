@@ -295,7 +295,7 @@ mod tests {
             _ => panic!("provider fixture"),
         };
         let views = top_level_item_views(&module.body);
-        let prepared = crate::execution_index::prepare_callable_capabilities(
+        let prepared = crate::execution_index::callable_capabilities::prepare_callable_capabilities(
             &views,
             BTreeSet::from(["make".into()]),
             Vec::new(),
@@ -410,15 +410,16 @@ mod tests {
                 module.visit_with(&mut make);
                 let key = make.0.expect("canonical nested make callable");
                 let views = top_level_item_views(&module.body);
-                let prepared = crate::execution_index::prepare_callable_capabilities(
-                    &views,
-                    BTreeSet::from(["make".into()]),
-                    Vec::new(),
-                    Vec::new(),
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                );
+                let prepared =
+                    crate::execution_index::callable_capabilities::prepare_callable_capabilities(
+                        &views,
+                        BTreeSet::from(["make".into()]),
+                        Vec::new(),
+                        Vec::new(),
+                        Default::default(),
+                        Default::default(),
+                        Default::default(),
+                    );
                 let summary = derive(&prepared.index, key, &BTreeSet::new())
                     .expect("local transfer retains the checked provider capture");
 
@@ -454,15 +455,16 @@ mod tests {
                 module.visit_with(&mut make);
                 let key = make.0.expect("canonical nested make callable");
                 let views = top_level_item_views(&module.body);
-                let prepared = crate::execution_index::prepare_callable_capabilities(
-                    &views,
-                    BTreeSet::from(["make".into()]),
-                    Vec::new(),
-                    Vec::new(),
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                );
+                let prepared =
+                    crate::execution_index::callable_capabilities::prepare_callable_capabilities(
+                        &views,
+                        BTreeSet::from(["make".into()]),
+                        Vec::new(),
+                        Vec::new(),
+                        Default::default(),
+                        Default::default(),
+                        Default::default(),
+                    );
 
                 assert!(
                     prepared.index.callables[&key]

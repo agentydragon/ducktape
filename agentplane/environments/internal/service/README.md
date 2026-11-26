@@ -91,6 +91,6 @@ An idle stream stays open while its credential remains valid and closes when rev
 Service SVID role grants and delegation: [SPEC.md](SPEC.md#resume-and-ownership).
 
 The implementation is internal to Environments. Consumer tests use the wire interface through
-`environments/testing/servicefixture`; production consumers use gRPC. Explicit resume is internal at `environments/internal/resume`; automatic wake execution and its
+`environments/testing/servicetest`; production consumers use gRPC. Explicit resume is internal at `environments/internal/resume`; automatic wake execution and its
 budget contract live at `session_dispatcher/dispatcher/wake`. Both use the shared authorization and
 guarded-write implementation at `environments/lifecycle`.

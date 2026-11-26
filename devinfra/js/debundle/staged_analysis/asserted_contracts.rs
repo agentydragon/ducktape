@@ -100,7 +100,7 @@ pub(crate) fn project_export_set(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::program_bindings::ResolvedImport;
+    use value_flow::program_bindings::ResolvedImport;
 
     fn module(imports: &[(&str, &str, &str)], exports: &[&str]) -> ModulePurityFacts<'static> {
         ModulePurityFacts {

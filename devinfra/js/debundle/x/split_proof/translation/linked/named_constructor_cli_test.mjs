@@ -23,8 +23,24 @@ assert.equal(good.scope, "named-declarations");
 assert.equal(good.guarantee, "all-outcomes");
 assert.equal(good.verdict.strategy, "compiled-constructor");
 assert.deepEqual(good.files, ["entry.mjs", "worker.mjs"]);
-assert.equal((await import(pathToFileURL(path.join(out, "entry.mjs")))).result, 7);
+assert.match(readFileSync(path.join(out, "worker.mjs"), "utf8"), /\bconst seed = 7;/);
+assert.match(readFileSync(path.join(out, "entry.mjs"), "utf8"), /\bconst result = seed;/);
+const emitted = await import(pathToFileURL(path.join(out, "entry.mjs")));
+assert.equal(emitted.result, 7);
 assert.equal(run({ checkOutput: true }).status, "certified");
+
+// Initialized lexical declarations use the same actual-source constructor.
+writeFileSync(source, "let seed = 7; export let result = seed;\n");
+const letOut = path.join(root, "let-out");
+const letResult = split({ source, spec, out: letOut, require: "all-outcomes" });
+assert.equal(letResult.status, "certified", letResult.log);
+assert.equal(letResult.scope, "named-declarations");
+assert.equal(letResult.guarantee, "all-outcomes");
+assert.deepEqual(letResult.files, ["entry.mjs", "worker.mjs"]);
+assert.match(readFileSync(path.join(letOut, "worker.mjs"), "utf8"), /\blet seed = 7;/);
+assert.match(readFileSync(path.join(letOut, "entry.mjs"), "utf8"), /\blet result = seed;/);
+assert.equal((await import(pathToFileURL(path.join(letOut, "entry.mjs")))).result, 7);
+assert.equal(split({ source, spec, out: letOut, require: "all-outcomes", checkOutput: true }).status, "certified");
 
 const entry = path.join(out, "entry.mjs");
 const original = readFileSync(entry, "utf8");
@@ -42,6 +58,23 @@ assert.deepEqual(
   good.files.map((file) => readFileSync(path.join(out, file), "utf8")),
   before
 );
+
+// A forward lexical read keeps its temporal-dead-zone failure. Reversing these
+// units must not take the all-outcomes constructor path or publish output.
+writeFileSync(source, "let first = later; let later = 7; export { first };\n");
+writeFileSync(
+  spec,
+  JSON.stringify({
+    entry: "entry.mjs",
+    modules: { "worker.mjs": ["#1"], "entry.mjs": ["#0", "#2"] },
+    order: ["worker.mjs"],
+    sequential: true,
+  })
+);
+const tdzOut = path.join(root, "tdz-refused");
+const tdz = split({ source, spec, out: tdzOut, require: "all-outcomes" });
+assert.equal(tdz.status, "refused", tdz.log);
+assert(!existsSync(tdzOut));
 
 // Unsupported initializers must not publish anything on this path.
 writeFileSync(source, "const seed = Math.random(); export const result = seed;\n");

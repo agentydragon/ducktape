@@ -1,4 +1,4 @@
-"""The proxy's `policy_service` block reaches PolicyService as the egress proxy, and is omitted when unset."""
+"""The proxy's required `policy_service` block reaches PolicyService as the egress proxy."""
 
 from pathlib import Path
 
@@ -43,8 +43,9 @@ def _peer(client_uri: str) -> dict[str, object]:
     }
 
 
-def test_policy_service_is_omitted_when_unset() -> None:
-    assert "policy_service" not in _settings().model_dump(mode="json")
+def test_policy_service_is_required() -> None:
+    with pytest.raises(ValidationError):
+        _settings()
 
 
 def test_policy_service_accepts_the_proxy_as_caller() -> None:

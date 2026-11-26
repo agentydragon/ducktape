@@ -54,6 +54,7 @@ py_test(
         "//agentplane/egress/api/rules:egress_rules_pb2",
         "//agentplane/egress/api/rules:egress_rules_pb2_grpc",
         "//agentplane/egress/testing:go_replica",
+        "//agentplane/egress/testing:policy_service",
         "//agentplane/egress/testing:sidecar_process",
         "//agentplane/identity/auth:listener",
         "//agentplane/net/peertls:config",

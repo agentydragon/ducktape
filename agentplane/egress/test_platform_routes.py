@@ -18,7 +18,7 @@ from agentplane.egress.platform_routes import (
     PlatformRoutes,
 )
 from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
-from agentplane.egress.testing.sidecar_process import SidecarProcess
+from agentplane.egress.testing.sidecar_process import sidecar_process
 from agentplane.testing.tls import issue_workload_leaf, make_ca, workload_uri, write_ca
 
 UNARY = "/test.Echo/Unary"
@@ -123,7 +123,7 @@ async def route_channel(
         },
     )
     async with (
-        SidecarProcess(proxy=unused_proxy, platform_routes=route_config) as sidecar,
+        sidecar_process(proxy=unused_proxy, platform_routes=route_config) as sidecar,
         grpc.aio.insecure_channel(
             f"{sidecar.platform_route_listener.host}:{sidecar.platform_route_listener.port}"
         ) as channel,

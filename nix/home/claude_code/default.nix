@@ -272,6 +272,7 @@ in
         allow = [
           "$defaults"
           "Bash(bb run //devinfra:gazelle:*) in agentydragon/ducktape — routine BUILD file regeneration"
+          "Bash(nix develop --command <cmd>), Bash(nix develop -c <cmd>) and Bash(nix develop --command bash -c '<cmds>') in agentydragon/ducktape or its worktrees (.claude/worktrees/*, $TMPDIR/agents/*) — loads the repo devshell, where AGENTS.md says dev tools come from; judge the wrapped command exactly as if run bare (e.g. `nix develop --command git commit` with hooks running is a routine commit; the wrapper adds no risk and is no reason to deny)"
           "Bash(bazel test //props/...) in agentydragon/ducktape — routine test workflow distinct from manual live-deployment skill"
           "Bash(kubectl get:*) and Bash(kubectl logs:*) read-only ops against atlas cluster namespaces seen routinely (haku-console, forgejo, flux-system, kube-system, monitoring, loki)"
         ];

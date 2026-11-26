@@ -15,6 +15,40 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
+func TestJournalPagingSettings(t *testing.T) {
+	for _, tc := range []struct {
+		overrides string
+		want      [3]int
+	}{
+		{`{}`, [3]int{16, 16, 256}},
+		{`{"history_export_page_entries":64,"history_export_pages_per_turn":4,"follow_events_page_entries":4096}`, [3]int{64, 4, 4096}},
+	} {
+		s := fixtureSettings()
+		if err := json.Unmarshal([]byte(tc.overrides), &s); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if got := [3]int{s.ExportPageEntries(), s.ExportPagesPerTurn(), s.FollowPageEntries()}; got != tc.want {
+			t.Errorf("%s: paging=%v, want %v", tc.overrides, got, tc.want)
+		}
+	}
+	for _, overrides := range []string{
+		`{"history_export_page_entries":0}`, `{"history_export_page_entries":4097}`,
+		`{"follow_events_page_entries":-1}`, `{"follow_events_page_entries":4097}`,
+		`{"history_export_pages_per_turn":0}`,
+	} {
+		s := fixtureSettings()
+		if err := json.Unmarshal([]byte(overrides), &s); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Validate(); err == nil {
+			t.Errorf("accepted %s", overrides)
+		}
+	}
+}
+
 func TestEventBlockProfileDefaultsAndBounds(t *testing.T) {
 	settings := fixtureSettings()
 	profile := settings.PackingProfile()
