@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
@@ -156,7 +157,7 @@ func TestAdminServicePeerTLSIsMethodScopedAndRejectsBearerAccess(t *testing.T) {
 	kubeConfig.Wrap(func(transport http.RoundTripper) http.RoundTripper {
 		return reviewTransport{next: transport, reviews: &reviews}
 	})
-	records, err := resolver.NewKubernetes(kubeConfig, []string{"test-ns"}, &resolver.Identities{PolicyNamespace: testPolicyNS})
+	records, err := resolver.NewKubernetes(kubeConfig, []string{"test-ns"}, workloadauthtesting.IdentityUIDsFromConfig(t, kubeConfig, testPolicyNS))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,10 +529,8 @@ func testResolver(t *testing.T) *resolver.Resolver {
 		},
 		Status: workloadapi.WorkloadCredentialStatus{CredentialID: agentCredentialID, URI: agentURI},
 	}
-	records, err := resolver.New(
-		clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(record, account, standing, testAgent.DeepCopy()).Build(),
-		[]string{"test-ns"}, &resolver.Identities{PolicyNamespace: testPolicyNS},
-	)
+	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(record, account, standing, testAgent.DeepCopy()).Build()
+	records, err := resolver.New(objects, []string{"test-ns"}, workloadauthtesting.IdentityUIDs(t, objects, testPolicyNS))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,7 +26,6 @@ go_library(
         "//agentplane/history_service/internal/storage",
         "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
-        "//agentplane/identity/credentials/resolver",
         "//agentplane/kubeclient",
         "//agentplane/net/listener",
         "//agentplane/net/peertls",

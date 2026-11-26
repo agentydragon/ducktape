@@ -17,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
@@ -73,7 +73,7 @@ func newServer(t *testing.T, lease time.Duration) testServer {
 // newSVIDResolver admits the workload callers of the test API server.
 func newSVIDResolver(t *testing.T) *auth.SVIDResolver {
 	t.Helper()
-	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, workloadauthtesting.IdentityUIDsFromConfig(t, kube.Config, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

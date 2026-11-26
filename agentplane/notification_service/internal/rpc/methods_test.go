@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
@@ -19,7 +19,7 @@ import (
 
 func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 	fixture := newServer(t)
-	svids, err := auth.NewSVIDResolver(fixture.workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testNamespace})
+	svids, err := auth.NewSVIDResolver(fixture.workload.Objects, []string{testNamespace}, workloadauthtesting.IdentityUIDs(t, fixture.workload.Objects, testNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

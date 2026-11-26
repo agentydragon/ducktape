@@ -13,7 +13,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -138,8 +137,11 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace},
-		&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
+	callerIdentities, err := auth.NewKubernetesIdentityUIDs(config, c.PolicyNamespace)
+	if err != nil {
+		return err
+	}
+	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace}, callerIdentities)
 	if err != nil {
 		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
 	}

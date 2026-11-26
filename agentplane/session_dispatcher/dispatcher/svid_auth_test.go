@@ -11,7 +11,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
@@ -72,7 +71,7 @@ func (p *svidAdmissionProbe) WatchDispatches(
 func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 	api := kubeapiserver.StartForTest(t)
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, workloadTestNamespace, "sandbox-a", workloadTestNamespace).Workload
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, &resolver.Identities{PolicyNamespace: workloadTestNamespace})
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, workloadTestNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +158,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 func TestSVIDListenerNeverAcceptsBearerOrDelegationWithoutItsOwnGrant(t *testing.T) {
 	api := kubeapiserver.StartForTest(t)
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, workloadTestNamespace, "sandbox-a", workloadTestNamespace).Workload
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, &resolver.Identities{PolicyNamespace: workloadTestNamespace})
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, workloadTestNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

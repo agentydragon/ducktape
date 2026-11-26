@@ -18,7 +18,6 @@ go_library(
         "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
-        "//agentplane/identity/credentials/resolver",
         "//agentplane/kubeclient",
         "//agentplane/net/listener",
         "//agentplane/net/peertls",

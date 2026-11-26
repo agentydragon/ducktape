@@ -10,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -31,7 +30,7 @@ func TestSVIDKeepsTheFirstWriterIdentityGate(t *testing.T) {
 	first := workloadauthtesting.NewIdentityWorkload(t, kube, namespace, "first-writer", testPolicyNamespace).Workload
 	other := workloadauthtesting.NewIdentityWorkload(t, kube, namespace, "other-writer", testPolicyNamespace).Workload
 	ca := transporttesting.NewCA(t)
-	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{namespace}, workloadauthtesting.IdentityUIDsFromConfig(t, kube.Config, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +183,7 @@ const testPolicyNamespace = "test-history-policies"
 func serveSVIDIngress(t *testing.T, service *Service, namespace string) func(uri string) testIngress {
 	t.Helper()
 	ca := transporttesting.NewCA(t)
-	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{namespace}, workloadauthtesting.IdentityUIDsFromConfig(t, kube.Config, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

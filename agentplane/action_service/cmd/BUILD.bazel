@@ -38,7 +38,6 @@ go_library(
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/requester",
-        "//agentplane/identity/credentials/resolver",
         "//agentplane/identity/operator",
         "//agentplane/kubeclient",
         "//agentplane/net/peertls",

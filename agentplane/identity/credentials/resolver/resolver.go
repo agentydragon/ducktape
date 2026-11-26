@@ -12,7 +12,6 @@ import (
 
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,40 +49,38 @@ type Peer struct {
 	Pod *workloadapi.PodRef
 }
 
-// Identities is where a credential's Identity subject lives: the policy namespace.
-type Identities struct {
-	PolicyNamespace string
+// IdentityUIDReader returns the UID of the live Identity of that name in the policy namespace; a
+// missing or deleting Identity is found=false. auth.IdentityUIDReader has the same method set and is
+// declared there for delegation; this one exists because auth imports this package.
+type IdentityUIDReader interface {
+	GetIdentityUID(ctx context.Context, name string) (uid string, found bool, err error)
 }
 
 // Resolver reads the WorkloadCredentials of its allowed namespaces.
 type Resolver struct {
 	objects    client.Reader
 	namespaces []string
-	identities *Identities
+	identities IdentityUIDReader
 }
 
-// New returns a Resolver. objects must read the API server directly: a certificate never
-// preserves the authority of a deleted record, a replaced credential ID or a deleted Identity.
-func New(objects client.Reader, namespaces []string, identities *Identities) (*Resolver, error) {
+// New returns a Resolver. objects must read the API server directly, and identities must not vouch
+// for an Identity it cannot see: a certificate never preserves the authority of a deleted record, a
+// replaced credential ID or a deleted Identity.
+func New(objects client.Reader, namespaces []string, identities IdentityUIDReader) (*Resolver, error) {
 	if objects == nil || len(namespaces) == 0 || slices.Contains(namespaces, "") {
 		return nil, errors.New("a WorkloadCredential reader and non-empty allowed namespaces are required")
 	}
-	if identities == nil || identities.PolicyNamespace == "" {
-		return nil, errors.New("a policy namespace is required to resolve Identity subjects")
+	if identities == nil {
+		return nil, errors.New("an Identity reader is required to resolve Identity subjects")
 	}
-	return &Resolver{
-		objects: objects, namespaces: slices.Clone(namespaces),
-		identities: &Identities{PolicyNamespace: identities.PolicyNamespace},
-	}, nil
+	return &Resolver{objects: objects, namespaces: slices.Clone(namespaces), identities: identities}, nil
 }
 
-// NewKubernetes returns a Resolver over an uncached client.
-func NewKubernetes(config *rest.Config, namespaces []string, identities *Identities) (*Resolver, error) {
+// NewKubernetes returns a Resolver reading WorkloadCredentials through an uncached client.
+func NewKubernetes(config *rest.Config, namespaces []string, identities IdentityUIDReader) (*Resolver, error) {
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{workloadapi.AddToScheme, policyapi.AddToScheme} {
-		if err := add(scheme); err != nil {
-			return nil, err
-		}
+	if err := workloadapi.AddToScheme(scheme); err != nil {
+		return nil, err
 	}
 	objects, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
@@ -153,19 +150,16 @@ func (r *Resolver) subject(ctx context.Context, record *workloadapi.WorkloadCred
 		return Identity{}, fmt.Errorf("%w: WorkloadCredential %s has no Identity subject", ErrRefused,
 			types.NamespacedName{Namespace: record.Namespace, Name: record.Name})
 	}
-	var identity policyapi.Identity
-	key := types.NamespacedName{Namespace: r.identities.PolicyNamespace, Name: named.Name}
-	if err := r.objects.Get(ctx, key, &identity); apierrors.IsNotFound(err) {
-		return Identity{}, fmt.Errorf("%w: subject Identity %s is gone", ErrRefused, key)
-	} else if err != nil {
-		return Identity{}, fmt.Errorf("%w: read Identity %s: %w", ErrUnavailable, key, err)
+	uid, found, err := r.identities.GetIdentityUID(ctx, named.Name)
+	if err != nil {
+		return Identity{}, fmt.Errorf("%w: read Identity %q: %w", ErrUnavailable, named.Name, err)
 	}
-	if !identity.DeletionTimestamp.IsZero() {
-		return Identity{}, fmt.Errorf("%w: subject Identity %s is being deleted", ErrRefused, key)
+	if !found {
+		return Identity{}, fmt.Errorf("%w: subject Identity %q is gone or being deleted", ErrRefused, named.Name)
 	}
 	// Pinning the incarnation is the requester's choice (workloadapi.IdentitySubject).
-	if named.UID != "" && identity.UID != named.UID {
-		return Identity{}, fmt.Errorf("%w: subject Identity %s is not the incarnation the record names", ErrRefused, key)
+	if named.UID != "" && types.UID(uid) != named.UID {
+		return Identity{}, fmt.Errorf("%w: subject Identity %q is not the incarnation the record names", ErrRefused, named.Name)
 	}
-	return Identity{Name: identity.Name, UID: identity.UID}, nil
+	return Identity{Name: named.Name, UID: types.UID(uid)}, nil
 }

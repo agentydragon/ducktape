@@ -13,7 +13,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
@@ -22,7 +21,7 @@ func TestWorkloadListenerUsesLiveSVIDAndReplacesCallerIdentity(t *testing.T) {
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-svid", testPolicyNamespace).Workload
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
-	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL)
 
 	request, err := http.NewRequest(http.MethodPost, serverURL+"/v1/responses", strings.NewReader(`{"model":"test"}`))
 	if err != nil {
@@ -78,7 +77,7 @@ func TestWorkloadListenerDoesNotFallBackToValidBearerForStaleSVID(t *testing.T) 
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-stale-svid", testPolicyNamespace).Workload
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
-	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	serverURL, client := newWorkloadIngressTestServer(t, workload, backendServer.URL)
 
 	workload.Issue(t, "ffffffffffffffffffffffffffffffff")
 	validBearer := workloadToken(t, "llm-bearer-fallback")
@@ -105,14 +104,14 @@ func newWorkloadIngressTestServer(
 	t *testing.T,
 	workload workloadauthtesting.Workload,
 	backendURL string,
-	identities *resolver.Identities,
 ) (string, *http.Client) {
 	t.Helper()
 	ca := transporttesting.NewCA(t)
 	serverCredentials := ca.Issue(t, peertls.LLMIngressURI)
 	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 
-	svidResolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, identities)
+	svidResolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace},
+		workloadauthtesting.IdentityUIDs(t, workload.Objects, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

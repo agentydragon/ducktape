@@ -11,7 +11,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -40,7 +39,7 @@ func TestSVIDResolvesTheRecordsSubjectAndPod(t *testing.T) {
 				leaf.URIs[0] = mustURL(t, workload.Issue(t, "cccccccccccccccccccccccccccccccc"))
 				want.PodName, want.PodUID = record.Spec.Pod.Name, string(record.Spec.Pod.UID)
 			}
-			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, testPolicyNamespace))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -65,7 +64,7 @@ func TestSVIDResolvesAStandingWorkloadWithoutAPod(t *testing.T) {
 		t.Fatal(err)
 	}
 	leaf.URIs[0] = mustURL(t, workload.Issue(t, "dddddddddddddddddddddddddddddddd"))
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +92,7 @@ func TestSVIDResolvesAStandingWorkloadWithoutAPod(t *testing.T) {
 func TestSVIDResolvesAnIdentitySubject(t *testing.T) {
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, "svid-"+uuid.NewString(), "sandbox-"+uuid.NewString(), testPolicyNamespace)
 	leaf := &x509.Certificate{URIs: []*url.URL{mustURL(t, workload.URI)}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +161,7 @@ func TestSVIDRefusesRevokedOrIncompleteWorkloads(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			workload, leaf := svidWorkload(t)
 			test.change(t, workload, leaf)
-			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, testPolicyNamespace))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -207,7 +206,7 @@ func svidFixture(t *testing.T) (workloadauthtesting.Workload, *x509.Certificate)
 // Direct SVID users must retain the same ambiguity rejection as configured listeners.
 func TestDirectSVIDRejectsCredentialMetadataAndRevalidates(t *testing.T) {
 	workload, leaf := svidWorkload(t)
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}
