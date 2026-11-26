@@ -110,13 +110,19 @@ app exposes it as the clearable "Identity for next start"
 rebind they fail dispatch, and #15445 refuses the rebind while a retained Session names another
 incarnation.
 
+The Identity itself is independent of both (operator, 2026-11-26): it can exist before any Session
+names it, and many Sessions can name the same one; no Session or Sandbox owns its lifetime, as
+[settled](session_environment_model.md#session-scoped-identities-and-native-creation-order). The
+shapes below differ only in which record holds the authoritative Session-to-Identity reference.
+
 Candidate shapes; **how any works is not designed**:
 
 - **Derive:** a Session with Sandboxes stores no Identity; each dispatch uses its Sandboxes' common
   Identity, and History records the Identity per turn. Breaks down with several Sandboxes: rebinding
   one makes them disagree.
-- **Session owns it:** the Session holds the Identity; its Sandboxes follow. Rebinding is an operation
-  on the Session that moves every attached Sandbox, all suspended.
+- **Session holds the reference:** the Session records which Identity it acts as; its Sandboxes must
+  match. Rebinding is an operation on the Session that moves every attached Sandbox, all suspended.
+  The Identity is still neither created nor deleted by it.
 - **Move together:** rebind or unbind of a suspended Sandbox rewrites its Sessions' pinned Identity in
   the same Dispatcher-coordinated operation.
 
@@ -204,7 +210,7 @@ Who runs it:
 
 ## Operator decisions
 
-1. **Binding shape:** derive from the Sandbox, Session owns it, or pinned on both and moved together;
+1. **Binding shape:** derive from the Sandbox, Session holds the reference, or pinned on both and moved together;
    and whether a rebind may detach a Sandbox instead of moving the whole set.
 2. **Store:** CR plus finalizer, or Agentplane-owned record; decide after the Identity trace.
 3. **Live-reference rule:** confirm or amend. Does a Sandbox naming the Identity block, or is "cannot
