@@ -1,4 +1,4 @@
-import { Anchor, Code, Text } from "@mantine/core";
+import { Anchor, Code } from "@mantine/core";
 import { createContext, type JSX, type ReactNode, useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
@@ -11,14 +11,6 @@ import type { ResultPreview } from "./result_entry";
 
 export const GROCY_BASE: string = "https://grocy-sf.allegedly.works";
 export const reference: z.ZodType<string | number> = z.union([z.number().int(), z.string()]);
-
-export function Line({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <Text size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
-      {children}
-    </Text>
-  );
-}
 
 export function objectLink(path: string, id: number, name: string): JSX.Element {
   return (

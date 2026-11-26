@@ -42,7 +42,7 @@ import { useOpenChronologicalDebug } from "./chronological_debug";
 import { observedSession, sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
 import { timestampLabel } from "./thread_presentation";
 import { isoTime, timeAgo } from "../ui/format_time";
-import { TimeAgo } from "../ui/time_ago";
+import { TimeAgo, useNow } from "../ui/time_ago";
 import { AUTOSUSPEND_BLOCKER_LABELS, autosuspendHint } from "./sandbox_autosuspend";
 import { NotificationStatus } from "../notifications/notification_status";
 import { DeliveryHistoryFallback } from "./command_delivery_history";
@@ -228,11 +228,7 @@ function ConversationBody({
   sandbox,
   delivery,
 }: ConversationBodyProps): JSX.Element {
-  const [clock, setClock] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setClock(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const now = useNow();
   const summary = thread.summary;
   const attachment = summary.attached;
   const spec = attachment?.spec;
@@ -240,7 +236,7 @@ function ConversationBody({
   const sandboxUID = summary.sandbox?.uid;
   const lastModelActivityAt = timestampLabel(summary.lastModelActivityAt);
   const idleSince = timestampLabel(summary.idleSince);
-  const activityAge = modelActivityAge(lastModelActivityAt, Math.max(clock, Date.now()));
+  const activityAge = modelActivityAge(lastModelActivityAt, now);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const sync = useThreadSync().useThread();
   const commands = useThreadCommands(thread, entities, delivery);
@@ -283,7 +279,7 @@ function ConversationBody({
   const confirmedIdle = status.kind === "idle" || status.kind === "turn_error";
   const harness = attachedHarness(attachment);
   const { llmTraceScope } = harnessBehavior(harness);
-  const sandboxAutosuspend = autosuspendHint(currentSandbox, inventoryFresh, Math.max(clock, Date.now()));
+  const sandboxAutosuspend = autosuspendHint(currentSandbox, inventoryFresh, now);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
   const selectedModel = controls?.appliedModel ?? spec?.model;

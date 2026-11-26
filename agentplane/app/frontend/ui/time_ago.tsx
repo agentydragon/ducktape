@@ -26,8 +26,14 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-export function TimeAgo({ value }: { value: string | number | Date }): JSX.Element {
+/** The current time in epoch milliseconds, re-rendering the caller every 30 seconds. */
+export function useNow(): number {
   useSyncExternalStore(subscribe, () => tick);
+  return Date.now();
+}
+
+export function TimeAgo({ value }: { value: string | number | Date }): JSX.Element {
+  useNow();
   return (
     <time dateTime={isoTime(value)} title={isoTime(value)}>
       {timeAgo(value)}

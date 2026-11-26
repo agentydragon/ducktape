@@ -2,17 +2,9 @@ import { Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
+import { Line } from "../../ui/line";
 import { defineCallPreview, definePreview } from "./entry";
-import {
-  batchError,
-  batchOutcome,
-  displayRef,
-  GrocyReview,
-  grocyRequest,
-  Line,
-  objectLink,
-  reference,
-} from "./grocy_shared";
+import { batchError, batchOutcome, displayRef, GrocyReview, grocyRequest, objectLink, reference } from "./grocy_shared";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview } from "./result_entry";
 
