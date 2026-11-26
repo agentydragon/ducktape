@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
 import { generate } from "astring";
+import { dump } from "../parser.mjs";
 import { split } from "../testing/split.mjs";
 import { moduleGraphFixture } from "./module_graph_fixture.mjs";
 
@@ -75,5 +77,64 @@ console.log(
     emittedAndReadBack: "green",
     wrongOwner: ownerResult.status,
     equalValueWrongCell: wrongCell.status,
+  })
+);
+
+function probe(kind, input) {
+  const request = [{ kind, input }];
+  const result = spawnSync(process.env.LINKED_INPUT_CHECKER, [], {
+    encoding: "utf8",
+    input: JSON.stringify(request) + "\n",
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 90_000,
+  });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout)[0];
+}
+
+function namedProbe(placement, sourceText = fixture.source) {
+  return probe("namedConstructor", { source: dump(sourceText), spec: placement });
+}
+
+// Reuse the sparse_checked_artifact_test.mjs sample: the export is not terminal.
+// #2 is the actual result declaration; #1 does not execute or allocate a region.
+const sparseSource = "const seed = 42;\nexport { seed as exposed };\nconst result = seed;\n";
+const sparseSpec = {
+  entry: "entry.mjs",
+  modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
+  order: ["worker.mjs"],
+  sequential: true,
+};
+const shape = probe("singletonSourceShape", { source: dump(sparseSource), entry: sparseSpec.entry });
+assert.deepEqual(shape.output, {
+  entry: "entry.mjs",
+  modules: [
+    {
+      name: "entry.mjs",
+      body: [
+        [0, ["seed"]],
+        [2, ["result"]],
+      ],
+      exports: [["exposed", "seed"]],
+    },
+  ],
+});
+const sparseConstructor = namedProbe(sparseSpec, sparseSource);
+assert.match(sparseConstructor.error, /source position 1 has no executable unit/);
+const sparseSourceFile = path.join(root, "sparse-source.mjs");
+const sparseSpecFile = path.join(root, "sparse-spec.json");
+const sparseOut = path.join(root, "sparse-out");
+writeFileSync(sparseSourceFile, sparseSource);
+writeFileSync(sparseSpecFile, JSON.stringify(sparseSpec));
+const sparse = split({ source: sparseSourceFile, spec: sparseSpecFile, out: sparseOut, require: "all-outcomes" });
+assert.equal(sparse.status, "refused", sparse.log);
+assert(!existsSync(sparseOut), "a refused sparse split must not publish output");
+console.log(
+  JSON.stringify({
+    fixture: "sparse-interior-export",
+    shape: shape.output,
+    constructor: sparseConstructor,
+    production: { status: sparse.status, scope: sparse.scope, reason: sparse.reason },
   })
 );

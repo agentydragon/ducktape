@@ -136,6 +136,15 @@ private def namedConstructor (input : Json) : Except String Json := do
   return Json.mkObj [("entry", toJson result.split.program.entry),
     ("modules", toJson (result.split.program.modules.map (·.name)))]
 
+/-- Inspect the original decoded module without projecting or renumbering its body. -/
+private def singletonSourceShape (input : Json) : Except String Json := do
+  let source ← input.getObjVal? "source"
+  let entry ← input.getObjValAs? String "entry"
+  let original ← CoreJS.LinkedInput.decodeSingletonSource source entry
+  return Json.mkObj [("entry", toJson original.entry), ("modules", toJson (original.modules.map fun m =>
+    Json.mkObj [("name", toJson m.name), ("body", toJson (m.body.map fun (id, stmt) =>
+      (id, stmt.bindings.map Prod.fst))), ("exports", toJson m.exports)]))]
+
 private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr (← cases.mapM fun fixture => do
@@ -146,6 +155,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "singletonPlacement" => pure (singletonPlacement (← fixture.getObjVal? "input"))
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
       | "structuralSparseHole" => pure (structuralSparseHole (← fixture.getObjVal? "input"))
+      | "singletonSourceShape" => pure (singletonSourceShape (← fixture.getObjVal? "input"))
       | "namedConstructor" => pure (namedConstructor (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
