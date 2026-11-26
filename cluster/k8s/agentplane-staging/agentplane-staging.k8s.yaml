@@ -423,6 +423,10 @@ spec:
         barmanObjectName: postgres
   postgresql:
     parameters:
+      deadlock_timeout: 1s
+      log_lock_waits: "on"
+      log_parameter_max_length: "0"
+      log_parameter_max_length_on_error: "0"
       max_connections: "300"
       max_slot_wal_keep_size: 512MB
   probes:

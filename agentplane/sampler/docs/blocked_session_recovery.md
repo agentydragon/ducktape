@@ -11,6 +11,56 @@ operation.
 Use the `SamplerAdmin` API for `GetSession`, `GetCommand`, `FollowEvents`, `ReadProviderRequest` and
 `RecoverSession`. Its caller must be listed separately in `admin_service_callers`.
 
+## Investigate a PostgreSQL lock wait
+
+The staging PostgreSQL cluster logs waits that reach `deadlock_timeout` (1 second).
+A wait record identifies the waiting backend and SQL statement. Its detail identifies
+the holding backend or wait queue. Match the wait time and `connection_from` to the
+sampler pod's error. Search both database pods to cover a primary change during the incident.
+
+Query [Loki](../../../cluster/docs/troubleshooting.md#loki-log-retrieval--use-this-for-logs-of-pods-that-no-longer-exist)
+for the incident's time window if the pods have rolled.
+
+```logql
+{namespace="agentplane-staging", pod=~"postgres-[0-9]+", container="postgres"}
+| json database="record.database_name", db_message="record.message"
+| database="central_sampler"
+| db_message=~".*(still waiting for|acquired .* after|canceling statement).*"
+```
+
+For recent logs on running pods, use this command.
+
+```bash
+kubectl logs -n agentplane-staging -l cnpg.io/cluster=postgres -c postgres --since=15m --tail=-1 |
+  jq -c '
+    select(.record.database_name == "central_sampler") |
+    select(.record.message | test("still waiting for|acquired .* after|canceling statement")) |
+    {ts, record: (.record | {process_id, connection_from, message, detail, context, query})}
+  '
+```
+
+For a wait still in progress, run this read-only query on the primary in `central_sampler`
+using an authorized database connection that can view the matching backends. The wait log
+identifies the blocker by PID. The live snapshot also shows its current or last statement,
+transaction age, and whether it is itself waiting on a lock or I/O.
+
+```sql
+SELECT waiter.pid AS waiter_pid,
+       waiter.wait_event AS waiter_event,
+       waiter.query AS waiter_query,
+       blocking.pid AS blocker_pid,
+       blocker.state AS blocker_state,
+       clock_timestamp() - blocker.xact_start AS blocker_xact_age,
+       blocker.wait_event_type AS blocker_wait_type,
+       blocker.wait_event AS blocker_event,
+       blocker.query AS blocker_query
+FROM pg_stat_activity AS waiter
+CROSS JOIN LATERAL unnest(pg_blocking_pids(waiter.pid)) AS blocking(pid)
+LEFT JOIN pg_stat_activity AS blocker ON blocker.pid = blocking.pid
+WHERE waiter.datname = current_database()
+  AND waiter.wait_event_type = 'Lock';
+```
+
 ## Lost host and lost owner settle automatically
 
 A Session whose JavaScript host is gone (Pod replaced, host process restarted) or whose owner
