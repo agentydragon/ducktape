@@ -34,10 +34,6 @@ use crate::imports::{
 use crate::naturalize::NaturalizedModuleBody;
 use crate::placement::EmissionPlacement;
 use crate::plans::ModulePlan;
-use crate::rename_ledger::{
-    RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
-    SealedRenames,
-};
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
@@ -48,6 +44,10 @@ use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::AssignmentAnalysis;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
+use rename_ledger::{
+    RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
+    SealedRenames,
+};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;

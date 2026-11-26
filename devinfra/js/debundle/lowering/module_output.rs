@@ -22,7 +22,6 @@ use crate::imports::{
 };
 use crate::naturalize::NaturalizedModuleBody;
 use crate::plans::ModulePlan;
-use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{BindingId, ImportedSourceTarget, ModuleId, ModuleRole, top_level_id};
@@ -36,6 +35,7 @@ use frontend_elaboration::source_ast::{
 use gate::AssignmentAnalysis;
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use output_layout::{CHUNK_REPORT, REPORTS_DIR, TREE_DIR};
+use rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValidation};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMutWith, VisitWith};

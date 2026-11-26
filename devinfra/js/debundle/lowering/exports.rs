@@ -3,11 +3,11 @@
 //! and convert binding maps into `export { ... }` ModuleItems.
 
 use crate::naturalize::NaturalizedModuleBody;
-use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
 use binding_targets::{ExportReferences, ReferenceCollector, public_export_name};
 use frontend_elaboration::chunk_ast::{ExportedNameOrigin, SourceExportIdentity, TopLevelDecl};
 use js_ast::{named_export_module_item, named_export_specifier};
+use rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use rustc_hash::FxHashSet;
 use source_identity::StatementId;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};

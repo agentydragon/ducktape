@@ -31,7 +31,6 @@ use crate::lower::{
 use crate::naturalize::collect_plan_export_rename_intents;
 use crate::placement::EmissionPlacement;
 use crate::plans::ModulePlan;
-use crate::rename_ledger::{RenameLedger, SealValidation};
 use crate::{
     AtomicGroupOwnerCompletionReport, BindingSourceUnitAssociation, ChunkModulesCounts,
     ChunkModulesReport, ExportReentryReport, FinalModuleContent, GateRejectionPolicy,
@@ -66,6 +65,7 @@ use output_layout::{
     SELECTOR_DIAGNOSTICS_REPORT, SPEC_LINT_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
 use ownership_subset::{OwnershipSubset, SelectedModule};
+use rename_ledger::{RenameLedger, SealValidation};
 use report_io::JsonlReport;
 use spec::{ChunkRenames, UnassignedMode};
 use spec_resolution::LogicalRequest;
@@ -379,7 +379,7 @@ pub(super) struct FinalizedLogicalAssignment<'a> {
     atomic_group_owner_completions: Vec<plan_builder::AtomicGroupOwnerCompletion>,
     unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
     pub(super) assignment_analysis: AssignmentAnalysis,
-    sealed_renames: crate::rename_ledger::SealedRenames,
+    sealed_renames: rename_ledger::SealedRenames,
     chunk_renames_map: HashMap<String, String>,
 }
 

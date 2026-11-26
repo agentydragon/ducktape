@@ -44,9 +44,6 @@ mod naturalize;
 mod placement;
 mod plans;
 mod reentry_report;
-pub mod rename_ledger;
-#[cfg(test)]
-mod rename_ledger_proptest;
 mod rewrite_runtime;
 mod scope_names;
 mod util;
