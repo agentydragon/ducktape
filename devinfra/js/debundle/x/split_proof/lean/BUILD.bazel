@@ -2072,6 +2072,13 @@ lean_proof_test(
     allow_empty = True,
     modules = ["EsmSplit.CoreJS.IndexedEntryLink"],
     required_theorems = [
+        "CoreJS.IndexedEntryLink.indexed_const_scopes_and_init",
+        "CoreJS.IndexedEntryLink.indexed_scopes_success",
+        "CoreJS.IndexedEntryLink.row_resolved_entries",
+        "CoreJS.IndexedEntryLink.export_pairs_equal",
+        "CoreJS.IndexedEntryLink.resolved_entries_equal",
+        "CoreJS.IndexedEntryLink.scopes_find",
+        "CoreJS.IndexedEntryLink.indexed_initFunctions_consts",
         "CoreJS.IndexedEntryLink.initFunctions_consts",
         "CoreJS.IndexedEntryLink.sorted_initFunctions_consts",
     ],

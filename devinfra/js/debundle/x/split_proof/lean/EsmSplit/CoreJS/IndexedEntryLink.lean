@@ -33,6 +33,204 @@ theorem sorted_initFunctions_consts (linked : List (Module × Env))
   intro u member
   exact allConst u ((List.mergeSort_perm _ _).mem_iff.1 member)
 
+/-- Actual scopes built for the indexed constructor contain only original
+source statements. Thus a const-only source has no link-time function hoists
+in the constructed program, including after the linker sorts its units. -/
+theorem indexed_initFunctions_consts {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+    {frames : List (Nat × List (Name × Addr))} {linked : List (Module × Env)}
+    (scopeResult : (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok linked)
+    (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init) :
+    (initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.id ≤ b.id)) : M W Unit) = pure () := by
+  apply sorted_initFunctions_consts
+  intro unit member
+  obtain ⟨pair, pairIn, inBody, _⟩ := mem_unitsOf member
+  have modules := ProjectedOrder.scopes_modules (splitProgramIndexed body B P) frames
+    (splitProgramIndexed body B P).loaded linked scopeResult
+  have loaded : pair.1 ∈ (splitProgramIndexed body B P).loaded := by
+    rw [← modules]
+    exact List.mem_map.mpr ⟨pair, pairIn, rfl⟩
+  have flat : (unit.1, unit.2.1) ∈ (splitProgramIndexed body B P).loaded.flatMap (·.body) :=
+    List.mem_flatMap.mpr ⟨pair.1, loaded, inBody⟩
+  have found := SparseProjectedOrder.loaded_row_lookup flat
+  have inSource : body.lookup unit.1 = some unit.2.1 := by simpa [indexedNumbered] using found
+  exact sourceConsts (unit.1, unit.2.1) (lookup_mem inSource)
+
+#print axioms indexed_initFunctions_consts
+
+/-- The indexed constructor's real linker constructs scopes for every loaded
+module from source/plan validity and source frames, without testing a candidate
+execution. -/
+theorem indexed_scopes_success {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {frames : List (Nat × List (Name × Addr))} (frameNames : FramesOf body frames)
+    {source : Module} (sourceBody : source.body = body) :
+    ∃ linked, (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok linked := by
+  obtain ⟨linked, success, _, _⟩ := scopes_ok (splitProgramIndexed body B P) frames
+    (fun _ _ => True) (splitProgramIndexed body B P).loaded (by
+      intro m member
+      obtain ⟨path, _, found⟩ := List.mem_filterMap.1 member
+      rw [SparseProjectedOrder.split_indexed_find] at found
+      obtain ⟨md, hfind, rfl⟩ := Option.map_eq_some_iff.1 found
+      have inPlan : md ∈ P.mods := List.mem_of_find?_eq_some hfind
+      obtain ⟨cells, imported, _⟩ := IndexedPlanCells.module_scope_cells valid
+        (IndexedConstructorCells.projection body B P) footprints complete frameNames sourceBody inPlan
+      exact ⟨cells, imported, trivial⟩)
+  exact ⟨linked, success⟩
+
+/-- For const-only source units, the actual constructed scopes link without
+function-hoist state changes. This holds for arbitrary statement initializers;
+it concerns linker initialization rather than statement execution. -/
+theorem indexed_const_scopes_and_init {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {frames : List (Nat × List (Name × Addr))} (frameNames : FramesOf body frames)
+    {source : Module} (sourceBody : source.body = body)
+    (sourceConsts : ∀ p ∈ body, ∃ name init, p.2 = .decl .const name init) :
+    ∃ linked, (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok linked ∧
+      (initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.id ≤ b.id)) : M W Unit) = pure () := by
+  obtain ⟨linked, linkedScopes⟩ := indexed_scopes_success valid footprints complete frameNames sourceBody
+  exact ⟨linked, linkedScopes, indexed_initFunctions_consts linkedScopes sourceConsts⟩
+
+#print axioms indexed_const_scopes_and_init
+#print axioms indexed_scopes_success
+
+/-- Selecting an entry from the actual list returned by `Program.scopes`
+selects the same first named module as the loaded-module list and pairs it
+with exactly the scope and imports produced by the CoreJS linker. -/
+theorem scopes_find (program : Program) (frames : List (Nat × List (Name × Addr))) (entry : String) :
+    ∀ (modules : List Module) (linked : List (Module × Env)) (target : Module),
+      program.scopes frames modules = .ok linked →
+      modules.find? (fun m => m.name == entry) = some target →
+      ∃ cells, program.imported frames target.imports = .ok cells ∧
+        linked.find? (fun (m, _) => m.name == entry) =
+          some (target, { vars := target.scope frames ++ cells, this := .undef })
+  | [], linked, target, scopeResult, found => by simp at found
+  | m :: rest, linked, target, scopeResult, found => by
+    change ((do
+      let imported ← program.imported frames m.imports
+      let tail ← program.scopes frames rest
+      pure ((m, { vars := m.scope frames ++ imported, this := .undef }) :: tail)) : Except Abort _) = .ok linked at scopeResult
+    cases imported : program.imported frames m.imports with
+    | error why => rw [imported] at scopeResult; cases scopeResult
+    | ok cells =>
+      cases remaining : program.scopes frames rest with
+      | error why => rw [imported, remaining] at scopeResult; cases scopeResult
+      | ok tail =>
+        rw [imported, remaining] at scopeResult
+        cases scopeResult
+        cases hit : (m.name == entry) with
+        | true =>
+          have equal : m = target := by simpa [List.find?_cons, hit] using found
+          subst target
+          exact ⟨cells, imported, by simp [hit]⟩
+        | false =>
+          have later : rest.find? (fun m => m.name == entry) = some target := by
+            simpa [List.find?_cons, hit] using found
+          obtain ⟨targetCells, targetImports, targetFound⟩ := scopes_find program frames entry rest tail target remaining later
+          exact ⟨targetCells, targetImports, by simpa [List.find?_cons, hit] using targetFound⟩
+
+/-- A public/local pair resolved in a concrete CoreJS environment. -/
+private def entryCell (env : Env) : Name × Name → Except String (Name × Addr) := fun (publicName, localName) => do
+  let some a := env.vars.lookup localName | throw s!"unbound entry export {publicName}"
+  return (publicName, a)
+
+/-- An ordered list of aliases resolves to one identical public-address table
+when each local has the same present address in the two environments. -/
+theorem export_pairs_equal (before after : Env) : ∀ names : List (Name × Name),
+    (∀ p ∈ names, ∃ a, before.vars.lookup p.2 = some a ∧ after.vars.lookup p.2 = some a) →
+    ∃ table, names.mapM (entryCell before) = .ok table ∧ names.mapM (entryCell after) = .ok table
+  | [], _ => ⟨[], rfl, rfl⟩
+  | (publicName, localName) :: rest, agree => by
+    obtain ⟨a, original, candidate⟩ := agree (publicName, localName) (by simp)
+    obtain ⟨table, hb, ha⟩ := export_pairs_equal before after rest
+      (fun p member => agree p (List.mem_cons_of_mem _ member))
+    refine ⟨(publicName, a) :: table, ?_, ?_⟩
+    · simp [entryCell, original, hb]; rfl
+    · simp [entryCell, candidate, ha]; rfl
+
+/-- EntryExports.resolve uses that ordered alias table for the actual selected
+linked entries, including when the source and candidate entry names differ. -/
+theorem resolved_entries_equal {sourceName candidateName : String} {source candidate : Module}
+    {sourceEnv candidateEnv : Env} {sourceLinked candidateLinked : List (Module × Env)}
+    (sourceFound : sourceLinked.find? (fun (m, _) => m.name == sourceName) = some (source, sourceEnv))
+    (candidateFound : candidateLinked.find? (fun (m, _) => m.name == candidateName) = some (candidate, candidateEnv))
+    (exports : candidate.exports = source.exports)
+    (agree : ∀ p ∈ source.exports, ∃ a, sourceEnv.vars.lookup p.2 = some a ∧ candidateEnv.vars.lookup p.2 = some a) :
+    ∃ table, EntryExports.resolve sourceName sourceLinked = .ok table ∧
+      EntryExports.resolve candidateName candidateLinked = .ok table := by
+  obtain ⟨table, before, after⟩ := export_pairs_equal sourceEnv candidateEnv source.exports agree
+  refine ⟨table, ?_, ?_⟩
+  · simp only [EntryExports.resolve, sourceFound]
+    exact before
+  · simp only [EntryExports.resolve, candidateFound, exports]
+    exact after
+
+/-- When actual CoreJS scope construction selects the source and authored
+entry modules, resolving their ordered public aliases gives the same table of
+addresses. Every such address is allocated in the source declaration result.
+The source-scope and loaded-entry premises are structural linker obligations;
+they do not compare executions or entry tables. Candidate scopes are derived
+from source/plan validity. -/
+theorem row_resolved_entries {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (valid : EsmSplit.Valid B S P)
+    (footprints : IndexedExportCells.Footprints body B) (complete : IndexedPlanCells.DefinitionsPresent body B)
+    {s s' : State W} {frames : List (Nat × List (Name × Addr))}
+    (allocated : declareTops body s = .ok frames s')
+    {sourceProgram : Program} {source : Module} (sourceBody : source.body = body)
+    (sourceImports : source.imports = []) {row : EsmSplit.LocalExportUnit}
+    (sourceRow : InteriorExportNames.SourceRow source row)
+    (rowFootprint : row.FootprintMatches (B.stmt row.ordinal))
+    {owner : EsmSplit.Module} (ownerIn : owner ∈ P.mods) (rowWithin : row.ordinal < B.length)
+    (authored : S.claimants B row.ordinal = [owner.name]) (unitsUnique : owner.stmts.Nodup)
+    (glue : owner.exports = [])
+    (onlyRow : ∀ id ∈ owner.stmts, id ≠ row.ordinal → (B.stmt id).exports = [])
+    (sourceDefs : ∀ pair ∈ row.names, ∃ id, id < B.length ∧ pair.2 ∈ (B.stmt id).defs)
+    {sourceLinked : List (Module × Env)}
+    (sourceScopes : sourceProgram.scopes frames sourceProgram.loaded = .ok sourceLinked)
+    (sourceEntry : sourceProgram.loaded.find? (fun m => m.name == sourceProgram.entry) = some source)
+    (targetEntry : (splitProgramIndexed body B P).loaded.find?
+      (fun m => m.name == (splitProgramIndexed body B P).entry) = some (moduleOfIndexed body B P owner)) :
+    ∃ targetLinked table,
+      (splitProgramIndexed body B P).scopes frames (splitProgramIndexed body B P).loaded = .ok targetLinked ∧
+      row.ordinal ∈ owner.stmts ∧
+      EntryExports.resolve sourceProgram.entry sourceLinked = .ok table ∧
+      EntryExports.resolve (splitProgramIndexed body B P).entry targetLinked = .ok table ∧
+      ∀ pair ∈ row.names, ∃ a b, (source.scope frames).lookup pair.2 = some a ∧ s'.cellAt a = some b := by
+  obtain ⟨targetLinked, targetScopes⟩ := indexed_scopes_success valid footprints complete
+    (declareTops_names body allocated) sourceBody
+  obtain ⟨cells, owned, published, imported, agree⟩ :=
+    IndexedAllocatedCells.row_allocated_cells valid footprints complete allocated sourceBody sourceRow rowFootprint
+      ownerIn rowWithin authored unitsUnique glue onlyRow sourceDefs
+  obtain ⟨sourceCells, sourceImported, sourceFound⟩ :=
+    scopes_find sourceProgram frames sourceProgram.entry sourceProgram.loaded sourceLinked source sourceScopes sourceEntry
+  have noSourceCells : sourceCells = [] := by
+    rw [sourceImports] at sourceImported
+    cases sourceImported
+    rfl
+  subst sourceCells
+  obtain ⟨targetCells, targetImported, targetFound⟩ :=
+    scopes_find (splitProgramIndexed body B P) frames (splitProgramIndexed body B P).entry
+      (splitProgramIndexed body B P).loaded targetLinked (moduleOfIndexed body B P owner) targetScopes targetEntry
+  have sameCells : targetCells = cells := by rw [imported] at targetImported; cases targetImported; rfl
+  subst targetCells
+  have envAgree : ∀ pair ∈ source.exports, ∃ a,
+      ({ vars := source.scope frames ++ [], this := .undef } : Env).vars.lookup pair.2 = some a ∧
+      ({ vars := (moduleOfIndexed body B P owner).scope frames ++ cells, this := .undef } : Env).vars.lookup pair.2 = some a := by
+    intro pair member
+    have inRow : pair ∈ row.names := by rw [← sourceRow.exports]; exact member
+    obtain ⟨a, _, original, target, _⟩ := agree pair inRow
+    exact ⟨a, by simpa using original, target⟩
+  obtain ⟨table, original, target⟩ := resolved_entries_equal sourceFound targetFound published envAgree
+  refine ⟨targetLinked, table, targetScopes, owned, original, target, ?_⟩
+  intro pair member
+  obtain ⟨a, b, original, _, present⟩ := agree pair member
+  exact ⟨a, b, original, present⟩
+
+#print axioms row_resolved_entries
+#print axioms export_pairs_equal
+#print axioms resolved_entries_equal
+#print axioms scopes_find
 #print axioms initFunctions_consts
 #print axioms sorted_initFunctions_consts
 
