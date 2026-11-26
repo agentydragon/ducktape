@@ -1,41 +1,20 @@
 /**
- * Identity deletion as the identity list and the identity page offer it. The Policy Controller rechecks Flux
- * ownership and references; the rules are restated here so the UI offers the delete only when it will be accepted.
+ * Identity deletion as the identity list and the identity page offer it. The dialog asks the Policy Controller
+ * whether it would accept (a dry-run DeleteIdentity) instead of restating its rules: the browser cannot see
+ * WorkloadCredentials, one of the references the controller refuses on.
  */
 import { Alert, Button, Group, List, Modal, Stack, Text } from "@mantine/core";
-import { type JSX, useState } from "react";
+import { type JSX, useEffect, useRef, useState } from "react";
 
 import type { Identity } from "../../../policy/v1/policy_service_pb";
-import { deleteIdentity, type DeleteOutcome, type Reference } from "./client";
-import { identityOrigin } from "./origin";
-import type { IdentityBindings } from "./references";
-
-/** Why delete is unavailable, or null when the Policy Controller would accept it. */
-export type DeleteBlocker = { case: "git" } | { case: "referenced"; references: Reference[] };
-
-export function deleteBlocker(identity: Identity, split: IdentityBindings): DeleteBlocker | null {
-  if (identityOrigin(identity) === "git") return { case: "git" };
-  if (split.referencing.length === 0) return null;
-  return {
-    case: "referenced",
-    references: split.referencing.map((binding) => ({ kind: "PolicyBinding", name: binding.identity?.name ?? "" })),
-  };
-}
-
-/** One line for a tooltip. */
-export function deleteBlockerSummary(blocker: DeleteBlocker): string {
-  if (blocker.case === "git") return "Managed in git: remove it in the repository";
-  const count = blocker.references.length;
-  return `Referenced by ${count} ${count === 1 ? "binding" : "bindings"} it does not own`;
-}
-
-export function DeleteBlockerDetail({ blocker }: { blocker: DeleteBlocker }): JSX.Element {
-  if (blocker.case === "git")
-    return (
-      <Text size="sm">Flux applies this identity from git and would recreate it: remove it in the repository.</Text>
-    );
-  return <References references={blocker.references} />;
-}
+import {
+  checkIdentityDelete,
+  type DeleteCheck,
+  deleteIdentity,
+  type DeleteOutcome,
+  type DeleteRefusal,
+  type Reference,
+} from "./client";
 
 function References({ references }: { references: Reference[] }): JSX.Element {
   return (
@@ -55,7 +34,22 @@ function References({ references }: { references: Reference[] }): JSX.Element {
   );
 }
 
-/** Asks before deleting; a refusal or failure stays in the modal until it is closed. */
+function Refusal({ refusal }: { refusal: DeleteRefusal }): JSX.Element {
+  return refusal.case === "referenced" ? (
+    <Alert color="red" role="alert" title="The Policy Controller refuses this delete">
+      <References references={refusal.references} />
+    </Alert>
+  ) : (
+    <Alert color="red" role="alert" title="This identity cannot be deleted">
+      {refusal.error}
+    </Alert>
+  );
+}
+
+/**
+ * Asks before deleting. Each time it opens it dry-runs the delete and offers Delete only if the controller would
+ * accept; the real delete still reports a refusal for a reference created in between.
+ */
 export function ConfirmIdentityDelete({
   identity,
   opened,
@@ -67,44 +61,59 @@ export function ConfirmIdentityDelete({
   onClose: () => void;
   onDeleted: () => void;
 }): JSX.Element {
+  const [check, setCheck] = useState<DeleteCheck | null>(null);
   const [outcome, setOutcome] = useState<DeleteOutcome | null>(null);
   const [pending, setPending] = useState(false);
   const name = identity.identity?.name ?? "";
-  function close(): void {
+  const uid = identity.identity?.uid;
+  // Re-check per opening and per incarnation, not on every watch update of the same Identity.
+  const latest = useRef(identity);
+  latest.current = identity;
+  useEffect(() => {
+    if (!opened) return;
+    let active = true;
+    setCheck(null);
     setOutcome(null);
-    onClose();
-  }
+    void checkIdentityDelete(latest.current).then((result) => {
+      if (active) setCheck(result);
+    });
+    return () => {
+      active = false;
+    };
+  }, [opened, uid]);
   async function remove(): Promise<void> {
-    setOutcome(null);
     setPending(true);
     const result = await deleteIdentity(identity);
     setPending(false);
     if (result.case === "deleted") {
-      close();
+      onClose();
       onDeleted();
     } else setOutcome(result);
   }
+  const refusal: DeleteRefusal | null =
+    outcome?.case === "deleted" ? null : (outcome ?? (check?.case === "allowed" ? null : check));
   return (
-    <Modal opened={opened} onClose={close} title={`Delete ${name}?`}>
+    <Modal opened={opened} onClose={onClose} title={`Delete ${name}?`}>
       <Stack>
         <Text size="sm">
           Its own bindings go with it. A Sandbox still naming it cannot start a workload until it names another.
         </Text>
-        {outcome?.case === "referenced" && (
-          <Alert color="red" role="alert" title="The Policy Controller refused the delete">
-            <References references={outcome.references} />
-          </Alert>
+        {check === null && (
+          <Text size="sm" c="dimmed" role="status">
+            Checking with the Policy Controller…
+          </Text>
         )}
-        {outcome?.case === "failed" && (
-          <Alert color="red" role="alert" title="Could not delete the identity">
-            {outcome.error}
-          </Alert>
-        )}
+        {refusal && <Refusal refusal={refusal} />}
         <Group justify="flex-end">
-          <Button variant="default" onClick={close}>
+          <Button variant="default" onClick={onClose}>
             Cancel
           </Button>
-          <Button color="red" loading={pending} onClick={() => void remove()}>
+          <Button
+            color="red"
+            loading={pending}
+            disabled={check?.case !== "allowed" || outcome !== null}
+            onClick={() => void remove()}
+          >
             Delete
           </Button>
         </Group>

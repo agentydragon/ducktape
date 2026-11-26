@@ -17,9 +17,14 @@ export interface Reference {
   name: string;
 }
 
+/** Why the Policy Controller refused, or why the request failed. */
+export type DeleteRefusal = { case: "referenced"; references: Reference[] } | { case: "failed"; error: string };
+
 /** How a delete ended: done, refused for what still names the identity, or failed. */
-export type DeleteOutcome =
-  { case: "deleted" } | { case: "referenced"; references: Reference[] } | { case: "failed"; error: string };
+export type DeleteOutcome = { case: "deleted" } | DeleteRefusal;
+
+/** What a dry-run delete found: the Policy Controller would accept, or why not. */
+export type DeleteCheck = { case: "allowed" } | DeleteRefusal;
 
 function isReferenceKind(type: unknown): type is Reference["kind"] {
   return REFERENCE_KINDS.some((kind) => kind === type);
@@ -51,13 +56,15 @@ function references(body: unknown): Reference[] | null {
   );
 }
 
-/** Deletes exactly this incarnation; the Policy Controller rechecks Flux ownership and references. */
-export async function deleteIdentity(identity: Identity): Promise<DeleteOutcome> {
+/** Sends DeleteIdentity for exactly this incarnation; null when the Policy Controller accepted. */
+async function requestIdentityDelete(identity: Identity, validateOnly: boolean): Promise<DeleteRefusal | null> {
   const { namespace, name, uid } = identity.identity ?? {};
   if (!namespace || !name || !uid) return { case: "failed", error: "Identity has no namespace, name and UID" };
+  const query = new URLSearchParams({ uid });
+  if (validateOnly) query.set("validateOnly", "true");
   try {
     await fetchText(
-      `/upstream/policy/v1/identities/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}?${new URLSearchParams({ uid })}`,
+      `/upstream/policy/v1/identities/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}?${query}`,
       { method: "DELETE" }
     );
   } catch (error) {
@@ -68,7 +75,17 @@ export async function deleteIdentity(identity: Identity): Promise<DeleteOutcome>
     const message = typeof body === "object" && body !== null && "message" in body ? body.message : null;
     return { case: "failed", error: typeof message === "string" ? message : error.message };
   }
-  return { case: "deleted" };
+  return null;
+}
+
+/** Deletes exactly this incarnation; the Policy Controller rechecks Flux ownership and references. */
+export async function deleteIdentity(identity: Identity): Promise<DeleteOutcome> {
+  return (await requestIdentityDelete(identity, false)) ?? { case: "deleted" };
+}
+
+/** Runs the Policy Controller's delete checks for this incarnation without deleting it. */
+export async function checkIdentityDelete(identity: Identity): Promise<DeleteCheck> {
+  return (await requestIdentityDelete(identity, true)) ?? { case: "allowed" };
 }
 
 function policyPost(body: Record<string, JsonValue>): RequestInit {

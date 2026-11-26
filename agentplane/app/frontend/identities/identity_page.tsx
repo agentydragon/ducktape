@@ -1,4 +1,4 @@
-import { Anchor, Alert, Button, Group, Stack, Text, Title, Tooltip } from "@mantine/core";
+import { Anchor, Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
 import { type JSX, useState } from "react";
 
 import type { Identity } from "../../../policy/v1/policy_service_pb";
@@ -10,7 +10,7 @@ import { IconArrowLeft } from "../ui/icons";
 import { useIdentities, usePolicyResources } from "../policy/watch";
 import { TopbarTitle } from "../shell/topbar";
 import { kubernetesAccounts } from "./accounts";
-import { ConfirmIdentityDelete, DeleteBlockerDetail, deleteBlocker } from "./delete";
+import { ConfirmIdentityDelete } from "./delete";
 import { identityOrigin } from "./origin";
 import { identityBindings, type IdentityBindings } from "./references";
 import { AccountsReached, OriginBadge } from "./summary";
@@ -25,27 +25,17 @@ function DeleteIdentity({
   onDeleted: () => void;
 }): JSX.Element {
   const [confirming, setConfirming] = useState(false);
-  const name = identity.identity?.name ?? "";
-  const blocker = deleteBlocker(identity, split);
   return (
     <Stack component="section" aria-label="Delete identity" gap="xs">
       <Title order={5}>Delete</Title>
-      {blocker ? (
-        <Alert color="gray" title="This identity cannot be deleted here">
-          <DeleteBlockerDetail blocker={blocker} />
-        </Alert>
-      ) : (
-        <Text size="sm" c="dimmed">
-          No external policy binding references this identity. Deleting it also deletes what it owns: {split.own.length}{" "}
-          {split.own.length === 1 ? "binding" : "bindings"}.
-        </Text>
-      )}
+      <Text size="sm" c="dimmed">
+        Deleting it also deletes what it owns: {split.own.length} {split.own.length === 1 ? "binding" : "bindings"}. The
+        Policy Controller checks what still references it before you confirm.
+      </Text>
       <Group>
-        <Tooltip label={blocker ? "Unavailable: see above" : `Delete ${name}`} withArrow>
-          <Button color="red" variant="light" disabled={blocker !== null} onClick={() => setConfirming(true)}>
-            Delete identity
-          </Button>
-        </Tooltip>
+        <Button color="red" variant="light" onClick={() => setConfirming(true)}>
+          Delete identity
+        </Button>
       </Group>
       <ConfirmIdentityDelete
         identity={identity}

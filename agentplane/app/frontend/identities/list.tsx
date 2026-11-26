@@ -9,7 +9,7 @@ import { useIdentities, usePolicyResources } from "../policy/watch";
 import { TopbarTitle } from "../shell/topbar";
 import { IconTrash } from "../ui/icons";
 import { kubernetesAccounts } from "./accounts";
-import { ConfirmIdentityDelete, deleteBlocker, deleteBlockerSummary } from "./delete";
+import { ConfirmIdentityDelete } from "./delete";
 import { identityOrigin } from "./origin";
 import { identityBindings } from "./references";
 import { AccountsReached, BindingExpiries, OriginBadge } from "./summary";
@@ -31,7 +31,6 @@ function IdentityRow({
   const split = identityBindings(identity, bindings);
   const naming = [...split.own, ...split.referencing];
   const reached = kubernetesAccounts(naming, sets, credentials);
-  const blocker = deleteBlocker(identity, split);
   const [confirming, setConfirming] = useState(false);
   const references =
     split.referencing.length === 0 ? (
@@ -87,14 +86,8 @@ function IdentityRow({
       </Table.Td>
       <Table.Td visibleFrom="sm">{references}</Table.Td>
       <Table.Td>
-        <Tooltip label={blocker ? deleteBlockerSummary(blocker) : `Delete ${name}`} withArrow>
-          <ActionIcon
-            color="red"
-            variant="subtle"
-            aria-label={`Delete ${name}`}
-            disabled={blocker !== null}
-            onClick={() => setConfirming(true)}
-          >
+        <Tooltip label={`Delete ${name}`} withArrow>
+          <ActionIcon color="red" variant="subtle" aria-label={`Delete ${name}`} onClick={() => setConfirming(true)}>
             <IconTrash size={16} />
           </ActionIcon>
         </Tooltip>

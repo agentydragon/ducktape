@@ -8,10 +8,10 @@ import { cleanupMounted, renderWithMantine } from "../../../../util/frontend/tes
 import { IdentitySchema, PolicyBindingSchema } from "../../../policy/v1/policy_service_pb";
 import { IdentityList } from "./list";
 
-const mocks = vi.hoisted(() => ({ identities: vi.fn(), resources: vi.fn(), remove: vi.fn() }));
+const mocks = vi.hoisted(() => ({ identities: vi.fn(), resources: vi.fn(), remove: vi.fn(), check: vi.fn() }));
 vi.mock("../policy/watch", () => ({ useIdentities: mocks.identities, usePolicyResources: mocks.resources }));
 vi.mock("../egress/credential_watch", () => ({ useCredentialMetadata: () => new Map() }));
-vi.mock("./client", () => ({ deleteIdentity: mocks.remove }));
+vi.mock("./client", () => ({ deleteIdentity: mocks.remove, checkIdentityDelete: mocks.check }));
 let container: HTMLDivElement;
 afterEach(async () => {
   await cleanupMounted();
@@ -58,18 +58,31 @@ function trash(name: string): HTMLButtonElement {
   return found;
 }
 
-it("deletes an unreferenced identity from its row after confirmation", async () => {
+function confirmButton(): HTMLButtonElement {
+  const found = [...document.querySelectorAll("button")].find((item) => item.textContent === "Delete");
+  if (!found) throw new Error("no Delete confirm button");
+  return found;
+}
+
+it("deletes from its row after the dry run and confirmation", async () => {
+  mocks.check.mockResolvedValue({ case: "allowed" });
   mocks.remove.mockResolvedValue({ case: "deleted" });
   await render("/identities");
   await act(async () => trash("unreferenced-identity").click());
+  expect(mocks.check).toHaveBeenCalledWith(identities[1]);
   expect(mocks.remove).not.toHaveBeenCalled();
-  const confirm = [...document.querySelectorAll("button")].find((item) => item.textContent === "Delete");
-  await act(async () => confirm!.click());
+  await act(async () => confirmButton().click());
   expect(mocks.remove).toHaveBeenCalledWith(identities[1]);
 });
 
-it("disables the row delete of an identity a foreign binding references", async () => {
+it("keeps every row's trash enabled and withholds the confirm when the dry run refuses", async () => {
+  mocks.check.mockResolvedValue({
+    case: "referenced",
+    references: [{ kind: "PolicyBinding", name: "standing-grant" }],
+  });
   await render("/identities");
-  expect(trash("referenced-identity").disabled).toBe(true);
-  expect(trash("unreferenced-identity").disabled).toBe(false);
+  expect(trash("referenced-identity").disabled).toBe(false);
+  await act(async () => trash("referenced-identity").click());
+  expect(confirmButton().disabled).toBe(true);
+  expect(mocks.remove).not.toHaveBeenCalled();
 });
