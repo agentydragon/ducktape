@@ -204,6 +204,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "verify-journal" {
+		if err := runVerifyJournal(ctx, os.Args[2:]); err != nil {
+			slog.Error("central sampler journal verification stopped", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if handled, err := runOwnershipCommand(ctx, os.Args[1:], os.Stdout); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "central-sampler ownership:", err)

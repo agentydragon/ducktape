@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 go_library(
     name = "eventblock",
@@ -12,4 +13,14 @@ go_test(
     name = "eventblock_test",
     srcs = ["block_test.go"],
     embed = [":eventblock"],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = ["@pypi//pydantic"],
 )

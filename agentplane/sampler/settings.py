@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.eventblock.settings import EventBlockProfile
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     LLM_INGRESS_URI,
@@ -313,6 +314,12 @@ class Settings(BaseModel):
         exclude_if=lambda value: not value,
         description="Pack completed sampler journal windows in the background.",
     )
+    event_block_v2_writes: bool = Field(
+        default=False,
+        exclude_if=lambda value: not value,
+        description="Write APB v1 zstd blocks after all replicas can read them.",
+    )
+    event_block_profile: EventBlockProfile | None = Field(default=None, exclude_if=lambda v: v is None)
     provider_response_header_timeout_seconds: int | None = Field(
         default=None,
         gt=0,

@@ -142,4 +142,19 @@ func TestCompactJournalRequiresScopeAndMode(t *testing.T) {
 			t.Errorf("compact-journal %v: got %v, want missing database URL", args, err)
 		}
 	}
+	if err := runCompactJournal(t.Context(), []string{
+		"--session", "one", "--dry-run", "--event-block-level=5",
+	}); err == nil || !strings.Contains(err.Error(), "invalid event block profile") {
+		t.Fatalf("invalid compact-journal profile error=%v", err)
+	}
+}
+
+func TestVerifyJournalRejectsArgumentsAndRequiresDatabaseURL(t *testing.T) {
+	t.Setenv(samplerDatabaseURLEnv, "")
+	if err := runVerifyJournal(t.Context(), []string{"--all"}); err == nil || err.Error() != "verify-journal does not accept arguments" {
+		t.Fatalf("verify-journal argument error=%v", err)
+	}
+	if err := runVerifyJournal(t.Context(), nil); err == nil || !strings.Contains(err.Error(), samplerDatabaseURLEnv) {
+		t.Fatalf("verify-journal missing database error=%v", err)
+	}
 }

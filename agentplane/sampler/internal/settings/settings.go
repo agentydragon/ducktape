@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
@@ -39,6 +40,8 @@ type Settings struct {
 	MaxLiveSessions                        int                         `json:"max_live_sessions"`
 	ContextSourceWrites                    bool                        `json:"context_source_writes,omitempty"`
 	EventBlockWrites                       bool                        `json:"event_block_writes,omitempty"`
+	EventBlockV2Writes                     bool                        `json:"event_block_v2_writes,omitempty"`
+	EventBlockProfile                      eventblock.Profile          `json:"event_block_profile,omitzero"`
 	ProviderResponseHeaderTimeoutSeconds   *int                        `json:"provider_response_header_timeout_seconds,omitempty"`
 	ProviderIdleTimeoutSeconds             *int                        `json:"provider_idle_timeout_seconds,omitempty"`
 	ProviderProgressLeaseCoalescingSeconds *int                        `json:"provider_progress_lease_coalescing_seconds,omitempty"`

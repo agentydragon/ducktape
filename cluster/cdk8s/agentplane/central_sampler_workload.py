@@ -91,6 +91,8 @@ class CentralSampler(Construct):
             max_live_sessions=props.max_live_sessions,
             context_source_writes=props.context_source_writes,
             event_block_writes=props.event_block_writes,
+            event_block_v2_writes=props.event_block_v2_writes,
+            event_block_profile=props.event_block_profile,
             rpc_timeout_seconds=props.rpc_timeout_seconds,
             executor_initialize_timeout_seconds=props.executor_initialize_timeout_seconds,
             lease_seconds=props.lease_seconds,

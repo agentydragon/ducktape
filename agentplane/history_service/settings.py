@@ -3,21 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
+from agentplane.eventblock.settings import EventBlockProfile
 from agentplane.identity.auth.delegation import ServiceDelegation
 from agentplane.identity.auth.listener import Listener
 from agentplane.net.peertls.config import ServiceSPIFFEID
-
-
-class EventBlockProfile(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    target_bytes: int = Field(default=65536, ge=1, le=8 << 20)
-    target_entries: int = Field(default=32, ge=1, le=256)
-    codec: Literal["zstd"] = "zstd"
-    level: int = Field(default=3, ge=1, le=4)
 
 
 class IngressSettings(BaseModel):

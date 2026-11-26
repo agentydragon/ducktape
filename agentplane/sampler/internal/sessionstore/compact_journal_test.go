@@ -45,7 +45,7 @@ func appendTestJournalThrough(t *testing.T, store *Store, id string, through, ov
 	}
 }
 
-func TestCompactJournalDryRunApplyAndReplay(t *testing.T) {
+func TestCompactJournalWindowDryRunApplyAndReplay(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	const window = eventcodec.MaxBlockEntries
@@ -74,7 +74,7 @@ func TestCompactJournalDryRunApplyAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := store.CompactJournal(t.Context(), session.ID, false)
+	proposal, err := store.compactJournalWindow(t.Context(), session.ID, 1, 3*window, false)
 	if err != nil || proposal.Events == 0 || proposal.Blocks == 0 || proposal.StoredBytes <= proposal.PackedBytes {
 		t.Fatalf("dry run result=%+v err=%v", proposal, err)
 	}
@@ -84,7 +84,7 @@ func TestCompactJournalDryRunApplyAndReplay(t *testing.T) {
 	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1`, session.ID); got != len(original)-window {
 		t.Fatalf("dry run changed the standalone row count to %d", got)
 	}
-	result, err := store.CompactJournal(t.Context(), session.ID, true)
+	result, err := store.compactJournalWindow(t.Context(), session.ID, 1, 3*window, true)
 	if err != nil || result != proposal {
 		t.Fatalf("apply result=%+v proposal=%+v err=%v", result, proposal, err)
 	}
@@ -132,7 +132,7 @@ func TestCompactJournalDryRunApplyAndReplay(t *testing.T) {
 	if current, err := store.CurrentCursor(t.Context(), session.ID); err != nil || current != tail {
 		t.Fatalf("apply changed the session cursor to %d: %v", current, err)
 	}
-	if repeated, err := store.CompactJournal(t.Context(), session.ID, true); err != nil || repeated != (JournalCompactionResult{}) {
+	if repeated, err := store.compactJournalWindow(t.Context(), session.ID, 1, 3*window, true); err != nil || repeated != (JournalCompactionResult{}) {
 		t.Fatalf("repeat apply result=%+v err=%v", repeated, err)
 	}
 }
@@ -145,6 +145,9 @@ func TestCompactJournalResumesAfterRejectedWindow(t *testing.T) {
 	original, err := journalFrames(t.Context(), store.DB(), session.ID, window+1, 2*window)
 	if err != nil || len(original) != window {
 		t.Fatalf("read %d original frames: %v", len(original), err)
+	}
+	if _, err := store.compactJournalWindow(t.Context(), session.ID, 1, window, true); err != nil {
+		t.Fatalf("commit first completed window: %v", err)
 	}
 	var frames [][]byte
 	for _, frame := range original {
@@ -166,18 +169,18 @@ func TestCompactJournalResumesAfterRejectedWindow(t *testing.T) {
 		END; $$`, window+1, tampered))
 	migrationExec(t, store.DB(), `CREATE TRIGGER replace_block_payload BEFORE INSERT ON sampler_event_block
 		FOR EACH ROW EXECUTE FUNCTION replace_block_payload()`)
-	if result, err := store.CompactJournal(t.Context(), session.ID, true); err == nil || result.Events != window || result.Blocks != 1 {
-		t.Fatalf("changed packed frame: result=%+v err=%v", result, err)
+	if _, err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window, true); err == nil {
+		t.Fatal("tampered block payload was committed")
 	}
 	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); got != 1 {
-		t.Fatalf("failed verification committed %d blocks", got)
+		t.Fatalf("failed verification left %d blocks, want the committed first window", got)
 	}
 	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1 AND sequence>$2`,
 		session.ID, window); got != window {
-		t.Fatalf("failed verification left %d original rows in the rejected window, wanted %d", got, window)
+		t.Fatalf("failed verification left %d source rows in the rejected window, want %d", got, window)
 	}
 	migrationExec(t, store.DB(), `DROP TRIGGER replace_block_payload ON sampler_event_block`)
-	if result, err := store.CompactJournal(t.Context(), session.ID, true); err != nil || result.Events != window || result.Blocks != 1 {
+	if result, err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window, true); err != nil || result.Events != window || result.Blocks != 1 {
 		t.Fatalf("resume result=%+v err=%v", result, err)
 	}
 	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1`, session.ID); got != 0 {

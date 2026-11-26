@@ -15,6 +15,44 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
+func TestEventBlockProfileDefaultsAndBounds(t *testing.T) {
+	settings := fixtureSettings()
+	profile := settings.PackingProfile()
+	if profile.TargetBytes != 64<<10 || profile.TargetEntries != 128 || profile.Level != 3 {
+		t.Fatalf("stock event block profile=%+v", profile)
+	}
+	if err := json.Unmarshal([]byte(`{"event_block_profile":{"target_bytes":32768,"level":2}}`), &settings); err != nil {
+		t.Fatal(err)
+	}
+	if p := settings.PackingProfile(); p.TargetBytes != 32768 || p.TargetEntries != 128 || p.Codec != "zstd" || p.Level != 2 {
+		t.Fatalf("partial JSON profile: %+v", p)
+	}
+	settings.EventBlockProfile.TargetBytes = 32 << 10
+	settings.EventBlockProfile.TargetEntries = 96
+	settings.EventBlockProfile.Level = 2
+	profile = settings.PackingProfile()
+	if profile.TargetBytes != 32<<10 || profile.TargetEntries != 96 || profile.Level != 2 {
+		t.Fatalf("configured event block profile=%+v", profile)
+	}
+	for _, tc := range []struct {
+		name string
+		set  func(*Settings)
+	}{
+		{"bytes", func(s *Settings) { s.EventBlockProfile.TargetBytes = (8 << 20) + 1 }},
+		{"entries", func(s *Settings) { s.EventBlockProfile.TargetEntries = 257 }},
+		{"codec", func(s *Settings) { s.EventBlockProfile.Codec = "gzip" }},
+		{"level", func(s *Settings) { s.EventBlockProfile.Level = 5 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			invalid := fixtureSettings()
+			tc.set(&invalid)
+			if err := invalid.Validate(); err == nil {
+				t.Fatalf("accepted invalid event block %s", tc.name)
+			}
+		})
+	}
+}
+
 func TestSettingsPlatformGuidanceAcceptsOldConfigurationAndRejectsEmptyGuide(t *testing.T) {
 	encoded, err := json.Marshal(fixtureSettings())
 	if err != nil {

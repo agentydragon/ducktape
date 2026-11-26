@@ -7,7 +7,7 @@ import (
 )
 
 func TestCut(t *testing.T) {
-	p, err := NewPacker(Profile{16, 3, 3})
+	p, err := NewPacker(Profile{TargetBytes: 16, TargetEntries: 3, Level: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestCut(t *testing.T) {
 }
 
 func TestWire(t *testing.T) {
-	p, err := NewPacker(Profile{1024, 2, 3})
+	p, err := NewPacker(Profile{TargetBytes: 1024, TargetEntries: 2, Level: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
