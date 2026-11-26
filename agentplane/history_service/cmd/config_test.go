@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
@@ -205,5 +206,28 @@ func TestSettingsFilePathIsRequiredAndMustBeReadable(t *testing.T) {
 func TestSecondsConvertToADuration(t *testing.T) {
 	if got := seconds(0.2); got != 200*time.Millisecond {
 		t.Errorf("seconds(0.2) = %v, want 200ms", got)
+	}
+}
+
+func TestEventBlockProfileFromYAML(t *testing.T) {
+	c, err := loadTestConfig(t, requiredFile+`  event_block_writes: true
+  event_block_profile: {target_bytes: 256, target_entries: 4, codec: zstd, level: 2}
+  event_block_target_bytes_by_kind: {BOUNDARY_RECORD: 8192}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packers, err := c.Ingress.packers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundary := packers[historypb.EventKind_EVENT_KIND_BOUNDARY_RECORD]
+	ordinary := packers[historypb.EventKind_EVENT_KIND_HARNESS_STARTED]
+	if !c.Ingress.EventBlockWrites || boundary == nil || ordinary == nil || boundary.NextSizes([]int{300}, false).N != 0 || ordinary.NextSizes([]int{300}, false).N != 1 {
+		t.Fatal("incorrect configured packing profiles")
+	}
+	c.Ingress.EventBlockTargetBytesByKind["TYPO"] = 100
+	if _, err := c.Ingress.packers(); err == nil {
+		t.Fatal("accepted unknown event kind")
 	}
 }

@@ -365,3 +365,36 @@ func TestReadVersionedSparseBlockOfPreviouslyUnpackedKind(t *testing.T) {
 		t.Fatalf("after removal: %v, %v", surviving, err)
 	}
 }
+
+func TestVersionedWriterPacksLargeBoundaryOnCrossing(t *testing.T) {
+	p, err := eventblock.NewPacker(eventblock.Profile{TargetBytes: 2 << 20, TargetEntries: 32, Level: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(testDB(t), Options{EventPackers: map[historypb.EventKind]*eventblock.Packer{historypb.EventKind_EVENT_KIND_BOUNDARY_RECORD: p}})
+	id := opened(t, store)
+	var original []*eventlogpb.EventEntry
+	for i := uint64(1); i <= 4; i++ {
+		e := executionEvidenceEntry(i, true)
+		e.Event.GetBoundaryRecord().Payload = []byte(strings.Repeat("journal", 100000))
+		appendEntries(t, store, id, e)
+		original = append(original, e)
+		if i == 2 {
+			if raw, blocks := packedRows(t, store, id); raw != 2 || blocks != 0 {
+				t.Fatalf("early seal: %d %d", raw, blocks)
+			}
+		}
+	}
+	if raw, blocks := packedRows(t, store, id); raw != 1 || blocks != 1 {
+		t.Fatalf("after crossing: %d rows, %d blocks", raw, blocks)
+	}
+	got, err := store.ReadSequences(t.Context(), id, []uint64{1, 2, 3, 4}, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, r := range got.Reads {
+		if !proto.Equal(r.NextEntry, original[i]) {
+			t.Fatalf("read differs at %d", i+1)
+		}
+	}
+}

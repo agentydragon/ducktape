@@ -10,6 +10,7 @@ go_library(
         "compact_history.go",
         "delta_templates.go",
         "follow.go",
+        "pack.go",
         "settlement.go",
         "store.go",
     ],

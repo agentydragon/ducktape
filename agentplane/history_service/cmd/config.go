@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/configfile"
+	"github.com/agentydragon/ducktape/agentplane/eventblock"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 )
@@ -51,6 +53,10 @@ type serviceDelegationConfig struct {
 
 // ingressConfig is the Session journal ingress's authorization and storage policy. Its RPC shares the service listener.
 type ingressConfig struct {
+	EventBlockWrites            bool           `mapstructure:"event_block_writes"`
+	EventBlockProfile           blockProfile   `mapstructure:"event_block_profile"`
+	EventBlockTargetBytesByKind map[string]int `mapstructure:"event_block_target_bytes_by_kind"`
+
 	// WriterNamespaces scopes the live workload Identity credential records resolved for journal writers.
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
 	// SamplerServiceActor is the exact service SVID admitted to push central sampler journals.
@@ -65,11 +71,54 @@ type ingressConfig struct {
 	CompactExecutionEvidence bool `mapstructure:"compact_execution_evidence"`
 }
 
+type blockProfile struct {
+	TargetBytes   int    `mapstructure:"target_bytes"`
+	TargetEntries int    `mapstructure:"target_entries"`
+	Codec         string `mapstructure:"codec"`
+	Level         int    `mapstructure:"level"`
+}
+
+func (c ingressConfig) packers() (map[historypb.EventKind]*eventblock.Packer, error) {
+	profile := c.EventBlockProfile
+	if profile.Codec != "zstd" {
+		return nil, fmt.Errorf("invalid event block codec %q", profile.Codec)
+	}
+	byKind := map[historypb.EventKind]int{}
+	for name, size := range c.EventBlockTargetBytesByKind {
+		n, ok := historypb.EventKind_value["EVENT_KIND_"+strings.ToUpper(name)]
+		if !ok || n == 0 {
+			return nil, fmt.Errorf("invalid event block kind %q", name)
+		}
+		byKind[historypb.EventKind(n)] = size
+	}
+	build := func(size int) (*eventblock.Packer, error) {
+		return eventblock.NewPacker(eventblock.Profile{TargetBytes: size, TargetEntries: profile.TargetEntries, Level: profile.Level})
+	}
+	base, err := build(profile.TargetBytes)
+	if err != nil {
+		return nil, err
+	}
+	result := map[historypb.EventKind]*eventblock.Packer{}
+	for n := range historypb.EventKind_name {
+		if n != 0 {
+			result[historypb.EventKind(n)] = base
+		}
+	}
+	for k, v := range byKind {
+		p, err := build(v)
+		if err != nil {
+			return nil, err
+		}
+		result[k] = p
+	}
+	return result, nil
+}
+
 func defaultConfig() config {
 	return config{
 		RequestTimeoutSeconds: 15, MigrationTimeoutSeconds: defaultMigrationTimeoutSeconds,
 		RPC:             listener.Config{ListenAddress: "0.0.0.0:8080"},
-		Ingress:         ingressConfig{SettleDeltas: true},
+		Ingress:         ingressConfig{SettleDeltas: true, EventBlockProfile: blockProfile{65536, 32, "zstd", 3}, EventBlockTargetBytesByKind: map[string]int{"BOUNDARY_RECORD": 2 << 20}},
 		FoldConcurrency: 4, FoldPageSize: 1000, FoldIntervalSeconds: 2,
 		NativeFrameReadBatchSize: 200, WatchLeaseSeconds: 300,
 	}
