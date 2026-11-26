@@ -26,7 +26,8 @@ private def supportedUnit : Stmt → Bool
   | .decl .let_ _ value => simpleValue value && initializedValue value
   | _ => false
 
-private def summarize (source : Program) : EsmSplit.Bundle :=
+/-- The source-derived bundle used by the checked constructor. -/
+def summarize (source : Program) : EsmSplit.Bundle :=
   match source.modules with
   | [m] => m.body.map fun (_, stmt) =>
     let defs := stmt.bindings.map Prod.fst

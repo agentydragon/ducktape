@@ -648,6 +648,7 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/HoistedFunctionLink.lean"],
     deps = [
         ":corejs_certificate_support",
+        ":corejs_link_world",
         ":planner",
     ],
 )
@@ -658,9 +659,32 @@ lean_proof_test(
     modules = ["EsmSplit.CoreJS.HoistedFunctionLink"],
     required_theorems = [
         "CoreJS.HoistedFunctionLink.planned_function",
-        "CoreJS.HoistedFunctionLink.planned_primitive_closure_crossing",
+        "CoreJS.HoistedFunctionLink.planned_independent_primitive_closure_crossing",
     ],
     deps = [":hoisted_function_link"],
+)
+
+lean_library(
+    name = "hoisted_function_split",
+    srcs = ["EsmSplit/CoreJS/HoistedFunctionSplit.lean"],
+    deps = [
+        ":corejs_checked_split",
+        ":corejs_linked_input",
+        ":corejs_single_module",
+        ":hoisted_function_link",
+    ],
+)
+
+lean_proof_test(
+    name = "hoisted_function_split_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.HoistedFunctionSplit"],
+    required_theorems = [
+        "CoreJS.HoistedFunctionSplit.construct",
+        "CoreJS.HoistedFunctionSplit.constructSource",
+        "CoreJS.HoistedFunctionSplit.Construction.sound",
+    ],
+    deps = [":hoisted_function_split"],
 )
 
 lean_library(
