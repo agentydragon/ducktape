@@ -1127,6 +1127,27 @@ rust_library(
 )
 
 rust_library(
+    name = "selector_render",
+    srcs = ["selectors/authoring/render.rs"],
+    crate_root = "selectors/authoring/render.rs",
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        ":source_match_holes",
+        "@crates//:anyhow",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "selector_render_test",
+    crate = ":selector_render",
+    edition = "2024",
+)
+
+rust_library(
     name = "selector_codemod",
     srcs = [
         "selectors/authoring/match_selector.rs",
@@ -1138,7 +1159,6 @@ rust_library(
         "selectors/authoring/minimize/use_site.rs",
         "selectors/authoring/minimize/var.rs",
         "selectors/authoring/regex_anchor.rs",
-        "selectors/authoring/render.rs",
         "selectors/authoring/selector_codemod.rs",
         "selectors/authoring/selector_minimizer_proptest.rs",
     ],
@@ -1149,6 +1169,7 @@ rust_library(
         ":js_ast",
         ":readoff_render",
         ":selector_outcome",
+        ":selector_render",
         ":selector_resolve",
         ":shape_index",
         ":source_identity",

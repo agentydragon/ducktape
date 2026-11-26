@@ -42,7 +42,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use crate::render::{
+use selector_render::{
     anything_expr, args_hole, class_member_hole, ident_node, object_props_pat_prop,
     object_props_prop, stmt_list_stmt,
 };

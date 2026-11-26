@@ -52,13 +52,13 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use crate::match_selector::relax_progressively;
 use crate::regex_anchor::RegexAnchorSubstitution;
-use crate::render::{
-    AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
-    hole_stmt, holes_present, named_pat, object_props_pat_prop, span_key,
-};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
     matched_body_indices, prove_synthesized_selector, single_ident_pat_name,
+};
+use selector_render::{
+    AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
+    hole_stmt, holes_present, named_pat, object_props_pat_prop, span_key,
 };
 use synthesis_failure::{ProofFailure, SynthesisSkipReason};
 
@@ -263,7 +263,7 @@ fn sanitize_exact_identifiers(item: &mut ModuleItem) {
                 && let MemberProp::Ident(prop) = &member.prop
                 && selector_run_keyword_collision(prop.sym.as_ref())
             {
-                *expr = crate::render::anything_expr();
+                *expr = selector_render::anything_expr();
                 return;
             }
             expr.visit_mut_children_with(self);
@@ -287,7 +287,7 @@ fn sanitize_exact_identifiers(item: &mut ModuleItem) {
                 };
                 if collision {
                     *prop = PropOrSpread::Prop(Box::new(Prop::Shorthand(
-                        crate::render::ident_node(ANYTHING_HOLE_KEYWORD),
+                        selector_render::ident_node(ANYTHING_HOLE_KEYWORD),
                     )));
                 }
             }
@@ -317,7 +317,7 @@ fn sanitize_exact_identifiers(item: &mut ModuleItem) {
                 _ => false,
             };
             if shorthand_collision {
-                *prop = Prop::Shorthand(crate::render::ident_node(ANYTHING_HOLE_KEYWORD));
+                *prop = Prop::Shorthand(selector_render::ident_node(ANYTHING_HOLE_KEYWORD));
                 return;
             }
             prop.visit_mut_children_with(self);
@@ -332,7 +332,7 @@ fn sanitize_exact_identifiers(item: &mut ModuleItem) {
                     _ => None,
                 };
                 if key.is_some_and(selector_prop_name_collision) {
-                    *member = crate::render::class_member_hole();
+                    *member = selector_render::class_member_hole();
                 }
             }
         }
@@ -399,7 +399,7 @@ fn exact_declaration_item(
                 && function.ident.sym.as_ref() == targets[0].runtime_binding.as_str() =>
         {
             let mut function = function.clone();
-            function.ident = crate::render::ident_node(&targets[0].export_name);
+            function.ident = selector_render::ident_node(&targets[0].export_name);
             Decl::Fn(function)
         }
         Decl::Class(class)
@@ -407,7 +407,7 @@ fn exact_declaration_item(
                 && class.ident.sym.as_ref() == targets[0].runtime_binding.as_str() =>
         {
             let mut class = class.clone();
-            class.ident = crate::render::ident_node(&targets[0].export_name);
+            class.ident = selector_render::ident_node(&targets[0].export_name);
             Decl::Class(class)
         }
         Decl::Var(var) => {
@@ -450,7 +450,7 @@ fn rename_selected_initializer_uses(init: &mut Expr, targets: &[SynthesizedTarge
             match expr {
                 Expr::Ident(ident) => {
                     if let Some(replacement) = self.replacement(ident.sym.as_ref()) {
-                        *ident = crate::render::ident_node(replacement);
+                        *ident = selector_render::ident_node(replacement);
                     }
                 }
                 Expr::Arrow(_) | Expr::Fn(_) | Expr::Class(_) => {}
@@ -464,7 +464,7 @@ fn rename_selected_initializer_uses(init: &mut Expr, targets: &[SynthesizedTarge
             {
                 *prop = Prop::KeyValue(KeyValueProp {
                     key: PropName::Ident(IdentName::new(ident.sym.clone(), ident.span)),
-                    value: Box::new(Expr::Ident(crate::render::ident_node(replacement))),
+                    value: Box::new(Expr::Ident(selector_render::ident_node(replacement))),
                 });
             } else {
                 prop.visit_mut_children_with(self);
@@ -488,7 +488,7 @@ fn rename_pattern_targets(
                 .find(|target| binding.id.sym.as_ref() == target.runtime_binding.as_str())
             {
                 found.insert(target.runtime_binding.clone());
-                binding.id = crate::render::ident_node(&target.selector_local);
+                binding.id = selector_render::ident_node(&target.selector_local);
             }
         }
         Pat::Array(array) => {
@@ -512,7 +512,7 @@ fn rename_pattern_targets(
                                 assign.key.id.span,
                             ));
                             let binding = Pat::Ident(BindingIdent {
-                                id: crate::render::ident_node(&target.selector_local),
+                                id: selector_render::ident_node(&target.selector_local),
                                 type_ann: None,
                             });
                             let value = match assign.value.take() {
@@ -916,11 +916,11 @@ fn extend_anchor_cover(
     let mut scored = 0;
     while !resolves(&kept)? {
         let mut best = None;
-        for &anchor in ranked.iter().take(crate::render::MAX_MINIMIZER_ANCHORS) {
+        for &anchor in ranked.iter().take(selector_render::MAX_MINIMIZER_ANCHORS) {
             if kept.contains(&anchor) {
                 continue;
             }
-            if scored == 2 * crate::render::MAX_MINIMIZER_ANCHORS {
+            if scored == 2 * selector_render::MAX_MINIMIZER_ANCHORS {
                 if let Some((_, best_anchor)) = best {
                     kept.insert(best_anchor);
                 }

@@ -10,7 +10,7 @@
 //! for dropped statement / argument / array / sequence / switch-case runs
 //! (where `ANYTHING` would collapse to an arity-exact
 //! single-node hole, so the keyword stays). These primitives are form-agnostic;
-//! the per-form minimizers (`crate::minimize`) drive them.
+//! the per-form minimizers (`selector_codemod`'s `minimize` module) drive them.
 
 use std::collections::BTreeSet;
 
@@ -36,31 +36,31 @@ impl Visit for RetainedIdentifiers {
 }
 
 /// `(lo, hi)` byte offsets of a retained concrete token.
-pub(crate) type AnchorSpan = (u32, u32);
+pub type AnchorSpan = (u32, u32);
 
-pub(crate) const MAX_MINIMIZER_ANCHORS: usize = 64;
+pub const MAX_MINIMIZER_ANCHORS: usize = 64;
 
-pub(crate) fn span_key(span: Span) -> AnchorSpan {
+pub fn span_key(span: Span) -> AnchorSpan {
     (span.lo.0, span.hi.0)
 }
 
-pub(crate) fn node_holds_anchor(node: Span, anchor: AnchorSpan) -> bool {
+pub fn node_holds_anchor(node: Span, anchor: AnchorSpan) -> bool {
     node.lo.0 <= anchor.0 && anchor.1 <= node.hi.0
 }
 
-pub(crate) fn node_retains_any(node: Span, kept: &BTreeSet<AnchorSpan>) -> bool {
+pub fn node_retains_any(node: Span, kept: &BTreeSet<AnchorSpan>) -> bool {
     kept.iter().any(|anchor| node_holds_anchor(node, *anchor))
 }
 
-pub(crate) fn ident_node(name: &str) -> Ident {
+pub fn ident_node(name: &str) -> Ident {
     Ident::new_no_ctxt(name.into(), DUMMY_SP)
 }
 
-pub(crate) fn anything_expr() -> Expr {
+pub fn anything_expr() -> Expr {
     Expr::Ident(ident_node(ANYTHING_HOLE_KEYWORD))
 }
 
-pub(crate) fn stmt_list_stmt() -> Stmt {
+pub fn stmt_list_stmt() -> Stmt {
     Stmt::Expr(ExprStmt {
         span: DUMMY_SP,
         expr: Box::new(Expr::Ident(ident_node(STMT_LIST_HOLE_KEYWORD))),
@@ -69,13 +69,13 @@ pub(crate) fn stmt_list_stmt() -> Stmt {
 
 /// An object-property run-absorber hole, emitted as a bare `ANYTHING` shorthand
 /// property — the only spelling the matcher accepts in this position.
-pub(crate) fn object_props_prop() -> PropOrSpread {
+pub fn object_props_prop() -> PropOrSpread {
     PropOrSpread::Prop(Box::new(Prop::Shorthand(ident_node(ANYTHING_HOLE_KEYWORD))))
 }
 
 /// An `ARGS` argument-list hole that absorbs a run of dropped (non-anchor)
 /// call/`new` arguments (the argument analog of [`object_props_prop`]).
-pub(crate) fn args_hole() -> ExprOrSpread {
+pub fn args_hole() -> ExprOrSpread {
     ExprOrSpread {
         spread: None,
         expr: Box::new(Expr::Ident(ident_node(ARGS_HOLE_KEYWORD))),
@@ -99,16 +99,13 @@ fn anything_pat() -> Pat {
     })
 }
 
-pub(crate) fn holed_block(block: &BlockStmt, kept: &BTreeSet<AnchorSpan>) -> BlockStmt {
+pub fn holed_block(block: &BlockStmt, kept: &BTreeSet<AnchorSpan>) -> BlockStmt {
     let mut holed = block.clone();
     holed.stmts = hole_stmts(&block.stmts, kept);
     holed
 }
 
-pub(crate) fn holed_function_body(
-    body: &FunctionBody,
-    kept: &BTreeSet<AnchorSpan>,
-) -> FunctionBody {
+pub fn holed_function_body(body: &FunctionBody, kept: &BTreeSet<AnchorSpan>) -> FunctionBody {
     let mut holed = body.clone();
     holed.stmts = hole_stmts(&body.stmts, kept);
     holed
@@ -117,7 +114,7 @@ pub(crate) fn holed_function_body(
 /// Hole a function for selector form, preserving parameters referenced by the
 /// retained body. Used both for top-level function selectors and for
 /// function-valued subexpressions reached through [`hole_expr`].
-pub(crate) fn hole_function(function: &Function, kept: &BTreeSet<AnchorSpan>) -> Function {
+pub fn hole_function(function: &Function, kept: &BTreeSet<AnchorSpan>) -> Function {
     let mut holed = function.clone();
     if let Some(body) = &function.body {
         holed.body = Some(holed_function_body(body, kept));
@@ -131,7 +128,7 @@ pub(crate) fn hole_function(function: &Function, kept: &BTreeSet<AnchorSpan>) ->
     holed
 }
 
-pub(crate) fn retained_body_identifiers(body: Option<&FunctionBody>) -> BTreeSet<String> {
+pub fn retained_body_identifiers(body: Option<&FunctionBody>) -> BTreeSet<String> {
     let mut retained = RetainedIdentifiers::default();
     if let Some(body) = body {
         body.visit_with(&mut retained);
@@ -139,7 +136,7 @@ pub(crate) fn retained_body_identifiers(body: Option<&FunctionBody>) -> BTreeSet
     retained.0
 }
 
-pub(crate) fn retain_or_hole_param(
+pub fn retain_or_hole_param(
     param: &Param,
     retained: &BTreeSet<String>,
     kept: &BTreeSet<AnchorSpan>,
@@ -180,7 +177,7 @@ fn pattern_referenced_by_retained_body(pat: &Pat, retained: &BTreeSet<String>) -
 /// `kept`, and replace every subtree off a kept token's path with an `ANYTHING`
 /// hole node. The result is an ordinary `swc` AST emitted by codegen, not a
 /// hand-built string.
-pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
+pub fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
     if !node_retains_any(expr.span(), kept) {
         return anything_expr();
     }
@@ -388,7 +385,7 @@ fn hole_callee_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
 
 /// Replace each nonempty run of omitted elements with one list hole.
 /// Callers own retention/rendering and any hole required for an empty list.
-pub(crate) fn collapse_omitted_runs<T>(
+pub fn collapse_omitted_runs<T>(
     items: impl IntoIterator<Item = Option<T>>,
     hole: impl Fn() -> T,
 ) -> Vec<T> {
@@ -468,7 +465,7 @@ fn hole_array(array: &ArrayLit, kept: &BTreeSet<AnchorSpan>) -> ArrayLit {
 /// A destructure-pattern run-absorber hole — a shorthand binding whose name is
 /// `ANYTHING` — absorbing a run of dropped destructured properties. The pattern
 /// analog of [`object_props_prop`].
-pub(crate) fn object_props_pat_prop() -> ObjectPatProp {
+pub fn object_props_pat_prop() -> ObjectPatProp {
     ObjectPatProp::Assign(AssignPatProp {
         span: DUMMY_SP,
         key: BindingIdent {
@@ -532,7 +529,7 @@ fn hole_object(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
 /// subsequence element, so a minimal *key set* survives key reorder and arbitrary
 /// gaps. With no kept prop this is a bare `{ ANYTHING }`; with one it is the
 /// padded single-key form (unchanged from the edge-padding behavior).
-pub(crate) fn hole_object_padded(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
+pub fn hole_object_padded(object: &ObjectLit, kept: &BTreeSet<AnchorSpan>) -> ObjectLit {
     let mut props = vec![object_props_prop()];
     for prop in &object.props {
         if node_retains_any(prop.span(), kept) {
@@ -573,7 +570,7 @@ fn hole_stmts(stmts: &[Stmt], kept: &BTreeSet<AnchorSpan>) -> Vec<Stmt> {
     out
 }
 
-pub(crate) fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
+pub fn hole_stmt(stmt: &Stmt, kept: &BTreeSet<AnchorSpan>) -> Stmt {
     match stmt {
         Stmt::Expr(expr_stmt) => {
             let mut holed = expr_stmt.clone();
@@ -671,7 +668,7 @@ fn hole_switch_case(case: &SwitchCase, kept: &BTreeSet<AnchorSpan>) -> SwitchCas
 /// A declarator hole absorbing a run of non-target declarators. Synthesis uses
 /// the plain `DECLARATORS` keyword: positional suffixes accepted by the matcher
 /// affect hint text only, not equality binding.
-pub(crate) fn declarator_hole() -> VarDeclarator {
+pub fn declarator_hole() -> VarDeclarator {
     VarDeclarator {
         span: DUMMY_SP,
         name: named_pat(DECLARATORS_HOLE_KEYWORD),
@@ -680,7 +677,7 @@ pub(crate) fn declarator_hole() -> VarDeclarator {
     }
 }
 
-pub(crate) fn anything_param() -> Param {
+pub fn anything_param() -> Param {
     Param {
         span: DUMMY_SP,
         decorators: vec![],
@@ -688,7 +685,7 @@ pub(crate) fn anything_param() -> Param {
     }
 }
 
-pub(crate) fn named_pat(name: &str) -> Pat {
+pub fn named_pat(name: &str) -> Pat {
     Pat::Ident(BindingIdent {
         id: ident_node(name),
         type_ann: None,
@@ -697,7 +694,7 @@ pub(crate) fn named_pat(name: &str) -> Pat {
 
 /// Emit a synthesized selector item (a holed declaration) to source via the
 /// shared codegen — the only AST→string step, and the matcher's parse inverts it.
-pub(crate) fn emit_selector(item: ModuleItem) -> Result<String> {
+pub fn emit_selector(item: ModuleItem) -> Result<String> {
     js_ast::emit_module_source(&Module {
         span: DUMMY_SP,
         body: vec![item],
@@ -708,7 +705,7 @@ pub(crate) fn emit_selector(item: ModuleItem) -> Result<String> {
 /// Report keyword identifiers in generated selector syntax, not occurrences in
 /// strings, comments, or concrete property names. Parse only the final generated
 /// selector; input-chunk analysis still comes from the shared chunk indexes.
-pub(crate) fn holes_present(source: &str) -> Result<BTreeSet<String>> {
+pub fn holes_present(source: &str) -> Result<BTreeSet<String>> {
     #[derive(Default)]
     struct Holes(BTreeSet<String>);
 
@@ -739,7 +736,7 @@ pub(crate) fn holes_present(source: &str) -> Result<BTreeSet<String>> {
 }
 
 /// A class-member run hole, represented by an `ANYTHING;` field.
-pub(crate) fn class_member_hole() -> ClassMember {
+pub fn class_member_hole() -> ClassMember {
     ClassMember::ClassProp(ClassProp {
         span: DUMMY_SP,
         key: PropName::Ident(IdentName::new(ANYTHING_HOLE_KEYWORD.into(), DUMMY_SP)),
