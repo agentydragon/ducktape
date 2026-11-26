@@ -27,6 +27,49 @@ theorem dropped_module_rejected : ¬ Permutes bundle plan_dropped_module := by d
 def planControls : List (String × Plan) :=
   [("missing_import", plan_missing_import), ("dropped_module", plan_dropped_module)]
 
+/-! ## Selector boundaries
+
+The same name can be declared by multiple units, and overlapping selectors in a single module
+still contribute just one claimant per unit. Malformed specs and plans must be rejected. -/
+private def selectorBundle : Bundle := [
+  { src := "first", defs := ["x", "x"] },
+  { src := "second", defs := ["x"] }]
+
+private def selectorSpec (modules : List (ModName × List Selector)) : Spec :=
+  { entry := "main", modules }
+
+private def selectorPlan (names : List (ModName × List Nat)) : Plan :=
+  { entry := "main", mods := names.map fun (name, stmts) =>
+      { name, stmts, imports := [], exports := [] } }
+
+example : faithfulB selectorBundle selectorBundle.toArray
+    (selectorSpec [("main", [.name "x", .stmt 0, .name "x"])])
+    (selectorPlan [("main", [0, 1])]) = true := by decide +kernel
+
+example : faithfulB selectorBundle selectorBundle.toArray
+    (selectorSpec [("main", [.stmt 0])])
+    (selectorPlan [("main", [0, 1])]) = false := by decide +kernel
+
+example : faithfulB selectorBundle selectorBundle.toArray
+    (selectorSpec [("main", [.name "x", .stmt 2])])
+    (selectorPlan [("main", [0, 1])]) = false := by decide +kernel
+
+example : faithfulB selectorBundle selectorBundle.toArray
+    (selectorSpec [("main", [.name "x"])])
+    (selectorPlan [("main", [0, 1, 2])]) = false := by decide +kernel
+
+example : faithfulB selectorBundle selectorBundle.toArray
+    (selectorSpec [("main", [.name "x"]), ("main", [.stmt 0])])
+    (selectorPlan [("main", [0, 1]), ("main", [0])]) = false := by decide +kernel
+
+example : faithfulB selectorBundle selectorBundle.toArray
+    (selectorSpec [("main", [.name "x"]), ("other", [.stmt 0])])
+    (selectorPlan [("main", [0, 1]), ("other", [0])]) = false := by decide +kernel
+
+example : faithfulB selectorBundle selectorBundle.toArray
+    (selectorSpec [("main", [.name "x", .name "missing"])])
+    (selectorPlan [("main", [0, 1])]) = false := by decide +kernel
+
 /-! ## Export names
 
 The entry's own statement publishes `X` as `m`, and `show.mjs` needs the entry's local `m`. -/

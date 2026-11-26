@@ -283,6 +283,56 @@ theorem Spec.claimantsT_eq (S : Spec) (B : Bundle) (i : Nat) :
     S.claimantsT B.toArray i = S.claimants B i := by
   simp only [Spec.claimantsT, Spec.claimants, Selector.claimsT_eq]
 
+/-- Index a module's statement selectors once; retain name selectors independently. -/
+private def selectorIndex (sels : List Selector) : Std.TreeSet Nat × List Name :=
+  ((sels.filterMap fun s => match s with | .stmt i => some i | _ => none).foldl
+    (·.insert ·) ∅,
+   sels.filterMap fun s => match s with | .name u => some u | _ => none)
+
+private def indexedClaims (arr : Array Stmt) (i : Nat) (idx : Std.TreeSet Nat × List Name) : Bool :=
+  idx.1.contains i || idx.2.any fun u => (arr.getD i default).defs.contains u
+
+private theorem indexedClaims_eq (arr : Array Stmt) (i : Nat) (sels : List Selector) :
+    indexedClaims arr i (selectorIndex sels) = sels.any (·.claimsT arr i) := by
+  apply Bool.eq_iff_iff.mpr
+  simp only [indexedClaims, selectorIndex, Bool.or_eq_true, ← Std.TreeSet.mem_iff_contains,
+    mem_foldl_insert, Std.TreeSet.not_mem_emptyc, false_or, List.any_eq_true,
+    List.mem_filterMap]
+  constructor
+  · rintro (⟨s, hs, h⟩ | ⟨u, ⟨s, hs, h⟩, hu⟩)
+    · cases s with
+      | name u => simp at h
+      | stmt k =>
+        simp only [Option.some.injEq] at h
+        subst k
+        exact ⟨.stmt i, hs, by simp [Selector.claimsT]⟩
+    · cases s with
+      | stmt k => simp at h
+      | name v =>
+        simp only [Option.some.injEq] at h
+        subst v
+        exact ⟨.name u, hs, by simpa [Selector.claimsT] using hu⟩
+  · rintro ⟨s, hs, h⟩
+    cases s with
+    | stmt k => left; exact ⟨.stmt k, hs, by simpa [Selector.claimsT, beq_iff_eq] using h⟩
+    | name u => right; exact ⟨u, ⟨.name u, hs, rfl⟩, h⟩
+
+private def indexedClaimants (mods : List (ModName × (Std.TreeSet Nat × List Name)))
+    (arr : Array Stmt) (i : Nat) : List ModName :=
+  (mods.filter fun (_, idx) => indexedClaims arr i idx).map (·.1)
+
+private theorem indexedClaimants_eq (S : Spec) (arr : Array Stmt) (i : Nat) :
+    indexedClaimants (S.modules.map fun (m, sels) => (m, selectorIndex sels)) arr i =
+      S.claimantsT arr i := by
+  unfold indexedClaimants Spec.claimantsT
+  generalize S.modules = mods
+  induction mods with
+  | nil => rfl
+  | cons x xs ih =>
+    rcases x with ⟨m, sels⟩
+    simp only [List.map_cons, List.filter_cons, indexedClaims_eq]
+    split <;> simp_all
+
 /-- Every name some statement declares. -/
 def Bundle.allDefs (B : Bundle) : NameSet :=
   B.foldl (fun acc s => s.defs.foldl (·.insert ·) acc) ∅
@@ -328,7 +378,8 @@ theorem Selector.picksSomeT_iff (B : Bundle) (sel : Selector) :
 /-- `Faithful`, with the claimants of each statement computed once and statement sets for the modules. -/
 def faithfulB (B : Bundle) (arr : Array Stmt) (S : Spec) (P : Plan) : Bool :=
   let n := B.length
-  let cl : List (Nat × List ModName) := (List.range n).map fun i => (i, S.claimantsT arr i)
+  let indexed := S.modules.map fun (m, sels) => (m, selectorIndex sels)
+  let cl : List (Nat × List ModName) := (List.range n).map fun i => (i, indexedClaimants indexed arr i)
   let allDefs := B.allDefs
   decide (P.entry = S.entry) && decide (P.mods.map (·.name) = S.modules.map (·.1))
     && nodupB (P.mods.map (·.name))
@@ -348,7 +399,7 @@ theorem faithfulB_iff (B : Bundle) (S : Spec) (P : Plan) :
     faithfulB B B.toArray S P = true ↔ Faithful B S P := by
   simp only [faithfulB, Faithful, Bool.and_eq_true, decide_eq_true_eq, nodupB_iff, List.all_eq_true,
     List.mem_map, beq_iff_eq, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂,
-    Spec.claimantsT_eq, Selector.picksSomeT_iff, and_assoc, contains_foldl_insert, decide_eq_decide]
+    indexedClaimants_eq, Spec.claimantsT_eq, Selector.picksSomeT_iff, and_assoc, contains_foldl_insert, decide_eq_decide]
 /-! ## ExportsUnique, with a set -/
 
 def Plan.exportsUniqueB (arr : Array Stmt) (P : Plan) : Bool :=
