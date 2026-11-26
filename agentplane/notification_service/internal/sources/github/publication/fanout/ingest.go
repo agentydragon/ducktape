@@ -93,6 +93,28 @@ func (c *Coordinator) BackfillFacts(ctx context.Context) error {
 	}
 }
 
+// CleanupPayloads removes only the optional webhook body from bounded batches. Every receipt must have a
+// durable fact first, so old writers can overlap this cleanup without losing matchable notification content.
+func (c *Coordinator) CleanupPayloads(ctx context.Context, cutoff time.Time) error {
+	if err := c.BackfillFacts(ctx); err != nil {
+		return err
+	}
+	return c.runner.Run(ctx, func(tx transaction.Tx) error {
+		if err := githubstate.Lock(ctx, tx); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `
+			WITH expired AS (
+				SELECT position FROM github_delivery
+				WHERE received_at < $1 AND payload IS NOT NULL AND fact IS NOT NULL
+				ORDER BY received_at, position LIMIT 1000
+				FOR UPDATE SKIP LOCKED
+			)
+			UPDATE github_delivery d SET payload = NULL FROM expired e WHERE d.position = e.position`, cutoff)
+		return err
+	})
+}
+
 // Cleanup deletes bounded batches of raw receipts, generated events and obsolete commit facts
 // older than cutoff.
 // Expired transition rows are removed even if no inbox consumed them. Inbox entries and current pull-request

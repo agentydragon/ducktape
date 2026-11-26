@@ -142,6 +142,31 @@ func TestLegacyReceiptIsBackfilledAsACompactFactBeforeMatching(t *testing.T) {
 		strings.Contains(string(fact), "private_data") || strings.Contains(string(fact), "\"email\"") {
 		t.Fatalf("backfilled fact = %s, want compact comment, action and repository data", fact)
 	}
+	if _, err := g.db.ExecContext(t.Context(), `UPDATE github_delivery SET received_at = now() - interval '4 days' WHERE position = $1`, position); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.coordinator.CleanupPayloads(t.Context(), time.Now().Add(-3*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var bodyExpired bool
+	var cleanupPosition int64
+	var cleanupDigest []byte
+	var retainedFact []byte
+	if err := g.db.QueryRowContext(t.Context(), `SELECT position, digest, payload IS NULL, fact FROM github_delivery WHERE position = $1`, position).
+		Scan(&cleanupPosition, &cleanupDigest, &bodyExpired, &retainedFact); err != nil {
+		t.Fatal(err)
+	}
+	if !bodyExpired {
+		t.Fatal("expired raw body was retained")
+	}
+	if cleanupPosition != originalPosition || !bytes.Equal(cleanupDigest, originalDigest) {
+		t.Fatalf("body cleanup changed receipt identity: position=%d (before %d), digest=%x (before %x)",
+			cleanupPosition, originalPosition, cleanupDigest, originalDigest)
+	}
+	sameJSON(t, retainedFact, fact)
+	if got := g.count(t, `SELECT count(*) FROM github_delivery_subject WHERE delivery_position = $1`, position); got != originalSubjects {
+		t.Fatalf("body cleanup changed subject links: got %d, want %d", got, originalSubjects)
+	}
 }
 
 func TestDeliveryIsStoredAgainstTheSubjectsOfItsRepositoryAndNothingElse(t *testing.T) {

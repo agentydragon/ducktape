@@ -48,7 +48,6 @@ const deploymentFile = `rpc:
     key_file: /test/tls.key
 namespace: test-agentplane
 operator_reader_services: [spiffe://agentplane/app]
-github_delivery_retention_days: 14
 notice_debounce:
   quiet_seconds: 60
   max_wait_seconds: 120
@@ -71,6 +70,8 @@ session_dispatcher:
     ca_file: /test/ca.pem
     server_uri: spiffe://agentplane/session-dispatcher
 github:
+  fact_retention_hours: 85
+  raw_body_retention_hours: 3
   app_id: 1234
   api_url: https://api.github.com/
   request_timeout_s: 5
@@ -96,7 +97,8 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 		t.Fatal(err)
 	}
 	if c.DatabaseURL == "" || c.Namespace != "test-agentplane" ||
-		len(c.OperatorReaderServices) != 1 || c.OperatorReaderServices[0] != peertls.AppURI || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 14) || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
+		len(c.OperatorReaderServices) != 1 || c.OperatorReaderServices[0] != peertls.AppURI || (c.GitHub.Retention.Hours == nil || *c.GitHub.Retention.Hours != 85) ||
+		c.GitHub.Retention.PayloadHours == nil || *c.GitHub.Retention.PayloadHours != 3 || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
 		c.Actions.URL != "http://test-actions.invalid:8080" || c.Actions.TokenFile != "/test/tokens/actions" ||
 		c.HistoryService.Target != "test-history.invalid:8080" || c.HistoryService.TokenFile != "/test/tokens/history" ||
 		c.SessionDispatcher.Target != "test-dispatcher.invalid:8080" || c.SessionDispatcher.TokenFile != "/test/tokens/dispatcher" ||
@@ -124,7 +126,8 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if c.Quotas.InboxesPerAccount != 64 || c.Quotas.ActiveSubscriptionsPerInbox != 64 || c.Quotas.EntriesPerInbox != 10_000 {
 		t.Errorf("quota defaults: %+v", c.Quotas)
 	}
-	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.UnavailableDestinationRetrySeconds != 30 || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 7) {
+	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.UnavailableDestinationRetrySeconds != 30 ||
+		c.GitHub.Retention.Hours == nil || *c.GitHub.Retention.Hours != 168 || c.GitHub.Retention.PayloadHours == nil || *c.GitHub.Retention.PayloadHours != 72 {
 		t.Errorf("worker defaults: %+v", c.Settings)
 	}
 	if c.HistoryService.RequestTimeoutSeconds != 20 ||
@@ -137,14 +140,14 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 }
 
 func TestStaticEnvironmentVariablesDoNotOverrideTheSettingsFile(t *testing.T) {
-	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"github_delivery_retention_days: 14\nquotas:\n  entries_per_inbox: 5\n",
+	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"github:\n  fact_retention_hours: 85\nquotas:\n  entries_per_inbox: 5\n",
 		settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9001", settingPrefix+"NOTICE_DEBOUNCE__QUIET_SECONDS=7", settingPrefix+"ACTIONS__REQUEST_TIMEOUT_S=1.5",
-		settingPrefix+"UNAVAILABLE_DESTINATION_RETRY_S=9", settingPrefix+"GITHUB_DELIVERY_RETENTION_DAYS=3")
+		settingPrefix+"UNAVAILABLE_DESTINATION_RETRY_S=9", settingPrefix+"GITHUB__FACT_RETENTION_HOURS=3")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.Quotas.EntriesPerInbox != 5 || c.NoticeDebounce.QuietSeconds != 2 ||
-		c.Actions.RequestTimeoutSeconds != 5 || c.UnavailableDestinationRetrySeconds != 30 || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 14) {
+		c.Actions.RequestTimeoutSeconds != 5 || c.UnavailableDestinationRetrySeconds != 30 || (c.GitHub.Retention.Hours == nil || *c.GitHub.Retention.Hours != 85) {
 		t.Errorf("static settings were affected by environment variables: %+v", c)
 	}
 }
@@ -302,8 +305,8 @@ func TestNullGitHubRetentionDisablesExpiry(t *testing.T) {
 		name, file, env string
 		want            *int
 	}{
-		{"YAML null", requiredFile + "github_delivery_retention_days: null\n", "", nil},
-		{"environment ignored over YAML null", requiredFile + "github_delivery_retention_days: null\n", settingPrefix + "GITHUB_DELIVERY_RETENTION_DAYS=3", nil},
+		{"YAML null", requiredFile + "github:\n  fact_retention_hours: null\n", "", nil},
+		{"environment ignored over YAML null", requiredFile + "github:\n  fact_retention_hours: null\n", settingPrefix + "GITHUB__FACT_RETENTION_HOURS=3", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := []string{}
@@ -314,9 +317,40 @@ func TestNullGitHubRetentionDisablesExpiry(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := c.GitHubRetention.Days
+			got := c.GitHub.Retention.Hours
 			if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
 				t.Fatalf("retention = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGitHubPayloadRetentionIsBoundedByFactRetention(t *testing.T) {
+	for _, tc := range []struct {
+		name, file string
+		valid      bool
+		factsHours *int
+		bodyHours  *int
+	}{
+		{"zero body with finite facts", requiredFile + "github:\n  fact_retention_hours: 1\n  raw_body_retention_hours: 0\n", true, new(1), new(0)},
+		{"body longer than facts", requiredFile + "github:\n  fact_retention_hours: 1\n  raw_body_retention_hours: 2\n", false, nil, nil},
+		{"infinite body and facts", requiredFile + "github:\n  fact_retention_hours: null\n  raw_body_retention_hours: null\n", true, nil, nil},
+		{"infinite body with finite facts", requiredFile + "github:\n  raw_body_retention_hours: null\n", false, nil, nil},
+		{"finite body with infinite facts", requiredFile + "github:\n  fact_retention_hours: null\n", true, nil, new(72)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := loadTestConfig(t, tc.file)
+			if (err == nil) != tc.valid {
+				t.Fatalf("loadTestConfig() error = %v, valid = %v", err, tc.valid)
+			}
+			if err == nil && c.githubEnabled() {
+				t.Fatal("retention enabled GitHub ingestion")
+			}
+			if err == nil && ((c.GitHub.Retention.Hours == nil) != (tc.factsHours == nil) ||
+				(c.GitHub.Retention.Hours != nil && *c.GitHub.Retention.Hours != *tc.factsHours) ||
+				(c.GitHub.Retention.PayloadHours == nil) != (tc.bodyHours == nil) ||
+				(c.GitHub.Retention.PayloadHours != nil && *c.GitHub.Retention.PayloadHours != *tc.bodyHours)) {
+				t.Fatalf("retention = %+v, want facts %v and body %v", c.GitHub.Retention, tc.factsHours, tc.bodyHours)
 			}
 		})
 	}
