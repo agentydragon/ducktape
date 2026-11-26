@@ -1,5 +1,6 @@
 import Std.Data.HashMap.Lemmas
 import EsmSplit.CoreJS.Iterator
+import EsmSplit.ModuleOrder
 
 /-!
 # CoreJS: the interpreter
@@ -946,15 +947,8 @@ def initialState (W : World) (regions : Nat) : State W where
 
 def Program.find (P : Program) (name : String) : Option Module := P.modules.find? (·.name == name)
 
-/-- One step of the order: `entered` are the modules visited so far, `done` the ones whose turn has come, in order.
-`fuel` bounds the depth; the count of modules and one more is enough. -/
-def Program.visit (P : Program) : Nat → String → List String × List String → List String × List String
-  | 0, _, st => st
-  | fuel + 1, m, (entered, done) =>
-    if entered.contains m then (entered, done) else
-      let sources := ((P.find m).map fun md => md.imports.map (·.source)).getD []
-      let st := sources.foldl (fun st s => P.visit fuel s st) (m :: entered, done)
-      (st.1, st.2 ++ [m])
+def Program.visit (P : Program) : Nat → String → List String × List String → List String × List String :=
+  EsmSplit.visitImports fun m => ((P.find m).map fun md => md.imports.map (·.source)).getD []
 
 /-- The order in which the modules run. -/
 def Program.evalOrder (P : Program) : List String := (P.visit (P.modules.length + 1) P.entry ([], [])).2

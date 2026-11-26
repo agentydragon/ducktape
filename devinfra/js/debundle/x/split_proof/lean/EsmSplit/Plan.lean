@@ -1,4 +1,5 @@
 import EsmSplit.Bundle
+import EsmSplit.ModuleOrder
 
 /-!
 # The split program, and when it is valid
@@ -67,16 +68,8 @@ structure Plan where
 
 def Plan.find (P : Plan) (m : ModName) : Option Module := P.mods.find? (·.name == m)
 
-/-- ES module evaluation order (synchronous modules): depth-first over `import`s in source order,
-modules run after the modules they import, each module once. A module that was already entered is
-skipped, which is how import cycles are cut. `fuel` bounds the recursion depth. -/
-def Plan.visit (P : Plan) : Nat → ModName → List ModName × List ModName → List ModName × List ModName
-  | 0, _, st => st
-  | fuel + 1, m, (entered, done) =>
-    if entered.contains m then (entered, done) else
-      let srcs := ((P.find m).map fun md => md.imports.map (·.1)).getD []
-      let st := srcs.foldl (fun st s => P.visit fuel s st) (m :: entered, done)
-      (st.1, st.2 ++ [m])
+def Plan.visit (P : Plan) : Nat → ModName → List ModName × List ModName → List ModName × List ModName :=
+  visitImports fun m => ((P.find m).map fun md => md.imports.map (·.1)).getD []
 
 def Plan.evalOrder (P : Plan) : List ModName :=
   (P.visit (P.mods.length + 1) P.entry ([], [])).2
