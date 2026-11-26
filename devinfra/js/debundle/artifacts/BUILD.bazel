@@ -1,0 +1,110 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+# Compiled into `//devinfra/js/debundle:reconstruction`, whose crate root sits
+# in the parent package.
+exports_files(
+    [
+        "browser_harness_plan.rs",
+        "harness_monitor.html",
+    ],
+    visibility = ["//devinfra/js/debundle:__pkg__"],
+)
+
+rust_library(
+    name = "output_layout",
+    srcs = ["output_layout.rs"],
+    crate_root = "output_layout.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:relative-path",
+    ],
+)
+
+rust_library(
+    name = "artifact",
+    srcs = [
+        "artifact.rs",
+        "emission_files.rs",
+        "export_policies.rs",
+        "indexed_files.rs",
+        "metrics.rs",
+        "paths.rs",
+        "reports.rs",
+        "runtime_resources.rs",
+        "source_program.rs",
+    ],
+    crate_root = "artifact.rs",
+    edition = "2024",
+    deps = [
+        ":output_layout",
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:report_io",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle:spec",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:relative-path",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:strum",
+        "@crates//:swc_common",
+        "@crates//:url",
+    ],
+)
+
+rust_test(
+    name = "artifact_test",
+    crate = ":artifact",
+    edition = "2024",
+)
+
+rust_library(
+    name = "write_tree",
+    srcs = [
+        "script_output.rs",
+        "write_tree.rs",
+    ],
+    crate_root = "write_tree.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":output_layout",
+        "//devinfra/js/debundle:identifier_rename_queue",
+        "//devinfra/js/debundle:reconstruction",
+        "//devinfra/js/debundle:report_io",
+        "//devinfra/js/debundle:source_identity",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:swc_common",
+    ],
+)
+
+rust_library(
+    name = "emit_harness",
+    srcs = ["emit_harness.rs"],
+    crate_root = "emit_harness.rs",
+    edition = "2024",
+    deps = [
+        ":artifact",
+        ":output_layout",
+        ":write_tree",
+        "//devinfra/js/debundle:reconstruction",
+        "//devinfra/js/debundle:report_io",
+        "//devinfra/js/debundle:source_identity",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "emit_harness_test",
+    crate = ":emit_harness",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)

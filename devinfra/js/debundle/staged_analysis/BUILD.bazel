@@ -1,0 +1,39 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "staged_analysis",
+    srcs = glob(["*.rs"]),
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_codec",
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:analysis_projection",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:prepare_chunks",
+        "//devinfra/js/debundle:program_analysis",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/artifacts:artifact",
+        "//devinfra/js/debundle/chunk_analysis",
+        "//devinfra/js/debundle/vendor",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:rmp-serde",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "staged_analysis_unit_test",
+    crate = ":staged_analysis",
+    edition = "2024",
+)
