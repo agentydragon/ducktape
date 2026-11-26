@@ -1107,6 +1107,14 @@ rust_test(
 )
 
 rust_library(
+    name = "source_input",
+    srcs = ["selectors/authoring/source_input.rs"],
+    crate_root = "selectors/authoring/source_input.rs",
+    edition = "2024",
+    deps = ["@crates//:anyhow"],
+)
+
+rust_library(
     name = "selector_codemod",
     srcs = [
         "selectors/authoring/match_selector.rs",
@@ -1121,7 +1129,6 @@ rust_library(
         "selectors/authoring/render.rs",
         "selectors/authoring/selector_codemod.rs",
         "selectors/authoring/selector_minimizer_proptest.rs",
-        "selectors/authoring/source_input.rs",
         "selectors/authoring/synthesis_failure.rs",
     ],
     crate_root = "selectors/authoring/selector_codemod.rs",
@@ -1134,6 +1141,7 @@ rust_library(
         ":selector_resolve",
         ":shape_index",
         ":source_identity",
+        ":source_input",
         ":source_match",
         ":source_match_holes",
         ":spec",
@@ -1693,6 +1701,7 @@ rust_library(
         ":selector_outcome",
         ":selector_resolve",
         ":source_identity",
+        ":source_input",
         ":source_inspection",
         ":source_match",
         ":spec",

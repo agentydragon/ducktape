@@ -76,7 +76,7 @@ pub struct MatchSelectorReport {
     pub slack: Option<Vec<SlackRelaxation>>,
 }
 
-use crate::source_input::resolve_chunk_source_file;
+use source_input::resolve_chunk_source_file;
 
 pub fn run_match_selector(config: &MatchSelectorConfig) -> Result<MatchSelectorReport> {
     js_ast::with_swc_globals(|| run_match_selector_impl(config))

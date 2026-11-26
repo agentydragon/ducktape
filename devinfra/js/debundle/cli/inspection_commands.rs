@@ -12,9 +12,9 @@ use peel::{
     SourceSelectionArgs, run_atomic_groups_report, run_graph_summary_report, run_patch_plan_report,
     run_source_selection_report,
 };
-use selector_codemod::source_input::resolve_chunk_source_file;
 use serde::Serialize;
 use source_identity::SourceUnitOrdinal;
+use source_input::resolve_chunk_source_file;
 use source_inspection::{PreparedSource, StatementCoordinates, StatementRange, StatementRow};
 use spec_modules::{collect_module_files, module_path_from_file};
 use std::collections::{BTreeMap, BTreeSet};

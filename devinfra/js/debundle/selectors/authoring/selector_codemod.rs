@@ -50,7 +50,6 @@ mod render;
 // Read-only agent-facing selector query primitives (M1 of the
 // selector-authoring plan), sharing this crate's source loading + prove-gate.
 pub mod match_selector;
-pub mod source_input;
 
 use crate::minimize::{
     collapse_statement_hole_runs, exact_declaration_rejection, exact_declaration_source,
