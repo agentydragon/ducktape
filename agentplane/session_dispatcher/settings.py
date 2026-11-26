@@ -19,6 +19,7 @@ from agentplane.net.peertls.config import (
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     ClientTLS,
+    PolicyServicePeer,
     ServiceSPIFFEID,
 )
 
@@ -55,6 +56,13 @@ class Settings(BaseModel):
     sandbox_namespace: str = Field(min_length=1, description="Namespace of Agentplane Sandboxes.")
     policy_namespace: str = Field(
         min_length=1, description="Namespace holding the Identities a workload SVID may name."
+    )
+    # CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
+    #   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+    policy_service: PolicyServicePeer | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="PolicyService Identity view replacing every Kubernetes Identity read; omit to read Kubernetes.",
     )
     runner_token_file: Path | None = Field(
         default=None, description="Projected caller token; omit when gateway_tls uses the Sessions role SVID."
@@ -123,6 +131,8 @@ class Settings(BaseModel):
         if self.gateway_tls.server_uri not in {SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI}:
             raise ValueError("gateway_tls.server_uri must identify the Gateway or Environments Runtime proxy")
         self.gateway_tls.validate_caller(self.runner_token_file, GATEWAY_SESSIONS_URI)
+        if self.policy_service is not None:
+            self.policy_service.tls.validate_caller(None, GATEWAY_SESSIONS_URI)
         return self
 
     @field_validator("kubernetes_client_qps")

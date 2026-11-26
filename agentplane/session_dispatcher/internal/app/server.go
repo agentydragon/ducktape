@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
@@ -80,6 +81,44 @@ func listenAndServe(ctx context.Context, c config) error {
 	return serve(ctx, c, rpcListener)
 }
 
+// identitySources are the Identity readers behind every Dispatcher verifier.
+type identitySources struct {
+	callers, sandboxes, delegation auth.IdentityUIDReader
+	rules                          reader.IdentitySource
+	stop                           func()
+}
+
+// startIdentities serves every Identity read from one PolicyService view when policy_service is set, else from
+// Kubernetes.
+func startIdentities(ctx context.Context, c config, kubeConfig *rest.Config, objects client.Client) (identitySources, error) {
+	// CLEANUP(added 2026-11-26): drop the Kubernetes sources once the staging manifests set policy_service
+	//   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+	if c.PolicyService != nil {
+		view, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
+		if err != nil {
+			return identitySources{}, fmt.Errorf("PolicyService Identity view: %w", err)
+		}
+		return identitySources{
+			callers: view, sandboxes: view, delegation: view, rules: reader.CachedIdentities{View: view}, stop: stop,
+		}, nil
+	}
+	callers, err := auth.NewKubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace)
+	if err != nil {
+		return identitySources{}, err
+	}
+	sandboxes, err := auth.KubernetesIdentityUIDs(objects, c.Namespace)
+	if err != nil {
+		return identitySources{}, err
+	}
+	delegation, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
+	if err != nil {
+		return identitySources{}, err
+	}
+	return identitySources{
+		callers: callers, sandboxes: sandboxes, delegation: delegation, rules: reader.KubernetesIdentities{}, stop: func() {},
+	}, nil
+}
+
 // serve uses the supplied shared gRPC listener.
 func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	rpcCredentials, err := c.RPC.ServerCredentialsWithServices(peertls.SessionDispatcherURI)
@@ -133,15 +172,16 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	catalog, err := sandboxinventory.NewKubernetesSandboxes(inventory, objects, c.Namespace)
+	identities, err := startIdentities(ctx, c, config, objects)
 	if err != nil {
 		return err
 	}
-	callerIdentities, err := auth.NewKubernetesIdentityUIDs(config, c.PolicyNamespace)
+	defer identities.stop()
+	catalog, err := sandboxinventory.NewKubernetesSandboxes(inventory, objects, c.Namespace, identities.sandboxes)
 	if err != nil {
 		return err
 	}
-	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace}, callerIdentities)
+	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace}, identities.callers)
 	if err != nil {
 		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
 	}
@@ -191,7 +231,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	dispatchEnvironmentRules := access.NewIndex()
 	dispatchPolicyHealth := watchhealth.New()
 	dispatchPolicyWatches := reader.NewWatches(config, dispatchPolicyHealth)
-	if err := reader.WatchRules(dispatchPolicyWatches, dispatchEnvironmentRules, c.PolicyNamespace, access.Ready, reader.KubernetesIdentities{}); err != nil {
+	if err := reader.WatchRules(dispatchPolicyWatches, dispatchEnvironmentRules, c.PolicyNamespace, access.Ready, identities.rules); err != nil {
 		return fmt.Errorf("configure Dispatcher environment policy watches: %w", err)
 	}
 	go dispatchPolicyWatches.Run(ctx)
@@ -217,11 +257,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	maps.Copy(methods, dispatcherMethods)
 
 	if c.DispatcherServiceDelegation != nil {
-		identityReader, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
-		if err != nil {
-			return err
-		}
-		methods, err = methods.WithServiceDelegation(c.DispatcherServiceDelegation.Methods, c.DispatcherServiceDelegation.Actors, identityReader)
+		methods, err = methods.WithServiceDelegation(c.DispatcherServiceDelegation.Methods, c.DispatcherServiceDelegation.Actors, identities.delegation)
 		if err != nil {
 			return fmt.Errorf("configure service delegation: %w", err)
 		}
