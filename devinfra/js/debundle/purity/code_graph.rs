@@ -22,8 +22,9 @@ use std::sync::Arc;
 #[derive(Debug, Default, Clone)]
 pub struct ChunkCodeGraph {
     pub(crate) bindings: BTreeMap<String, ChunkBinding>,
-    plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
-    plain_data_inference_uses: BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
+    plain_data_dependencies: BTreeMap<String, analysis_vocabulary::inputs::ProofDependencies>,
+    plain_data_inference_uses:
+        BTreeMap<String, BTreeSet<analysis_vocabulary::provenance::InferenceUse>>,
     fresh_record_proofs: BTreeMap<u32, FreshRecordProof>,
     pure_new_constructors: BTreeSet<String>,
     /// Per-binding declared-pure member-call set. Looked up by the
@@ -101,9 +102,10 @@ pub struct PurityShapeInputs<'a> {
     pub set_iterable_proof: &'a SetIterableProof,
     pub local_class_construction_proof: &'a LocalClassConstructionProof,
     pub plain_data_bindings: &'a [String],
-    pub plain_data_dependencies: &'a BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    pub plain_data_dependencies:
+        &'a BTreeMap<String, analysis_vocabulary::inputs::ProofDependencies>,
     pub plain_data_inference_uses:
-        &'a BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
+        &'a BTreeMap<String, BTreeSet<analysis_vocabulary::provenance::InferenceUse>>,
     pub plain_array_bindings: &'a BTreeSet<String>,
     pub stable_var_number_candidates: &'a BTreeSet<Id>,
     /// Named and default imports bound to a provider cell that is never
@@ -272,10 +274,10 @@ impl ChunkCodeGraph {
         set_iterable_proof: &SetIterableProof,
         local_class_construction_proof: &LocalClassConstructionProof,
         plain_data_bindings: &[String],
-        plain_data_dependencies: &BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+        plain_data_dependencies: &BTreeMap<String, analysis_vocabulary::inputs::ProofDependencies>,
         plain_data_inference_uses: &BTreeMap<
             String,
-            BTreeSet<crate::analysis_provenance::InferenceUse>,
+            BTreeSet<analysis_vocabulary::provenance::InferenceUse>,
         >,
         plain_array_bindings: &BTreeSet<String>,
         stable_var_number_candidates: &BTreeSet<Id>,
@@ -539,14 +541,14 @@ impl ChunkCodeGraph {
     pub(crate) fn plain_data_dependencies(
         &self,
         name: &str,
-    ) -> Option<&crate::analysis_inputs::ProofDependencies> {
+    ) -> Option<&analysis_vocabulary::inputs::ProofDependencies> {
         self.plain_data_dependencies.get(name)
     }
 
     pub fn plain_data_inference_uses(
         &self,
         name: &str,
-    ) -> Option<&BTreeSet<crate::analysis_provenance::InferenceUse>> {
+    ) -> Option<&BTreeSet<analysis_vocabulary::provenance::InferenceUse>> {
         self.plain_data_inference_uses.get(name)
     }
 

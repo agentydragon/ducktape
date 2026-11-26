@@ -52,7 +52,7 @@ pub struct ReturnedRecordSummary {
     pub source_location: Option<SourceLocation>,
     pub members: Vec<DeferredRecordMember>,
     /// Composed source/native proof, including its captured-input dependencies.
-    pub inference: crate::analysis_provenance::InferenceUse,
+    pub inference: crate::provenance::InferenceUse,
     /// As on `ForeignCallSummary`: the swap's replacement package when the
     /// emitted program runs it instead of this body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,7 +76,7 @@ pub struct NamespaceWrapperSummary {
     pub export: String,
     pub local: String,
     pub source_location: Option<SourceLocation>,
-    pub inference: crate::analysis_provenance::InferenceUse,
+    pub inference: crate::provenance::InferenceUse,
     /// Trusted provider judgment; deliberately absent from report JSON.
     #[serde(skip)]
     pub dependencies: ProofDependencies,
@@ -526,7 +526,7 @@ macro_rules! proof_dependencies {
 
         impl ProofDependencies {
             /// Atoms in this contribution that the receiving judgment does not yet have.
-            pub(crate) fn difference(&self, current: &Self) -> Self {
+            pub fn difference(&self, current: &Self) -> Self {
                 Self { $($field: self.$field.difference(&current.$field).cloned().collect()),+ }
             }
 
@@ -540,8 +540,8 @@ macro_rules! proof_dependencies {
                 }
             }
 
-            #[cfg(test)]
-            pub(crate) fn atom_count(&self) -> usize {
+            /// Proof-delivery accounting for `inference` tests.
+            pub fn atom_count(&self) -> usize {
                 0 $(+ self.$field.len())+
             }
         }
@@ -648,7 +648,7 @@ impl HostBehaviorKey {
 /// Analysis output names the premise only by its path inside the spec, so it
 /// does not depend on where the spec or the inputs live. The fields marked
 /// report-only are `None` in analysis output and filled in by
-/// [`crate::reports::author_inputs::AuthorInputLocations`].
+/// `analysis::reports::author_inputs::AuthorInputLocations`.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ValueInputEvidence {
     pub reference: ValueInputRef,
@@ -908,7 +908,7 @@ pub struct InferredSetConstruction {
     pub binding: Id,
     pub operation: InferredSetOperation,
     pub dependencies: ProofDependencies,
-    pub inference: crate::analysis_provenance::InferenceUse,
+    pub inference: crate::provenance::InferenceUse,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -935,8 +935,8 @@ pub enum ProvenSetAllocation {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NativeIntegrity {
     pub mutated: BTreeSet<NativeIntrinsic>,
-    pub prototype_mutations: Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
-    pub witnesses: Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
+    pub prototype_mutations: Arc<Vec<crate::report_schema::NativePrototypeMutation>>,
+    pub witnesses: Arc<Vec<crate::report_schema::NativeMutationWitness>>,
     /// Validated inputs by stable reference. Consumers report a dependency only
     /// when a receiver refinement was actually used.
     pub value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
@@ -947,7 +947,7 @@ pub struct NativeIntegrity {
     /// are intact whatever the census witnesses; `mutated` excludes them.
     pub never_written: BTreeSet<NativeIntrinsic>,
     /// The witnesses that premise overrides: the author's audit list.
-    pub never_written_overrides: Vec<crate::reports::schema::NeverWrittenOverride>,
+    pub never_written_overrides: Vec<crate::report_schema::NeverWrittenOverride>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1100,7 +1100,7 @@ pub struct AnalysisInputs {
     /// entry; raw exported kinds alone do not prove a normal imported
     /// `GetValue`. This value supports ordinary transfer, while the separate
     /// read capability supplies its normal-read effect coverage.
-    pub imported_values: BTreeMap<String, crate::facts::abstract_domain::value::Value>,
+    pub imported_values: BTreeMap<String, crate::value::Value>,
     /// Imported stable primitive reads with exact source-cell provenance and
     /// an acyclic, fully resolved static dependency closure. This is an
     /// operation-local read capability, not provider effect authority.
@@ -1121,7 +1121,7 @@ impl ValidatedNativeOperationFacts {
 
     /// A validated direct zero-argument native constructor; its result has no
     /// ordinary-object or retained-callback certificate.
-    pub(crate) fn empty_native_constructor_proof(
+    pub fn empty_native_constructor_proof(
         &self,
         construction: &swc_ecma_ast::NewExpr,
     ) -> Option<&ResolvedNativeOperationInput> {
@@ -1134,10 +1134,7 @@ impl ValidatedNativeOperationFacts {
     /// The exact-site native input certifies the original data slots. A bare
     /// Symbol call with no argument or one string literal has no conversion
     /// callback or separately observable allocation effect.
-    pub(crate) fn symbol_literal_proof(
-        &self,
-        call: &CallExpr,
-    ) -> Option<&ResolvedNativeOperationInput> {
+    pub fn symbol_literal_proof(&self, call: &CallExpr) -> Option<&ResolvedNativeOperationInput> {
         let string_literal = matches!(call.args.as_slice(), [arg]
             if arg.spread.is_none() && matches!(arg.expr.as_ref(), Expr::Lit(Lit::Str(_))));
         self.inputs.iter().find(|input| {

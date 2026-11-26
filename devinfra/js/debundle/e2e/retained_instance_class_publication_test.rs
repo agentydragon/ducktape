@@ -1,6 +1,6 @@
 //! Retained local instances must not be confused with escaped class members.
-use analysis::execution_evidence::ConstructionRejection;
-use analysis::reports::schema::RecordFactoryRejectionReason;
+use analysis_vocabulary::execution_evidence::ConstructionRejection;
+use analysis_vocabulary::report_schema::RecordFactoryRejectionReason;
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 use serde_json::Value as JsonValue;
@@ -274,7 +274,7 @@ fn assert_class_members_escape_refusal(graph: &graph::DependencyGraphReport, bin
 fn class_members_escape_rejection<'a>(
     graph: &'a graph::DependencyGraphReport,
     binding: &str,
-) -> &'a analysis::reports::schema::LocalRecordFactoryRejection {
+) -> &'a analysis_vocabulary::report_schema::LocalRecordFactoryRejection {
     let execution = node_declaring(graph, binding)
         .synchronous_execution
         .as_ref()

@@ -13,10 +13,10 @@ use anyhow::{Context, Result};
 use graph_provenance::{CurrentRoots, GraphProvenance};
 use spec::{DependencyGraphOptions, SourceUnitSelector};
 
-use crate::analysis_inputs::{
+use analysis_vocabulary::inputs::{
     NativeOperationInputEvidence, NativeOperationSelectorProvenance, ValueInputEvidence,
 };
-use crate::reports::schema::{
+use analysis_vocabulary::report_schema::{
     InferenceUseReport, NativeMutationWitness, SynchronousExecutionReport,
 };
 
@@ -150,7 +150,7 @@ impl<'a> AuthorInputLocations<'a> {
 
     pub fn render_imported_primitive_array_spread_input_use(
         &self,
-        input_use: &mut crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse,
+        input_use: &mut analysis_vocabulary::inputs::ImportedPrimitiveArraySpreadInputUse,
     ) {
         let reference = &input_use.evidence.reference;
         let contract = &self

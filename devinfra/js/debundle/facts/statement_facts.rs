@@ -1,5 +1,6 @@
 use super::*;
-use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss};
+use analysis_vocabulary::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss};
+use analysis_vocabulary::report_schema::EffectCellReport;
 use source_identity::SourceUnitOrdinal;
 
 /// One value per syntactic position bucket. Collapses the repeated
@@ -168,7 +169,7 @@ pub struct StatementFacts {
     /// Allocation sites in this statement's deferred positions, at any depth.
     pub deferred_heap_allocations: BTreeSet<EffectCell>,
     /// Native premises consumed by proved heap construction at this source unit.
-    pub heap_native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
+    pub heap_native_integrity_uses: Vec<analysis_vocabulary::report_schema::NativeIntegrityUse>,
     pub purity: Purity,
     pub kind: StatementKind,
 }
@@ -218,8 +219,9 @@ pub struct CallbackFactoryWriteWitness {
 #[derive(Debug, Clone, Default)]
 pub struct SynchronousCalls {
     pub initializer_binding_effects:
-        Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
-    pub initializer_external_effects: Option<crate::reports::schema::InitializerExternalEffectsUse>,
+        Option<Box<analysis_vocabulary::report_schema::InitializerBindingEffectsUse>>,
+    pub initializer_external_effects:
+        Option<analysis_vocabulary::report_schema::InitializerExternalEffectsUse>,
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
     pub completed_initialization: Option<super::initialization_effects::CompletedInitialization>,
     /// Report-only reason the original owner's whole-initialization proof was
@@ -232,9 +234,11 @@ pub struct SynchronousCalls {
     pub evaluation_effects: super::evaluation_effects::EvaluationEffects,
     // SavedSynchronousCalls transports both verdicts through the artifact's
     // shared purity graph; the report projects this runtime field separately.
-    pub purity_disagreement: Option<crate::reports::schema::PurityCompletionDisagreement>,
-    pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
-    pub local_record_factory_rejections: Vec<crate::reports::schema::LocalRecordFactoryRejection>,
+    pub purity_disagreement:
+        Option<analysis_vocabulary::report_schema::PurityCompletionDisagreement>,
+    pub local_record_factory_uses: Vec<analysis_vocabulary::report_schema::LocalRecordFactoryUse>,
+    pub local_record_factory_rejections:
+        Vec<analysis_vocabulary::report_schema::LocalRecordFactoryRejection>,
     /// Internal call-site certificate produced only after the checked local
     /// constructor-factory proof and ordinary synchronous execution both
     /// succeed. It is deliberately separate from the serialized proof-use
@@ -273,17 +277,20 @@ pub struct SynchronousCalls {
     /// explicit commuting premises; the conservative heap order uses all cells.
     pub non_assumed_heap_accesses: HeapContentAccesses,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
-    pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
-    pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
-    pub native_prefix_observations: Vec<crate::reports::schema::NativePrefixObservation>,
-    pub native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
-    pub native_operation_input_uses: Vec<crate::reports::schema::NativeOperationInputUse>,
+    pub native_integrity_checks: Vec<analysis_vocabulary::report_schema::NativeIntegrityCheck>,
+    pub native_prototype_property_checks:
+        Vec<analysis_vocabulary::report_schema::NativePrototypePropertyCheck>,
+    pub native_prefix_observations:
+        Vec<analysis_vocabulary::report_schema::NativePrefixObservation>,
+    pub native_integrity_uses: Vec<analysis_vocabulary::report_schema::NativeIntegrityUse>,
+    pub native_operation_input_uses:
+        Vec<analysis_vocabulary::report_schema::NativeOperationInputUse>,
     pub imported_primitive_array_spread_input_uses:
-        Vec<crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse>,
-    pub inference_uses: Vec<crate::analysis_provenance::InferenceUse>,
+        Vec<analysis_vocabulary::inputs::ImportedPrimitiveArraySpreadInputUse>,
+    pub inference_uses: Vec<analysis_vocabulary::provenance::InferenceUse>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
-    pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
+    pub author_host_contract_uses: Vec<analysis_vocabulary::report_schema::ReentryFreeOperationUse>,
 }
 
 /// Binding effects a statement's synchronous summary assumed rather than
@@ -327,7 +334,7 @@ impl SynchronousCalls {
     ) -> super::binding_effect_coverage::BindingEffectAuthority {
         let author_source_only = matches!(
             self.initializer_binding_effects.as_deref(),
-            Some(crate::reports::schema::InitializerBindingEffectsUse::Applied { .. })
+            Some(analysis_vocabulary::report_schema::InitializerBindingEffectsUse::Applied { .. })
         );
         self.binding_effect_coverage
             .authority(self.complete, author_source_only)
@@ -335,10 +342,10 @@ impl SynchronousCalls {
 
     pub fn binding_effect_authority_report(
         &self,
-    ) -> crate::reports::schema::BindingEffectAuthorityReport {
+    ) -> analysis_vocabulary::report_schema::BindingEffectAuthorityReport {
         let author_source_only = matches!(
             self.initializer_binding_effects.as_deref(),
-            Some(crate::reports::schema::InitializerBindingEffectsUse::Applied { .. })
+            Some(analysis_vocabulary::report_schema::InitializerBindingEffectsUse::Applied { .. })
         );
         self.binding_effect_coverage
             .authority_report(self.complete, author_source_only)
@@ -372,26 +379,26 @@ impl SynchronousCalls {
 pub struct LocalRecordFactoryPurityCertificate {
     pub call_span: swc_common::Span,
     pub checked_owners: BTreeSet<SourceUnitOrdinal>,
-    pub dependencies: crate::analysis_inputs::ProofDependencies,
+    pub dependencies: analysis_vocabulary::inputs::ProofDependencies,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CallbackFactoryUseFact {
     pub imported_local: String,
-    pub evidence: Vec<crate::analysis_inputs::CallbackFactoryEvidence>,
-    pub kind: crate::reports::schema::CallbackFactoryUseKind,
+    pub evidence: Vec<analysis_vocabulary::inputs::CallbackFactoryEvidence>,
+    pub kind: analysis_vocabulary::report_schema::CallbackFactoryUseKind,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
-    pub source_location: Option<crate::execution_evidence::SourceLocation>,
+    pub source_location: Option<analysis_vocabulary::execution_evidence::SourceLocation>,
     pub span: swc_common::Span,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReturnedRecordUseFact {
     pub imported_local: String,
-    pub evidence: crate::analysis_inputs::ReturnedRecordSummary,
-    pub kind: crate::reports::schema::ReturnedRecordUseKind,
+    pub evidence: analysis_vocabulary::inputs::ReturnedRecordSummary,
+    pub kind: analysis_vocabulary::report_schema::ReturnedRecordUseKind,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
-    pub source_location: Option<crate::execution_evidence::SourceLocation>,
+    pub source_location: Option<analysis_vocabulary::execution_evidence::SourceLocation>,
     pub span: swc_common::Span,
 }
 
@@ -401,7 +408,7 @@ impl StatementFacts {
     /// failure.
     pub fn purity_completion_disagreement(
         &self,
-    ) -> Option<&crate::reports::schema::PurityCompletionDisagreement> {
+    ) -> Option<&analysis_vocabulary::report_schema::PurityCompletionDisagreement> {
         self.synchronous_calls
             .as_ref()
             .and_then(|calls| calls.purity_disagreement.as_ref())
@@ -510,6 +517,24 @@ pub enum EffectCell {
     },
 }
 
+impl From<&EffectCell> for EffectCellReport {
+    fn from(cell: &EffectCell) -> Self {
+        match cell {
+            EffectCell::Binding(id) => Self::Binding {
+                binding: id.0.clone(),
+            },
+            EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
+            EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
+            EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
+            EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
+            EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
+                origin: *origin,
+                property: property.clone(),
+            },
+        }
+    }
+}
+
 /// The (writes, reads) cell view of one statement, derived by
 /// [`StatementFacts::effects`]. Its completeness is
 /// [`StatementFacts::havoc`] (`cell_writes_summarizable`,
@@ -591,7 +616,7 @@ fn apply_initializer_binding_effects(
     fact: &mut StatementFacts,
     source_only_bindings: &BTreeSet<String>,
 ) {
-    use crate::reports::schema::InitializerBindingEffectsUse;
+    use analysis_vocabulary::report_schema::InitializerBindingEffectsUse;
 
     let Some(binding) = fact
         .declared
@@ -739,11 +764,12 @@ impl ChunkFactAnalysis {
                 binding.0,
                 fact.ordinal.0
             );
-            calls.initializer_external_effects =
-                Some(crate::reports::schema::InitializerExternalEffectsUse {
+            calls.initializer_external_effects = Some(
+                analysis_vocabulary::report_schema::InitializerExternalEffectsUse {
                     binding: binding.0.to_string(),
                     effects,
-                });
+                },
+            );
             consumed.insert(binding.0.to_string());
         }
         anyhow::ensure!(
@@ -784,7 +810,7 @@ impl ChunkFactAnalysis {
         &self,
         source_only_bindings: &BTreeSet<String>,
     ) -> anyhow::Result<()> {
-        use crate::reports::schema::InitializerBindingEffectsUse;
+        use analysis_vocabulary::report_schema::InitializerBindingEffectsUse;
 
         let mut consumed = BTreeSet::new();
         for fact in &self.facts {
@@ -1020,9 +1046,9 @@ pub struct StructuralChunkAnalysis<'a> {
     /// at arbitrary module positions the resulting value class is Number or
     /// pre-initialization `undefined`, never exact Number.
     pub stable_var_number_candidates: BTreeSet<Id>,
-    pub plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    pub plain_data_dependencies: BTreeMap<String, analysis_vocabulary::inputs::ProofDependencies>,
     pub plain_data_inference_uses:
-        BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
+        BTreeMap<String, BTreeSet<analysis_vocabulary::provenance::InferenceUse>>,
     pub source_semantic_facts: Option<std::sync::Arc<super::semantic_inference::SemanticFacts>>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,

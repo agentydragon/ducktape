@@ -12,7 +12,7 @@ mod chunk_constraining_module_edges_tests {
     use analysis_model::DepKind;
     use source_identity::SourceUnitId;
 
-    use analysis::AnalysisInputs;
+    use analysis_vocabulary::inputs::AnalysisInputs;
     use analyze::analyze_chunk;
 
     use crate::DependencyGraph;
@@ -120,9 +120,9 @@ mod from_report_tests {
         AtomicGraphReport, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
         ModuleQuotientReport, SourceUnitReport,
     };
-    use analysis::analysis_inputs::ValueInputRef;
-    use analysis::purity::Purity;
-    use analysis::reports::schema::{NativeIntegrityGuard, NativeIntegrityUse};
+    use analysis_vocabulary::inputs::ValueInputRef;
+    use analysis_vocabulary::purity::Purity;
+    use analysis_vocabulary::report_schema::{NativeIntegrityGuard, NativeIntegrityUse};
     use source_identity::SourceUnitId;
 
     use analysis::StatementKind;

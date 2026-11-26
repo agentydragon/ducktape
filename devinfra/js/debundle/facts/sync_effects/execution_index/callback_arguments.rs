@@ -1,8 +1,8 @@
 //! Structural callback argument evidence and its shallow native-census consumer.
 
 use super::*;
-use analysis::analysis_inputs::CallableSummary;
-use analysis::reports::schema::NativeUnreachableBranch;
+use analysis_vocabulary::inputs::CallableSummary;
+use analysis_vocabulary::report_schema::NativeUnreachableBranch;
 
 #[derive(Debug)]
 pub(super) struct InlineCallbackEntry {

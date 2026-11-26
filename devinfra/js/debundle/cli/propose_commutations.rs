@@ -18,7 +18,8 @@ use std::path::{Path, PathBuf};
 use synthesis_failure::SynthesisSkipReason;
 
 use ::gate::{BlockingSccEntry, CycleEdge};
-use analysis::{EntryDestination, ModuleId, SourceLocation};
+use analysis::{EntryDestination, ModuleId};
+use analysis_vocabulary::execution_evidence::SourceLocation;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use graph::{CommutationOrder, EndpointView, assignment_endpoints};

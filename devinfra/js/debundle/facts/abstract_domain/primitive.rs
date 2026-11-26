@@ -155,51 +155,6 @@ pub fn binary_result(op: BinaryOp, left: PrimKinds, right: PrimKinds) -> Option<
     binary(op, Some(left), Some(right))
 }
 
-/// Whether `op` can throw on some pair of primitives of these types, before or
-/// after converting them: a Symbol through `ToNumber`/`ToString`, a BigInt
-/// combined arithmetically with another numeric kind, or a BigInt operation
-/// whose operand values the types do not bound: `/` and `%` by `0n` and `**`
-/// with a negative exponent throw a RangeError, and any operation that can
-/// grow a BigInt (`+`, `-`, `*`, `**`, shifts) can exceed the engine's size
-/// limit. `in` and `instanceof` throw on every primitive right operand.
-pub fn binary_throws(op: BinaryOp, left: PrimKinds, right: PrimKinds) -> bool {
-    let symbol = left.intersects(PrimKinds::SYMBOL) || right.intersects(PrimKinds::SYMBOL);
-    let bigint = left.intersects(PrimKinds::BIGINT) || right.intersects(PrimKinds::BIGINT);
-    let bigint_with = |other: PrimKinds| {
-        (left.intersects(PrimKinds::BIGINT) && right.intersects(other))
-            || (right.intersects(PrimKinds::BIGINT) && left.intersects(other))
-    };
-    let non_bigint = PrimKinds::ANY.without(PrimKinds::BIGINT);
-    match op {
-        BinaryOp::EqEq
-        | BinaryOp::NotEq
-        | BinaryOp::EqEqEq
-        | BinaryOp::NotEqEq
-        | BinaryOp::LogicalAnd
-        | BinaryOp::LogicalOr
-        | BinaryOp::NullishCoalescing => false,
-        BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq => symbol,
-        BinaryOp::In | BinaryOp::InstanceOf => true,
-        // A String operand makes `+` a concatenation, which converts a BigInt;
-        // two BigInts add.
-        BinaryOp::Add => {
-            symbol
-                || bigint_with(non_bigint.without(PrimKinds::STRING))
-                || (left.intersects(PrimKinds::BIGINT) && right.intersects(PrimKinds::BIGINT))
-        }
-        // Bitwise conjunctions of BigInts never outgrow their operands.
-        BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::BitAnd => symbol || bigint_with(non_bigint),
-        BinaryOp::Sub
-        | BinaryOp::Mul
-        | BinaryOp::Div
-        | BinaryOp::Mod
-        | BinaryOp::Exp
-        | BinaryOp::LShift
-        | BinaryOp::RShift
-        | BinaryOp::ZeroFillRShift => symbol || bigint,
-    }
-}
-
 /// The primitive types `expr` can complete with, or `None` when it may be an
 /// object or its shape is not modeled.
 pub fn evaluate(expr: &Expr, scope: &impl PrimScope) -> Option<PrimKinds> {

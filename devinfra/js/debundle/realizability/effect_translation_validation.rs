@@ -8,14 +8,14 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, btree_map};
 use std::ops::Bound::{Excluded, Unbounded};
 
-use analysis::analysis_inputs::{CommutingStatementsRef, ProofDependencies};
 use analysis::facts::{
     CellOverlap, CellOverlapIndex, EffectCell, InitializationEffectEvidence, InitializationEffects,
     OwnerInitializationCoverageRefusal, OwnerInitializationCoverageRefusalReason, RootAttempt,
     RootAttemptCounts, StatementFacts, UnknownEffectCoverage,
 };
 use analysis::ids::ModuleId;
-use analysis::reports::schema::EffectCellReport;
+use analysis_vocabulary::inputs::{CommutingStatementsRef, ProofDependencies};
+use analysis_vocabulary::report_schema::EffectCellReport;
 use graph::DependencyGraph;
 use graph::module_assignment::ModuleAssignment;
 use graph::{AppliedCommutingPremise, CellOverlapReport};
@@ -50,7 +50,7 @@ pub struct LegacyEdgeComparisonCounts {
 #[derive(Debug, Clone, Serialize)]
 pub struct EffectCoverageReport {
     pub statement_count: usize,
-    pub covered_owner_dependencies: analysis::analysis_inputs::ProofDependencies,
+    pub covered_owner_dependencies: analysis_vocabulary::inputs::ProofDependencies,
     pub unknown_coverage: BTreeMap<UnknownEffectCoverage, usize>,
     pub owner_coverage_refusals: BTreeMap<OwnerInitializationCoverageRefusalReason, usize>,
     pub root_attempts: RootAttemptCounts,
@@ -295,7 +295,7 @@ pub struct EffectOpacity<'a> {
     pub unknown_coverage: &'a BTreeSet<UnknownEffectCoverage>,
     pub dataflow_opacity: &'a BTreeSet<analysis::DataflowOpacityCause>,
     pub incomplete_execution: bool,
-    pub execution_losses: &'a [analysis::execution_evidence::ExecutionPrecisionLoss],
+    pub execution_losses: &'a [analysis_vocabulary::execution_evidence::ExecutionPrecisionLoss],
     pub opaque_heap: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner_coverage_refusal: Option<&'a OwnerInitializationCoverageRefusal>,
@@ -1011,8 +1011,8 @@ fn push_range<'participants>(
 mod observed_access_tests {
     use super::*;
 
-    use analysis::AnalysisInputs;
     use analysis::facts::CellOverlapLaw;
+    use analysis_vocabulary::inputs::AnalysisInputs;
     use analyze::analyze_chunk;
     use source_identity::SourceUnitId;
 

@@ -1,7 +1,7 @@
 //! Property absence on the intrinsic Object prototype, separate from native call identity.
 
 use super::*;
-use analysis::reports::schema::{NativePrototypeMutation, NativePrototypeMutationKind};
+use analysis_vocabulary::report_schema::{NativePrototypeMutation, NativePrototypeMutationKind};
 use std::cell::RefCell;
 use swc_common::{DUMMY_SP, SyntaxContext};
 
@@ -1062,7 +1062,7 @@ impl ExecutionIndex {
 #[cfg(test)]
 mod capability_graph_tests {
     use super::*;
-    use analysis::analysis_inputs::ValueInputRef;
+    use analysis_vocabulary::inputs::ValueInputRef;
     use std::rc::Rc;
     use swc_common::SyntaxContext;
 

@@ -1,6 +1,6 @@
 //! Typed projections of the shared provider interpreter, never an AST evaluator.
 
-use crate::analysis_inputs::{
+use analysis_vocabulary::inputs::{
     ForeignInvocation, ForeignReturn, NativeIntrinsic, ProofDependencies,
 };
 use std::collections::BTreeSet;

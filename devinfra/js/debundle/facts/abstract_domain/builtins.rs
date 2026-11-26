@@ -8,12 +8,12 @@
 //! operation after callee and argument evaluation. Nothing else in the crate
 //! names a builtin's semantics.
 
-use super::effect::CoerceOp;
 use super::heap::Mutation;
 use super::integrity::IntrinsicSlot;
-use super::value::Kind;
-use crate::analysis_inputs::NativeIntrinsic;
 use analysis_model::PrimKinds;
+use analysis_vocabulary::effect::CoerceOp;
+use analysis_vocabulary::inputs::NativeIntrinsic;
+use analysis_vocabulary::value::Kind;
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 use std::sync::LazyLock;

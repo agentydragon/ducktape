@@ -2,8 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::{BindingId, ModuleId, ModuleRole, SourceLocation, StatementKind};
+use analysis::{BindingId, ModuleId, ModuleRole, StatementKind};
 use analysis_model::DepKind;
+use analysis_vocabulary::execution_evidence::SourceLocation;
 use gate::AssignmentAnalysis;
 use graph::{report::atomic_group_key, report::source_unit_key};
 use serde::Serialize;

@@ -13,8 +13,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::AnalysisInputs;
 use analysis::ids::ModuleId;
+use analysis_vocabulary::inputs::AnalysisInputs;
 use analyze::analyze_chunk;
 use debundle_e2e_support::*;
 use gate::check_realizability_with_priority;

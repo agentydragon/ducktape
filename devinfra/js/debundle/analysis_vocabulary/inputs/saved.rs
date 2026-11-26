@@ -11,8 +11,8 @@ use super::{
     CallableSummary, HostBehaviorKey, NativeIntegrity, NativeIntrinsic, ProofDependencies,
     ValueInputEvidence, ValueInputRef,
 };
-use crate::reports::saved::{SavedNativeMutationWitness, SavedNativePrototypeMutation};
-use crate::reports::schema::NeverWrittenOverride;
+use crate::report_schema::NeverWrittenOverride;
+use crate::report_schema::saved::{SavedNativeMutationWitness, SavedNativePrototypeMutation};
 
 /// A callable summary whose trusted proof dependencies are explicit artifact
 /// data while remaining absent from its ordinary report-facing Serde shape.
@@ -130,11 +130,11 @@ impl<'a> SavedNativeIntegrity<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis_inputs::{
+    use crate::inputs::{
         ArgumentInputRef, CallableSummary, ForeignCallSummary, ForeignInvocation, ForeignReturn,
         NamespaceWrapperSummary, ValueInputRef,
     };
-    use crate::analysis_provenance::{InferenceRule, InferenceUse};
+    use crate::provenance::{InferenceRule, InferenceUse};
     use std::collections::BTreeSet;
 
     #[test]

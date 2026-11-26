@@ -36,7 +36,7 @@ use ::gate::{
     AtInitReadPosition, BlockingRejection, BlockingSccEntry, CutEdgeExplanation, CycleEdge,
     initializer_reason, render_binding_pairs,
 };
-use analysis::Purity;
+use analysis_vocabulary::purity::Purity;
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph::{
@@ -289,7 +289,7 @@ pub enum GateDiagnoseExpansion {
 pub struct GateDiagnoseTrace {
     pub ownership_target: GateDiagnoseOwnershipTarget,
     pub constraining_dependency: GateDiagnoseDependency,
-    pub call_site_source_location: Option<analysis::SourceLocation>,
+    pub call_site_source_location: Option<analysis_vocabulary::execution_evidence::SourceLocation>,
     pub coverage: GateDiagnoseCoverage,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matched_contract: Option<graph::CallbackFactoryContractReport>,
@@ -374,7 +374,7 @@ pub struct GateDiagnoseWriteWitness {
     pub source_unit: String,
     pub statement_ordinal: SourceUnitOrdinal,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_location: Option<analysis::SourceLocation>,
+    pub source_location: Option<analysis_vocabulary::execution_evidence::SourceLocation>,
     pub receiver_binding: Atom,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub property: Option<String>,
@@ -386,7 +386,7 @@ pub struct GateDiagnoseWriteWitness {
 pub struct GateDiagnoseCallArgumentWitness {
     pub source_unit: String,
     pub statement_ordinal: SourceUnitOrdinal,
-    pub source_location: Option<analysis::SourceLocation>,
+    pub source_location: Option<analysis_vocabulary::execution_evidence::SourceLocation>,
     pub namespace_binding: Atom,
     pub call_span_start: u32,
     pub call_span_end: u32,

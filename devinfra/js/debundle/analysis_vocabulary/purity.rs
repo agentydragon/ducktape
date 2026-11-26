@@ -1,8 +1,12 @@
-use super::*;
-use crate::analysis_inputs::ProofDependencies;
-use crate::facts::abstract_domain::effect::{CoerceOperand, CoerceOperands};
+use crate::effect::{CoerceOperand, CoerceOperands, CoerceSite, Effect, HavocCause, InvokeSite};
+use crate::execution_evidence::SourceLocation;
+use crate::inputs::ProofDependencies;
 use analysis_model::PrimKinds;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::sync::Arc;
+use swc_common::Span;
+use swc_ecma_ast::Id;
 
 pub use saved_purity_proto::debundle::saved_purity::PurityRule;
 
@@ -114,7 +118,7 @@ enum EffectEvent {
 }
 
 impl Effects {
-    pub(crate) fn none() -> Self {
+    pub fn none() -> Self {
         Self::default()
     }
 
@@ -122,11 +126,11 @@ impl Effects {
         Self::of_opt_detail(effect, span, None)
     }
 
-    pub(crate) fn of_detail(effect: Effect, span: Span, detail: String) -> Self {
+    pub fn of_detail(effect: Effect, span: Span, detail: String) -> Self {
         Self::of_opt_detail(effect, span, Some(detail))
     }
 
-    pub(crate) fn of_opt_detail(effect: Effect, span: Span, detail: Option<String>) -> Self {
+    pub fn of_opt_detail(effect: Effect, span: Span, detail: Option<String>) -> Self {
         Self {
             events: vec![EffectEvent::Effect {
                 effect,
@@ -140,7 +144,7 @@ impl Effects {
 
     /// Add context to an existing member-read reason at `span`, without
     /// changing its effect or position in evaluation order.
-    pub(crate) fn with_member_read_detail(mut self, span: Span, detail: String) -> Self {
+    pub fn with_member_read_detail(mut self, span: Span, detail: String) -> Self {
         for event in &mut self.events {
             if let EffectEvent::Effect {
                 effect: Effect::Invoke(InvokeSite::MemberRead),
@@ -158,7 +162,7 @@ impl Effects {
 
     /// A coercion at `span` that `operands`, when present, can resolve
     /// against the values settled at the statement's program point.
-    pub(crate) fn coerce(
+    pub fn coerce(
         site: CoerceSite,
         span: Span,
         detail: String,
@@ -175,7 +179,7 @@ impl Effects {
         }
     }
 
-    pub(crate) fn call(callee: &Arc<Purity>, name: &str, span: Span) -> Self {
+    pub fn call(callee: &Arc<Purity>, name: &str, span: Span) -> Self {
         Self {
             events: vec![EffectEvent::Call {
                 callee: Arc::clone(callee),
@@ -187,18 +191,18 @@ impl Effects {
     }
 
     /// Evaluate `self`, then `next`.
-    pub(crate) fn then(mut self, next: Self) -> Self {
+    pub fn then(mut self, next: Self) -> Self {
         self.events.extend(next.events);
         self.dependencies.extend(&next.dependencies);
         self
     }
 
-    pub(crate) fn with_dependencies(mut self, additional: &ProofDependencies) -> Self {
+    pub fn with_dependencies(mut self, additional: &ProofDependencies) -> Self {
         self.dependencies.extend(additional);
         self
     }
 
-    pub(crate) fn proof_dependencies(&self) -> ProofDependencies {
+    pub fn proof_dependencies(&self) -> ProofDependencies {
         let mut dependencies = self.dependencies.clone();
         for event in &self.events {
             if let EffectEvent::Call { callee, .. } = event
@@ -213,7 +217,7 @@ impl Effects {
     /// Discharge the call of an impure function at `span` when it is the only
     /// such call there: a certificate proved that call's execution adds no
     /// observable effect. Every other effect stays.
-    pub(crate) fn discharge_call(mut self, span: Span, dependencies: &ProofDependencies) -> Self {
+    pub fn discharge_call(mut self, span: Span, dependencies: &ProofDependencies) -> Self {
         let discharged = |event: &EffectEvent| {
             matches!(event, EffectEvent::Call { callee, span: site, .. }
                 if *site == span && !callee.is_pure())
@@ -227,7 +231,7 @@ impl Effects {
 
     /// Remove only the classifier's member-read obligation at an exact
     /// runtime-certified site. Ambiguous duplicate events retain the reason.
-    pub(crate) fn discharge_private_own_field_reads(
+    pub fn discharge_private_own_field_reads(
         mut self,
         spans: &[Span],
         dependencies: &ProofDependencies,
@@ -293,7 +297,7 @@ impl Effects {
         self
     }
 
-    pub(crate) fn is_pure(&self) -> bool {
+    pub fn is_pure(&self) -> bool {
         self.events.iter().all(|event| match event {
             EffectEvent::Effect { .. } => false,
             EffectEvent::Call { callee, .. } => callee.is_pure(),
@@ -407,7 +411,7 @@ impl PurityReason {
     /// A reason with `source_location` left unresolved: the classifier fills only
     /// `span`; a caller holding the `SourceLocator` populates `source_location`
     /// later.
-    pub(crate) fn new(rule: PurityRule, span: Span, detail: Option<String>) -> Self {
+    pub fn new(rule: PurityRule, span: Span, detail: Option<String>) -> Self {
         Self {
             rule,
             span,

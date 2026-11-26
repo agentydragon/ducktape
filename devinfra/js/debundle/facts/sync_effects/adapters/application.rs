@@ -30,15 +30,15 @@ use super::super::value_model::{
     ValueExpr, Values,
 };
 use super::super::world::World;
-use analysis::analysis_inputs::{NativeIntrinsic, ProofDependencies};
-use analysis::execution_evidence::{
-    AssumedEffectReason, ExecutionOperation, ExecutionPrecisionLossReason,
-};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::abstract_domain::builtins;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
-use analysis::reports::schema::NativeIntegrityGuard;
+use analysis_vocabulary::execution_evidence::{
+    AssumedEffectReason, ExecutionOperation, ExecutionPrecisionLossReason,
+};
+use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
+use analysis_vocabulary::report_schema::NativeIntegrityGuard;
+use analysis_vocabulary::value::{Kind, Value};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -302,7 +302,7 @@ impl LocalExecutionContext<'_, '_, '_> {
         &self,
         kind: CallKind,
         callee: &ValueExpr,
-    ) -> Option<analysis::analysis_inputs::ForeignCallSummary> {
+    ) -> Option<analysis_vocabulary::inputs::ForeignCallSummary> {
         self.executor
             .foreign_call_summary(kind, callee)
             .filter(|summary| summary.provider_cell_reads.is_empty())
@@ -314,7 +314,7 @@ impl LocalExecutionContext<'_, '_, '_> {
     fn substituted_call_summary(
         &self,
         call: &super::super::execution_index::Call,
-    ) -> Option<analysis::analysis_inputs::ForeignCallSummary> {
+    ) -> Option<analysis_vocabulary::inputs::ForeignCallSummary> {
         if call.has_spread {
             return None;
         }
@@ -1144,7 +1144,7 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
                 .observations
                 .record_native_operation_input_use(
                     span,
-                    analysis::reports::schema::NativeOperationInputUse {
+                    analysis_vocabulary::report_schema::NativeOperationInputUse {
                         evidence,
                         source_location: None,
                         span,

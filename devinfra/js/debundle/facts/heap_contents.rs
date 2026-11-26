@@ -10,7 +10,7 @@
 
 use super::value_flow::Values;
 use super::*;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis_vocabulary::value::{Kind, Value};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Native-read evidence the synchronous interpreter prepared for the chunk.
@@ -21,9 +21,9 @@ pub trait NativeHeapReads {
         &self,
         span: Span,
     ) -> Option<(
-        crate::analysis_provenance::InferenceUse,
-        Option<crate::analysis_inputs::NativeOperationInputEvidence>,
-        crate::analysis_inputs::ProofDependencies,
+        analysis_vocabulary::provenance::InferenceUse,
+        Option<analysis_vocabulary::inputs::NativeOperationInputEvidence>,
+        analysis_vocabulary::inputs::ProofDependencies,
     )>;
 
     /// Premises under which a direct native `Map` over a primitive entry
@@ -33,7 +33,7 @@ pub trait NativeHeapReads {
         construction: &NewExpr,
         flow: &ChunkValueFlow,
         shadowed: &BTreeSet<&'static str>,
-    ) -> Option<crate::analysis_inputs::ProofDependencies>;
+    ) -> Option<analysis_vocabulary::inputs::ProofDependencies>;
 }
 
 /// Exact native freeze calls on fresh records the synchronous interpreter
@@ -43,7 +43,7 @@ pub trait FreshFreezeInputs {
     fn input_evidence(
         &self,
         call: &CallExpr,
-    ) -> Option<&crate::analysis_inputs::NativeOperationInputEvidence>;
+    ) -> Option<&analysis_vocabulary::inputs::NativeOperationInputEvidence>;
 }
 
 pub struct HeapContentProofs<'a> {
@@ -65,8 +65,8 @@ pub struct ChunkHeapContents {
     /// removed. Used only after that exact call earns a heap-local receipt.
     pub checked_factory_arguments: BTreeMap<u32, HeapContentCells>,
     pub native_read_uses: Vec<(
-        Vec<crate::analysis_provenance::InferenceUse>,
-        Vec<crate::reports::schema::NativeOperationInputUse>,
+        Vec<analysis_vocabulary::provenance::InferenceUse>,
+        Vec<analysis_vocabulary::report_schema::NativeOperationInputUse>,
     )>,
 }
 
@@ -365,9 +365,9 @@ struct ArrayContentCollector<'a> {
     /// invoke as a callable. A class member's eager parts run in the
     /// enclosing body although its entry is already pushed.
     bodies: Vec<(Option<u32>, u32)>,
-    heap_native_integrity_uses: BTreeSet<crate::reports::schema::NativeIntegrityUse>,
-    native_read_inferences: BTreeMap<u32, crate::analysis_provenance::InferenceUse>,
-    native_read_inputs: BTreeMap<u32, crate::reports::schema::NativeOperationInputUse>,
+    heap_native_integrity_uses: BTreeSet<analysis_vocabulary::report_schema::NativeIntegrityUse>,
+    native_read_inferences: BTreeMap<u32, analysis_vocabulary::provenance::InferenceUse>,
+    native_read_inputs: BTreeMap<u32, analysis_vocabulary::report_schema::NativeOperationInputUse>,
     position: LazyPosition,
     checked_factory_call: Option<u32>,
     direct_root_new_site: Option<u32>,
@@ -562,12 +562,12 @@ impl ArrayContentCollector<'_> {
     /// proofs at sites this collector also visits, so this record covers it.
     fn record_native_input_use(
         &mut self,
-        evidence: crate::analysis_inputs::NativeOperationInputEvidence,
+        evidence: analysis_vocabulary::inputs::NativeOperationInputEvidence,
         span: swc_common::Span,
     ) {
         self.native_read_inputs.insert(
             span.lo.0,
-            crate::reports::schema::NativeOperationInputUse {
+            analysis_vocabulary::report_schema::NativeOperationInputUse {
                 evidence,
                 source_location: None,
                 span,
@@ -581,7 +581,7 @@ impl ArrayContentCollector<'_> {
             if let Some(evidence) = evidence {
                 self.native_read_inputs.insert(
                     member.span.lo.0,
-                    crate::reports::schema::NativeOperationInputUse {
+                    analysis_vocabulary::report_schema::NativeOperationInputUse {
                         evidence,
                         source_location: None,
                         span: member.span,
@@ -775,8 +775,8 @@ impl Visit for ArrayContentCollector<'_> {
             )
         {
             self.heap_native_integrity_uses
-                .insert(crate::reports::schema::NativeIntegrityUse {
-                    guard: crate::reports::schema::NativeIntegrityGuard::NativeCallIdentity,
+                .insert(analysis_vocabulary::report_schema::NativeIntegrityUse {
+                    guard: analysis_vocabulary::report_schema::NativeIntegrityGuard::NativeCallIdentity,
                     value_input_refs: dependencies.value_inputs,
                     no_accessor_install_refs: dependencies.no_accessor_install_callables,
                     program_premises: dependencies.program_premises,
@@ -813,8 +813,9 @@ impl Visit for ArrayContentCollector<'_> {
                 .dependencies_for_constructor(node.span)
             {
                 self.heap_native_integrity_uses.insert(
-                    crate::reports::schema::NativeIntegrityUse {
-                        guard: crate::reports::schema::NativeIntegrityGuard::SetIterable,
+                    analysis_vocabulary::report_schema::NativeIntegrityUse {
+                        guard:
+                            analysis_vocabulary::report_schema::NativeIntegrityGuard::SetIterable,
                         value_input_refs: dependencies.value_inputs.clone(),
                         no_accessor_install_refs: dependencies
                             .no_accessor_install_callables
@@ -829,7 +830,7 @@ impl Visit for ArrayContentCollector<'_> {
             {
                 self.native_read_inputs.insert(
                     node.span.lo.0,
-                    crate::reports::schema::NativeOperationInputUse {
+                    analysis_vocabulary::report_schema::NativeOperationInputUse {
                         evidence: evidence.clone(),
                         source_location: None,
                         span: node.span,
@@ -848,8 +849,8 @@ impl Visit for ArrayContentCollector<'_> {
         {
             if !dependencies.is_empty() {
                 self.heap_native_integrity_uses.insert(
-                    crate::reports::schema::NativeIntegrityUse {
-                        guard: crate::reports::schema::NativeIntegrityGuard::LocalClassConstruction,
+                    analysis_vocabulary::report_schema::NativeIntegrityUse {
+                        guard: analysis_vocabulary::report_schema::NativeIntegrityGuard::LocalClassConstruction,
                         value_input_refs: dependencies.value_inputs.clone(),
                         no_accessor_install_refs: dependencies
                             .no_accessor_install_callables

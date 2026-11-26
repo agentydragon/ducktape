@@ -11,7 +11,8 @@ use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use analysis::analysis_inputs::{
+use analysis::program_bindings::{ProgramBindings, ResolvedImport};
+use analysis_vocabulary::inputs::{
     ArgumentInputEvidence, ArgumentInputRef, CallableSummary, EffectiveInitializerCallReplacement,
     ImportedPrimitiveRead, InitializerCallEffectInputRef, NativeInputKind, NativeIntegrity,
     NativeOperationInputEvidence, NativeOperationInputRef, NativeOperationSelectorProvenance,
@@ -19,9 +20,8 @@ use analysis::analysis_inputs::{
     ResolvedInitializerCallEffectInput, ResolvedNativeOperationInput, ResolvedNoAccessorInstall,
     SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
-use analysis::facts::abstract_domain::value::Value;
-use analysis::program_bindings::{ProgramBindings, ResolvedImport};
-use analysis::purity::Purity;
+use analysis_vocabulary::purity::Purity;
+use analysis_vocabulary::value::Value;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::reports::{ImportSpecifierKind, StaticModuleRequest, StaticModuleRequestMode};
 use artifact::{ArtifactIndexes, ChunkBundle};
@@ -91,7 +91,7 @@ pub struct ProgramSummary {
     /// Source-derived native mutation census shared by every analyzed chunk.
     pub native_integrity: Option<NativeIntegrity>,
     /// The whole-program bundle-owned globals (SPEC.md § Bundle-owned globals).
-    pub bundle_globals: analysis::analysis_inputs::BundleGlobalNames,
+    pub bundle_globals: analysis_vocabulary::inputs::BundleGlobalNames,
     /// Source-resolved author inputs for the provider's own local analysis.
     pub value_inputs: BTreeMap<String, Vec<ResolvedBindingValueInput>>,
     /// Source-resolved native operation premises for the provider initializer.
@@ -99,10 +99,12 @@ pub struct ProgramSummary {
     pub initializer_call_effect_inputs: BTreeMap<String, Vec<ResolvedInitializerCallEffectInput>>,
     /// Exact-site imported-array lifetime assumptions and source-resolved
     /// provider primitive slots for each selected spread.
-    pub imported_primitive_array_spread_inputs:
-        BTreeMap<String, Vec<analysis::analysis_inputs::ResolvedImportedPrimitiveArraySpreadInput>>,
+    pub imported_primitive_array_spread_inputs: BTreeMap<
+        String,
+        Vec<analysis_vocabulary::inputs::ResolvedImportedPrimitiveArraySpreadInput>,
+    >,
     pub inferred_set_constructions:
-        BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::InferredSetConstruction>>,
+        BTreeMap<String, BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>>,
     pub argument_inputs: BTreeMap<String, Vec<ResolvedArgumentInput>>,
     /// Source-resolved commuting source-unit pairs, keyed by their chunk.
     pub inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
@@ -1295,7 +1297,7 @@ fn resolve_value_inputs(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, ChunkAnalysisInputs>,
-    selected_sites: &BTreeMap<String, Vec<analysis::analysis_inputs::SourceDeclaration>>,
+    selected_sites: &BTreeMap<String, Vec<analysis_vocabulary::inputs::SourceDeclaration>>,
     graph_provenance: Option<&GraphProvenance>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<SelectedBindingValueInput>>> {
@@ -1570,7 +1572,7 @@ fn resolve_argument_inputs(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, ChunkAnalysisInputs>,
-    selected_sites: &BTreeMap<String, Vec<analysis::analysis_inputs::SourceDeclaration>>,
+    selected_sites: &BTreeMap<String, Vec<analysis_vocabulary::inputs::SourceDeclaration>>,
     graph_provenance: Option<&GraphProvenance>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedArgumentInput>>> {
@@ -1709,7 +1711,7 @@ fn resolve_no_accessor_install_callables(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, ChunkAnalysisInputs>,
-    selected_sites: &BTreeMap<String, Vec<analysis::analysis_inputs::SourceDeclaration>>,
+    selected_sites: &BTreeMap<String, Vec<analysis_vocabulary::inputs::SourceDeclaration>>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedNoAccessorInstall>>> {
     let mut resolved = BTreeMap::new();

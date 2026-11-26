@@ -13,8 +13,8 @@ use super::super::value_model::{CallSite, CapturedContext, LexicalCaptures, Valu
 use super::super::world::World;
 use super::closure::{CapturePolicy, ClosureAdmission};
 use super::frame::{LocalCallRequest, LocalFrame, LocalValueResult, RemainderDisposition};
-use analysis::analysis_inputs::ProofDependencies;
-use analysis::execution_evidence::OrderedFieldReadRefusal;
+use analysis_vocabulary::execution_evidence::OrderedFieldReadRefusal;
+use analysis_vocabulary::inputs::ProofDependencies;
 use rustc_hash::FxHashSet;
 use swc_common::Span;
 use swc_ecma_ast::Id;

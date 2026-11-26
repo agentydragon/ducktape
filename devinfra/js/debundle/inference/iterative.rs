@@ -8,7 +8,7 @@
 //! require a separate completion boundary before becoming positive certificates.
 
 use super::Judgment;
-use crate::analysis_inputs::ProofDependencies;
+use analysis_vocabulary::inputs::ProofDependencies;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::Hash;

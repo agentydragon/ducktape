@@ -51,7 +51,7 @@ fn listed_host_membership_can_preserve_deferred_callback_initialization() {
                 .find(|node| node.id == probe)
                 .unwrap()
                 .purity,
-            analysis::Purity::NotPure { .. }
+            analysis_vocabulary::purity::Purity::NotPure { .. }
         ));
         assert_all_emitted_js_checks(&fixture);
     }

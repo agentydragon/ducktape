@@ -13,10 +13,10 @@ use super::assignment::RootAssignment;
 use super::body::expected_root_calls;
 use super::operands::RootOperands;
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis::facts::binding_effect_coverage::BindingEffectCoverage;
 use analysis::facts::evaluation_effects::EvaluationEffects;
 use analysis::facts::statement_facts::SynchronousCalls;
+use analysis_vocabulary::value::{Kind, Value};
 
 pub(super) fn finalize(
     inputs: &ExecutionInputs<'_>,
@@ -58,7 +58,7 @@ pub(super) fn finalize(
         && !observations.record_factory_prototype_premises().is_empty()
     {
         outcome.effects.local_record_factory_uses.push(
-            analysis::reports::schema::LocalRecordFactoryUse {
+            analysis_vocabulary::report_schema::LocalRecordFactoryUse {
                 factory_binding: factory.0.to_string(),
                 prototype_properties: observations
                     .record_factory_prototype_premises()

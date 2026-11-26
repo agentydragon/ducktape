@@ -5,7 +5,7 @@
 
 use super::super::local_operations::LocalBinding;
 use super::super::value_model::{AbstractValue, Captured, LexicalCellId, Values};
-use analysis::facts::abstract_domain::value::Value;
+use analysis_vocabulary::value::Value;
 use rustc_hash::FxHashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,7 +230,7 @@ mod tests {
     use super::{CellInitialization, LexicalCell, LexicalCells};
     use crate::local_operations::LocalBinding;
     use crate::value_model::{AbstractValue, Values};
-    use analysis::facts::abstract_domain::value::{Kind, Value};
+    use analysis_vocabulary::value::{Kind, Value};
 
     const UNAVAILABLE: AbstractValue = AbstractValue::Value(Value::Unavailable);
 

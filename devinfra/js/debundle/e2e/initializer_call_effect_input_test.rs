@@ -1,7 +1,7 @@
 //! One exact audited initializer call can remove its own operation-domain
 //! barrier while unrelated heap writes and retained callback use remain live.
 
-use analysis::analysis_provenance::InferenceRule;
+use analysis_vocabulary::provenance::InferenceRule;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use spec::{

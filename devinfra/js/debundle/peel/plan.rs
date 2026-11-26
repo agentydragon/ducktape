@@ -16,7 +16,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
 use serde::Serialize;
 
-use analysis::SourceLocation;
+use analysis_vocabulary::execution_evidence::SourceLocation;
 use graph::{
     AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DependencyEdgeReport,
     DependencyGraphInput, DependencyGraphReport, ProgramGraphReport, QuotientEdgeReport,
@@ -244,9 +244,10 @@ pub struct DestinationGroup {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ExplainReport {
-    pub native_integrity_witnesses: Vec<analysis::reports::schema::NativeMutationWitness>,
+    pub native_integrity_witnesses: Vec<analysis_vocabulary::report_schema::NativeMutationWitness>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub native_prototype_mutations: Vec<analysis::reports::schema::NativePrototypeMutation>,
+    pub native_prototype_mutations:
+        Vec<analysis_vocabulary::report_schema::NativePrototypeMutation>,
     pub query: QueryReport,
     pub source_unit_ids: Vec<String>,
     pub source_units: Vec<SourceUnitReport>,
@@ -932,8 +933,8 @@ fn native_integrity_context(
     source_units: &[SourceUnitReport],
     neighbor_source_units: &[SourceUnitReport],
 ) -> (
-    Vec<analysis::reports::schema::NativeMutationWitness>,
-    Vec<analysis::reports::schema::NativePrototypeMutation>,
+    Vec<analysis_vocabulary::report_schema::NativeMutationWitness>,
+    Vec<analysis_vocabulary::report_schema::NativePrototypeMutation>,
 ) {
     let checked_properties: BTreeSet<_> = source_units
         .iter()

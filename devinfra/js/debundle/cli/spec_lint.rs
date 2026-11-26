@@ -14,11 +14,11 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
 use analysis::reports::spec_lint::{
     ChunkSpecLint, InconclusiveReason, InferableReason, InferenceVerdict, LintFinding, LintRule,
     LintedAnnotation, LoaderKeyUses, PurityHintOwner,
 };
+use analysis_vocabulary::inputs::{HostBehaviorKey, ProgramPremiseKey};
 use anyhow::{Context, Result, ensure};
 use clap::Args as ClapArgs;
 use command_output::write_report;

@@ -1,5 +1,5 @@
 //! Wire reports of the dependency graph, its module quotient and atomic
-//! groups. Fact-level evidence types live in `analysis::reports::schema`.
+//! groups. Fact-level evidence types live in `analysis_vocabulary::report_schema`.
 
 use analysis_model::DepKind;
 use serde::{Deserialize, Serialize};
@@ -8,13 +8,13 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 use swc_atoms::Atom;
 
 use analysis::StatementKind;
-use analysis::analysis_inputs::{
+use analysis::ids::ModuleId;
+use analysis_vocabulary::execution_evidence::SourceLocation;
+use analysis_vocabulary::inputs::{
     CallbackFactoryEvidence, CommutingStatementsRef, ReturnedRecordSummary,
 };
-use analysis::execution_evidence::SourceLocation;
-use analysis::ids::ModuleId;
-use analysis::purity::Purity;
-use analysis::reports::schema::{
+use analysis_vocabulary::purity::Purity;
+use analysis_vocabulary::report_schema::{
     HeapFrontierEvidence, NativeIntegrityUse, NativeMutationWitness, NativePrototypeMutation,
     NeverWrittenOverride, SynchronousExecutionReport,
 };

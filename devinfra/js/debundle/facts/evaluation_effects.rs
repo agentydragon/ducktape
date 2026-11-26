@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use swc_common::Span;
 
-use crate::analysis_inputs::ProofDependencies;
-use crate::execution_evidence::AssumedEffectReason;
+use analysis_vocabulary::execution_evidence::AssumedEffectReason;
+use analysis_vocabulary::inputs::ProofDependencies;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

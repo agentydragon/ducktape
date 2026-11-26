@@ -27,7 +27,7 @@ fn source_wrapper_arguments_discharge_only_the_unreachable_native_write() {
         .find(|witness| {
             witness
                 .receiver_roots
-                .contains(&analysis::analysis_inputs::NativeIntrinsic::UnknownGlobalValue)
+                .contains(&analysis_vocabulary::inputs::NativeIntrinsic::UnknownGlobalValue)
                 && witness.unreachable_branch.is_some()
         })
         .expect("retained unreachable write witness");
@@ -48,7 +48,7 @@ fn source_wrapper_arguments_discharge_only_the_unreachable_native_write() {
         "static/namespace.js"
     );
     match &proof.arguments.wrapper {
-        analysis::CallbackFactoryEvidence::InferredImmutableWrapper {
+        analysis_vocabulary::inputs::CallbackFactoryEvidence::InferredImmutableWrapper {
             defining_module,
             export,
             source_location,

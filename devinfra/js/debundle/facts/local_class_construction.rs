@@ -6,10 +6,10 @@
 //! after the declaration and a unique class value in whole-chunk flow.
 
 use super::*;
-use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::builtins::{self, Invocation};
-use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
+use analysis_vocabulary::inputs::ProofDependencies;
+use analysis_vocabulary::value::{Kind, Value};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
@@ -124,7 +124,7 @@ impl LocalClassConstructionProof {
     pub fn inference_use_for_class(
         &self,
         class: u32,
-    ) -> Option<crate::analysis_provenance::InferenceUse> {
+    ) -> Option<analysis_vocabulary::provenance::InferenceUse> {
         self.facts.inference_use(&SemanticKey::LocalClass(class))
     }
 

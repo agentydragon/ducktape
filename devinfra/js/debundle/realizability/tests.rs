@@ -6,8 +6,8 @@ use super::incremental_quotient::{
 };
 use super::*;
 use crate::counted_digraph::CountedDiGraph;
-use analysis::AnalysisInputs;
 use analysis::ids::ModuleId;
+use analysis_vocabulary::inputs::AnalysisInputs;
 use analyze::analyze_chunk;
 use graph::DependencyGraph;
 use graph::module_assignment::ModuleAssignment;

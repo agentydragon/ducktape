@@ -1,7 +1,7 @@
 //! Compile spec claims into request types and resolve those requests against source chunks.
 
-use analysis::KnownEffect;
 use analysis::facts::StructuralChunkSourceFacts;
+use analysis_vocabulary::inputs::KnownEffect;
 use anyhow::{Result, bail};
 use selector_outcome::{
     BindingClaimant, ClaimOperation, ClaimValidationError, DuplicateBinding, SelectorKind,

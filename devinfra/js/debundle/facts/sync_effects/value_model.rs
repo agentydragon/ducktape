@@ -2,10 +2,10 @@
 
 use super::world::WorldScope;
 use analysis::facts::abstract_domain::builtins::IterationRow;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis::facts::value_flow::static_prop as static_string_prop;
 use analysis::inference::{FactContext, IterativeFacts, IterativeInference, IterativeRules};
 use analysis_model::PrimKinds;
+use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};

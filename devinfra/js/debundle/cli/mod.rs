@@ -1154,7 +1154,7 @@ mod tests {
 mod output_failure_tests {
     use super::*;
     use analysis::diagnostics::{ChunkDiagnostic, InvocationDiagnostic};
-    use analysis::reports::schema::PurityCompletionDisagreement;
+    use analysis_vocabulary::report_schema::PurityCompletionDisagreement;
     use anyhow::Error;
     use command_diagnostics::{DiagnosticOutputError, finish};
     use std::error::Error as _;
@@ -1179,17 +1179,17 @@ mod output_failure_tests {
     fn purity_disagreement_diagnostic() -> ChunkDiagnostic {
         ChunkDiagnostic::PurityCompletionDisagreement {
             ordinal: source_identity::SourceUnitOrdinal(3),
-            source_location: Some(analysis::SourceLocation {
+            source_location: Some(analysis_vocabulary::execution_evidence::SourceLocation {
                 source_path: "src/main.js".to_owned(),
                 start_line: 4,
                 end_line: 4,
                 start_column: Some(7),
             }),
             evidence: Box::new(PurityCompletionDisagreement {
-                prepared: analysis::Purity::pure(),
-                completed: analysis::Purity::NotPure {
-                    reasons: vec![analysis::PurityReason {
-                        rule: analysis::PurityRule::UnknownCall,
+                prepared: analysis_vocabulary::purity::Purity::pure(),
+                completed: analysis_vocabulary::purity::Purity::NotPure {
+                    reasons: vec![analysis_vocabulary::purity::PurityReason {
+                        rule: analysis_vocabulary::purity::PurityRule::UnknownCall,
                         source_location: None,
                         detail: Some("injected monitoring evidence".to_owned()),
                         author_guidance: None,

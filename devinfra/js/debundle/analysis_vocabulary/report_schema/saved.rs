@@ -7,14 +7,14 @@ use swc_common::Span;
 
 use crate::execution_evidence::ExecutionPrecisionLoss;
 
-use super::schema::{
+use crate::report_schema::{
     LocalRecordFactoryRejection, LocalRecordFactoryUse, NativeMutationWitness,
     NativeOperationInputUse, NativePrototypeMutation, NativeUnreachableBranch,
     ReentryFreeOperationUse,
 };
 
 #[derive(Serialize, Deserialize)]
-pub struct SavedNativeMutationWitness<'a> {
+pub(crate) struct SavedNativeMutationWitness<'a> {
     report: Cow<'a, NativeMutationWitness>,
     span: Span,
     /// Required field, nullable value: missing must differ from explicit None.
@@ -112,8 +112,8 @@ saved_report_with_span!(SavedExecutionPrecisionLoss, ExecutionPrecisionLoss);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis_inputs::{CallbackFactoryEvidence, CallbackObjectArguments};
-    use crate::reports::schema::NativeMutationOperation;
+    use crate::inputs::{CallbackFactoryEvidence, CallbackObjectArguments};
+    use crate::report_schema::NativeMutationOperation;
     use source_identity::SourceUnitOrdinal;
     use std::collections::BTreeSet;
     use swc_common::{BytePos, Span};

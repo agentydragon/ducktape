@@ -15,7 +15,7 @@ use super::statement_facts::{
 use super::*;
 use crate::facts::binding_effect_coverage::SavedBindingEffectCoverage;
 use crate::purity::saved::{PurityNodeId, PuritySnapshot, RestoredPurities};
-use crate::reports::saved::{
+use analysis_vocabulary::report_schema::saved::{
     SavedExecutionPrecisionLoss, SavedLocalRecordFactoryRejection, SavedLocalRecordFactoryUse,
     SavedNativeOperationInputUse, SavedReentryFreeOperationUse,
 };
@@ -203,17 +203,31 @@ fn restore_effect_cells(
 
 #[derive(Serialize, Deserialize)]
 struct SavedFallbackOnlyEffects {
-    reads: Vec<(SavedBinding, crate::execution_evidence::AssumedEffectReason)>,
-    rebinds: Vec<(SavedBinding, crate::execution_evidence::AssumedEffectReason)>,
-    uninitialized_reads: Vec<(SavedBinding, crate::execution_evidence::AssumedEffectReason)>,
+    reads: Vec<(
+        SavedBinding,
+        analysis_vocabulary::execution_evidence::AssumedEffectReason,
+    )>,
+    rebinds: Vec<(
+        SavedBinding,
+        analysis_vocabulary::execution_evidence::AssumedEffectReason,
+    )>,
+    uninitialized_reads: Vec<(
+        SavedBinding,
+        analysis_vocabulary::execution_evidence::AssumedEffectReason,
+    )>,
 }
 
 impl SavedFallbackOnlyEffects {
     fn snapshot(effects: &FallbackOnlyEffects, ordinals: &ContextOrdinals) -> Result<Self> {
         fn snapshot_reasons(
-            reasons: &BTreeMap<Id, crate::execution_evidence::AssumedEffectReason>,
+            reasons: &BTreeMap<Id, analysis_vocabulary::execution_evidence::AssumedEffectReason>,
             ordinals: &ContextOrdinals,
-        ) -> Result<Vec<(SavedBinding, crate::execution_evidence::AssumedEffectReason)>> {
+        ) -> Result<
+            Vec<(
+                SavedBinding,
+                analysis_vocabulary::execution_evidence::AssumedEffectReason,
+            )>,
+        > {
             reasons
                 .iter()
                 .map(|(binding, reason)| Ok((ordinals.snapshot_binding(binding)?, reason.clone())))
@@ -229,9 +243,13 @@ impl SavedFallbackOnlyEffects {
 
     fn restore(self, ordinals: &ContextOrdinals) -> Result<FallbackOnlyEffects> {
         fn restore_reasons(
-            reasons: Vec<(SavedBinding, crate::execution_evidence::AssumedEffectReason)>,
+            reasons: Vec<(
+                SavedBinding,
+                analysis_vocabulary::execution_evidence::AssumedEffectReason,
+            )>,
             ordinals: &ContextOrdinals,
-        ) -> Result<BTreeMap<Id, crate::execution_evidence::AssumedEffectReason>> {
+        ) -> Result<BTreeMap<Id, analysis_vocabulary::execution_evidence::AssumedEffectReason>>
+        {
             reasons
                 .into_iter()
                 .map(|(binding, reason)| Ok((ordinals.restore_binding(binding)?, reason)))
@@ -326,7 +344,7 @@ struct SavedStatementFacts<'a> {
     heap_contents: SavedHeapContentCells,
     heap_one_shot_allocations: BTreeSet<SavedEffectCell>,
     deferred_heap_allocations: BTreeSet<SavedEffectCell>,
-    heap_native_integrity_uses: Cow<'a, [crate::reports::schema::NativeIntegrityUse]>,
+    heap_native_integrity_uses: Cow<'a, [analysis_vocabulary::report_schema::NativeIntegrityUse]>,
     purity: PurityNodeId,
     kind: StatementKind,
 }
@@ -478,9 +496,9 @@ impl<'a> SavedStatementFacts<'a> {
 #[derive(Serialize, Deserialize)]
 struct SavedSynchronousCalls<'a> {
     initializer_binding_effects:
-        Cow<'a, Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>>,
+        Cow<'a, Option<Box<analysis_vocabulary::report_schema::InitializerBindingEffectsUse>>>,
     initializer_external_effects:
-        Cow<'a, Option<crate::reports::schema::InitializerExternalEffectsUse>>,
+        Cow<'a, Option<analysis_vocabulary::report_schema::InitializerExternalEffectsUse>>,
     completed_initialization:
         Cow<'a, Option<super::initialization_effects::CompletedInitialization>>,
     initialization_coverage_refusal:
@@ -503,15 +521,16 @@ struct SavedSynchronousCalls<'a> {
     heap_contents: SavedHeapContentCells,
     non_assumed_heap_accesses: SavedHeapContentAccesses,
     precision_losses: Vec<SavedExecutionPrecisionLoss<'a>>,
-    native_integrity_checks: Cow<'a, [crate::reports::schema::NativeIntegrityCheck]>,
+    native_integrity_checks: Cow<'a, [analysis_vocabulary::report_schema::NativeIntegrityCheck]>,
     native_prototype_property_checks:
-        Cow<'a, [crate::reports::schema::NativePrototypePropertyCheck]>,
-    native_prefix_observations: Cow<'a, [crate::reports::schema::NativePrefixObservation]>,
-    native_integrity_uses: Cow<'a, [crate::reports::schema::NativeIntegrityUse]>,
+        Cow<'a, [analysis_vocabulary::report_schema::NativePrototypePropertyCheck]>,
+    native_prefix_observations:
+        Cow<'a, [analysis_vocabulary::report_schema::NativePrefixObservation]>,
+    native_integrity_uses: Cow<'a, [analysis_vocabulary::report_schema::NativeIntegrityUse]>,
     native_operation_input_uses: Vec<SavedNativeOperationInputUse<'a>>,
     imported_primitive_array_spread_input_uses:
-        Cow<'a, [crate::analysis_inputs::ImportedPrimitiveArraySpreadInputUse]>,
-    inference_uses: Cow<'a, [crate::analysis_provenance::InferenceUse]>,
+        Cow<'a, [analysis_vocabulary::inputs::ImportedPrimitiveArraySpreadInputUse]>,
+    inference_uses: Cow<'a, [analysis_vocabulary::provenance::InferenceUse]>,
     callback_factory_uses: Cow<'a, [super::CallbackFactoryUseFact]>,
     returned_record_uses: Cow<'a, [super::ReturnedRecordUseFact]>,
     author_host_contract_uses: Vec<SavedReentryFreeOperationUse<'a>>,
@@ -625,10 +644,12 @@ impl<'a> SavedSynchronousCalls<'a> {
             purity_disagreement: self
                 .purity_disagreement
                 .map(|disagreement| -> Result<_> {
-                    Ok(crate::reports::schema::PurityCompletionDisagreement {
-                        prepared: purities.restore_value(disagreement.prepared)?,
-                        completed: purities.restore_value(disagreement.completed)?,
-                    })
+                    Ok(
+                        analysis_vocabulary::report_schema::PurityCompletionDisagreement {
+                            prepared: purities.restore_value(disagreement.prepared)?,
+                            completed: purities.restore_value(disagreement.completed)?,
+                        },
+                    )
                 })
                 .transpose()?,
             local_record_factory_uses: self
@@ -696,9 +717,9 @@ impl<'a> SavedSynchronousCalls<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis_inputs::ProofDependencies;
-    use crate::purity::{PurityReason, PurityRule};
-    use crate::reports::schema::PurityCompletionDisagreement;
+    use analysis_vocabulary::inputs::ProofDependencies;
+    use analysis_vocabulary::purity::{PurityReason, PurityRule};
+    use analysis_vocabulary::report_schema::PurityCompletionDisagreement;
     use std::sync::Arc;
     use swc_common::{BytePos, Span};
 
@@ -743,10 +764,10 @@ mod tests {
                     }],
                 },
             }),
-            precision_losses: vec![crate::execution_evidence::ExecutionPrecisionLoss {
+            precision_losses: vec![analysis_vocabulary::execution_evidence::ExecutionPrecisionLoss {
                 reason:
-                    crate::execution_evidence::ExecutionPrecisionLossReason::RecursiveInvocation,
-                reach: crate::execution_evidence::HavocReach::Bounded,
+                    analysis_vocabulary::execution_evidence::ExecutionPrecisionLossReason::RecursiveInvocation,
+                reach: analysis_vocabulary::execution_evidence::HavocReach::Bounded,
                 statement_ordinal: SourceUnitOrdinal(3),
                 source_location: None,
                 span: precision_loss_span,

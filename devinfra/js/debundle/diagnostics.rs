@@ -3,9 +3,9 @@
 pub mod progress;
 pub use work_metrics::WorkMetrics;
 
-use crate::execution_evidence::SourceLocation;
-use crate::reports::schema::PurityCompletionDisagreement;
 use crate::{RedundantPureMemberHint, RedundantPurityHint};
+use analysis_vocabulary::execution_evidence::SourceLocation;
+use analysis_vocabulary::report_schema::PurityCompletionDisagreement;
 use source_identity::SourceUnitOrdinal;
 use spec::AdmissionCheck;
 use std::collections::BTreeMap;

@@ -1,4 +1,4 @@
-use crate::analysis_inputs::{
+use analysis_vocabulary::inputs::{
     ArgumentInputRef, DescriptorCopyAuthorRef, HostBehaviorKey,
     ImportedPrimitiveArraySpreadInputRef, InitializerCallEffectInputRef, NativeOperationInputRef,
     NoAccessorInstallRef, ProofDependencies, ValueInputRef,

@@ -369,7 +369,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let source_span = site.source_span();
             self.observations.record_native_operation_input_use(
                 source_span,
-                analysis::reports::schema::NativeOperationInputUse {
+                analysis_vocabulary::report_schema::NativeOperationInputUse {
                     evidence: *evidence,
                     source_location: None,
                     span: source_span,
@@ -509,7 +509,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .insert(input.evidence.reference.clone());
             self.record_proof_dependencies(NativeIntegrityGuard::ArrayIntrinsics, &dependencies);
             self.observations
-                .record_inference_use(analysis::analysis_provenance::InferenceUse {
+                .record_inference_use(analysis_vocabulary::provenance::InferenceUse {
                     conclusion: InferenceRule::ImportedPrimitiveArraySpread,
                     derivation_rules: BTreeSet::from([
                         InferenceRule::ImportedPrimitiveArraySpread,
@@ -526,7 +526,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 });
             self.observations
                 .record_imported_primitive_array_spread_input_use(
-                    analysis::analysis_inputs::ImportedPrimitiveArraySpreadInputUse {
+                    analysis_vocabulary::inputs::ImportedPrimitiveArraySpreadInputUse {
                         evidence: input.evidence.clone(),
                         operand_index: source_index,
                     },
@@ -646,7 +646,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, premise);
                     self.observations.record_native_operation_input_use(
                         span,
-                        analysis::reports::schema::NativeOperationInputUse {
+                        analysis_vocabulary::report_schema::NativeOperationInputUse {
                             evidence,
                             source_location: None,
                             span,
@@ -698,7 +698,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
-        let mut dependencies = analysis::analysis_inputs::ProofDependencies::default();
+        let mut dependencies = analysis_vocabulary::inputs::ProofDependencies::default();
         // Both arms below hold only when the index saw the matching
         // `reentry_free_operations` entry; an unaudited host selects neither.
         let operation = match (call.kind, &call.callee) {
@@ -739,9 +739,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         dependencies
             .host_behavior
-            .insert(analysis::analysis_inputs::HostBehaviorKey::ReentryFreeOperation(operation));
+            .insert(analysis_vocabulary::inputs::HostBehaviorKey::ReentryFreeOperation(operation));
         self.consume_proof_dependencies(&dependencies);
-        let proof_use = analysis::reports::schema::ReentryFreeOperationUse {
+        let proof_use = analysis_vocabulary::report_schema::ReentryFreeOperationUse {
             operation,
             source_location: None,
             span: call.span,

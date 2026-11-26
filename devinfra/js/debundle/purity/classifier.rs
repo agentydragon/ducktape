@@ -1,6 +1,6 @@
 use super::*;
-use crate::facts::abstract_domain::effect::{CoerceCheck, CoerceOperand, CoerceOperands};
 use analysis_model::PrimKinds;
+use analysis_vocabulary::effect::{CoerceCheck, CoerceOperand, CoerceOperands};
 
 pub fn classify_var_decl_purity(
     var: &VarDecl,

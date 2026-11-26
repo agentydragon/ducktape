@@ -7,7 +7,7 @@ use super::super::runtime_inference::{RuntimeOperation, RuntimeValue};
 use super::super::value_model::AbstractValue;
 use super::body::RootBody;
 use super::operands::RootOperands;
-use analysis::facts::abstract_domain::value::Value;
+use analysis_vocabulary::value::Value;
 
 pub(super) struct RootAssignment {
     pub(super) outcome: Outcome,

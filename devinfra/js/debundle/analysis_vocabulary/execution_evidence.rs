@@ -387,7 +387,7 @@ impl AssumedEffectReason {
     /// possible-getter witnesses intentionally share one category so summary
     /// evidence can retain one deterministic witness without growing with
     /// every getter lookup and promoted owner.
-    pub(crate) fn same_report_category(&self, other: &Self) -> bool {
+    pub fn same_report_category(&self, other: &Self) -> bool {
         matches!(
             (self, other),
             (Self::PossibleGetter { .. }, Self::PossibleGetter { .. })
@@ -397,7 +397,7 @@ impl AssumedEffectReason {
     /// Whether this detailed witness sorts before `other` within the same
     /// report category. Possible-getter witnesses use source coordinates so
     /// merge order cannot select a different representative.
-    pub(crate) fn is_canonical_predecessor(&self, other: &Self) -> bool {
+    pub fn is_canonical_predecessor(&self, other: &Self) -> bool {
         match (self, other) {
             (
                 Self::PossibleGetter {
