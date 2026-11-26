@@ -90,9 +90,11 @@ placement and the entry's live exports, then requires the staged and reread
 JavaScript to decode to that exact candidate before publishing. Its verdict
 states the CoreJS theorem, reports no host premises, and marks
 `every_ending_matches: true` with `observation_scope: "strict-static-data"`.
-The common singleton output gate reports that same observation scope only for
-import-free static data declarations and safe local reads. It refuses
-callables, calls, host/property reads, and other effects before publication,
+The common certified output gate reports that same observation scope only for
+import-free static data declarations and safe local reads. It checks the exact
+singleton source or every manifest chunk and additional source in a linked
+deployment. It refuses callables,
+calls, host/property reads, imports, and other effects before publication,
 regardless of the selected CoreJS proof strategy or host profile. The
 constructor route refuses sparse IDs and changed unit
 order without changing an existing output directory. A recognized dense
@@ -100,12 +102,13 @@ singleton source with a function declaration, call, or other effectful
 initializer is refused with `strict_observation_unsupported` before structural
 or host-profile alternatives can run. Source forms outside this constructor's
 fragment can use another proof strategy only when the common output gate also
-proves positive strict-observation coverage: a single import-free module of
-static data declarations, with primitive or data-literal initializers and safe
-local reads. Calls, callables, host reads, property reads, and other operations
-that can expose code identity or module location are refused even if a structural
-or profiled CoreJS proof succeeds. The gate runs before staged output is
-published, and a strategy or host profile cannot bypass it.
+proves positive strict-observation coverage for every linked source module: a
+single import-free module of static data declarations, with primitive or
+data-literal initializers and safe local reads. Calls, callables, host reads,
+property reads, and other operations that can expose code identity or module
+location are refused even if a structural or profiled CoreJS proof succeeds.
+The gate runs before staged output is published, and a strategy or host profile
+cannot bypass it.
 
 To move an initializer such as `Math.PI / 12`, pass
 `{"profile":"browser-page","stableIntrinsicValues":["Math.PI@1"]}` with

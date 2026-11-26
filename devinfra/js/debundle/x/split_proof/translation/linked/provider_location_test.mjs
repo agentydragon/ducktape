@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { lower, prepare, root } from "./harness.mjs";
@@ -39,32 +39,25 @@ const opts = [
   "native-browser-record@1",
 ];
 const out = path.join(dir, "out");
-const { verdict } = lower(files.sourceFile, files.specFile, out, opts, "linked-structural-pivot");
-assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-assert.deepEqual(
-  lower(files.sourceFile, files.specFile, out, [...opts, "--check-output"], "linked-structural-pivot").verdict,
-  verdict
-);
+const { verdict } = lower(files.sourceFile, files.specFile, out, opts);
+assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
+assert.equal(verdict.reason_code, "strict_observation_unsupported", JSON.stringify(verdict));
+assert(!existsSync(out));
 
-// An overlay serves lazy assets and providers at their original URLs. Recreate
-// it in a second tree to exercise both module graphs without sharing Node's cache.
-const overlay = path.join(root, "overlay");
-cpSync(dir, overlay, { recursive: true, filter: (file) => file !== out });
-cpSync(out, overlay, { recursive: true });
-for (const tree of [dir, overlay]) {
-  const api = await import(pathToFileURL(path.join(tree, entry)));
-  assert.deepEqual(Object.keys(api), ["entryMeta", "load", "meta", "render", "update"]);
-  assert.equal(api.meta().url, pathToFileURL(path.join(tree, provider)).href);
-  assert.equal(api.entryMeta().url, pathToFileURL(path.join(tree, entry)).href);
-  assert.notEqual(api.meta(), api.entryMeta());
-  api.meta().tag = "provider only";
-  assert.equal(api.entryMeta().tag, undefined);
-  const ns = await api.load();
-  assert.equal(ns.sample(), "before");
-  api.update("after");
-  assert.equal(ns.sample(), "after");
-  assert.equal(await api.load(), ns);
-}
+// The original graph still exposes distinct entry and provider module records.
+// The strict CLI refuses to publish a moved version of this callable/import graph.
+const api = await import(pathToFileURL(path.join(dir, entry)));
+assert.deepEqual(Object.keys(api), ["entryMeta", "load", "meta", "render", "update"]);
+assert.equal(api.meta().url, pathToFileURL(path.join(dir, provider)).href);
+assert.equal(api.entryMeta().url, pathToFileURL(path.join(dir, entry)).href);
+assert.notEqual(api.meta(), api.entryMeta());
+api.meta().tag = "provider only";
+assert.equal(api.entryMeta().tag, undefined);
+const ns = await api.load();
+assert.equal(ns.sample(), "before");
+api.update("after");
+assert.equal(ns.sample(), "after");
+assert.equal(await api.load(), ns);
 
 // Same provider file, different re-entry: the lazy module requires an export
 // the real linked provider doesn't have. A root-relative decoy still exists.
@@ -115,9 +108,7 @@ const nsFiles = prepare(nsDir, {
 });
 const nsOut = path.join(nsDir, "out");
 const nsCheck = (args, scope) => lower(nsFiles.sourceFile, nsFiles.specFile, nsOut, args, scope).verdict;
-assert.equal(nsCheck(opts, "linked-structural-order").status, "certified");
-const relocated = path.join(nsOut, worker);
-const emitted = readFileSync(relocated, "utf8");
-assert.match(emitted, /provider\.mjs/);
-writeFileSync(relocated, emitted.replace("provider.mjs", "other.mjs"));
-assert.equal(nsCheck([...opts, "--check-output"], "linked-structural").status, "rejected");
+const strictRefusal = nsCheck(opts);
+assert.equal(strictRefusal.status, "rejected", JSON.stringify(strictRefusal));
+assert.equal(strictRefusal.reason_code, "strict_observation_unsupported", JSON.stringify(strictRefusal));
+assert(!existsSync(nsOut));

@@ -25,23 +25,20 @@ for (const member of ["url", "env.MODE"]) {
   writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
   const options = ["--structural", "--deployment-origin", "https://example.org", "--host-contract", profile];
   if (member === "url") {
-    const scope = "linked-structural-pivot";
-    const { verdict } = lower(sourceFile, specFile, out, options, scope);
-    assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-    assert.deepEqual(lower(sourceFile, specFile, out, [...options, "--check-output"], scope).verdict, verdict);
+    const { verdict } = lower(sourceFile, specFile, out, options);
+    assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
+    assert.equal(verdict.reason_code, "strict_observation_unsupported", JSON.stringify(verdict));
+    assert(!existsSync(out));
   } else {
     const { verdict } = lower(sourceFile, specFile, out, options, "linked-structural");
     assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
     assert.match(verdict.reason, /unit 0: expected import.meta.url/);
     assert(!existsSync(out));
     const preset = [...options, "--deployment-preset", "native-browser-record@1"];
-    const accepted = lower(sourceFile, specFile, out, preset, "linked-structural-pivot").verdict;
-    assert.equal(accepted.status, "certified", JSON.stringify(accepted));
-    assert(accepted.assumptions.some((p) => p.startsWith("native-browser-record@1:")));
-    assert.deepEqual(
-      lower(sourceFile, specFile, out, [...preset, "--check-output"], "linked-structural-pivot").verdict,
-      accepted
-    );
+    const presetRefusal = lower(sourceFile, specFile, out, preset).verdict;
+    assert.equal(presetRefusal.status, "rejected", JSON.stringify(presetRefusal));
+    assert.equal(presetRefusal.reason_code, "strict_observation_unsupported", JSON.stringify(presetRefusal));
+    assert(!existsSync(out));
   }
 }
 
@@ -95,11 +92,7 @@ assert.notEqual(first, live.value());
 assert.equal(original.read(), live.value());
 assert.equal(live.calls(), 2);
 
-const split = await import(pathToFileURL(path.join(out, entry)));
-assert.deepEqual(Object.keys(split), Object.keys(original));
-const wrongRecord = instrument(split);
-assert.throws(() => split.read(), TypeError);
-assert.equal(wrongRecord.calls(), 0);
+assert.deepEqual(Object.keys(original), ["meta", "read"]);
 
 const profile = path.join(root, "browser-profile.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));

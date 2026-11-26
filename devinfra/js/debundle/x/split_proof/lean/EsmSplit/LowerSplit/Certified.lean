@@ -132,6 +132,25 @@ private def profileFields (profile : CoreJS.HostProfile) : List (String × Json)
 private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises) : List (String × Json) :=
   if selected == .empty then [] else profileFields selected ++ [("assumptions", toJson used.assumptions)]
 
+private def supportsStrictObservationInput (source : Json) (entry : String) : Bool :=
+  match CoreJS.LinkedInput.decodeSingletonSource source entry with
+  | .ok decoded => CoreJS.CheckedSplit.supportsStrictObservationSource decoded
+  | .error _ => false
+
+private def supportsStrictObservationGraph (linked : List (String × Json)) : Bool :=
+  linked.all fun (entry, source) => supportsStrictObservationInput source entry
+
+private def strictObservationRefusal : CertificationRefusal := {
+  reason := "strict JavaScript observations are not covered for this source; only static data declarations have positive coverage"
+  reasonCode := some "strict_observation_unsupported"
+}
+
+private def guardStrictObservation {α : Type} (covered : Bool)
+    (checked : Except CertificationRefusal α) : Except CertificationRefusal α :=
+  match checked with
+  | .error refusal => .error refusal
+  | .ok result => if covered then .ok result else .error strictObservationRefusal
+
 private structure CertifiedOptions where
   request : Guarantee
   profile : CoreJS.HostProfile
@@ -252,7 +271,8 @@ private def emitStructural (options : CertifiedOptions) (used : List CoreJS.Stab
       "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
     ])
   emitVerdict options.request.label (.ok level) scope
-    (profileFields options.profile ++ [("assumptions", toJson assumptions)])
+    (profileFields options.profile ++ [("observation_scope", toJson "strict-static-data"),
+      ("assumptions", toJson assumptions)])
 
 private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
   let ok ← timePhase timings "plan_checks" fun _ => checkLayout part.bundle part.plan (some part.spec) false
@@ -373,21 +393,12 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
   let part ← prepare chunk src work profile "bundle.mjs" timings declarations
   let { original := program, bundle := B, spec := S, plan := P, output } := part
-  let strictObservationCovered := match CoreJS.LinkedInput.decodeSingletonSource program S.entry with
-    | .ok source => CoreJS.CheckedSplit.supportsStrictObservationSource source
-    | .error _ => false
+  let strictObservationCovered := supportsStrictObservationInput program S.entry
   let verify {α : Type} (providers : Json) (check : Json → IO (Except CertificationRefusal α)) :
       IO (Except CertificationRefusal α) := do
     certifyOutput [output] providers out work checkOnly timings fun files => do
       let checked : Except CertificationRefusal α ← check files
-      match checked with
-      | .error refusal => pure (.error refusal)
-      | .ok result =>
-        if strictObservationCovered then pure (.ok result)
-        else pure (.error ({
-          reason := "strict JavaScript observations are not covered for this source; only static data declarations have positive coverage"
-          reasonCode := some "strict_observation_unsupported"
-        } : CertificationRefusal))
+      pure (guardStrictObservation strictObservationCovered checked)
   let providers := fun _ => timePhase timings "provider_loading" fun _ => do
     let (entry, root) ← if javascriptSource chunk.source then
         let path ← IO.FS.realPath chunk.source
@@ -411,7 +422,9 @@ private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
           let _ ← IO.ofExcept (prepared.certify files)
           pure (.ok ())
       match checked with
-      | .ok _ => return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
+      | .ok _ => do
+        let fields := profileVerdict profile {} ++ [("observation_scope", toJson "strict-static-data")]
+        return ← emitVerdict request.label (.ok level) "closed-declarations" fields
       | .error refusal => return ← emitRefusal request.label refusal "closed-declarations"
     catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
   if structural then
@@ -537,6 +550,9 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
       unless reachable.contains name do throw (IO.userError s!"original chunk is unreachable from the entry: {name}")
     let some main := supplied[manifest.entry]? | throw (IO.userError "missing deployment entry")
     let linked := (manifest.entry, main) :: providers
+    let suppliedNames := Std.HashSet.ofList (originals.toList.map Prod.fst)
+    let strictSources := originals.toList ++ linked.filter fun (name, _) => !suppliedNames.contains name
+    let strictObservationCovered := supportsStrictObservationGraph strictSources
     let changed := Std.HashSet.ofList (parts.toList.map (·.plan.entry))
     let shared := Json.mkObj (linked.filter fun (name, _) => !changed.contains name)
     let deployment ← deploymentOrigin.mapM fun origin =>
@@ -547,7 +563,7 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
         let outputs ← part.plan.mods.mapM fun m => do
           return (m.name, ← files.getObjVal? m.name)
         pure ({ source := part.original, files := Json.mkObj outputs, plan := part.plan } : CoreJS.LinkedInput.StaticSplit)
-      timePhase timings "structural_certificate" fun _ => do
+      let checked ← timePhase timings "structural_certificate" fun _ => do
         let result ← IO.lazyPure fun _ =>
           CoreJS.LinkedBehavior.certifyDeployment manifest.entry actual shared deployment profile intrinsics
         match result with
@@ -555,6 +571,7 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
         | .ok ⟨used, level, proof, _⟩ => do
           requireGuarantee request level
           pure (.ok (used, level, proof))
+      pure (guardStrictObservation strictObservationCovered checked)
     match checked with
     | .ok (used, level, proof) => emitStructural options used level proof
     | .error refusal => emitRefusal request.label refusal "linked-structural"

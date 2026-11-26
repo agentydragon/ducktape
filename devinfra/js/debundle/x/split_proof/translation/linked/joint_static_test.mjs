@@ -94,9 +94,12 @@ async function observe(dest) {
   return [...seen, a.value, a.external, b.value];
 }
 
-const left = split("app.mjs", "private-state", [false, true, true, false]);
-const right = split("provider.mjs", "provider-state", [true, true, false]);
-const shared = split("provider.mjs", "private-state", [true, true, false]);
+// These fixtures exercise the joint CoreJS checker, whose source examples use
+// imports and callables outside the strict CLI observation fragment. Their
+// proposed layouts are untrusted checker inputs, not certified CLI output.
+const left = split("app.mjs", "private-state", [false, true, true, false], dir, true);
+const right = split("provider.mjs", "provider-state", [true, true, false], dir, true);
+const shared = split("provider.mjs", "private-state", [true, true, false], dir, true);
 const expected = [10, 20, 11, 21, 21];
 assert.deepEqual(await observe(dir), expected);
 assert.deepEqual(await observe(assemble("app-only", left)), expected);
@@ -260,18 +263,11 @@ assert.equal(tagged.stdout.trim(), "certified");
       { encoding: "utf8" }
     );
   const emitted = run(out);
-  assert.equal(emitted.status, 0, emitted.stdout + emitted.stderr);
-  assert.equal(JSON.parse(emitted.stdout).guarantee, "all-outcomes");
-  assert.equal((await import(pathToFileURL(path.join(out, entry)))).total, 6);
-  const checked = run(out, "--check-output");
-  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
-  assert.deepEqual(JSON.parse(checked.stdout), JSON.parse(emitted.stdout));
-
-  const third = path.join(out, "third-body.mjs");
-  writeFileSync(third, readFileSync(third, "utf8").replace("= 3", "= 4"));
-  const tampered = run(out, "--check-output");
-  assert.equal(tampered.status, 1, tampered.stdout + tampered.stderr);
-  assert.equal(JSON.parse(tampered.stdout).status, "rejected");
+  assert.equal(emitted.status, 1, emitted.stdout + emitted.stderr);
+  const strictRefusal = JSON.parse(emitted.stdout);
+  assert.equal(strictRefusal.status, "rejected");
+  assert.equal(strictRefusal.reason_code, "strict_observation_unsupported");
+  assert(!existsSync(out));
 
   writeFileSync(path.join(original, "second-body.mjs"), "export const existing = 20;");
   const collisionPath = path.join(root, "collision-out");
@@ -324,13 +320,12 @@ assert.equal(tagged.stdout.trim(), "certified");
   const out = path.join(root, "throwing-deployment-out");
   setOrder(["label", "detail"]);
   const required = ["--require", "all-outcomes"];
+  await assert.rejects(import(pathToFileURL(path.join(original, entry))), (thrown) => thrown === message);
   const emitted = run(out, ...required);
-  assert.equal(emitted.exit, 0, JSON.stringify(emitted.verdict));
-  assert.equal(emitted.verdict.guarantee, "all-outcomes");
-  assert.equal(emitted.verdict.scope, "linked-structural-order");
-  assert.deepEqual(run(out, ...required, "--check-output"), emitted);
-  for (const dir of [original, out])
-    await assert.rejects(import(pathToFileURL(path.join(dir, entry))), (thrown) => thrown === message);
+  assert.equal(emitted.exit, 1, JSON.stringify(emitted.verdict));
+  assert.equal(emitted.verdict.status, "rejected");
+  assert.equal(emitted.verdict.reason_code, "strict_observation_unsupported");
+  assert(!existsSync(out));
 
   setOrder(["detail", "label"]);
   const reordered = path.join(root, "throwing-deployment-reordered");
@@ -339,7 +334,7 @@ assert.equal(tagged.stdout.trim(), "certified");
   assert.match(refused.verdict.reason, /proves only normal-completion/);
   assert(!existsSync(reordered));
   const normal = run(reordered);
-  assert.equal(normal.exit, 0, JSON.stringify(normal.verdict));
-  assert.equal(normal.verdict.guarantee, "normal-completion");
-  assert.equal(run(reordered, ...required, "--check-output").exit, 1);
+  assert.equal(normal.exit, 1, JSON.stringify(normal.verdict));
+  assert.equal(normal.verdict.reason_code, "strict_observation_unsupported");
+  assert(!existsSync(reordered));
 }

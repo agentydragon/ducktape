@@ -171,6 +171,68 @@ for (const [name, options] of [
   assert.deepEqual(readdirSync(stackOut), [entry], "stack-observation refusal changed prior output files");
 }
 
+const deploymentStackFixture = prepare(path.join(root, "stack-deployment"), {
+  source: stackSource,
+  sourceName: entry,
+  provider: "",
+  spec: { entry, modules: { [entry]: ["value"], [worker]: ["read"] } },
+});
+const deploymentStackOut = path.join(root, "stack-deployment-out");
+const deploymentStackSentinel = path.join(deploymentStackOut, entry);
+const deploymentPriorBytes = Buffer.from("keep deployment output\n");
+mkdirSync(deploymentStackOut, { recursive: true });
+writeFileSync(deploymentStackSentinel, deploymentPriorBytes);
+const deploymentRefused = split({
+  source: deploymentStackFixture.sourceFile,
+  spec: deploymentStackFixture.specFile,
+  out: deploymentStackOut,
+  require: "all-outcomes",
+  structural: true,
+  hostContract: browserContract,
+  deploymentOrigin: "https://audit.example",
+  allowExistingOut: true,
+});
+assert.equal(deploymentRefused.status, "refused", deploymentRefused.log);
+assert.equal(deploymentRefused.verdict.guarantee, null, deploymentRefused.log);
+assert.equal(deploymentRefused.verdict.every_ending_matches, false, deploymentRefused.log);
+assert.equal(deploymentRefused.verdict.reason_code, "strict_observation_unsupported", deploymentRefused.log);
+assert.deepEqual(
+  readFileSync(deploymentStackSentinel),
+  deploymentPriorBytes,
+  "deployment stack-observation refusal changed prior output bytes"
+);
+assert.deepEqual(readdirSync(deploymentStackOut), [entry], "deployment refusal changed prior output files");
+
+const deploymentDataFixture = prepare(path.join(root, "deployment-static-data"), {
+  source: "const first = 42; const second = 41; export const value = first;\n",
+  sourceName: entry,
+  provider: "",
+  spec: { entry, modules: { [entry]: ["value"], [worker]: ["first", "second"] }, order: [worker], sequential: true },
+});
+const deploymentDataOut = path.join(root, "deployment-static-data-out");
+const deploymentDataResult = split({
+  source: deploymentDataFixture.sourceFile,
+  spec: deploymentDataFixture.specFile,
+  out: deploymentDataOut,
+  require: "all-outcomes",
+  structural: true,
+  deploymentOrigin: "https://audit.example",
+});
+assert.equal(deploymentDataResult.status, "certified", deploymentDataResult.log);
+assert.equal(deploymentDataResult.verdict.observation_scope, "strict-static-data", deploymentDataResult.log);
+assert.equal(deploymentDataResult.verdict.guarantee, "all-outcomes", deploymentDataResult.log);
+assert.match(deploymentDataResult.verdict.target_theorem, /modeled CoreJS world/);
+assert(
+  deploymentDataResult.verdict.assumptions.some((assumption) =>
+    assumption.includes("static deployment at https://audit.example")
+  ),
+  deploymentDataResult.log
+);
+assert.deepEqual(
+  observe(path.join(deploymentDataOut, entry), "value"),
+  observe(deploymentDataFixture.sourceFile, "value")
+);
+
 const pureSparseSource = `export const value = [1, , 2];\n`;
 const pureSparse = prepare(path.join(root, "pure-sparse"), {
   source: pureSparseSource,
