@@ -418,6 +418,50 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_single_module",
+    srcs = ["EsmSplit/CoreJS/SingleModule.lean"],
+    deps = [":corejs_certificate_support"],
+)
+
+lean_library(
+    name = "corejs_checked_split",
+    srcs = ["EsmSplit/CoreJS/CheckedSplit.lean"],
+    deps = [
+        ":corejs_certificate_generation_support",
+        ":corejs_linked_input",
+        ":corejs_runtime",
+        ":corejs_single_module",
+        ":planner",
+    ],
+)
+
+lean_binary(
+    name = "checked_split_test_runner",
+    testonly = True,
+    srcs = ["CheckedSplitTest.lean"],
+    entry = "CheckedSplitTest.lean",
+    deps = [":corejs_checked_split"],
+)
+
+sh_test(
+    name = "checked_split_test",
+    srcs = ["checked_split_test.sh"],
+    args = ["$(rlocationpath :checked_split_test_runner)"],
+    data = [":checked_split_test_runner"],
+    use_bash_launcher = True,
+)
+
+lean_axiom_test(
+    name = "checked_split_axioms_test",
+    imports = ["EsmSplit.CoreJS.CheckedSplit"],
+    theorems = [
+        "CoreJS.CheckedSplit.checkedSplit_sound",
+        "CoreJS.CheckedSplit.checkOutput_sound",
+    ],
+    deps = [":corejs_checked_split"],
+)
+
+lean_library(
     name = "lowersplit_workflows",
     srcs = [
         "EsmSplit/LowerSplit/Certified.lean",
@@ -429,6 +473,7 @@ lean_library(
     deps = [
         ":corejs_certificates",
         ":corejs_runtime",
+        ":corejs_single_module",
         ":corejs_structural",
         ":lowersplit_support",
         ":planner",
@@ -439,7 +484,7 @@ lean_axiom_test(
     name = "slice_certificate_axioms_test",
     imports = ["EsmSplit.LowerSplit.SliceCertificate"],
     theorems = [
-        "EsmSplit.LowerSplit.runProgram_singleModuleMetadata",
+        "CoreJS.runProgram_singleModuleMetadata",
         "EsmSplit.LowerSplit.certifySlice_sound",
     ],
     deps = [":lowersplit_workflows"],

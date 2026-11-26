@@ -177,6 +177,8 @@ The verdict's `scope` identifies which theorem the run established. Each theorem
 
 [Publication](lean/EsmSplit/SplitFiles.lean) prints to staging, reparses the files, and checks their module set, syntax, and callable spelling. It requires copied providers to match the source text. The certificate consumes the annotated ASTs from those disk reads. `--check-output` repeats the same checks on an existing directory, including for regrouped declarations with the same ordered units. The theorems relate CoreJS programs. Their application to the files relies on the parser and scope annotator, the lowering and CoreJS model, and Lean's compiler and file IO.
 
+`CoreJS.CheckedSplit.checkedSplit` constructs an order-preserving split of a single import-free CoreJS entry. The fragment covers simple `const` declarations, including direct zero-argument calls, and ordinary zero-argument function declarations that return a literal or binding. Each success carries the requested placement, the same public live cells, and the requested guarantee in every CoreJS world. A companion check compares an independently decoded artifact with the constructed program. A Bazel fixture exercises the API from prebuilt Lean modules. The `lowersplit` command uses the production checkers above. [Constructor and proof](lean/EsmSplit/CoreJS/CheckedSplit.lean)
+
 For a module that calls functions or imports named bindings from relative JavaScript files, use
 the manifest command with the same original source path. The splitter parses
 reachable `.mjs` and `.js` providers as ES modules and copies them alongside the split.
