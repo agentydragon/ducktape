@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"reflect"
@@ -9,6 +10,33 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
+
+// ReplayNativeFrames visits both directions from the earliest relevant command admission.
+// A handler may append events. Read through the current tail, advancing past non-native entries.
+func ReplayNativeFrames(ctx context.Context, journal AdapterJournal, firstAdmission uint64, visit func(*eventpb.Native, uint64) error) error {
+	cursor := firstAdmission
+	if cursor > 0 {
+		cursor-- // Since reads strictly after the supplied cursor.
+	}
+	for cursor < journal.LastCursor() {
+		entries, err := journal.Since(ctx, cursor, 128)
+		if err != nil {
+			return err
+		}
+		if len(entries) == 0 {
+			break
+		}
+		for _, entry := range entries {
+			cursor = entry.GetCursor()
+			if native := entry.GetEvent().GetNative(); native != nil {
+				if err := visit(native, entry.GetOrigin().GetSequence()); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
 
 // ObservedItem is the Runtime's durable view of an item emitted during a turn.
 type ObservedItem struct {

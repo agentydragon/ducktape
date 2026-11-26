@@ -170,7 +170,7 @@ func (a *claudeAdapter) Recover(ctx context.Context) error {
 		return err
 	}
 	correlations := map[string]bool{}
-	var replayFrom uint64
+	var firstAdmission uint64
 	a.mu.Lock()
 	for _, request := range requests {
 		if len(request.Commands) != 1 {
@@ -209,12 +209,8 @@ func (a *claudeAdapter) Recover(ctx context.Context) error {
 			return fmt.Errorf("unexpected Claude request kind %q", request.Kind)
 		}
 		correlations[request.ID] = true
-		before := uint64(0)
-		if command.AdmittedCursor > 0 {
-			before = command.AdmittedCursor - 1
-		}
-		if len(correlations) == 1 || before < replayFrom {
-			replayFrom = before
+		if len(correlations) == 1 || command.AdmittedCursor < firstAdmission {
+			firstAdmission = command.AdmittedCursor
 		}
 	}
 	a.mu.Unlock()
@@ -222,40 +218,26 @@ func (a *claudeAdapter) Recover(ctx context.Context) error {
 		return nil
 	}
 
-	cursor := replayFrom
-	for cursor < a.host.Journal().LastCursor() {
-		entries, err := a.host.Journal().Since(ctx, cursor, 128)
-		if err != nil {
-			return err
+	return harness.ReplayNativeFrames(ctx, a.host.Journal(), firstAdmission, func(native *eventpb.Native, sequence uint64) error {
+		if native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
+			return nil
 		}
-		if len(entries) == 0 {
-			break
+		var frame claudeWireFrame
+		if json.Unmarshal([]byte(native.GetLine()), &frame) != nil {
+			return nil
 		}
-		for _, entry := range entries {
-			cursor = entry.GetCursor()
-			native := entry.GetEvent().GetNative()
-			if native == nil || native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
-				continue
-			}
-			var frame claudeWireFrame
-			if json.Unmarshal([]byte(native.GetLine()), &frame) != nil {
-				continue
-			}
-			matching := correlations[frame.UUID] || correlations[frame.UserMessageUUID] || correlations[frame.CommandUUID]
-			if frame.Type == "control_response" {
-				response, err := decodeClaudeControlResponse(json.RawMessage(native.GetLine()))
-				if err == nil && correlations[response.RequestID] {
-					matching = true
-				}
-			}
-			if matching {
-				if err := a.OnFrame(ctx, json.RawMessage(native.GetLine()), entry.GetOrigin().GetSequence()); err != nil {
-					return err
-				}
+		matching := correlations[frame.UUID] || correlations[frame.UserMessageUUID] || correlations[frame.CommandUUID]
+		if frame.Type == "control_response" {
+			response, err := decodeClaudeControlResponse(json.RawMessage(native.GetLine()))
+			if err == nil && correlations[response.RequestID] {
+				matching = true
 			}
 		}
-	}
-	return nil
+		if matching {
+			return a.OnFrame(ctx, json.RawMessage(native.GetLine()), sequence)
+		}
+		return nil
+	})
 }
 
 func (a *claudeAdapter) Reconcile(ctx context.Context, turnID string, resumed bool) (*eventpb.ConversationReconciled, error) {
