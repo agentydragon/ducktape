@@ -18,7 +18,7 @@ use crate::binding::{
 };
 use crate::candidate_assessment::ResolvedCandidateEffectAssessment;
 use crate::edit_gate::{
-    Gate, ProjectedBindingKind, SourceUnitClaimProjection, SourceUnitModuleAssignments,
+    Gate, LocalBindingResolution, SourceUnitClaimProjection, SourceUnitModuleAssignments,
     post_edit_spec_from_docs, resolve_edit_claims, source_unit_module_assignments_from_projection,
 };
 use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
@@ -764,25 +764,27 @@ fn source_unit_claim_locations(
             )
         })?;
         anyhow::ensure!(
-            doc.members.len() == projected.members.len(),
+            doc.members.len() == projected.member_bindings.len(),
             "projected member claims do not match module {}",
             module.path.display()
         );
-        for (member_index, projected_member) in projected.members.iter().enumerate() {
-            if matches!(projected_member.kind, ProjectedBindingKind::ImportSpecifier) {
-                continue;
-            }
-            if let Some(crate::edit_gate::LocalBindingResolution::Resolved(source_units)) =
-                &projected_member.resolution
+        let mut record_local = |binding_name: &str, slot: SourceUnitClaimSlot| {
+            if let Some(LocalBindingResolution::Resolved(source_units)) =
+                projected.local_bindings.get(binding_name)
             {
                 for source_unit in source_units {
                     locations.push(SourceUnitClaimLocation {
                         source_unit_id: dependency_graph.nodes[source_unit.0].id.clone(),
                         physical_module: module_path.clone(),
                         logical_module: logical_module.clone(),
-                        slot: SourceUnitClaimSlot::Member(member_index),
+                        slot: slot.clone(),
                     });
                 }
+            }
+        };
+        for (member_index, binding) in projected.member_bindings.iter().enumerate() {
+            if let Some(binding) = binding {
+                record_local(binding, SourceUnitClaimSlot::Member(member_index));
             }
         }
         for (claim_index, claim) in doc.source_matches.iter().enumerate() {
@@ -800,18 +802,10 @@ fn source_unit_claim_locations(
                 // pattern. Under alpha-equivalent matching, the actual source
                 // declaration can have a different name; the canonical
                 // resolver's outcome is the authoritative binding identity.
-                if let Some(crate::edit_gate::LocalBindingResolution::Resolved(source_units)) =
-                    projected.local_bindings.get(resolved_binding)
-                {
-                    for source_unit in source_units {
-                        locations.push(SourceUnitClaimLocation {
-                            source_unit_id: dependency_graph.nodes[source_unit.0].id.clone(),
-                            physical_module: module_path.clone(),
-                            logical_module: logical_module.clone(),
-                            slot: SourceUnitClaimSlot::SourceMatch(claim_index, binding_index),
-                        });
-                    }
-                }
+                record_local(
+                    resolved_binding,
+                    SourceUnitClaimSlot::SourceMatch(claim_index, binding_index),
+                );
             }
         }
         let mut selectors = BTreeSet::new();
