@@ -52,10 +52,10 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis_model::PrimKinds;
 
 use super::{
-    LazyBoundary, PositionBucketed, StatementFacts, TopLevelItemView, lazy_visit_arrow_expr,
-    lazy_visit_bin_expr, lazy_visit_class, lazy_visit_class_member, lazy_visit_cond_expr,
-    lazy_visit_function, lazy_visit_getter_prop, lazy_visit_if_stmt, lazy_visit_may_skip,
-    lazy_visit_method_prop, lazy_visit_setter_prop,
+    LazyBoundary, LazyPosition, PositionBucketed, StatementFacts, TopLevelItemView,
+    lazy_visit_arrow_expr, lazy_visit_bin_expr, lazy_visit_class, lazy_visit_class_member,
+    lazy_visit_cond_expr, lazy_visit_function, lazy_visit_getter_prop, lazy_visit_if_stmt,
+    lazy_visit_may_skip, lazy_visit_method_prop, lazy_visit_setter_prop,
 };
 
 pub(crate) fn native_set_allocation_roots(
@@ -1389,15 +1389,9 @@ impl ChunkValueFlow {
             Expr::Cond(cond) => self
                 .values_of_expr(&cond.cons)
                 .union(self.values_of_expr(&cond.alt)),
-            Expr::Bin(bin)
-                if matches!(
-                    bin.op,
-                    BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-                ) =>
-            {
-                self.values_of_expr(&bin.left)
-                    .union(self.values_of_expr(&bin.right))
-            }
+            Expr::Bin(bin) if bin.op.may_short_circuit() => self
+                .values_of_expr(&bin.left)
+                .union(self.values_of_expr(&bin.right)),
             Expr::Seq(seq) => seq
                 .exprs
                 .last()
@@ -1526,9 +1520,7 @@ impl ChunkValueFlow {
                 calls: PositionBucketed::default(),
                 complete_ident_calls: PositionBucketed::default(),
                 incomplete_ident_calls: PositionBucketed::default(),
-                lazy_depth: 0,
-                past_await: false,
-                may_skip_await_depth: 0,
+                position: LazyPosition::default(),
             };
             item.as_module_item().visit_with(&mut collector);
             for id in collector
@@ -1562,9 +1554,7 @@ impl ChunkValueFlow {
                     calls: PositionBucketed::default(),
                     complete_ident_calls: PositionBucketed::default(),
                     incomplete_ident_calls: PositionBucketed::default(),
-                    lazy_depth: 0,
-                    past_await: false,
-                    may_skip_await_depth: 0,
+                    position: LazyPosition::default(),
                 };
                 for member in &class.body {
                     if matches!(member, ClassMember::Constructor(_))
@@ -2084,12 +2074,7 @@ impl FlowValueExpr {
     fn from_ast(expr: &Expr, symbols: &mut FlowSymbols) -> Self {
         match expr.unwrap_parens() {
             Expr::Cond(cond) => Self::from_union_branches(&cond.cons, &cond.alt, symbols),
-            Expr::Bin(bin)
-                if matches!(
-                    bin.op,
-                    BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-                ) =>
-            {
+            Expr::Bin(bin) if bin.op.may_short_circuit() => {
                 Self::from_union_branches(&bin.left, &bin.right, symbols)
             }
             expr => Self::from_ast_leaf(expr, symbols),
@@ -2105,12 +2090,7 @@ impl FlowValueExpr {
                     pending.push(&cond.alt);
                     pending.push(&cond.cons);
                 }
-                Expr::Bin(bin)
-                    if matches!(
-                        bin.op,
-                        BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-                    ) =>
-                {
+                Expr::Bin(bin) if bin.op.may_short_circuit() => {
                     pending.push(&bin.right);
                     pending.push(&bin.left);
                 }
@@ -4481,21 +4461,12 @@ struct FlowCallCollector<'a> {
     calls: PositionBucketed<BTreeSet<Id>>,
     complete_ident_calls: PositionBucketed<BTreeSet<Id>>,
     incomplete_ident_calls: PositionBucketed<BTreeSet<Id>>,
-    lazy_depth: u32,
-    past_await: bool,
-    may_skip_await_depth: u32,
+    position: LazyPosition,
 }
 
 impl LazyBoundary for FlowCallCollector<'_> {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.lazy_depth
-    }
-
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
-    }
-    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
-        Some(&mut self.may_skip_await_depth)
+    fn position(&mut self) -> &mut LazyPosition {
+        &mut self.position
     }
 }
 
@@ -4509,11 +4480,10 @@ impl FlowCallCollector<'_> {
             } else {
                 &mut self.incomplete_ident_calls
             };
-            bucket.record(&id, self.lazy_depth, self.past_await);
+            bucket.record(&id, self.position);
         }
         for binding in targets.bindings {
-            self.calls
-                .record(&binding, self.lazy_depth, self.past_await);
+            self.calls.record(&binding, self.position);
         }
     }
 }
@@ -4522,10 +4492,7 @@ impl Visit for FlowCallCollector<'_> {
     impl_lazy_optional_path_visits!();
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        if matches!(
-            node.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if node.op.may_short_circuit() {
             lazy_visit_may_skip(self, node);
         } else {
             node.visit_children_with(self);
@@ -4554,8 +4521,8 @@ impl Visit for FlowCallCollector<'_> {
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {
         node.arg.visit_with(self);
-        if self.lazy_depth > 0 && self.may_skip_await_depth == 0 {
-            self.past_await = true;
+        if self.position.depth > 0 && self.position.may_skip_await_depth == 0 {
+            self.position.past_await = true;
         }
     }
 }

@@ -1447,10 +1447,7 @@ pub(crate) fn is_result_primitive(
             primitives.contains(id.sym.as_ref()) && !local_shadowed.contains(id.sym.as_ref())
         }
         Expr::Unary(u) => u.op != UnaryOp::Delete,
-        Expr::Bin(b) => !matches!(
-            b.op,
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-        ),
+        Expr::Bin(b) => !b.op.may_short_circuit(),
         Expr::Cond(c) => {
             is_result_primitive(&c.cons, primitives, local_shadowed)
                 && is_result_primitive(&c.alt, primitives, local_shadowed)

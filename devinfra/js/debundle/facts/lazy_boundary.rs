@@ -1,53 +1,32 @@
 use super::*;
 
-/// Shared trait for visitors that track lazy nesting depth and the
-/// per-body "past first await" boundary.
-///
-/// Depth semantics:
-/// - `0` — eager (outside any function body).
-/// - `1` — first-order lazy (inside the immediate body of a function).
-/// - `≥2` — nested lazy (inside a function nested in another function body).
-///
-/// `past_await` is a per-body flag: while visiting an async function /
-/// arrow / method body, it flips `true` once an `AwaitExpr` has been
-/// seen, and resets back to `false` when control exits that body.
-/// Code past the first await runs in a microtask after the at-init
-/// caller has finished, so it doesn't behave as "synchronously fires
-/// when the function is invoked" — at-init call promotion treats it
-/// like a nested closure.
-///
-/// At-init call promotion only inherits reads/rebinds/calls from the
-/// **first-order, pre-await** part of a callee's body
-/// (`lazy_depth == 1 && !past_await`), because a synchronous invocation
-/// of the callee runs only that portion of the body. Statements
-/// lexically inside nested function/arrow definitions or past an
-/// `await` in an async body are not executed until something else
-/// (the nested closure being called, or the microtask scheduler)
-/// fires them. The general `lazy_*` sets stay coarse (any depth ≥1,
-/// regardless of `past_await`) because, from the chunk's top-level
-/// POV, any rebind inside any function body remains "lazy".
-pub(crate) trait LazyBoundary: Visit {
-    fn lazy_depth_mut(&mut self) -> &mut u32;
-    fn past_await_mut(&mut self) -> &mut bool;
-    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
-        None
+/// Depth zero is eager. A synchronous call also runs the immediate function
+/// body (depth one) up to its first unavoidable suspension. Nested bodies
+/// and code after that suspension still contribute to the general lazy sets.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct LazyPosition {
+    pub(super) depth: u32,
+    pub(super) past_await: bool,
+    pub(super) may_skip_await_depth: u32,
+}
+
+impl LazyPosition {
+    pub(super) fn can_run_at_init(self) -> bool {
+        self.depth == 0 || (self.depth == 1 && !self.past_await)
     }
+}
+
+pub(crate) trait LazyBoundary: Visit {
+    fn position(&mut self) -> &mut LazyPosition;
 
     fn descend_lazy<F: FnOnce(&mut Self)>(&mut self, f: F) {
-        // Each body has its own `past_await` scope: a nested function
-        // starts pre-await regardless of the enclosing body's state.
-        let saved_past_await = std::mem::replace(self.past_await_mut(), false);
-        let saved_may_skip_await = self
-            .may_skip_await_depth_mut()
-            .map(|depth| std::mem::replace(depth, 0));
-        *self.lazy_depth_mut() += 1;
+        let outer = *self.position();
+        *self.position() = LazyPosition {
+            depth: outer.depth + 1,
+            ..Default::default()
+        };
         f(self);
-        *self.lazy_depth_mut() -= 1;
-        *self.past_await_mut() = saved_past_await;
-        if let (Some(depth), Some(saved)) = (self.may_skip_await_depth_mut(), saved_may_skip_await)
-        {
-            *depth = saved;
-        }
+        *self.position() = outer;
     }
 }
 
@@ -56,46 +35,39 @@ pub(crate) trait LazyBoundary: Visit {
 /// still classifying reads inside the branch after its own await as deferred.
 pub(crate) fn lazy_visit_if_stmt<V: LazyBoundary>(v: &mut V, node: &IfStmt) {
     node.test.visit_with(v);
-    let before_branch = *v.past_await_mut();
+    let before_branch = v.position().past_await;
     node.cons.visit_with(v);
-    *v.past_await_mut() = before_branch;
+    v.position().past_await = before_branch;
     if let Some(alt) = &node.alt {
         alt.visit_with(v);
-        *v.past_await_mut() = before_branch;
+        v.position().past_await = before_branch;
     }
 }
 
 pub(crate) fn lazy_visit_cond_expr<V: LazyBoundary>(v: &mut V, node: &CondExpr) {
     node.test.visit_with(v);
-    let before_branch = *v.past_await_mut();
+    let before_branch = v.position().past_await;
     node.cons.visit_with(v);
-    *v.past_await_mut() = before_branch;
+    v.position().past_await = before_branch;
     node.alt.visit_with(v);
-    *v.past_await_mut() = before_branch;
+    v.position().past_await = before_branch;
 }
 
 pub(crate) fn lazy_visit_bin_expr<V: LazyBoundary>(v: &mut V, node: &BinExpr) {
     node.left.visit_with(v);
-    let before_right = *v.past_await_mut();
+    let before_right = v.position().past_await;
     node.right.visit_with(v);
-    if matches!(
-        node.op,
-        BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-    ) {
-        *v.past_await_mut() = before_right;
+    if node.op.may_short_circuit() {
+        v.position().past_await = before_right;
     }
 }
 
 pub(crate) fn lazy_visit_may_skip<V: LazyBoundary, N: VisitWith<V>>(v: &mut V, node: &N) {
-    let before = *v.past_await_mut();
-    if let Some(depth) = v.may_skip_await_depth_mut() {
-        *depth += 1;
-    }
+    let before = v.position().past_await;
+    v.position().may_skip_await_depth += 1;
     node.visit_children_with(v);
-    if let Some(depth) = v.may_skip_await_depth_mut() {
-        *depth -= 1;
-    }
-    *v.past_await_mut() = before;
+    v.position().may_skip_await_depth -= 1;
+    v.position().past_await = before;
 }
 
 pub(crate) fn lazy_visit_function<V: LazyBoundary>(v: &mut V, node: &Function) {

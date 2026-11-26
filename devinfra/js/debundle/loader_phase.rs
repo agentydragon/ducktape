@@ -168,10 +168,7 @@ impl Visit for SuspensionWalk<'_> {
 
     fn visit_bin_expr(&mut self, node: &BinExpr) {
         node.left.visit_with(self);
-        if matches!(
-            node.op,
-            BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-        ) {
+        if node.op.may_short_circuit() {
             let skipped = self.flow;
             node.right.visit_with(self);
             self.flow = self.flow.join(skipped);
@@ -182,10 +179,7 @@ impl Visit for SuspensionWalk<'_> {
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         node.left.visit_with(self);
-        if matches!(
-            node.op,
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-        ) {
+        if node.op.may_short_circuit() {
             let skipped = self.flow;
             node.right.visit_with(self);
             self.flow = self.flow.join(skipped);

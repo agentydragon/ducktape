@@ -31,13 +31,13 @@ impl PositionBucketed<BTreeSet<Id>> {
     /// at depth 0; `lazy` at depth ≥ 1, additionally `first_order_lazy`
     /// at depth 1 before the body's first `await`. Maintains the
     /// `first_order_lazy ⊆ lazy` invariant structurally.
-    pub(crate) fn record(&mut self, id: &Id, lazy_depth: u32, past_await: bool) {
-        if lazy_depth == 0 {
+    pub(crate) fn record(&mut self, id: &Id, position: LazyPosition) {
+        if position.depth == 0 {
             self.eager.insert(id.clone());
             return;
         }
         self.lazy.insert(id.clone());
-        if lazy_depth == 1 && !past_await {
+        if position.can_run_at_init() {
             self.first_order_lazy.insert(id.clone());
         }
     }

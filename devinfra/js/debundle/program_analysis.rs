@@ -262,12 +262,7 @@ fn primitive_value(expression: &Expr) -> Option<PrimitiveValue> {
             kinds: PrimKinds::NONE,
             copies: BTreeSet::from([id.to_id()]),
         }),
-        Expr::Bin(binary)
-            if matches!(
-                binary.op,
-                BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
-            ) =>
-        {
+        Expr::Bin(binary) if binary.op.may_short_circuit() => {
             Some(primitive_value(&binary.left)?.join(primitive_value(&binary.right)?))
         }
         Expr::Cond(cond) => Some(primitive_value(&cond.cons)?.join(primitive_value(&cond.alt)?)),
