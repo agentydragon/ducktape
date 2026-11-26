@@ -13,6 +13,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
@@ -107,7 +108,7 @@ func actionEvent(event *action_servicepb.ActionEvent) (storagecodec.ActionEvent,
 		return storagecodec.ActionEvent{}, validationFailure()
 	}
 	state := event.GetState()
-	if !validActionState(state) {
+	if !actionstate.Valid(state) {
 		return storagecodec.ActionEvent{}, validationFailure()
 	}
 	actor := event.GetActor()
@@ -142,9 +143,4 @@ func rpcFailure(ctx context.Context, err error) error {
 
 func validationFailure() error {
 	return &sources.ProviderError{Kind: model.FailureProcessingError, Message: "ValidationError"}
-}
-
-func validActionState(state action_servicepb.ActionState) bool {
-	_, known := action_servicepb.ActionState_name[int32(state)]
-	return known && state != action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED
 }

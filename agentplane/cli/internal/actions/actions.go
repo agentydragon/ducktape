@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"github.com/google/uuid"
@@ -402,7 +403,7 @@ func (a *commands) post(ctx context.Context, client action_servicepb.ActionServi
 func actionState(value string) (action_servicepb.ActionState, error) {
 	name := "ACTION_STATE_" + strings.ToUpper(value)
 	state := action_servicepb.ActionState(action_servicepb.ActionState_value[name])
-	if state == action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED {
+	if !actionstate.Valid(state) {
 		return 0, invocation.UsageFailure("unknown Action state %q", value)
 	}
 	return state, nil

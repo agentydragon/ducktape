@@ -20,6 +20,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/rpc",
     deps = [
+        "//agentplane/action_service/actionstate",
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
         "//agentplane/action_service/api/web_push:web_push_service_go_proto",

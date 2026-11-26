@@ -218,14 +218,18 @@ func TestWaitDoesNotRetryARefusal(t *testing.T) {
 	}
 }
 
-func TestWaitRefusesAStateItDoesNotKnow(t *testing.T) {
-	fake, endpoint := newActionFake(t)
-	fake.getRequest = func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
-		return &action_servicepb.GetActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState(99))}, nil
-	}
-	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "5")
-	if code != invocation.ExitRefused || stdout != "" || fake.count("WatchActionRequest") != 0 {
-		t.Errorf("exit %d, stdout %q, calls %+v; want an immediate unusable response", code, stdout, fake.callLog())
+func TestWaitRefusesAnUnsupportedState(t *testing.T) {
+	for _, state := range []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED, 99} {
+		t.Run(state.String(), func(t *testing.T) {
+			fake, endpoint := newActionFake(t)
+			fake.getRequest = func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
+				return &action_servicepb.GetActionRequestResponse{ActionRequest: receiptAt(waitedID, state)}, nil
+			}
+			code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "5")
+			if code != invocation.ExitRefused || stdout != "" || fake.count("WatchActionRequest") != 0 {
+				t.Errorf("exit %d, stdout %q, calls %+v; want an immediate unusable response", code, stdout, fake.callLog())
+			}
+		})
 	}
 }
 

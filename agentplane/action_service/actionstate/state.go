@@ -1,4 +1,4 @@
-// Package actionstate defines stable storage strings for Action states.
+// Package actionstate classifies Action lifecycle states and owns their stable storage names.
 package actionstate
 
 import "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -46,4 +46,29 @@ func StoredNames() []string {
 		names[i] = known.text
 	}
 	return names
+}
+
+// Valid reports whether state is a supported lifecycle state.
+func Valid(state action_servicepb.ActionState) bool {
+	_, known := Stored(state)
+	return known
+}
+
+// Decided reports whether state is a recorded state after decision_pending.
+func Decided(state action_servicepb.ActionState) bool {
+	return state != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING && Valid(state)
+}
+
+// Terminal reports whether the request cannot advance to another lifecycle state.
+func Terminal(state action_servicepb.ActionState) bool {
+	switch state {
+	case action_servicepb.ActionState_ACTION_STATE_DENIED,
+		action_servicepb.ActionState_ACTION_STATE_SUCCEEDED,
+		action_servicepb.ActionState_ACTION_STATE_FAILED,
+		action_servicepb.ActionState_ACTION_STATE_CANCELLED,
+		action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
+		return true
+	default:
+		return false
+	}
 }

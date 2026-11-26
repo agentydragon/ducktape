@@ -9,6 +9,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/actions",
     deps = [
+        "//agentplane/action_service/actionstate",
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/notification_service/internal/inbox",

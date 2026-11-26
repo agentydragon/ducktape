@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"github.com/sethvargo/go-retry"
@@ -29,17 +30,7 @@ func validateActionRequest(message *action_servicepb.ActionRequest) error {
 	if message == nil {
 		return invocation.InvalidResponse("response has no Action request")
 	}
-	switch message.GetState() {
-	case action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
-		action_servicepb.ActionState_ACTION_STATE_ALLOWED,
-		action_servicepb.ActionState_ACTION_STATE_DENIED,
-		action_servicepb.ActionState_ACTION_STATE_DISPATCHING,
-		action_servicepb.ActionState_ACTION_STATE_RUNNING,
-		action_servicepb.ActionState_ACTION_STATE_SUCCEEDED,
-		action_servicepb.ActionState_ACTION_STATE_FAILED,
-		action_servicepb.ActionState_ACTION_STATE_CANCELLED,
-		action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
-	default:
+	if !actionstate.Valid(message.GetState()) {
 		return invocation.InvalidResponse("unrecognized Action state %q", message.GetState())
 	}
 	return nil
@@ -64,25 +55,11 @@ func parseUntil(value string) (waitUntil, error) {
 	}
 }
 
-// holds is the Action Service's rule: decision holds once the state is not decision_pending;
-// terminal holds only at an execution outcome or a denial/cancellation.
 func (u waitUntil) holds(state action_servicepb.ActionState) bool {
-	switch state {
-	case action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING:
-		return false
-	case action_servicepb.ActionState_ACTION_STATE_ALLOWED,
-		action_servicepb.ActionState_ACTION_STATE_DISPATCHING,
-		action_servicepb.ActionState_ACTION_STATE_RUNNING:
-		return u == untilDecision
-	case action_servicepb.ActionState_ACTION_STATE_DENIED,
-		action_servicepb.ActionState_ACTION_STATE_SUCCEEDED,
-		action_servicepb.ActionState_ACTION_STATE_FAILED,
-		action_servicepb.ActionState_ACTION_STATE_CANCELLED,
-		action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
-		return true
-	default:
-		return false
+	if u == untilDecision {
+		return actionstate.Decided(state)
 	}
+	return actionstate.Terminal(state)
 }
 
 // exitStatus is what a state that holds exits with. It never derives success from the result.
