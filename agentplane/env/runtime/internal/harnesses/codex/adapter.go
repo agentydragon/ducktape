@@ -379,18 +379,8 @@ func (a *codexAdapter) ChangeReasoningEffort(_ context.Context, commandID, effor
 
 func (a *codexAdapter) takePendingChange(ctx context.Context, changes *[]codexPendingChange, label string) (*codexPendingChange, error) {
 	a.mu.Lock()
-	var pending []codexPendingChange
-	switch changes {
-	case &a.pendingModelChanges:
-		pending = a.pendingModelChanges
-		a.pendingModelChanges = nil
-	case &a.pendingEffortChanges:
-		pending = a.pendingEffortChanges
-		a.pendingEffortChanges = nil
-	default:
-		a.mu.Unlock()
-		return nil, errors.New("unexpected Codex pending-change queue")
-	}
+	pending := *changes
+	*changes = nil
 	a.mu.Unlock()
 	if len(pending) == 0 {
 		return nil, nil
