@@ -328,28 +328,26 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
               reason := s!"the compiled {kind.scope} slice proves only normal-completion"
               reasonCode := some "slice_guarantee"
             } : CertificationRefusal))
-          else pure (.ok (some kind, {}, "compiled-slice", []))
+          else pure (.ok (some kind, {}, "compiled-slice"))
         | .error _refusal =>
           if request != .normalCompletion then
             pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
           else do
             let replayed ← if needsAccessorCheck then pure accessorReplay else checkReplay "compiled_replay"
             if replayed.isSome then
-              pure (.ok (none, eligibility.probe.premises, "compiled-replay-premised", []))
+              pure (.ok (none, eligibility.probe.premises, "compiled-replay-premised"))
             else
               pure (.error ({
                 reason := "no compiled rule supports this split; no JavaScript was written"
                 reasonCode := some "no_compiled_rule"
               } : CertificationRefusal))
     match checked with
-    | .ok (some kind, active, strategy, blockers) => do
-      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
+    | .ok (some kind, active, strategy) => do
       return ← emitVerdict request.label (.ok kind.level) kind.scope
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
-    | .ok (none, active, strategy, blockers) => do
-      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
+        (profileVerdict profile active ++ [("strategy", toJson strategy)])
+    | .ok (none, active, strategy) => do
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
+        (profileVerdict profile active ++ [("strategy", toJson strategy)])
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 

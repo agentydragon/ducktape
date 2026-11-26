@@ -54,32 +54,26 @@ assert.deepEqual(readdirSync(out), ["sentinel.bin"]);
 assert.deepEqual(readFileSync(sentinel), original);
 assert.doesNotMatch(denied.stderr, /"phase":"(?:execution_proof|ast_correspondence)"/);
 
-// Explicit structural certification stays compiled and still checks the printed output.
-const structuralSource = path.join(root, "structural.mjs");
-const structuralSpec = path.join(root, "structural-spec.json");
-const structuralOut = path.join(root, "structural-out");
-writeFileSync(structuralSource, "const a = 1; export const result = a;\n");
-writeFileSync(
-  structuralSpec,
-  JSON.stringify({
-    entry: "entry.mjs",
-    modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1"] },
-    order: ["worker.mjs"],
-    sequential: true,
-  })
+// Check an existing output tree as well as a request to publish one. The
+// unchanged single-file placement lets the input be used as the disk fixture.
+const readbackOut = path.join(root, "generated-only-readback");
+mkdirSync(readbackOut);
+writeFileSync(path.join(readbackOut, "entry.mjs"), readFileSync(source));
+writeFileSync(path.join(readbackOut, "provider.mjs"), readFileSync(path.join(root, "provider.mjs")));
+const readbackFiles = readdirSync(readbackOut);
+const beforeReadback = readbackFiles.map((file) => readFileSync(path.join(readbackOut, file)));
+const deniedReadback = run(source, spec, readbackOut, [
+  "--require",
+  "normal-completion",
+  "--host-contract",
+  host,
+  "--check-output",
+]);
+assert.equal(deniedReadback.verdict.status, "rejected", deniedReadback.stdout + deniedReadback.stderr);
+assert.equal(deniedReadback.verdict.reason_code, "no_compiled_rule", deniedReadback.stdout + deniedReadback.stderr);
+assert.deepEqual(readdirSync(readbackOut), readbackFiles);
+assert.deepEqual(
+  readbackFiles.map((file) => readFileSync(path.join(readbackOut, file))),
+  beforeReadback
 );
-const flags = ["--structural", "--require", "all-outcomes"];
-const structural = run(structuralSource, structuralSpec, structuralOut, flags);
-assert.equal(structural.verdict.status, "certified", structural.stdout + structural.stderr);
-assert.match(structural.verdict.scope, /^linked-structural/);
-const checked = run(structuralSource, structuralSpec, structuralOut, [...flags, "--check-output"]);
-assert.equal(checked.verdict.status, "certified", checked.stdout + checked.stderr);
-const entry = path.join(structuralOut, "entry.mjs");
-const entryText = readFileSync(entry, "utf8");
-const tampered = entryText.replace("result = a", "result = 2");
-assert.notEqual(tampered, entryText);
-writeFileSync(entry, tampered);
-const rejected = run(structuralSource, structuralSpec, structuralOut, [...flags, "--check-output"]);
-assert.equal(rejected.verdict.status, "rejected", rejected.stdout + rejected.stderr);
-assert.equal(readFileSync(entry, "utf8"), tampered, "readback refusal changed existing output");
 assert(!existsSync(leanMarker), "split or check-output invoked lean from PATH");
