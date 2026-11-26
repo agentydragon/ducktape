@@ -254,6 +254,7 @@ py_library(
         "//agentplane/env/runtime:harness",
         "//agentplane/identity/operator:settings",
         "//agentplane/net/peertls:config",
+        "//agentplane/net/peertls:service_uris",
         "//agentplane/notification_service:settings",
         "//agentplane/proto:session_pb2",
         "//agentplane/sampler:settings",

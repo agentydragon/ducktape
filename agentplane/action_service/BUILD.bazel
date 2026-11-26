@@ -111,6 +111,7 @@ py_test(
         ":settings",
         "//:conftest",
         "//agentplane/net/peertls:config",
+        "//agentplane/net/peertls:service_uris",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

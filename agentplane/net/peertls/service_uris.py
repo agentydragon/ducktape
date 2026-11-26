@@ -17,11 +17,11 @@ WORKLOAD_LISTENERS = {
     "SessionDispatcherURI": "spiffe://agentplane/session-dispatcher",
 }
 
+RUNTIME_PROXY_TEST_READER_NAME = "system-test-runtime-proxy-reader"
+RUNTIME_PROXY_TEST_READER_URI = f"spiffe://agentplane/{RUNTIME_PROXY_TEST_READER_NAME}"
+
 # The k3s fixture also authenticates its isolated Runtime proxy reader through a workload listener.
-WORKLOAD_PEERS = {
-    **WORKLOAD_LISTENERS,
-    "SystemTestRuntimeProxyReaderURI": "spiffe://agentplane/system-test-runtime-proxy-reader",
-}
+WORKLOAD_PEERS = {**WORKLOAD_LISTENERS, "SystemTestRuntimeProxyReaderURI": RUNTIME_PROXY_TEST_READER_URI}
 
 GATEWAY = "spiffe://agentplane/runner-gateway"
 SERVICES = {

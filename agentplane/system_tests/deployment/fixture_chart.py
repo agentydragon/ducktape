@@ -81,6 +81,7 @@ from agentplane.net.peertls.config import (
     SESSION_DISPATCHER_URI,
     TLS,
 )
+from agentplane.net.peertls.service_uris import RUNTIME_PROXY_TEST_READER_URI
 from agentplane.notification_service.settings import NoticeDebounceSettings
 
 # gazelle:include_dep @pypi//protobuf
@@ -102,7 +103,6 @@ from agentplane.system_tests.driver.native_auth import (
     NATIVE_CLIENT_NAME,
     RUNTIME_PROXY_TEST_READER_CERTIFICATE,
     RUNTIME_PROXY_TEST_READER_SECRET,
-    RUNTIME_PROXY_TEST_READER_URI,
 )
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration

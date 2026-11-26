@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from agentplane.action_service.settings import EnvironmentServicePeer, ServicePeer, Settings
 from agentplane.net.peertls.config import ACTIONS_URI, CENTRAL_SAMPLER_URI, SANDBOX_CONTROLLER_URI
+from agentplane.net.peertls.service_uris import RUNTIME_PROXY_TEST_READER_URI
 
 
 def _settings_source() -> dict[str, object]:
@@ -84,6 +85,8 @@ def test_service_peer_accepts_only_the_actions_svid(server_uri: str) -> None:
     assert peer.token_file == ""
     assert peer.tls is not None
     assert peer.tls.uses_svid
+    with pytest.raises(ValidationError, match="server_uri"):
+        ServicePeer.model_validate(source | {"tls": tls | {"server_uri": RUNTIME_PROXY_TEST_READER_URI}})
     with pytest.raises(ValidationError, match="cannot be combined"):
         ServicePeer.model_validate(source | {"token_file": "/token"})
     with pytest.raises(ValidationError, match="client_uri must be"):
