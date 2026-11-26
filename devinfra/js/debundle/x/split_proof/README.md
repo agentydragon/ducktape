@@ -82,6 +82,19 @@ fixed-name static fields and runs blocks in their source order.
 
 The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee. A structural split that links to the same initial state and the same ordered units reports `all-outcomes`, including when both versions throw. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
+For a single import-free source module with dense unit IDs and only `const`
+initializers that are primitive literals or reads of earlier constants, the
+CLI uses the `compiled-constructor` strategy when the authored placement keeps
+the source unit order. It constructs one CoreJS candidate, checks the requested
+placement and the entry's live exports, then requires the staged and reread
+JavaScript to decode to that exact candidate before publishing. Its verdict
+states the CoreJS theorem, reports no host premises, and marks
+`every_ending_matches: true`. This route refuses sparse IDs and changed unit
+order without changing an existing output directory. It does not select this
+strategy for function declarations, calls, or other effectful initializers;
+those remain subject to the other certified checker paths and their reported
+evidence.
+
 To move an initializer such as `Math.PI / 12`, pass
 `{"profile":"browser-page","stableIntrinsicValues":["Math.PI@1"]}` with
 `--host-contract` and `--structural` on both emission and `--check-output`.

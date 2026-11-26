@@ -38,7 +38,7 @@ const phases = (stderr) =>
   stderr
     .trim()
     .split("\n")
-    .filter((line) => line.startsWith('{"phase"'))
+    .filter((line) => line.includes('"phase":'))
     .map((line) => JSON.parse(line).phase);
 assert(phases(emitted.stderr).includes("checked_construction"), emitted.log);
 assert(phases(emitted.stderr).includes("checked_correspondence"), emitted.log);
