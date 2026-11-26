@@ -2,6 +2,7 @@
  * Threads grouped by their Sandbox, including threadless Sandboxes and retained Threads whose
  * Sandbox no longer exists: the sidebar's navigation and the landing page's whole content.
  */
+import { SandboxStatusTooltip } from "../sandboxes/status_tooltip";
 import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { IconArchive, IconArchiveOff, IconSearch } from "../ui/icons";
@@ -15,7 +16,7 @@ import { attachedHarness } from "./harness_behavior";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
 import { useRequiredSandboxesLive } from "../sandboxes/live";
 import { MarkGlyph } from "../ui/mark_glyph";
-import { sandboxStatusDetail, sandboxSummary } from "../sandboxes/sandbox_status";
+import { sandboxSummary } from "../sandboxes/sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
 import "./thread_list.css";
 import { groupThreads, type ThreadGroup } from "./thread_groups";
@@ -42,7 +43,7 @@ function GroupStateIcon({ sandbox }: { sandbox: EnvironmentDescriptor | null }):
   }
   const { kind } = sandboxSummary(sandbox);
   return (
-    <Tooltip label={sandboxStatusDetail(sandbox)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+    <Tooltip label={<SandboxStatusTooltip sandbox={sandbox} />} multiline withArrow>
       <span className="agentplane-thread-list-state-icon" data-status={kind}>
         <MarkGlyph mark={SANDBOX_STATUS_MARKS[kind]} />
       </span>

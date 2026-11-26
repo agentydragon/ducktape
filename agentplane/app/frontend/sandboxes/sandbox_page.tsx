@@ -1,3 +1,4 @@
+import { SandboxStatusTooltip } from "./status_tooltip";
 import { SessionStatus_Materialization } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { clone, create } from "@bufbuild/protobuf";
 
@@ -320,7 +321,7 @@ export function SandboxPage({
       <TopbarTitle>
         <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
           {sandbox && (
-            <Tooltip label={sandboxStatusDetail(sandbox)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+            <Tooltip label={<SandboxStatusTooltip sandbox={sandbox} />} multiline withArrow>
               <span
                 role="img"
                 tabIndex={0}

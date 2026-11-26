@@ -1,3 +1,4 @@
+import { SandboxStatusTooltip } from "./status_tooltip";
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import {
   CreateEnvironmentRequestSchema,
@@ -34,7 +35,7 @@ import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
 import { useRequiredSandboxesLive } from "./live";
 import { MarkGlyph } from "../ui/mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
-import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
+import { podIp, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
 import { TopbarTitle } from "../shell/topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
@@ -72,7 +73,7 @@ const PRESET_PARAM = "preset";
 function StatusIcon({ row }: { row: EnvironmentDescriptor }): JSX.Element {
   const summary = sandboxSummary(row);
   return (
-    <Tooltip label={sandboxStatusDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+    <Tooltip label={<SandboxStatusTooltip sandbox={row} />} multiline withArrow>
       <span aria-label={summary.label} data-status={summary.kind}>
         <MarkGlyph mark={SANDBOX_STATUS_MARKS[summary.kind]} size="small" />
       </span>
