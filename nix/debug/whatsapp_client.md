@@ -4,7 +4,7 @@ Goal: GUI WhatsApp client in nixpkgs with video calls. Installed on wyrm2, rugge
 
 ## Chosen: `pkgs.karere` (2.5.5)
 
-Picked from tracker evidence only; not yet tested here. Closed `tobagin/karere` issues "Your browser doesn't support calling", "WhatsApp Web Calls", "No audio output devices listed during calls" → fixed by moving to CEF. Unchecked: nixpkgs 2.5.5 includes that fix. Try with `nix run nixpkgs#karere`, link phone, place a call.
+Picked from tracker evidence. Linking and general use confirmed working on wyrm2 (2026-11-26); calls not yet tried. Closed `tobagin/karere` issues "Your browser doesn't support calling", "WhatsApp Web Calls", "No audio output devices listed during calls" → fixed by moving to CEF. Unchecked: nixpkgs 2.5.5 includes that fix. Try with `nix run nixpkgs#karere`, link phone, place a call.
 
 ## Whatsie 5.0.0: login broken, dropped
 
