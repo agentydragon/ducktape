@@ -3,10 +3,10 @@ import { actionArguments } from "../../presentation";
 import type { ActionRequest } from "../../../../../action_service/api/contracts/action_service_pb";
 import type { ActionNotificationParts } from "../types";
 
-import { zPodsInNamespaceArguments } from "../../schemas/kubernetes_admin/pods_list_in_namespace";
+import { podsInNamespaceArguments } from "../../schemas/kubernetes_admin/arguments";
 
 export function podsInNamespaceNotification(request: ActionRequest): ActionNotificationParts | null {
-  const parsed = zPodsInNamespaceArguments.safeParse(actionArguments(request));
+  const parsed = podsInNamespaceArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
 
   return {

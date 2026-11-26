@@ -1,20 +1,13 @@
 import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { type ActionPresentation, expandsForDetails } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
+import { podsLogArguments } from "../../schemas/kubernetes_admin/arguments";
 import { podsLogOptions } from "../../schemas/kubernetes_admin/pods_log";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 import { kubernetesTextResult } from "./text_result";
-
-const podsLogArguments = z.strictObject({
-  name: z.string().min(1),
-  namespace: z.string().min(1).optional(),
-  container: z.string().min(1).optional(),
-  previous: z.boolean().optional(),
-  tail: z.int().optional(),
-});
 
 export function offersCardDecisionButtonsPodsLog(args: unknown): boolean {
   return podsLogArguments.safeParse(args).success;

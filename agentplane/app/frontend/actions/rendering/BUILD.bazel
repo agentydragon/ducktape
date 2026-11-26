@@ -392,7 +392,6 @@ ts_library(
         "kubernetes_admin/pods_get.tsx",
         "kubernetes_admin/pods_list_in_namespace.tsx",
         "kubernetes_admin/pods_log.tsx",
-        "kubernetes_admin/resource_common.tsx",
         "kubernetes_admin/resources.tsx",
         "kubernetes_admin/resources_apply.tsx",
         "kubernetes_admin/resources_delete.tsx",

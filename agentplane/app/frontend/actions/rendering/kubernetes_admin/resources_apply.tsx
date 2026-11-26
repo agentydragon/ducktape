@@ -1,6 +1,7 @@
 import { Code, Stack, Text } from "@mantine/core";
 import { Fragment, type JSX } from "react";
 import { z } from "zod";
+import { resourceApplyArguments } from "../../schemas/kubernetes_admin/arguments";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
@@ -10,8 +11,6 @@ import {
   kubernetesResourceTarget,
   parseKubernetesYaml,
 } from "../../schemas/kubernetes_admin/manifest";
-
-const resourceApplyArguments = z.strictObject({ resource: z.string().min(1) });
 
 // Malformed or non-resource YAML fails here, so the label falls back and the manifest is shown verbatim.
 const appliedResources = resourceApplyArguments.transform((args, context) => {

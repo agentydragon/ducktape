@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { actionArguments } from "../../presentation";
 
 import type { ActionRequest } from "../../../../../action_service/api/contracts/action_service_pb";
@@ -7,17 +6,11 @@ import { commandNotificationText } from "../command";
 import type { ActionNotificationParts } from "../types";
 
 import { podsExecNotes } from "../../schemas/kubernetes_admin/pods_exec";
+import { podsExecArguments } from "../../schemas/kubernetes_admin/arguments";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 
-const podsExecNotificationArguments = z.strictObject({
-  name: z.string().min(1),
-  namespace: z.string().min(1).optional(),
-  container: z.string().min(1).optional(),
-  command: z.array(z.string()),
-});
-
 export function podsExecNotification(request: ActionRequest): ActionNotificationParts | null {
-  const parsed = podsExecNotificationArguments.safeParse(actionArguments(request));
+  const parsed = podsExecArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
 
   return {

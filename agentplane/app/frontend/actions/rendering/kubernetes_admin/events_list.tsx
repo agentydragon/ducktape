@@ -6,12 +6,8 @@ import { z } from "zod";
 import { type ActionPresentation, expandsForDetails } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { defineResultPreview } from "../result_entry";
+import { eventsListArguments } from "../../schemas/kubernetes_admin/arguments";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
-
-const eventsListArguments = z.strictObject({
-  namespace: z.string().min(1).optional(),
-  fieldSelector: z.string().min(1).optional(),
-});
 
 export function offersCardDecisionButtonsEventsList(args: unknown): boolean {
   return eventsListArguments.safeParse(args).success;

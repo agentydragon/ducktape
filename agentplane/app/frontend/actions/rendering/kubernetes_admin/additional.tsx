@@ -3,12 +3,12 @@ import type { JSX, ReactNode } from "react";
 import { parseDocument } from "yaml";
 import { z } from "zod";
 
+import { resourcesGetArguments } from "../../schemas/kubernetes_admin/arguments";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 import { definePreview, type ArgumentsPreview, useCompactPane } from "../entry";
 import { type ActionPresentation, expandsForDetails, expandsForRejectedArguments } from "../presentation";
 import { defineResultPreview } from "../result_entry";
 import { parseKubernetesTable, resourceListResult } from "./list_result";
-import { resource } from "./resource_common";
 import { kubernetesResourcesResult, kubernetesResourcesSchema } from "./resources";
 import { kubernetesTextResult } from "./text_result";
 
@@ -27,7 +27,7 @@ const podRun = z.strictObject({
   image: string,
   port: z.int().optional(),
 });
-const scale = z.strictObject({ ...resource, scale: z.int().optional() });
+const scale = resourcesGetArguments.extend({ scale: z.int().optional() });
 
 function selectors(label?: string, field?: string): JSX.Element | null {
   if (!label && !field) return null;
