@@ -269,23 +269,46 @@ def certify (source candidate : Program) (pair : CheckedProbePair source candida
       sameExports := pair.sameExports hExports
     }
 
-/-- The decoded wrapper preserves the exact `decodeSingleton` programs in the result type. -/
-def certifyDecoded (decoded : LinkedInput.DecodedDeployment)
-    (pair : CheckedProbePair decoded.before decoded.after) (providerName : String)
-    (providerExport : Name) :
-    Except String (ProviderLinkCertificate decoded.before decoded.after) :=
-  certify decoded.before decoded.after pair providerName providerExport
+/-! The checked input records the exact JSON source, provider files, emitted
+files, authored plan, and HostProfile accepted by `decodeSingleton`. Its
+assignment is part of the returned deployment. -/
 
-theorem certifyDecoded_sameExports {decoded : LinkedInput.DecodedDeployment}
-    {pair : CheckedProbePair decoded.before decoded.after}
+structure DecodedProviderInput (profile : HostProfile) (source providers files : Lean.Json)
+    (P : EsmSplit.Plan) where
+  deployment : LinkedInput.DecodedDeployment
+  decodedFromInput : LinkedInput.decodeSingleton source providers files P profile = .ok deployment
+
+structure DecodedProviderCertificate {profile : HostProfile} {source providers files : Lean.Json}
+    {P : EsmSplit.Plan} (input : DecodedProviderInput profile source providers files P) where
+  links : ProviderLinkCertificate input.deployment.before input.deployment.after
+
+/-- Certify the exact checked link pair for a successful decoding of the supplied
+source, providers, emitted files, authored plan, and profile. The checker does
+not decode or link again. -/
+def certifyDecoded {profile : HostProfile} {source providers files : Lean.Json} {P : EsmSplit.Plan}
+    (input : DecodedProviderInput profile source providers files P)
+    (pair : CheckedProbePair input.deployment.before input.deployment.after) (providerName : String)
+    (providerExport : Name) : Except String (DecodedProviderCertificate input) := do
+  return ⟨← certify input.deployment.before input.deployment.after pair providerName providerExport⟩
+
+theorem DecodedProviderCertificate.sameExports {profile : HostProfile} {source providers files : Lean.Json}
+    {P : EsmSplit.Plan} {input : DecodedProviderInput profile source providers files P}
+    (certificate : DecodedProviderCertificate input) :
+    SameExports input.deployment.before input.deployment.after :=
+  certificate.links.sameExports
+
+theorem certifyDecoded_sameExports {profile : HostProfile} {source providers files : Lean.Json}
+    {P : EsmSplit.Plan} {input : DecodedProviderInput profile source providers files P}
+    {pair : CheckedProbePair input.deployment.before input.deployment.after}
     {providerName : String} {providerExport : Name}
-    {certificate : ProviderLinkCertificate decoded.before decoded.after}
-    (_accepted : certifyDecoded decoded pair providerName providerExport = .ok certificate) :
-    SameExports decoded.before decoded.after :=
+    {certificate : DecodedProviderCertificate input}
+    (_accepted : certifyDecoded input pair providerName providerExport = .ok certificate) :
+    SameExports input.deployment.before input.deployment.after :=
   certificate.sameExports
 
 #print axioms ProviderLinkCertificate.before_aliases_resolve
 #print axioms ProviderLinkCertificate.after_aliases_resolve
+#print axioms DecodedProviderCertificate.sameExports
 #print axioms certifyDecoded_sameExports
 
 end CoreJS.StaticProviderLinking

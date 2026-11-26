@@ -373,6 +373,7 @@ lean_proof_test(
     required_theorems = [
         "CoreJS.StaticProviderLinking.ProviderLinkCertificate.before_aliases_resolve",
         "CoreJS.StaticProviderLinking.ProviderLinkCertificate.after_aliases_resolve",
+        "CoreJS.StaticProviderLinking.DecodedProviderCertificate.sameExports",
         "CoreJS.StaticProviderLinking.certifyDecoded_sameExports",
     ],
     deps = [":corejs_static_provider_linking"],
