@@ -38,6 +38,10 @@ private def checkGraph (j : Json) (specText sourceText : String) : IO Unit := do
     throw (IO.userError "actual source bundle fails executable/metadata footprints")
   unless (decide (checked.terminal.row.FootprintMatches (bundle.stmt checked.terminal.row.ordinal))) do
     throw (IO.userError "actual original export row fails bundle footprint matching")
+  unless (decide (MetadataCells.RowLocalsDefined statements bundle checked.terminal.row)) do
+    throw (IO.userError "actual export row has no executable source declaration")
+  unless (decide (ProjectedOrder.Kept statements plan)) do
+    throw (IO.userError "actual plan changes executable order")
   unless (decide (EsmSplit.Valid bundle spec plan)) do
     throw (IO.userError "actual authored plan fails validity")
   let some entry := plan.find plan.entry | throw (IO.userError "actual plan has no entry")

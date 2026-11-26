@@ -1707,6 +1707,8 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/TerminalConstructorInput.lean"],
     deps = [
         ":corejs_single_module",
+        ":corejs_terminal_footprints",
+        ":corejs_terminal_plan_family",
         ":corejs_terminal_source",
         ":named_declaration_split",
     ],
@@ -1722,6 +1724,7 @@ lean_proof_test(
         "CoreJS.TerminalConstructorInput.declarations_all_const",
         "CoreJS.TerminalConstructorInput.source_shape",
         "CoreJS.TerminalConstructorInput.source_links",
+        "CoreJS.TerminalConstructorInput.planned_family",
     ],
     deps = [":corejs_terminal_constructor_input"],
 )

@@ -1,6 +1,8 @@
 import EsmSplit.CoreJS.NamedDeclarationSplit
 import EsmSplit.CoreJS.TerminalSource
 import EsmSplit.CoreJS.SingleModule
+import EsmSplit.CoreJS.TerminalPlanFamily
+import EsmSplit.CoreJS.TerminalFootprints
 
 /-! Input-side facts for a terminal-export constructor. These checks do not
 construct or certify an output program. -/
@@ -75,10 +77,36 @@ theorem source_links {input : Program × List EsmSplit.LocalExportUnit} (checked
     checked.terminal.source.exports (checked.terminal.source.body.map Prod.snd) (all_const checked) w
   exact ⟨(source_shape checked).symm ▸ before⟩
 
+
+/-- Connect the checked original program to the existing family theorem on the
+actual full bundle and authored plan. This is not a placement certificate or
+an output constructor. -/
+theorem planned_family {input : Program × List EsmSplit.LocalExportUnit} (checked : Checked input)
+    (B : EsmSplit.Bundle) (S : EsmSplit.Spec) (entry : EsmSplit.Module)
+    (valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S))
+    (footprints : MetadataCells.Footprints (checked.terminal.source.body.map Prod.snd) B)
+    (ordered : ProjectedOrder.Kept (checked.terminal.source.body.map Prod.snd) (EsmSplit.mkPlan B S))
+    (found : (EsmSplit.mkPlan B S).find (EsmSplit.mkPlan B S).entry = some entry)
+    (units : entry.stmts = [checked.terminal.row.ordinal]) (glue : entry.exports = [])
+    (rowFootprint : checked.terminal.row.FootprintMatches (B.stmt checked.terminal.row.ordinal))
+    (sourceDefs : MetadataCells.RowLocalsDefined (checked.terminal.source.body.map Prod.snd) B checked.terminal.row) :
+    LinkedBehavior.SameExports input.1 (splitProgram (checked.terminal.source.body.map Prod.snd) B (EsmSplit.mkPlan B S)) ∧
+      ∀ w fuel, runProgram w fuel input.1 =
+        runProgram w fuel (splitProgram (checked.terminal.source.body.map Prod.snd) B (EsmSplit.mkPlan B S)) := by
+  have result := TerminalPlanFamily.family (all_const checked) valid footprints ordered
+    checked.terminal.source.name checked.terminal.row entry found units glue rowFootprint sourceDefs
+  have shape := source_shape checked
+  rw [checked.terminal.fullTable] at shape
+  change input.1 = TerminalPlanLink.source checked.terminal.source.name checked.terminal.row.names
+    (checked.terminal.source.body.map Prod.snd) at shape
+  rw [← shape] at result
+  exact result
+
 #print axioms declarations_all_const
 #print axioms check
 #print axioms all_const
 #print axioms source_shape
 #print axioms source_links
+#print axioms planned_family
 
 end CoreJS.TerminalConstructorInput
