@@ -5,7 +5,7 @@ import EsmSplit.LowerSplit.Diagnostic
 # Certify and publish a JavaScript deployment.
 
     lowersplit <deployment.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]
-    lowersplit --diagnostic <deployment.json> <outdir> [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
+    lowersplit --diagnostic <deployment.json> <outdir> [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--move-report <file>] [--force]
 
 The manifest names the entry and each original chunk, with a source file and an optional placement or spec.
 A singleton authored split accepts an annotated ESTree snapshot as its source.
@@ -18,8 +18,8 @@ The bundle may import from outside modules; those are loaded first, in their ord
 `--plan` writes the plan beside the modules, as JSON: `{"order": […], "modules": {name: [statement, …]}}` has the order
 in which the modules run (`Plan.evalOrder`) and the statements of each module, by their numbers in the bundle.
 With `--all-conflicts`, the plan includes every inverted structural conflict as an [earlier, later] pair.
-Lean lowers supported annotated ASTs directly to CoreJS. For bundles outside that subset,
-`--corejs` supplies the external lowering. The verdict reports which input it used.
+Diagnostic model verdicts lower the source AST directly to CoreJS. Unsupported source units
+produce no model verdict.
 `--move-report` writes diagnostic statement categories and up to 64 failing inverted pairs in original unit IDs.
 It does not certify a split: the verdict still requires all frontend and plan premises.
 -/
