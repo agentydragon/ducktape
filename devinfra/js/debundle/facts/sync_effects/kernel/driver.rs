@@ -1,9 +1,9 @@
 //! The one loop that runs a continuation to completion.
 
-use super::super::alternatives::{self, Family, Leaf};
-use super::super::local_operations::LocalBody;
+use super::alternatives::{self, Family, Leaf};
 use super::context::{ForkPolicy, KernelContext};
 use super::continuation::{LocalContinuation, LocalSuspension};
+use value_model::local_operations::LocalBody;
 
 /// Run `continuation` over `body`, performing each suspended call through the
 /// adapter. Syntax coverage comes from `LocalBody`'s canonical lowering; the
@@ -15,7 +15,7 @@ use super::continuation::{LocalContinuation, LocalSuspension};
 /// end of the body in its own path state, and the family is the caller's to
 /// join; whether a refused leaf refuses the family is the caller's
 /// `Family::all_completed` check.
-pub(crate) fn drive<C: KernelContext>(
+pub fn drive<C: KernelContext>(
     context: &mut C,
     body: &LocalBody,
     mut continuation: LocalContinuation,

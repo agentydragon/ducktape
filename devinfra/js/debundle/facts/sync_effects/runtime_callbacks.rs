@@ -1,8 +1,8 @@
 use super::interpreter::{Executor, Outcome};
-use super::value_model::{Context, Values};
 use analysis_vocabulary::execution_evidence::{ExecutionPrecisionLossReason, HavocReach};
 use source_identity::SourceUnitOrdinal;
 use swc_common::Span;
+use value_model::{Context, Values};
 
 pub(super) enum CallbackOperation {
     PromoteRaw {

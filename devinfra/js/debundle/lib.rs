@@ -25,9 +25,8 @@ pub mod reports;
 pub use facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryWriteWitness,
     CellOverlap, CellOverlapIndex, CellOverlapLaw, ChunkFactAnalysis, DataflowOpacityCause,
-    EffectCell, PositionBucketed, StatementEffectSummary, StatementFacts, StatementKind,
-    StructuralChunkAnalysis, StructuralStatementFacts, analyze_chunk_structural,
-    local_namespace_iife_target,
+    EffectCell, StatementEffectSummary, StatementFacts, StructuralChunkAnalysis,
+    StructuralStatementFacts, analyze_chunk_structural, local_namespace_iife_target,
 };
 pub use ids::{
     BindingCatalogue, BindingId, BindingKind, BindingScopeError, EntryDestination,

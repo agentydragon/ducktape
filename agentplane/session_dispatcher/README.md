@@ -15,6 +15,8 @@ Dispatcher automatic wake retains each row's attribution and applies `wakeOnSend
 configured service-broker grants, and the shared budget. Action-attributed rows use the Actions
 service's Dispatcher broker grant while keeping the effective Identity in attribution. Its
 Kubernetes Role reads workload and policy state and patches existing Sandboxes for automatic wake.
+Every Identity read goes through the required `policy_service` (a `WatchIdentities`-fed cache with
+read-through `GetIdentity`); the Dispatcher does not read Identity objects from the Kubernetes API.
 Delivery uses per-Session PostgreSQL leases. The Role cannot create or delete Sandboxes or read
 SandboxTemplates. The Controller owns `Sandbox.status`; its leader election and Runtime observation
 are independent of Dispatcher scheduling ownership. See the
@@ -49,7 +51,7 @@ Source lives under `agentplane/session_dispatcher/`: `cmd/` owns signal/log setu
   `AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL` Secret input. The independent
   `dispatcher_service_delegation` policy scopes each service actor to exact Dispatcher RPC
   methods. Environments owns its own roles and delegation settings.
-- `internal/sandboxinventory/`: informer-backed Sandbox reads and the uncached Identity reader that supply the Dispatcher contract.
+- `internal/sandboxinventory/`: informer-backed Sandbox reads, with Identity lookups through the PolicyService view, that supply the Dispatcher contract.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `internal/store/`: Session and dispatch persistence, leases, retention and notification reads.
 - `migrations/`: Goose migrations for the Dispatcher database.

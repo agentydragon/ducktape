@@ -10,6 +10,7 @@
 
 use super::value_flow::Values;
 use super::*;
+use analysis_domain::allocation_roots::{ArrayOriginCollector, array_candidate_roots_from_origins};
 use analysis_vocabulary::value::{Kind, Value};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -243,32 +244,6 @@ pub fn annotate_heap_contents(
         callables,
         checked_factory_arguments,
         native_read_uses,
-    }
-}
-
-pub(crate) fn array_candidate_roots(body: &[TopLevelItemView<'_>]) -> BTreeSet<Value> {
-    let mut origins = ArrayOriginCollector::default();
-    for item in body {
-        item.as_module_item().visit_with(&mut origins);
-    }
-    array_candidate_roots_from_origins(&origins.0)
-}
-
-fn array_candidate_roots_from_origins(origins: &BTreeSet<u32>) -> BTreeSet<Value> {
-    origins
-        .iter()
-        .copied()
-        .map(|site| Value::Alloc(Kind::Object, site))
-        .collect()
-}
-
-#[derive(Default)]
-struct ArrayOriginCollector(BTreeSet<u32>);
-
-impl Visit for ArrayOriginCollector {
-    fn visit_array_lit(&mut self, node: &ArrayLit) {
-        self.0.insert(node.span.lo.0);
-        node.visit_children_with(self);
     }
 }
 

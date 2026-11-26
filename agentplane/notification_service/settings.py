@@ -211,12 +211,8 @@ class Settings(BaseModel):
         default=8081, ge=1, le=65535, description="The HTTP listener's port, used only for the signed GitHub webhook."
     )
 
-    # CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
-    #   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
-    policy_service: PolicyServicePeer | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-        description="PolicyService, where every Identity reader learns the live Identities; unset, they read the namespace's Identity resources.",
+    policy_service: PolicyServicePeer = Field(
+        description="PolicyService, where every Identity reader learns the live Identities."
     )
 
     @model_validator(mode="after")

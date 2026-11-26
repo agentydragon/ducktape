@@ -18,10 +18,8 @@ const configFileEnv = "AGENTPLANE_ENVIRONMENTS_CONFIG_FILE"
 // which renders the Deployment's required settings file.
 type config struct {
 	EnvironmentService *serving.Config `mapstructure:"environment_service"`
-	// PolicyService, when set, supplies EnvironmentService's Identities through PolicyService.WatchIdentities instead
-	// of reading Identity resources. The reconciler keeps reading Identity resources either way.
-	// CLEANUP(added 2026-11-26): require it and drop EnvironmentService's Kubernetes Identity reads once the staging
-	//   manifests set it (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+	// PolicyService supplies EnvironmentService's Identities through PolicyService.WatchIdentities; required exactly
+	// when environment_service is set. The reconciler reads Identity resources directly.
 	PolicyService          *identitycache.Peer `mapstructure:"policy_service"`
 	RunnerGatewayTLS       *peertls.ClientTLS  `mapstructure:"runner_gateway_tls"`
 	RunnerSecurity         peertls.Security    `mapstructure:"runner_security"`
@@ -62,10 +60,10 @@ func (c config) validate() error {
 			return fmt.Errorf("environment_service: %w", err)
 		}
 	}
+	if (c.EnvironmentService == nil) != (c.PolicyService == nil) {
+		return errors.New("policy_service and environment_service must be set together")
+	}
 	if c.PolicyService != nil {
-		if c.EnvironmentService == nil {
-			return errors.New("policy_service requires environment_service, its only reader")
-		}
 		if err := c.PolicyService.Validate(peertls.SandboxControllerURI); err != nil {
 			return err
 		}

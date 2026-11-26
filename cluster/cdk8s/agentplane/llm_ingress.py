@@ -24,9 +24,9 @@ from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
 from agentplane.llm_ingress.settings import Settings
-from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, POLICY_CONTROLLER_URI, PolicyServicePeer
 from cluster.cdk8s import cilium, node_scheduling, public_web_pki
-from cluster.cdk8s.agentplane import central_sampler, workload_tls
+from cluster.cdk8s.agentplane import central_sampler, policy_controller, workload_tls
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -158,6 +158,10 @@ class LlmIngress(Construct):
         static_settings = Settings(
             allowed_service_account_namespaces=frozenset({env.namespace}),
             policy_namespace=env.namespace,
+            policy_service=PolicyServicePeer(
+                target=policy_controller.tls_service(env.namespace).authority,
+                tls=serving_tls.client_tls(POLICY_CONTROLLER_URI, client_uri=LLM_INGRESS_URI),
+            ),
             central_sampler_services=([CENTRAL_SAMPLER_URI] if env.central_sampler is not None else []),
             central_sampler_identity_callers=env.central_sampler is not None,
             log_llm_requests=env.llm_ingress.log_llm_requests,
@@ -203,6 +207,7 @@ class LlmIngress(Construct):
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
+                policy_controller.tls_service(self.env.namespace).egress(),
                 EgressRule.to_endpoints(
                     {
                         "k8s:io.kubernetes.pod.namespace": litellm.NAMESPACE,

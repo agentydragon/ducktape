@@ -701,7 +701,7 @@ impl FunctionCensus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::facts::top_level_item_views;
+    use analysis_domain::item_views::top_level_item_views;
 
     #[derive(Default)]
     struct MemberWriteValues(Vec<(String, Ident)>);

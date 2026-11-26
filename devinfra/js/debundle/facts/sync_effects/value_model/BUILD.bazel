@@ -1,0 +1,27 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "value_model",
+    srcs = glob(["*.rs"]),
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle/analysis_domain",
+        "//devinfra/js/debundle/analysis_vocabulary",
+        "//devinfra/js/debundle/inference",
+        "@crates//:imbl",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "value_model_test",
+    crate = ":value_model",
+    edition = "2024",
+)

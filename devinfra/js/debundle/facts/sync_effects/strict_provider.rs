@@ -3,12 +3,12 @@
 
 use super::adapters::provider::{ProviderContext, SealedProviderBody};
 use super::execution_index::ExecutionIndex;
-use super::value_model::{AbstractValue, ProviderInput, ProviderScopeId};
 use crate::foreign_call::DerivedForeignCall;
 use analysis_vocabulary::inputs::{ForeignInvocation, ForeignReturn};
 use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeSet;
 use swc_ecma_ast::Id;
+use value_model::{AbstractValue, ProviderInput, ProviderScopeId};
 
 fn retain_provider_values(
     context: &ProviderContext<'_>,
@@ -264,7 +264,7 @@ pub(super) fn derive_class(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::facts::item_views::top_level_item_views;
+    use analysis_domain::item_views::top_level_item_views;
     use swc_ecma_ast::{Decl, Expr, FnDecl, ModuleItem, Stmt};
     use swc_ecma_visit::{Visit, VisitWith};
 

@@ -207,6 +207,20 @@ const environmentServiceSettings = `environment_service:
     methods: [/agentplane.environments.v1.EnvironmentService/ResumeEnvironment]
 `
 
+func policyServiceBlock(target, clientURI, serverURI string) string {
+	return fmt.Sprintf(`policy_service:
+  target: %q
+  tls:
+    ca_file: /run/test/ca.crt
+    server_uri: %s
+    cert_file: /run/test/tls.crt
+    key_file: /run/test/tls.key
+    client_uri: %s
+`, target, serverURI, clientURI)
+}
+
+var policyServiceSettings = policyServiceBlock("policy-controller:8443", peertls.SandboxControllerURI, peertls.PolicyControllerURI)
+
 const environmentRuntimeProxySettings = `  runtime_proxy:
     runner_security:
       mode: insecure
@@ -218,7 +232,7 @@ func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
 	if err != nil || c.EnvironmentService != nil {
 		t.Fatalf("existing settings enabled EnvironmentService: %+v, %v", c.EnvironmentService, err)
 	}
-	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings+policyServiceSettings))
 	c, err = loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -228,12 +242,13 @@ func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
 		t.Fatalf("lost EnvironmentService peer roles: %+v", c.EnvironmentService)
 	}
 	for name, invalid := range map[string]string{
-		"incomplete":            "environment_service: {}\n",
-		"unknown nested key":    environmentServiceSettings + "  unknown: true\n",
-		"unknown listener key":  strings.Replace(environmentServiceSettings, "    listen_address:", "    misspelled_address:", 1),
-		"wrong service role":    strings.Replace(environmentServiceSettings, "[spiffe://agentplane/app]", "[spiffe://agentplane/test-unknown]", 1),
-		"foreign method":        strings.Replace(environmentServiceSettings, "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment", "/other.Service/Method", 1),
-		"connection provenance": strings.Replace(environmentServiceSettings, "      - spiffe_id: spiffe://agentplane/actions", "      - spiffe_id: spiffe://agentplane/actions\n        connection_provenance: true", 1),
+		"incomplete":            "environment_service: {}\n" + policyServiceSettings,
+		"no policy_service":     environmentServiceSettings,
+		"unknown nested key":    environmentServiceSettings + "  unknown: true\n" + policyServiceSettings,
+		"unknown listener key":  strings.Replace(environmentServiceSettings, "    listen_address:", "    misspelled_address:", 1) + policyServiceSettings,
+		"wrong service role":    strings.Replace(environmentServiceSettings, "[spiffe://agentplane/app]", "[spiffe://agentplane/test-unknown]", 1) + policyServiceSettings,
+		"foreign method":        strings.Replace(environmentServiceSettings, "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment", "/other.Service/Method", 1) + policyServiceSettings,
+		"connection provenance": strings.Replace(environmentServiceSettings, "      - spiffe_id: spiffe://agentplane/actions", "      - spiffe_id: spiffe://agentplane/actions\n        connection_provenance: true", 1) + policyServiceSettings,
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+invalid))
@@ -245,7 +260,7 @@ func TestEnvironmentServiceIsOptInAndStrict(t *testing.T) {
 }
 
 func TestEnvironmentRuntimeProxyIsOptionalAndStrict(t *testing.T) {
-	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings+policyServiceSettings))
 	c, err := loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -254,7 +269,7 @@ func TestEnvironmentRuntimeProxyIsOptionalAndStrict(t *testing.T) {
 		t.Fatalf("omitted runtime_proxy was populated: %+v", c.EnvironmentService.RuntimeProxy)
 	}
 
-	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings+environmentRuntimeProxySettings))
+	t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings+environmentRuntimeProxySettings+policyServiceSettings))
 	c, err = loadConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -277,7 +292,7 @@ func TestEnvironmentRuntimeProxyIsOptionalAndStrict(t *testing.T) {
 	}
 	for name, runtimeProxySettings := range invalid {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings+runtimeProxySettings))
+			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+environmentServiceSettings+runtimeProxySettings+policyServiceSettings))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("accepted invalid runtime_proxy settings")
 			}
@@ -286,30 +301,20 @@ func TestEnvironmentRuntimeProxyIsOptionalAndStrict(t *testing.T) {
 }
 
 func TestPolicyServiceMustBeACompleteMutualTLSCallerAsTheController(t *testing.T) {
-	block := func(target, clientURI, serverURI string) string {
-		return fmt.Sprintf(`policy_service:
-  target: %q
-  tls:
-    ca_file: /run/test/ca.crt
-    server_uri: %s
-    cert_file: /run/test/tls.crt
-    key_file: /run/test/tls.key
-    client_uri: %s
-`, target, serverURI, clientURI)
-	}
 	controller, policy := peertls.SandboxControllerURI, peertls.PolicyControllerURI
 	for _, tc := range []struct {
 		name     string
 		settings string
 		valid    bool
 	}{
-		{"complete", environmentServiceSettings + block("policy-controller:8443", controller, policy), true},
-		{"no EnvironmentService to read it", block("policy-controller:8443", controller, policy), false},
-		{"no target", environmentServiceSettings + block("", controller, policy), false},
-		{"another caller identity", environmentServiceSettings + block("policy-controller:8443", peertls.AppURI, policy), false},
-		{"another server", environmentServiceSettings + block("policy-controller:8443", controller, peertls.ActionsURI), false},
+		{"complete", environmentServiceSettings + policyServiceBlock("policy-controller:8443", controller, policy), true},
+		{"no EnvironmentService to read it", policyServiceBlock("policy-controller:8443", controller, policy), false},
+		{"EnvironmentService without it", environmentServiceSettings, false},
+		{"no target", environmentServiceSettings + policyServiceBlock("", controller, policy), false},
+		{"another caller identity", environmentServiceSettings + policyServiceBlock("policy-controller:8443", peertls.AppURI, policy), false},
+		{"another server", environmentServiceSettings + policyServiceBlock("policy-controller:8443", controller, peertls.ActionsURI), false},
 		{"no client SVID", environmentServiceSettings + "policy_service:\n  target: policy-controller:8443\n  tls:\n    ca_file: /run/test/ca.crt\n    server_uri: " + policy + "\n", false},
-		{"unknown key", environmentServiceSettings + block("policy-controller:8443", controller, policy) + "  unknown: true\n", false},
+		{"unknown key", environmentServiceSettings + policyServiceBlock("policy-controller:8443", controller, policy) + "  unknown: true\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(configFileEnv, configtest.WriteSettings(t, validSettings+tc.settings))

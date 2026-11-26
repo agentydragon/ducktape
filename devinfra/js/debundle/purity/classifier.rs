@@ -1,4 +1,5 @@
 use super::*;
+use analysis_domain::ts_enum_iife::is_ts_enum_iife_init_for_binding;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::effect::{CoerceCheck, CoerceOperand, CoerceOperands};
 

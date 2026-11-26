@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::*;
 use analysis::*;
+use analysis_domain::item_views::StatementKind;
 use analysis_model::DepKind;
 use analysis_vocabulary::inputs::AnalysisInputs;
 use graph::*;

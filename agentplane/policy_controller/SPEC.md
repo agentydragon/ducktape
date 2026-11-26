@@ -86,6 +86,19 @@ Identity owner UID as well as the caller UID, so this remains true before garbag
 and when another owner retains the binding. A declarative binding without an Identity owner
 continues to follow its subject name.
 
+Both creates take an optional `idempotency_key` of 1 to 200 characters of UTF-8 (AIP-155). Without
+one, behavior is as above. With one, an identical retry answers with the original result: the same
+Identity incarnation, or the same binding. The key reused for a different request is
+`ALREADY_EXISTS`, as is a key whose object is being deleted, which is never adopted. A
+CreateIdentity key is scoped by the Identity name; an Identity of that name the key did not create
+is `ALREADY_EXISTS` too. A grant key is scoped by the Identity incarnation: its binding is named
+after the Identity with a suffix derived from the Identity UID and the key, so a retry meets the
+first call's binding and never creates a second. While Identities and PolicyBindings are custom
+resources, the created object records the key and a SHA-256 digest of the rest of the request in
+the `agentplane.allegedly.works/{idempotency-key,request-digest}` annotations, which PolicyService
+owns; a retry that meets an existing object compares them. If this record moves into a database,
+the key becomes a unique key there.
+
 `PolicyService.DeleteIdentity`, behind the same writer allowlist, deletes one Identity by name and
 observed UID with UID and resourceVersion preconditions; garbage collection then removes what the
 Identity owns. It refuses an Identity carrying Flux's `kustomize.toolkit.fluxcd.io/name` label,
@@ -203,10 +216,11 @@ not exist. It is checked once the subject resolves and holds even when applying 
 
 `PolicyService` serves the policy namespace on every controller replica. `WatchPolicyBindings`
 observes bindings for one ServiceAccount, one Identity name, or every Identity subject;
-`WatchPolicySets` observes PolicySets; `WatchIdentities` observes Identities; and
+`WatchPolicySets` observes PolicySets; `WatchIdentities` observes Identities; `GetIdentity` reads
+one Identity from the API server, for a reader whose view has not yet seen it; and
 `ListPolicySetNames` returns one sorted snapshot of the PolicySet names visible to the caller. A
 configured reader service may select any explicit ServiceAccount or Identity subject, see every
-set and watch Identities. A binding watch requires a selector: the service has no implicit account.
+set and watch or get Identities. A binding watch requires a selector: the service has no implicit account.
 The server revalidates the service certificate at admission, before each stream frame, and while
 idle; an expired or refused certificate ends the stream.
 

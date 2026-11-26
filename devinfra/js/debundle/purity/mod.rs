@@ -17,8 +17,6 @@
 //!   types and the load-bearing-hint detectors.
 //! - `fluent` — the closure of author-trusted fluent roots over chunk-top
 //!   `const` chains.
-//! - `ts_enum_iife` — the TypeScript-emit enum IIFE as a pre-purity
-//!   admission shape (heap `PlainData` and the initializer's own purity).
 //! - `classifier` — `classify_expr_purity` and its expression /
 //!   member / call / `new` / fluent-chain / property recursion,
 //!   `classify_var_decl_purity`, `classify_class_static_purity`, and the
@@ -35,9 +33,9 @@ pub(crate) use swc_common::{Span, Spanned};
 pub(crate) use swc_ecma_ast::*;
 pub(crate) use swc_ecma_visit::{Visit, VisitWith};
 
-pub(crate) use crate::facts::TopLevelItemView;
-pub(crate) use crate::facts::abstract_domain::builtins::{self, Invocation};
-pub(crate) use crate::facts::abstract_domain::primitive::evaluate;
+pub(crate) use analysis_domain::builtins::{self, Invocation};
+pub(crate) use analysis_domain::item_views::TopLevelItemView;
+pub(crate) use analysis_domain::primitive::evaluate;
 pub(crate) use analysis_vocabulary::effect::{
     CoerceSite, Effect, HavocCause, InvokeSite, binary_throws,
 };
@@ -53,7 +51,6 @@ mod native_rows;
 mod order_dependent_reads;
 pub mod redundant_hints;
 pub mod saved;
-mod ts_enum_iife;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
@@ -66,7 +63,6 @@ pub use fresh_record::FreshRecordDestructuringContext;
 pub(crate) use fresh_record::*;
 pub(crate) use native_rows::*;
 pub(crate) use order_dependent_reads::*;
-pub(crate) use ts_enum_iife::*;
 
 // Public API: importable at `purity::<item>`.
 pub use code_graph::{ChunkCodeGraph, PurityCallContext, PurityShapeInputs};

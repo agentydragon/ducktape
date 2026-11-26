@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use analysis::StatementKind;
+use analysis_domain::item_views::StatementKind;
 use anonymous_resolution::resolve_source_file;
 use anyhow::{Context, Result, anyhow, bail};
 use graph::{DependencyGraphReport, ModuleDestinationKind};

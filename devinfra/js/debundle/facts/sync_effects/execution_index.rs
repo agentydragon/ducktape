@@ -23,23 +23,9 @@ use property_keys::{
     property_key_evidence,
 };
 
-use super::callable_body_facts::CallableBodyFacts;
-use super::local_operations::{DeferredCallableCreation, LocalBinding, LocalBody};
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::strict_provider;
-use super::value_model::{
-    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, DiscardedHeritageCall,
-    FromEntriesMappedProof, LexicalClassHeritage, MemberKey, NamespaceValueFacts,
-    OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, infer_namespace_aliases,
-    object_data_property_name, static_prop, static_property_name,
-};
-use analysis::facts::abstract_domain::builtins::{
-    self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
-};
-use analysis::facts::abstract_domain::integrity::{
-    IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
-};
 use analysis::facts::at_init_fallback::{
     is_no_sync_callback_member_call, member_row_invokes_no_argument,
 };
@@ -48,8 +34,6 @@ use analysis::facts::callable_inference::{
 };
 use analysis::facts::collector::UnresolvedCallSourceCollector;
 use analysis::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
-use analysis::facts::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
-use analysis::facts::lazy_boundary::visit_eager_member_parts;
 use analysis::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
 use analysis::facts::semantic_inference::{
     DescriptorCopyCallCandidate as SemanticDescriptorCopyCallCandidate, NativeBindingContext,
@@ -64,6 +48,10 @@ use analysis::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes,
     OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
 };
+use analysis_domain::builtins::{self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row};
+use analysis_domain::integrity::{IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites};
+use analysis_domain::item_views::{TopLevelItemView, collect_declared_names, var_decl_of_item};
+use analysis_domain::lazy_boundary::visit_eager_member_parts;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::execution_evidence::SourceLocator;
 use analysis_vocabulary::inputs::{
@@ -79,6 +67,8 @@ use analysis_vocabulary::report_schema::{
 };
 use analysis_vocabulary::value::{Kind, Value};
 use inference::{FactContext, IterativeInference, IterativeRules};
+use kernel::closure::CaptureCensus;
+use kernel::context::IndexReads;
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
 use std::cell::RefCell;
@@ -88,6 +78,15 @@ use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
+use value_model::callable_body_facts::CallableBodyFacts;
+use value_model::local_operations::{DeferredCallableCreation, LocalBinding, LocalBody};
+use value_model::{
+    ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, DiscardedHeritageCall,
+    FromEntriesMappedProof, LexicalClassHeritage, LiteralPropertyKind, MemberKey,
+    NamespaceValueFacts, OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr,
+    infer_namespace_aliases, object_data_property_name, static_prop, static_property_name,
+};
+use world::allocation_transfer::LiteralLayout;
 
 fn map_entry_array_span(new_expr: &NewExpr) -> Option<u32> {
     if !matches!(new_expr.callee.unwrap_parens(), Expr::Ident(ident) if ident.sym == "Map") {
@@ -4615,7 +4614,7 @@ pub(super) struct ExecutionIndex {
     pub(super) map_entry_arrays: BTreeSet<u32>,
     pub(super) dense_array_literals: BTreeMap<u32, usize>,
     pub(super) array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
-    literal_property_kinds: BTreeMap<u32, Vec<super::value_model::LiteralPropertyKind>>,
+    literal_property_kinds: BTreeMap<u32, Vec<LiteralPropertyKind>>,
     callable_creations: BTreeMap<u32, DeferredCallableCreation>,
     pub(super) method_record_members: BTreeMap<u32, Vec<crate::foreign_call::RecordMember>>,
     pub(super) array_iterations: BTreeMap<CallSite, ArrayIteration>,
@@ -4922,42 +4921,6 @@ impl ExecutionIndex {
         self.own_descriptor_shapes.get(&allocation)
     }
 
-    pub(super) fn literal_property_kind(
-        &self,
-        allocation: u32,
-        position: usize,
-    ) -> super::value_model::LiteralPropertyKind {
-        self.literal_property_kinds
-            .get(&allocation)
-            .and_then(|kinds| kinds.get(position))
-            .cloned()
-            .unwrap_or(super::value_model::LiteralPropertyKind::Opaque)
-    }
-
-    pub(super) fn callable_creation(&self, callable: u32) -> Option<DeferredCallableCreation> {
-        self.callable_creations.get(&callable).copied()
-    }
-
-    pub(super) fn callable_home_object(&self, callable: u32) -> Option<u32> {
-        self.callable_creations
-            .get(&callable)
-            .and_then(|creation| creation.home_object())
-    }
-
-    pub(super) fn allocation_layout(
-        &self,
-        allocation: u32,
-    ) -> super::allocation_transfer::LiteralLayout {
-        use super::allocation_transfer::LiteralLayout;
-        if self.exact_object_spread_copies.contains(&allocation) {
-            return LiteralLayout::Unsupported;
-        }
-        if let Some(elements) = self.array_elements.get(&allocation) {
-            return LiteralLayout::Array(elements.clone());
-        }
-        LiteralLayout::Record
-    }
-
     /// Simple top-level declared bindings every write of which stores a fresh
     /// value (`fresh_value`); every write is modeled because the modeled
     /// writes number as many as the binding's recorded writes. Before the
@@ -5044,6 +5007,63 @@ impl ExecutionIndex {
             fresh_collections: names.fresh_collections,
             no_accessor_install_callables: names.no_accessor_install_callables.clone(),
         }
+    }
+}
+
+impl IndexReads for ExecutionIndex {
+    fn callable_creation(&self, callable: u32) -> Option<DeferredCallableCreation> {
+        self.callable_creations.get(&callable).copied()
+    }
+
+    fn capture_census(&self, callable: u32) -> Option<CaptureCensus<'_>> {
+        let body = self.callables.get(&callable)?;
+        // This canonical census also contains nested closures' references. An
+        // intermediate closure must retain cells needed by its children.
+        let reads = self
+            .prototype_callable_reads
+            .get(&callable)
+            .unwrap_or(&body.reads);
+        // A nested closure's write needs the cell as much as a read does.
+        let writes = self.nested_callable_writes.get(&callable);
+        let free = reads
+            .iter()
+            .chain(&body.rebinds)
+            .chain(writes.into_iter().flatten())
+            .filter(|id| {
+                !body.declared_locals.contains(*id)
+                    && !body.local_functions.contains_key(*id)
+                    && !body
+                        .params
+                        .iter()
+                        .any(|parameter| parameter.binding.as_ref() == Some(*id))
+            })
+            .map(|id| (id, body.reads.contains(id) || body.rebinds.contains(id)))
+            .collect();
+        Some(CaptureCensus {
+            home_object: self
+                .callable_creations
+                .get(&callable)
+                .and_then(|creation| creation.home_object()),
+            free,
+        })
+    }
+
+    fn allocation_layout(&self, allocation: u32) -> LiteralLayout {
+        if self.exact_object_spread_copies.contains(&allocation) {
+            return LiteralLayout::Unsupported;
+        }
+        if let Some(elements) = self.array_elements.get(&allocation) {
+            return LiteralLayout::Array(elements.clone());
+        }
+        LiteralLayout::Record
+    }
+
+    fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind {
+        self.literal_property_kinds
+            .get(&allocation)
+            .and_then(|kinds| kinds.get(position))
+            .cloned()
+            .unwrap_or(LiteralPropertyKind::Opaque)
     }
 }
 
@@ -7360,7 +7380,6 @@ impl Visit for ExecutionIndex {
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);
         }
-        use super::value_model::LiteralPropertyKind;
         let mut definition_kinds = Vec::new();
         let mut record_members = Some(Vec::new());
         let mut member_names = BTreeSet::new();
@@ -10242,7 +10261,7 @@ pub fn infer_callable_capabilities<'f>(
         let flow = prepared_flow
             .take()
             .unwrap_or_else(|| ChunkValueFlow::analyze(body));
-        let shadowed = analysis::facts::compute_shadowed_globals(body);
+        let shadowed = analysis_domain::item_views::compute_shadowed_globals(body);
         let callables = callable_inference_inputs(&index, &flow, &exported_locals);
         index.semantic_facts = Some(index.prepare_semantic_facts(
             &flow,
@@ -10286,7 +10305,7 @@ pub fn infer_callable_capabilities<'f>(
                     index
                         .integrity
                         .require(&[IntrinsicSlot::Global(family)], None),
-                    analysis::facts::abstract_domain::integrity::Integrity::Intact(_)
+                    analysis_domain::integrity::Integrity::Intact(_)
                 )
             },
             |call| call.permits_foreign_summary() || call.callback_factory,
@@ -10304,7 +10323,7 @@ pub fn infer_callable_capabilities<'f>(
             index
                 .integrity
                 .require(&[IntrinsicSlot::Global(*family)], None),
-            analysis::facts::abstract_domain::integrity::Integrity::Intact(_)
+            analysis_domain::integrity::Integrity::Intact(_)
         )
     })
     .collect();
@@ -10332,7 +10351,7 @@ fn infer_foreign_calls<'f>(
         Some(flow) => flow,
         None => structural_flow(),
     };
-    let shadowed = analysis::facts::compute_shadowed_globals(body);
+    let shadowed = analysis_domain::item_views::compute_shadowed_globals(body);
     let candidates: Vec<_> = flow
         .callable_declarations()
         .filter(|(binding, _)| exported_locals.contains(binding.0.as_ref()))
@@ -10613,7 +10632,7 @@ mod preflow_set_protocol_tests {
         families: &BTreeSet<NativeIntrinsic>,
     ) -> BTreeMap<u32, InferredSetConstruction> {
         let module = parse(source);
-        let views = analysis::facts::top_level_item_views(&module.body);
+        let views = analysis_domain::item_views::top_level_item_views(&module.body);
         let prepared = prepare_callable_capabilities(
             &views,
             BTreeSet::new(),

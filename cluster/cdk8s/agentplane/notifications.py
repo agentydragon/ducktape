@@ -23,7 +23,9 @@ from agentplane.net.peertls.config import (
     APP_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
+    PolicyServicePeer,
 )
 from agentplane.notification_service.settings import (
     ActionsSettings,
@@ -33,7 +35,7 @@ from agentplane.notification_service.settings import (
     Settings,
 )
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database, workload_tls
+from cluster.cdk8s.agentplane import database, policy_controller, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -142,6 +144,10 @@ class Notifications(Construct):
                 target=dispatcher.authority,
                 tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=NOTIFICATIONS_URI),
             ),
+            policy_service=PolicyServicePeer(
+                target=policy_controller.tls_service(env.namespace).authority,
+                tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=NOTIFICATIONS_URI),
+            ),
             github=GitHubSettings(app_id=github.app_id) if github is not None else None,
             http_port=http.pod_port,
             rpc=serving_tls.spiffe_listener(endpoint.pod_port),
@@ -206,6 +212,7 @@ class Notifications(Construct):
                 self.actions.egress(),
                 self.history.egress(),
                 self.dispatcher.egress(),
+                policy_controller.tls_service(env.namespace).egress(),
                 database.egress(env.namespace),
             ],
         )

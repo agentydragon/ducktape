@@ -1,5 +1,7 @@
 import EsmSplit.CoreJS.CheckedSplit
+import EsmSplit.CoreJS.LinkedPivotCertificate
 import EsmSplit.CoreJS.ResolvedPlacement
+import EsmSplit.CoreJS.LinkWorld
 
 /-! A model-only sparse constructor. The existing checked splitter supplies
 its compact plan and module bodies; the result is checked again against the

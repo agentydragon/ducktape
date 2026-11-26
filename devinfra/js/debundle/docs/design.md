@@ -921,7 +921,7 @@ globalThis`) marks the bindings it flows into (transitively,
   effect. The shared local-class proof supplies accepted field shapes and stable
   construction sites; the canonical native index validates every native field's
   identity/integrity premise, and the keyed-collection rows of the builtin
-  table (`facts/abstract_domain/builtins.rs`, `allocates`) separately supply
+  table (`analysis_domain/builtins.rs`, `allocates`) separately supply
   the fresh-allocation heap capability for zero-argument collection
   construction.
   This is not derived from purity or synchronous-call completeness.
@@ -1521,7 +1521,7 @@ truncated roots are expanded once per source statement
 without adding them to the persistent escaped-callback cache. Incomplete
 reachability retains whole-body fallback.
 
-**Builtin member rows.** `MEMBER_ROWS` in `facts/abstract_domain/builtins.rs`
+**Builtin member rows.** `MEMBER_ROWS` in `analysis_domain/builtins.rs`
 summarizes host methods selected by property name on any receiver. A call
 `x.addEventListener("type", listener)` with a string-literal type and no spread
 selects the `addEventListener` row, which invokes no argument at call time: the
@@ -3409,14 +3409,14 @@ this remains separate from the prepared/completed publication boundary.
 
 `facts/sync_effects/` is laid out by role:
 
-| Module          | Owns                                                                                                                                                                                   |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kernel/`       | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ.               |
-| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                                            |
-| `alternatives/` | `Family`, the leaves of a forked body, and the join of their path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                                  |
-| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary.     |
-| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer; root `x.p = v` and `x = v` statements as kernel attempts. |
-| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                    |
+| Module          | Owns                                                                                                                                                                                                                                                                                                  |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kernel/`       | Crate. The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ; `Family`, the leaves of a forked body (`alternatives`). Reads the execution index only through `context::IndexReads`. |
+| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                                                                                                                                                           |
+| `alternatives/` | The join of a family's path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                                                                                                                                                                                       |
+| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary.                                                                                                                    |
+| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer; root `x.p = v` and `x = v` statements as kernel attempts.                                                                                                                |
+| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                                                                                                                                   |
 
 **Adapters implement only five narrow traits** (`kernel/context.rs`):
 `BindingContext`, `CallContext`, `HeapContext`, `NativeContext` and
@@ -4004,7 +4004,7 @@ exploration before crossing the relevant phase.
    added.
 2. **Lazy-position completeness.** `reads_at_init` is implemented
    as a visitor that descends into eager positions and stops at
-   lazy positions (<../facts/lazy_boundary.rs>). Function, arrow, method,
+   lazy positions (<../analysis_domain/lazy_boundary.rs>). Function, arrow, method,
    getter/setter and constructor bodies and instance class-field initializers
    are lazy; `extends` clauses, decorator expressions, computed member keys,
    static fields and static blocks are eager. Open: an exhaustive table of unit
@@ -4054,8 +4054,10 @@ contract is in <../SPEC.md>
   [selector resolver](../selectors/resolution/).
 - [`facts/analyze.rs`](../facts/analyze.rs) analyzes `StatementFacts`.
   [`facts/sync_effects/execution_index.rs`](../facts/sync_effects/execution_index.rs)
-  collects synchronous execution facts with the adjacent value model and
-  interpreter. [`facts/abstract_domain/builtins.rs`](../facts/abstract_domain/builtins.rs)
+  collects synchronous execution facts with the adjacent interpreter. The
+  value model ([`value_model/`](../facts/sync_effects/value_model/)) and the
+  world with its transfers ([`world/`](../facts/sync_effects/world/)) are
+  crates below it. [`analysis_domain/builtins.rs`](../analysis_domain/builtins.rs)
   models native operations.
 - [`graph/`](../graph/) (its own crate above `analysis`) builds dependency
   graphs, module quotients and their wire reports.

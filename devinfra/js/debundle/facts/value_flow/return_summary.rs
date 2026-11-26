@@ -238,7 +238,7 @@ mod finite_tests {
                 panic!("first function fixture");
             };
             let function = function.function.span.lo.0;
-            let views = crate::facts::top_level_item_views(&module.body);
+            let views = analysis_domain::item_views::top_level_item_views(&module.body);
             let program = super::super::FlowProgram::collect(&views, &BTreeSet::new());
             program.return_summaries.get(&function).copied()
         })

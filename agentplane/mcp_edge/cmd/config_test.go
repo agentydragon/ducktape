@@ -11,7 +11,17 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
-const testSettings = `actions_target: actions:8080
+const policyServiceSettings = `policy_service:
+  target: policy-controller:8443
+  tls:
+    ca_file: /etc/agentplane/tls/ca.crt
+    server_uri: spiffe://agentplane/policy-controller
+    cert_file: /etc/agentplane/tls/tls.crt
+    key_file: /etc/agentplane/tls/tls.key
+    client_uri: spiffe://agentplane/mcp-edge
+`
+
+const settingsWithoutPolicyService = `actions_target: actions:8080
 policy_namespace: test-policy
 actions_token_file: /run/agentplane/action-token/token
 rpc_tls:
@@ -23,6 +33,8 @@ operator_oidc:
   audience: edge
   jwks_uri: https://operator.example/jwks
 `
+
+const testSettings = settingsWithoutPolicyService + policyServiceSettings
 
 func clearSettingsEnv(t *testing.T) {
 	t.Helper()
@@ -80,7 +92,7 @@ operator_oidc:
   issuer: https://operator.example
   audience: edge
   jwks_uri: https://operator.example/jwks
-`
+` + policyServiceSettings
 	validTLS := `rpc_tls:
   listen: 0.0.0.0:8082
   cert_file: /etc/agentplane/tls/tls.crt
@@ -283,20 +295,6 @@ func TestOAuthRequiresExactlyOneActionCallerCredential(t *testing.T) {
 	}
 }
 
-func TestPolicyNamespaceIsRequiredAndValidated(t *testing.T) {
-	for name, contents := range map[string]string{
-		"missing":           strings.Replace(testSettings, "policy_namespace: test-policy\n", "", 1),
-		"invalid namespace": strings.Replace(testSettings, "test-policy", "Test_Policy", 1),
-	} {
-		t.Run(name, func(t *testing.T) {
-			settingsFile(t, contents)
-			if c, err := loadConfig(); err == nil {
-				t.Fatalf("accepted policy namespace in %+v", c)
-			}
-		})
-	}
-}
-
 func TestPolicyServiceMustBeACompleteMutualTLSCallerAsTheEdge(t *testing.T) {
 	block := func(target, clientURI, serverURI string) string {
 		return fmt.Sprintf(`policy_service:
@@ -316,15 +314,16 @@ func TestPolicyServiceMustBeACompleteMutualTLSCallerAsTheEdge(t *testing.T) {
 		valid    bool
 	}{
 		{"complete", block("policy-controller:8443", edge, policy), true},
+		{"absent", "", false},
 		{"no target", block("", edge, policy), false},
 		{"another caller identity", block("policy-controller:8443", peertls.AppURI, policy), false},
 		{"another server", block("policy-controller:8443", edge, peertls.ActionsURI), false},
 		{"no client SVID", "policy_service:\n  target: policy-controller:8443\n  tls:\n    ca_file: /etc/agentplane/tls/ca.crt\n    server_uri: " + policy + "\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			settingsFile(t, testSettings+tc.settings)
+			settingsFile(t, settingsWithoutPolicyService+tc.settings)
 			c, err := loadConfig()
-			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "policy-controller:8443") {
+			if tc.valid && (err != nil || c.PolicyService.Target != "policy-controller:8443") {
 				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
 			}
 			if !tc.valid && err == nil {

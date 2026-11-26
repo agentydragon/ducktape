@@ -7,6 +7,7 @@ from collections.abc import Iterator, Mapping
 from pathlib import PurePosixPath
 from typing import Any
 
+import pytest
 import pytest_bazel
 import yaml
 from cdk8s import App
@@ -184,11 +185,27 @@ def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(stagi
     ]
 
 
-def test_mcp_edge_reaches_policy_service_as_itself(staging_manifests: list[Body]) -> None:
-    _, mounts = _service_container(staging_manifests, "mcp-edge")
-    peer = config_map_yaml(staging_manifests, "mcp-edge-settings", "settings.yaml")["policy_service"]
-    _assert_mounted_tls(staging_manifests, mounts, peer["tls"], MCP_EDGE_URI)
-    assert peer["tls"]["client_uri"] == MCP_EDGE_URI
+@pytest.mark.parametrize(
+    ("deployment", "settings_map", "settings_key", "client_uri"),
+    [
+        ("mcp-edge", "mcp-edge-settings", "settings.yaml", MCP_EDGE_URI),
+        ("history-service", "history-service-config", "config.yaml", HISTORY_SERVICE_URI),
+        ("llm-ingress", "llm-ingress-settings", "settings.yaml", LLM_INGRESS_URI),
+        ("notifications", "notifications-settings", "settings.yaml", NOTIFICATIONS_URI),
+        (egress.NAME, "egress-go-settings", "settings.yaml", EGRESS_PROXY_URI),
+        ("actions", "actions-settings", "settings.yaml", ACTIONS_URI),
+        # The Session Dispatcher calls out only as the gateway Sessions SVID.
+        (runner_gateway.NAME, "sessions-settings", "settings.yaml", GATEWAY_SESSIONS_URI),
+        ("environments", "environments-settings", "config.yaml", SANDBOX_CONTROLLER_URI),
+    ],
+)
+def test_service_reaches_policy_service_as_itself(
+    staging_manifests: list[Body], deployment: str, settings_map: str, settings_key: str, client_uri: str
+) -> None:
+    _, mounts = _service_container(staging_manifests, deployment)
+    peer = config_map_yaml(staging_manifests, settings_map, settings_key)["policy_service"]
+    _assert_mounted_tls(staging_manifests, mounts, peer["tls"], client_uri)
+    assert peer["tls"]["client_uri"] == client_uri
     assert peer["tls"]["server_uri"] == POLICY_CONTROLLER_URI
     host, port = peer["target"].rsplit(":", 1)
     service = find_resource(staging_manifests, "Service", "policy-controller")
@@ -196,12 +213,12 @@ def test_mcp_edge_reaches_policy_service_as_itself(staging_manifests: list[Body]
     tls_port = one(p for p in service["spec"]["ports"] if p["port"] == int(port))
     assert tls_port["name"] == "grpc-tls"
     policy = config_map_yaml(staging_manifests, "policy-controller-settings", "config.yaml")
-    assert MCP_EDGE_URI in policy["reader_services"]
-    egress = find_resource(staging_manifests, "CiliumNetworkPolicy", "mcp-edge")["spec"]["egress"]
+    assert client_uri in policy["reader_services"]
+    outbound = find_resource(staging_manifests, "CiliumNetworkPolicy", deployment)["spec"]["egress"]
     assert any(
         rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("app.kubernetes.io/name") == "policy-controller"
         and {"port": str(tls_port["targetPort"]), "protocol": "TCP"} in rule["toPorts"][0]["ports"]
-        for rule in egress
+        for rule in outbound
     )
 
 
@@ -209,7 +226,17 @@ def test_policy_service_exposes_its_tls_listener_to_the_app(staging_manifests: l
     container, mounts = _service_container(staging_manifests, "policy-controller")
     settings = config_map_yaml(staging_manifests, "policy-controller-settings", "config.yaml")
     tls = settings["grpc_tls"]
-    assert set(settings["reader_services"]) == {APP_URI, MCP_EDGE_URI}
+    assert set(settings["reader_services"]) == {
+        ACTIONS_URI,
+        APP_URI,
+        EGRESS_PROXY_URI,
+        GATEWAY_SESSIONS_URI,
+        HISTORY_SERVICE_URI,
+        LLM_INGRESS_URI,
+        MCP_EDGE_URI,
+        NOTIFICATIONS_URI,
+        SANDBOX_CONTROLLER_URI,
+    }
     assert settings["writer_services"] == [APP_URI]
     _assert_mounted_tls(staging_manifests, mounts, tls, POLICY_CONTROLLER_URI, ca_field="client_ca_file")
 
