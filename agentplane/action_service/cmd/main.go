@@ -52,6 +52,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
@@ -319,34 +321,47 @@ func webPush(c config, d deps, db *sql.DB, requests *store.Store) (*push.Identit
 	return identity, notifier, err
 }
 
+// identitySources are the one source every Identity reader of this service uses.
+type identitySources struct {
+	uids   auth.IdentityUIDReader
+	policy reader.IdentitySource
+}
+
+// startIdentities follows Identities through PolicyService when policy_service is set, else reads them from the API
+// server; stop ends the PolicyService view.
+func startIdentities(ctx context.Context, c config, d deps) (identitySources, func(), error) {
+	if c.PolicyService == nil {
+		uids, err := auth.NewKubernetesIdentityUIDs(d.Kube, c.PolicyNamespace)
+		if err != nil {
+			return identitySources{}, nil, fmt.Errorf("configure Identity checks: %w", err)
+		}
+		return identitySources{uids: uids, policy: reader.KubernetesIdentities{}}, func() {}, nil
+	}
+	cache, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
+	if err != nil {
+		return identitySources{}, nil, fmt.Errorf("start the PolicyService Identity view: %w", err)
+	}
+	return identitySources{uids: cache, policy: reader.CachedIdentities{View: cache}}, stop, nil
+}
+
 // gate admits workload Identities and exact service SVIDs, with separately verified operator OIDC.
-func gate(c config, d deps, callers grpcgate.Callers) (*grpcgate.Gate, error) {
+func gate(c config, d deps, callers grpcgate.Callers, identities auth.IdentityUIDReader) (*grpcgate.Gate, error) {
 	var err error
 	options := grpcgate.Options{ErrorMapper: rpc.Failure, Callers: callers, ServiceReaders: c.ServiceReaders, OperatorServices: c.OperatorServices}
-	if c.ConnectionDelegationService != "" || c.SessionDelegationService != "" {
-		identities, err := auth.NewKubernetesIdentityUIDs(d.Kube, c.PolicyNamespace)
+	if c.ConnectionDelegationService != "" {
+		options.ConnectionDelegation, err = actionConnectionDelegation(c.ConnectionDelegationService, identities)
 		if err != nil {
-			return nil, fmt.Errorf("configure delegated Identity checks: %w", err)
+			return nil, fmt.Errorf("configure MCP Connection delegation: %w", err)
 		}
-		if c.ConnectionDelegationService != "" {
-			options.ConnectionDelegation, err = actionConnectionDelegation(c.ConnectionDelegationService, identities)
-			if err != nil {
-				return nil, fmt.Errorf("configure MCP Connection delegation: %w", err)
-			}
-		}
-		if c.SessionDelegationService != "" {
-			options.SessionDelegation, err = actionSessionDelegation(identities)
-			if err != nil {
-				return nil, fmt.Errorf("configure Central Sampler Session delegation: %w", err)
-			}
+	}
+	if c.SessionDelegationService != "" {
+		options.SessionDelegation, err = actionSessionDelegation(identities)
+		if err != nil {
+			return nil, fmt.Errorf("configure Central Sampler Session delegation: %w", err)
 		}
 	}
 	if c.RPC.HasSPIFFE() {
-		callerIdentities, err := auth.NewKubernetesIdentityUIDs(d.Kube, c.PolicyNamespace)
-		if err != nil {
-			return nil, err
-		}
-		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces, callerIdentities)
+		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces, identities)
 		if err != nil {
 			return nil, err
 		}
@@ -417,8 +432,13 @@ func actionSessionDelegation(identities auth.IdentityUIDReader) (auth.Methods, e
 // the MCP groups, the refreshes and Web Push delivery drain from then on, beside the listener's shutdown, and serve
 // returns once they have and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
+	identities, stopIdentities, err := startIdentities(ctx, c, d)
+	if err != nil {
+		return err
+	}
+	defer stopIdentities()
 	policy := informer.NewIndex()
-	admission, err := gate(c, d, policy)
+	admission, err := gate(c, d, policy, identities.uids)
 	if err != nil {
 		return err
 	}
@@ -561,7 +581,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		return err
 	}
 
-	policyInformer, err := informer.New(d.Kube, policy, c.PolicyNamespace)
+	policyInformer, err := informer.New(d.Kube, policy, c.PolicyNamespace, identities.policy)
 	if err != nil {
 		return err
 	}

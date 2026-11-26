@@ -19,6 +19,7 @@ from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     SANDBOX_CONTROLLER_URI,
     ClientTLS,
+    PolicyServicePeer,
     ServiceSPIFFEID,
 )
 
@@ -91,6 +92,14 @@ class Settings(BaseModel):
         description="Kubernetes namespace whose PolicySets and PolicyBindings this service watches; "
         "it writes `ActionsReady` conditions only on those bindings."
     )
+    # CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
+    #   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+    policy_service: PolicyServicePeer | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="PolicyService, the one source of every Identity this service reads; "
+        "unset, it reads them from the API server in `policy_namespace`.",
+    )
     caller_service_account_namespaces: Set[str] = Field(
         description="Kubernetes namespaces whose live WorkloadCredentials the SVID resolver reads; "
         "it does not grant Action approval."
@@ -136,6 +145,8 @@ class Settings(BaseModel):
             raise ValueError(f"session_delegation_service must be {CENTRAL_SAMPLER_URI}")
         if not any(auth.mode == "spiffe" for auth in self.rpc.auth):
             raise ValueError("rpc must configure TLS and spiffe client trust")
+        if self.policy_service is not None:
+            self.policy_service.tls.validate_caller(None, ACTIONS_URI)
         return self
 
     @model_validator(mode="after")
