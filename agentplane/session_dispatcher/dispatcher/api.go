@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
-	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -23,7 +22,6 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/types"
@@ -95,32 +93,6 @@ func (s *Service) NewDeliveryWorker(ctx context.Context, databaseURL string) (*D
 
 // maxFilterCommands bounds DispatchFilter.command_ids, the size of a Session's queue.
 const maxFilterCommands = 1000
-
-// watchWriteTimeout bounds how long a slow reader can hold a Dispatcher watch.
-const watchWriteTimeout = 5 * time.Second
-
-func sendWatchDispatch(
-	leaseCtx, ctx context.Context,
-	stream grpc.ServerStreamingServer[dispatcherpb.WatchDispatchesResponse],
-	frame *dispatcherpb.WatchDispatchesResponse,
-) (bool, error) {
-	err := streaming.SendWithin(leaseCtx, watchWriteTimeout, stream.Send, frame)
-	switch {
-	case err == nil:
-		return false, nil
-	case ctx.Err() != nil:
-		return false, ctx.Err()
-	case leaseCtx.Err() != nil:
-		// The lease ended; the caller renews with a new authorized watch.
-		return true, nil
-	case errors.Is(err, streaming.ErrSendTimeout):
-		return false, status.Error(codes.DeadlineExceeded, "dispatcher watch write deadline expired")
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return false, status.FromContextError(err).Err()
-	default:
-		return false, err
-	}
-}
 
 // Methods applies the caller's explicit authorization rule to every SessionDispatcher RPC. Handlers
 // serve an IdentityAdmission as an IdentityCaller, so the rule may admit Identity callers.
