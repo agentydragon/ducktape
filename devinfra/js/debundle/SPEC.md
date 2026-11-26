@@ -1,8 +1,9 @@
-# Selector resolution: specification
+# Debundle: specification
 
-What `debundle` guarantees when it places spec entities in a bundle chunk. How to
-write selectors: <docs/selectors.md>. How it is implemented:
-`docs/selector_resolution.md`.
+What `debundle` guarantees to spec authors and CLI users: invocations, reports,
+selector resolution, assignment and the author assertions the analysis trusts.
+How to write selectors: <docs/selectors.md>. Selector-resolution implementation:
+<docs/selector_resolution.md>. Design and correctness proof: <docs/design.md>.
 
 ## Resolved CLI invocations
 
@@ -319,15 +320,9 @@ selects full graphs independently of diagnostic detail and effect-conflict
 streams. Both selections retain all analysis facts, generated edges, premises,
 gate/TV checks and final reconstructed-program validation.
 
-Every `final_module_contents` row in the per-chunk `modules.json` report includes
-`binding_source_units`: one row per `binding_names` entry, in the same input-name
-order. Each row maps that input binding name to sorted `unit:N` IDs of source
-units that declare it. Redeclaration sites all appear, and IDs follow the
-analysis's source-unit boundaries, including units created by splitting a
-comma-list declaration. Reads, writes, and calls do not count as declarations.
-The existing module-level `source_unit_ids` remains the sorted union of
-declaration IDs for the row's named bindings; `member_names` remains
-positionally aligned with `binding_names`.
+Every `final_module_contents` row in the per-chunk `modules.json` report pairs
+each input binding name with the source units that declare it; see
+[wire format § Module binding source-unit associations](docs/wire_format.md#module-binding-source-unit-associations).
 
 For a rejected assignment, `atomic_group_conflicts.json` and `cycles.json` are
 each emitted when their corresponding evidence is nonempty, and may coexist.
