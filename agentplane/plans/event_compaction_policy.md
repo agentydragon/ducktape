@@ -286,6 +286,34 @@ service with winner, runner-up, measured trade-off and affected read path. Until
 exist, keep the current writer defaults; use the measured generic packing results to prioritize
 the experiment, not to authorize a fleet rewrite.
 
+### A repeatable workload for measuring growth
+
+Track two numbers per journal: **allocated bytes per MiB of original serialized frames**
+measures what the representation costs; **allocated bytes per agent turn** measures what
+a workload costs. For the first, divide the change in heap, TOAST and index bytes in a fresh
+database by the total MiB of frames presented to that journal. For the second, count the same
+turn only once even if both History and Sampler retain it; report their byte costs separately
+and sum them for the combined cost. Keep WAL generated during ingestion as a separate write
+cost. For capacity planning, multiply bytes per turn by observed turns per day in each workload
+group; account for expiry and page reuse before comparing that estimate with PVC growth.
+
+As a future load test, freeze a versioned corpus of complete session streams through recorded
+end cursors. Keep the original frame bytes, ordering, turn boundaries and arrival times, so
+the same workload can test both storage and concurrent ingestion. A manifest should identify
+the format and checksum, the service and capture point, and aggregate turns, tool calls, frame
+counts and bytes by kind. Report results by provider, model and visible stream content:
+a run that exposes reasoning frames has a different cost per turn from one that doesn't.
+Mark unavailable token counts as unknown. Splitting one response into more stream deltas
+can change bytes per event even when the user receives exactly the same response.
+
+Start with purpose-built test sessions. If using an instance capture, keep it in an
+access-controlled object store within the source data's retention and access rules; put only
+aggregate results and the replay procedure in the public repo. Replay into disposable databases
+through the journal ingestion paths, without calling models or executing recorded tools.
+Compare writer versions on the identical corpus, verify ordered frame bytes on readback, and
+record physical footprint and WAL after the same number of turns. This benchmark can follow
+the rollout independently of the live-session canary.
+
 ## Implementation order
 
 1. Land the shared Go packer and versioned decoder with exact-byte and boundary tests.
