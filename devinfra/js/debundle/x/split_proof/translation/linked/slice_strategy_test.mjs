@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { assertCertified, assertRejected, lower, observe, prepare, root, runSplit } from "./harness.mjs";
 
@@ -128,9 +128,17 @@ const providerFallback = runSplit("slice-provider-fallback", {
   provider: "export const imported = 41;",
   spec: { entry, modules: { [entry]: ["#0", "#1", "#2"] } },
 });
-assertCertified(providerFallback.verdict, providerFallback.log);
-assert.equal(providerFallback.verdict.scope, "linked-programs", providerFallback.log);
-assert.equal(providerFallback.verdict.guarantee, "normal-completion", providerFallback.log);
+assertRejected(providerFallback, /no compiled certification rule/);
+assert.equal(providerFallback.verdict.reason_code, "no_compiled_rule", providerFallback.log);
+const providerStructural = lower(
+  providerFallback.files.sourceFile,
+  providerFallback.files.specFile,
+  providerFallback.out,
+  ["--structural"],
+  "linked-structural-order"
+);
+assertCertified(providerStructural.verdict, providerStructural.log);
+assert.equal(providerStructural.verdict.guarantee, "all-outcomes", providerStructural.log);
 assert.deepEqual(observe(providerFallback.files.sourceFile, "result"), { result: 42 });
 assert.deepEqual(observe(path.join(providerFallback.out, entry), "result"), { result: 42 });
 
@@ -150,18 +158,31 @@ assertRejected(
   /unsupported computed class key/
 );
 const normal = lower(profiled.sourceFile, profiled.specFile, profiledOut, host);
-assertCertified(normal.verdict, normal.log);
-assert.equal(normal.verdict.scope, "linked-programs", normal.log);
-assert.equal(normal.verdict.guarantee, "normal-completion", normal.log);
-assert.deepEqual(normal.verdict.assumptions, [
-  "Symbol.iterator returns the well-known iterator symbol without observable effects throughout initialization",
+assertRejected({ out: profiledOut, ...normal }, /no compiled certification rule/);
+assert.equal(normal.verdict.reason_code, "no_compiled_rule", normal.log);
+
+const structural = [...host, "--structural"];
+const profiledOrder = lower(profiled.sourceFile, profiled.specFile, profiledOut, structural, "linked-structural-order");
+assertCertified(profiledOrder.verdict, profiledOrder.log);
+assert.equal(profiledOrder.verdict.guarantee, "all-outcomes", profiledOrder.log);
+assert.equal(profiledOrder.verdict.hostProfile, "browser-page", profiledOrder.log);
+assert.deepEqual(profiledOrder.verdict.assumptions, [
+  "Retained source units use the same capability-closed opaque world in both layouts.",
 ]);
 assert.deepEqual(observe(profiled.sourceFile, "result"), { result: 42 });
 assert.deepEqual(observe(path.join(profiledOut, entry), "result"), { result: 42 });
 assert.deepEqual(
-  lower(profiled.sourceFile, profiled.specFile, profiledOut, [...host, "--check-output"]).verdict,
-  normal.verdict
+  lower(
+    profiled.sourceFile,
+    profiled.specFile,
+    profiledOut,
+    [...structural, "--check-output"],
+    "linked-structural-order"
+  ).verdict,
+  profiledOrder.verdict
 );
+const normalDisk = lower(profiled.sourceFile, profiled.specFile, profiledOut, [...host, "--check-output"]);
+assert.deepEqual(normalDisk.verdict, normal.verdict, normalDisk.log);
 const profiledAll = path.join(profiledDir, "all-outcomes");
 assertRejected(
   { out: profiledAll, ...lower(profiled.sourceFile, profiled.specFile, profiledAll, [...host, ...allOutcomes]) },
@@ -184,5 +205,5 @@ for (const request of [[], allOutcomes]) {
   const tampered = lower(profiled.sourceFile, profiled.specFile, profiledOut, [...host, ...request, "--check-output"]);
   assert.equal(tampered.verdict.status, "rejected", tampered.log);
   assert.match(tampered.verdict.reason, /worker\.mjs differs from its generated ESTree/, tampered.log);
-  assert(existsSync(profiledWorker));
+  assert.equal(readFileSync(profiledWorker, "utf8"), changedWorker, tampered.log);
 }
