@@ -772,44 +772,6 @@ fn inspection_root_args(roots: &CurrentRoots) -> Vec<String> {
     args
 }
 
-#[cfg(test)]
-mod inspection_command_tests {
-    use super::inspection_root_args;
-    use graph_provenance::CurrentRoots;
-    use std::collections::BTreeMap;
-    use std::path::PathBuf;
-
-    #[test]
-    fn inspection_roots_keep_spaced_paths_whole_and_sort_package_roots() {
-        let roots = CurrentRoots {
-            spec: Some(PathBuf::from("spec root")),
-            source: Some(PathBuf::from("graph source root")),
-            ownership_subset: Some(PathBuf::from("subset root")),
-            packages: BTreeMap::from([
-                ("package one".to_owned(), PathBuf::from("package root one")),
-                ("package two".to_owned(), PathBuf::from("package root two")),
-            ]),
-        };
-
-        assert_eq!(
-            inspection_root_args(&roots),
-            [
-                "--spec-root",
-                "spec root",
-                "--graph-source-root",
-                "graph source root",
-                "--graph-ownership-subset-root",
-                "subset root",
-                "--graph-package-root",
-                "package one=package root one",
-                "--graph-package-root",
-                "package two=package root two",
-            ]
-        );
-        assert!(inspection_root_args(&CurrentRoots::default()).is_empty());
-    }
-}
-
 fn render_diagnose_text(report: &GateDiagnoseReport, out: &mut String) {
     out.push_str(&format!(
         "binding {}: returned {} of {} trace(s){}\n",
@@ -1244,4 +1206,42 @@ fn recompute_evidence(
     }
     CycleEdge::sort_for_report(&mut out);
     Ok(out)
+}
+
+#[cfg(test)]
+mod inspection_command_tests {
+    use super::inspection_root_args;
+    use graph_provenance::CurrentRoots;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn inspection_roots_keep_spaced_paths_whole_and_sort_package_roots() {
+        let roots = CurrentRoots {
+            spec: Some(PathBuf::from("spec root")),
+            source: Some(PathBuf::from("graph source root")),
+            ownership_subset: Some(PathBuf::from("subset root")),
+            packages: BTreeMap::from([
+                ("package one".to_owned(), PathBuf::from("package root one")),
+                ("package two".to_owned(), PathBuf::from("package root two")),
+            ]),
+        };
+
+        assert_eq!(
+            inspection_root_args(&roots),
+            [
+                "--spec-root",
+                "spec root",
+                "--graph-source-root",
+                "graph source root",
+                "--graph-ownership-subset-root",
+                "subset root",
+                "--graph-package-root",
+                "package one=package root one",
+                "--graph-package-root",
+                "package two=package root two",
+            ]
+        );
+        assert!(inspection_root_args(&CurrentRoots::default()).is_empty());
+    }
 }
