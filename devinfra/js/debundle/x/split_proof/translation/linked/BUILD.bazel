@@ -215,7 +215,7 @@ _RECORD_DATA = [
     "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
 ]
 
-_RECORD_ENV = {"LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)"}
+_LINKED_MODEL_ENV = {"LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)"}
 
 _RECORD_TESTS = [
     "literal_records_test",
@@ -224,6 +224,16 @@ _RECORD_TESTS = [
     "wide_records_test",
     "wide_table_reversal_test",
 ]
+
+_FIXTURE_PREVIEW_TESTS = [
+    "sequence_test",
+    "templates_test",
+]
+
+_FIXTURE_PREVIEW_DATA = [
+    ":fixture_preview",
+    "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
+] + _PUBLIC_REFUSAL_TEST_DATA
 
 _SHARD_COUNTS = {
     "browser_globals_test": 4,
@@ -265,9 +275,9 @@ _SHARD_COUNTS = {
         timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
         data = _TEST_DATA + (
             _RECORD_DATA if name in _RECORD_TESTS else _PUBLIC_REFUSAL_TEST_DATA if name == "provider_location_test" else []
-        ),
+        ) + (_FIXTURE_PREVIEW_DATA if name in _FIXTURE_PREVIEW_TESTS else []),
         entry_point = name + ".mjs",
-        env = _TEST_ENV | (_RECORD_ENV if name in _RECORD_TESTS else {}),
+        env = _TEST_ENV | (_LINKED_MODEL_ENV if name in _RECORD_TESTS or name in _FIXTURE_PREVIEW_TESTS else {}),
         shard_count = _SHARD_COUNTS.get(name),
     )
     for name in _UNSHARDED_TESTS + _SHARD_COUNTS.keys()
@@ -331,7 +341,7 @@ js_test(
     data = _TEST_DATA + _RECORD_DATA,
     entry_point = "wide_table_reversal_test.mjs",
     # Cross the old probe ceiling without repeating the 44-row scaling workload.
-    env = _TEST_ENV | _RECORD_ENV | {
+    env = _TEST_ENV | _LINKED_MODEL_ENV | {
         "LINKED_TABLE_FIELDS": "1410",
         "LINKED_TABLE_ROWS": "3",
     },

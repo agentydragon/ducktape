@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import path from "node:path";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { assertLinkedPreviewResult, prepareLinkedFixture, prepareWorkerFixture } from "./fixture_preview.mjs";
 import {
-  root,
   caseShard,
   id,
   literal,
@@ -17,11 +19,6 @@ import {
   exportNamed,
   program,
   observe,
-  lower,
-  prepare,
-  workerSplit,
-  assertRejectedOrOrderKeptSlice,
-  assertWorkerResult,
   observedProgram,
 } from "./harness.mjs";
 
@@ -50,22 +47,13 @@ for (const [value, expressions, expected] of [
     variable("const", "result", call(id("format"), [literal(value)])),
     exportNamed([["result", "result"]]),
   ]);
-  const dir = path.join(root, `generated-template-${value}`);
-  const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: {
-      entry: "entry.mjs",
-      modules: { "format.mjs": ["#0", "#1", "#2"], "entry.mjs": ["#3", "#4"] },
-      order: ["format.mjs"],
-    },
+  const fixture = prepareLinkedFixture(`generated-template-${value}`, source, {
+    entry: "entry.mjs",
+    modules: { "format.mjs": ["#0", "#1", "#2"], "entry.mjs": ["#3", "#4"] },
+    order: ["format.mjs"],
   });
-  const out = path.join(dir, "out");
-  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assert.equal(verdict.status, "certified", log);
-  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
-    assert.deepEqual(observe(file, "result"), { result: expected });
-  }
+  assertPublicEmissionRefused(fixture.manifest, fixture.out);
+  await assertLinkedPreviewResult(fixture, expected);
 }
 
 // Both substitutions throw. Only the leftmost thrown value reaches the catch.
@@ -88,19 +76,26 @@ for (const values of [
     [],
     block([tryStatement(block([returns(template)]), catchClause(id("error"), block([returns(id("error"))])))])
   );
-  assertWorkerResult(`throwing-template-${values[0]}`, observedProgram(worker, call(id("worker"))), values[0]);
+  const fixture = prepareWorkerFixture(`throwing-template-${values[0]}`, observedProgram(worker, call(id("worker"))));
+  assertPublicEmissionRefused(fixture.manifest, fixture.out);
+  await assertLinkedPreviewResult(fixture, values[0]);
 }
 
-for (const [name, source, reason] of [
-  [
+if (runCase("template-object-coercion")) {
+  const { manifest, out, sourceFile, specFile } = prepareWorkerFixture(
     "template-object-coercion",
-    "const worker = value => `${value}`; export const result = worker({});",
-    /object is converted to a primitive/,
-  ],
-]) {
-  if (!runCase(name)) continue;
-  const result = workerSplit(name, source);
-  if (assertRejectedOrOrderKeptSlice(result, reason)) {
-    assert.deepEqual(observe(path.join(result.out, "entry.mjs"), "result"), observe(result.files.sourceFile, "result"));
-  }
+    "const worker = value => `${value}`; export const result = worker({});"
+  );
+  assertPublicEmissionRefused(manifest, out);
+  const expected = { result: "[object Object]" };
+  assert.deepEqual(observe(sourceFile, "result"), expected);
+  await withSplitPreview({ manifest }, ({ directory, entryFile }) => {
+    assert.deepEqual(observe(entryFile, "result"), expected);
+    const model = probeLinkedModel({ source: sourceFile, spec: specFile, directory });
+    assert.equal(model.status, "refused", JSON.stringify(model));
+    assert.equal(model.reason_code, "probe_unknown", JSON.stringify(model));
+    assert.match(model.reason, /object is converted to a primitive/);
+    assertPublicEmissionRefused(manifest, directory);
+    assertPublicRecheckRefused(manifest, directory);
+  });
 }
