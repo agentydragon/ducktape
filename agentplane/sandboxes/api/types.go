@@ -367,6 +367,12 @@ type Sandbox struct {
 	Status            SandboxStatus `json:"status,omitempty"`
 }
 
+// StopRequested reports whether an operator or the Sandbox's owner asked it to stop: it is set not to run, or it was
+// suspended on request.
+func (s *Sandbox) StopRequested() bool {
+	return !s.Spec.Running || (s.Status.SuspendedBy != nil && *s.Status.SuspendedBy == SuspendedByRequested)
+}
+
 // +kubebuilder:object:root=true
 type SandboxList struct {
 	metav1.TypeMeta `json:",inline"`
