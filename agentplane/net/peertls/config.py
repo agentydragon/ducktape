@@ -1,33 +1,36 @@
 """TLS contracts and stable workload service identities shared across Agentplane clients."""
 
+import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Final, Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-ACTIONS_URI: Final = "spiffe://agentplane/actions"
-APP_URI: Final = "spiffe://agentplane/app"
-POLICY_CONTROLLER_URI: Final = "spiffe://agentplane/policy-controller"
-CENTRAL_SAMPLER_URI: Final = "spiffe://agentplane/central-sampler"
-EGRESS_PROXY_URI: Final = "spiffe://agentplane/egress-proxy"
-GATEWAY_SESSIONS_URI: Final = "spiffe://agentplane/sessions"
-GATEWAY_RUNTIME_PROXY_URI: Final = "spiffe://agentplane/runtime-proxy"
-HISTORY_SERVICE_URI: Final = "spiffe://agentplane/history-ingress"
-LLM_INGRESS_URI: Final = "spiffe://agentplane/llm-ingress"
-MCP_EDGE_URI: Final = "spiffe://agentplane/mcp-edge"
-NOTIFICATIONS_URI: Final = "spiffe://agentplane/notifications"
-SESSION_DISPATCHER_URI: Final = "spiffe://agentplane/session-dispatcher"
-SANDBOX_CONTROLLER_URI: Final = "spiffe://agentplane/sandbox-controller"
+from agentplane.net.peertls.service_uris import GATEWAY, SERVICES, WORKLOAD_LISTENERS
+
+ACTIONS_URI: Final = SERVICES["ActionsURI"]
+APP_URI: Final = SERVICES["AppURI"]
+POLICY_CONTROLLER_URI: Final = SERVICES["PolicyControllerURI"]
+CENTRAL_SAMPLER_URI: Final = SERVICES["CentralSamplerURI"]
+EGRESS_PROXY_URI: Final = SERVICES["EgressProxyURI"]
+GATEWAY_SESSIONS_URI: Final = SERVICES["SessionsURI"]
+GATEWAY_RUNTIME_PROXY_URI: Final = SERVICES["RuntimeProxyURI"]
+HISTORY_SERVICE_URI: Final = SERVICES["HistoryIngressURI"]
+LLM_INGRESS_URI: Final = SERVICES["LLMIngressURI"]
+MCP_EDGE_URI: Final = SERVICES["MCPEdgeURI"]
+NOTIFICATIONS_URI: Final = SERVICES["NotificationsURI"]
+SESSION_DISPATCHER_URI: Final = SERVICES["SessionDispatcherURI"]
+SANDBOX_CONTROLLER_URI: Final = SERVICES["SandboxControllerURI"]
+
+
+def _uri_pattern(uris: Iterable[str]) -> str:
+    return "^(" + "|".join(re.escape(uri) for uri in uris) + ")$"
 
 
 # Service IDs never use the agent Identity workload grammar.
-type ServiceSPIFFEID = Annotated[
-    str,
-    Field(
-        pattern=r"^spiffe://agentplane/(app|mcp-edge|sessions|runtime-proxy|environments|runner-gateway|sandbox-controller|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler|system-test-runtime-proxy-reader)$"
-    ),
-]
+type ServiceSPIFFEID = Annotated[str, Field(pattern=_uri_pattern(SERVICES.values()))]
 
 
 class TLS(BaseModel):
@@ -99,9 +102,7 @@ class ClientTLS(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     ca_file: Path
-    server_uri: str = Field(
-        pattern=r"^spiffe://agentplane/(runner-gateway|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler|mcp-edge|sandbox-controller)$"
-    )
+    server_uri: str = Field(pattern=_uri_pattern((*WORKLOAD_LISTENERS.values(), GATEWAY)))
     cert_file: Path | None = None
     key_file: Path | None = None
     client_uri: ServiceSPIFFEID | None = None

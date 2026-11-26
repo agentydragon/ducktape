@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -13,6 +13,7 @@ go_library(
         "http_server_expiry.go",
         "open.go",
         "security.go",
+        "service_uris_generated.go",  # keep
         "workload_source.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/net/peertls",
@@ -64,5 +65,32 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":service_uris",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "service_uris",
+    srcs = ["service_uris.py"],
+)
+
+py_library(
+    name = "generate_service_uris",
+    srcs = ["generate_service_uris.py"],
+    deps = [":service_uris"],
+)
+
+py_binary(
+    name = "generate_service_uris_bin",
+    main_module = "agentplane.net.peertls.generate_service_uris",
+    deps = [":generate_service_uris"],
+)
+
+genrule(
+    name = "go_service_uris",
+    outs = ["service_uris_generated.go"],
+    cmd = "$(execpath :generate_service_uris_bin) > $@",
+    tools = [":generate_service_uris_bin"],
 )
