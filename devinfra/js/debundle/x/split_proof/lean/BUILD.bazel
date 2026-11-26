@@ -1954,3 +1954,20 @@ lean_proof_test(
     ],
     deps = [":corejs_terminal_plan_family"],
 )
+
+lean_library(
+    name = "corejs_terminal_plan_ownership",
+    srcs = ["EsmSplit/CoreJS/TerminalPlanOwnership.lean"],
+    deps = [
+        ":corejs_terminal_source",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_terminal_plan_ownership_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalPlanOwnership"],
+    required_theorems = ["CoreJS.TerminalPlanOwnership.all_original_owners"],
+    deps = [":corejs_terminal_plan_ownership"],
+)
