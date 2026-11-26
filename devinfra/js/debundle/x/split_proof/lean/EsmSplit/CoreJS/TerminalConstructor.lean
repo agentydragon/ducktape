@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.TerminalConstructorInput
 import EsmSplit.CoreJS.TerminalExportPlacement
+import EsmSplit.CoreJS.TerminalPlanSelection
 import EsmSplit.ModulePath
 
 /-! A checked CoreJS constructor for an order-kept singleton source whose
@@ -14,6 +15,7 @@ structure Construction (input : Program × List EsmSplit.LocalExportUnit)
     (B : EsmSplit.Bundle) (S : EsmSplit.Spec) where
   checked : TerminalConstructorInput.Checked input
   placement : TerminalExportPlacement.Selection ⟨checked.terminal.source, checked.terminal.row.ordinal⟩ S
+  matching : TerminalPlanSelection.ClaimantsMatch B S placement.selected
   complete : B.length = checked.terminal.row.ordinal + 1
   evaluationOrder : (EsmSplit.mkPlan B S).evalOrder = S.order ++ [S.entry]
   valid : EsmSplit.Valid B S (EsmSplit.mkPlan B S)
@@ -41,6 +43,8 @@ def construct (input : Program × List EsmSplit.LocalExportUnit) (B : EsmSplit.B
   let placement ← TerminalExportPlacement.resolve ⟨checked.terminal.source, checked.terminal.row.ordinal⟩ S
   let ss := checked.terminal.source.body.map Prod.snd
   let plan := EsmSplit.mkPlan B S
+  let .isTrue matching := (inferInstance : Decidable (TerminalPlanSelection.ClaimantsMatch B S placement.selected)) |
+    throw "resolved source owners do not match the original-bundle planner"
   let .isTrue complete := (inferInstance : Decidable (B.length = checked.terminal.row.ordinal + 1)) |
     throw "terminal export row must be the final original source unit"
   let .isTrue evaluationOrder := (inferInstance : Decidable (plan.evalOrder = S.order ++ [S.entry])) |
@@ -61,7 +65,7 @@ def construct (input : Program × List EsmSplit.LocalExportUnit) (B : EsmSplit.B
   | some entry =>
     if units : entry.stmts = [checked.terminal.row.ordinal] then
       if glue : entry.exports = [] then
-        return ⟨checked, placement, complete, evaluationOrder, valid, footprints, ordered, entry, found, units, glue, rowFootprint, sourceDefs⟩
+        return ⟨checked, placement, matching, complete, evaluationOrder, valid, footprints, ordered, entry, found, units, glue, rowFootprint, sourceDefs⟩
       else throw "terminal entry has generated glue exports"
     else throw "terminal entry must contain only the original export row"
 
@@ -73,8 +77,41 @@ theorem sound {input B S} (result : Construction input B S) :
   TerminalConstructorInput.planned_family result.checked B S result.entry result.valid result.footprints
     result.ordered result.found result.units result.glue result.rowFootprint result.sourceDefs
 
+
+/-- The exact executable owner labels and the terminal metadata owner are
+those resolved from the original source and authored request. -/
+theorem selected_owners {input B S} (result : Construction input B S) :
+    (∀ m ∈ (EsmSplit.mkPlan B S).mods, ∀ i (hi : i < (result.checked.terminal.source.body.map Prod.snd).length),
+      (i, (result.checked.terminal.source.body.map Prod.snd)[i]) ∈
+        (moduleOf (result.checked.terminal.source.body.map Prod.snd) B (EsmSplit.mkPlan B S) m).body ↔
+          (i, m.name) ∈ result.placement.selected) ∧
+    (result.checked.terminal.row.ordinal, result.entry.name) ∈ result.placement.selected ∧
+    (∀ owner, (result.checked.terminal.row.ordinal, owner) ∈ result.placement.selected → owner = result.entry.name) := by
+  have terminal : result.checked.terminal.row.ordinal = (result.checked.terminal.source.body.map Prod.snd).length := by
+    simpa using result.checked.terminal.terminal.2
+  have ids : result.checked.terminal.source.body.map Prod.fst =
+      List.range (result.checked.terminal.source.body.map Prod.snd).length := by
+    simpa using result.checked.terminal.terminal.1
+  exact TerminalPlanSelection.selected_owners result.checked.terminal.row terminal result.complete result.valid
+    result.entry result.found result.units ⟨result.checked.terminal.source, result.checked.terminal.row.ordinal⟩
+    rfl ids result.placement result.matching
+
+/-- Every original source ordinal is either one executable unit or the single
+terminal metadata unit; metadata creates no executable entry body. -/
+theorem original_units {input B S} (result : Construction input B S) :
+    (∀ i, i < B.length → i < (result.checked.terminal.source.body.map Prod.snd).length ∨
+      i = result.checked.terminal.row.ordinal) ∧
+    (moduleOf (result.checked.terminal.source.body.map Prod.snd) B (EsmSplit.mkPlan B S) result.entry).body = [] := by
+  have terminal : result.checked.terminal.row.ordinal = (result.checked.terminal.source.body.map Prod.snd).length := by
+    simpa using result.checked.terminal.terminal.2
+  have all := TerminalPlanOwnership.all_original_owners result.checked.terminal.row terminal result.complete
+    result.valid result.entry result.found result.units
+  exact ⟨all.1, all.2.2.2.2⟩
+
 #print axioms Construction.program
 #print axioms construct
 #print axioms sound
+#print axioms selected_owners
+#print axioms original_units
 
 end CoreJS.TerminalConstructor

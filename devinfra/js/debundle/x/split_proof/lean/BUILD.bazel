@@ -1710,6 +1710,7 @@ lean_library(
     srcs = ["EsmSplit/CoreJS/TerminalConstructor.lean"],
     deps = [
         ":corejs_terminal_constructor_input",
+        ":corejs_terminal_plan_selection",
         ":planner",
         ":terminal_export_placement",
     ],
@@ -1723,6 +1724,8 @@ lean_proof_test(
         "CoreJS.TerminalConstructor.Construction.program",
         "CoreJS.TerminalConstructor.construct",
         "CoreJS.TerminalConstructor.sound",
+        "CoreJS.TerminalConstructor.selected_owners",
+        "CoreJS.TerminalConstructor.original_units",
     ],
     deps = [":corejs_terminal_constructor"],
 )
