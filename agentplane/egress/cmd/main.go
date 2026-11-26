@@ -25,6 +25,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/proxy"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/upstream"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
@@ -183,7 +184,11 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 		return err
 	}
 
-	records, err := resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, &resolver.Identities{PolicyNamespace: c.RulesNamespace})
+	identities, err := auth.NewKubernetesIdentityUIDs(base, c.RulesNamespace)
+	if err != nil {
+		return fmt.Errorf("create live Identity reader: %w", err)
+	}
+	records, err := resolver.NewKubernetes(base, c.AllowedServiceAccountNamespaces, identities)
 	if err != nil {
 		return fmt.Errorf("create live WorkloadCredential resolver: %w", err)
 	}

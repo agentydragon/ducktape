@@ -10,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -69,7 +68,7 @@ func serveIdentitySVIDsWithPolicy(
 	policyReady func() error,
 ) (*store.Store, func(uri string) dispatcherpb.SessionDispatcherClient) {
 	t.Helper()
-	svids, err := auth.NewSVIDResolver(objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	svids, err := auth.NewSVIDResolver(objects, []string{caller.Namespace}, workloadauthtesting.IdentityUIDs(t, objects, policyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

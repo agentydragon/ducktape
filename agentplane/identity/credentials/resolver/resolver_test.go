@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
@@ -129,7 +130,7 @@ func leafFor(t *testing.T, ca *transporttesting.CA, uri string, usages ...x509.E
 
 func newResolver(t *testing.T, reader client.Reader) *resolver.Resolver {
 	t.Helper()
-	resolves, err := resolver.New(reader, []string{servedNamespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	resolves, err := resolver.New(reader, []string{servedNamespace}, workloadauthtesting.IdentityUIDs(t, reader, policyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +199,7 @@ func TestLegacyCredentialWithoutIdentityIsRefusedAndPreserved(t *testing.T) {
 		}
 	}
 	reader := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(legacy).Build()
-	resolves, err := resolver.New(reader, []string{servedNamespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	resolves, err := resolver.New(reader, []string{servedNamespace}, workloadauthtesting.IdentityUIDs(t, reader, policyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,15 +462,8 @@ func TestAnAPIErrorIsUnavailableNotRefused(t *testing.T) {
 	}
 }
 
-func TestNewRequiresIdentityConfiguration(t *testing.T) {
-	for name, identities := range map[string]*resolver.Identities{
-		"nil":   nil,
-		"empty": {},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := resolver.New(objects, []string{servedNamespace}, identities); err == nil {
-				t.Fatal("resolver accepted missing Identity configuration")
-			}
-		})
+func TestNewRequiresAnIdentityReader(t *testing.T) {
+	if _, err := resolver.New(objects, []string{servedNamespace}, nil); err == nil {
+		t.Fatal("resolver accepted a missing Identity reader")
 	}
 }

@@ -15,7 +15,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -117,7 +116,7 @@ func authorityClients(t *testing.T, queueStore *store.Store, inventory *authorit
 	api := kubeapiserver.StartForTest(t)
 	sameNamed := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
 	other := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-stranger")
-	svids, err := auth.NewSVIDResolver(sameNamed.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
+	svids, err := auth.NewSVIDResolver(sameNamed.Objects, []string{caller.Namespace}, workloadauthtesting.IdentityUIDs(t, sameNamed.Objects, caller.Namespace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +211,7 @@ func serveAuthoritySVIDServer(
 	environmentRules *reader.Index[access.Rule],
 ) authoritySVIDServer {
 	t.Helper()
-	svids, err := auth.NewSVIDResolver(objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
+	svids, err := auth.NewSVIDResolver(objects, []string{caller.Namespace}, workloadauthtesting.IdentityUIDs(t, objects, caller.Namespace))
 	if err != nil {
 		t.Fatal(err)
 	}

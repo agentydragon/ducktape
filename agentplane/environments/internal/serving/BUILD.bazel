@@ -21,7 +21,6 @@ go_library(
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth",
         "//agentplane/identity/auth/listener",
-        "//agentplane/identity/credentials/resolver",
         "//agentplane/net/listener",
         "//agentplane/net/peertls",
         "//agentplane/observability",

@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
@@ -26,7 +26,7 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 	for _, kind := range []string{"valid", "forged", "expired", "server-only", "mixed bearer", "mixed delegation"} {
 		t.Run(kind, func(t *testing.T) {
 			workload, leaf := svidFixture(t)
-			svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+			svids, err := auth.NewSVIDResolver(workload.Objects, []string{workload.Sandbox.Namespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, testPolicyNamespace))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -111,7 +111,7 @@ func (s *svidHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) 
 // turning its workload admission into a service-only method grant.
 func TestSharedListenerKeepsWorkloadAndServiceGrantsSeparate(t *testing.T) {
 	fixture, _ := svidFixture(t)
-	svids, err := auth.NewSVIDResolver(fixture.Objects, []string{fixture.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	svids, err := auth.NewSVIDResolver(fixture.Objects, []string{fixture.Sandbox.Namespace}, workloadauthtesting.IdentityUIDs(t, fixture.Objects, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

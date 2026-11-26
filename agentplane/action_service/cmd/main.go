@@ -47,7 +47,6 @@ import (
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -343,8 +342,11 @@ func gate(c config, d deps, callers grpcgate.Callers) (*grpcgate.Gate, error) {
 		}
 	}
 	if c.RPC.HasSPIFFE() {
-		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces,
-			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
+		callerIdentities, err := auth.NewKubernetesIdentityUIDs(d.Kube, c.PolicyNamespace)
+		if err != nil {
+			return nil, err
+		}
+		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces, callerIdentities)
 		if err != nil {
 			return nil, err
 		}

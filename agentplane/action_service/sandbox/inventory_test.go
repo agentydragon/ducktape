@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
@@ -58,7 +59,7 @@ func TestAnIdentitysBoxOutlivesTheIdentityWithItsCredentialRevoked(t *testing.T)
 		*subject.Identity != (workloadapi.IdentitySubject{Name: agent.Name, UID: types.UID(agent.UID)}) {
 		t.Errorf("the box's record names %+v, want the Identity", subject)
 	}
-	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, workloadauthtesting.IdentityUIDs(t, objects, policyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +158,7 @@ func TestAnOfflineBoxMountsNoCredential(t *testing.T) {
 // box's SVID and refuses the earlier box's.
 func TestARecreatedBoxsCredentialReplacesTheDisposedOnes(t *testing.T) {
 	f := newFixture(t, nil)
-	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, &resolver.Identities{PolicyNamespace: f.identityNamespace})
+	resolves, err := resolver.New(objects, []string{f.binding.Namespace}, workloadauthtesting.IdentityUIDs(t, objects, f.identityNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

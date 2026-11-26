@@ -64,7 +64,7 @@ func serveGRPC(t *testing.T, workload workloadauthtesting.Workload, index *polic
 		Auth:          []*listener.SPIFFEAuth{{CAFile: serverFiles.CAFile}},
 	}
 	reader := &rulesReader{Reader: workload.Objects}
-	records, err := resolver.New(reader, []string{workload.Record.Namespace}, &resolver.Identities{PolicyNamespace: workload.Identity.Namespace})
+	records, err := resolver.New(reader, []string{workload.Record.Namespace}, workloadauthtesting.IdentityUIDs(t, reader, workload.Identity.Namespace))
 	if err != nil {
 		t.Fatal(err)
 	}

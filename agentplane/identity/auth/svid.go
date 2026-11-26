@@ -24,7 +24,7 @@ type SVIDResolver struct {
 	records *resolver.Resolver
 }
 
-func NewSVIDResolver(objects client.Reader, namespaces []string, identities *resolver.Identities) (*SVIDResolver, error) {
+func NewSVIDResolver(objects client.Reader, namespaces []string, identities IdentityUIDReader) (*SVIDResolver, error) {
 	records, err := resolver.New(objects, namespaces, identities)
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func NewSVIDResolver(objects client.Reader, namespaces []string, identities *res
 }
 
 // NewKubernetesSVIDResolver creates an uncached reader for a service's SVID boundary.
-func NewKubernetesSVIDResolver(config *rest.Config, namespaces []string, identities *resolver.Identities) (*SVIDResolver, error) {
+func NewKubernetesSVIDResolver(config *rest.Config, namespaces []string, identities IdentityUIDReader) (*SVIDResolver, error) {
 	records, err := resolver.NewKubernetes(config, namespaces, identities)
 	if err != nil {
 		return nil, err

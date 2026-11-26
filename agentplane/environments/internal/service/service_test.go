@@ -12,8 +12,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
@@ -383,7 +383,7 @@ func TestWorkloadSVIDInventoryAllowsZeroAndMultipleSandboxAttachments(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			svids, err := auth.NewSVIDResolver(objects, []string{discoveryNamespace}, &resolver.Identities{PolicyNamespace: discoveryNamespace})
+			svids, err := auth.NewSVIDResolver(objects, []string{discoveryNamespace}, workloadauthtesting.IdentityUIDs(t, objects, discoveryNamespace))
 			if err != nil {
 				t.Fatal(err)
 			}
