@@ -76,10 +76,11 @@ uses the 32-entry bound for its backwards seek and interprets a one-entry span a
 row. A larger count cap or compressed singleton needs explicit storage tags and a predecessor
 lookup (or a reader bound valid for **all** stored versions) before enabling the writer.
 
-**History.** Start with the [existing kind streams](../history_service/internal/storage/blocks.go):
-native, text delta, tool-arguments delta, tool-output delta, boundary, and execution progress.
-Keep mutable state, projections, live control rows and unstudied rare kinds in their current
-representations. For a same-kind stream keep actual cursors and original sizes, not an implied
+**History.** Make all 29 concrete journal event kinds eligible, grouped by session and kind.
+The [existing packer](../history_service/internal/storage/blocks.go) supports only six.
+Eligibility does not require creating a block: leave an underfilled tail readable and keep
+ordinary rows when block metadata and encoding would cost more. Mutable state and projections
+are separate from the immutable journal. For a same-kind stream keep actual cursors and original sizes, not an implied
 dense interval. Merge cursor references before loading blocks for a page. Bound the number of
 active streams; leave low-volume tails in ordinary indexed rows until another append or a cold
 pass. Compare against mixed session-order blocks and against splitting only boundary records into
@@ -270,6 +271,23 @@ the difference, choose the simpler representation and the smaller read unit. Pub
 service with winner, runner-up, measured trade-off and affected read path. Until these comparisons
 exist, keep the current writer defaults; use the measured generic packing results to prioritize
 the experiment, not to authorize a fleet rewrite.
+
+## Implementation order
+
+1. Land the shared Go packer and versioned decoder with exact-byte and boundary tests.
+   Test equality at the target, a crossing entry, a large singleton, and a frame exceeding the
+   hard format limit. Keep existing formats readable.
+2. Ship reader support before changing either writer. In History, fetch candidate block metadata
+   for a page in one set-based query across the relevant kinds, including blocks straddling the
+   requested cursor. Check query plans and latency with sparse and interleaved kinds; collapsing
+   round trips alone does not guarantee less index work. Test exact cursor, kind filters, reverse
+   pages and sequence reads with the full enum. In Sampler, allow the new spans and singletons.
+3. Canary History writes using one packing switch, a default profile for every kind and a
+   byte-target override for boundary records. Validate byte-exact replay, append and point-read
+   p95, bytes per event and WAL at matched load. Then enable Sampler with its contiguous profile.
+4. Dry-run the explicit repacker over ordinary rows and existing blocks, apply one bounded range,
+   verify it against its original events, and verify a second run makes no changes. Expand in
+   resumable, rate-limited batches while both PVCs have headroom and replica lag remains within budget.
 
 ## Repack already stored data
 
