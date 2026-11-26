@@ -54,6 +54,7 @@ structure Construction (source : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Sp
   rowPlaced : ∃ entry, plan.find plan.entry = some entry ∧ row.ordinal ∈ entry.stmts ∧
     ∀ stmt, (row.ordinal, stmt) ∉ body
   sameExports : SameExports source program
+  allOutcomes : ∀ w fuel, runProgram w fuel source = runProgram w fuel program
   behavior : ScheduleEquivalent requested (fun _ => True) source program
 
 private theorem forRequest {source output : Program} (requested : Guarantee)
@@ -70,6 +71,8 @@ private theorem forRequest {source output : Program} (requested : Guarantee)
 def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
     (row : EsmSplit.LocalExportUnit) (requested : Guarantee) :
     Except String (Construction original B S row requested) := do
+  unless !S.privateEntryBody && (S.sequential || S.order.isEmpty) do
+    throw "checked split requires no private entry body and a sequential request when an order is supplied"
   match single : original.modules with
   | [source] =>
     if sourceEntry : original.entry = source.name then
@@ -81,6 +84,9 @@ def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
               if ordered : body.Pairwise (fun a b => a.1 ≤ b.1) then
                 if consts : ∀ p ∈ body, isConst p.2 = true then
                   let P := EsmSplit.mkPlan B S
+                  if S.sequential then
+                    unless P.evalOrder == S.order ++ [S.entry] do
+                      throw "constructed modules do not follow the requested order"
                   if valid : EsmSplit.Valid B S P then
                     if kept : SparseProjectedOrder.OrderKept body P then
                       if safe : ∀ m ∈ P.mods, EsmSplit.safeModulePath m.name = true then
@@ -149,7 +155,7 @@ def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
                                                       rw [SparseProjectedOrder.split_indexed_fileUnitPlacements safe]
                                                       exact member
                                                     return ⟨body, P, rfl, splitProgramIndexed body B P, rfl, labels, rfl,
-                                                      placed, ownerProof, rowOwner, rowPlaced, exports, forRequest requested runs⟩
+                                                      placed, ownerProof, rowOwner, rowPlaced, exports, runs, forRequest requested runs⟩
                                                   else throw "entry has other public export rows"
                                                 else throw "entry needs unsupported glue exports"
                                               else throw "entry units are duplicated"
