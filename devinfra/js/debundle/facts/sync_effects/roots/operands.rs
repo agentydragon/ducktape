@@ -2,13 +2,10 @@
 //! selected ordered initializer an owner executes with. Preparatory
 //! classifier proofs that read the prefix run here, before the body.
 
-use super::super::execution_index::intrinsic_roots::object_own_data_read_property;
-use super::super::execution_index::{Call, CallKind, ExecutionIndex};
 use super::super::interpreter::{
     CheckedLocalConstructorFactory, Executor, Outcome, ValidatedMetadataDecoration, unknown,
 };
 use super::super::native::array_iteration::{admitted_callback, supported_row};
-use super::super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::local_effect_targets::MetadataDecorateCall;
 use analysis::facts::statement_facts::StatementFacts;
@@ -18,6 +15,11 @@ use analysis_vocabulary::report_schema::{
     LocalRecordFactoryRejection, RecordFactoryRejectionReason,
 };
 use analysis_vocabulary::value::{Kind, Value};
+use execution_index::intrinsic_roots::object_own_data_read_property;
+use execution_index::noninvoking_initialization::{
+    InitializationSourceIdentity, OriginalInitializer,
+};
+use execution_index::{Call, CallKind, ExecutionIndex};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
 use std::sync::Arc;

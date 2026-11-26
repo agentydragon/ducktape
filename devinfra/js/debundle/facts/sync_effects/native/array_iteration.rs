@@ -10,9 +10,7 @@
 //! already ran and summarizes the remainder.
 
 use super::super::adapters::application::LocalExecutionContext;
-use super::super::execution_index::ExecutionIndex;
 use super::super::interpreter::MAX_SYNCHRONOUS_INVOCATIONS;
-use super::operation::{self, IterationResultArray};
 use analysis::facts::EffectCell;
 use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
 use analysis_domain::builtins::IterationResult;
@@ -22,6 +20,8 @@ use analysis_vocabulary::execution_evidence::{
 };
 use analysis_vocabulary::inputs::NativeIntrinsic;
 use analysis_vocabulary::value::{Kind, Value};
+use execution_index::ExecutionIndex;
+use execution_index::native_operation::{self, IterationResultArray};
 use kernel::frame::{LocalFrame, LocalValueResult, RemainderDisposition, SelectedValue};
 use std::collections::BTreeSet;
 use swc_common::Span;
@@ -152,9 +152,7 @@ impl LocalExecutionContext<'_, '_, '_> {
         let call = self
             .calls()
             .iter()
-            .find(|call| {
-                call.kind == super::super::execution_index::CallKind::Call && call.span == span
-            })
+            .find(|call| call.kind == execution_index::CallKind::Call && call.span == span)
             .expect("a source-covered call has its canonical call record");
         let Some(caller) = self.executor.local_body_identity_for_call(call) else {
             return Err(RemainderDisposition::NeedsSummary);
@@ -300,12 +298,12 @@ impl LocalExecutionContext<'_, '_, '_> {
         };
         let values = match fresh {
             Some((allocation, result)) => {
-                let plan = operation::plan_iteration_result(
+                let plan = native_operation::plan_iteration_result(
                     allocation,
                     result,
                     self.executor.state.world.revision.prefix,
                 );
-                let Ok(Some(values)) = operation::execute(self.executor, plan) else {
+                let Ok(Some(values)) = native_operation::execute(self.executor, plan) else {
                     unreachable!("an iteration result is planned against the current prefix");
                 };
                 for cell in [

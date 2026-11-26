@@ -38,7 +38,7 @@ source, analysis projection and engine (`analysis_projection.rs`,
 <../docs/bazel_integration.md>).
 
 - **One effect producer.** One domain and one builtin table
-  (`facts/abstract_domain/`, `facts/sync_effects/`) produce a per-statement
+  (`analysis_vocabulary/`, `analysis_domain/`, `facts/sync_effects/`) produce a per-statement
   effect set. Its algorithm is owned by <analysis_consolidation.md>: bounded
   interprocedural may-analysis with ordered proof refinement.
   The effects include:

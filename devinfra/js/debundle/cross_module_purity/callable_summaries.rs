@@ -10,12 +10,12 @@ use analysis_vocabulary::inputs::{
     SelectedBindingValueInput, SelectedNativeOperationInput,
 };
 use anyhow::{Result, bail};
+use execution_index::callable_capabilities::{
+    InferredCallableCapabilities, PreparedCallableCapabilities,
+};
 use inference::{FactContext, IterativeInference, IterativeRules};
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::BytePos;
-use sync_effects::execution_index::callable_capabilities::{
-    InferredCallableCapabilities, PreparedCallableCapabilities,
-};
 use value_flow::program_bindings::{BindingId, ExportId, ProgramBindings, SourceModuleKey};
 
 /// Callback transfer is independent of purity, including asserted purity.
@@ -249,7 +249,7 @@ pub fn resolve_imported_callable_summaries(
                 .collect();
             let views = top_level_item_views(facts.body);
             let mut prepared_module =
-                sync_effects::execution_index::callable_capabilities::prepare_callable_capabilities(
+                execution_index::callable_capabilities::prepare_callable_capabilities(
                     &views,
                     locals,
                     selected_value_inputs
@@ -312,16 +312,15 @@ pub fn resolve_imported_callable_summaries(
         prepare(&BundleGlobalNames::default())?;
     let mut bundle_globals = BundleGlobalNames::default();
     if predefined_globals != spec::PredefinedGlobals::Unknown {
-        bundle_globals = sync_effects::execution_index::bundle_globals::resolve(
-            prepared.iter().map(|(module, facts)| {
+        bundle_globals =
+            execution_index::bundle_globals::resolve(prepared.iter().map(|(module, facts)| {
                 (
                     facts,
                     no_accessor_install_callables
                         .get(*module)
                         .map_or(&[][..], Vec::as_slice),
                 )
-            }),
-        );
+            }));
         if bundle_globals != BundleGlobalNames::default() {
             // The first census has supplied its global-name result. Retire
             // its complete source indexes before constructing their replacements.
@@ -459,11 +458,11 @@ pub fn resolve_imported_callable_summaries(
         );
         facts.locate_native_writes(module, modules[*module].locator());
     }
-    let mut native_integrity = sync_effects::execution_index::resolve_native_integrity(
+    let mut native_integrity = execution_index::resolve_native_integrity(
         prepared.values().map(|facts| facts.native_writes()),
     );
     if !intrinsics_never_written.is_empty() {
-        sync_effects::execution_index::apply_intrinsics_never_written(
+        execution_index::apply_intrinsics_never_written(
             &mut native_integrity,
             &intrinsics_never_written,
         )
@@ -498,7 +497,7 @@ pub fn resolve_imported_callable_summaries(
                 .collect();
             (
                 module,
-                sync_effects::execution_index::callable_capabilities::infer_callable_capabilities(
+                execution_index::callable_capabilities::infer_callable_capabilities(
                     views,
                     prepared,
                     &native_integrity,
@@ -740,14 +739,14 @@ fn preflow_set_constructions(
     // Source inference must finish before any root can seed structural flow.
     // The completed raw census is conservative; later branch refinement may
     // not retroactively introduce a root into an already solved flow.
-    let mut preflow_native_integrity = sync_effects::execution_index::resolve_native_integrity(
+    let mut preflow_native_integrity = execution_index::resolve_native_integrity(
         prepared.values().map(|facts| facts.native_writes()),
     );
     // Validate the existing program premise against the conservative raw
     // census too. Failure only declines this early inference; the established
     // refined-census check below remains authoritative for the author input.
     let preflow_premises_hold = intrinsics_never_written.is_empty()
-        || sync_effects::execution_index::apply_intrinsics_never_written(
+        || execution_index::apply_intrinsics_never_written(
             &mut preflow_native_integrity,
             intrinsics_never_written,
         )
@@ -896,10 +895,9 @@ fn reject_contradicted_array_spread_inputs(
             })
         });
     if let Some(request) = array_spread_request {
-        let protocol_integrity =
-            sync_effects::execution_index::resolve_array_spread_protocol_integrity(
-                prepared.values().map(|facts| facts.native_writes()),
-            );
+        let protocol_integrity = execution_index::resolve_array_spread_protocol_integrity(
+            prepared.values().map(|facts| facts.native_writes()),
+        );
         if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
             facts
                 .known_array_iterator_protocol_mutation_owner_in(&protocol_integrity)

@@ -302,7 +302,7 @@ Tana savings; this is a source-audit finding, not a measured dominant hotspot.
 
 ### PF11 — Receiver-flow aggregate replay and fallback restart
 
-Receiver flow in `facts/sync_effects/execution_index.rs` has separate binding,
+Receiver flow in `facts/sync_effects/execution_index/mod.rs` has separate binding,
 assignment, return-site and callable keys, but reconstructs full assignment/return
 aggregates on wakes. For unresolved
 capture-connected callable summaries, `close_receiver_flow` rebuilds and reruns

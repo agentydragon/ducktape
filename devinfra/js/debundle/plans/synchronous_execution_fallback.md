@@ -69,5 +69,5 @@ uninitialized observations must retain their separate ordering constraint.
 
 The current reach classifier and precision-loss report are in
 `facts/sync_effects/interpreter.rs` and `e2e/synchronous_precision_report_test.rs`;
-the remaining promotion fallback is in `graph/build.rs`. See
+the remaining promotion fallback is in `graph/build/at_init.rs`. See
 <abstract_interpreter.md> for the broader effect-domain migration.

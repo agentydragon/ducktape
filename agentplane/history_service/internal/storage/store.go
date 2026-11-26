@@ -192,8 +192,9 @@ func (s *Store) sessionPredicate(alias string, firstArgument int) (string, []any
 // so a page read across that commit could pair entries with the range that removed them.
 var snapshot = sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
 
-func notify(ctx context.Context, tx *sql.Tx, channel string) error {
-	return postgres.Notify(ctx, tx, channel, "")
+// notify keys the wakeup by Session, so a follower wakes only for its own Session's commits.
+func notify(ctx context.Context, tx *sql.Tx, channel string, sessionID uuid.UUID) error {
+	return postgres.Notify(ctx, tx, channel, sessionID.String())
 }
 
 func conflict(format string, args ...any) error {
@@ -394,14 +395,14 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 			}
 		}
 		if created {
-			if err := notify(ctx, tx, ChannelHistory); err != nil {
+			if err := notify(ctx, tx, ChannelHistory, sessionID); err != nil {
 				return err
 			}
-			if err := notify(ctx, tx, ChannelSessions); err != nil {
+			if err := notify(ctx, tx, ChannelSessions, sessionID); err != nil {
 				return err
 			}
 		} else if changed {
-			if err := notify(ctx, tx, ChannelHistory); err != nil {
+			if err := notify(ctx, tx, ChannelHistory, sessionID); err != nil {
 				return err
 			}
 		}
@@ -530,7 +531,7 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 				sessionID, *row.sourceID, row.lastCursor); err != nil {
 				return err
 			}
-			if err := notify(ctx, tx, ChannelHistory); err != nil {
+			if err := notify(ctx, tx, ChannelHistory, sessionID); err != nil {
 				return err
 			}
 		}
@@ -607,7 +608,7 @@ func (s *Store) ReopenSealed(ctx context.Context, sessionID uuid.UUID, incarnati
 		if _, err := tx.ExecContext(ctx, "UPDATE session_history SET feed_state = $2 WHERE id = $1", sessionID, row.feedState); err != nil {
 			return err
 		}
-		if err := notify(ctx, tx, ChannelHistory); err != nil {
+		if err := notify(ctx, tx, ChannelHistory, sessionID); err != nil {
 			return err
 		}
 		checkpoint, err = row.checkpoint()
@@ -664,7 +665,7 @@ func (s *Store) RecordFeedState(ctx context.Context, sessionID uuid.UUID, feed *
 		if _, err := tx.ExecContext(ctx, "UPDATE session_history SET feed_state = $2 WHERE id = $1", sessionID, serialized); err != nil {
 			return err
 		}
-		return notify(ctx, tx, ChannelHistory)
+		return notify(ctx, tx, ChannelHistory, sessionID)
 	})
 }
 

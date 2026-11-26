@@ -30,7 +30,7 @@ func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream 
 	defer endLease()
 	defer context.AfterFunc(s.draining, endLease)()
 	// Subscribe before the opening snapshot: every intervening commit leaves a pending re-read.
-	changed, unsubscribe, err := s.wakeups.Subscribe(storage.ChannelHistory)
+	changed, unsubscribe, err := s.wakeups.SubscribeKey(storage.ChannelHistory, sessionID.String())
 	if err != nil {
 		return failure(ctx, err)
 	}
@@ -79,6 +79,8 @@ type followCall struct {
 	sessionID uuid.UUID
 	request   *historypb.FollowSessionRequest
 	through   uint64
+	// removedThrough is the position of the last removal this stream reported.
+	removedThrough uint64
 }
 
 type terminalWriteError struct{ err error }
@@ -142,7 +144,7 @@ func (c *followCall) catchUp(ctx context.Context, initial bool) error {
 		}
 	}
 	readCtx, cancel := context.WithTimeout(ctx, c.service.requestTimeout)
-	removed, err := c.reader.History.ReadFollowRemoved(readCtx, c.sessionID, 0, c.through)
+	removed, err := c.reader.History.ReadFollowRemoved(readCtx, c.sessionID, c.removedThrough, c.through)
 	if err != nil {
 		err = failure(readCtx, err)
 	}
@@ -150,12 +152,13 @@ func (c *followCall) catchUp(ctx context.Context, initial bool) error {
 	if err != nil {
 		return err
 	}
-	for _, cursorRange := range removed {
+	for _, cursorRange := range removed.Ranges {
 		if err := c.send(ctx, &historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Removed{Removed: cursorRange}}); err != nil {
 			return err
 		}
 		sentFrame = true
 	}
+	c.removedThrough = removed.Position
 	if initial || c.through != startThrough || sentFrame {
 		return c.send(ctx, &historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
 	}

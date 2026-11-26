@@ -1,5 +1,5 @@
 //! Soundness holes in the dataflow-aware S-chain
-//! (`graph.rs::emit_s_chain`, opt-in via
+//! (`graph/build/cell_order.rs::emit_s_chain`, opt-in via
 //! `chunk_analysis_options.<chunk>.dataflow_aware_s_chain`).
 //!
 //! Each test pins one hole by asserting the dependency graph carries the

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
@@ -146,29 +147,51 @@ type ConnectionConfig struct {
 	Auth    AuthConfig         `json:"auth"`
 }
 
-// HTTPClient retains the provider client's policy while verifying the selected
-// service SVID. External providers continue to use the standard HTTPS verifier.
-func (c ConnectionConfig) HTTPClient(client *http.Client) (*http.Client, error) {
-	if c.TLS == nil {
+// httpClient builds the connection's own client and connection pool. A service-SVID connection
+// verifies the selected service; external providers use the standard HTTPS verifier. The TLS
+// config reloads rotated certificates, so the client may be kept for the process lifetime.
+func (c ConnectionConfig) httpClient() (*http.Client, error) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if c.TLS != nil {
+		config, err := c.TLS.TLSConfig()
+		if err != nil {
+			return nil, err
+		}
+		transport.TLSClientConfig = config
+	}
+	return &http.Client{Transport: transport}, nil
+}
+
+// ProviderClients holds one HTTP client per configured connection, shared by every Session so
+// provider requests reuse keep-alive (and TLS) connections. A client is built on first use; a
+// failed build (for example, an SVID not yet mounted) is retried on the next request.
+type ProviderClients struct {
+	connections map[string]ConnectionConfig
+	mu          sync.Mutex
+	clients     map[string]*http.Client
+}
+
+func NewProviderClients(connections map[string]ConnectionConfig) *ProviderClients {
+	return &ProviderClients{connections: connections, clients: map[string]*http.Client{}}
+}
+
+// Client returns the shared client for the named connection.
+func (p *ProviderClients) Client(name string) (*http.Client, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if client, ok := p.clients[name]; ok {
 		return client, nil
 	}
-	config, err := c.TLS.TLSConfig()
+	connection, ok := p.connections[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown connection %s", name)
+	}
+	client, err := connection.httpClient()
 	if err != nil {
 		return nil, err
 	}
-	baseTransport := client.Transport
-	if baseTransport == nil {
-		baseTransport = http.DefaultTransport
-	}
-	transport, ok := baseTransport.(*http.Transport)
-	if !ok {
-		return nil, errors.New("service TLS requires a configurable HTTP transport")
-	}
-	transport = transport.Clone()
-	transport.TLSClientConfig = config
-	copy := *client
-	copy.Transport = transport
-	return &copy, nil
+	p.clients[name] = client
+	return client, nil
 }
 
 type AuthConfig struct {
