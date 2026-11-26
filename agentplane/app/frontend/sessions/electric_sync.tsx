@@ -707,6 +707,7 @@ interface WindowState {
   rows: readonly ThreadEntity[];
   /** The tail, view state and pending commands have loaded, and reach the scope's cursor. */
   caughtUp: boolean;
+  hasCaughtUp: boolean;
   olderAvailable: boolean;
   loadingOlder: boolean;
   connection: StreamConnection;
@@ -716,6 +717,7 @@ interface WindowState {
 const NO_WINDOW: WindowState = {
   rows: [],
   caughtUp: false,
+  hasCaughtUp: false,
   olderAvailable: false,
   loadingOlder: false,
   connection: { phase: "live", since: 0 },
@@ -1034,9 +1036,12 @@ class EpochWindow extends Listeners {
       for (const row of rows)
         for (const reference of threadEntityPayloadReferences(row)) this.bodies(reference.field).readAhead(reference);
     const view = rows.find((row) => row.entity.case === "viewState");
+    const caughtUp =
+      this.#ready && this.#through !== null && view !== undefined && view.revisionCursor >= this.#through;
     this.#state = {
       rows,
-      caughtUp: this.#ready && this.#through !== null && view !== undefined && view.revisionCursor >= this.#through,
+      caughtUp,
+      hasCaughtUp: this.#state.hasCaughtUp || caughtUp,
       olderAvailable: this.#lowest !== null && !this.#exhausted,
       loadingOlder: this.#loadingOlder,
       connection: this.#connection,
@@ -1294,7 +1299,7 @@ function useThread(): ThreadState {
       thread === null || shown === null
         ? null
         : {
-            rows: state.rows.filter(threadRow),
+            rows: state.hasCaughtUp ? state.rows.filter(threadRow) : [],
             caughtUp: state.caughtUp,
             olderAvailable: state.olderAvailable,
             loadingOlder: state.loadingOlder,
