@@ -3,7 +3,6 @@ package actions
 import (
 	"context"
 	"errors"
-	"net"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ import (
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -311,19 +311,11 @@ func newTestClient(t *testing.T, service *actionsService, rpcTimeout time.Durati
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(grpc.Creds(serverCredentials))
 	action_servicepb.RegisterActionServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
+	target := grpcserver.Serve(t, server)
 	clientTLS := ca.Issue(t, peertls.CentralSamplerURI)
-	client, err := Dial(context.Background(), listener.Addr().String(), clientTLS, rpcTimeout)
+	client, err := Dial(context.Background(), target, clientTLS, rpcTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}

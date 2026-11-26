@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -28,6 +27,7 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/migrations"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -152,21 +152,16 @@ func newDeliveryFixture(t *testing.T) *deliveryFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
 	receiver := &deliveryRuntime{opened: make(chan string, 256), commands: make(chan string, 256)}
 	harnesshostpb.RegisterHarnessHostServer(server, receiver)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	target := grpcserver.Serve(t, server)
 	senderCertificate := ca.Issue(t, peertls.SessionsURI)
 	dsn := deliveryDatabase.Clone(t)
 	return &deliveryFixture{
 		ctx: ctx, queueStore: store.NewStore(postgres.Open(t, dsn), 256), dsn: dsn, objects: objects, sandbox: sandbox,
 		identity: &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}, runtime: receiver,
-		catalog: &observedCatalog{KubernetesSandboxes: catalog}, sender: &dispatcher.HarnessHostClient{Namespace: namespace, Timeout: 5 * time.Second, TargetTemplate: listener.Addr().String(), GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI, ClientURI: peertls.SessionsURI, CertFile: senderCertificate.CertFile, KeyFile: senderCertificate.KeyFile}},
+		catalog: &observedCatalog{KubernetesSandboxes: catalog}, sender: &dispatcher.HarnessHostClient{Namespace: namespace, Timeout: 5 * time.Second, TargetTemplate: target, GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI, ClientURI: peertls.SessionsURI, CertFile: senderCertificate.CertFile, KeyFile: senderCertificate.KeyFile}},
 	}
 }
 

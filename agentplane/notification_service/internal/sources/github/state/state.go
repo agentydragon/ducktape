@@ -78,7 +78,7 @@ func NewSubjectKey(repositoryID int64, subject githubmodel.Subject) (SubjectKey,
 	}
 }
 
-// RefreshKey is a row that holds shared refresh state: a AccessKey or a SubjectKey.
+// RefreshKey identifies a shared access, subject, or pull request resource refresh row.
 type RefreshKey interface {
 	// refresh is the table holding the key's row, with the refresh lease's columns, and the row's key values.
 	refresh() (lease.Table, []any)

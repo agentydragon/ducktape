@@ -134,6 +134,7 @@ spec:
         - agentplane-staging
         - agents-infra
         - airlock
+        - attendant
         - buildbuddy-executor
         - claude-session-sync
         - cli-proxy-api

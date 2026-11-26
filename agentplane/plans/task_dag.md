@@ -1413,14 +1413,17 @@ a bounded continuation with a tool call on a route without native compaction.
 compaction threshold and reached 261,181 input tokens without recording a compaction intent.
 At all 59 sampling boundaries with a known previous usage above threshold, the sampler saw one
 live Code Mode cell, at least three user messages and no retry. The live-cell guard suppressed
-compaction while sampling continued. Cover a cell that stays live across the threshold: preserve
-its handle and eventual result without executing it twice. Reserve room for the summary and the next
-ordinary completion. Repeating the same nearly full prompt can exhaust even a bounded retry budget.
+compaction while sampling continued. #19867 removed that guard and exercises a yielded cell and
+its in-flight nested tool across compaction in the [runtime recovery test](../sampler/internal/residentruntime/provider_compaction_recovery_test.go).
 
-Use the last N items as the retention unit. Move the cut to keep a parallel tool-call batch and
-all its results together. Preserve the current task when a cut falls inside a user turn.
-Evaluate omitting historical reasoning **only from messages copied into a compacted context**;
-keep ordinary replay, new reasoning and History intact. Compare with
+Chat now replaces earlier tool exchanges with a handoff and retains recent authored user messages
+under a token budget (#19865). [Sampler contract](../sampler/SPEC.md)
+
+Measure whether the current policy leaves room for both the summary and the next ordinary
+completion. Repeating a nearly full prompt can exhaust even a bounded retry budget. Compare the
+current replacement with a last-N-item tail that keeps a parallel tool-call batch and its results
+together. For that alternative, evaluate omitting historical reasoning from the copied tail and
+preserve the current task across a cut inside a user turn. Compare with
 [Aider's token-budgeted tail](https://github.com/Aider-AI/aider/blob/main/aider/history.py)
 and another open-source tool-using harness on the same workload.
 
@@ -3594,33 +3597,33 @@ old checkpoint is never resumed as the replacement Identity.
 
 ### `APP_IDENTITIES_UI` — identities in the app
 
-**Paused; landed so far: the identities list with bindings, expiries and the accounts its use
-rules reach, the identity page, references, origin and delete refused while referenced or from git
-(`app/frontend/identities/`); the session form showing an existing environment's Identity
-(#15443); optional identity cleanup on Sandbox deletion (#15444); a stopped environment's identity
-changed or cleared, guarded against placed Sessions (#15445). Remaining slices are candidates.**
-`PolicyService` already watches Identities and deletes one for it (#15151;
-[Policy Controller SPEC](../policy_controller/SPEC.md#policy-resource-watches)). Left: the new-environment identity picker (`CreateEnvironment` still takes no Identity); the permission-request approval card with new
-temporary account, widen shared, or deny; a Thread finish action that offers Identity cleanup after
-the authoritative Session finish/lifetime contract and its selected backend operation exist
-(`SESSION_AND_INBOX_LIFETIME`, `SESSION_LIFETIME_IMPLEMENTATION`); the finish dialog's default to
-delete an app-minted identity once the app mints any; the identities an environment
-has run as on its page. Thread finish's prerequisites do not block the other slices. The Connection consent page (`/#/connection-enrollments/{handle}`) and
-the OAuth clients tab's rebind picker should choose an eligible live Identity in the policy
-namespace under operator-approved consent/rebind; there is no static Identity-name allowlist. A
-Connection's **View grants** shows that Identity's bindings, and an identity's page lists the
-Connections bound to it beside its Sandboxes and Sessions (operator, 2026-11-09; today's flow is in
-`app/README.md`). These UI slices no longer wait on the completed workload cutover. Mockups: the
-plan's operator UI section. **Exit:** BFF routes with
-tests, visual tests capturing each screen, and a browser test that a referenced identity cannot be
-deleted. The landed slice shows every identity not applied from git as of unknown origin. When
-Session-managed identity provisioning (`SESSION_MANAGED_IDENTITY`) is implemented, it needs to
-stamp an origin marker that `identities/origin.ts` can read. The new-environment identity picker
-remains an independent app UI slice; the Sandbox launch sequence is already settled in the identity
-plan.
-The environment page reads only its current Sandbox-owned WorkloadCredential at the last check;
-revoked records do not supply a complete identity history. Choose a retained source and retention
-contract before claiming to show earlier identities.
+**Paused.** The app lists Identities, their references, origin, bindings, expiries and reachable
+accounts. PolicyService watches Identities and refuses unsafe deletion (#15151). The Thread form
+shows the existing Sandbox’s Identity (#15443). Operators can request Identity cleanup on Sandbox
+deletion (#15444), rebind a stopped Sandbox with placed-Session checks (#15445), and launch a
+Sandbox with a new or existing Identity (#20089).
+[Policy resource watches](../policy_controller/SPEC.md#policy-resource-watches) ·
+[Thread creation](../app/frontend/SPEC.md#thread-creation) ·
+[Sandbox deletion and cleanup](../app/frontend/SPEC.md#sandbox-deletion-and-identity-cleanup)
+
+Remaining UI slices can proceed independently of the completed workload cutover.
+
+- Give permission requests an approval card with choices to create a temporary account, widen the
+  shared account, or deny.
+- Offer Identity cleanup on Thread finish once `SESSION_AND_INBOX_LIFETIME` and
+  `SESSION_LIFETIME_IMPLEMENTATION` define the backend operation. Default cleanup to selected
+  only when creation evidence identifies the Identity the app minted for that launch. Today only
+  Flux origin is recognizable. `SESSION_MANAGED_IDENTITY` must stamp Session-created Identities
+  so `identities/origin.ts` can distinguish them.
+- On Connection consent (`/#/connection-enrollments/{handle}`) and OAuth client rebind, let the
+  operator choose an eligible live Identity in the policy namespace. **View grants** should show
+  its bindings. The Identity page should list its bound Connections alongside Sandboxes and
+  Sessions (operator, 2026-11-09). [Current Connection flow](../app/README.md)
+- Choose a retained source and retention policy for the Identities an environment previously ran
+  as. Its current Sandbox-owned WorkloadCredential and revoked records give an incomplete history.
+
+**Exit:** cover the BFF routes, capture each screen in visual tests, and exercise refusal to delete
+a referenced Identity in the browser. [Operator UI design](identity_and_kubernetes_accounts.md#operator-ui)
 
 The merged #15444 and #15445 slices have no recorded k3s system test or post-Flux staging proof as
 of 2026-11-10. #15445's browser test exercises a running refusal by `EnvironmentService` and a

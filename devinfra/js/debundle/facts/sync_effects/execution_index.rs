@@ -1778,6 +1778,25 @@ enum NativeReceiverRoot {
 }
 
 impl NativeReceiverRoot {
+    fn cloned_ordinary_input(&self) -> Option<(ValueInputRef, SourceUnitOrdinal)> {
+        match self {
+            Self::OrdinaryDirect {
+                reference,
+                available_after,
+            }
+            | Self::OrdinaryDescendant {
+                reference,
+                available_after,
+            } => Some((reference.clone(), *available_after)),
+            Self::Intrinsic(_)
+            | Self::IntrinsicPrototype(_)
+            | Self::IntrinsicDescendant(_)
+            | Self::ArrayIteratorPrototype
+            | Self::SetIteratorPrototype
+            | Self::BundleGlobal => None,
+        }
+    }
+
     fn intrinsic_root(&self) -> Option<NativeIntrinsic> {
         match self {
             Self::Intrinsic(root)
@@ -2490,22 +2509,11 @@ fn intrinsic_roots_read(
                     ordinary_inputs,
                     callable_return_inputs,
                 );
-                ordinary_refs.extend(option_roots.iter().filter_map(|root| match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_)
-                    | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype
-                    | NativeReceiverRoot::BundleGlobal => None,
-                }));
+                ordinary_refs.extend(
+                    option_roots
+                        .iter()
+                        .filter_map(NativeReceiverRoot::cloned_ordinary_input),
+                );
                 if option_roots.is_empty() && intrinsic_alternative_can_be_unknown(option) {
                     unknown_arm = true;
                 }
@@ -2536,7 +2544,6 @@ fn intrinsic_roots_read(
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
             let mut input_roots = NativeReceiverRoots::new();
             let mut ordinary_refs = BTreeSet::new();
-            let mut has_callable_return_roots = false;
             let mut object_get_prototype_of = false;
             for (position, value) in std::iter::once(callee.as_ref())
                 .chain(args.iter())
@@ -2575,22 +2582,11 @@ fn intrinsic_roots_read(
                         callable_return_inputs,
                     )
                 };
-                ordinary_refs.extend(value_roots.iter().filter_map(|root| match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_)
-                    | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype
-                    | NativeReceiverRoot::BundleGlobal => None,
-                }));
+                ordinary_refs.extend(
+                    value_roots
+                        .iter()
+                        .filter_map(NativeReceiverRoot::cloned_ordinary_input),
+                );
                 input_roots.extend(value_roots);
             }
             if matches!(value, ValueExpr::Call(..)) && object_get_prototype_of {
@@ -2601,54 +2597,26 @@ fn intrinsic_roots_read(
                 input_roots.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
                 return input_roots;
             }
-            if let ValueExpr::Binding(binding) = callee.as_ref()
-                && let Some(return_roots) = callable_return_inputs.by_binding.get(binding)
-            {
-                has_callable_return_roots = true;
-                ordinary_refs.extend(return_roots.iter().filter_map(|root| match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_)
-                    | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype
-                    | NativeReceiverRoot::BundleGlobal => None,
-                }));
-                input_roots.extend(return_roots.iter().cloned());
-            } else if let ValueExpr::Alloc(Kind::Function, function) = callee.as_ref()
-                && let Some(return_roots) = callable_return_inputs.by_origin.get(function)
-            {
-                has_callable_return_roots = true;
-                ordinary_refs.extend(return_roots.iter().filter_map(|root| match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_)
-                    | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype
-                    | NativeReceiverRoot::BundleGlobal => None,
-                }));
-                input_roots.extend(return_roots.iter().cloned());
+            let return_roots = match callee.as_ref() {
+                ValueExpr::Binding(binding) => callable_return_inputs.by_binding.get(binding),
+                ValueExpr::Alloc(Kind::Function, function) => {
+                    callable_return_inputs.by_origin.get(function)
+                }
+                _ => None,
+            };
+            if let Some(roots) = return_roots {
+                ordinary_refs.extend(
+                    roots
+                        .iter()
+                        .filter_map(NativeReceiverRoot::cloned_ordinary_input),
+                );
+                input_roots.extend(roots.iter().cloned());
             }
             // Preserve baseline opaque call/construct behavior unless an
-            // author input participates. Native constructor aliases and
-            // instances do not inherit their constructor's identity.
+            // author input participates. A known empty return summary
+            // still preserves the collected input roots.
             if ordinary_refs.is_empty() {
-                return if has_callable_return_roots {
+                return if return_roots.is_some() {
                     input_roots
                 } else {
                     NativeReceiverRoots::new()
@@ -3290,20 +3258,12 @@ fn evaluate_receiver_value(
                 .fact
                 .capture_dependencies
                 .extend(callee_value.fact.capture_dependencies.iter().cloned());
-            let mut ordinary_refs = BTreeSet::new();
-            for root in &result.fact.roots {
-                if let NativeReceiverRoot::OrdinaryDirect {
-                    reference,
-                    available_after,
-                }
-                | NativeReceiverRoot::OrdinaryDescendant {
-                    reference,
-                    available_after,
-                } = root
-                {
-                    ordinary_refs.insert((reference.clone(), *available_after));
-                }
-            }
+            let mut ordinary_refs: BTreeSet<_> = result
+                .fact
+                .roots
+                .iter()
+                .filter_map(NativeReceiverRoot::cloned_ordinary_input)
+                .collect();
             for argument in args.iter() {
                 let argument = evaluate_receiver_value(argument, context, rules);
                 result.pending |= argument.pending;
@@ -3432,22 +3392,7 @@ fn evaluate_receiver_value(
                 .fact
                 .roots
                 .iter()
-                .filter_map(|root| match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => Some((reference.clone(), *available_after)),
-                    NativeReceiverRoot::Intrinsic(_)
-                    | NativeReceiverRoot::IntrinsicPrototype(_)
-                    | NativeReceiverRoot::IntrinsicDescendant(_)
-                    | NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype
-                    | NativeReceiverRoot::BundleGlobal => None,
-                })
+                .filter_map(NativeReceiverRoot::cloned_ordinary_input)
                 .collect();
             if !ordinary_refs.is_empty() {
                 result.fact.roots.insert(NativeReceiverRoot::Intrinsic(
@@ -3502,22 +3447,7 @@ impl IterativeRules for ReceiverFlowRules<'_> {
                 let ordinary_refs: BTreeSet<_> = fact
                     .roots
                     .iter()
-                    .filter_map(|root| match root {
-                        NativeReceiverRoot::OrdinaryDirect {
-                            reference,
-                            available_after,
-                        }
-                        | NativeReceiverRoot::OrdinaryDescendant {
-                            reference,
-                            available_after,
-                        } => Some((reference.clone(), *available_after)),
-                        NativeReceiverRoot::Intrinsic(_)
-                        | NativeReceiverRoot::IntrinsicPrototype(_)
-                        | NativeReceiverRoot::IntrinsicDescendant(_)
-                        | NativeReceiverRoot::ArrayIteratorPrototype
-                        | NativeReceiverRoot::SetIteratorPrototype
-                        | NativeReceiverRoot::BundleGlobal => None,
-                    })
+                    .filter_map(NativeReceiverRoot::cloned_ordinary_input)
                     .collect();
                 if let Some(copy_owner) = self.index.stable_top_level_copy_owner(target, value) {
                     fact.roots = fact
@@ -3943,7 +3873,6 @@ fn close_receiver_flow(
             Some((*function, roots))
         })
         .collect::<BTreeMap<_, _>>();
-    let by_origin = callable_roots.clone();
     let by_binding = facts
         .iter()
         .filter_map(|(key, fact)| {
@@ -3964,7 +3893,7 @@ fn close_receiver_flow(
         bindings,
         callable_returns: CallableReturnInputs {
             by_binding,
-            by_origin,
+            by_origin: callable_roots,
         },
         facts,
     }

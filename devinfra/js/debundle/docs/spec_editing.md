@@ -195,79 +195,41 @@ check its outcomes and `templates` listing.
 
 ## Workflow: fixing an atom-split rejection
 
-When `bindings assign` rejects with an "atom split" diagnostic, the
-realizability gate found that the requested move would split an
-indivisible source-unit set. The diagnostic names the split atom, its source units,
-and the destinations each member would land in.
+Use the [rejection diagnostics](cli.md#rejection-diagnostics) to find both
+claims and the edge witness. Inspect the complete atom and its source, using
+its reported ID in place of `atomic:1`:
 
-1. **Read the diagnostic.** It names the atom, lists each source unit's
-   current and proposed module, and the `DepKind` causes (eager_use,
-   rebind, sequenced, ...).
-2. **Inspect the atom.** Run `debundle describe <atom-id> --all` for graph
-   context (which source units are in it, why they're co-bound), then
-   `debundle inspect-source --id <atom-id>` to read the source.
-3. **List atoms broadly** if you need to triangulate:
-   ```bash
-   debundle atoms --format json | jq '.[] | select(...)'
-   ```
-   `debundle coverage` reports per-atom spec coverage; rows tagged
-   "split" by current YAML are not landable until the assignment agrees.
-4. **Diagnose before choosing the repair.** Follow the shared
-   [assignment diagnosis](../skills/shared/workflow.md#diagnose-a-rejected-assignment)
-   to distinguish a genuinely unsafe split from conservative analysis or a tool
-   defect. If the complete atom forms a coherent module, include its missing
-   members in the move batch; the diagnostic does not compute that completion.
-   Otherwise revise the boundary or investigate the blocking proof.
-5. **Re-run** the normal gate on the candidate; co-location alone does not
-   establish acceptance.
+```bash
+debundle describe atomic:1 --all
+debundle inspect-source --id atomic:1
+```
 
-The gate refuses; nothing on disk has changed.
+Use `atoms` for broader inventory and `coverage` for authored coverage.
+Follow the shared [assignment diagnosis](../skills/shared/workflow.md#diagnose-a-rejected-assignment)
+before changing the boundary. If the complete atom forms a coherent module,
+include its missing members in the same move batch. Otherwise revise the
+boundary or investigate the blocking proof. Run the normal gate on the candidate.
 
 ## Workflow: proposing commutations
 
-When `gate cut` shows a blocking SCC whose cut is `sequenced` edges with
-opaque effects (an unknown call, an escaped global alias), co-location is not
-the only remedy: a `commuting_statements` entry
-([SPEC § Commuting statements](../SPEC.md#commuting-statements)) certifies that
-the two source units are order-independent during initialization.
-
-1. **Draft.** Run `debundle spec propose-commutations --graph <graph>
---source-root <root> [--modules <chunk tree>] --out commutations.yaml`
-   ([cli.md § Proposing commutations](cli.md#proposing-commutations-spec-propose-commutations)).
-   It proposes one entry per `sequenced` source-unit pair inside the SCC that
-   the gate would accept, the best 50 by default (`--all` for every one),
-   ranked single-pair cuts first (the pair that alone
-   breaks the SCC may sit on an arc the gate's cut did not pick), and reports
-   separately the pairs the gate would
-   reject, the endpoints without a unique selector, and the `eager_use` edges
-   that still need co-location. Its `sccs` rows say whether all proposals
-   together break each SCC; when they cannot, the residual component member
-   paths and blocking edge counts show a surviving constraint. Predictions
-   preserve third-statement order through the same closure as the gate.
-   `counts_are_lower_bounds` marks an analysis stopped after proving a cycle;
-   its reported cyclic groups and counts need not be the full inventory.
-2. **Audit.** For each proposal read both statements at the reported locations
-   and establish the premise yourself: neither observes the other's effect.
-   The explanation says only why the analysis could not prove the order
-   irrelevant; the draft is a candidate, not a fact.
+1. **Draft.** Use [the commutation proposal command](cli.md#proposing-commutations-spec-propose-commutations)
+   on a blocking SCC with opaque sequenced effects. Review the ranked YAML
+   and check whether dataflow edges or preserved ordering still block the split.
+2. **Audit.** Read both statements at the reported locations. Keep an entry
+   only when you can establish that neither statement observes the other's
+   effects during initialization.
 3. **Apply.** Copy the audited entries into
-   `chunk_analysis_options.<chunk>.commuting_statements` of the spec (the
-   draft is already grouped under that key) and write the `note` with the
-   reason the pair commutes. Drop the rest.
-4. **Validate.** Run `debundle run` (or `spec validate`): the gate rejects an
-   entry that contradicts a source fact and warns about one that inerts
-   nothing, and the rejection report shows what the accepted entries bought
-   (`inert_commuting_edges`).
+   `chunk_analysis_options.<chunk>.commuting_statements` and write each rationale
+   in its `note`.
+4. **Validate.** Use the [pipeline](cli.md#running-the-pipeline) and review
+   `inert_commuting_edges` in the rejection report for the affected SCC.
 
 ## Workflow: applying a reviewed source-unit assignment
 
-Check the full [destination batch](cli.md#checking-explicit-destination-batches-modules-check)
-with `modules check --batch changes.json --format json`. Save the accepted
-`.plan` to retain its graph identity and import priority. Preview with
-`modules apply --plan plan.json --dry-run`, then apply that plan, regenerate
-and run the relevant behavior checks. To supply reviewed names or selector
-overrides for fresh claims, see [explicit assignments](cli.md#applying-explicit-assignments-modules-apply---assignments)
-and [multi-chunk application](cli.md#applying-assignments-in-a-multi-chunk-tree).
+[Check the complete destination batch](cli.md#checking-explicit-destination-batches-modules-check)
+and save its accepted `.plan` with its graph identity and import priority.
+[Preview and apply the saved plan](cli.md#applying-explicit-assignments-modules-apply---assignments),
+then regenerate and run the relevant behavior checks.
 
 Both `modules apply` and `modules merge` consolidate compatible source-match
 records in their destinations when the template bytes, identifier policy and

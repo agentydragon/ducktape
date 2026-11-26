@@ -184,9 +184,7 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
     let materialized = debundle_e2e_support::process::debundle_output(
         Command::new(debundler_path())
             .arg("run")
-            .args(tree_spec_args(fixture.root()))
-            .arg("--out-root")
-            .arg(&out_root),
+            .args(tree_spec_args(fixture.root(), &out_root)),
     )
     .unwrap();
     process::assert_success(&materialized);

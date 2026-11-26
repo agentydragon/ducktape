@@ -2,13 +2,13 @@ package status
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
@@ -16,17 +16,11 @@ import (
 )
 
 func TestGRPCHealthProbeUsesServingStatus(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	done := make(chan struct{})
-	go func() { defer close(done); _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close(); <-done })
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	target := grpcserver.Serve(t, server)
+	connection, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}

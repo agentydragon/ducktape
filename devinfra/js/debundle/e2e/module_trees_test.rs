@@ -44,9 +44,7 @@ fn rerun_tree(run: &TreeRun, output_dir: &str) -> std::process::Output {
     process::debundle_output(
         Command::new(debundler_path())
             .args(["run"])
-            .args(tree_spec_args(root))
-            .arg("--out-root")
-            .arg(root.join(output_dir)),
+            .args(tree_spec_args(root, &root.join(output_dir))),
     )
     .unwrap_or_else(|err| panic!("{err}"))
 }

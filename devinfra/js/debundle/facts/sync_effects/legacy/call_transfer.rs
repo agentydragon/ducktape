@@ -24,43 +24,36 @@ impl Executor<'_, '_> {
         captures: &Context,
         outcome: &mut Outcome,
     ) -> CallTransfer {
-        if call.kind == CallKind::OpaqueExecution {
-            let fact = &self.inputs.facts[call.owner.0];
-            let mut reached: Values = env
-                .values()
-                .chain(captures.values())
-                .flatten()
-                .chain(
-                    fact.reads
-                        .eager
-                        .iter()
-                        .chain(&fact.reads.lazy)
-                        .filter_map(|binding| self.state.world.module.prefix_values.get(binding))
-                        .flatten(),
-                )
-                .cloned()
-                .collect();
-            for argument in &call.args {
-                reached.extend(self.evaluate(argument, env, captures));
+        let opaque_reach = match call.kind {
+            CallKind::OpaqueExecution => {
+                let fact = &self.inputs.facts[call.owner.0];
+                let reached = env
+                    .values()
+                    .chain(captures.values())
+                    .flatten()
+                    .chain(
+                        fact.reads
+                            .eager
+                            .iter()
+                            .chain(&fact.reads.lazy)
+                            .filter_map(|binding| {
+                                self.state.world.module.prefix_values.get(binding)
+                            })
+                            .flatten(),
+                    )
+                    .cloned()
+                    .collect();
+                Some(reached)
             }
-            self.note_unknown_call(call);
-            self.unsettle(&reached);
-            self.promote_escaped_callbacks(&reached, outcome);
-            self.invoke_possible_callbacks_at(&[reached], false, Some(call.span), outcome);
-            outcome.unsupported(
-                &self.inputs.metrics,
-                ExecutionOperation::OpaqueExecution,
-                call.owner,
-                call.span,
-            );
-            outcome.unknown_call = true;
-            return CallTransfer::EffectsOnly;
-        }
-        if call.kind == CallKind::Call && call.has_spread {
-            // The canonical argument values are iterable capabilities, not
-            // the actual positional arguments. No exact local invocation can
-            // use them as though spreading had completed without effects.
-            let mut reached = self.evaluate(&call.callee, env, captures);
+            CallKind::Call if call.has_spread => {
+                // The canonical argument values are iterable capabilities, not
+                // the actual positional arguments. Evaluate the callee first,
+                // then retain the reached values for conservative fallback.
+                Some(self.evaluate(&call.callee, env, captures))
+            }
+            _ => None,
+        };
+        if let Some(mut reached) = opaque_reach {
             for argument in &call.args {
                 reached.extend(self.evaluate(argument, env, captures));
             }

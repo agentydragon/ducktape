@@ -255,10 +255,7 @@ func workloadSidecarFor(t *testing.T, central *httptest.Server, proxyCredential 
 	sidecar, err := newSidecar(config{
 		Proxy: proxyConfig{
 			Address: net.JoinHostPort(host, port),
-			Transport: tlsProxyTransportConfig{
-				CAFile: proxyCredential.CAFile,
-				Auth:   spiffeProxyAuth{CertFile: proxyCredential.CertFile, KeyFile: proxyCredential.KeyFile},
-			},
+			SVID:    proxyCredential,
 		},
 		PlatformRoutes: &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
 		WorkloadRoutes: map[string]workloadRouteConfig{authority: route},

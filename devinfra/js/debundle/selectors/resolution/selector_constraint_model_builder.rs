@@ -1,7 +1,7 @@
 //! Lowering from selector IR plus facts into a compact finite-domain problem.
 
 use source_identity::SourceUnitOrdinal;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
 use selector_constraint_backend::{
     AllowedTupleRowsId, BackendValueId, BindingProjection, CompiledSelectorProblem,
@@ -441,38 +441,15 @@ fn add_cached_source_unit_string_indexed_allowed_tuples(
         (SourceUnitTerm::Var { id: source_unit_id }, StringTerm::Var { id: string_id }) => {
             // `SelectorProgram::validate` types source unit terms as source unit variables
             // and string terms as string variables: the two are distinct.
-            let constraint_variables = [
-                model_variable(variables, *source_unit_id)?,
-                model_variable(variables, *string_id)?,
-            ];
-            let row_set =
-                if let Some(row_set) = support_cache.source_unit_string_binary.get(relation) {
-                    *row_set
-                } else {
-                    let tuples = index
-                        .rows
-                        .iter()
-                        .map(|(fact_source_unit, fact_string)| {
-                            Ok((
-                                model.intern_source_unit(*fact_source_unit)?,
-                                model.intern_string(fact_string)?,
-                            ))
-                        })
-                        .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-                    let row_set = model.intern_encoded_allowed_binary_row_set(
-                        constraint_variables,
-                        [VariableDomain::SourceUnit, VariableDomain::String],
-                        tuples,
-                    )?;
-                    support_cache
-                        .source_unit_string_binary
-                        .insert(relation, row_set);
-                    row_set
-                };
-            model
-                .add_encoded_allowed_row_set(constraint_variables.to_vec(), row_set)
-                .map(|_| ())
-                .map_err(Into::into)
+            add_source_unit_string_rows(
+                model,
+                [
+                    model_variable(variables, *source_unit_id)?,
+                    model_variable(variables, *string_id)?,
+                ],
+                support_cache.source_unit_string_binary.entry(relation),
+                index.rows(),
+            )
         }
     }
 }
@@ -527,41 +504,45 @@ fn add_cached_source_unit_string_allowed_tuples(
                 .map_err(Into::into)
         }
         (SourceUnitTerm::Var { id: source_unit_id }, StringTerm::Var { id: string_id }) => {
-            let constraint_variables = [
-                model_variable(variables, *source_unit_id)?,
-                model_variable(variables, *string_id)?,
-            ];
-            let row_set = if let Some(row_set) = support_cache
-                .source_unit_string_binary_by_key
-                .get(&relation_key)
-            {
-                *row_set
-            } else {
-                let tuples = facts
-                    .iter()
-                    .map(|(fact_source_unit, fact_string)| {
-                        Ok((
-                            model.intern_source_unit(*fact_source_unit)?,
-                            model.intern_string(fact_string)?,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-                let row_set = model.intern_encoded_allowed_binary_row_set(
-                    constraint_variables,
-                    [VariableDomain::SourceUnit, VariableDomain::String],
-                    tuples,
-                )?;
+            add_source_unit_string_rows(
+                model,
+                [
+                    model_variable(variables, *source_unit_id)?,
+                    model_variable(variables, *string_id)?,
+                ],
                 support_cache
                     .source_unit_string_binary_by_key
-                    .insert(relation_key, row_set);
-                row_set
-            };
-            model
-                .add_encoded_allowed_row_set(constraint_variables.to_vec(), row_set)
-                .map(|_| ())
-                .map_err(Into::into)
+                    .entry(relation_key),
+                facts.iter().map(|(unit, value)| (*unit, value.as_str())),
+            )
         }
     }
+}
+
+fn add_source_unit_string_rows<'a, K: Ord>(
+    model: &mut CompiledSelectorProblemBuilder,
+    variables: [ConstraintVariableId; 2],
+    cached: Entry<'_, K, AllowedTupleRowsId>,
+    rows: impl Iterator<Item = (SourceUnitId, &'a str)>,
+) -> Result<(), CompiledSelectorProblemBuildError> {
+    let row_set = match cached {
+        Entry::Occupied(entry) => *entry.get(),
+        Entry::Vacant(entry) => {
+            let tuples = rows
+                .map(|(unit, value)| {
+                    Ok((model.intern_source_unit(unit)?, model.intern_string(value)?))
+                })
+                .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
+            let id = model.intern_encoded_allowed_binary_row_set(
+                variables,
+                [VariableDomain::SourceUnit, VariableDomain::String],
+                tuples,
+            )?;
+            *entry.insert(id)
+        }
+    };
+    model.add_encoded_allowed_row_set(variables.to_vec(), row_set)?;
+    Ok(())
 }
 
 fn add_cached_source_unit_allowed_tuples(
@@ -823,36 +804,27 @@ impl TargetBindingProjections {
 struct SourceUnitStringIndex {
     source_units_by_value: BTreeMap<String, Vec<SourceUnitId>>,
     values_by_unit: BTreeMap<SourceUnitId, Vec<String>>,
-    rows: Vec<(SourceUnitId, String)>,
 }
 
 impl SourceUnitStringIndex {
-    fn from_facts(facts: &BTreeSet<(SourceUnitId, String)>) -> Self {
+    fn from_facts(facts: BTreeSet<(SourceUnitId, String)>) -> Self {
         let mut index = Self::default();
-        for (source_unit, value) in facts {
+        // Tuple order makes both per-key lists sorted and unique.
+        for (unit, value) in facts {
             index
                 .source_units_by_value
                 .entry(value.clone())
                 .or_default()
-                .push(*source_unit);
-            index
-                .values_by_unit
-                .entry(*source_unit)
-                .or_default()
-                .push(value.clone());
-            index.rows.push((*source_unit, value.clone()));
+                .push(unit);
+            index.values_by_unit.entry(unit).or_default().push(value);
         }
-        for source_units in index.source_units_by_value.values_mut() {
-            source_units.sort_unstable();
-            source_units.dedup();
-        }
-        for values in index.values_by_unit.values_mut() {
-            values.sort();
-            values.dedup();
-        }
-        index.rows.sort();
-        index.rows.dedup();
         index
+    }
+
+    fn rows(&self) -> impl Iterator<Item = (SourceUnitId, &str)> {
+        self.values_by_unit
+            .iter()
+            .flat_map(|(&unit, values)| values.iter().map(move |value| (unit, value.as_str())))
     }
 
     fn contains(&self, source_unit: SourceUnitId, value: &str) -> bool {
@@ -1095,9 +1067,7 @@ impl DerivedFactRequirements {
 struct FactDomains {
     source_units: BTreeSet<SourceUnitId>,
     strings: BTreeSet<String>,
-    source_unit_kinds: BTreeSet<(SourceUnitId, String)>,
     source_unit_statement_ordinals: BTreeSet<(SourceUnitId, SourceUnitOrdinal)>,
-    declared_bindings: BTreeSet<(SourceUnitId, String)>,
     raw_source_unit_references_binding: BTreeSet<(SourceUnitId, String)>,
     references_unit: BTreeSet<(SourceUnitId, SourceUnitId)>,
     raw_member_reads: BTreeSet<(SourceUnitOrdinal, Option<String>, String)>,
@@ -1124,7 +1094,7 @@ impl FactDomains {
         domains.add_facts(facts);
         domains.add_derived_facts(&requirements);
         domains.add_program_constants(program);
-        domains.build_lookup_indexes();
+        domains.relation_supports = RelationSupportCache::from_domains(&domains);
         domains
     }
 
@@ -1146,6 +1116,8 @@ impl FactDomains {
     }
 
     fn add_facts(&mut self, facts: &SelectorFactStore) {
+        let mut source_unit_kinds = BTreeSet::new();
+        let mut declared_bindings = BTreeSet::new();
         for fact in &facts.facts {
             match fact {
                 SelectorFact::SourceUnit {
@@ -1156,8 +1128,7 @@ impl FactDomains {
                 } => {
                     self.add_source_unit(*source_unit);
                     self.add_string(statement_kind);
-                    self.source_unit_kinds
-                        .insert((*source_unit, statement_kind.clone()));
+                    source_unit_kinds.insert((*source_unit, statement_kind.clone()));
                     self.source_unit_statement_ordinals
                         .insert((*source_unit, *statement_ordinal));
                 }
@@ -1168,8 +1139,7 @@ impl FactDomains {
                 } => {
                     self.add_source_unit(*source_unit);
                     self.add_string(binding);
-                    self.declared_bindings
-                        .insert((*source_unit, binding.clone()));
+                    declared_bindings.insert((*source_unit, binding.clone()));
                 }
                 SelectorFact::SourceUnitReferencesBinding {
                     source_unit,
@@ -1256,12 +1226,8 @@ impl FactDomains {
                 }
             }
         }
-    }
-
-    fn build_lookup_indexes(&mut self) {
-        self.source_unit_kinds_index = SourceUnitStringIndex::from_facts(&self.source_unit_kinds);
-        self.declared_bindings_index = SourceUnitStringIndex::from_facts(&self.declared_bindings);
-        self.relation_supports = RelationSupportCache::from_domains(self);
+        self.source_unit_kinds_index = SourceUnitStringIndex::from_facts(source_unit_kinds);
+        self.declared_bindings_index = SourceUnitStringIndex::from_facts(declared_bindings);
     }
 
     fn discard_unneeded_raw_relations(&mut self) {
@@ -1279,19 +1245,14 @@ impl FactDomains {
     }
 
     fn add_derived_facts(&mut self, requirements: &DerivedFactRequirements) {
-        let mut source_units_with_declarations = BTreeSet::new();
-        let mut source_units_by_binding: BTreeMap<String, BTreeSet<SourceUnitId>> = BTreeMap::new();
-        for (source_unit, binding) in &self.declared_bindings {
-            source_units_with_declarations.insert(*source_unit);
-            source_units_by_binding
-                .entry(binding.clone())
-                .or_default()
-                .insert(*source_unit);
-        }
-
+        let source_units_by_binding = &self.declared_bindings_index.source_units_by_value;
         if requirements.references_unit {
             for (source_unit, binding) in &self.raw_source_unit_references_binding {
-                if !source_units_with_declarations.contains(source_unit) {
+                if !self
+                    .declared_bindings_index
+                    .values_by_unit
+                    .contains_key(source_unit)
+                {
                     continue;
                 }
                 if let Some(referenced_source_units) = source_units_by_binding.get(binding) {
@@ -1325,7 +1286,11 @@ impl FactDomains {
                 let Some(source_unit) = source_unit_by_ordinal.get(statement_ordinal) else {
                     continue;
                 };
-                if !source_units_with_declarations.contains(source_unit) {
+                if !self
+                    .declared_bindings_index
+                    .values_by_unit
+                    .contains_key(source_unit)
+                {
                     continue;
                 }
                 if requirements.member_reads {
@@ -1362,7 +1327,11 @@ impl FactDomains {
                 let Some(source_unit) = source_unit_by_ordinal.get(statement_ordinal) else {
                     continue;
                 };
-                if !source_units_with_declarations.contains(source_unit) {
+                if !self
+                    .declared_bindings_index
+                    .values_by_unit
+                    .contains_key(source_unit)
+                {
                     continue;
                 }
                 self.module_member_uses

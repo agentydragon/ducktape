@@ -567,9 +567,7 @@ impl GraphFixture {
             Command::new(debundler_path())
                 .arg("run")
                 .arg("--graphs")
-                .args(tree_spec_args(root))
-                .arg("--out-root")
-                .arg(out_root),
+                .args(tree_spec_args(root, out_root)),
             root,
         )
         .unwrap()
