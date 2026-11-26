@@ -13,7 +13,7 @@ pub struct FreshRecordDestructuringContext<'a> {
 }
 
 impl FreshRecordDestructuringContext<'_> {
-    pub fn has_own_data_fields(&self, pattern: &Pat, init: &Expr) -> bool {
+    pub(crate) fn has_own_data_fields(&self, pattern: &Pat, init: &Expr) -> bool {
         let Pat::Object(pattern) = pattern else {
             return false;
         };

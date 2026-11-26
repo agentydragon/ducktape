@@ -26,10 +26,10 @@ pub enum PurityMode {
 /// Stable identity for a function body across modules and policy contexts.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub struct PurityFunctionKey {
-    pub module: String,
-    pub binding: String,
-    pub source_key: u32,
-    pub mode: PurityMode,
+    pub(crate) module: String,
+    pub(crate) binding: String,
+    pub(crate) source_key: u32,
+    pub(crate) mode: PurityMode,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
@@ -40,19 +40,19 @@ pub enum PurityKey {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PurityBodyTransfer {
-    pub events: BTreeMap<EffectEventKey, PurityEffectEvent>,
-    pub dependencies: ProofDependencies,
+    pub(crate) events: BTreeMap<EffectEventKey, PurityEffectEvent>,
+    pub(crate) dependencies: ProofDependencies,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct EffectEventKey {
+pub(crate) struct EffectEventKey {
     /// Explicit canonical classifier traversal order. Outer calls precede
     /// their arguments even though their spans contain those argument spans.
-    pub order: usize,
+    pub(crate) order: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PurityEffectEvent {
+pub(crate) enum PurityEffectEvent {
     Direct(PurityReason),
     Call {
         callee: PurityFunctionKey,
@@ -61,15 +61,18 @@ pub enum PurityEffectEvent {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PurityCallObligation {
-    pub callee: PurityFunctionKey,
-    pub name: String,
-    pub span: Span,
-    pub source_location: Option<analysis_vocabulary::execution_evidence::SourceLocation>,
+pub(crate) struct PurityCallObligation {
+    pub(crate) callee: PurityFunctionKey,
+    pub(crate) name: String,
+    pub(crate) span: Span,
+    pub(crate) source_location: Option<analysis_vocabulary::execution_evidence::SourceLocation>,
 }
 
 impl PurityBodyTransfer {
-    pub fn from_classification(purity: Purity, obligations: Vec<PurityCallObligation>) -> Self {
+    pub(crate) fn from_classification(
+        purity: Purity,
+        obligations: Vec<PurityCallObligation>,
+    ) -> Self {
         let (direct_reasons, dependencies) = match purity {
             Purity::Pure { dependencies } => (Vec::new(), dependencies),
             Purity::NotPure { reasons } => (reasons, ProofDependencies::default()),
@@ -109,24 +112,24 @@ impl PurityBodyTransfer {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PurityEffectFact {
+pub(crate) struct PurityEffectFact {
     /// Reasons local to this function: direct witnesses and call-site
     /// witnesses whose callee has a non-empty effect fact.
-    pub reasons: BTreeMap<EffectEventKey, PurityEffectReason>,
+    pub(crate) reasons: BTreeMap<EffectEventKey, PurityEffectReason>,
 }
 
 impl PurityEffectFact {
-    pub fn is_effectful(&self) -> bool {
+    pub(crate) fn is_effectful(&self) -> bool {
         !self.reasons.is_empty()
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PurityEffectReason {
-    pub reason: PurityReason,
+pub(crate) struct PurityEffectReason {
+    pub(crate) reason: PurityReason,
     /// The inferred callee behind an `impure_function_call` witness. This is a
     /// key, not an Arc, so recursive effects can never create cyclic causes.
-    pub callee: Option<PurityFunctionKey>,
+    pub(crate) callee: Option<PurityFunctionKey>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
@@ -138,7 +141,7 @@ pub enum PurityRuleKey {
 /// Typed adapter seam for registering purity rules in a larger shared store.
 /// A dispatcher can implement this by projecting its own enum key/fact types
 /// onto these purity-specific variants.
-pub trait PurityFactContext {
+pub(crate) trait PurityFactContext {
     fn read_purity(&mut self, key: PurityKey) -> Option<&PurityFact>;
     fn propose_purity(&mut self, key: PurityKey, contribution: PurityFact) -> FactChange;
     fn assume_purity(&mut self, dependencies: &ProofDependencies);
@@ -244,7 +247,7 @@ impl PurityEffectRules {
     /// positive completion certificates; each Effects rule then joins an
     /// effectfulness bit as its callees become effectful. Call-site reasons
     /// are materialized once after this closure settles.
-    pub fn producers(&self) -> Vec<PurityRuleKey> {
+    pub(crate) fn producers(&self) -> Vec<PurityRuleKey> {
         self.bodies
             .keys()
             .flat_map(|key| {
@@ -256,7 +259,7 @@ impl PurityEffectRules {
             .collect()
     }
 
-    pub fn evaluate(&self, rule: &PurityRuleKey, context: &mut impl PurityFactContext) {
+    pub(crate) fn evaluate(&self, rule: &PurityRuleKey, context: &mut impl PurityFactContext) {
         match rule {
             PurityRuleKey::Body(key) => {
                 let Some(body) = self.bodies.get(key) else {
@@ -441,7 +444,7 @@ impl IterativeRules for PurityEffectRules {
 /// Convert a saturated effect store to the established immutable Purity API.
 /// Cause edges only point toward a strictly shorter route to a direct witness,
 /// so recursive call SCCs produce a finite acyclic Arc cause graph.
-pub fn project_purity_effects(
+pub(crate) fn project_purity_effects(
     keys: impl IntoIterator<Item = PurityFunctionKey>,
     mut effects_for: impl FnMut(&PurityFunctionKey) -> Option<(PurityEffectFact, ProofDependencies)>,
 ) -> BTreeMap<PurityFunctionKey, Arc<Purity>> {
@@ -586,7 +589,7 @@ fn project_effect_maps(
     projected
 }
 
-pub fn call_reason(name: &str, span: Span) -> PurityReason {
+pub(crate) fn call_reason(name: &str, span: Span) -> PurityReason {
     PurityReason::new(
         PurityRule::ImpureFunctionCall,
         span,

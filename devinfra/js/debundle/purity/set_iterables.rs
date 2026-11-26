@@ -46,7 +46,7 @@ impl TopLevelNativeIterableOperandProjection {
         }
     }
 
-    pub fn operation_span(self) -> Span {
+    pub(crate) fn operation_span(self) -> Span {
         self.operation_span
     }
 
@@ -58,7 +58,7 @@ impl TopLevelNativeIterableOperandProjection {
         self.owner
     }
 
-    pub fn matches_operand(self, expr: &Expr) -> bool {
+    pub(crate) fn matches_operand(self, expr: &Expr) -> bool {
         matches!(
             (self.operand, expr.unwrap_parens()),
             (
@@ -470,7 +470,7 @@ fn primitive_object_properties(
 
 /// Own literal primitive values of an ordinary object, after duplicate-key
 /// replacement. Reject shapes whose keys or descriptors need runtime reasoning.
-pub fn primitive_literal_property_keys(object: &ObjectLit) -> Option<BTreeSet<String>> {
+pub(crate) fn primitive_literal_property_keys(object: &ObjectLit) -> Option<BTreeSet<String>> {
     let mut primitive_keys = BTreeSet::new();
     for prop in &object.props {
         let PropOrSpread::Prop(prop) = prop else {

@@ -371,7 +371,7 @@ fn classify_array_literal_element_purity(
 /// When `for_iterable` is `Some((elements, spelling))`, the Array arm
 /// classifies elements under that native row's iteration steps instead of
 /// generic array-literal purity.
-pub fn classify_fresh_array_spread_source(
+pub(crate) fn classify_fresh_array_spread_source(
     expr: &Expr,
     for_iterable: Option<(Elements, &str)>,
     shadowed: &BTreeSet<&'static str>,
@@ -543,7 +543,7 @@ fn classify_member_purity(
     Effects::of_opt_detail(Effect::Invoke(InvokeSite::MemberRead), member.span, detail)
 }
 
-pub fn classify_call_purity(
+pub(crate) fn classify_call_purity(
     call: &CallExpr,
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,
@@ -587,7 +587,7 @@ pub fn classify_call_purity(
 /// A body-local binding shadowing the root makes the called value a
 /// different value than the one the author annotated, so the chain is
 /// not trusted then (same rule as every other author-trust arm).
-pub fn classify_fluent_chain(
+pub(crate) fn classify_fluent_chain(
     expr: &Expr,
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,
@@ -821,7 +821,7 @@ fn callee_summary(callee_expr: &Expr) -> Option<String> {
     }
 }
 
-pub fn all_args_pure(
+pub(crate) fn all_args_pure(
     args: &[ExprOrSpread],
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,
@@ -1110,7 +1110,7 @@ fn binary_may_throw_on_numeric_mismatch(
 /// outlive only the surrounding match — short-lived by design,
 /// because the `pure_members` admission only needs the strings to
 /// look up the per-binding declared-pure set.
-pub fn static_member_obj_prop(expr: &Expr) -> Option<(&str, &str)> {
+pub(crate) fn static_member_obj_prop(expr: &Expr) -> Option<(&str, &str)> {
     let member = match expr {
         Expr::Member(member) => member,
         Expr::OptChain(opt) => match opt.base.as_ref() {
@@ -1133,7 +1133,7 @@ pub fn static_member_obj_prop(expr: &Expr) -> Option<(&str, &str)> {
 /// certifies the operands, or a spec-declared `purity: pure_new` binding with
 /// all args pure. Everything else (non-Ident callees, shadowed names, other
 /// arg shapes) is `UnknownNew`.
-pub fn classify_new_expr_purity(
+pub(crate) fn classify_new_expr_purity(
     new_expr: &NewExpr,
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,
@@ -1262,7 +1262,7 @@ pub fn classify_new_expr_purity(
     )
 }
 
-pub fn is_pure_object_define_property_on_fresh_namespace(
+pub(crate) fn is_pure_object_define_property_on_fresh_namespace(
     callee_expr: &Expr,
     args: &[ExprOrSpread],
     shadowed: &BTreeSet<&'static str>,
@@ -1432,7 +1432,7 @@ fn prop_name_is(name: &PropName, expected: &str) -> bool {
 ///
 /// No admitted shape can produce a Symbol, so ToString on a
 /// result-primitive value never hits the symbol TypeError path.
-pub fn is_result_primitive(
+pub(crate) fn is_result_primitive(
     expr: &Expr,
     primitives: &BTreeSet<String>,
     local_shadowed: &BTreeSet<String>,
@@ -1458,16 +1458,16 @@ pub fn is_result_primitive(
 }
 
 /// Primitive types `ToString` and `ToNumeric` convert without throwing.
-pub const TO_STRING_SILENT: PrimKinds = PrimKinds::ANY.without(PrimKinds::SYMBOL);
+pub(crate) const TO_STRING_SILENT: PrimKinds = PrimKinds::ANY.without(PrimKinds::SYMBOL);
 
 /// Primitive types `ToNumber` converts without throwing.
-pub const TO_NUMBER_SILENT: PrimKinds = TO_STRING_SILENT.without(PrimKinds::BIGINT);
+pub(crate) const TO_NUMBER_SILENT: PrimKinds = TO_STRING_SILENT.without(PrimKinds::BIGINT);
 
 /// The operands deciding a coercion of `operands` under `check`: `None`
 /// unless every operand is a primitive of known types here, a top-level
 /// binding, or a `PlainData` binding's named member whose value at the
 /// statement's program point can prove its types.
-pub fn coerce_operands(
+pub(crate) fn coerce_operands(
     operands: &[&Expr],
     check: CoerceCheck,
     graph: &ChunkCodeGraph,
@@ -1509,7 +1509,7 @@ pub fn coerce_operands(
 /// engine-only), proven immutable Symbol-valued consts, and reads of
 /// primitive-valued intrinsic data properties (`Symbol.iterator` etc.)
 /// whose global is not shadowed.
-pub fn is_safe_property_key(
+pub(crate) fn is_safe_property_key(
     key: &Expr,
     shadowed: &BTreeSet<&'static str>,
     local_shadowed: &BTreeSet<String>,

@@ -168,7 +168,7 @@ pub struct NativePremises {
 
 impl NativePremises {
     /// Every slot intact (or asserted at `site`).
-    pub fn require_slots(
+    pub(crate) fn require_slots(
         &self,
         slots: &[IntrinsicSlot],
         site: Option<u32>,
@@ -184,7 +184,7 @@ impl NativePremises {
     }
 
     /// `callee` names the original `family` global and `slots` are intact.
-    pub fn require_binding(
+    pub(crate) fn require_binding(
         &self,
         callee: &NativeCallee,
         family: NativeIntrinsic,
@@ -215,7 +215,7 @@ impl NativePremises {
 
     /// A zero-argument `new binding()` of a keyed collection: a fresh, empty
     /// allocation that runs no user code.
-    pub fn require_empty_collection(
+    pub(crate) fn require_empty_collection(
         &self,
         row: &Row,
         binding: &Id,
@@ -468,7 +468,7 @@ impl Default for SemanticFacts {
 }
 
 impl SemanticFacts {
-    pub fn solve(rules: SemanticRules) -> Self {
+    pub(crate) fn solve(rules: SemanticRules) -> Self {
         Self::solve_with_source(rules, None)
     }
 
@@ -562,7 +562,7 @@ impl SemanticFacts {
             .or_else(|| self.source.as_ref()?.judgment(key))
     }
 
-    pub fn dependencies(&self, key: &SemanticKey) -> Option<&ProofDependencies> {
+    pub(crate) fn dependencies(&self, key: &SemanticKey) -> Option<&ProofDependencies> {
         self.judgment(key).map(Judgment::dependencies)
     }
 
@@ -611,9 +611,9 @@ pub struct ArgumentNoEscapeFacts {
     inputs: BTreeMap<Id, Vec<(u32, usize, usize)>>,
 }
 
-pub struct ArgumentBorrowProof {
-    pub dependencies: ProofDependencies,
-    pub inference_use: InferenceUse,
+pub(crate) struct ArgumentBorrowProof {
+    pub(crate) dependencies: ProofDependencies,
+    pub(crate) inference_use: InferenceUse,
 }
 
 impl ArgumentNoEscapeFacts {
@@ -666,7 +666,7 @@ impl ArgumentNoEscapeFacts {
         }
     }
 
-    pub fn proof(
+    pub(crate) fn proof(
         &self,
         binding: &Id,
         argument_index: usize,

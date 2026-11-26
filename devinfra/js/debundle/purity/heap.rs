@@ -386,7 +386,7 @@ pub fn plain_array_bindings(
 /// of one. `Clean` keeps the elements primitive for the whole chunk, so
 /// iterating the array through an intact `%Array.prototype%` method passes
 /// only primitives.
-pub fn primitive_element_arrays(
+pub(crate) fn primitive_element_arrays(
     body: &[TopLevelItemView<'_>],
     plain_arrays: &BTreeSet<String>,
     prims: &BindingPrims,

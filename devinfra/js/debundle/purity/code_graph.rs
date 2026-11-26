@@ -21,7 +21,7 @@ use std::sync::Arc;
 /// them naturally.
 #[derive(Debug, Default, Clone)]
 pub struct ChunkCodeGraph {
-    pub bindings: BTreeMap<String, ChunkBinding>,
+    pub(crate) bindings: BTreeMap<String, ChunkBinding>,
     plain_data_dependencies: BTreeMap<String, analysis_vocabulary::inputs::ProofDependencies>,
     plain_data_inference_uses:
         BTreeMap<String, BTreeSet<analysis_vocabulary::provenance::InferenceUse>>,
@@ -42,7 +42,7 @@ pub struct ChunkCodeGraph {
     pub primitive_bindings: BTreeSet<String>,
     /// Projection of `binding_prims`: Symbol-valued bindings are safe only for
     /// ToPropertyKey; ToString(Symbol) throws.
-    pub symbol_const_bindings: BTreeSet<String>,
+    pub(crate) symbol_const_bindings: BTreeSet<String>,
     /// Chunk-top `const X = [..]` bindings that remain static ordinary
     /// arrays under the same no-escape scan as `PlainData`, and are
     /// never used as the receiver of unknown/mutating array methods
@@ -123,7 +123,7 @@ pub struct PurityCallContext<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub enum ChunkBinding {
+pub(crate) enum ChunkBinding {
     /// Chunk-top function declaration or `const f = function/arrow`.
     /// `purity` is the worst purity reachable from the body, computed
     /// by fixed-point iteration over all chunk-top functions.
@@ -508,7 +508,7 @@ impl ChunkCodeGraph {
     /// Return and record the inferred target of a direct identifier call when
     /// this graph is collecting body transfers. Returning `None` leaves the
     /// established classifier path unchanged.
-    pub fn record_purity_call_obligation(
+    pub(crate) fn record_purity_call_obligation(
         &self,
         name: &str,
         span: Span,
@@ -535,7 +535,7 @@ impl ChunkCodeGraph {
         matches!(self.bindings.get(name), Some(ChunkBinding::PlainData))
     }
 
-    pub fn plain_data_dependencies(
+    pub(crate) fn plain_data_dependencies(
         &self,
         name: &str,
     ) -> Option<&analysis_vocabulary::inputs::ProofDependencies> {
@@ -560,7 +560,7 @@ impl ChunkCodeGraph {
         self.primitive_element_arrays.contains(name)
     }
 
-    pub fn set_iterable_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
+    pub(crate) fn set_iterable_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
         self.set_iterable_proof.dependencies_for_constructor(span)
     }
 
@@ -574,7 +574,7 @@ impl ChunkCodeGraph {
         self.set_iterable_proof.native_iterable_operand(span)
     }
 
-    pub fn stable_set_spread_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
+    pub(crate) fn stable_set_spread_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
         self.set_iterable_proof.stable_spread_dependencies(span)
     }
 
@@ -583,18 +583,21 @@ impl ChunkCodeGraph {
             .stable_array_spread_dependencies(operand)
     }
 
-    pub fn local_class_construction_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
+    pub(crate) fn local_class_construction_dependencies(
+        &self,
+        span: Span,
+    ) -> Option<&ProofDependencies> {
         self.local_class_construction_proof
             .dependencies_for_construction(span)
     }
 
-    pub fn is_declared_pure_new(&self, name: &str) -> bool {
+    pub(crate) fn is_declared_pure_new(&self, name: &str) -> bool {
         self.pure_new_constructors.contains(name)
     }
 
     /// Cross-module purity verdict for an imported function binding,
     /// when the program-level oracle resolved one.
-    pub fn imported_purity(&self, name: &str) -> Option<&Arc<Purity>> {
+    pub(crate) fn imported_purity(&self, name: &str) -> Option<&Arc<Purity>> {
         self.imported_purities.get(name)
     }
 
@@ -602,7 +605,7 @@ impl ChunkCodeGraph {
     /// `pure_members: [<prop>, …]` annotation on the binding `recv`.
     /// Args still classified independently — declared purity covers
     /// the function value, not its arguments.
-    pub fn is_declared_pure_member(&self, recv: &str, prop: &str) -> bool {
+    pub(crate) fn is_declared_pure_member(&self, recv: &str, prop: &str) -> bool {
         self.declared_pure_members
             .get(recv)
             .is_some_and(|props| props.contains(prop))
@@ -611,7 +614,7 @@ impl ChunkCodeGraph {
     /// Whether `name` is a fluent-trusted root (author-asserted via
     /// `fluent_exports`, or a chunk-top `const` derived from one — see
     /// `collect_fluent_const_bindings`).
-    pub fn is_fluent_binding(&self, name: &str) -> bool {
+    pub(crate) fn is_fluent_binding(&self, name: &str) -> bool {
         self.fluent_bindings.contains(name)
     }
 }
@@ -889,7 +892,7 @@ fn classify_function_body_transfer(
 /// params (fresh array from the arguments list) contribute nothing;
 /// default-value expressions are classified separately as
 /// expressions by the body walk.
-pub fn param_destructuring_purity(pat: &Pat) -> Option<Effects> {
+pub(crate) fn param_destructuring_purity(pat: &Pat) -> Option<Effects> {
     match pat {
         Pat::Ident(_) => None,
         Pat::Rest(rest) => param_destructuring_purity(&rest.arg),

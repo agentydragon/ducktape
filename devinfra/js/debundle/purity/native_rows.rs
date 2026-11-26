@@ -36,7 +36,7 @@ enum Operand {
 
 /// What iteration does with each element of a fresh array operand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Elements {
+pub(crate) enum Elements {
     /// Stored or compared by identity.
     Any,
     /// Read as a `[key, value]` pair; `keyed` converts the key with
@@ -120,7 +120,7 @@ fn operand(row: &Row, index: usize) -> Option<Operand> {
 
 /// Whether every operand count is admitted and no operand is inspected, so
 /// the call is pure whenever its arguments evaluate purely.
-pub fn admits_any_operands(row: &Row) -> bool {
+pub(crate) fn admits_any_operands(row: &Row) -> bool {
     certifies(row)
         && *row.arity.start() == 0
         && *row.arity.end() == usize::MAX
@@ -134,7 +134,7 @@ pub fn admits_any_operands(row: &Row) -> bool {
 
 /// Whether a one-argument call reads its operand's own data or iterates it,
 /// at most freezing it, and keeps no other reference to it.
-pub fn only_inspects_operand(row: &Row) -> bool {
+pub(crate) fn only_inspects_operand(row: &Row) -> bool {
     certifies(row)
         && row.arity.contains(&1)
         && matches!(
@@ -148,7 +148,7 @@ pub fn only_inspects_operand(row: &Row) -> bool {
 }
 
 /// The global spelling of a direct callee: `global` or `global.member`.
-pub fn native_callee(callee: &Expr) -> Option<(&str, Option<&str>)> {
+pub(crate) fn native_callee(callee: &Expr) -> Option<(&str, Option<&str>)> {
     match callee {
         Expr::Ident(global) => Some((global.sym.as_ref(), None)),
         Expr::Member(member) => {
@@ -159,7 +159,7 @@ pub fn native_callee(callee: &Expr) -> Option<(&str, Option<&str>)> {
 }
 
 /// `global.property` with an identifier receiver and a static name.
-pub fn static_member(member: &MemberExpr) -> Option<(&str, &str)> {
+pub(crate) fn static_member(member: &MemberExpr) -> Option<(&str, &str)> {
     let (Expr::Ident(global), MemberProp::Ident(property)) = (member.obj.as_ref(), &member.prop)
     else {
         return None;
@@ -168,12 +168,12 @@ pub fn static_member(member: &MemberExpr) -> Option<(&str, &str)> {
 }
 
 /// One evaluated operand of a native call.
-pub struct NativeOperand<'a> {
-    pub expr: &'a Expr,
-    pub spread: Option<Span>,
+pub(crate) struct NativeOperand<'a> {
+    pub(crate) expr: &'a Expr,
+    pub(crate) spread: Option<Span>,
     /// A source-site certificate for the exact collection-constructor
     /// operand. This is not an evaluated iterable or a settled prefix value.
-    pub native_iterable: Option<(
+    pub(crate) native_iterable: Option<(
         &'a TopLevelNativeIterableOperandProjection,
         &'a ProofDependencies,
     )>,
@@ -190,7 +190,7 @@ impl<'a> From<&'a ExprOrSpread> for NativeOperand<'a> {
 }
 
 impl<'a> NativeOperand<'a> {
-    pub fn with_native_iterable(
+    pub(crate) fn with_native_iterable(
         mut self,
         projection: &'a TopLevelNativeIterableOperandProjection,
         dependencies: &'a ProofDependencies,
@@ -207,7 +207,7 @@ impl<'a> NativeOperand<'a> {
 /// `operands` are the evaluated arguments; a tagged template's engine-supplied
 /// template object precedes them.
 #[allow(clippy::too_many_arguments)]
-pub fn native_call_purity(
+pub(crate) fn native_call_purity(
     (global, member): (&str, Option<&str>),
     invocation: Invocation,
     operands: &[NativeOperand<'_>],
@@ -409,7 +409,7 @@ fn fresh_array_elements(
 
 /// One element of a fresh array iterated by a native row. A spread element
 /// expands a fresh array source under the same element steps.
-pub fn iterable_element(
+pub(crate) fn iterable_element(
     element: &ExprOrSpread,
     elements: Elements,
     spelling: &str,

@@ -69,22 +69,24 @@ mod set_iterables;
 pub use array_spreads::StableArraySpreadShapes;
 pub use classifier::*;
 pub use code_graph::ShapeProofRefinement;
-pub use code_graph::*;
-pub use effect_inference::*;
-pub use fluent::*;
+pub(crate) use code_graph::*;
+pub(crate) use effect_inference::*;
+pub(crate) use fluent::*;
 pub use fresh_record::FreshRecordDestructuringContext;
-pub use fresh_record::*;
+pub(crate) use fresh_record::*;
 pub use local_class_construction::{
     LocalClassConstructionProof, LocalClassConstructionShapes, LocalClassHeapProof,
 };
-pub use native_rows::*;
-pub use order_dependent_reads::*;
-pub use semantic_inference::ArgumentNoEscapeFacts;
+pub(crate) use native_rows::*;
+pub(crate) use order_dependent_reads::*;
+pub(crate) use semantic_inference::ArgumentNoEscapeFacts;
 pub use set_iterables::{
     NativeIterableOperandOrigin, SetIterableProof, SetIterableShapes,
     TopLevelNativeIterableOperandSite,
 };
-pub use set_iterables::{TopLevelNativeIterableOperandProjection, primitive_literal_property_keys};
+pub(crate) use set_iterables::{
+    TopLevelNativeIterableOperandProjection, primitive_literal_property_keys,
+};
 
 // Public API: importable at `purity::<item>`.
 pub use code_graph::{ChunkCodeGraph, PurityCallContext, PurityShapeInputs};

@@ -9,15 +9,15 @@ use source_identity::SourceUnitOrdinal;
 
 #[derive(Debug, Clone)]
 pub struct StableArraySpreadShape {
-    pub consumer: SourceUnitOrdinal,
-    pub producers: BTreeSet<SourceUnitOrdinal>,
+    pub(crate) consumer: SourceUnitOrdinal,
+    pub(crate) producers: BTreeSet<SourceUnitOrdinal>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct StableArraySpreadShapes {
     pub by_initializer: BTreeMap<u32, StableArraySpreadShape>,
-    pub by_site: BTreeMap<u32, u32>,
-    pub source_origins: BTreeMap<u32, u32>,
+    pub(crate) by_site: BTreeMap<u32, u32>,
+    pub(crate) source_origins: BTreeMap<u32, u32>,
 }
 
 impl StableArraySpreadShapes {
