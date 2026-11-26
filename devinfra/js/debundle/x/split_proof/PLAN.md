@@ -155,16 +155,17 @@ Excalidraw remains the [public intermediate milestone](#excalidraw-public-interm
 
 ## Target
 
-`lowersplit` has one guarantee and writes no unchecked output. `split` is total Lean code over CoreJS, and its type carries the theorem:
+The target is one total Lean function over CoreJS. Its soundness theorem has this shape (schematic):
 
 ```lean
-split X S = .ok Y →
+split request X S = .ok (Y, A) →
+  Permitted request A ∧                   -- only premises from the requested host contract
   Places S X Y ∧                          -- each source unit appears once, in the module S names
   SameExports X Y ∧                       -- same entry names, bound to the same live cells
-  NormalEquivalent (Worlds premises) X Y  -- same successful final states, in both directions
+  ∀ w, Satisfies w A → EquivalentUnder request.guarantee request.observations w X Y
 ```
 
-`X` is the lowering of the original module graph. `Y` is the lowering of the printed output. [`NormalEquivalent`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) and [`SameExports`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) describe the behavioral and linking guarantees. The [assembled deployment proof](lean/EsmSplit/CoreJS/JointStatic.lean) also carries [`Places`](lean/EsmSplit/CoreJS/DeploymentPlacement.lean) over the resolved assignment of executable units. The unified interface still needs to derive that assignment from `S`. `Worlds premises` are the worlds that satisfy the host premises the verdict lists. When `Y` runs the units in the original order, `split` also proves that every ending matches, including throws.
+`X` is the lowering of the original module graph. The lowering of the printed output must match the constructed `Y`. [`NormalEquivalent`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) compares successful final states in both directions; the all-outcomes guarantee also compares abrupt endings. [`SameExports`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) states the linking guarantee. The [assembled deployment proof](lean/EsmSplit/CoreJS/JointStatic.lean) also carries [`Places`](lean/EsmSplit/CoreJS/DeploymentPlacement.lean) over the resolved assignment of executable units. The unified interface still needs to derive that assignment from `S`.
 
 The planner may use unproved heuristics to propose operations. The compiled splitter checks their preconditions and constructs `Y` by applying them. Prove once, at build time, that the accepted operations compose to give the theorem above. This needs no decision procedure for equivalence of arbitrary programs and no Lean compiler at split time. When writing JavaScript, stage and reparse the files and check that their lowering is the `Y` the theorem covers before publishing them.
 
