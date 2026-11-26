@@ -385,6 +385,8 @@ Spec, [`example/spec.json`](example/spec.json). A selector is a declared name, o
 
 Two optional keys set the order the modules run in. `"order": ["a.mjs", …]` is an import priority: the entry imports every module in that order. That does not fix the order of evaluation, because a module runs after the modules it imports. `"sequential": true` does: the modules run in exactly `order` (or, without `order`, in the order of their first statements), the entry last. The planner then makes a module that an earlier one mentions import that earlier module first, and every module between ([`Split.lean`](lean/EsmSplit/Split.lean), `nest`). `Valid` checks the resulting plan like any other.
 
+For certification, the authored spec has a closed set of keys: `entry`, `modules`, `order`, `sequential`, and `privateEntryBody`. Unknown keys, duplicate keys, and values of the wrong type are refused. Resolved placements use their own format.
+
 The `render` target writes these files to the output directory you pass it. Statements are copied verbatim.
 
 ```js

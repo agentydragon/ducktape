@@ -55,6 +55,13 @@ assert.deepEqual(
   reread.phases,
   emitted.phases.filter((phase) => !["output_staging", "output_publication"].includes(phase))
 );
+// The closed authored format still accepts every supported optional field.
+const schemaFile = path.join(root, "schema.json");
+writeFileSync(schemaFile, JSON.stringify({ ...spec, order: [], sequential: false, privateEntryBody: false }));
+assert.deepEqual(
+  check("valid-authored-schema", "certified", { spec: schemaFile, checkOutput: true }).run.verdict,
+  emitted.run.verdict
+);
 const entryFile = path.join(out, entry);
 const workerFile = path.join(out, worker);
 assert.deepEqual(observe(files.sourceFile, "result"), { result: 42 });
@@ -99,6 +106,42 @@ const existing = check("unsupported-existing", "rejected", { spec: unsupportedFi
 assert.deepEqual(existing.run.verdict, freshRefusal.run.verdict);
 assert.deepEqual(snapshot(), before);
 assert.deepEqual(existing.phases, ["input_parse", "source_lowering", "checked_construction"]);
+
+// JSON.parse normally discards duplicate members before the spec decoder can
+// inspect them. Exercise the actual file boundary, including escaped spellings
+// of the same key and duplicate module names, while preserving prior bytes.
+const modules = JSON.stringify(spec.modules);
+const badSpecs = [
+  ["unknown", JSON.stringify({ ...spec, sequentail: true }), /unexpected authored spec field/],
+  ["control-metadata", JSON.stringify({ ...spec, fails: "OrderOk" }), /unexpected authored spec field/],
+  ["sequential-string", JSON.stringify({ ...spec, sequential: "true" }), /bool/i],
+  ["sequential-null", JSON.stringify({ ...spec, sequential: null }), /bool/i],
+  ["private-type", JSON.stringify({ ...spec, privateEntryBody: "false" }), /bool/i],
+  ["order-type", JSON.stringify({ ...spec, order: "worker.mjs" }), /array/i],
+  ["modules-type", JSON.stringify({ ...spec, modules: [] }), /object/i],
+  ["selector-type", JSON.stringify({ entry, modules: { [entry]: [3] } }), /string/i],
+  [
+    "duplicate-field",
+    `{"entry":"${entry}","modules":${modules},"sequential":false,"\\u0073equential":true}`,
+    /duplicate authored spec key/,
+  ],
+  [
+    "duplicate-module",
+    `{"entry":"${entry}","modules":{"entry.mjs":["result","decoy"],"worker.mjs":["seed","read","other"],"\\u0077orker.mjs":[]}}`,
+    /duplicate authored spec key/,
+  ],
+];
+for (const [name, text, reason] of badSpecs) {
+  writeFileSync(schemaFile, text);
+  const result = check(name, "rejected", { spec: schemaFile, allowExistingOut: true });
+  assert.match(result.run.verdict.reason, reason, name);
+  assert.deepEqual(snapshot(), before, name);
+  assert.deepEqual(result.phases, [], name);
+}
+const malformedFresh = path.join(root, "malformed-fresh");
+const freshMalformed = check("malformed-fresh", "rejected", { spec: schemaFile, out: malformedFresh });
+assert.match(freshMalformed.run.verdict.reason, /duplicate authored spec key/);
+assert(!existsSync(malformedFresh));
 
 const artifacts = process.env.TEST_UNDECLARED_OUTPUTS_DIR;
 assert(artifacts);

@@ -65,7 +65,7 @@ def readDeploymentManifest (path : System.FilePath) : IO DeploymentManifest := d
     let placement : Placement ← match (chunk.getObjVal? "spec").toOption, (chunk.getObjVal? "placement").toOption with
       | some specPath, none => do
         unless chunkId.isNone do throw (IO.userError s!"{route}: chunk_id requires placement")
-        let spec ← loadSpec (resolve (← IO.ofExcept specPath.getStr?))
+        let spec ← loadAuthoredSpec (resolve (← IO.ofExcept specPath.getStr?))
         unless spec.entry == route do throw (IO.userError s!"{route}: spec entry differs from chunk path")
         pure (.authored spec)
       | none, some resolved => do
