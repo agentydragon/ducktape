@@ -357,6 +357,28 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_static_provider_linking",
+    srcs = ["EsmSplit/CoreJS/StaticProviderLinking.lean"],
+    deps = [
+        ":corejs_link_world",
+        ":corejs_linked_input",
+        ":corejs_state_match",
+        ":corejs_structural",
+    ],
+)
+
+lean_proof_test(
+    name = "static_provider_linking_axioms_test",
+    modules = ["EsmSplit.CoreJS.StaticProviderLinking"],
+    required_theorems = [
+        "CoreJS.StaticProviderLinking.ProviderLinkCertificate.before_aliases_resolve",
+        "CoreJS.StaticProviderLinking.ProviderLinkCertificate.after_aliases_resolve",
+        "CoreJS.StaticProviderLinking.certifyDecoded_sameExports",
+    ],
+    deps = [":corejs_static_provider_linking"],
+)
+
+lean_library(
     name = "corejs_certificate_generation_support",
     srcs = [
         # Keep import order for the native Lean rule.
