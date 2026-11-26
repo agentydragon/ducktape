@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -144,9 +143,7 @@ func (a *commands) getInboxCommand() *cobra.Command {
 				return invocation.GRPCFailure(ctx, err)
 			}
 			if response.GetInbox() == nil {
-				return a.ShowOne([]byte("null"), func(json.RawMessage) (string, error) {
-					return "no inbox for session " + args[0], nil
-				})
+				return a.ShowValue(nil, "no inbox for session "+args[0]+"\n")
 			}
 			return invocation.ShowProto(a.Invocation, []*notificationspb.Inbox{response.GetInbox()}, inboxLine, notificationJSONOptions)
 		}),
@@ -466,7 +463,7 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 
 func (a *commands) showSubscription(subscription *notificationspb.Subscription) error {
 	if subscription == nil && a.JSON() {
-		return a.ShowOne([]byte("null"), nil)
+		return a.ShowValue(nil, "")
 	}
 	return invocation.ShowProto(a.Invocation, []*notificationspb.Subscription{subscription}, subscriptionLine, notificationJSONOptions)
 }
@@ -481,7 +478,7 @@ func (a *commands) subscriptionsCommand() *cobra.Command {
 To continue, pass the last item's id as --after.`,
 		Args: cobra.NoArgs,
 		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, _ []string) error {
-			items, err := invocation.Collect(limit, after, func(after string, _ int) ([]*notificationspb.Subscription, error) {
+			fetch := func(after string, _ int) ([]*notificationspb.Subscription, error) {
 				request := &notificationspb.ListSubscriptionsRequest{}
 				if after != "" {
 					request.AfterId = proto.String(after)
@@ -491,11 +488,8 @@ To continue, pass the last item's id as --after.`,
 					return nil, invocation.GRPCFailure(ctx, err)
 				}
 				return response.GetSubscriptions(), nil
-			}, subscriptionID)
-			if err != nil {
-				return err
 			}
-			return invocation.ShowProtoPage(a.Invocation, items, limit, subscriptionID, subscriptionLine, notificationJSONOptions)
+			return invocation.ShowProtoPages(a.Invocation, limit, after, fetch, (*notificationspb.Subscription).GetId, subscriptionLine, notificationJSONOptions)
 		}),
 	}
 	command.Flags().IntVar(&limit, "limit", invocation.DefaultLimit, "stop after this many items; 0 is unlimited")
@@ -656,7 +650,7 @@ account sent or a purged inbox; it never means the message was not delivered.`,
 
 func (a *commands) showMessage(message *notificationspb.Message) error {
 	if message == nil && a.JSON() {
-		return a.ShowOne([]byte("null"), nil)
+		return a.ShowValue(nil, "")
 	}
 	return invocation.ShowProto(a.Invocation, []*notificationspb.Message{message}, messageLine, notificationJSONOptions)
 }
@@ -711,10 +705,6 @@ func subscriptionLine(subscription *notificationspb.Subscription) (string, error
 	}
 
 	return line, nil
-}
-
-func subscriptionID(subscription *notificationspb.Subscription) (string, error) {
-	return subscription.GetId(), nil
 }
 
 func sourceLabel(source *notificationspb.Source) string {

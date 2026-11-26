@@ -153,15 +153,15 @@ func newTarget(args []string, key string) (target, error) {
 	return target{key: key}, nil
 }
 
-func (t target) read(ctx context.Context, client action_servicepb.ActionServiceClient) (*receipt, error) {
+func (t target) read(ctx context.Context, client action_servicepb.ActionServiceClient) (*action_servicepb.ActionRequest, error) {
 	if t.id != "" {
 		return readReceipt(ctx, client, t.id)
 	}
 	return lookupByKey(ctx, client, t.key)
 }
 
-func (a *commands) printReceipt(r *receipt) error {
-	return invocation.ShowProto(a.Invocation, []*action_servicepb.ActionRequest{r.request}, receiptLine, protojson.MarshalOptions{})
+func (a *commands) printReceipt(r *action_servicepb.ActionRequest) error {
+	return invocation.ShowProto(a.Invocation, []*action_servicepb.ActionRequest{r}, receiptLine, protojson.MarshalOptions{})
 }
 
 func (a *commands) getCommand() *cobra.Command {
@@ -210,7 +210,7 @@ with the last receipt read on stdout. Ending the watch never cancels the Action.
 			if err != nil {
 				return err
 			}
-			last, err := await(ctx, client, condition, nil, func(ctx context.Context) (*receipt, error) { return t.read(ctx, client) })
+			last, err := t.await(ctx, client, condition)
 			if err != nil {
 				return a.afterWait(last, err)
 			}
@@ -240,11 +240,11 @@ learn a script's own exit code or an MCP isError.`,
 			if err != nil {
 				return err
 			}
-			last, err := await(ctx, client, untilTerminal, nil, func(ctx context.Context) (*receipt, error) { return t.read(ctx, client) })
+			last, err := t.await(ctx, client, untilTerminal)
 			if err != nil {
 				return a.afterWait(last, err)
 			}
-			if last.request.GetState() == action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
+			if last.GetState() == action_servicepb.ActionState_ACTION_STATE_SUCCEEDED {
 				return a.printResult(last)
 			}
 			return a.finish(last, untilTerminal)
@@ -254,8 +254,8 @@ learn a script's own exit code or an MCP isError.`,
 	return command
 }
 
-func (a *commands) printResult(r *receipt) error {
-	result := r.request.GetExecution().GetResult()
+func (a *commands) printResult(r *action_servicepb.ActionRequest) error {
+	result := r.GetExecution().GetResult()
 	if result == nil {
 		result = structpb.NewNullValue()
 	}
@@ -315,7 +315,7 @@ Without --wait it prints the receipt and exits 0 once the request is recorded, w
 			if !wait {
 				return a.printReceipt(created)
 			}
-			last, err := await(ctx, client, condition, created, nil)
+			last, err := watchReceipt(ctx, client, condition, created)
 			if err != nil {
 				return a.afterWait(last, err)
 			}
@@ -356,10 +356,10 @@ func (a *commands) readArguments(spec string) (*structpb.Struct, error) {
 }
 
 // post makes the one submission. A failure that may have committed it is followed by one lookup under the same key.
-func (a *commands) post(ctx context.Context, client action_servicepb.ActionServiceClient, request *action_servicepb.SubmitActionRequestRequest) (*receipt, error) {
+func (a *commands) post(ctx context.Context, client action_servicepb.ActionServiceClient, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.ActionRequest, error) {
 	response, err := client.SubmitActionRequest(ctx, request)
 	if err == nil {
-		created, parseErr := receiptFromProto(response.GetActionRequest())
+		created, parseErr := checkedReceipt(response.GetActionRequest())
 		if parseErr == nil {
 			return created, nil
 		}
@@ -428,7 +428,7 @@ unlimited). To continue, pass the last item's id as --after.`,
 				}
 				parsedStates = append(parsedStates, state)
 			}
-			items, err := invocation.Collect(limit, after, func(after string, size int) ([]*action_servicepb.ActionRequest, error) {
+			fetch := func(after string, size int) ([]*action_servicepb.ActionRequest, error) {
 				request := &action_servicepb.ListActionRequestsRequest{State: parsedStates}
 				limit := int32(size)
 				request.Limit = &limit
@@ -440,11 +440,8 @@ unlimited). To continue, pass the last item's id as --after.`,
 					return nil, invocation.GRPCFailure(ctx, err)
 				}
 				return response.GetActionRequests(), nil
-			}, requestID)
-			if err != nil {
-				return err
 			}
-			return invocation.ShowProtoPage(a.Invocation, items, limit, requestID, receiptLine, protojson.MarshalOptions{})
+			return invocation.ShowProtoPages(a.Invocation, limit, after, fetch, (*action_servicepb.ActionRequest).GetId, receiptLine, protojson.MarshalOptions{})
 		}),
 	}
 	command.Flags().StringArrayVar(&states, "state", nil, "only requests in this state; repeatable")
@@ -465,8 +462,8 @@ func (a *commands) eventsCommand() *cobra.Command {
 			if after < 0 || after > int(1<<31-1) {
 				return invocation.UsageFailure("--after must be between 0 and 2147483647")
 			}
-			items, err := invocation.Collect(limit, after, func(after, size int) ([]*action_servicepb.ActionEvent, error) {
-				request := &action_servicepb.ListActionRequestEventsRequest{RequestId: args[0], AfterSequence: int32(after)}
+			fetch := func(after int32, size int) ([]*action_servicepb.ActionEvent, error) {
+				request := &action_servicepb.ListActionRequestEventsRequest{RequestId: args[0], AfterSequence: after}
 				limit := int32(size)
 				request.Limit = &limit
 				response, err := client.ListActionRequestEvents(ctx, request)
@@ -474,11 +471,8 @@ func (a *commands) eventsCommand() *cobra.Command {
 					return nil, invocation.GRPCFailure(ctx, err)
 				}
 				return response.GetEvents(), nil
-			}, eventSequence)
-			if err != nil {
-				return err
 			}
-			return invocation.ShowProtoPage(a.Invocation, items, limit, eventSequence, eventLine, protojson.MarshalOptions{})
+			return invocation.ShowProtoPages(a.Invocation, limit, int32(after), fetch, (*action_servicepb.ActionEvent).GetSequence, eventLine, protojson.MarshalOptions{})
 		}),
 	}
 	command.Flags().IntVar(&limit, "limit", invocation.DefaultLimit, "stop after this many items; 0 is unlimited")
@@ -523,12 +517,4 @@ type commands struct{ *invocation.Invocation }
 
 func Command(in *invocation.Invocation) *cobra.Command {
 	return (&commands{Invocation: in}).actionsCommand()
-}
-
-func requestID(request *action_servicepb.ActionRequest) (string, error) {
-	return request.GetId(), nil
-}
-
-func eventSequence(event *action_servicepb.ActionEvent) (int, error) {
-	return int(event.GetSequence()), nil
 }

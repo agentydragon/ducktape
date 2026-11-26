@@ -117,7 +117,7 @@ func policyText(policy *action_servicepb.CallerActionPolicy) (string, error) {
 }
 
 func receiptLine(r *action_servicepb.ActionRequest) (string, error) {
-	if err := validateActionRequest(r); err != nil {
+	if _, err := checkedReceipt(r); err != nil {
 		return "", err
 	}
 	state := actionEnumText(r.GetState().String(), "ACTION_STATE_")
