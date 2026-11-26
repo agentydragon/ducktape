@@ -2,7 +2,7 @@
 
 A flat JavaScript bundle goes in. A spec says which top-level statement goes to which module.
 The experimental splitter emits ES modules after Lean certifies the requested
-CoreJS guarantee. [Certification commands and guarantees](#request-a-corejs-guarantee)
+CoreJS guarantee. The [target theorem](PLAN.md#target) covers every input and spec accepted by the constructor, with its proof checked when building the splitter. Some current routes instead validate the particular output. [Certification commands and guarantees](#request-a-corejs-guarantee)
 
 [`SUPPORT.md`](SUPPORT.md) inventories the syntax, standard library and host
 features the intended inputs require. [CoreJS coverage](model/README.md) tracks
