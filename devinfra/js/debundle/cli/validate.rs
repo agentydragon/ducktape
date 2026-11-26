@@ -27,7 +27,7 @@ use command_output::write_report;
 use graph::CommutingStatementsDiagnostic;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
 use peel::OutputFormat;
-use pipeline::{RunOutput, TransformRunOptions, run_transform};
+use pipeline::{TransformRunOptions, run_transform};
 use selector_outcome::{
     Entity, InvalidSelectorError, InvalidSelectorReport, Outcome, Placement, SelectorKind,
     SelectorOutcome, SelectorOutcomeReport, SelectorValidationCounts, Severity,
@@ -170,18 +170,10 @@ pub(crate) fn run_captured_pass(
         run_transform(
             &cli,
             TransformRunOptions {
-                ownership_subset: None,
-                ownership_subset_input: None,
-                output: RunOutput::DryRun,
-                artifacts: pipeline::RunArtifacts::Program,
-                graph_reports: lowering::GraphReportSelection::None,
                 keep_going,
                 report_dir_override: Some(capture.path().to_path_buf()),
                 list_template_identifiers: true,
-                effect_conflicts_jsonl: false,
-                effect_conflicts_chunks: Default::default(),
-                full_reports: Default::default(),
-                full_report_chunks: Default::default(),
+                ..TransformRunOptions::dry_run()
             },
             diagnostics,
         )

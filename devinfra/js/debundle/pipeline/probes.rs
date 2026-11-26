@@ -20,12 +20,17 @@ impl ContractAudit {
         expected_spec: &TransformSpec,
         diagnostics: &analysis::diagnostics::Diagnostics,
     ) -> Result<Self> {
-        let (spec, prepared) =
-            prepare_transform(cli, &audit_options(), Some(expected_spec), None, None)?;
+        let (spec, prepared) = prepare_transform(
+            cli,
+            &TransformRunOptions::dry_run(),
+            Some(expected_spec),
+            None,
+            None,
+        )?;
         run_prepared_transform(
             &spec,
             prepared.clone(),
-            audit_options(),
+            TransformRunOptions::dry_run(),
             true,
             AnalysisMode::Compute,
             false,
@@ -62,7 +67,7 @@ impl ContractAudit {
         let outcome = run_prepared_transform(
             &spec,
             self.prepared.clone(),
-            audit_options(),
+            TransformRunOptions::dry_run(),
             true,
             AnalysisMode::Compute,
             false,
@@ -103,8 +108,13 @@ pub enum AnnotationProbeRun {
 
 impl AnnotationProbe {
     pub fn prepare(cli: &TransformRequest, expected_spec: &TransformSpec) -> Result<Self> {
-        let (spec, prepared) =
-            prepare_transform(cli, &audit_options(), Some(expected_spec), None, None)?;
+        let (spec, prepared) = prepare_transform(
+            cli,
+            &TransformRunOptions::dry_run(),
+            Some(expected_spec),
+            None,
+            None,
+        )?;
         Ok(Self { spec, prepared })
     }
 
@@ -137,7 +147,7 @@ impl AnnotationProbe {
                     out_root: out_root.to_path_buf(),
                 },
                 graph_reports: GraphReportSelection::Full,
-                ..audit_options()
+                ..TransformRunOptions::dry_run()
             },
             false,
             AnalysisMode::Compute,
@@ -155,22 +165,5 @@ impl AnnotationProbe {
             }
             Err(error) => AnnotationProbeRun::Rejected(error),
         })
-    }
-}
-
-pub(super) fn audit_options() -> TransformRunOptions {
-    TransformRunOptions {
-        ownership_subset: None,
-        ownership_subset_input: None,
-        output: RunOutput::DryRun,
-        artifacts: RunArtifacts::Program,
-        graph_reports: GraphReportSelection::None,
-        keep_going: false,
-        report_dir_override: None,
-        list_template_identifiers: false,
-        effect_conflicts_jsonl: false,
-        effect_conflicts_chunks: BTreeSet::new(),
-        full_reports: BTreeSet::new(),
-        full_report_chunks: BTreeSet::new(),
     }
 }
