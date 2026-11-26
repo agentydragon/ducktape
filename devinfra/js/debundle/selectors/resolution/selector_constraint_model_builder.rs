@@ -1,7 +1,7 @@
 //! Lowering from selector IR plus facts into a compact finite-domain problem.
 
 use source_identity::SourceUnitOrdinal;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
 use selector_constraint_backend::{
     AllowedTupleRowsId, BackendValueId, BindingProjection, CompiledSelectorProblem,
@@ -441,37 +441,15 @@ fn add_cached_source_unit_string_indexed_allowed_tuples(
         (SourceUnitTerm::Var { id: source_unit_id }, StringTerm::Var { id: string_id }) => {
             // `SelectorProgram::validate` types source unit terms as source unit variables
             // and string terms as string variables: the two are distinct.
-            let constraint_variables = [
-                model_variable(variables, *source_unit_id)?,
-                model_variable(variables, *string_id)?,
-            ];
-            let row_set =
-                if let Some(row_set) = support_cache.source_unit_string_binary.get(relation) {
-                    *row_set
-                } else {
-                    let tuples = index
-                        .rows()
-                        .map(|(fact_source_unit, fact_string)| {
-                            Ok((
-                                model.intern_source_unit(fact_source_unit)?,
-                                model.intern_string(fact_string)?,
-                            ))
-                        })
-                        .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-                    let row_set = model.intern_encoded_allowed_binary_row_set(
-                        constraint_variables,
-                        [VariableDomain::SourceUnit, VariableDomain::String],
-                        tuples,
-                    )?;
-                    support_cache
-                        .source_unit_string_binary
-                        .insert(relation, row_set);
-                    row_set
-                };
-            model
-                .add_encoded_allowed_row_set(constraint_variables.to_vec(), row_set)
-                .map(|_| ())
-                .map_err(Into::into)
+            add_source_unit_string_rows(
+                model,
+                [
+                    model_variable(variables, *source_unit_id)?,
+                    model_variable(variables, *string_id)?,
+                ],
+                support_cache.source_unit_string_binary.entry(relation),
+                index.rows(),
+            )
         }
     }
 }
@@ -526,41 +504,45 @@ fn add_cached_source_unit_string_allowed_tuples(
                 .map_err(Into::into)
         }
         (SourceUnitTerm::Var { id: source_unit_id }, StringTerm::Var { id: string_id }) => {
-            let constraint_variables = [
-                model_variable(variables, *source_unit_id)?,
-                model_variable(variables, *string_id)?,
-            ];
-            let row_set = if let Some(row_set) = support_cache
-                .source_unit_string_binary_by_key
-                .get(&relation_key)
-            {
-                *row_set
-            } else {
-                let tuples = facts
-                    .iter()
-                    .map(|(fact_source_unit, fact_string)| {
-                        Ok((
-                            model.intern_source_unit(*fact_source_unit)?,
-                            model.intern_string(fact_string)?,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
-                let row_set = model.intern_encoded_allowed_binary_row_set(
-                    constraint_variables,
-                    [VariableDomain::SourceUnit, VariableDomain::String],
-                    tuples,
-                )?;
+            add_source_unit_string_rows(
+                model,
+                [
+                    model_variable(variables, *source_unit_id)?,
+                    model_variable(variables, *string_id)?,
+                ],
                 support_cache
                     .source_unit_string_binary_by_key
-                    .insert(relation_key, row_set);
-                row_set
-            };
-            model
-                .add_encoded_allowed_row_set(constraint_variables.to_vec(), row_set)
-                .map(|_| ())
-                .map_err(Into::into)
+                    .entry(relation_key),
+                facts.iter().map(|(unit, value)| (*unit, value.as_str())),
+            )
         }
     }
+}
+
+fn add_source_unit_string_rows<'a, K: Ord>(
+    model: &mut CompiledSelectorProblemBuilder,
+    variables: [ConstraintVariableId; 2],
+    cached: Entry<'_, K, AllowedTupleRowsId>,
+    rows: impl Iterator<Item = (SourceUnitId, &'a str)>,
+) -> Result<(), CompiledSelectorProblemBuildError> {
+    let row_set = match cached {
+        Entry::Occupied(entry) => *entry.get(),
+        Entry::Vacant(entry) => {
+            let tuples = rows
+                .map(|(unit, value)| {
+                    Ok((model.intern_source_unit(unit)?, model.intern_string(value)?))
+                })
+                .collect::<Result<Vec<_>, CompiledSelectorProblemError>>()?;
+            let id = model.intern_encoded_allowed_binary_row_set(
+                variables,
+                [VariableDomain::SourceUnit, VariableDomain::String],
+                tuples,
+            )?;
+            *entry.insert(id)
+        }
+    };
+    model.add_encoded_allowed_row_set(variables.to_vec(), row_set)?;
+    Ok(())
 }
 
 fn add_cached_source_unit_allowed_tuples(
