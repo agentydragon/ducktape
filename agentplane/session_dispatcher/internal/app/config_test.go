@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -355,6 +356,43 @@ func TestRuntimeProxyPeerAcceptsEachCutoverReceiver(t *testing.T) {
 				}
 			} else if err != nil || c.GatewayTLS.ServerURI != uri {
 				t.Fatalf("Runtime proxy peer %q: %v", uri, err)
+			}
+		})
+	}
+}
+
+func TestPolicyServiceMustBeACompleteMutualTLSCallerAsSessions(t *testing.T) {
+	block := func(target, clientURI, serverURI string) string {
+		return fmt.Sprintf(`policy_service:
+  target: %q
+  tls:
+    ca_file: /test/workload-ca
+    server_uri: %s
+    cert_file: /test/sessions-client-cert
+    key_file: /test/sessions-client-key
+    client_uri: %s
+`, target, serverURI, clientURI)
+	}
+	sessions, policy := peertls.SessionsURI, peertls.PolicyControllerURI
+	for _, tc := range []struct {
+		name     string
+		settings string
+		valid    bool
+	}{
+		{"complete", block("policy-controller.test:8443", sessions, policy), true},
+		{"no target", block("", sessions, policy), false},
+		{"another caller identity", block("policy-controller.test:8443", peertls.SessionDispatcherURI, policy), false},
+		{"another server", block("policy-controller.test:8443", sessions, peertls.ActionsURI), false},
+		{"no client SVID", "policy_service:\n  target: policy-controller.test:8443\n  tls:\n    ca_file: /test/workload-ca\n    server_uri: " + policy + "\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := configtest.WriteSettings(t, requiredFile+tc.settings)
+			c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "policy-controller.test:8443") {
+				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
+			}
+			if !tc.valid && err == nil {
+				t.Fatal("loadConfig accepted an incomplete policy_service")
 			}
 		})
 	}

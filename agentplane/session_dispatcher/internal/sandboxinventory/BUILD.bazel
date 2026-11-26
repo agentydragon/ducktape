@@ -43,6 +43,7 @@ go_test(
     deps = [
         "//agentplane/environments/lifecycle",
         "//agentplane/harness_host:harness_host_go_proto",
+        "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
         "//agentplane/policy/api/v1alpha1",

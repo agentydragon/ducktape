@@ -32,15 +32,12 @@ type KubernetesSandboxes struct {
 	reader    *sandboxreader.Reader
 }
 
-func NewKubernetesSandboxes(inventory cache.Cache, objects client.Client, namespace string) (*KubernetesSandboxes, error) {
+// NewKubernetesSandboxes resolves the Identity a Sandbox names through identities.
+func NewKubernetesSandboxes(inventory cache.Cache, objects client.Client, namespace string, identities auth.IdentityUIDReader) (*KubernetesSandboxes, error) {
 	if inventory == nil || objects == nil || namespace == "" {
 		return nil, errors.New("Sandbox cache, client and namespace are required")
 	}
 	informer, err := inventory.GetInformer(context.Background(), &sandboxapi.Sandbox{})
-	if err != nil {
-		return nil, err
-	}
-	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
 	if err != nil {
 		return nil, err
 	}
