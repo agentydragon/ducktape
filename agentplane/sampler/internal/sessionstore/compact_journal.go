@@ -1,7 +1,6 @@
 package sessionstore
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -12,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
+	"github.com/lib/pq"
 )
 
 // JournalCompactionResult counts the rows that would move in a dry run or committed
@@ -51,28 +51,22 @@ func (s *Store) CompactJournal(ctx context.Context, sessionID string, apply bool
 	if err != nil {
 		return result, err
 	}
-	const window = eventcodec.MaxBlockEntries
-	through := cursor / window * window
+	through := cursor / journalWindowSize * journalWindowSize
 	lastProgress := time.Now()
 	for after := uint64(0); after < through; {
-		// Seek the next standalone row via the primary key. Fully packed and empty
-		// windows require no transaction, decompression, or session lock.
-		searchCtx, cancel := context.WithTimeout(ctx, s.operationTimeout)
-		var first uint64
-		err := s.db.QueryRowContext(searchCtx, `SELECT sequence FROM sampler_event
-			WHERE session_id=$1 AND sequence>$2 AND sequence<=$3 ORDER BY sequence LIMIT 1`,
-			sessionID, after, through).Scan(&first)
-		cancel()
-		if errors.Is(err, sql.ErrNoRows) {
-			break
-		}
+		last, err := s.nextJournalWindow(ctx, sessionID, after, through)
 		if err != nil {
 			return result, err
 		}
-		last := ((first-1)/window + 1) * window
-		batch, err := s.compactJournalWindow(ctx, sessionID, last-window+1, last, apply)
+		if last == 0 {
+			break
+		}
+		batch, err := s.compactJournalWindow(ctx, sessionID, last-journalWindowSize+1, last, apply)
+		if errors.Is(err, errJournalWindowChanged) {
+			continue
+		}
 		if err != nil {
-			return result, fmt.Errorf("compact cursors %d–%d: %w", last-window+1, last, err)
+			return result, fmt.Errorf("compact cursors %d–%d: %w", last-journalWindowSize+1, last, err)
 		}
 		after = last
 		result.Events += batch.Events
@@ -87,111 +81,135 @@ func (s *Store) CompactJournal(ctx context.Context, sessionID string, apply bool
 		}
 		if apply && batch.Blocks > 0 {
 			// Give live appenders a chance to acquire the lock and pace WAL generation.
-			timer := time.NewTimer(50 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return result, ctx.Err()
-			case <-timer.C:
+			if err := waitForJournalCompaction(ctx, journalCompactionPace); err != nil {
+				return result, err
 			}
 		}
 	}
 	return result, nil
 }
 
+const (
+	journalWindowSize     = eventcodec.MaxBlockEntries
+	journalCompactionPace = 50 * time.Millisecond
+)
+
+func waitForJournalCompaction(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// Seek the first standalone row through the opening cursor, skipping fully packed windows.
+func (s *Store) nextJournalWindow(ctx context.Context, sessionID string, after, through uint64) (uint64, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
+	var first uint64
+	err := s.db.QueryRowContext(ctx, `SELECT sequence FROM sampler_event
+		WHERE session_id=$1 AND sequence>$2 AND sequence<=$3 ORDER BY sequence LIMIT 1`,
+		sessionID, after, through).Scan(&first)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return ((first-1)/journalWindowSize + 1) * journalWindowSize, nil
+}
+
+var errJournalWindowChanged = errors.New("standalone journal window changed during packing")
+
 func (s *Store) compactJournalWindow(ctx context.Context, sessionID string, first, last uint64, apply bool) (JournalCompactionResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 	defer cancel()
 	var result JournalCompactionResult
-	err := postgres.Transaction(ctx, s.db, sql.TxOptions{ReadOnly: !apply}, func(tx *sql.Tx) error {
-		if apply {
-			if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout='1s'`); err != nil {
-				return err
-			}
-			// Appenders take this same lock. Packing never changes the conversation or
-			// requires its lock, ownership fence, or retained transcript.
-			var id string
-			err := tx.QueryRowContext(ctx, `SELECT id FROM sampler_session WHERE id=$1 FOR UPDATE`, sessionID).Scan(&id)
-			if errors.Is(err, sql.ErrNoRows) {
-				return protocol.ErrMissing
-			}
-			if err != nil {
-				return err
-			}
+	blocks, err := prepareJournalBlocks(ctx, s.db, sessionID, first, last)
+	if err != nil {
+		return result, err
+	}
+	if apply && len(blocks) > 0 {
+		if err := s.commitJournalBlocks(ctx, sessionID, blocks); err != nil {
+			return result, err
 		}
-		blocks, err := prepareJournalBlocks(ctx, tx, sessionID, first, last)
+	}
+	for _, block := range blocks {
+		result.Events += int64(block.last - block.first + 1)
+		result.Blocks++
+		result.StoredBytes += int64(block.storedBytes)
+		result.PackedBytes += int64(len(block.payload))
+	}
+	return result, nil
+}
+
+func (s *Store) commitJournalBlocks(ctx context.Context, sessionID string, blocks []sealedJournalBlock) error {
+	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout='1s'`); err != nil {
+			return err
+		}
+		// Old inline writers, appenders and compactors all serialize on this row.
+		// The packed window was already committed before we read it.
+		var id string
+		err := tx.QueryRowContext(ctx, `SELECT id FROM sampler_session WHERE id=$1 FOR UPDATE`, sessionID).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return protocol.ErrMissing
+		}
 		if err != nil {
 			return err
 		}
-		if apply {
-			if err := replaceJournalBlocks(ctx, tx, sessionID, blocks, true); err != nil {
+		for _, block := range blocks {
+			if err := replaceJournalBlock(ctx, tx, sessionID, block); err != nil {
 				return err
 			}
-		}
-		for _, block := range blocks {
-			result.Events += int64(block.last - block.first + 1)
-			result.Blocks++
-			result.StoredBytes += int64(block.storedBytes)
-			result.PackedBytes += int64(len(block.payload))
 		}
 		return nil
 	})
-	return result, err
 }
 
-func insertVerifiedJournalBlock(ctx context.Context, tx *sql.Tx, sessionID string, block sealedJournalBlock) error {
-	// Blocks in a valid journal occupy gaps in standalone storage. Fail if an
-	// overlapping block already exists, including one starting before the window.
-	oldestBlock := max(block.first, eventcodec.MaxBlockEntries) - eventcodec.MaxBlockEntries + 1
-	var overlap bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_event_block
-		WHERE session_id=$1 AND first_sequence BETWEEN $4 AND $3 AND last_sequence>=$2)`,
-		sessionID, block.first, block.last, oldestBlock).Scan(&overlap); err != nil {
+func replaceJournalBlock(ctx context.Context, tx *sql.Tx, sessionID string, block sealedJournalBlock) error {
+	// Match the source row versions captured by the original read. A competing
+	// compactor may have removed them while we were compressing. Roll back the
+	// entire window in that case so the caller can take a fresh snapshot.
+	deleted, err := tx.ExecContext(ctx, `
+		DELETE FROM sampler_event AS event
+		USING unnest($4::text[]) WITH ORDINALITY AS source(version,position)
+		WHERE event.session_id=$1 AND event.sequence BETWEEN $2 AND $3
+		  AND event.sequence=$2+source.position-1 AND event.xmin=source.version::xid`,
+		sessionID, block.first, block.last, pq.Array(block.versions))
+	if err != nil {
 		return err
 	}
-	if overlap {
+	count, err := deleted.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != int64(len(block.versions)) {
+		return errJournalWindowChanged
+	}
+	// In a valid journal the deleted rows cannot overlap any block, including
+	// one starting before this window.
+	oldestBlock := max(block.first, journalWindowSize) - journalWindowSize + 1
+	var verified bool
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO sampler_event_block(session_id,first_sequence,last_sequence,payload)
+		SELECT $1::varchar,$2::integer,$3::integer,$4::bytea WHERE NOT EXISTS (
+			SELECT 1 FROM sampler_event_block
+			WHERE session_id=$1 AND first_sequence BETWEEN $5 AND $3 AND last_sequence>=$2
+		)
+		RETURNING first_sequence=$2 AND last_sequence=$3 AND payload=$4`,
+		sessionID, block.first, block.last, block.payload, oldestBlock).Scan(&verified)
+	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("existing journal block overlaps cursors %d–%d", block.first, block.last)
 	}
-	var first, last uint64
-	var payload []byte
-	if err := tx.QueryRowContext(ctx, insertJournalBlock+` RETURNING first_sequence,last_sequence,payload`,
-		sessionID, block.first, block.last, block.payload).Scan(&first, &last, &payload); err != nil {
-		return err
-	}
-	if first != block.first || last != block.last {
-		return fmt.Errorf("stored journal block interval %d–%d differs from %d–%d", first, last, block.first, block.last)
-	}
-	frames, err := eventcodec.UnpackBlock(payload, int(last-first+1))
 	if err != nil {
 		return err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT sequence,entry FROM sampler_event
-		WHERE session_id=$1 AND sequence BETWEEN $2 AND $3 ORDER BY sequence`, sessionID, first, last)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	next := first
-	for rows.Next() {
-		var sequence uint64
-		var stored []byte
-		if err := rows.Scan(&sequence, &stored); err != nil {
-			return err
-		}
-		raw, err := eventcodec.UnpackBlockEntry(stored)
-		if err != nil {
-			return err
-		}
-		if sequence != next || sequence > last || !bytes.Equal(raw, frames[sequence-first]) {
-			return fmt.Errorf("packed frame at cursor %d differs from its original", sequence)
-		}
-		next++
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if next != last+1 {
-		return fmt.Errorf("journal block verification stopped before cursor %d", last)
+	if !verified {
+		return fmt.Errorf("stored journal block differs from prepared cursors %d–%d", block.first, block.last)
 	}
 	return nil
 }

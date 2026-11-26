@@ -11,13 +11,11 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"google.golang.org/protobuf/proto"
 )
 
 func TestJournalBlockKeepsFragmentedEvidenceWithinDecodedLimit(t *testing.T) {
 	store, session, owner := claimedSession(t)
-	store.eventBlockWrites = true
 	large := strings.Repeat("a", 2*BoundaryBytes+40)
 	operation := "fragmented-evidence"
 	if err := store.ProtocolEvent(t.Context(), owner, operation, eventpb.ExecutionProgress_KIND_EXECUTOR,
@@ -29,6 +27,9 @@ func TestJournalBlockKeepsFragmentedEvidenceWithinDecodedLimit(t *testing.T) {
 			eventpb.ExecutionProgress_PHASE_RECEIVED, map[string]any{"payload": "small evidence"}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := store.CompactJournal(t.Context(), session.ID, true); err != nil {
+		t.Fatal(err)
 	}
 	entries, err := store.Events(t.Context(), session.ID, session.Cursor, eventcodec.MaxBlockEntries)
 	if err != nil {
@@ -91,17 +92,19 @@ func TestJournalBlockPreservesLegacyFramesAndCommandAdmission(t *testing.T) {
 	if err != nil || len(expected) != int(last-first+1) {
 		t.Fatalf("standalone frames=%d err=%v", len(expected), err)
 	}
-	writer := New(store.DB(), store.operationTimeout, &settings.Settings{EventBlockWrites: true})
 	migrationExec(t, store.DB(), `ALTER TABLE sampler_event_block ADD CONSTRAINT reject_event_block CHECK (false)`)
-	if err := record(writer); err == nil {
-		t.Fatal("evidence append committed despite a failed block insert")
+	if err := record(store); err != nil {
+		t.Fatalf("append should commit independently of packing: %v", err)
 	}
 	current, err := store.GetSession(t.Context(), session.ID, session.OwnerKey)
-	if err != nil || current.Cursor != last {
-		t.Fatalf("failed block insert advanced Session: %v err=%v", current, err)
+	if err != nil || current.Cursor != last+2 {
+		t.Fatalf("append cursor=%v err=%v", current, err)
+	}
+	if _, err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window, true); err == nil {
+		t.Fatal("packed despite a failed block insert")
 	}
 	migrationExec(t, store.DB(), `ALTER TABLE sampler_event_block DROP CONSTRAINT reject_event_block`)
-	if err := record(writer); err != nil {
+	if _, err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window, true); err != nil {
 		t.Fatal(err)
 	}
 	var blockStart, blockEnd uint64
@@ -112,7 +115,7 @@ func TestJournalBlockPreservesLegacyFramesAndCommandAdmission(t *testing.T) {
 	if blockStart != window+1 || blockEnd != 2*window {
 		t.Fatalf("sealed window=%d–%d", blockStart, blockEnd)
 	}
-	// Revert to the disabled writer and read the packed and standalone parts through it.
+	// Keep appending and read a page spanning the packed and standalone parts.
 	if err := record(store); err != nil {
 		t.Fatal(err)
 	}

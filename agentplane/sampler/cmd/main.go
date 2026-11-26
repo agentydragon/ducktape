@@ -148,6 +148,9 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	defer tlsListener.Close()
 	running, runningCtx := errgroup.WithContext(ctx)
 	running.Go(func() error { return runtime.Run(runningCtx, hub) })
+	if settings.EventBlockWrites {
+		running.Go(func() error { return store.RunJournalCompaction(runningCtx) })
+	}
 	if settings.HistoryTarget != "" {
 		running.Go(func() error {
 			return historyexport.Run(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, sessionstore.OutboxChannel, hub, settings.HistoryTLS)

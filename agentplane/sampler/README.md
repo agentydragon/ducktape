@@ -73,17 +73,19 @@ For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
 `--migrate-only` as the sole argument. Normal service startup performs the same migration before
 it serves.
 
-Migration 21 adds the sampler journal's block table. With `event_block_writes` enabled, the
-writer seals completed 32-cursor windows in the append transaction. Each block compresses up to
-32 consecutive exact event frames and decodes to at most 2 MiB. The live tail, oversized frames,
-and groups that do not benefit from compression stay in standalone rows. The
-[historical packing Job](#historical-journal-packing) can pack earlier completed windows.
-The exporter and recovery read both forms.
+Migration 21 adds the sampler journal's block table. With `event_block_writes` enabled, a
+background worker packs completed 32-cursor windows, including windows from before a restart.
+Migration 22 records each Session's last processed window. The worker reads and verifies frame
+bytes before acquiring the Session lock for the atomic replacement. Each block compresses up to
+32 consecutive exact event frames and decodes to at most 2 MiB. The incomplete tail, oversized
+frames and groups with no compression savings stay in standalone rows. The exporter and
+recovery read both forms.
 
-Deploy the block-capable image across all replicas with `event_block_writes` omitted before
-enabling it. To roll back block writes, remove the setting and roll the block-capable image
-again. Check sampler event follow, provider recovery, and History export checkpoints after the
-roll. Keep migration 21 and the block-capable reader as the rollback floor while blocks exist.
+Enable `event_block_writes` once every replica can read blocks. To stop background packing,
+remove the setting and roll the sampler. An earlier block-capable image can still read the
+journal and pack inline with the setting enabled. Check event follow, provider recovery and
+History export checkpoints after a roll. Keep migration 21 and a block-capable reader while
+blocks exist.
 
 `context_source_writes` enables sourced context entries. Deploy the reader to every sampler
 replica before enabling writes. With the setting omitted, the sampler reads both formats and

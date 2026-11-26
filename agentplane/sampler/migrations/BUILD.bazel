@@ -11,6 +11,7 @@ go_library(
         "schema/0019_chat_completions.sql",
         "schema/0020_turn_wakeups.sql",
         "schema/0021_event_blocks.sql",
+        "schema/0022_journal_compaction_progress.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/migrations",
     visibility = [

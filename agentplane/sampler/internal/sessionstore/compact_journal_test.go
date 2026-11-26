@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -59,9 +60,10 @@ func TestCompactJournalDryRunApplyAndReplay(t *testing.T) {
 	appendTestJournalThrough(t, store, session.ID, window, oversized)
 	// An imported journal with a missing cursor can pack each side independently.
 	migrationExec(t, store.DB(), `DELETE FROM sampler_event WHERE session_id=$1 AND sequence=$2`, session.ID, gap)
-	store.eventBlockWrites = true
 	appendTestJournalThrough(t, store, session.ID, 2*window, 0)
-	store.eventBlockWrites = false
+	if result, err := store.compactJournalWindow(t.Context(), session.ID, window+1, 2*window, true); err != nil || result.Blocks != 1 {
+		t.Fatalf("pack existing block: result=%+v err=%v", result, err)
+	}
 	appendTestJournalThrough(t, store, session.ID, tail, 0)
 	var previousBlock []byte
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT payload FROM sampler_event_block
@@ -204,5 +206,66 @@ func TestListJournalSessionsUsesExclusiveKeyset(t *testing.T) {
 	}
 	if !slices.Equal(actual, want) {
 		t.Fatalf("listed %v, want %v", actual, want)
+	}
+}
+
+func TestJournalCompactionRetriesChangedStandaloneRows(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	const window = eventcodec.MaxBlockEntries
+	appendTestJournalThrough(t, store, session.ID, window, 0)
+	blocks, err := prepareJournalBlocks(t.Context(), store.DB(), session.ID, 1, window)
+	if err != nil || len(blocks) != 1 {
+		t.Fatalf("prepare blocks=%d err=%v", len(blocks), err)
+	}
+	// Replace one row without moving its cursor. Even a partial delete must
+	// roll back when the prepared block no longer matches its sources.
+	migrationExec(t, store.DB(), `UPDATE sampler_event SET entry=entry WHERE session_id=$1 AND sequence=$2`, session.ID, window)
+	if err := store.commitJournalBlocks(t.Context(), session.ID, blocks); !errors.Is(err, errJournalWindowChanged) {
+		t.Fatalf("apply prepared block after row replacement: %v", err)
+	}
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1`, session.ID); count != window {
+		t.Fatalf("stale compactor left %d of %d source rows", count, window)
+	}
+	blocks, err = prepareJournalBlocks(t.Context(), store.DB(), session.ID, 1, window)
+	if err != nil || len(blocks) != 1 {
+		t.Fatalf("refresh blocks=%d err=%v", len(blocks), err)
+	}
+	if err := store.commitJournalBlocks(t.Context(), session.ID, blocks); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.commitJournalBlocks(t.Context(), session.ID, blocks); !errors.Is(err, errJournalWindowChanged) {
+		t.Fatalf("apply same window after a competing compactor committed: %v", err)
+	}
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); count != 1 {
+		t.Fatalf("competing compactions left %d blocks", count)
+	}
+}
+
+func TestJournalCompactionWorkerResumesFromCompletedCursor(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	const window = eventcodec.MaxBlockEntries
+	appendTestJournalThrough(t, store, session.ID, 2*window+1, 0)
+	// A retained window with no packable pair is still a completed attempt.
+	migrationExec(t, store.DB(), `DELETE FROM sampler_event WHERE session_id=$1 AND sequence BETWEEN 2 AND $2`, session.ID, window)
+	for _, want := range []uint64{0, window} {
+		pending, err := store.pendingJournalCompactions(t.Context(), "")
+		if err != nil || len(pending) != 1 || pending[0].id != session.ID || pending[0].after != want {
+			t.Fatalf("pending=%+v, expected one Session after %d: %v", pending, want, err)
+		}
+		if err := store.compactPendingJournal(t.Context(), pending[0]); err != nil {
+			t.Fatal(err)
+		}
+		store = New(store.DB(), store.operationTimeout, nil)
+	}
+	if pending, err := store.pendingJournalCompactions(t.Context(), ""); err != nil || len(pending) != 0 {
+		t.Fatalf("incomplete tail pending=%+v err=%v", pending, err)
+	}
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event WHERE session_id=$1`, session.ID); count != 2 {
+		t.Fatalf("unpackable entry and incomplete tail left %d standalone rows", count)
+	}
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); count != 1 {
+		t.Fatalf("worker packed %d blocks", count)
 	}
 }
