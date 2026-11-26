@@ -1317,7 +1317,7 @@ fn shape_statement(
 
 /// The shape of a canonical helper source.
 fn canonical(source: &str) -> String {
-    let parsed = js_ast::parse_js_module("helper", &format!("({source});"))
+    let parsed = js_ast::parse_js_module("helper", format!("({source});"))
         .expect("the canonical helper parses");
     let [ModuleItem::Stmt(Stmt::Expr(statement))] = parsed.module.body.as_slice() else {
         panic!("the canonical helper is one expression");

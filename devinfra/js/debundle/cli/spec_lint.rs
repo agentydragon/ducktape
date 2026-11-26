@@ -24,12 +24,13 @@ use clap::Args as ClapArgs;
 use command_output::write_report;
 use output_layout::SPEC_LINT_REPORT;
 use peel::OutputFormat;
-use pipeline::{AnnotationProbe, AnnotationProbeRun, load_transform_spec_source};
+use pipeline::{AnnotationProbe, AnnotationProbeRun};
 use serde::Serialize;
 use serde_json::Value;
 use spec::{MemberPurity, ReentryFreeOperation, TransformSpec};
 use std::io::Write;
 use transform_command::TransformArgs;
+use transform_inputs::load_transform_spec_source;
 
 use crate::validate::run_captured_pass;
 
@@ -351,7 +352,7 @@ fn authored_loader_host_keys(host: &spec::HostBehavior) -> Vec<HostBehaviorKey> 
 fn probe_annotations(
     stderr: &mut (dyn std::io::Write + Send),
     args: &SpecLintArgs,
-    cli: &pipeline::TransformRequest,
+    cli: &transform_inputs::TransformRequest,
     spec: &TransformSpec,
     report: &mut SpecLintReport,
 ) -> Result<()> {

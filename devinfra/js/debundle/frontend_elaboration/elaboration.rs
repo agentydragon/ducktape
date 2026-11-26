@@ -514,7 +514,7 @@ fn resolve_imported_array_spread_inputs(
                     .into_iter()
                     .filter(|candidate| {
                         candidate.body_idx == consumer_declaration.body_index
-                            && candidate.binding.binding_name == consumer_declaration.binding
+                            && candidate.binding == consumer_declaration.binding
                     })
                     .map(|candidate| candidate.free_bindings),
             );
@@ -844,7 +844,7 @@ pub fn select_one_declared_binding(
         .matcher()
         .member_candidates(request_id, &parsed_selector)?
         .into_iter()
-        .filter(|matched| matched.binding.binding_name == binding)
+        .filter(|matched| matched.binding == binding)
         .map(|matched| matched.body_idx)
         .collect::<BTreeSet<_>>();
     match sites.len() {

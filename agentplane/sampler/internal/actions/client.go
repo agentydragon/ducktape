@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -234,7 +235,7 @@ func (s *Session) Await(ctx context.Context, requestID string) (*action_servicep
 			if last.GetId() != requestID {
 				return errors.New("Action Service watch returned a different request")
 			}
-			if terminal(last.GetState()) {
+			if actionstate.Terminal(last.GetState()) {
 				return nil
 			}
 		}
@@ -273,19 +274,6 @@ func retryableStreamError(ctx context.Context, err error) error {
 		return retry.RetryableError(err)
 	default:
 		return err
-	}
-}
-
-func terminal(state action_servicepb.ActionState) bool {
-	switch state {
-	case action_servicepb.ActionState_ACTION_STATE_SUCCEEDED,
-		action_servicepb.ActionState_ACTION_STATE_FAILED,
-		action_servicepb.ActionState_ACTION_STATE_DENIED,
-		action_servicepb.ActionState_ACTION_STATE_CANCELLED,
-		action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
-		return true
-	default:
-		return false
 	}
 }
 

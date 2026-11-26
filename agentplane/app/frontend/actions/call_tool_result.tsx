@@ -3,6 +3,8 @@ import { type JSX, useMemo } from "react";
 import { z } from "zod";
 import { parseAllDocuments } from "yaml";
 
+import { isKubernetesResource } from "./schemas/kubernetes_admin/manifest";
+
 import { JsonBlock, TextBlock } from "../ui/text_block";
 import { parsedJson } from "../transport/parsed_json";
 import { looksLikeJson } from "../../../../util/frontend/transcript/text_block";
@@ -199,19 +201,11 @@ function restates(text: string, value: unknown): boolean {
     const values = documents.flatMap((document) => (document.contents === null ? [] : [document.toJS()]));
     if (values.length === 0) return false;
     const resources = values.flatMap((document) => (Array.isArray(document) ? document : [document]));
-    if (resources.some((resource) => !isKubernetesResourceValue(resource))) return false;
+    if (resources.some((resource) => !isKubernetesResource(resource))) return false;
     return canonicalJson(values.length === 1 ? values[0] : values) === canonicalJson(value);
   } catch {
     return false;
   }
-}
-
-function isKubernetesResourceValue(value: unknown): boolean {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const resource = value as Record<string, unknown>;
-  if (typeof resource.apiVersion !== "string" || typeof resource.kind !== "string") return false;
-  const metadata = resource.metadata;
-  return metadata === undefined || (metadata !== null && typeof metadata === "object" && !Array.isArray(metadata));
 }
 
 /** JSON with every object's keys sorted, so two serializations of one value compare equal. */

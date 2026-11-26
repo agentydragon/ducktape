@@ -1,16 +1,12 @@
 import { kubernetesResourcesResult } from "./resources";
 import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
+import { podsGetArguments } from "../../schemas/kubernetes_admin/arguments";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
-
-const podsGetArguments = z.strictObject({
-  name: z.string().min(1),
-  namespace: z.string().min(1).optional(),
-});
 
 export function offersCardDecisionButtonsPodsGet(args: unknown): boolean {
   return podsGetArguments.safeParse(args).success;

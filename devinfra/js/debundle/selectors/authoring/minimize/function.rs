@@ -6,10 +6,9 @@ use anyhow::Result;
 use swc_ecma_ast::*;
 
 use super::read_off_candidates;
-use crate::render::{AnchorSpan, emit_selector, hole_function, ident_node};
-use crate::{
-    ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-};
+use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
+use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
+use selector_render::{AnchorSpan, emit_selector, hole_function, ident_node};
 
 /// The form-specific prune + codegen for a function-declaration selector: render
 /// the function holed down to the spans in `kept`, named for the target export.

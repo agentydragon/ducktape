@@ -33,14 +33,7 @@ fn assert_construction_proved(fixture: &Fixture, case: &str) {
     assert_eq!(call["target"]["kind"], "constructor", "{case}: {call:#}");
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{case}: {report:#}");
-    assert_eq!(
-        report["decision"]["status"], "accepted",
-        "{case}: {report:#}"
-    );
-    assert_eq!(
-        report["decision"]["scope"], "statement_order_commutation",
-        "{case}: {report:#}"
-    );
+    assert_commutation_accepted(&report, case);
 }
 
 /// The checked constructor refused this class with `check`; the

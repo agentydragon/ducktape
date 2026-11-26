@@ -9,11 +9,10 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::{extend_anchor_cover, finish_minimized_selector, push_candidate, render_var_slots};
-use crate::render::{AnchorSpan, node_holds_anchor, span_key};
-use crate::{
-    ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    match_single_member_selector, prove_synthesized_selector,
-};
+use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
+use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
+use crate::proof::{match_single_member_selector, prove_synthesized_selector};
+use selector_render::{AnchorSpan, node_holds_anchor, span_key};
 
 /// Ranked anchor spans for an object literal's key-set cover, best-first: each
 /// direct literal/template **value** (a value-level discriminator, tried first)
@@ -82,9 +81,9 @@ fn cover_object_slot(
                 return Ok((true, usize::MAX));
             };
             // Object ranking distinguishes the declaration as well as the binding.
-            let target_unresolved = !matches.iter().any(|m| {
-                m.body_idx == decl.body_idx && m.binding.binding_name == target.runtime_binding
-            });
+            let target_unresolved = !matches
+                .iter()
+                .any(|m| m.body_idx == decl.body_idx && m.binding == target.runtime_binding);
             Ok((target_unresolved, matches.len()))
         },
     )?;

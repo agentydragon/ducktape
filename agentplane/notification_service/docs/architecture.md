@@ -29,14 +29,17 @@ Inbox recording retains its existing transaction boundary for deduplication, ent
 
 The service owns a PostgreSQL database and role on the shared cluster. The serving process applies
 Goose migrations before it opens listeners or starts workers. Its migration-only mode uses the same
-binary and migration code. Goose retains the advisory lock shared with the retired Alembic migrator;
-see [`migrations`](../migrations/migrations.go) and the deployment instructions.
+binary and migration code. [The baseline](../migrations/notifications/00013_baseline.sql) creates
+a fresh schema or adopts a completed v12 schema and its migration history, without copying rows. A partial predecessor
+must finish migration under its previous image. See [deployment](../README.md#running-and-deployment).
 
 An inbox row lock serializes cursor allocation, payload insertion, overlapping subscription
 matches and source-checkpoint advancement. Inbox entries hold their own payload copies, independent
 of the raw GitHub receipt journal. Event identities survive inbox payload expiry for deduplication.
-GitHub matching reads the compact event-specific fact projection stored with each receipt. The signed request body
-is optional and is not part of matching or notification rendering; legacy backfill reads it only when a fact is missing.
+Action state, actor and timestamp, mergeability refs, state and nanosecond timestamp, and
+message text and optional source Session use native columns. Generated observations use JSONB.
+Subscription `creation_proto` and notice `runner_entry` remain binary protobuf snapshots. GitHub matches compact receipt facts and backfills
+legacy receipts from the optional JSONB payload when a fact is missing.
 
 One PostgreSQL LISTEN connection per replica distributes committed invalidations, never payloads.
 Workers drain durable state at startup and after reconnect. Inbox claims, source generations and
@@ -60,8 +63,9 @@ A crash before that marker permits a newer initial checkpoint; after it, retries
 entries. Missing runner entries must be accounted for by settled streamed-delta ranges.
 
 History Service must reach the runner journal end before a command can be sent: lag delays
-submission rather than hiding an admission. Replay verifies the last committed entry. Retries
-reuse the command ID; admission is not harness confirmation. Confirmation follows causal
+submission rather than hiding an admission. Replay compares the full stored entry at the committed
+cursor using [`proto.Equal`](../internal/inbox/notices.go). Unknown field-number groups may reorder,
+but order and opaque wire bytes within each group remain significant. Retries reuse the command ID; admission is not harness confirmation. Confirmation follows causal
 `origin_command_ids`, including coalesced inputs. Invalid runner history quarantines delivery
 until explicit retirement. See [`deliver.go`](../internal/worker/deliver.go).
 
@@ -72,7 +76,9 @@ observations; numeric repository and installation identities fence access. Subsc
 keep both identities, while immutable creation parameters serve idempotency.
 
 Shared access and subject refreshes use leases, persisted backoff and generation fences. Network
-calls run outside database locks. Installation lifecycle webhooks invalidate cached grants and
+calls run outside database locks. The [REST client](../internal/sources/github/client/client.go) returns
+rate-limit errors immediately so the provider can persist retries instead of sleeping inside a lease.
+Installation lifecycle webhooks invalidate cached grants and
 in-flight refreshes. Recording inbox entries rechecks access generations and expiry under the
 same lock as invalidation; a lost lease cannot overwrite a newer observation.
 
@@ -81,7 +87,8 @@ to a fork: matching also requires its validated installation/repository grant. D
 links support events without a SHA; later association discovery can select earlier retained CI
 receipts. Receipt positions are serialized against subscription creation. Expiring a raw body leaves
 its receipt, compact fact and subject links intact. Expiring the receipt at fact retention cascades to its
-subject links without removing independent inbox copies.
+subject links without removing independent inbox copies. Receipts predating the first retention
+migration use that migration's timestamp because their ingestion times were not recorded.
 
 Shared failure observations belong to their access/subject records, not copies on every
 subscription or inbox history. These are current-state records, not temporal versions. See

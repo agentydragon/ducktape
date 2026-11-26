@@ -378,10 +378,7 @@ fn near_misses_among<I: std::borrow::Borrow<Index>>(
         }
         near_misses.push(SourceMatchNearMiss {
             body_idx,
-            declared_bindings: declared_bindings(candidate)
-                .into_iter()
-                .map(|binding| binding.binding_name)
-                .collect(),
+            declared_bindings: declared_bindings(candidate),
             score: reason.score(),
             reason,
         });

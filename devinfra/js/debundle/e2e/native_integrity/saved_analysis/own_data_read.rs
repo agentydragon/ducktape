@@ -1,9 +1,7 @@
 //! Automatic Object own-data reads preserve getter-free lookup and later call effects.
 
 use debundle_e2e_graph_support::FixtureGraphExt;
-use debundle_e2e_support::saved_analysis::{
-    assert_ok, assert_same_invocation_trees, graph_node_for_binding, staged,
-};
+use debundle_e2e_support::saved_analysis::{graph_node_for_binding, staged};
 use debundle_e2e_support::*;
 use serde_json::Value;
 
@@ -108,22 +106,8 @@ fn intrinsic_alias_relations_resolve_without_native_operation_inputs() {
         decorator_trio("b", "Beta", "beta role")
     );
     let (staged, _fixture) = staged(intrinsic_alias_opts(&source));
-    let direct = staged.run(&[]);
-    assert_ok(&direct.result, "direct relational-alias run");
-    let saved = staged.run_saved(&[]);
-    assert_ok(&saved.result, "saved-analysis relational-alias run");
-    assert_same_invocation_trees(&direct, &saved);
-
-    for invocation in [&direct, &saved] {
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            EXPECTED,
-            "",
-        );
-    }
-
-    let out_root = direct.output_root();
-    let app_root = out_root.join("app");
+    let [direct, _] = staged.assert_fresh_saved_parity(&[], 0, EXPECTED, EXPECTED);
+    let app_root = direct.output_root().join("app");
     assert_module_exports(
         &app_root,
         "static/app/modules/alpha.js",

@@ -1,9 +1,10 @@
 # Debundle Architecture Review
 
 Use this guide to review whether an in-progress spec and its emitted JavaScript
-form a coherent application tree. The current module names and paths are useful
-leads, not ground truth: infer architecture from source behavior, call sites,
-graph edges, source proximity, ownership, and repeated internal structure.
+form a coherent application tree. Shape criteria (seams, tiny-module folds,
+directory shapes, layer ownership, anti-patterns) live in
+[module shape](../skills/shared/module_shape.md); this guide is the review
+procedure, metrics and outputs.
 
 ## Inputs, scope, and outputs
 
@@ -39,45 +40,28 @@ substitute a few familiar prefixes. Then inspect source bodies and graph
 neighborhoods behind suspicious paths; the tree alone does not establish an
 architecture.
 
-Look for:
+Look for the [module-shape anti-patterns](../skills/shared/module_shape.md#anti-patterns),
+plus modules named after a callable or implementation step instead of a durable
+concept, unrelated behavior glued into one module, unsupported layer direction,
+source behavior that contradicts the assigned name or path, and
+extracted modules unreachable from the generated graph.
 
-- tiny modules that are implementation details of one meaningful consumer;
-- modules named after a callable or implementation step instead of a durable
-  concept;
-- unrelated behavior glued into one module, or helpers/configuration separated
-  from their real owner;
-- unsupported layer direction, inconsistent depth, or competing roots for the
-  same concept family;
-- generic buckets such as `utils`, `helpers`, `core`, `common`, `runtime`, or
-  `misc` without a project convention that explains them;
-- singleton directory wrappers, overloaded sibling lists, and repeated
-  `foo/foo.js` leaves with no useful namespace meaning;
-- source behavior that contradicts the assigned name or path, and extracted
-  modules unreachable from the generated graph.
-
-Use the shared [module-shape guidance](../skills/shared/module_shape.md) for
-seam quality, tiny-module folds, and layer ownership. Treat one-callable modules
-as a recurring smell when the module merely repeats a callable's name. Keep a
-standalone callable when it is a public API, a shared domain primitive, or has
-multiple meaningful consumers. Otherwise follow its behavior one layer higher
-to find the owning component, service, state, or parser, and propose a merge or
-co-peel with that owner.
+Treat one-callable modules as a recurring smell when the module merely repeats
+a callable's name. Keep a standalone callable when it is a public API, a shared
+domain primitive, or has multiple meaningful consumers. Otherwise follow its
+behavior one layer higher to find the owning component, service, state, or
+parser, and propose a merge or co-peel with that owner.
 
 ### 2. Audit directory boundaries
 
-Review hierarchy as a system, not only as isolated files. If the adapter
-provides directory reports, inspect `reports/tree/<emitted-dir>/index.json`
-before recommending hierarchy changes. Incoming/outgoing symbol, file, and
-edge-kind attribution shows which crossings make a directory leaky or which
-concepts dominate its boundary. Read the source and graph behind the highest
-attribution entries before writing a recommendation.
-
-A directory with one child is not automatically wrong: it may name a stable
-namespace, route/package, public API, or evident family. A broad directory is
-not automatically wrong either: a small cohesive subsystem may have a useful
-flat surface. In both cases, record the local reason. When repeated bad shapes
-show a missing convention, update the project convention or architecture notes
-so future peels can follow it.
+Review hierarchy as a system, not only as isolated files, using the
+[directory-shape criteria](../skills/shared/module_shape.md#directory-shape).
+If the adapter provides directory reports, inspect
+`reports/tree/<emitted-dir>/index.json` before recommending hierarchy changes,
+and read the source and graph behind the highest attribution entries before
+writing a recommendation. Record the local reason for keeping a single-child or
+broad directory. When repeated bad shapes show a missing convention, update the
+project convention or architecture notes so future peels can follow it.
 
 ### 3. Review selector health
 
@@ -164,25 +148,6 @@ assumption to revise, with the reason recorded. Drift in an observatory should
 prompt a decision to intervene, promote the hypothesis to a rule, or revise
 it. Any new or sharpened boundary in architecture notes needs a matching
 metric in the same pass.
-
-## Co-consumption and architecture ownership
-
-Co-consumption helps identify local helpers, but it does not override layer
-ownership. Do not move domain, policy, persistence, integration, or
-infrastructure behavior into presentation code merely because that code is the
-only consumer. Examples to consider as hypotheses, not universal rules:
-
-- component-local presentation helpers or styling may belong with their one
-  component consumer;
-- reducers, action constants, and selectors may share a state module when they
-  share a public contract;
-- parser tables and token predicates may belong with a parser when they are
-  implementation details;
-- command metadata may belong with a handler only when it is not an independent
-  registry or policy.
-
-State the exception boundary for every inferred convention. For seam and layer
-criteria, see [module shape](../skills/shared/module_shape.md).
 
 ## Outputs
 

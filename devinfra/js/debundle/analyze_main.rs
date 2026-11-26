@@ -1,6 +1,6 @@
 //! Bazel's analysis-only executable; the standalone CLI retains `analyze`.
 
-use analysis_thread::run_analysis;
+use analysis_thread::run_analysis_command;
 use analyze_command::AnalyzeArgs;
 use clap::Parser;
 
@@ -11,16 +11,10 @@ struct Args {
 }
 
 fn main() -> std::process::ExitCode {
-    run_analysis(|| {
-        match Args::parse().analysis.run(
+    run_analysis_command(|| {
+        Args::parse().analysis.run(
             &mut std::io::stderr(),
             analysis_identity::ANALYSIS_ENGINE_SHA256,
-        ) {
-            Ok(()) => std::process::ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("{error:#}");
-                std::process::ExitCode::FAILURE
-            }
-        }
+        )
     })
 }

@@ -21,19 +21,14 @@ func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, ins
 	}
 
 	statuses := make([]githubmodel.CommitStatus, 0)
-	for page := 1; ; {
-		result, err := callAsCommitStatusesInstallation(ctx, c, installationID, func(ctx context.Context, client *github.Client) (resourcePage[*github.CombinedStatus], *github.Response, error) {
-			value, response, err := client.Repositories.GetCombinedStatus(ctx, owner, name, sha, &github.ListOptions{
-				PerPage: pageSize,
-				Page:    page,
-			})
-			return resourcePage[*github.CombinedStatus]{value: value, response: response}, response, err
-		})
+	pages := installationPages(ctx, c, installationID, commitStatusesRead, "combined status", func(ctx context.Context, client *github.Client, opts github.ListOptions) (*github.CombinedStatus, *github.Response, error) {
+		return client.Repositories.GetCombinedStatus(ctx, owner, name, sha, &opts)
+	})
+	for combined, err := range pages {
 		if err != nil {
 			return nil, err
 		}
-		combined, response := result.value, result.response
-		if combined == nil || response == nil {
+		if combined == nil {
 			return nil, &InvalidResponseError{Reason: "combined status response is missing"}
 		}
 		if combined.GetSHA() == "" {
@@ -52,15 +47,9 @@ func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, ins
 			}
 			statuses = append(statuses, observation)
 		}
-		if response.NextPage == 0 {
-			sort.SliceStable(statuses, func(i, j int) bool { return statuses[i].ID < statuses[j].ID })
-			return statuses, nil
-		}
-		if response.NextPage <= page {
-			return nil, &InvalidResponseError{Reason: "combined status pagination did not advance"}
-		}
-		page = response.NextPage
 	}
+	sort.SliceStable(statuses, func(i, j int) bool { return statuses[i].ID < statuses[j].ID })
+	return statuses, nil
 }
 
 func CommitStatusObservation(status *github.RepoStatus, sha string) (githubmodel.CommitStatus, error) {
@@ -70,8 +59,8 @@ func CommitStatusObservation(status *github.RepoStatus, sha string) (githubmodel
 	if status.GetContext() == "" {
 		return githubmodel.CommitStatus{}, &InvalidResponseError{Reason: "commit status context is missing"}
 	}
-	state, ok := commitStatusState(status.GetState())
-	if !ok {
+	state := githubmodel.CommitStatusState(status.GetState())
+	if !state.Valid() {
 		return githubmodel.CommitStatus{}, &InvalidResponseError{Reason: "commit status state is invalid"}
 	}
 	return githubmodel.CommitStatus{
@@ -82,21 +71,6 @@ func CommitStatusObservation(status *github.RepoStatus, sha string) (githubmodel
 		TargetURL: status.GetTargetURL(),
 		UpdatedAt: timestampTime(status.UpdatedAt),
 	}, nil
-}
-
-func commitStatusState(state string) (githubmodel.CommitStatusState, bool) {
-	switch state {
-	case "error":
-		return githubmodel.CommitStatusError, true
-	case "failure":
-		return githubmodel.CommitStatusFailure, true
-	case "pending":
-		return githubmodel.CommitStatusPending, true
-	case "success":
-		return githubmodel.CommitStatusSuccess, true
-	default:
-		return "", false
-	}
 }
 
 func validCombinedStatus(status string) bool {

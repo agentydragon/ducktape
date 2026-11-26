@@ -12,10 +12,9 @@ use peel::OutputFormat;
 use resolved_placement::{ResolvePlacementArgs, ResolvePlacementsArgs};
 use transform_command::{ProjectAnalysisArgs, ProjectApplyArgs};
 
-use selector_codemod::match_selector::{
-    MatchSelectorConfig, render_match_selector_text, run_match_selector,
-};
-use selector_codemod::{SelectorCodemodConfig, render_selector_codemod_text, run_selector_codemod};
+use match_selector::{MatchSelectorConfig, render_match_selector_text, run_match_selector};
+use selector_codemod::driver::{SelectorCodemodConfig, run_selector_codemod};
+use selector_codemod::report::render_selector_codemod_text;
 use selector_debt::{
     SelectorDebtReport, SourceAwareSelectorDebtConfig, compute_selector_debt_with_source,
     populate_name_only_module_groups, render_selector_debt_text,
@@ -374,11 +373,13 @@ fn run_synthesize_selectors_cmd(
         candidates: args.candidates,
     };
     if format == OutputFormat::Ndjson {
-        let report =
-            selector_codemod::run_selector_codemod_with_module_results(&config, &mut |module| {
+        let report = selector_codemod::driver::run_selector_codemod_with_module_results(
+            &config,
+            &mut |module| {
                 write_section(output, "module", module)?;
                 Ok(())
-            })?;
+            },
+        )?;
         return write_section(output, "summary", &report.summary);
     }
     let report = run_selector_codemod(&config)?;
@@ -448,7 +449,7 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs, output: &mut dyn std::io::Write
     if args.group_module_depth == Some(0) {
         bail!("--group-module-depth must be at least 1");
     }
-    let source_file = selector_codemod::source_input::optional_chunk_source_file(
+    let source_file = source_input::optional_chunk_source_file(
         args.source_file.as_deref(),
         args.source_root.as_deref(),
         args.chunk.as_deref(),

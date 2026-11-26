@@ -209,7 +209,7 @@ func TestSessionDrainDoesNotWaitForRuntimeProcess(t *testing.T) {
 
 func newManagedProcessTestHost(t *testing.T) *Runtime {
 	t.Helper()
-	return newSessionTestRuntime(t, lifecycleConfig(t, "http://unused", t.TempDir(), nil, "/bin/false"))
+	return newSessionTestRuntime(t, lifecycleConfig(t, t.TempDir(), nil, "/bin/false"))
 }
 
 func assertManagedProcessFinalizer(t *testing.T, ctx context.Context, r *Runtime, process *supervision.ManagedProcess, want bool) {

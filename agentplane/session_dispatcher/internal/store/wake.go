@@ -234,7 +234,7 @@ func (s *Store) FailExpiredWake(
 				WHERE session_id=$1 AND session_id=$2 AND state_value=$6
 				RETURNING `+sessionColumns, id, owner.SessionID, SessionFailedState, reason, now, waiting, blockerBytes, assessmentBytes))
 		} else {
-			dispatch, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state_value=CASE WHEN delivery_attempted THEN $9::integer ELSE $3::integer END,
+			dispatch, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch AS d SET state_value=CASE WHEN delivery_attempted THEN $9::integer ELSE $3::integer END,
 				reason=$4,updated_at=$5,delivery_blocker=COALESCE($7,delivery_blocker),wake_assessment=$8
 				WHERE command_id=$1 AND session_id=$2 AND state_value=$6
 				RETURNING `+dispatchColumns, id, owner.SessionID, FailedState, reason, now, QueueState, blockerBytes, assessmentBytes, UnknownState))

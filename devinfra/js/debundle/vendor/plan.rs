@@ -42,10 +42,10 @@ use crate::manifests::{
     ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, PartialSwapPackageResolution,
     VendorResolution, VendorSwapsReport,
 };
-use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
+use crate::packages::ResolveVendorPackage;
 use crate::validate::{
-    PartialSwapConsumerStage, PartialSwapPackageCoords, ResolvePartialSwapPackageOptions,
-    ResolvedVendorChunk, build_partial_swap_symbol_resolutions, check_partial_swap_consumers,
+    PartialSwapConsumerStage, PartialSwapPackageCoords, ResolvedVendorChunk,
+    build_partial_swap_symbol_resolutions, check_partial_swap_consumers,
     resolve_partial_swap_package, validate_partial_swap_symbols, vendor_chunk_name,
     vendor_entry_ast,
 };
@@ -601,33 +601,19 @@ fn plan_full_swaps(
 }
 
 fn resolve_full_swap(job: FullSwapJob, options: &VendorPlanOptions<'_>) -> Result<FullSwapPlan> {
-    let installed =
-        read_installed_package_metadata(&job.package, options.package_roots, options.packages_root)
-            .with_context(|| format!("reading metadata for package {}", job.package))?;
-    let installed_version = installed
-        .get("version")
-        .and_then(Value::as_str)
-        .context("package metadata missing version")?;
-    if installed_version != job.version {
-        bail!(
-            "swap_vendor_chunks vendor entry {} version mismatch for {}: spec={}, installed={installed_version}",
-            job.chunk_path,
-            job.package,
-            job.version,
-        );
+    let upstream_path = ResolveVendorPackage {
+        stage: "swap_vendor_chunks",
+        chunk_path: &job.chunk_path,
+        package_roots: options.package_roots,
+        packages_root: options.packages_root,
     }
-    let upstream_path = resolve_package_subpath(
-        &job.package,
-        &job.subpath,
-        options.package_roots,
-        options.packages_root,
-    )?;
+    .resolve(&job.package, &job.version, &job.subpath)?;
     let upstream_code = graph_provenance::read_package_to_string(&job.package, &upstream_path)?;
 
     let wrapper_source = match job.wrapper_shape {
         Some(WrapperShape::NamedFromDefault) => {
             let upstream_ast =
-                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+                parse_js_module(&upstream_path.display().to_string(), upstream_code)?;
             let object_keys =
                 collect_default_export_object_keys(&upstream_ast.module, &job.chunk_path)?;
             let non_default_exports = job
@@ -705,7 +691,7 @@ fn resolve_full_swap(job: FullSwapJob, options: &VendorPlanOptions<'_>) -> Resul
                 );
             }
             let upstream_ast =
-                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+                parse_js_module(&upstream_path.display().to_string(), upstream_code)?;
             Some(generate_named_from_module_default_wrapper(
                 &upstream_ast,
                 &job.vendor_exports,
@@ -714,7 +700,7 @@ fn resolve_full_swap(job: FullSwapJob, options: &VendorPlanOptions<'_>) -> Resul
         }
         None => {
             let upstream_ast =
-                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+                parse_js_module(&upstream_path.display().to_string(), upstream_code)?;
             let upstream_exports = collect_exported_names(&upstream_ast.module);
             let missing = set_diff(&job.vendor_exports, &upstream_exports);
             if !missing.is_empty() {
@@ -787,7 +773,7 @@ fn plan_partial_swaps(
 
         // Per-package validation: installed version + upstream subpath
         // exists + every referenced root is exported by the upstream subpath.
-        let resolve_options = ResolvePartialSwapPackageOptions {
+        let resolve_options = ResolveVendorPackage {
             stage: "apply_partial_vendor_swaps",
             chunk_path,
             package_roots: options.package_roots,
@@ -809,7 +795,7 @@ fn plan_partial_swaps(
             let upstream_code =
                 graph_provenance::read_package_to_string(package_name, &upstream_path)?;
             let upstream_ast =
-                parse_js_module(&upstream_path.display().to_string(), &upstream_code)?;
+                parse_js_module(&upstream_path.display().to_string(), upstream_code)?;
             let upstream_exports = collect_exported_names(&upstream_ast.module);
             // Packages that re-export everything from a sibling module
             // (`export * from "./other.js"`) can't be fully enumerated
@@ -931,7 +917,7 @@ fn plan_bundled_partial_swaps(
             BTreeMap::new();
         let mut package_targets: BTreeMap<String, BundledPartialSwapPackageTarget> =
             BTreeMap::new();
-        let resolve_options = ResolvePartialSwapPackageOptions {
+        let resolve_options = ResolveVendorPackage {
             stage: "apply_bundled_partial_vendor_swaps",
             chunk_path,
             package_roots: options.package_roots,

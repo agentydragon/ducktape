@@ -488,6 +488,7 @@ rust_library(
     deps = [
         ":support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:graph_provenance",
         "//devinfra/js/debundle:peel",
         "//devinfra/js/debundle:spec",
@@ -941,7 +942,6 @@ debundle_e2e_test(
     size = "small",
     deps = [
         "@crates//:serde_json",
-        "@crates//:tempfile",
     ],
 )
 
@@ -1166,7 +1166,6 @@ debundle_e2e_test(
     name = "match_selector_cli_test",
     deps = [
         "@crates//:serde_json",
-        "@crates//:tempfile",
     ],
 )
 
@@ -1244,7 +1243,6 @@ debundle_e2e_test(
     name = "synthesis_diagnostics_test",
     deps = [
         "@crates//:serde_json",
-        "@crates//:tempfile",
     ],
 )
 
@@ -1278,10 +1276,6 @@ debundle_graph_e2e_test(
 debundle_graph_e2e_test(
     name = "return_summary_test",
     saved_analysis_tools = True,
-    deps = [
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:analysis_model",
-    ],
 )
 
 debundle_e2e_test(
@@ -1305,10 +1299,6 @@ debundle_graph_e2e_test(
     name = "program_value_flow_test",
     compile_data = ["fixtures/default_export_wrapper.js"],
     saved_analysis_tools = True,
-    deps = [
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:analysis_model",
-    ],
 )
 
 debundle_e2e_test(

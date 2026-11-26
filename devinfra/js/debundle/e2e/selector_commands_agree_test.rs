@@ -24,7 +24,7 @@ use debundle_e2e_support::{
     assert_generated_module_after_entry_script, assert_module_source, logical_module,
     logical_module_with_binding_groups, outcomes, parse_stdout_json, process,
     read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture,
-    run_match_selector, run_source_only_validate, run_spec_validate, run_synthesize_selectors,
+    run_match_selector, run_source_only_validate_json, run_spec_validate, run_synthesize_selectors,
     source_match_module_yaml, write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
@@ -179,9 +179,7 @@ fn source_only_validate(case: &Case) -> Option<Value> {
         &modules.join(format!("{MODULE}.yaml")),
         &source_matches_yaml(case),
     );
-    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
-    assert!(out.status.success(), "stderr={}", out.stderr);
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = run_source_only_validate_json(&modules, &source);
     export_record(outcomes(&report), EXPORT)
 }
 
@@ -720,9 +718,7 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
     let tree = elimination_tree();
     let source = tree.source_path();
     let modules = &tree.modules;
-    let out = run_source_only_validate(modules, &source, &["--format", "json"]);
-    assert!(out.status.success(), "stderr={}", out.stderr);
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = run_source_only_validate_json(modules, &source);
     let [source_only] = outcomes(&report) else {
         panic!("spec validate --source-file lists one outcome: {report:#}");
     };
@@ -835,9 +831,7 @@ fn relational_claims_eliminate_in_graph_backed_commands() {
     );
     let source = tree.source_path();
     let modules = &tree.modules;
-    let out = run_source_only_validate(modules, &source, &["--format", "json"]);
-    assert!(out.status.success(), "stderr={}", out.stderr);
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = run_source_only_validate_json(modules, &source);
     let [source_only] = outcomes(&report) else {
         panic!("spec validate --source-file lists one outcome: {report:#}");
     };
@@ -952,9 +946,7 @@ export { actual, other };
         "{selector}"
     );
 
-    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
-    assert!(out.status.success(), "stderr={}", out.stderr);
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = run_source_only_validate_json(&modules, &source);
     assert!(outcomes(&report).is_empty(), "{report:#}");
 }
 
@@ -1038,9 +1030,7 @@ function f() { return key + 1; }"#;
             "source_matches:\n  - match: |\n{indented}\n    bindings:\n      - local: key\n        name: anchorKey\n      - local: f\n        name: reader\n"
         ),
     );
-    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
-    assert!(out.status.success(), "stderr={}", out.stderr);
-    let report: Value = serde_json::from_str(&out.stdout).unwrap();
+    let report = run_source_only_validate_json(&modules, &source);
     assert_eq!(
         export_record(outcomes(&report), "anchorKey"),
         None,
@@ -1067,14 +1057,7 @@ fn candidate_limit_counts_places_not_wildcard_alignments() {
         &modules.join("selected.yaml"),
         "source_matches:\n  - match: |\n      const first = 1; STMT_LIST; anchor(); STMT_LIST; const second = 2;\n    bindings: [first, second]\n",
     );
-    let output = run_source_only_validate(&modules, &source, &["--format", "json"]);
-    assert!(
-        output.status.success(),
-        "{}\n{}",
-        output.stdout,
-        output.stderr
-    );
-    let report: Value = serde_json::from_str(&output.stdout).unwrap();
+    let report = run_source_only_validate_json(&modules, &source);
     assert!(outcomes(&report).is_empty(), "{report:#}");
 }
 

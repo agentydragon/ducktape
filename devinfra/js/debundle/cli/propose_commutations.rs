@@ -12,10 +12,10 @@
 //! own contradiction and unused checks validate it.
 
 use analysis_model::DepKind;
-use selector_codemod::synthesis_failure::SynthesisSkipReason;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
+use synthesis_failure::SynthesisSkipReason;
 
 use ::gate::{BlockingSccEntry, CycleEdge};
 use analysis::graph::{CommutationOrder, EndpointView, assignment_endpoints};
@@ -32,7 +32,7 @@ use peel::OutputFormat;
 use petgraph::algo::{is_cyclic_directed, tarjan_scc};
 use petgraph::graphmap::DiGraphMap;
 use petgraph::visit::EdgeFiltered;
-use selector_codemod::{
+use selector_codemod::source_unit::{
     SourceUnitSelectorRequest, SourceUnitSelectorSynthesis, SourceUnitSelectorSynthesizer,
     with_source_unit_selector_synthesizer,
 };

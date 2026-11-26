@@ -12,13 +12,14 @@ use swc_ecma_ast::*;
 use super::object::{object_anchor_ranking, try_object_read_off_candidates};
 use super::use_site::{render_via_call_use_site, render_via_named_object_use_site};
 use super::var::try_var_read_off_candidates;
-use super::{relax_exact_declaration, render_var_slots, render_via_neighbor_context};
-use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
-use crate::render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, holes_present, node_holds_anchor};
-use crate::{
-    ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    prove_synthesized_selector, single_ident_pat_name,
+use super::{
+    relax_exact_declaration, render_var_slots, render_via_neighbor_context, single_ident_pat_name,
 };
+use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
+use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
+use crate::proof::prove_synthesized_selector;
+use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
+use selector_render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, holes_present, node_holds_anchor};
 
 /// Probe prefixes of the shape index's ranking in exponentially growing
 /// batches, find the shortest proving prefix, then remove redundant blocks.

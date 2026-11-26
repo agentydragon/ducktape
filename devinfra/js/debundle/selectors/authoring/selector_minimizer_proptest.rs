@@ -31,10 +31,10 @@ use proptest::sample::Index;
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 
-use super::{
-    ChunkSelectorIndex, GroupSelectorOutcome, NameBindingMember, matched_body_indices,
-    synthesize_simplest_selector_for_group,
-};
+use crate::chunk_index::ChunkSelectorIndex;
+use crate::group_synthesis::{GroupSelectorOutcome, synthesize_simplest_selector_for_group};
+use crate::name_binding_rewrite::NameBindingMember;
+use crate::proof::matched_body_indices;
 
 const METHODS: [&str; 3] = ["foo", "bar", "baz"];
 const STRINGS: [&str; 3] = ["alpha", "beta", "gamma"];
@@ -415,7 +415,7 @@ proptest! {
         let source = js_ast::emit_module_source(&module).expect("emit generated module");
 
         let outcome: Result<(), TestCaseError> = js_ast::with_swc_globals(|| {
-            let parsed = js_ast::parse_js_module_consuming("<proptest>", source.clone())
+            let parsed = js_ast::parse_js_module("<proptest>", &source)
                 .map_err(|err| TestCaseError::fail(format!("parse failed: {err}\n{source}")))?;
             let index = ChunkSelectorIndex::new(&parsed.module);
 

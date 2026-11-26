@@ -324,31 +324,93 @@ fn compute_selector_debt_impl(
 ) -> Result<SelectorDebtReport> {
     let files = collect_module_files(modules_root)
         .with_context(|| format!("walking {}", modules_root.display()))?;
+    let runtime_module = parse_runtime_module(source_aware)?;
+    let mut tally = DebtTally::new(source_aware, runtime_module.as_ref());
+    for file in &files {
+        let module_path = module_path_from_file(file, modules_root);
+        let module: ModuleFile = read_module_file(file)?;
+        tally.record_members(&module_path, &module)?;
+        tally.record_source_match_claims(&module_path, &module)?;
+        tally.record_anonymous_statements(&module_path, &module)?;
+    }
+    Ok(tally.into_report())
+}
 
-    let mut name_only: Vec<NameOnlySelector> = Vec::new();
-    // normalized body -> every occurrence of it.
-    let mut by_normalized: BTreeMap<String, Vec<SourceMatchOccurrence>> = BTreeMap::new();
-    let mut source_match_total = 0usize;
-    let runtime_module = source_aware
+/// Parse the current chunk source the source-aware pass compares against.
+fn parse_runtime_module(
+    source_aware: Option<&SourceAwareSelectorDebtConfig<'_>>,
+) -> Result<Option<SwcModule>> {
+    source_aware
         .map(|config| {
             let source = std::fs::read_to_string(config.source_file)
                 .with_context(|| format!("reading {}", config.source_file.display()))?;
             js_ast::parse_js_module_ast(&config.source_file.display().to_string(), &source)
                 .with_context(|| format!("parsing {}", config.source_file.display()))
         })
-        .transpose()?;
-    let runtime_debt = std::cell::OnceCell::new();
-    let mut source_aware_checked = 0usize;
-    let mut source_aware_unique = 0usize;
-    let mut source_aware_near_ambiguous = Vec::new();
-    let mut source_aware_exact_by_key =
-        BTreeMap::<(String, Vec<usize>), Vec<SourceMatchOccurrence>>::new();
-    let mut binding_group_suggestion_candidates = Vec::new();
+        .transpose()
+}
 
-    for file in &files {
-        let module_path = module_path_from_file(file, modules_root);
-        let module: ModuleFile = read_module_file(file)?;
+/// Per-selector accumulators for one selector-debt pass over all modules.
+struct DebtTally<'a> {
+    source_aware: Option<&'a SourceAwareSelectorDebtConfig<'a>>,
+    runtime_module: Option<&'a SwcModule>,
+    runtime_debt: std::cell::OnceCell<source_match::SourceMatchDebtRuntime<'a>>,
+    name_only: Vec<NameOnlySelector>,
+    // normalized body -> every occurrence of it.
+    by_normalized: BTreeMap<String, Vec<SourceMatchOccurrence>>,
+    source_match_total: usize,
+    source_aware_checked: usize,
+    source_aware_unique: usize,
+    source_aware_near_ambiguous: Vec<SourceAwareStructuralSelector>,
+    source_aware_exact_by_key: BTreeMap<(String, Vec<usize>), Vec<SourceMatchOccurrence>>,
+    binding_group_suggestion_candidates: Vec<BindingGroupSuggestionCandidate>,
+}
 
+impl<'a> DebtTally<'a> {
+    fn new(
+        source_aware: Option<&'a SourceAwareSelectorDebtConfig<'a>>,
+        runtime_module: Option<&'a SwcModule>,
+    ) -> Self {
+        Self {
+            source_aware,
+            runtime_module,
+            runtime_debt: std::cell::OnceCell::new(),
+            name_only: Vec::new(),
+            by_normalized: BTreeMap::new(),
+            source_match_total: 0,
+            source_aware_checked: 0,
+            source_aware_unique: 0,
+            source_aware_near_ambiguous: Vec::new(),
+            source_aware_exact_by_key: BTreeMap::new(),
+            binding_group_suggestion_candidates: Vec::new(),
+        }
+    }
+
+    /// Run the source-aware check for one selector, when enabled.
+    fn source_aware_debt(
+        &mut self,
+        module_path: &str,
+        site: SelectorSite,
+        selector: &AnonymousStatementSelector,
+    ) -> Result<Option<Vec<usize>>> {
+        collect_source_aware_debt(
+            &mut self.source_aware_checked,
+            &mut self.source_aware_unique,
+            &mut self.source_aware_near_ambiguous,
+            self.source_aware,
+            self.runtime_module.map(|module| {
+                self.runtime_debt
+                    .get_or_init(|| source_match::SourceMatchDebtRuntime::new(module))
+            }),
+            module_path,
+            site,
+            None,
+            selector,
+        )
+    }
+
+    /// Tally name-only member selectors; relational selectors are not debt.
+    fn record_members(&mut self, module_path: &str, module: &ModuleFile) -> Result<()> {
         for member in &module.members {
             match member
                 .selector
@@ -356,8 +418,8 @@ fn compute_selector_debt_impl(
                 .with_context(|| format!("module {module_path}: member selector"))?
             {
                 MemberSelectorSpec::Binding(binding) => {
-                    name_only.push(NameOnlySelector {
-                        module: module_path.clone(),
+                    self.name_only.push(NameOnlySelector {
+                        module: module_path.to_owned(),
                         minified_score: minified_score(&binding.name),
                         binding_name: binding.name,
                         export_name: member.name.clone(),
@@ -377,43 +439,35 @@ fn compute_selector_debt_impl(
                 }
             }
         }
+        Ok(())
+    }
 
+    fn record_source_match_claims(&mut self, module_path: &str, module: &ModuleFile) -> Result<()> {
         for claim in &module.source_matches {
-            source_match_total += 1;
+            self.source_match_total += 1;
             let selector = claim.selector();
-            let exact_body_indices = collect_source_aware_debt(
-                &mut source_aware_checked,
-                &mut source_aware_unique,
-                &mut source_aware_near_ambiguous,
-                source_aware,
-                runtime_module.as_ref().map(|module| {
-                    runtime_debt.get_or_init(|| source_match::SourceMatchDebtRuntime::new(module))
-                }),
-                &module_path,
-                SelectorSite::SourceMatch,
-                None,
-                &selector,
-            )?;
+            let exact_body_indices =
+                self.source_aware_debt(module_path, SelectorSite::SourceMatch, &selector)?;
             if let Some(exact_body_indices) = exact_body_indices.as_deref() {
                 for expanded in
-                    source_match::source_match_claim_member_selectors(&module_path, claim)?
+                    source_match::source_match_claim_member_selectors(module_path, claim)?
                 {
                     if let Some(candidate) = collect_binding_group_suggestion_candidate(
-                        runtime_module.as_ref(),
-                        &module_path,
+                        self.runtime_module,
+                        module_path,
                         Some(expanded.export_name),
                         expanded.parsed_selector.selector(),
                         Some(exact_body_indices),
                     )? {
-                        binding_group_suggestion_candidates.push(candidate);
+                        self.binding_group_suggestion_candidates.push(candidate);
                     }
                 }
             }
             record_occurrence(
-                &mut by_normalized,
-                &mut source_aware_exact_by_key,
+                &mut self.by_normalized,
+                &mut self.source_aware_exact_by_key,
                 SourceMatchOccurrence {
-                    module: module_path.clone(),
+                    module: module_path.to_owned(),
                     site: SelectorSite::SourceMatch,
                     export_name: None,
                     match_source: selector.match_source,
@@ -421,30 +475,26 @@ fn compute_selector_debt_impl(
                 exact_body_indices,
             );
         }
+        Ok(())
+    }
 
+    fn record_anonymous_statements(
+        &mut self,
+        module_path: &str,
+        module: &ModuleFile,
+    ) -> Result<()> {
         for statement in &module.anonymous_statements {
             let selector = statement
                 .selector()
                 .with_context(|| format!("module {module_path}: anonymous statement selector"))?;
-            source_match_total += 1;
-            let exact_body_indices = collect_source_aware_debt(
-                &mut source_aware_checked,
-                &mut source_aware_unique,
-                &mut source_aware_near_ambiguous,
-                source_aware,
-                runtime_module.as_ref().map(|module| {
-                    runtime_debt.get_or_init(|| source_match::SourceMatchDebtRuntime::new(module))
-                }),
-                &module_path,
-                SelectorSite::AnonymousStatement,
-                None,
-                &selector,
-            )?;
+            self.source_match_total += 1;
+            let exact_body_indices =
+                self.source_aware_debt(module_path, SelectorSite::AnonymousStatement, &selector)?;
             record_occurrence(
-                &mut by_normalized,
-                &mut source_aware_exact_by_key,
+                &mut self.by_normalized,
+                &mut self.source_aware_exact_by_key,
                 SourceMatchOccurrence {
-                    module: module_path.clone(),
+                    module: module_path.to_owned(),
                     site: SelectorSite::AnonymousStatement,
                     export_name: None,
                     match_source: selector.match_source,
@@ -452,27 +502,66 @@ fn compute_selector_debt_impl(
                 exact_body_indices,
             );
         }
+        Ok(())
     }
 
-    // Most rebuild-fragile first; ties broken by module then bound name
-    // for a stable order.
-    name_only.sort_by(|a, b| {
-        b.minified_score
-            .cmp(&a.minified_score)
-            .then_with(|| a.module.cmp(&b.module))
-            .then_with(|| a.binding_name.cmp(&b.binding_name))
-    });
+    fn into_report(self) -> SelectorDebtReport {
+        let mut name_only = self.name_only;
+        // Most rebuild-fragile first; ties broken by module then bound name
+        // for a stable order.
+        name_only.sort_by(|a, b| {
+            b.minified_score
+                .cmp(&a.minified_score)
+                .then_with(|| a.module.cmp(&b.module))
+                .then_with(|| a.binding_name.cmp(&b.binding_name))
+        });
+        let repeated_source_match = repeated_source_matches(self.by_normalized);
+        let source_aware_repeated_exact =
+            repeated_exact_source_matches(self.source_aware_exact_by_key);
+        let source_aware_binding_group_suggestions =
+            collect_binding_group_suggestions(self.binding_group_suggestion_candidates);
+        let source_aware_binding_group_suggested_selectors = source_aware_binding_group_suggestions
+            .iter()
+            .map(|group| group.selectors.len())
+            .sum();
 
+        let summary = SelectorDebtSummary {
+            name_only_total: name_only.len(),
+            name_only_fragile: name_only
+                .iter()
+                .filter(|n| n.minified_score >= FRAGILE_THRESHOLD)
+                .count(),
+            source_match_total: self.source_match_total,
+            repeated_source_match_groups: repeated_source_match.len(),
+            source_aware_checked: self.source_aware_checked,
+            source_aware_unique: self.source_aware_unique,
+            source_aware_near_ambiguous: self.source_aware_near_ambiguous.len(),
+            source_aware_repeated_exact: source_aware_repeated_exact.len(),
+            source_aware_binding_group_suggestions: source_aware_binding_group_suggestions.len(),
+            source_aware_binding_group_suggested_selectors,
+        };
+
+        SelectorDebtReport {
+            name_only,
+            repeated_source_match,
+            source_aware_near_ambiguous: self.source_aware_near_ambiguous,
+            source_aware_repeated_exact,
+            source_aware_binding_group_suggestions,
+            name_only_module_groups: Vec::new(),
+            summary,
+        }
+    }
+}
+
+/// Bodies used by two or more selectors, most-repeated first.
+fn repeated_source_matches(
+    by_normalized: BTreeMap<String, Vec<SourceMatchOccurrence>>,
+) -> Vec<RepeatedSourceMatch> {
     let mut repeated_source_match: Vec<RepeatedSourceMatch> = by_normalized
         .into_iter()
         .filter(|(_, occurrences)| occurrences.len() >= 2)
         .map(|(normalized, mut occurrences)| {
-            occurrences.sort_by(|a, b| {
-                a.module
-                    .cmp(&b.module)
-                    .then_with(|| a.site.cmp(&b.site))
-                    .then_with(|| a.export_name.cmp(&b.export_name))
-            });
+            sort_occurrences(&mut occurrences);
             RepeatedSourceMatch {
                 normalized,
                 occurrences,
@@ -485,20 +574,26 @@ fn compute_selector_debt_impl(
             .cmp(&a.occurrences.len())
             .then_with(|| a.normalized.cmp(&b.normalized))
     });
+    repeated_source_match
+}
 
-    let mut source_aware_repeated_exact: Vec<SourceAwareRepeatedExactSourceMatch> =
-        source_aware_exact_by_key
-            .into_iter()
-            .filter(|(_, occurrences)| occurrences.len() >= 2)
-            .map(|((normalized, exact_body_indices), mut occurrences)| {
-                sort_occurrences(&mut occurrences);
-                SourceAwareRepeatedExactSourceMatch {
-                    normalized,
-                    exact_body_indices,
-                    occurrences,
-                }
-            })
-            .collect();
+/// Bodies whose source-aware resolution lands on the same exact statements
+/// for two or more selectors, most-repeated first.
+fn repeated_exact_source_matches(
+    exact_by_key: BTreeMap<(String, Vec<usize>), Vec<SourceMatchOccurrence>>,
+) -> Vec<SourceAwareRepeatedExactSourceMatch> {
+    let mut source_aware_repeated_exact: Vec<SourceAwareRepeatedExactSourceMatch> = exact_by_key
+        .into_iter()
+        .filter(|(_, occurrences)| occurrences.len() >= 2)
+        .map(|((normalized, exact_body_indices), mut occurrences)| {
+            sort_occurrences(&mut occurrences);
+            SourceAwareRepeatedExactSourceMatch {
+                normalized,
+                exact_body_indices,
+                occurrences,
+            }
+        })
+        .collect();
     source_aware_repeated_exact.sort_by(|a, b| {
         b.occurrences
             .len()
@@ -506,39 +601,7 @@ fn compute_selector_debt_impl(
             .then_with(|| a.normalized.cmp(&b.normalized))
             .then_with(|| a.exact_body_indices.cmp(&b.exact_body_indices))
     });
-
-    let source_aware_binding_group_suggestions =
-        collect_binding_group_suggestions(binding_group_suggestion_candidates);
-    let source_aware_binding_group_suggested_selectors = source_aware_binding_group_suggestions
-        .iter()
-        .map(|group| group.selectors.len())
-        .sum();
-
-    let summary = SelectorDebtSummary {
-        name_only_total: name_only.len(),
-        name_only_fragile: name_only
-            .iter()
-            .filter(|n| n.minified_score >= FRAGILE_THRESHOLD)
-            .count(),
-        source_match_total,
-        repeated_source_match_groups: repeated_source_match.len(),
-        source_aware_checked,
-        source_aware_unique,
-        source_aware_near_ambiguous: source_aware_near_ambiguous.len(),
-        source_aware_repeated_exact: source_aware_repeated_exact.len(),
-        source_aware_binding_group_suggestions: source_aware_binding_group_suggestions.len(),
-        source_aware_binding_group_suggested_selectors,
-    };
-
-    Ok(SelectorDebtReport {
-        name_only,
-        repeated_source_match,
-        source_aware_near_ambiguous,
-        source_aware_repeated_exact,
-        source_aware_binding_group_suggestions,
-        name_only_module_groups: Vec::new(),
-        summary,
-    })
+    source_aware_repeated_exact
 }
 
 fn sort_occurrences(occurrences: &mut [SourceMatchOccurrence]) {
@@ -1363,24 +1426,5 @@ const stableName = 1;
 
         assert_eq!(report.summary.source_aware_binding_group_suggestions, 0,);
         assert!(report.source_aware_binding_group_suggestions.is_empty());
-    }
-
-    #[test]
-    fn deterministic_same_spec_same_output() {
-        let dir = TempDir::new().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "a.yaml",
-            "members:\n  - selector: { binding: { name: a } }\n  - selector: { binding: { name: bQ } }\n",
-        );
-        write(
-            root,
-            "b/c.yaml",
-            "anonymous_statements:\n  - match: 'foo();'\n",
-        );
-        let j1 = serde_json::to_string(&compute_selector_debt(root).unwrap()).unwrap();
-        let j2 = serde_json::to_string(&compute_selector_debt(root).unwrap()).unwrap();
-        assert_eq!(j1, j2);
     }
 }

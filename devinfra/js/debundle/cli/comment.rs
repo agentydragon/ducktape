@@ -5,7 +5,7 @@
 //! layout and YAML comments are not an editing contract.
 
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -331,43 +331,42 @@ fn run_editor(current: &str) -> Result<String> {
         .or_else(|| std::env::var("VISUAL").ok().filter(|s| !s.is_empty()))
         .unwrap_or_else(|| "vi".to_string());
 
-    let dir = std::env::temp_dir();
-    let pid = std::process::id();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let path = dir.join(format!("debundle-comment-{pid}-{nanos}.txt"));
-
-    {
-        let mut f = fs::File::create(&path)
-            .with_context(|| format!("creating tempfile {}", path.display()))?;
-        f.write_all(current.as_bytes())
-            .with_context(|| format!("writing tempfile {}", path.display()))?;
-    }
+    let mut draft = tempfile::Builder::new()
+        .prefix("debundle-comment-")
+        .suffix(".txt")
+        .tempfile()
+        .context("creating comment draft")?;
+    draft
+        .write_all(current.as_bytes())
+        .context("writing comment draft")?;
+    // The editor may replace the file when saving. Keep its path until we
+    // have read the new contents; a failed edit leaves the draft recoverable.
+    let path = draft
+        .into_temp_path()
+        .keep()
+        .context("keeping comment draft")?;
 
     // Split editor on whitespace so users can set `EDITOR="code -w"`.
     let mut parts = editor.split_whitespace();
     let prog = parts.next().ok_or_else(|| anyhow!("empty $EDITOR"))?;
-    let extra: Vec<&str> = parts.collect();
     let status = Command::new(prog)
-        .args(&extra)
+        .args(parts)
         .arg(&path)
         .status()
-        .with_context(|| format!("spawning editor {editor}"))?;
+        .with_context(|| format!("spawning editor {editor} for {}", path.display()))?;
     if !status.success() {
-        bail!("editor {editor} exited with status {status}");
+        bail!(
+            "editor {editor} exited with status {status}. Comment draft: {}",
+            path.display()
+        );
     }
 
-    let mut s = String::new();
-    fs::File::open(&path)
-        .with_context(|| format!("reopening tempfile {}", path.display()))?
-        .read_to_string(&mut s)
-        .with_context(|| format!("reading tempfile {}", path.display()))?;
+    let mut s = fs::read_to_string(&path)
+        .with_context(|| format!("reading comment draft {}", path.display()))?;
     let _ = fs::remove_file(&path);
     // Strip a single trailing newline (most editors append one).
-    if let Some(stripped) = s.strip_suffix('\n') {
-        s = stripped.to_string();
+    if s.ends_with('\n') {
+        s.pop();
     }
     Ok(s)
 }

@@ -559,6 +559,34 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "symbolic_terminal_const",
+    srcs = ["EsmSplit/CoreJS/SymbolicTerminalConst.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_linked_input",
+        ":corejs_runtime",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "symbolic_terminal_const_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.SymbolicTerminalConst"],
+    required_theorems = [
+        "CoreJS.SymbolicTerminalConst.constructedLink",
+        "CoreJS.SymbolicTerminalConst.exact_cell",
+        "CoreJS.SymbolicTerminalConst.exports",
+        "CoreJS.SymbolicTerminalConst.placement",
+        "CoreJS.SymbolicTerminalConst.planned_eq_construct",
+        "CoreJS.SymbolicTerminalConst.planned_sound",
+        "CoreJS.SymbolicTerminalConst.runs",
+        "CoreJS.SymbolicTerminalConst.sourceLink",
+    ],
+    deps = [":symbolic_terminal_const"],
+)
+
+lean_library(
     name = "corejs_resolved_placement",
     srcs = ["EsmSplit/CoreJS/ResolvedPlacement.lean"],
     deps = [

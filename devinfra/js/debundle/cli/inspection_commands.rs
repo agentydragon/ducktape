@@ -12,10 +12,10 @@ use peel::{
     SourceSelectionArgs, run_atomic_groups_report, run_graph_summary_report, run_patch_plan_report,
     run_source_selection_report,
 };
-use selector_codemod::source_input::resolve_chunk_source_file;
 use serde::Serialize;
 use source_identity::SourceUnitOrdinal;
-use source_inspection::{PreparedSource, StatementRange, StatementRow};
+use source_input::resolve_chunk_source_file;
+use source_inspection::{PreparedSource, StatementCoordinates, StatementRange, StatementRow};
 use spec_modules::{collect_module_files, module_path_from_file};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -179,12 +179,8 @@ struct InspectedStatement {
     index: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     declarator_index: Option<usize>,
-    byte_start: usize,
-    byte_end: usize,
-    start_line: usize,
-    start_column: usize,
-    end_line: usize,
-    end_column: usize,
+    #[serde(flatten)]
+    coordinates: StatementCoordinates,
     bindings: Vec<String>,
     source_unit_ids: Vec<String>,
     source: String,
@@ -699,12 +695,12 @@ fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
                 "\nbody[{}]{} bytes={}..{} location={}:{}..{}:{} bindings=[{}] source_units=[{}]\n",
                 statement.index,
                 declarator,
-                statement.byte_start,
-                statement.byte_end,
-                statement.start_line,
-                statement.start_column,
-                statement.end_line,
-                statement.end_column,
+                statement.coordinates.byte_start,
+                statement.coordinates.byte_end,
+                statement.coordinates.start_line,
+                statement.coordinates.start_column,
+                statement.coordinates.end_line,
+                statement.coordinates.end_column,
                 bindings,
                 statement.source_unit_ids.join(", "),
             ));
@@ -747,12 +743,7 @@ fn inspected_statement(
     InspectedStatement {
         index: row.index,
         declarator_index: row.declarator_index,
-        byte_start: row.byte_start,
-        byte_end: row.byte_end,
-        start_line: row.start_line,
-        start_column: row.start_column,
-        end_line: row.end_line,
-        end_column: row.end_column,
+        coordinates: row.coordinates,
         bindings: row.bindings,
         source_unit_ids,
         omitted_source_bytes: full_source.len() - source.len(),

@@ -176,6 +176,7 @@ ts_library(
         "//agentplane/app/frontend/egress:credential_watch",
         "//agentplane/app/frontend/policy:table",
         "//agentplane/app/frontend/policy:watch",
+        "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/app/frontend/shell:topbar",
         "//agentplane/app/frontend/ui:icons",
         "//agentplane/policy/v1:policy_service_pb",

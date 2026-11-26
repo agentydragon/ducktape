@@ -11,18 +11,6 @@ use serde_json::Value;
 const RELOCATION: &str =
     "const independent = 7;\nvar result = run();\nconsole.log(independent, result.join(','));\n";
 
-fn assert_commuting_relocation(fixture: &Fixture, case: &str) {
-    let report = assert_effect_verdict_accepts(fixture, case);
-    assert_eq!(
-        report["decision"]["status"], "accepted",
-        "{case}: {report:#}"
-    );
-    assert_eq!(
-        report["decision"]["scope"], "statement_order_commutation",
-        "{case}: {report:#}"
-    );
-}
-
 /// The root binding's receipt names the native row as one of its call edges.
 fn assert_iteration_receipt(fixture: &Fixture, member: &str, case: &str) {
     let execution = binding_execution_report(fixture, "result");

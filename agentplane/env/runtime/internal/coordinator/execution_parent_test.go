@@ -246,7 +246,7 @@ func (p *heldExecutionWorker) registerExecutionWorker() func() {
 }
 
 func TestExecutionParentCloseJoinsRegisteredWorkerBeforeStoreRelease(t *testing.T) {
-	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	r, err := newTestRuntime(t, config.Config, nil, runtimeDeps{

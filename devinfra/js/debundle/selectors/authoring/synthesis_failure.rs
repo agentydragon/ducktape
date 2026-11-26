@@ -61,14 +61,14 @@ impl<E: fmt::Display> ProofFailure<E> {
 }
 
 impl ProofFailure {
-    pub(crate) fn from_error(error: anyhow::Error) -> anyhow::Result<Self> {
+    pub fn from_error(error: anyhow::Error) -> anyhow::Result<Self> {
         error.downcast::<ProofError>().map(|error| error.0)
     }
 }
 
 /// Internal error transport keeps a proof rejection downcastable through anyhow.
 #[derive(Debug)]
-pub(crate) struct ProofError(pub ProofFailure);
+pub struct ProofError(pub ProofFailure);
 
 impl fmt::Display for ProofError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

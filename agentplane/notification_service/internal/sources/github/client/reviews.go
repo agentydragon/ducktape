@@ -21,21 +21,14 @@ func (c *Client) PullRequestReviews(ctx context.Context, repository string, numb
 	}
 
 	observations := make([]githubmodel.ReviewObservation, 0)
-	for page := 1; ; {
-		result, err := callAsInstallation(ctx, c, installationID, false, func(ctx context.Context, client *github.Client) (resourcePage[[]*github.PullRequestReview], *github.Response, error) {
-			reviews, response, err := client.PullRequests.ListReviews(ctx, owner, name, number, &github.ListOptions{
-				PerPage: pageSize,
-				Page:    page,
-			})
-			return resourcePage[[]*github.PullRequestReview]{value: reviews, response: response}, response, err
-		})
+	pages := installationPages(ctx, c, installationID, coreReads, "pull request reviews", func(ctx context.Context, client *github.Client, opts github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
+		return client.PullRequests.ListReviews(ctx, owner, name, number, &opts)
+	})
+	for reviews, err := range pages {
 		if err != nil {
 			return nil, err
 		}
-		if result.response == nil {
-			return nil, &InvalidResponseError{Reason: "pull request reviews response is missing"}
-		}
-		for _, review := range result.value {
+		for _, review := range reviews {
 			observation, err := ReviewObservation(review)
 			if err != nil {
 				return nil, err
@@ -44,14 +37,8 @@ func (c *Client) PullRequestReviews(ctx context.Context, repository string, numb
 				observations = append(observations, *observation)
 			}
 		}
-		if result.response.NextPage == 0 {
-			return observations, nil
-		}
-		if result.response.NextPage <= page {
-			return nil, &InvalidResponseError{Reason: "pull request reviews pagination did not advance"}
-		}
-		page = result.response.NextPage
 	}
+	return observations, nil
 }
 
 // ReviewObservation normalizes the review fields shared by the REST list and pull_request_review webhook. It

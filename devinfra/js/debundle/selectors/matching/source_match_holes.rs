@@ -140,6 +140,26 @@ pub fn is_hole_keyword(name: &str) -> bool {
     hole_keyword(name).is_some()
 }
 
+/// The variable-length list holes; every other keyword fills one node.
+const RUN_HOLE_KEYWORDS: [&str; 6] = [
+    STMT_LIST_HOLE_KEYWORD,
+    ARGS_HOLE_KEYWORD,
+    ARRAY_ELEMENTS_HOLE_KEYWORD,
+    CASE_REST_HOLE_KEYWORD,
+    DECLARATORS_HOLE_KEYWORD,
+    SEQ_EXPRS_HOLE_KEYWORD,
+];
+
+/// A bare or labeled list hole (`STMT_LIST`, `ARGS`, ...).
+pub fn is_run_hole_keyword(name: &str) -> bool {
+    hole_keyword(name).is_some_and(|keyword| RUN_HOLE_KEYWORDS.contains(&keyword))
+}
+
+/// A predicate callee: `STR_LITERAL_MATCHING_RE` or `AST_CONTAINS_STRING`.
+pub fn is_predicate_keyword(name: &str) -> bool {
+    name == STRING_LITERAL_REGEX_PREDICATE || name == AST_CONTAINS_STRING_PREDICATE
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

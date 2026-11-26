@@ -460,7 +460,7 @@ impl MemberSelectorProgramBuilder {
                 self.lower_binding_selector(source_unit, binding)
             }
             MemberSelectorSpec::CrossRef(target) => {
-                let anchor = self.source_unit_for_global_export(&target.anchor)?;
+                let anchor = self.source_unit_for_global_export(&target.references)?;
                 self.program
                     .add_atom(SelectorAtom::SourceUnitReferencesSourceUnit {
                         source_unit: source_unit_term(source_unit),
@@ -654,7 +654,7 @@ impl From<selector_ir::SelectorProgramError> for SelectorIrLoweringError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spec::CrossRefTarget;
+    use spec::CrossRefSelector;
 
     const MODULE: &str = "runtime/widgets";
 
@@ -675,9 +675,9 @@ mod tests {
         }
     }
 
-    fn references(anchor: &str) -> CrossRefTarget {
-        CrossRefTarget {
-            anchor: anchor.to_string(),
+    fn references(anchor: &str) -> CrossRefSelector {
+        CrossRefSelector {
+            references: anchor.to_string(),
             kind: Some(BindingSourceKind::FunctionDeclaration),
         }
     }

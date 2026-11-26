@@ -840,6 +840,39 @@ func TestDeleteIdentityRefusesWhatItMustNotRemove(t *testing.T) {
 	}
 }
 
+func TestDeleteIdentityValidateOnlyChecksWithoutDeleting(t *testing.T) {
+	unreferenced := testIdentity("unreferenced-identity", nil)
+	credentialed := testIdentity("credentialed-identity", nil)
+	api, kube := fixture(t, unreferenced, credentialed, identityCredential("fake-workloads", "standing-agent", credentialed))
+	for _, tc := range []struct {
+		identity *policyapi.Identity
+		want     []string
+	}{
+		{unreferenced, nil},
+		{credentialed, []string{"WorkloadCredential/fake-workloads/standing-agent"}},
+	} {
+		_, err := api["app"].DeleteIdentity(testContext(t), &policypb.DeleteIdentityRequest{
+			Namespace: "policies", Name: tc.identity.Name, Uid: string(tc.identity.UID), ValidateOnly: true,
+		})
+		if tc.want == nil && err != nil {
+			t.Errorf("%s: validate-only refused: %v", tc.identity.Name, err)
+		}
+		if tc.want != nil && (status.Code(err) != codes.FailedPrecondition || !reflect.DeepEqual(refusalViolations(err), tc.want)) {
+			t.Errorf("%s: validate-only = %v naming %v, want FailedPrecondition naming %v", tc.identity.Name, err, refusalViolations(err), tc.want)
+		}
+	}
+	if kube.deletePreconditions != nil {
+		t.Fatalf("validate-only deleted with preconditions %+v", kube.deletePreconditions)
+	}
+	var identities policyapi.IdentityList
+	if err := kube.List(context.Background(), &identities, client.InNamespace("policies")); err != nil {
+		t.Fatal(err)
+	}
+	if len(identities.Items) != 2 {
+		t.Fatalf("validate-only removed identities: %v", identities.Items)
+	}
+}
+
 func TestCreateIdentityCreatesAnUnownedIdentityOnce(t *testing.T) {
 	api, kube := fixture(t)
 	created, err := api["app"].CreateIdentity(testContext(t), &policypb.CreateIdentityRequest{Name: "launch-a", Description: "Agent of launch a"})

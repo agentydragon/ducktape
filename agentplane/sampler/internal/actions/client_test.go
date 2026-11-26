@@ -145,6 +145,12 @@ func (s *actionsService) WatchActionRequest(request *action_servicepb.WatchActio
 			return stream.Context().Err()
 		}
 	}
+	// An older Sampler can receive a state added by a newer Action Service.
+	future := proto.Clone(pending).(*action_servicepb.ActionRequest)
+	future.State = action_servicepb.ActionState(99)
+	if err := stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: future}); err != nil {
+		return err
+	}
 	terminal := proto.Clone(pending).(*action_servicepb.ActionRequest)
 	terminal.State = action_servicepb.ActionState_ACTION_STATE_SUCCEEDED
 	return stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: terminal})

@@ -18,8 +18,10 @@ func TestForwardRequiresCompleteAccountManifestAndPreservesRows(t *testing.T) {
 	firstBefore := preservedState(t, db, first)
 	secondBefore := preservedState(t, db, second)
 
-	if err := Forward(ctx, db, []string{first}, "account-a"); err == nil {
-		t.Fatal("Forward accepted an incomplete account manifest")
+	for _, manifest := range [][]string{{first}, {first, other}, {first, first}} {
+		if err := Forward(ctx, db, manifest, "account-a"); err == nil {
+			t.Fatalf("Forward accepted a manifest that did not match the account: %v", manifest)
+		}
 	}
 	assertOwner(t, db, first, "account-a", "")
 	assertOwner(t, db, second, "account-a", "")
@@ -34,6 +36,11 @@ func TestForwardRequiresCompleteAccountManifestAndPreservesRows(t *testing.T) {
 	assertPreservedState(t, db, second, secondBefore)
 	if err := Forward(ctx, db, []string{first, second}, "account-a"); err != nil {
 		t.Fatalf("idempotent Forward: %v", err)
+	}
+	for _, manifest := range [][]string{{first, other}, {first, "missing-session"}} {
+		if err := Forward(ctx, db, manifest, "account-a"); err == nil {
+			t.Fatalf("Forward accepted a retry with a foreign or missing Session: %v", manifest)
+		}
 	}
 	late := insertSession(t, db, "account-a", "created-after-cutover")
 	if err := Forward(ctx, db, []string{first, second}, "account-a"); err == nil {
@@ -86,8 +93,12 @@ func TestReverseOnlyRestoresManifestIDsAndIsIdempotent(t *testing.T) {
 	setServiceOwner(t, db, otherService, "spiffe://agentplane/other")
 	otherAccount := insertSession(t, db, "account-b", "other-account")
 
+	if err := Reverse(ctx, db, []string{first}, "account-a"); err != nil {
+		t.Fatalf("Reverse first Session: %v", err)
+	}
+	assertOwner(t, db, second, "", peertls.SessionsURI)
 	if err := Reverse(ctx, db, []string{first, second}, "account-a"); err != nil {
-		t.Fatalf("Reverse: %v", err)
+		t.Fatalf("Reverse with one Session already restored: %v", err)
 	}
 	if err := Reverse(ctx, db, []string{first, second}, "account-a"); err != nil {
 		t.Fatalf("idempotent Reverse: %v", err)
@@ -116,6 +127,13 @@ func TestReverseRejectsMissingAndForeignOwnershipWithoutChangingRows(t *testing.
 	}
 	assertOwner(t, db, owned, "", peertls.SessionsURI)
 	assertOwner(t, db, foreign, "account-b", "")
+
+	setServiceOwner(t, db, foreign, "spiffe://agentplane/other")
+	if err := Reverse(ctx, db, []string{owned, foreign}, "account-a"); err == nil {
+		t.Fatal("Reverse accepted a manifest containing another service's Session")
+	}
+	assertOwner(t, db, owned, "", peertls.SessionsURI)
+	assertOwner(t, db, foreign, "", "spiffe://agentplane/other")
 }
 
 func insertSession(t *testing.T, db *sql.DB, accountUID, model string) string {

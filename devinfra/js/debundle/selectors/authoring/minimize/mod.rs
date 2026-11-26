@@ -44,25 +44,22 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Result};
 use readoff_render::kept_spans_for_anchor_set;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD,
-    AST_CONTAINS_STRING_PREDICATE, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
-    SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_keyword,
-    is_hole_keyword,
+    ANYTHING_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, is_hole_keyword, is_predicate_keyword,
+    is_run_hole_keyword,
 };
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-use crate::match_selector::relax_progressively;
+use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration};
+use crate::group_synthesis::{SpecializedSelector, SynthesizedTargetBinding};
+use crate::proof::{matched_body_indices, prove_synthesized_selector};
 use crate::regex_anchor::RegexAnchorSubstitution;
-use crate::render::{
+use match_selector::relax_progressively;
+use selector_render::{
     AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
     hole_stmt, holes_present, named_pat, object_props_pat_prop, span_key,
 };
-use crate::synthesis_failure::{ProofFailure, SynthesisSkipReason};
-use crate::{
-    ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    matched_body_indices, prove_synthesized_selector, single_ident_pat_name,
-};
+use synthesis_failure::{ProofFailure, SynthesisSkipReason};
 
 // Keep whole-declaration proof work bounded even when its AST is enormous.
 const MAX_EXACT_RELAXATION_PROBES: usize = 128;
@@ -161,7 +158,7 @@ pub(crate) fn relax_exact_declaration(
     if prove_synthesized_selector(index, decl, targets, &source).is_err() {
         return Ok(None);
     }
-    let mut current = js_ast::parse_js_module_consuming("<exact selector>", source)?.module;
+    let mut current = js_ast::parse_js_module("<exact selector>", source)?.module;
     js_ast::strip_parens(&mut current);
     let mut seen = BTreeSet::from([js_ast::emit_module_source(&current)?]);
     current = relax_progressively(
@@ -220,31 +217,17 @@ pub(crate) fn exact_declaration_source(
 }
 
 pub(crate) fn collapse_statement_hole_runs(source: &str) -> Result<String> {
-    let mut module =
-        js_ast::parse_js_module_consuming("<selector hole runs>", source.to_string())?.module;
+    let mut module = js_ast::parse_js_module("<selector hole runs>", source)?.module;
     module.visit_mut_with(&mut CollapseStatementHoleRuns);
     js_ast::emit_module_source(&module)
 }
 
 fn selector_keyword_collision(name: &str) -> bool {
-    is_hole_keyword(name)
-        || name == STRING_LITERAL_REGEX_PREDICATE
-        || name == AST_CONTAINS_STRING_PREDICATE
+    is_hole_keyword(name) || is_predicate_keyword(name)
 }
 
 fn selector_run_keyword_collision(name: &str) -> bool {
-    hole_keyword(name).is_some_and(|keyword| {
-        [
-            ARGS_HOLE_KEYWORD,
-            ARRAY_ELEMENTS_HOLE_KEYWORD,
-            CASE_REST_HOLE_KEYWORD,
-            DECLARATORS_HOLE_KEYWORD,
-            SEQ_EXPRS_HOLE_KEYWORD,
-            STMT_LIST_HOLE_KEYWORD,
-        ]
-        .contains(&keyword)
-    }) || name == STRING_LITERAL_REGEX_PREDICATE
-        || name == AST_CONTAINS_STRING_PREDICATE
+    is_run_hole_keyword(name) || is_predicate_keyword(name)
 }
 
 fn selector_prop_name_collision(name: &PropName) -> bool {
@@ -279,7 +262,7 @@ fn sanitize_exact_identifiers(item: &mut ModuleItem) {
                 && let MemberProp::Ident(prop) = &member.prop
                 && selector_run_keyword_collision(prop.sym.as_ref())
             {
-                *expr = crate::render::anything_expr();
+                *expr = selector_render::anything_expr();
                 return;
             }
             expr.visit_mut_children_with(self);
@@ -303,7 +286,7 @@ fn sanitize_exact_identifiers(item: &mut ModuleItem) {
                 };
                 if collision {
                     *prop = PropOrSpread::Prop(Box::new(Prop::Shorthand(
-                        crate::render::ident_node(ANYTHING_HOLE_KEYWORD),
+                        selector_render::ident_node(ANYTHING_HOLE_KEYWORD),
                     )));
                 }
             }
@@ -333,7 +316,7 @@ fn sanitize_exact_identifiers(item: &mut ModuleItem) {
                 _ => false,
             };
             if shorthand_collision {
-                *prop = Prop::Shorthand(crate::render::ident_node(ANYTHING_HOLE_KEYWORD));
+                *prop = Prop::Shorthand(selector_render::ident_node(ANYTHING_HOLE_KEYWORD));
                 return;
             }
             prop.visit_mut_children_with(self);
@@ -348,7 +331,7 @@ fn sanitize_exact_identifiers(item: &mut ModuleItem) {
                     _ => None,
                 };
                 if key.is_some_and(selector_prop_name_collision) {
-                    *member = crate::render::class_member_hole();
+                    *member = selector_render::class_member_hole();
                 }
             }
         }
@@ -415,7 +398,7 @@ fn exact_declaration_item(
                 && function.ident.sym.as_ref() == targets[0].runtime_binding.as_str() =>
         {
             let mut function = function.clone();
-            function.ident = crate::render::ident_node(&targets[0].export_name);
+            function.ident = selector_render::ident_node(&targets[0].export_name);
             Decl::Fn(function)
         }
         Decl::Class(class)
@@ -423,7 +406,7 @@ fn exact_declaration_item(
                 && class.ident.sym.as_ref() == targets[0].runtime_binding.as_str() =>
         {
             let mut class = class.clone();
-            class.ident = crate::render::ident_node(&targets[0].export_name);
+            class.ident = selector_render::ident_node(&targets[0].export_name);
             Decl::Class(class)
         }
         Decl::Var(var) => {
@@ -466,7 +449,7 @@ fn rename_selected_initializer_uses(init: &mut Expr, targets: &[SynthesizedTarge
             match expr {
                 Expr::Ident(ident) => {
                     if let Some(replacement) = self.replacement(ident.sym.as_ref()) {
-                        *ident = crate::render::ident_node(replacement);
+                        *ident = selector_render::ident_node(replacement);
                     }
                 }
                 Expr::Arrow(_) | Expr::Fn(_) | Expr::Class(_) => {}
@@ -480,7 +463,7 @@ fn rename_selected_initializer_uses(init: &mut Expr, targets: &[SynthesizedTarge
             {
                 *prop = Prop::KeyValue(KeyValueProp {
                     key: PropName::Ident(IdentName::new(ident.sym.clone(), ident.span)),
-                    value: Box::new(Expr::Ident(crate::render::ident_node(replacement))),
+                    value: Box::new(Expr::Ident(selector_render::ident_node(replacement))),
                 });
             } else {
                 prop.visit_mut_children_with(self);
@@ -504,7 +487,7 @@ fn rename_pattern_targets(
                 .find(|target| binding.id.sym.as_ref() == target.runtime_binding.as_str())
             {
                 found.insert(target.runtime_binding.clone());
-                binding.id = crate::render::ident_node(&target.selector_local);
+                binding.id = selector_render::ident_node(&target.selector_local);
             }
         }
         Pat::Array(array) => {
@@ -528,7 +511,7 @@ fn rename_pattern_targets(
                                 assign.key.id.span,
                             ));
                             let binding = Pat::Ident(BindingIdent {
-                                id: crate::render::ident_node(&target.selector_local),
+                                id: selector_render::ident_node(&target.selector_local),
                                 type_ann: None,
                             });
                             let value = match assign.value.take() {
@@ -932,11 +915,11 @@ fn extend_anchor_cover(
     let mut scored = 0;
     while !resolves(&kept)? {
         let mut best = None;
-        for &anchor in ranked.iter().take(crate::render::MAX_MINIMIZER_ANCHORS) {
+        for &anchor in ranked.iter().take(selector_render::MAX_MINIMIZER_ANCHORS) {
             if kept.contains(&anchor) {
                 continue;
             }
-            if scored == 2 * crate::render::MAX_MINIMIZER_ANCHORS {
+            if scored == 2 * selector_render::MAX_MINIMIZER_ANCHORS {
                 if let Some((_, best_anchor)) = best {
                     kept.insert(best_anchor);
                 }
@@ -958,24 +941,30 @@ fn extend_anchor_cover(
     Ok(kept)
 }
 
+fn single_ident_pat_name(pat: &Pat) -> Option<&str> {
+    match pat {
+        Pat::Ident(ident) => Some(ident.id.sym.as_ref()),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod run_hole_tests {
     #[test]
     fn progressive_relaxation_skips_rejected_site_and_obeys_probe_budget() {
         js_ast::with_swc_globals(|| {
-            let module = js_ast::parse_js_module_consuming(
+            let module = js_ast::parse_js_module(
                 "<selector>",
-                "function Selected(x) { x += 1; x += 2; x += 3; return x * 4; }".to_string(),
+                "function Selected(x) { x += 1; x += 2; x += 3; return x * 4; }",
             )
             .unwrap()
             .module;
             let mut probes = 0;
-            let relaxed =
-                crate::match_selector::relax_progressively(module, Some("Selected"), 3, |_| {
-                    probes += 1;
-                    Ok(probes > 1)
-                })
-                .unwrap();
+            let relaxed = match_selector::relax_progressively(module, Some("Selected"), 3, |_| {
+                probes += 1;
+                Ok(probes > 1)
+            })
+            .unwrap();
             let source = js_ast::emit_module_source(&relaxed).unwrap();
             assert_eq!(probes, 3);
             assert_eq!(source.matches("STMT_LIST").count(), 2, "{source}");

@@ -73,18 +73,10 @@ invalidation and lifetime bounds remain the acceptance criteria in the active
 consolidation plan; this investigation establishes no implementation or
 performance result.
 
-## Verified baseline
+## Reproduction
 
-On `08bfee9ff2c34c8dcbaa495b1dfe7460501d6851`, where the fixture was still its
-own target (it is now part of `//devinfra/js/debundle/e2e:callbacks_test`):
-
-```sh
-direnv exec . bbr test //devinfra/js/debundle/e2e:opaque_iteration_receiver_test
-```
-
-The target passed, including original/emitted Node-output checks for the
-unsplit primitive and escaping variants, acceptance with the opaque call
-removed, and both expected split refusals. Target execution took 3.9 seconds;
-the Bazel invocation reported 61.888 seconds elapsed. This confirms the
-existing behavior, not successful receiver-preserving extraction.
-[BuildBuddy invocation](https://app.buildbuddy.io/invocation/2553f234-3128-45ad-a287-c8739b2bb786).
+`bbr test //devinfra/js/debundle/e2e:callbacks_test` runs the fixture's
+original/emitted Node checks for the primitive and escaping variants, the
+accepted extraction with the opaque call removed, and both expected split
+refusals. It passing confirms the current refusal, not receiver-preserving
+extraction.

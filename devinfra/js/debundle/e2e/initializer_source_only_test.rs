@@ -361,16 +361,7 @@ export { table, readLater };\n",
                 artifact_before == fs::read(&staged.artifact).unwrap(),
                 "source-only annotations must leave raw source facts and receipts unchanged"
             );
-            let direct = staged.run(&[]);
-            let loaded = staged.run_saved(&[]);
-            assert_ok(&direct.result, "direct source-only materialization");
-            assert_ok(&loaded.result, "loaded source-only materialization");
-            assert_same_invocation_trees(&direct, &loaded);
-            assert_node_output(
-                &loaded.output_root().join("app/static/app/entry.js"),
-                case.output,
-                "",
-            );
+            let [_, loaded] = staged.assert_fresh_saved_parity(&[], 0, case.output, case.output);
             let graph: Value = read_gzip_json(
                 &loaded
                     .output_root()
@@ -541,16 +532,7 @@ fn initializer_source_only_uses_resolved_binding_and_keeps_comma_siblings_raw() 
             fs::read(&staged.projection).unwrap(),
             fs::read(edited).unwrap()
         );
-        let direct = staged.run(&[]);
-        let loaded = staged.run_saved(&[]);
-        assert_ok(&direct.result, "direct comma-list annotation");
-        assert_ok(&loaded.result, "loaded comma-list annotation");
-        assert_same_invocation_trees(&direct, &loaded);
-        assert_node_output(
-            &loaded.output_root().join("app/static/app/entry.js"),
-            "41 7\n",
-            "",
-        );
+        let [_, loaded] = staged.assert_fresh_saved_parity(&[], 0, "41 7\n", "41 7\n");
         let graph: Value = read_gzip_json(
             &loaded
                 .output_root()
@@ -865,22 +847,12 @@ fn private_metadata_contract_replays_raw_analysis_for_comma_declarators_and_chun
             fs::read(&staged.artifact).unwrap(),
             "private-metadata annotation must leave raw facts and receipts unchanged"
         );
-        let direct = staged.run(&[]);
-        let loaded = staged.run_saved(&[]);
-        assert_ok(&direct.result, "direct private-metadata materialization");
-        assert_ok(&loaded.result, "loaded private-metadata materialization");
-        assert_same_invocation_trees(&direct, &loaded);
+        let [_, loaded] = staged.assert_fresh_saved_parity(&[], 0, "a b\n", "a b\n");
         assert_module_exports(
             &loaded.output_root().join("app"),
             "static/app/modules/a.js",
             &["second"],
             &["first"],
-        );
-        assert_node_output(&staged.root().join("snapshot/static/app.js"), "a b\n", "");
-        assert_node_output(
-            &loaded.output_root().join("app/static/app/entry.js"),
-            "a b\n",
-            "",
         );
     }
 }

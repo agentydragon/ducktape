@@ -1,18 +1,13 @@
-import { z } from "zod";
 import { actionArguments } from "../../presentation";
 
 import type { ActionRequest } from "../../../../../action_service/api/contracts/action_service_pb";
 import type { ActionNotificationParts } from "../types";
 
+import { podsDeleteArguments } from "../../schemas/kubernetes_admin/arguments";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
 
-const podsDeleteNotificationArguments = z.strictObject({
-  name: z.string().min(1),
-  namespace: z.string().min(1).optional(),
-});
-
 export function podsDeleteNotification(request: ActionRequest): ActionNotificationParts | null {
-  const parsed = podsDeleteNotificationArguments.safeParse(actionArguments(request));
+  const parsed = podsDeleteArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
 
   return {

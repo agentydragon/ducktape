@@ -5,22 +5,6 @@
 use debundle_e2e_graph_support::effect_validation::*;
 use debundle_e2e_support::*;
 
-fn assert_commuting_relocation(fixture: &Fixture, case: &str) {
-    let report = fixture.effect_translation_validation();
-    assert!(
-        report["swapped_pairs"].as_u64().unwrap() > 0,
-        "{case}: {report:#}"
-    );
-    assert_eq!(
-        report["decision"]["status"], "accepted",
-        "{case}: {report:#}"
-    );
-    assert_eq!(
-        report["decision"]["scope"], "statement_order_commutation",
-        "{case}: {report:#}"
-    );
-}
-
 /// A boolean module constant decides no test, so each body forks; the joined
 /// receipt still closes the root's binding effects. `null` decides `??`.
 #[test]

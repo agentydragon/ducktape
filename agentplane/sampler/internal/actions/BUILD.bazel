@@ -7,6 +7,7 @@ go_library(
     srcs = ["client.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/actions",
     deps = [
+        "//agentplane/action_service/actionstate",
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",

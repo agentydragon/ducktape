@@ -38,7 +38,7 @@ Acceptance of the whole tree does not measure readable extraction coverage.
 Generated `reports/output.json` records named-module size fractions;
 `reports/tree/<chunk>/modules.json` records the actual claimed members. The
 [extraction investigation](../debug/excalidraw_extraction/README.md) records the
-November 13 checkpoint and boundary probes.
+open boundary probes and a dated November 13 coverage checkpoint.
 
 `test_debundle_tree` verifies complete accepted output and resolvable static
 chunk imports. `spec_output_test` checks the spec's emitted contracts through
@@ -76,7 +76,7 @@ Measured at `@excalidraw/excalidraw` 0.18.1 (2026-11-10):
   `admission_overrides`.
 - `DebundleAnalyze` on RBE: 39.5–43.6 s wall / 59.5–64.9 s CPU / 927–988 MiB
   peak RSS, and 48.6 s / 50.2 s / 808 MiB with `analysis_threads = 1`. With roughjs inlined
-  in the editor chunk it took about 305 s (<../perf/excalidraw_roughjs_analyze.md>).
+  in the editor chunk it took about 305 s (<../perf/analysis_serial_phases.md#workloads>).
   `DebundlePipeline` 10.9–24.5 s.
 
 That is cheap enough to run on every pull request whose affected set includes

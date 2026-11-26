@@ -9,8 +9,7 @@ import (
 )
 
 func TestSealedIncarnationReopensOnlyForItsSuccessor(t *testing.T) {
-	proxy := modelConfigServer(t)
-	r := newLifecycleRuntime(t, lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"))
+	r := newLifecycleRuntime(t, lifecycleConfig(t, t.TempDir(), nil, "/bin/false"))
 	if _, err := r.Quiesce(t.Context(), &sessionpb.QuiesceRequest{}); err != nil {
 		t.Fatal(err)
 	}

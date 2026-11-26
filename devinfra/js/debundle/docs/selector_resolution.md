@@ -5,7 +5,7 @@ guarantee is <../SPEC.md>; this is how they are computed.
 
 ## One resolve
 
-`selector_resolve::resolve` (<../selectors/resolution/selector_resolve.rs>) takes parsed chunks,
+`selector_resolve::resolve` (<../selectors/resolution/selector_resolve/lib.rs>) takes parsed chunks,
 each with the spec entities scoped to it, and returns one `SelectorOutcome`
 per entity. Every command that resolves selectors calls it, directly or as
 `Chunk::resolve` of one chunk:

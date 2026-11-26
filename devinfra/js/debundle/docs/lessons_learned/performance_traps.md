@@ -64,6 +64,32 @@ may add constraints but never drop callback reads or rebinds. Benchmark fixtures
   Claude constructions; the rest were `borrowed_receiver`, `tainted_input` or
   `unknown_callee`.
 
+## Runtime transfers (2026-10-28)
+
+Moving the interpreter onto child requests and results (contract:
+<../inference.md> § Scheduling):
+
+- **Parent replay.** A parent suspended at its first unavailable child, then
+  replayed from its immutable input once the child settled, keeping every
+  request/result snapshot. It passed the CLI contracts but hit a 45 s cutoff on
+  1,024 callbacks (518 MiB) and cached fallback fanout (4.9 GiB). About 48% of
+  sampled CPU went to cloning binding-ID and source-owner sets. Terminal
+  transfers in dependency order on the shared fact context, retiring completed
+  payloads, brought these to 0.20 s and 2.74 s.
+- **Copied memo read sets.** Invocation memo reads put every completed version
+  key in the current producer's read set, so each ephemeral request/result
+  copied the keys and their operation paths: 22% of cycles in copying
+  `BTreeSet<RuntimeKey>`, and +141% CPU on cached fallback. `read_final`
+  carries immutable memo dependencies without live watchers or premise keys.
+- **Native stack depth.** Recursive transfer calls overflowed the stack on a
+  private corpus. Execution state is heap-owned across transfer calls; a
+  two-chunk fixture with 60-function call chains covers it
+  (`synchronous_precision_report_test`).
+
+Accepted compact transfers stayed within the 25% CPU/RSS budget on four neutral
+controls; a matching run on the private Claude corpus reproduced all 75
+baseline graphs.
+
 ## Memory lifetime
 
 - Compact source does not bound fact count. An alias/property matrix with

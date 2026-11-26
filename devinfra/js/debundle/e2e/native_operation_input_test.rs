@@ -3,6 +3,7 @@
 
 use analysis::StatementKind;
 use analysis_model::DepKind;
+use debundle_e2e_graph_support::effect_validation::assert_commutation_accepted;
 use debundle_e2e_graph_support::reflective_provider::{
     REFLECT_CHUNKS, REFLECT_FILES, unknown_receiver_witness,
 };
@@ -573,10 +574,9 @@ fn primitive_set_owner_keeps_its_effect_coverage_dependency() {
 
     let report = fixture.effect_translation_validation();
     assert!(report["legacy_gate_accepts"].as_bool().unwrap_or(false));
-    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
-    assert_eq!(
-        report["decision"]["scope"], "statement_order_commutation",
-        "the reordered native owners have complete effect coverage: {report:#}"
+    assert_commutation_accepted(
+        &report,
+        "the reordered native owners have complete effect coverage",
     );
     assert_eq!(
         report["emitted_order"],

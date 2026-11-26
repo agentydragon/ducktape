@@ -38,7 +38,7 @@ uses (including deferred dynamic imports and metadata). The caller supplies a
 closed, one-to-one mapping from safe paths to module resources on a single
 origin. The primitive does not publish files or attest to their bytes.
 
-The [one-binding-per-chunk Excalidraw trial](../integration/excalidraw/joint.md) exercises these additional obligations:
+The [historical Excalidraw deployment replay](../integration/excalidraw/joint.md) illustrates these additional obligations:
 
 1. Freeze the app entry URL, both source hashes and named placements, host
    contract, import map, and the resource inventory of the whole deployment.

@@ -457,16 +457,11 @@ respective RPC services and require `listen_tls.client_ca_file`. Both default em
 no caller. RPCs require a verified client SVID and do not accept bearer tokens or perform
 account/Pod lookup.
 
-Sampler Session ownership distinguishes service SPIFFE IDs from ServiceAccount UIDs. Migration 18
-adds a separate service owner column without rewriting existing rows. A service cannot reopen or
-read Sessions owned by an old account or another service. Before the Sessions caller switches to its
-SVID, existing account-owned Sessions need an explicit ownership cutover; no certificate is implicitly
-mapped to a Kubernetes UID.
-
-The `central-sampler` image carries the ownership cutover as one-off commands, so no second image or
-manual SQL is needed. Run one as a Job from the `central-sampler` Deployment's image, with
-`AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL` taken from that Deployment's Secret (staging:
-`postgres-central-sampler`, key `uri`). `--account-uid` is the legacy ServiceAccount's UID, not its name.
+Sessions authenticates to Sampler as `spiffe://agentplane/sessions`. To give it access to Sessions
+still owned by a legacy ServiceAccount UID, use the ownership commands in the `central-sampler`
+Deployment's image. Run the command as a Job with `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL` from
+the Deployment's Secret (in staging, key `uri` in `postgres-central-sampler`). Pass the legacy
+ServiceAccount's UID to `--account-uid`.
 
 ```text
 central-sampler ownership inventory --account-uid <account-uid>
@@ -474,21 +469,20 @@ central-sampler ownership forward --account-uid <account-uid> --manifest <sessio
 central-sampler ownership reverse --account-uid <account-uid> --manifest <session-ids.json>
 ```
 
-- `inventory` prints one JSON array of the account's Session IDs, ordered by ID; `[]` means there is
-  nothing to forward. Review the array and retain it as the manifest (the rollback scope), for example
-  in a uniquely named ConfigMap mounted as the `--manifest` file.
-- `forward` assigns exactly the manifest's Sessions to the Sessions service
-  (`spiffe://agentplane/sessions`). Under a `sampler_session` table lock (other writers can wait
-  briefly) it requires the manifest to equal the complete account-owned set and otherwise fails before
-  changing anything. Repeating a committed `forward` is a no-op while the account owns no Sessions and
-  every manifest Session is still service-owned. Afterwards `inventory` for the same UID must print
-  `[]`: a listed ID was created after the lock was released and is outside the manifest.
-- `reverse` is the rollback. It validates every listed owner, restores only the manifest's Sessions to
-  the account, and is safe to repeat. Sessions created under the SVID after the switch are outside the
-  manifest and need their own reviewed manifest before a bearer-only caller is restored.
+- `inventory` prints the account's Session IDs as a sorted JSON array. An empty array means there is
+  nothing to forward. Review and save the array as the rollback manifest, for example in a uniquely
+  named ConfigMap mounted at `--manifest`.
+- `forward` assigns the listed Sessions to the Sessions service. It locks `sampler_session` against
+  concurrent writers and requires the manifest to match the entire account-owned set. A retry succeeds
+  if the account owns no Sessions and the Sessions service owns every listed ID. Check that inventory
+  still prints `[]` after commit. Review any IDs created after the lock was released separately.
+- `reverse` restores the listed Sessions to the account. Each must belong to the Sessions service or
+  already belong to the account. Preserve a separate reviewed manifest for Sessions created under the
+  service identity if a bearer-only caller needs access to them after rollback.
 
-Both rewrites change only `account_uid` and `service_spiffe_id`; they never delete Sessions or
-conversation data.
+Both commands update only `account_uid` and `service_spiffe_id` and preserve conversation data.
+Rolling back [migration 18](migrations/schema/0018_service_session_owners.sql) requires restoring
+every service-owned Session first.
 
 Keep the Job's Pod outside the sampler's selectors: the Service matches the Deployment's
 `cdk8s.io/metadata.addr`, while the PDB and the sampler's `CiliumNetworkPolicy` match

@@ -461,7 +461,9 @@ pub fn run_source_unit_apply(
     let mut synthesized_claims = BTreeMap::<String, LogicalModule>::new();
     for (source, modules) in fresh_bindings {
         for (destination, claims) in
-            selector_codemod::synthesize_residual_claims_for_modules(&source, &modules)?
+            selector_codemod::source_unit::synthesize_residual_claims_for_modules(
+                &source, &modules,
+            )?
         {
             synthesized_claims
                 .entry(destination.clone())
@@ -475,7 +477,9 @@ pub fn run_source_unit_apply(
     }
     for (source, modules) in fresh_anonymous {
         for (destination, statements) in
-            selector_codemod::synthesize_anonymous_claims_for_modules(&source, &modules)?
+            selector_codemod::source_unit::synthesize_anonymous_claims_for_modules(
+                &source, &modules,
+            )?
         {
             synthesized_claims
                 .entry(destination.clone())

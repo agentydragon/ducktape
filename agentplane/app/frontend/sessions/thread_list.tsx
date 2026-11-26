@@ -5,7 +5,7 @@
 import { SandboxStatusTooltip } from "../sandboxes/status_tooltip";
 import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
-import { IconArchive, IconArchiveOff, IconSearch } from "../ui/icons";
+import { IconArchive, IconArchiveOff, IconFingerprint, IconSearch } from "../ui/icons";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
 
@@ -182,20 +182,36 @@ function ThreadGroupSection({
   );
   return (
     <div>
-      {deleted ? (
-        <div className={`agentplane-thread-list-group-label${currentSandbox ? " current" : ""}`}>{groupLabel}</div>
-      ) : (
-        <Link
-          className={`agentplane-thread-list-group-label agentplane-thread-list-group-link${currentSandbox ? " current" : ""}`}
-          aria-current={currentSandbox ? "page" : undefined}
-          // A suspended Sandbox's name is the gray of its icon rather than the link blue.
-          style={suspended ? { color: SANDBOX_STATUS_MARKS.suspended.color } : undefined}
-          to={`/sandboxes/${encodeURIComponent(group.sandboxName)}`}
-          onClick={onNavigate}
-        >
-          {groupLabel}
-        </Link>
-      )}
+      <div className="agentplane-thread-group-links">
+        {deleted ? (
+          <div className={`agentplane-thread-list-group-label${currentSandbox ? " current" : ""}`}>{groupLabel}</div>
+        ) : (
+          <Link
+            className={`agentplane-thread-list-group-label agentplane-thread-list-group-link${currentSandbox ? " current" : ""}`}
+            aria-current={currentSandbox ? "page" : undefined}
+            // A suspended Sandbox's name is the gray of its icon rather than the link blue.
+            style={suspended ? { color: SANDBOX_STATUS_MARKS.suspended.color } : undefined}
+            to={`/sandboxes/${encodeURIComponent(group.sandboxName)}`}
+            onClick={onNavigate}
+          >
+            {groupLabel}
+          </Link>
+        )}
+        {group.sandbox?.identityName && (
+          <Link
+            className="agentplane-thread-identity-link"
+            to={`/identities/${encodeURIComponent(group.sandbox.identityName)}`}
+            title={`Identity: ${group.sandbox.identityName}`}
+            aria-label={`Identity: ${group.sandbox.identityName}`}
+            onClick={onNavigate}
+          >
+            <span className="agentplane-thread-identity-content">
+              <IconFingerprint size={16} />
+              {group.sandbox.identityName !== group.sandboxName && <span>{group.sandbox.identityName}</span>}
+            </span>
+          </Link>
+        )}
+      </div>
       {group.threads.map((thread) => (
         <ThreadRow
           key={thread.metadata.threadId}

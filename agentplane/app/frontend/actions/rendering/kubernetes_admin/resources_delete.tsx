@@ -6,13 +6,9 @@ import type { ActionPresentation } from "../presentation";
 import { defineCallPreview, definePreview, type ArgumentsPreview, type CallPreview } from "../entry";
 import type { ResultPreview } from "../result_entry";
 
+import { resourcesDeleteArguments } from "../../schemas/kubernetes_admin/arguments";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
-import { resource } from "./resource_common";
 
-const resourcesDeleteArguments = z.strictObject({
-  ...resource,
-  gracePeriodSeconds: z.int().nonnegative().optional(),
-});
 const resourcesDeleteResult = z.literal("Resource deleted successfully");
 
 // The label names the whole target; the opened card adds the API version and any grace period.

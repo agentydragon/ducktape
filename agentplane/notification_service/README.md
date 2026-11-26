@@ -1,47 +1,24 @@
 # Notification Service
 
-Standalone Actions and GitHub App subscriptions, messages between workloads, and durable Session inboxes. The
-service reads Action history over the generated ActionService gRPC API, reads Sandboxes for the existing message
-authorization checks, sends notices by Session ID through the Session Dispatcher, and reads command receipts from
-the Session's runner entries in the History Service. Session inbox ownership comes from the Identity recorded by
-the Dispatcher; inbox subscription and access do not require a Sandbox target or a Runtime call. The service
-authorizes messages by the `session_inbox_access` rules of the PolicySets bound to the sender, which it watches.
-It does not depend on the integration app or connect directly to runners.
+Notification Service provides Actions and GitHub App subscriptions, workload messages, and durable
+Session inboxes. The Session ID keys each inbox and Dispatcher supplies its exact owning Identity name
+and UID. Accepted entries remain available across Sandbox incarnations. An admitted Session can
+subscribe, read and acknowledge before its host starts.
 
-Inboxes are keyed by Session ID alone and owned by the exact Identity (name and UID) the Dispatcher recorded for the
-Session; a same-name replacement Identity cannot inherit one. Agents subscribe with a Session ID and an idempotence
-key, read stored payloads when notified, and acknowledge the handled prefix explicitly. Once Dispatcher has admitted
-the Session, that Identity can subscribe, read and acknowledge even before the host creates the Session. Retired
-ServiceAccount credentials confer no sender or receipt access. Accepted sender attribution, payloads, cursors and
-runner receipts stay intact.
-
-Agent entry point: `agentplane notifications guide` ([source](docs/agents/llms.txt)), with subscription,
-inbox-handling, GitHub and messaging workflows embedded in the CLI image. The integration app has its own
-generated JSON facade over gRPC; the Notification Service itself serves no HTTP workload API. Update the guides
-when those contracts change.
-
-- [API and caller-visible delivery semantics](docs/api.md): Session-keyed inboxes, Identity ownership, message
-  authorization, delivery outcomes.
-- [Storage, worker and delivery architecture](docs/architecture.md)
-- [Staging GitHub acceptance record](docs/staging_github_acceptance.md) — live CI/comment delivery and its limits.
-
-While the History Service is down or rolling, webhooks are still accepted and inbox entries still
-stored, but no notice reaches a Session: a delivery reads the Session's receipts from the History
-Service first and, failing that, releases its claim to retry later. A delivery also waits while the
-History Service lags the runner's journal, so a retry never precedes an admission it has not seen.
-
-Sandbox callers authenticate with the Runner SVID on the shared TLS RPC listener, and the service resolves the
-credential's exact live Identity ([Agent API](docs/api.md#agent-api)).
+- [Agent workflows](docs/agents/llms.txt) are embedded in the CLI as `agentplane notifications guide`.
+- [API](docs/api.md) covers caller authentication, inbox ownership, message authorization and delivery outcomes.
+- [Architecture](docs/architecture.md) covers source scheduling, storage and runner notice delivery.
+- [Staging GitHub acceptance](docs/staging_github_acceptance.md) records live delivery and its limits.
 
 ## Running and deployment
 
-`:service_image` contains `notification-service`, which applies Goose migrations before opening
-listeners or starting workers. A startup probe delays health checks until that initialization has
-completed. Goose serializes concurrent starts with a PostgreSQL advisory session lock. The service needs its own
-PostgreSQL database, Actions, History Service and Session Dispatcher endpoints, client TLS material
-for each peer, Kubernetes read access to Sandboxes, PolicySets and PolicyBindings, and `patch` on
-PolicyBinding status. Preserve existing staging data. Verify an Action
-subscription through a newly opened harness after rollout.
+`:service_image` contains `notification-service`, which applies
+[Goose migrations](../postgres/migrate/README.md) before opening listeners or starting workers.
+The startup probe waits for initialization. For migration-only startup, pass `--migrate-only` with `AGENTPLANE_NOTIFICATIONS_DATABASE_URL`.
+Serving needs a PostgreSQL database, Actions, History and Dispatcher endpoints with client TLS,
+Kubernetes reads for WorkloadCredentials, Identities, Sandboxes, PolicySets and PolicyBindings,
+and `patch` on PolicyBinding status. Verify an Action subscription through a newly opened harness
+after rollout.
 
 Replicas use the environment's rolling profile: existing replicas keep accepting webhooks and serving requests
 while replacements apply migrations and start, so every migration must stay compatible with both old and new
@@ -50,63 +27,37 @@ what the previous image reads needs the `Recreate` hold of
 [staging data preservation](../docs/staging_data_preservation.md) until serving replicas run and pass their
 checks on the new schema.
 
-Subscription creation and message sends take a Session-only request, and creation requires a Dispatcher Session
-record. Deploy the Notification API and CLI images together: while old and new versions overlap, creations can
-fail and old CLI binaries cannot send. Once serving replicas and client binaries agree, retry uncertain creations
-and sends with their original idempotency keys.
+The CLI reads the Session from `AGENTPLANE_SESSION_ID` or `--session ID`. For an older central
+Session whose prompt names `AGENTPLANE_DESTINATION`, pass `--session ID` or open a new Session.
+See [CLI credentials and configuration](../docs/agent_cli.md#configuration-and-credentials).
+Retry uncertain creations and sends with the original idempotency keys.
 
-The CLI reads the Session from `AGENTPLANE_SESSION_ID` or `--session ID`. Prompts stored by older central
-Sessions may still name the retired `AGENTPLANE_DESTINATION`; pass `--session ID` from such a Session or open a
-new one ([agent CLI](../docs/agent_cli.md#configuration-and-credentials)).
+The service logs JSON to stderr. `request_timeout_s` (default 15) bounds backend work and each watch
+write. Watches revalidate the credential and send heartbeats every 15 seconds.
+`message_body_limit_bytes` defaults to 32768 and has a database ceiling of 262144. Sends wait for
+healthy PolicySet and PolicyBinding watches and are refused while either watch is unsynced or failing.
 
-Schema changes are Goose migrations. `00013_baseline.sql` creates the current schema directly on an
-empty database. A database with completed version 12 and the required final schema is adopted
-without copying rows or rewriting its Goose history. A partial predecessor must first finish
-migrating with the previous image. Subsequent schema changes use new Goose versions.
+The TLS listener (`rpc.listen_address`) serves native `Notifications` and `grpc.health.v1`.
+`rpc.tls` supplies the server certificate and key, and `rpc.auth` configures SPIFFE client trust.
+`operator_reader_services` grants exact service SVIDs the
+[five diagnostic reads](docs/api.md#session-inbox-diagnostics).
+Health probes need no bearer. Service `""` reports readiness (the LISTEN connection and a database
+query) and becomes unhealthy on shutdown. `livez` checks process liveness. The HTTP listener (`host`, `http_port`) serves only the signed `POST /v1/webhooks/github`
+when the provider is enabled. The App owns the browser facade.
 
-The schema stores Action state, actor and timestamp; mergeability repository, refs, states,
-commit and nanosecond timestamp; and Message text and optional source Session in native columns.
-GitHub webhook receipts keep an optional signed raw body separately from a compact event-specific fact projection;
-generated observation payloads remain JSONB. Subscription `creation_proto` and notice
-`runner_entry` remain binary protobuf snapshots. Expired entries retain identity tombstones while
-their content stays cleared.
-
-At a committed runner cursor, replay decodes the stored snapshot and compares the full `EventEntry` with
-`proto.Equal`. All known fields, including fields added later, and unknown fields recursively must match.
-Unknown field-number groups may be reordered; occurrences and opaque wire bytes within one field number
-remain significant, so this does not equate different non-minimal encodings.
-
-The service reads the settings file and explicit Secret inputs described in [Configuration](#configuration). It takes no
-flags; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work
-and waiting for each watch write to clear transport backpressure. Watches revalidate the credential and send heartbeats every 15 seconds.
-`message_body_limit_bytes` (default 32768, at most 262144, which the database also holds) bounds a message body.
-Sends are refused until the PolicySet and PolicyBinding informers have synced, and while either fails to list or
-watch. GitHub is on
-when any `github.*` setting is set, so a Secret without `github.app_id`, or the reverse, fails startup. A setting
-that fails validation stops startup without printing its value.
-
-The native gRPC listener (`rpc.listen_address`) serves `Notifications` and `grpc.health.v1`.
-`rpc.tls` supplies its server certificate and key, and `rpc.auth` must configure SPIFFE client trust.
-The receiver admits live workload SVIDs and exact service SVID grants only; it performs no TokenReview.
-A certificate combined with bearer or delegation metadata is refused. `operator_reader_services`
-admits exact service SPIFFE IDs to the five diagnostic read methods. A service SVID grants neither an
-agent Identity nor inbox ownership, and is not admitted to mutations or other RPCs.
-The HTTP listener (`host`, `http_port`) serves only `POST /v1/webhooks/github` when GitHub is configured; all other
-paths return not found. It has no workload HTTP API or documentation routes. The generated App browser facade dials
-the gRPC listener, and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN
-connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the
-process answers). Four source workers process durable due subscriptions independently of four inbox-delivery workers.
-A source can publish events while its destination is offline. A worker that
-returns or fails ends the process, logging the types of its error and never its message.
+An unexpectedly stopped worker ends the process and logs error types without values. During a
+History outage or lag, GitHub receipts and inbox entries can still commit. Notices wait for History
+to catch up before retries. See the [delivery contract](docs/architecture.md#notice-delivery-and-history).
 
 ### Rollback
 
-Migration 22 (`00022_session_inbox_key_contract.sql`) drops the Sandbox key, destination and owner columns that
+[Migration 22](migrations/notifications/00022_session_inbox_key_contract.sql) drops the Sandbox key, destination and owner columns that
 images predating it read; it deletes no subscription, entry, acknowledgement or notice. An image rolled back alone
 would query columns that no longer exist: restore a database backup taken before migration 22 beside the paired
 prior API and CLI images (their send and subscribe requests differ by the destination field).
 
-Rollback also requires a native-schema-capable service image. Restore a backup only before admitting
+For a partial pre-v13 schema, first finish migrating with the predecessor image. Rollback requires a
+native-schema-capable service image. Restore a backup only before admitting
 new writes, never over newly accepted work. Keep the Deployment stopped during restore, then verify
 readiness, authorization, inbox reads, new writes, expiry and replay deduplication. Staging
 verification also includes a fresh Action subscription and a real GitHub webhook delivery;
@@ -116,7 +67,7 @@ database checks alone do not prove ingress or runner notice delivery.
 
 Set `AGENTPLANE_NOTIFICATIONS_CONFIG_FILE` to a YAML file; a missing file and unknown keys fail startup.
 The file is the sole source for static settings; other environment variables cannot override its values.
-[settings.py](settings.py) defines the typed fields and defaults rendered by the manifests, while `config.go` and
+[settings.py](settings.py) defines the typed fields and defaults rendered by the manifests, while [`cmd/config.go`](cmd/config.go) and
 the settings owned by its packages decode and validate them. The database URL, GitHub private key, and webhook
 secret are read explicitly from their Secret-backed environment inputs and are not fields in the static file.
 Configuration changes require a service restart.
@@ -136,13 +87,8 @@ audience-specific projected ServiceAccount token and sends no client certificate
 Service client rereads that token file for each RPC. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
 environment variable rather than putting the DSN in the ConfigMap.
 
-The service persists a notice's stable command ID before calling `SubmitInput`. A queued response means
-the Dispatcher owns the retry; it is not a runner-admission receipt. The service reads admission and
-confirmation from History Service, and a Dispatcher error never falls back to a direct Runtime call: the
-service holds no Runtime-proxy peer setting or client.
-
-The deployment mounts the settings from its ConfigMap. Roll the application image and configuration
-together because their structure is versioned with the code.
+Roll the application image and its settings ConfigMap together. The settings schema is versioned
+with the code.
 
 ### Resource quotas
 
@@ -188,10 +134,6 @@ retention later deletes the whole receipt and its links; `fact_retention_hours: 
 disables that cleanup while the body setting still applies independently. Inbox payload copies keep
 their independent 30-day retention.
 
-For the staging upgrade, apply the configuration with both defaults omitted before updating
-the image. The old binary rejects hour keys and the new binary rejects day keys. For a custom
-window, convert days to hours (multiply by 24) when switching to the new image.
-
 The fact setting also deletes up to 1000 expired generated pull-request mergeability transitions,
 1000 generated CI transitions and 1000 generated review/lifecycle transitions per pass, including
 transitions not consumed by an inbox. Current pull-request snapshots remain. Old CI heads without
@@ -199,43 +141,22 @@ active PR followers are pruned in bounded batches; current facts for an actively
 copied inbox payloads retain their independent lifetimes. These settings do not enable the GitHub
 provider.
 
-Writers predating the compact-facts change leave `fact` empty; new readers backfill retained bodies
-before matching, and body cleanup completes that backfill before expiry. Keep the three-day body
-window through a rolling rollout. Set body retention to zero only after every reader runs the
-fact-based code; once a body expires, a release that matches from raw bodies cannot recover it.
-Rolling back to the compact-facts release remains supported.
+For a rollback across the [hourly settings change](https://github.com/agentydragon/ducktape/pull/20054),
+omit both retention keys to use defaults with either binary. Older binaries reject hour keys and
+newer binaries reject day keys. Convert custom windows when switching binaries (24 hours per day).
+
+Before shortening or disabling raw body retention, verify every replica can match compact facts.
+New readers backfill legacy receipts from retained bodies before matching or expiry. Once a body
+expires, images that match from bodies lose access to that receipt's content. The compact-facts
+release can still match it. PostgreSQL makes deleted space available for page reuse.
 
 ### GitHub source work and inbox delivery
 
-GitHub work is triggered by durable webhook receipts and subscription creation or renewal. Successful
-subscriptions go idle. A queued page continuation, a new ingress generation, a transient failure or rate limit,
-and a bounded mergeability-settling attempt schedule only their unfinished work. Restarting resumes the due
-rows and expired claims; no successful subscription is periodically rerun.
-
-`github.freshness_seconds` (default 600, range 60–3600) bounds cached access checks and observations when
-pending work needs them. Expiry alone does not schedule a request. GitHub does not automatically retry failed
-webhooks; recover missing deliveries through the App's delivery history/redelivery operation. A missed event
-can remain missing until a later triggering event, subscription renewal or explicit redelivery.
-
-The GitHub source coordinates API access, interpretation, refresh policy, backoff and raw-receipt retention
-under `internal/sources/github/`. Its `state/` package owns refresh leases, access fences, webhook facts
-and observations. The source receives that persistence explicitly at service construction. The source coordinator under `internal/sources/` processes due subscriptions
-without a live Sandbox or runner. `internal/worker/` owns inbox notice delivery and source-independent inbox
-retention. The store retains the explicit same-transaction adapters between typed source state and durable
-subscriptions/entries; source access fences, subscription versions, quota checks, publication and progress
-commit together. A receipt arriving during a source pass leaves a newer generation pending.
-
-Targeted catch-up reads current facts for followed PR heads, not full event or action history. PR defaults
-report completed check-run facts and all commit statuses; an explicitly unfiltered `check_run` filter reports
-all observed check-run states. Explicit action filters select actual webhook actions only; catch-up does not
-invent `created`, `in_progress` or `completed` actions. The subscription command and default filters are
-unchanged. Branch and fixed-commit CI notifications use receipt-backed webhook facts. See the
-[agent GitHub guide](docs/agents/github.md#follow-github-activity) for identity, payload and filter details.
-
-Current review refresh state and pull-request review/lifecycle observations use the same retention
-setting and do not reconstruct transitions missed between observations. Deliveries predating the
-original retention migration use its timestamp because their actual ingestion times were not recorded.
-Deletes free space for PostgreSQL to reuse; they do not immediately shrink its volume.
+Receipts and subscription creation or renewal trigger GitHub work. Successful subscriptions go
+idle. `github.freshness_seconds` (default 600, range 60–3600) bounds observations and access checks
+reused by that work. Expiry alone schedules no repair. See
+[webhook troubleshooting](#github-webhook-troubleshooting) for redelivery and the
+[matching contract](docs/api.md#github-webhook-ingestion-and-matching) for catch-up and retries.
 
 ### Runner notice debounce
 
@@ -256,15 +177,16 @@ The maximum bounds the batching delay, not source processing, runner outages or 
 
 ## GitHub App setup
 
-GitHub is disabled when `github` is absent from YAML. To enable it, put the public
-`github.app_id` and any non-default provider settings in YAML, and supply these Secret-backed environment variables:
+To enable GitHub ingestion, set `github.app_id` and any non-default provider settings in YAML
+alongside both Secret-backed environment variables below. Setting a provider option without the
+App ID and credentials fails validation. Retention settings alone leave ingestion disabled.
 
 - `AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY`: PEM App private key.
 - `AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET`: random webhook signing secret, at least 16 characters.
 
 The private key and webhook secret are read explicitly, validated with the static settings at startup, and never
-printed. Remove the `github` block and its Secret references together to disable the source. No fixed installation
-ID or OAuth client secret is needed.
+printed. Remove the App ID, provider overrides and Secret references together to disable the
+source. Keep any retention settings for existing receipts. Installation IDs come from GitHub.
 
 Staging is enabled and the operator has installed the App; see the
 [live acceptance record](docs/staging_github_acceptance.md). Testing remains disabled.
@@ -284,11 +206,8 @@ and Commit statuses read respectively. These permissions are not added to the or
 profile. If an installation cannot grant one repair profile, that refresh reports the access error while the other
 resource and ordinary webhook processing continue.
 
-The service also refreshes currently exposed non-pending PR review facts on an independent durable deadline and
-observes PR lifecycle state through the existing subject refresh. Lifecycle changes do not require a second API read.
-These are current-state observations, not a replay of all review or lifecycle events. An `APPROVED` review is one
-review fact, not an aggregate approval result or an evaluation of repository review rules. See the
-[agent GitHub guide](docs/agents/github.md#follow-github-activity) for payload fields and scope.
+See [current source-processing observations](docs/api.md#current-source-processing-observations)
+and the [agent GitHub guide](docs/agents/github.md#follow-github-activity) for review and lifecycle events.
 
 ### GitHub API transport overrides
 
@@ -300,11 +219,6 @@ embedded credentials, query strings or fragments are rejected; redirects remain 
 The configured endpoint receives App JWTs and installation tokens: only use trusted endpoints,
 and use fixture credentials for local mock services. These are deployment-owned settings,
 not subscription-controlled destinations, and do not alter egress authorization.
-
-`client.Client` in [`internal/sources/github/client`](internal/sources/github/client/client.go) owns the configured endpoint, App JWTs, the installation-token cache and
-typed REST resource methods. The notification provider owns webhook verification, durable access/subject
-observations, leases, backoff scheduling and matching. Client calls surface rate limits immediately; they do not
-sleep/retry inside a lease. `client.New` validates the settings and the App private key and makes no request.
 
 ## GitHub webhook troubleshooting
 

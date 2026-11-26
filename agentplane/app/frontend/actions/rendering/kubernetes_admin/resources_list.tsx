@@ -1,23 +1,11 @@
 import { resourceListResult } from "./list_result";
 import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
-import { z } from "zod";
+import type { z } from "zod";
+import { resourcesListArguments } from "../../schemas/kubernetes_admin/arguments";
 
 import { type ActionPresentation, expandsForDetails } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
-
-import { resource } from "./resource_common";
-
-const listSelectors = {
-  fieldSelector: z.string().min(1).optional(),
-  labelSelector: z.string().min(1).optional(),
-};
-const resourcesListArguments = z.strictObject({
-  apiVersion: resource.apiVersion,
-  kind: resource.kind,
-  namespace: resource.namespace,
-  ...listSelectors,
-});
 
 export function offersCardDecisionButtonsResourcesList(args: unknown): boolean {
   return resourcesListArguments.safeParse(args).success;

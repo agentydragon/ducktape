@@ -53,7 +53,7 @@ func (aggregateProbeRuntime) QueueReconcile() {}
 
 func TestAggregateRequiresCurrentSessionPreFenceSettlement(t *testing.T) {
 	workspace := t.TempDir()
-	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
+	config := lifecycleConfig(t, workspace, nil, "/bin/false")
 	config.expectCloseError = true
 	r := newSessionTestRuntime(t, config)
 	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, t.Context()), openLifecycleSession("pre-fence", filepath.Join(workspace, "project"))); err != nil {
@@ -240,8 +240,7 @@ func (s *harnessHostAdmissionProbeState) UpdateWithConflicts(ctx context.Context
 func lifecycleTestSession(t *testing.T) (*Runtime, *session.Session) {
 	t.Helper()
 	workspace := t.TempDir()
-	proxy := modelConfigServer(t)
-	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newSessionTestRuntime(t, lifecycleConfig(t, workspace, nil, "/bin/false"))
 	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
@@ -267,8 +266,7 @@ func lifecycleTestBlockedSetupWithState(t *testing.T, store state.State) (*Runti
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = pipe.Close() })
-	proxy := modelConfigServer(t)
-	r := newSessionTestRuntimeWithState(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), store)
+	r := newSessionTestRuntimeWithState(t, lifecycleConfig(t, workspace, nil, "/bin/false"), store)
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
@@ -745,8 +743,7 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 		desiredPublicationErr: errors.New("injected desired-state publication failure"),
 	}
 	workspace := t.TempDir()
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config := lifecycleConfig(t, workspace, nil, "/bin/false")
 	config.expectCloseError = true
 	r := newSessionTestRuntimeWithState(t, config, store)
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
@@ -782,8 +779,7 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 
 func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 	workspace := t.TempDir()
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config := lifecycleConfig(t, workspace, nil, "/bin/false")
 	config.expectCloseError = true
 	store := &harnessHostAdmissionProbeState{State: state.WrapCore(namespaced.NewState(inmem.Build))}
 	r := newSessionTestRuntimeWithState(t, config, store)
@@ -844,8 +840,7 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 
 func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 	workspace := t.TempDir()
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config := lifecycleConfig(t, workspace, nil, "/bin/false")
 	config.expectCloseError = true
 	r := newSessionTestRuntime(t, config)
 	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {

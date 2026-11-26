@@ -2,9 +2,11 @@
 
 pub(crate) mod bundle_globals;
 mod callback_arguments;
+mod input_validation;
 mod native_write_census;
 mod property_keys;
 mod prototype_properties;
+mod recording;
 
 use native_write_census::{
     ArraySpreadNativeIteratorPremise, ConditionalIntrinsicWrite, NativeSlotOverlap,
@@ -2035,7 +2037,9 @@ fn matches_resolved_native_initializer(
 ) -> bool {
     declaration.direct_top_level
         && declaration.simple_identifier
-        && span_contains(input.selected_statement_span, declaration.binding_span)
+        && input
+            .selected_statement_span
+            .contains(declaration.binding_span)
         && declaration.binding_span == input.declaration_span
         && declaration.initializer_span == Some(input.initializer_span)
         && declaration.owner == input.initializer_ordinal
@@ -2111,10 +2115,6 @@ fn set_from_set_spread_source(expression: &Expr) -> Option<(Id, Span, Span)> {
             first.spread.expect("checked spread"),
         )
     })
-}
-
-fn span_contains(outer: Span, inner: Span) -> bool {
-    outer.lo.0 <= inner.lo.0 && inner.hi.0 <= outer.hi.0
 }
 
 /// First milestone accepts only a source-local opaque slot/member read. This
@@ -5064,1416 +5064,76 @@ impl ExecutionIndex {
             .collect()
     }
 
-    pub(crate) fn validated_native_operation_inputs(&self) -> Vec<ResolvedNativeOperationInput> {
-        self.resolved_native_operation_inputs.clone()
-    }
-
-    fn apply_native_integrity(&mut self, integrity: &NativeIntegrity) {
-        self.mutated_intrinsic_roots = integrity.mutated.clone();
-        self.native_integrity_witnesses = integrity.witnesses.clone();
-        self.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
-        self.native_integrity_host_behavior = integrity.consumed_host_behavior.clone();
-        self.never_written = integrity.never_written.clone();
-        self.never_written_overrode = !integrity.never_written_overrides.is_empty();
-        self.integrity = self.integrity_flags();
-    }
-
-    /// Literal operands are primitive without executing source. An identifier
-    /// operand is admitted only when the completed census proves the same
-    /// canonical binding has one earlier direct primitive initializer, with
-    /// no dynamic-scope access or recorded write. This establishes primitive
-    /// type, not an exact value; ordinary reads still carry order and TDZ.
-    fn has_stable_primitive_set_array(&self, declaration: &BindingDeclarationWrite) -> bool {
-        if !self.dynamic_scope_owners.is_empty() {
-            return false;
-        }
-        declaration
-            .set_from_primitive_array_aliases
-            .as_ref()
-            .is_some_and(|aliases| {
-                aliases.iter().all(|binding| {
-                    !self.reassigned_bindings.contains(binding)
-                        && !self.binding_target_writes.contains(binding)
-                        && matches!(
-                            self.binding_declaration_writes.get(binding).map(Vec::as_slice),
-                            Some([source]) if source.direct_top_level
-                                && source.simple_identifier
-                                && source.primitive_literal_initializer
-                                && source.owner < declaration.owner
-                        )
-                })
-            })
-    }
-
-    /// Source-only construction proofs. Every protocol premise comes from the
-    /// completed census; this operation must run before its roots seed flow.
-    fn infer_set_constructions(
-        &self,
-        integrity: &IntegrityFlags,
-    ) -> BTreeMap<u32, InferredSetConstruction> {
-        use crate::analysis_provenance::InferenceRule;
-        use IntrinsicSlot::{ArrayIteratorPrototype, Global, Prototype, SetIteratorPrototype};
-        use NativeIntrinsic::{Array, Set};
-        if !self.dynamic_scope_owners.is_empty() {
-            return BTreeMap::new();
-        }
-        let declarations: BTreeMap<_, _> = self
-            .binding_declaration_writes
-            .iter()
-            .filter_map(|(binding, writes)| {
-                let [write] = writes.as_slice() else {
-                    return None;
-                };
-                (write.direct_top_level
-                    && write.simple_identifier
-                    && !self.reassigned_bindings.contains(binding))
-                .then_some((write.owner, (binding, write)))
-            })
-            .collect();
-        let set_binding = ("Set".into(), swc_common::SyntaxContext::empty());
-        if self.declared_bindings().iter().any(|id| id.0 == "Set")
-            || self.property_key_declarations.contains(&set_binding)
-        {
-            return BTreeMap::new();
-        }
-        let slots = [
-            Global(Set),
-            Prototype(Set),
-            Prototype(Array),
-            ArrayIteratorPrototype,
-        ];
-        let mut proofs: BTreeMap<u32, InferredSetConstruction> = BTreeMap::new();
-        let mut sites_by_binding = BTreeMap::new();
-        for (owner, (binding, declaration)) in &declarations {
-            let Some(ValueExpr::New(callee, _, site)) = &declaration.initializer else {
-                continue;
-            };
-            if !matches!(callee.as_ref(), ValueExpr::Binding(id) if id.0 == "Set") {
-                continue;
-            }
-            let operation = if self.has_stable_primitive_set_array(declaration) {
-                InferredSetOperation::PrimitiveArray
-            } else if let Some((source, source_span, spread_token_span)) =
-                &declaration.set_from_set_spread_source
-            {
-                let Some(seed_site) = sites_by_binding.get(source) else {
-                    continue;
-                };
-                let Some(seed) = proofs.get(seed_site) else {
-                    continue;
-                };
-                if !matches!(seed.operation, InferredSetOperation::PrimitiveArray) {
-                    continue;
-                }
-                let Some((seed_owner, _)) = declarations.iter().find(|(_, (id, _))| *id == source)
-                else {
-                    continue;
-                };
-                if seed_owner >= owner {
-                    continue;
-                }
-                let mut interval_bindings = Vec::new();
-                let mut dependencies = ProofDependencies::default();
-                let mut valid = true;
-                for ordinal in seed_owner.0..owner.0 {
-                    let Some((id, write)) = declarations.get(&SourceUnitOrdinal(ordinal)) else {
-                        valid = false;
-                        break;
-                    };
-                    let Some(proof) = sites_by_binding.get(*id).and_then(|site| proofs.get(site))
-                    else {
-                        valid = false;
-                        break;
-                    };
-                    if !self.has_stable_primitive_set_array(write)
-                        || self.original_statement_spans[ordinal]
-                            != self.original_statement_spans[owner.0]
-                    {
-                        valid = false;
-                        break;
-                    }
-                    interval_bindings.push((*id).clone());
-                    dependencies.extend(&proof.dependencies);
-                }
-                if !valid {
-                    continue;
-                }
-                interval_bindings.push((*binding).clone());
-                InferredSetOperation::ProtectedSpread {
-                    source: source.clone(),
-                    interval: Box::new(crate::analysis_inputs::StableSetIterableUse {
-                        source_span: *source_span,
-                        spread_token_span: *spread_token_span,
-                        interval_bindings,
-                        dependencies,
-                    }),
-                }
-            } else {
-                continue;
-            };
-            let required_slots = match operation {
-                InferredSetOperation::PrimitiveArray => slots.to_vec(),
-                InferredSetOperation::ProtectedSpread { .. } => {
-                    [slots.as_slice(), &[SetIteratorPrototype]].concat()
-                }
-            };
-            let Some(mut premise) = native_premise(
-                integrity,
-                &required_slots,
-                None,
-                InferenceRule::PrimitiveSetIteration,
-            ) else {
-                continue;
-            };
-            let mut operation = operation;
-            if let InferredSetOperation::ProtectedSpread { interval, .. } = &mut operation {
-                premise.dependencies.extend(&interval.dependencies);
-                interval.dependencies = premise.dependencies.clone();
-            }
-            sites_by_binding.insert((*binding).clone(), site.allocation_id());
-            proofs.insert(
-                site.allocation_id(),
-                InferredSetConstruction {
-                    binding: (*binding).clone(),
-                    operation,
-                    dependencies: premise.dependencies,
-                    inference: premise.inference_use,
-                },
-            );
-        }
-        proofs
-    }
-
-    /// Build one immutable context from the canonical source index and the
-    /// completed native-write census. Callable candidates are input facts;
-    /// their returned-record constructors participate in the same native
-    /// identity and integrity proofs as local-class fields.
-    fn completed_native_rules(&self) -> SemanticRules {
-        SemanticRules {
-            native: NativePremises {
-                integrity: self.integrity.clone(),
-                bindings: NativeBindingContext::default(),
-            },
-            dynamic_scope: !self.dynamic_scope_owners.is_empty(),
-            ..SemanticRules::default()
-        }
-    }
-
-    /// The author and host premises the completed census consumed.
-    pub(super) fn native_integrity_dependencies(&self) -> ProofDependencies {
-        let bundle_globals = self
-            .native_integrity_host_behavior
-            .contains(&HostBehaviorKey::PredefinedGlobals);
-        ProofDependencies {
-            value_inputs: self.native_integrity_value_input_refs.clone(),
-            host_behavior: self.native_integrity_host_behavior.clone(),
-            no_accessor_install_callables: if bundle_globals {
-                self.census_globals
-                    .bundle
-                    .no_accessor_install_callables
-                    .clone()
-            } else {
-                BTreeSet::new()
-            },
-            program_premises: if self.never_written_overrode {
-                BTreeSet::from([ProgramPremiseKey::IntrinsicsNeverWritten])
-            } else {
-                BTreeSet::new()
-            },
-            ..Default::default()
-        }
-    }
-
-    /// The completed census as slot flags, with the `IntrinsicIntact` axioms
-    /// of every validated native input.
-    pub(super) fn integrity_flags(&self) -> IntegrityFlags {
-        IntegrityFlags::new(
-            self.dynamic_scope_owners.is_empty(),
-            self.mutated_intrinsic_roots.clone(),
-            &self.native_integrity_witnesses,
-            self.native_integrity_dependencies(),
-            self.intrinsic_axioms(),
-            PrototypeWrites::new(
-                self.native_prototype_mutations
-                    .iter()
-                    .map(|mutation| mutation.properties.as_ref()),
-            ),
-        )
-        .with_never_written(self.never_written.clone())
-    }
-
-    /// Each validated input asserts the slots its operation reads at the
-    /// exact call or construction site its consumer queries.
-    fn intrinsic_axioms(&self) -> BTreeMap<u32, IntrinsicIntact> {
-        use IntrinsicSlot::{ArrayIteratorPrototype, Global, Prototype, Static};
-        use NativeIntrinsic::{Array, Object, Set, Symbol, WeakMap};
-        use spec::{NativeCallIdentityKind as Callee, NativeOperationKind as Operation};
-        const SET_FROM_ARRAY: &[IntrinsicSlot] = &[
-            Global(Set),
-            Prototype(Set),
-            Prototype(Array),
-            ArrayIteratorPrototype,
-        ];
-        self.resolved_native_operation_inputs
-            .iter()
-            .map(|input| {
-                let (site, slots): (Span, Vec<IntrinsicSlot>) = match input.evidence.operation {
-                    // The builtin `Symbol` row at the call. A zero-argument
-                    // or literal-string call also makes the source unit pure
-                    // (`symbol_literal_proof`).
-                    NativeInputKind::Operation(Operation::Symbol) => {
-                        (input.call_span, vec![Global(Symbol)])
-                    }
-                    // A fresh Set value-flow origin and Set-content allocation
-                    // cell at the constructor, and constructor purity. Later
-                    // Set methods and iteration keep their own checks.
-                    NativeInputKind::Operation(Operation::SetFromPrimitiveArray) => {
-                        (input.call_span, SET_FROM_ARRAY.to_vec())
-                    }
-                    // Timing, purity and heap ordering of this construction;
-                    // the platform result has no ordinary-object certificate.
-                    NativeInputKind::Operation(Operation::TextEncoderEmpty) => {
-                        (input.call_span, vec![Global(NativeIntrinsic::TextEncoder)])
-                    }
-                    NativeInputKind::Operation(Operation::MapEmpty) => {
-                        (input.call_span, vec![Global(NativeIntrinsic::Map)])
-                    }
-                    NativeInputKind::Operation(Operation::WeakMapEmpty) => {
-                        (input.call_span, vec![Global(WeakMap)])
-                    }
-                    NativeInputKind::Operation(Operation::SetEmpty) => {
-                        (input.call_span, vec![Global(Set)])
-                    }
-                    // The `Object.freeze` row at that call. A fresh plain-data
-                    // literal argument also drops the call's opaque heap
-                    // barrier; the returned value gains no value-flow origin.
-                    NativeInputKind::CallIdentity(Callee::ObjectFreeze) => (
-                        input.call_span,
-                        vec![Global(Object), Static(Object, "freeze")],
-                    ),
-                };
-                (
-                    site.lo.0,
-                    IntrinsicIntact {
-                        slots: slots.into_iter().collect(),
-                        reference: input.evidence.reference.clone(),
-                    },
-                )
-            })
-            .collect()
-    }
-
-    pub(crate) fn prepare_semantic_facts(
-        &self,
-        flow: &ChunkValueFlow,
-        shadowed: &BTreeSet<&'static str>,
-        shapes: SemanticShapeInputs<'_>,
-        source_facts: Option<&Arc<SemanticFacts>>,
-    ) -> Arc<SemanticFacts> {
-        let SemanticShapeInputs {
-            classes,
-            sets,
-            array_spreads,
-            callables,
-        } = shapes;
-        let mut collection_bindings = BTreeMap::new();
-        let constructors = classes
-            .classes
-            .values()
-            .flatten()
-            .map(|(binding, _)| binding.clone())
-            .chain(
-                callables
-                    .namespace_wrappers
-                    .values()
-                    .map(|candidate| candidate.weak_map.clone()),
-            );
-        for binding in constructors {
-            let Some(row) = builtins::lookup(binding.0.as_ref(), None, Invocation::Construct)
-            else {
-                continue;
-            };
-            if row.allocates.is_some_and(Kind::is_keyed_collection) {
-                collection_bindings.insert(binding, row);
-            }
-        }
-        // Rules read binding identity only for these candidate callees.
-        let declared_bindings = collection_bindings
-            .keys()
-            .chain(
-                callables
-                    .namespace_wrappers
-                    .values()
-                    .map(|candidate| &candidate.object),
-            )
-            .filter(|binding| flow.is_declared(binding))
-            .cloned()
-            .collect();
-        let completed = self.completed_native_rules();
-        Arc::new(SemanticFacts::solve_with_source(
-            SemanticRules {
-                classes,
-                sets,
-                array_spreads: array_spreads.by_initializer.keys().copied().collect(),
-                collection_bindings,
-                native: NativePremises {
-                    bindings: NativeBindingContext {
-                        declared_bindings,
-                        shadowed_globals: shadowed.clone(),
-                        global_object_names: self.global_object_names.clone(),
-                    },
-                    ..completed.native
-                },
-                descriptor_copy_providers: self.descriptor_copy_factories.clone(),
-                descriptor_copy_calls: self
-                    .descriptor_copy_calls
-                    .iter()
-                    .filter_map(|(site, candidate)| {
-                        let shape = self.own_descriptor_shapes.get(&candidate.source_object)?;
-                        let data_keys = shape
-                            .properties
-                            .iter()
-                            .filter_map(|(key, descriptor)| {
-                                matches!(descriptor, OwnPropertyDescriptorSyntax::Data)
-                                    .then_some(key.clone())
-                            })
-                            .collect();
-                        let accessor_keys = shape
-                            .properties
-                            .iter()
-                            .filter_map(|(key, descriptor)| {
-                                matches!(descriptor, OwnPropertyDescriptorSyntax::Accessor { .. })
-                                    .then_some(key.clone())
-                            })
-                            .collect();
-                        Some((
-                            site.source_span().lo.0,
-                            SemanticDescriptorCopyCallCandidate {
-                                source_object: candidate.source_object,
-                                provider_binding: candidate.provider_binding.clone(),
-                                signature: candidate.signature.clone(),
-                                data_keys,
-                                accessor_keys,
-                            },
-                        ))
-                    })
-                    .collect(),
-                callables,
-                dynamic_scope: completed.dynamic_scope,
-                ..SemanticRules::default()
-            },
-            source_facts,
-        ))
-    }
-
-    fn validate_value_inputs(
-        &mut self,
-        selected: &[SelectedBindingValueInput],
-        resolved: &[ResolvedBindingValueInput],
-        raw_aliases: &BTreeMap<Id, NativeReceiverRoots>,
-        declared: &BTreeSet<Id>,
-    ) {
-        for input in selected {
-            let request = &input.evidence.spec_location;
-            if !self.dynamic_scope_owners.is_empty() {
-                self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because provider analysis contains dynamic-scope contamination",
-                    input.selected_binding
-                ));
-                continue;
-            }
-            let candidates: Vec<_> = self
-                .binding_declaration_writes
-                .iter()
-                .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
-                .flat_map(|(binding, writes)| {
-                    writes.iter().filter_map(move |write| {
-                        (write.simple_identifier
-                            && write.direct_top_level
-                            && span_contains(input.selected_statement_span, write.binding_span))
-                        .then_some((binding.clone(), write.clone()))
-                    })
-                })
-                .collect();
-            let [(binding, declaration)] = candidates.as_slice() else {
-                self.value_input_errors.push(format!(
-                    "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
-                    input.selected_binding,
-                    candidates.len()
-                ));
-                continue;
-            };
-            let binding = (*binding).clone();
-            let declaration = (*declaration).clone();
-            if self
-                .binding_declaration_writes
-                .get(&binding)
-                .is_none_or(|writes| writes.len() != 1)
-            {
-                self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because its canonical binding has repeated or pattern declaration sites",
-                    input.selected_binding
-                ));
-                continue;
-            }
-            if self
-                .property_key_assignments
-                .get(&binding)
-                .is_none_or(|writes| writes.len() != 1)
-            {
-                self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because the canonical write index found a possible reassignment, update, destructuring write, or deferred write",
-                    input.selected_binding
-                ));
-                continue;
-            }
-            let Some(initializer) = declaration.initializer.as_ref() else {
-                self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because the selected declaration has no initializer",
-                    input.selected_binding
-                ));
-                continue;
-            };
-            let check_known_identity =
-                matches!(initializer, ValueExpr::Binding(_) | ValueExpr::Member(..));
-            if check_known_identity {
-                let mut roots = intrinsic_roots(
-                    initializer,
-                    raw_aliases,
-                    &self.census_globals,
-                    declared,
-                    &BTreeMap::new(),
-                    &CallableReturnInputs::default(),
-                );
-                roots.remove(&NativeReceiverRoot::Intrinsic(
-                    NativeIntrinsic::UnknownGlobalValue,
-                ));
-                let contradictions: BTreeSet<_> = roots
-                    .iter()
-                    .filter_map(NativeReceiverRoot::intrinsic_root)
-                    .collect();
-                if !contradictions.is_empty() {
-                    self.value_input_errors.push(format!(
-                        "{request} contradicts recognized native/global identity for `{}`: {contradictions:?}",
-                        input.selected_binding
-                    ));
-                    continue;
-                }
-            }
-            if !is_opaque_member_slot(initializer) {
-                self.value_input_errors.push(format!(
-                    "{request} uses an unsupported initializer category for `{}`; this version accepts only opaque binding-rooted member reads",
-                    input.selected_binding
-                ));
-                continue;
-            }
-            let raw_roots = intrinsic_roots(
-                initializer,
-                raw_aliases,
-                &self.census_globals,
-                declared,
-                &BTreeMap::new(),
-                &CallableReturnInputs::default(),
-            );
-            if !raw_roots.iter().any(|root| {
-                matches!(
-                    root,
-                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue)
-                )
-            }) {
-                self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because source-only analysis did not establish an existing unknown-global receiver root",
-                    input.selected_binding
-                ));
-                continue;
-            }
-            if self.ordinary_input_refs.contains_key(&binding) {
-                self.value_input_errors.push(format!(
-                    "{request} duplicates a value input for canonical binding `{}`",
-                    input.selected_binding
-                ));
-                continue;
-            }
-            let Some(initializer_span) = declaration.initializer_span else {
-                self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because its initializer has no source span",
-                    input.selected_binding
-                ));
-                continue;
-            };
-            let mut evidence = input.evidence.clone();
-            evidence.selected_binding = input.selected_binding.clone();
-            self.ordinary_input_refs.insert(
-                binding.clone(),
-                (evidence.reference.clone(), declaration.owner),
-            );
-            self.value_input_evidence
-                .insert(evidence.reference.clone(), evidence.clone());
-            self.resolved_value_inputs.push(ResolvedBindingValueInput {
-                evidence,
-                binding,
-                declaration_span: declaration.binding_span,
-                initializer_span,
-                initializer_ordinal: declaration.owner,
-            });
-        }
-        for input in resolved {
-            let request = &input.evidence.spec_location;
-            if !self.dynamic_scope_owners.is_empty() {
-                self.value_input_errors.push(format!(
-                    "{request} cannot refine `{}` because provider analysis contains dynamic-scope contamination",
-                    input.evidence.selected_binding
-                ));
-                continue;
-            }
-            let Some(writes) = self.binding_declaration_writes.get(&input.binding) else {
-                self.value_input_errors.push(format!(
-                    "{request} no longer resolves to one canonical declaration in this prepared AST"
-                ));
-                continue;
-            };
-            let [declaration] = writes.as_slice() else {
-                self.value_input_errors.push(format!(
-                    "{request} no longer resolves to one canonical declaration in this prepared AST"
-                ));
-                continue;
-            };
-            if !declaration.direct_top_level
-                || !declaration.simple_identifier
-                || declaration.binding_span != input.declaration_span
-                || declaration.initializer_span != Some(input.initializer_span)
-                || declaration.owner != input.initializer_ordinal
-                || input.binding.0.as_ref() != input.evidence.selected_binding
-                || self
-                    .property_key_assignments
-                    .get(&input.binding)
-                    .is_none_or(|writes| writes.len() != 1)
-            {
-                self.value_input_errors.push(format!(
-                    "{request} no longer identifies the same stable simple top-level binding and complete write summary"
-                ));
-                continue;
-            }
-            let Some(initializer) = declaration.initializer.as_ref() else {
-                self.value_input_errors.push(format!(
-                    "{request} no longer has the source initializer used by the value input"
-                ));
-                continue;
-            };
-            if !is_opaque_member_slot(initializer) {
-                self.value_input_errors.push(format!(
-                    "{request} now uses an unsupported initializer category; expected a binding-rooted opaque member read"
-                ));
-                continue;
-            }
-            let roots = intrinsic_roots(
-                initializer,
-                raw_aliases,
-                &self.census_globals,
-                declared,
-                &BTreeMap::new(),
-                &CallableReturnInputs::default(),
-            );
-            let contradiction = roots
-                .iter()
-                .filter_map(NativeReceiverRoot::intrinsic_root)
-                .any(|root| root != NativeIntrinsic::UnknownGlobalValue);
-            if contradiction {
-                self.value_input_errors.push(format!(
-                    "{request} contradicts a recognized native/global initializer in this prepared AST"
-                ));
-                continue;
-            }
-            if !roots.contains(&NativeReceiverRoot::Intrinsic(
-                NativeIntrinsic::UnknownGlobalValue,
-            )) {
-                self.value_input_errors.push(format!(
-                    "{request} cannot refine this binding because source-only analysis did not establish an existing unknown-global receiver root"
-                ));
-                continue;
-            }
-            if self.ordinary_input_refs.contains_key(&input.binding) {
-                self.value_input_errors.push(format!(
-                    "{request} duplicates a captured value input for canonical binding `{}`",
-                    input.evidence.selected_binding
-                ));
-                continue;
-            }
-            self.ordinary_input_refs.insert(
-                input.binding.clone(),
-                (input.evidence.reference.clone(), input.initializer_ordinal),
-            );
-            self.value_input_evidence
-                .insert(input.evidence.reference.clone(), input.evidence.clone());
-            self.resolved_value_inputs.push(input.clone());
-        }
-    }
-
-    fn validate_native_operation_inputs(
-        &mut self,
-        selected: &[SelectedNativeOperationInput],
-        resolved: &[ResolvedNativeOperationInput],
-    ) {
-        if selected.is_empty() && resolved.is_empty() {
-            return;
-        }
-        if !self.dynamic_scope_owners.is_empty() {
-            for evidence in selected
-                .iter()
-                .map(|input| &input.evidence)
-                .chain(resolved.iter().map(|input| &input.evidence))
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{} cannot assert native operation identity because provider analysis contains dynamic-scope contamination",
-                    evidence.spec_location
-                ));
-            }
-            return;
-        }
-        for input in selected {
-            let request = &input.evidence.spec_location;
-            if let Some(error) = self.native_operation_mutation_error(&input.evidence) {
-                self.native_operation_input_errors.push(error);
-                continue;
-            }
-            if input.evidence.operation
-                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
-            {
-                let candidates: Vec<_> = self
-                    .hoisted_bindings
-                    .keys()
-                    .filter(|binding| binding.0.as_ref() == input.selected_binding)
-                    .filter(|binding| {
-                        self.hoisted_bindings
-                            .get(*binding)
-                            .and_then(|key| self.callable_spans.get(key))
-                            .is_some_and(|span| span_contains(input.selected_statement_span, *span))
-                    })
-                    .collect();
-                let [binding] = candidates.as_slice() else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} must select exactly one direct top-level function declaration"
-                    ));
-                    continue;
-                };
-                let Some(call) =
-                    self.direct_freeze_return_call(binding, input.selected_statement_span)
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} requires a nonasync top-level function whose sole statement directly returns one unshadowed Object.freeze call"
-                    ));
-                    continue;
-                };
-                let mut evidence = input.evidence.clone();
-                evidence.selected_binding = input.selected_binding.clone();
-                self.native_operation_input_evidence
-                    .insert(call.span.into(), evidence.clone());
-                self.resolved_native_operation_inputs
-                    .push(ResolvedNativeOperationInput {
-                        evidence,
-                        binding: (*binding).clone(),
-                        selected_statement_span: input.selected_statement_span,
-                        declaration_span: self.callable_spans[&self.hoisted_bindings[*binding]],
-                        initializer_span: call.span,
-                        call_span: call.span,
-                        initializer_ordinal: call.owner,
-                    });
-                continue;
-            }
-            let candidates: Vec<_> = self
-                .binding_declaration_writes
-                .iter()
-                .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
-                .flat_map(|(binding, writes)| {
-                    writes.iter().filter_map(move |write| {
-                        (write.simple_identifier
-                            && write.direct_top_level
-                            && span_contains(input.selected_statement_span, write.binding_span))
-                        .then_some((binding.clone(), write.clone()))
-                    })
-                })
-                .collect();
-            let [(binding, declaration)] = candidates.as_slice() else {
-                self.native_operation_input_errors.push(format!(
-                    "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
-                    input.selected_binding,
-                    candidates.len()
-                ));
-                continue;
-            };
-            if matches!(
-                input.evidence.operation,
-                NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
-            ) {
-                let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} must select a direct supported Set constructor initializer"
-                    ));
-                    continue;
-                };
-                let ValueExpr::Binding(constructor) = callee.as_ref() else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} must select a direct uncomputed Set identifier"
-                    ));
-                    continue;
-                };
-                if !self.is_unshadowed_primitive_set_initializer(declaration, constructor) {
-                    self.native_operation_input_errors
-                        .push(format!(
-                            "{request} requires a direct unshadowed new Set([primitive literals or earlier stable primitive bindings]) operation with one dense nonspread array literal"
-                        ));
-                    continue;
-                }
-                let Some(call) = self.top_calls[declaration.owner.0]
-                    .iter()
-                    .find(|call| CallSite::from(call.span) == *call_site)
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer resolves to a direct top-level constructor site"
-                    ));
-                    continue;
-                };
-                if call.kind != CallKind::New || call.has_spread || call.caller.is_some() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} must select an ordinary direct nonspread constructor site"
-                    ));
-                    continue;
-                }
-                let mut evidence = input.evidence.clone();
-                evidence.selected_binding = input.selected_binding.clone();
-                self.native_operation_input_evidence
-                    .insert(*call_site, evidence.clone());
-                self.resolved_native_operation_inputs
-                    .push(ResolvedNativeOperationInput {
-                        evidence,
-                        binding: binding.clone(),
-                        selected_statement_span: input.selected_statement_span,
-                        declaration_span: declaration.binding_span,
-                        initializer_span: declaration.initializer_span.unwrap_or(call.span),
-                        call_span: call.span,
-                        initializer_ordinal: declaration.owner,
-                    });
-                continue;
-            }
-            let binding = (*binding).clone();
-            let declaration = (*declaration).clone();
-            if declaration.initializer.is_none() {
-                self.native_operation_input_errors.push(format!(
-                    "{request} selected `{}` without an initializer",
-                    input.selected_binding
-                ));
-                continue;
-            }
-            let Some(initializers) =
-                native_operation_initializers(&declaration, input.evidence.operation)
-            else {
-                let object_shape = if input.evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty)
-                {
-                    ", or an object containing only direct empty Map data fields"
-                } else {
-                    ""
-                };
-                self.native_operation_input_errors.push(format!(
-                    "{request} must select a direct top-level binding initialized by a {}{object_shape}",
-                    native_operation_call_name(input.evidence.operation)
-                ));
-                continue;
-            };
-            if declaration.empty_map_object_sites.is_some()
-                && self.binding_declaration_writes[&binding].len() != 1
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{request} must select one unambiguous canonical object binding declaration"
-                ));
-                continue;
-            }
-            for (callee, args, call_site) in initializers {
-                let call = match self.direct_native_initializer_call(
-                    input.evidence.operation,
-                    &declaration,
-                    call_site,
-                ) {
-                    Ok(call) => call,
-                    Err(reason) => {
-                        self.native_operation_input_errors
-                            .push(format!("{request} {reason}"));
-                        continue;
-                    }
-                };
-                if let Some(reason) = self.native_operation_call_shape_error(
-                    input.evidence.operation,
-                    callee,
-                    args,
-                    call_site,
-                    call,
-                ) {
-                    self.native_operation_input_errors
-                        .push(format!("{request} {reason}"));
-                    continue;
-                }
-                let call_span = call.span;
-                let mut evidence = input.evidence.clone();
-                evidence.selected_binding = input.selected_binding.clone();
-                self.native_operation_input_evidence
-                    .insert(call_site, evidence.clone());
-                self.resolved_native_operation_inputs
-                    .push(ResolvedNativeOperationInput {
-                        evidence,
-                        binding: binding.clone(),
-                        selected_statement_span: input.selected_statement_span,
-                        declaration_span: declaration.binding_span,
-                        initializer_span: declaration.initializer_span.unwrap_or(call_span),
-                        call_span,
-                        initializer_ordinal: declaration.owner,
-                    });
-            }
-        }
-
-        for input in resolved {
-            let request = &input.evidence.spec_location;
-            if let Some(error) = self.native_operation_mutation_error(&input.evidence) {
-                self.native_operation_input_errors.push(error);
-                continue;
-            }
-            if input.evidence.operation
-                == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
-            {
-                let is_same = self
-                    .direct_freeze_return_call(&input.binding, input.selected_statement_span)
-                    .is_some_and(|call| {
-                        call.span == input.call_span
-                            && call.owner == input.initializer_ordinal
-                            && input.declaration_span
-                                == self.callable_spans[&self.hoisted_bindings[&input.binding]]
-                            && input.initializer_span == call.span
-                            && input.binding.0.as_ref() == input.evidence.selected_binding
-                    });
-                if !is_same {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer identifies the same direct unshadowed Object.freeze return call"
-                    ));
-                    continue;
-                }
-                self.native_operation_input_evidence
-                    .insert(input.call_span.into(), input.evidence.clone());
-                self.resolved_native_operation_inputs.push(input.clone());
-                continue;
-            }
-            let Some([declaration]) = self
-                .binding_declaration_writes
-                .get(&input.binding)
-                .map(Vec::as_slice)
-            else {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer resolves to one canonical binding declaration"
-                ));
-                continue;
-            };
-            if matches!(
-                input.evidence.operation,
-                NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
-            ) {
-                let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer selects a direct Set constructor initializer"
-                    ));
-                    continue;
-                };
-                let is_same = matches_resolved_native_initializer(input, declaration, *call_site)
-                    && matches!(callee.as_ref(), ValueExpr::Binding(constructor)
-                        if self.is_unshadowed_primitive_set_initializer(declaration, constructor));
-                if !is_same {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer identifies the same direct unshadowed Set initializer"
-                    ));
-                    continue;
-                }
-                self.native_operation_input_evidence
-                    .insert(*call_site, input.evidence.clone());
-                self.resolved_native_operation_inputs.push(input.clone());
-                continue;
-            }
-            let Some((callee, args, call_site)) =
-                native_operation_initializers(declaration, input.evidence.operation).and_then(
-                    |initializers| {
-                        initializers
-                            .into_iter()
-                            .find(|(_, _, site)| *site == CallSite::from(input.call_span))
-                    },
-                )
-            else {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer selects the same direct native initializer site"
-                ));
-                continue;
-            };
-            let call = match self.direct_native_initializer_call(
-                input.evidence.operation,
-                declaration,
-                call_site,
-            ) {
-                Ok(call) => call,
-                Err(reason) => {
-                    self.native_operation_input_errors
-                        .push(format!("{request} {reason}"));
-                    continue;
-                }
-            };
-            if let Some(reason) = self.native_operation_call_shape_error(
-                input.evidence.operation,
-                callee,
-                args,
-                call_site,
-                call,
-            ) {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer identifies the selected operation: {reason}"
-                ));
-                continue;
-            }
-            let is_same = matches_resolved_native_initializer(input, declaration, call_site);
-            if !is_same {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer identifies the same direct unshadowed native initializer"
-                ));
-                continue;
-            }
-            self.native_operation_input_evidence
-                .insert(call_site, input.evidence.clone());
-            self.resolved_native_operation_inputs.push(input.clone());
-        }
-
-        let original_len = self.resolved_native_operation_inputs.len();
-        let mut references = BTreeMap::new();
-        let mut sites = BTreeSet::new();
-        self.resolved_native_operation_inputs.retain(|input| {
-            let same_initializer = references.get(&input.evidence.reference).is_none_or(
-                |previous: &ResolvedNativeOperationInput| {
-                    input.evidence.operation
-                        == NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty)
-                        && previous.evidence.operation == input.evidence.operation
-                        && previous.binding == input.binding
-                        && previous.selected_statement_span == input.selected_statement_span
-                        && previous.declaration_span == input.declaration_span
-                        && previous.initializer_span == input.initializer_span
-                        && previous.initializer_ordinal == input.initializer_ordinal
-                        && input.initializer_span != input.call_span
-                },
-            );
-            if !same_initializer || !sites.insert(CallSite::from(input.call_span)) {
-                return false;
-            }
-            references.insert(input.evidence.reference.clone(), input.clone());
-            true
-        });
-        if self.resolved_native_operation_inputs.len() != original_len {
-            self.native_operation_input_errors.push(
-                "native_operation_inputs contain conflicting assertion references or duplicate call sites"
-                    .to_owned(),
-            );
-        }
-    }
-
-    fn native_operation_mutation_error(
-        &self,
-        evidence: &NativeOperationInputEvidence,
-    ) -> Option<String> {
-        let request = &evidence.spec_location;
-        let operation = evidence.operation;
-        match operation {
-            NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze) => {
-                let owner = self.known_object_freeze_mutation()?;
-                Some(format!(
-                    "{request} is contradicted by a positively identified required Object.freeze slot write in source unit {}",
-                    owner.0
-                ))
-            }
-            NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray) => {
-                let owner = self.known_set_protocol_mutation()?;
-                Some(format!(
-                    "{request} is contradicted by a positively identified required native slot write in source unit {}",
-                    owner.0
-                ))
-            }
-            _ => {
-                let (name, owner) = self.known_global_native_operation_mutation(operation)?;
-                Some(format!(
-                    "{request} is contradicted by a positively identified global {name} replacement or accessor installation (source unit {})",
-                    owner.0
-                ))
-            }
-        }
-    }
-
-    fn is_unshadowed_primitive_set_initializer(
-        &self,
-        declaration: &BindingDeclarationWrite,
-        constructor: &Id,
-    ) -> bool {
-        self.has_stable_primitive_set_array(declaration)
-            && constructor.0.as_ref() == "Set"
-            && !self.property_key_declarations.contains(constructor)
-            && !self.imported_bindings.contains(constructor)
-    }
-
-    fn direct_native_initializer_call(
-        &self,
-        operation: NativeInputKind,
-        declaration: &BindingDeclarationWrite,
-        site: CallSite,
-    ) -> Result<&Call, &'static str> {
-        let call = self.top_calls[declaration.owner.0]
-            .iter()
-            .find(|call| CallSite::from(call.span) == site)
-            .ok_or("no longer resolves to a direct top-level call site")?;
-        if operation.empty_constructor_name().is_some()
-            && declaration.empty_map_object_sites.is_none()
-            && declaration.initializer_span != Some(call.span)
-        {
-            return Err(
-                "must select the direct constructor initializer without a sequence or assignment wrapper",
-            );
-        }
-        Ok(call)
-    }
-
-    fn source_slot_overlap(&self, slot: &NativeWriteSlot) -> NativeSlotOverlap {
-        source_slot_overlap(
-            self.native_write_census
-                .witnesses
-                .iter()
-                .chain(
-                    self.native_write_census
-                        .conditional
-                        .iter()
-                        .map(|write| &write.witness),
-                )
-                .chain(self.native_integrity_witnesses.iter()),
-            slot,
-        )
-    }
-
-    fn native_operation_call_shape_error(
-        &self,
-        operation: NativeInputKind,
-        callee: &ValueExpr,
-        args: &[ValueExpr],
-        call_site: CallSite,
-        call: &Call,
-    ) -> Option<&'static str> {
-        if let Some(constructor) = operation.empty_constructor_name() {
-            if call.kind != CallKind::New
-                || call.has_spread
-                || call.caller.is_some()
-                || !args.is_empty()
-                || !self.bare_constructor_sites.contains(&call_site)
-            {
-                return Some("must select direct zero-argument native construction without spread");
-            }
-            let ValueExpr::Binding(binding) = callee else {
-                return Some("must select the direct bare global constructor");
-            };
-            if binding.0.as_ref() != constructor || self.declared_bindings().contains(binding) {
-                return Some(
-                    "must select the original unshadowed global constructor binding matching the requested operation",
-                );
-            }
-            return None;
-        }
-        if call.kind != CallKind::Call || call.has_spread || call.caller.is_some() {
-            return Some(match operation {
-                NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
-                    "must select a nonoptional, nonspread, direct top-level Symbol call"
-                }
-                _ => "must select an ordinary direct top-level native call",
-            });
-        }
-        if !self.ordinary_top_call_sites.contains(&call_site) {
-            return Some("must select an ordinary direct top-level call");
-        }
-        match operation {
-            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
-                let ValueExpr::Binding(symbol) = callee else {
-                    return Some("must select a direct uncomputed Symbol identifier call");
-                };
-                if symbol.0.as_ref() != "Symbol" {
-                    return Some("operation does not match the selected direct Symbol initializer");
-                }
-                if self.declared_bindings().contains(symbol) {
-                    return Some(
-                        "selects a shadowed Symbol binding; only the original unshadowed global Symbol binding is supported",
-                    );
-                }
-                if !self.primitive_native_symbol_calls.contains(&call_site) || args.len() > 1 {
-                    return Some(
-                        "has an unsupported Symbol call shape; use one ordinary direct call with zero or one syntactically primitive argument and no spread",
-                    );
-                }
-                let Some((row, _)) = native_call_identity_key(CallKind::Call, callee) else {
-                    return Some("does not resolve through the exact native Symbol call row");
-                };
-                (row.family() == Some(NativeIntrinsic::Symbol))
-                    .then_some(())
-                    .is_none()
-                    .then_some("selected an unsupported native Symbol call row")
-            }
-            _ => Some("operation does not match the selected native call"),
-        }
-    }
-
-    fn known_global_native_operation_mutation(
-        &self,
-        operation: NativeInputKind,
-    ) -> Option<(&'static str, SourceUnitOrdinal)> {
-        let name = match operation {
-            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => "Symbol",
-            _ => operation.empty_constructor_name()?,
-        };
-        match self.source_slot_overlap(&NativeWriteSlot {
-            receiver: NativeReceiverPath::GlobalObject,
-            key: NativePropertyKey::String(name.to_owned()),
-        }) {
-            NativeSlotOverlap::Known(owner) => Some((name, owner)),
-            NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-        }
-    }
-
-    fn known_object_freeze_mutation(&self) -> Option<SourceUnitOrdinal> {
-        [
-            NativeWriteSlot {
-                receiver: NativeReceiverPath::GlobalObject,
-                key: NativePropertyKey::String("Object".to_owned()),
-            },
-            NativeWriteSlot {
-                receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Object),
-                key: NativePropertyKey::String("freeze".to_owned()),
-            },
-        ]
-        .iter()
-        .find_map(|slot| match self.source_slot_overlap(slot) {
-            NativeSlotOverlap::Known(owner) => Some(owner),
-            NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-        })
-    }
-
-    fn known_descriptor_copy_mutation(
-        &self,
-        assigned_keys: &BTreeSet<String>,
-    ) -> Option<SourceUnitOrdinal> {
-        let slots = ["Object"]
-            .into_iter()
-            .map(|key| NativeWriteSlot {
-                receiver: NativeReceiverPath::GlobalObject,
-                key: NativePropertyKey::String(key.to_owned()),
-            })
-            .chain(
-                [
-                    "getOwnPropertyDescriptors",
-                    "defineProperties",
-                    "assign",
-                    "prototype",
-                ]
-                .into_iter()
-                .map(|key| NativeWriteSlot {
-                    receiver: NativeReceiverPath::Constructor(NativeIntrinsic::Object),
-                    key: NativePropertyKey::String(key.to_owned()),
-                }),
-            )
-            .chain(assigned_keys.iter().map(|key| NativeWriteSlot {
-                receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Object),
-                key: NativePropertyKey::String(key.clone()),
-            }));
-        slots
-            .into_iter()
-            .find_map(|slot| match self.source_slot_overlap(&slot) {
-                NativeSlotOverlap::Known(owner) => Some(owner),
-                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-            })
-    }
-
-    pub(super) fn direct_freeze_return_call(
-        &self,
-        binding: &Id,
-        selected_span: Span,
-    ) -> Option<Call> {
-        if !self.direct_top_level_functions.contains(binding) {
-            return None;
-        }
-        let key = *self.hoisted_bindings.get(binding)?;
-        let declaration = *self.callable_spans.get(&key)?;
-        if !span_contains(selected_span, declaration) || self.async_callables.contains(&key) {
-            return None;
-        }
-        let callable = self.callables.get(&key)?;
-        if callable.generator {
-            return None;
-        }
-        let site = CallSite::from(*self.direct_return_calls.get(binding)?);
-        let call = callable
-            .calls
-            .iter()
-            .find(|call| call.kind == CallKind::Call && CallSite::from(call.span) == site)?;
-        if call.kind != CallKind::Call
-            || call.caller != Some(key)
-            || call.has_spread
-            || CallSite::from(call.span) != site
-            || call.args.len() != 1
-        {
-            return None;
-        }
-        let ValueExpr::Member(receiver, Some(member), MemberKey::Static, _) = &call.callee else {
-            return None;
-        };
-        let ValueExpr::Binding(object) = receiver.as_ref() else {
-            return None;
-        };
-        if object.0.as_ref() != "Object"
-            || member != "freeze"
-            || self.declared_bindings().contains(object)
-        {
-            return None;
-        }
-        let (row, _) = native_call_identity_key(CallKind::Call, &call.callee)?;
-        (row.op == IntrinsicOp::ObjectFreeze).then(|| call.as_ref().clone())
-    }
-
-    fn known_array_iterator_protocol_mutation_with(
-        &self,
-        integrity: &ArraySpreadProtocolIntegrity,
-    ) -> Option<SourceUnitOrdinal> {
-        [
-            NativeWriteSlot {
-                receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Array),
-                key: NativePropertyKey::SymbolIterator,
-            },
-            NativeWriteSlot {
-                receiver: NativeReceiverPath::ArrayIteratorPrototype,
-                key: NativePropertyKey::String("next".to_owned()),
-            },
-        ]
-        .iter()
-        .find_map(|slot| {
-            match array_spread_protocol_slot_overlap(
-                self.native_write_census.witnesses.iter().chain(
-                    self.native_write_census
-                        .conditional
-                        .iter()
-                        .map(|write| &write.witness),
-                ),
-                slot,
-                &integrity.mutated,
-                integrity.global_array_binding_mutated,
-                &integrity.premise_authorized_next_writes,
-                ArraySpreadNativeIteratorPremise,
-            ) {
-                NativeSlotOverlap::Known(owner) => Some(owner),
-                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-            }
-        })
-    }
-
-    fn known_set_protocol_mutation(&self) -> Option<SourceUnitOrdinal> {
-        [
-            NativeWriteSlot {
-                receiver: NativeReceiverPath::GlobalObject,
-                key: NativePropertyKey::String("Set".to_owned()),
-            },
-            NativeWriteSlot {
-                receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Set),
-                key: NativePropertyKey::String("add".to_owned()),
-            },
-            NativeWriteSlot {
-                receiver: NativeReceiverPath::Prototype(NativeIntrinsic::Array),
-                key: NativePropertyKey::SymbolIterator,
-            },
-            NativeWriteSlot {
-                receiver: NativeReceiverPath::ArrayIteratorPrototype,
-                key: NativePropertyKey::String("next".to_owned()),
-            },
-        ]
-        .iter()
-        .find_map(|slot| match self.source_slot_overlap(slot) {
-            NativeSlotOverlap::Known(owner) => Some(owner),
-            NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-        })
-    }
-
-    fn validate_captured_callable_returns(
-        &mut self,
-        assignments: &[&(Id, ValueExpr)],
-        flow: Option<&ChunkValueFlow>,
-        raw_aliases: &BTreeMap<Id, NativeReceiverRoots>,
-    ) {
-        if self.resolved_value_inputs.is_empty() {
-            return;
-        }
-        let closure = close_receiver_flow(self, assignments, flow, raw_aliases);
-        let mut rejected = Vec::new();
-        for input in &self.resolved_value_inputs {
-            let unsupported = self.callables.iter().any(|(key, callable)| {
-                callable.reads.contains(&input.binding)
-                    && (callable.generator
-                        || self.async_callables.contains(key)
-                        || closure
-                            .facts
-                            .get(&ReceiverFlowKey::Callable(*key))
-                            .is_none_or(|fact| {
-                                fact.outcomes.is_empty()
-                                    || fact.outcomes.contains(&CallableReturnOutcome::Unknown)
-                            }))
-            });
-            if unsupported {
-                rejected.push((
-                    input.binding.clone(),
-                    input.evidence.reference.clone(),
-                    format!(
-                        "{} cannot refine `{}` because a capturing synchronous return path is unsupported, unresolved, or opaque",
-                        input.evidence.spec_location, input.evidence.selected_binding
-                    ),
-                ));
-            }
-        }
-        for (binding, reference, message) in rejected {
-            self.value_input_errors.push(message);
-            self.ordinary_input_refs.remove(&binding);
-            self.value_input_evidence.remove(&reference);
-            self.resolved_value_inputs
-                .retain(|input| input.binding != binding);
-        }
-    }
-
-    fn stable_top_level_copy_owner(
-        &self,
-        binding: &Id,
-        initializer: &ValueExpr,
-    ) -> Option<SourceUnitOrdinal> {
-        if !matches!(initializer, ValueExpr::Binding(_))
-            || self
-                .property_key_assignments
-                .get(binding)
-                .is_none_or(|writes| writes.len() != 1)
-        {
-            return None;
-        }
-        let [declaration] = self.binding_declaration_writes.get(binding)?.as_slice() else {
-            return None;
-        };
-        let same_direct_binding = matches!(
-            (declaration.initializer.as_ref(), initializer),
-            (Some(ValueExpr::Binding(declared)), ValueExpr::Binding(candidate))
-                if declared == candidate
-        );
-        (declaration.direct_top_level && declaration.simple_identifier && same_direct_binding)
-            .then_some(declaration.owner)
-    }
-
     pub(super) fn collect(
         body: &[TopLevelItemView<'_>],
         hints: &AnalysisInputs,
         flow: Option<&ChunkValueFlow>,
+        plain_array_bindings: &BTreeSet<String>,
+        construction_proof: &LocalClassConstructionShapes,
+    ) -> Self {
+        let mut index =
+            Self::collection_seed(body, hints, plain_array_bindings, construction_proof);
+        let max_source_position = index.seed_top_level_declarations(body, hints);
+        let fresh_steps = index.visit_top_level_items(body, hints);
+        for (offset, proof) in index.array_iterations.values_mut().enumerate() {
+            proof.result = u32::try_from(offset)
+                .ok()
+                .and_then(|offset| max_source_position.checked_add(offset)?.checked_add(1));
+        }
+        // An accessor fallback may run any callable owned by this item,
+        // including a nested function installed as the setter. Union each
+        // retained synchronous prefix instead of using whole lazy bodies.
+        for callable in index.callables.values() {
+            let effects = index.owner_callable_prefix_effects[callable.owner.0]
+                .get_or_insert_with(CallablePrefixEffects::default);
+            if !callable.created_after_parent_await {
+                effects.reads.extend(callable.reads.iter().cloned());
+            }
+        }
+        let owned_namespace_assignments = index
+            .top_assignments
+            .iter()
+            .flatten()
+            .chain(
+                index
+                    .callables
+                    .values()
+                    .flat_map(|callable| callable.local_assignments.iter()),
+            )
+            .cloned()
+            .collect::<Vec<_>>();
+        let namespace_assignments = owned_namespace_assignments.iter().collect::<Vec<_>>();
+        let namespace_value_facts = NamespaceValueFacts::from_assignments(
+            index.class_values.clone(),
+            fresh_steps
+                .iter()
+                .filter_map(|step| match step {
+                    Some(FreshValueStep::Literal { span, .. }) => Some(*span),
+                    _ => None,
+                })
+                .collect(),
+            &namespace_assignments,
+        );
+        let mutated_intrinsics =
+            index.census_native_writes(body, hints, flow, &namespace_assignments);
+        let claim_counts = index.certified_fresh_error_sites(flow, &mutated_intrinsics);
+        index.close_namespace_family(
+            &namespace_assignments,
+            &namespace_value_facts,
+            &fresh_steps,
+            &claim_counts,
+        );
+        index.admit_deferred_global_publications(hints);
+        index.admit_non_reentrant_global_membership(body, hints);
+        index.finish_collection(hints);
+        index
+    }
+
+    /// The index before any item is visited: per-owner tables sized to `body`
+    /// and the author inputs the visitor consults.
+    fn collection_seed(
+        body: &[TopLevelItemView<'_>],
+        hints: &AnalysisInputs,
         plain_array_bindings: &BTreeSet<String>,
         construction_proof: &LocalClassConstructionShapes,
     ) -> Self {
@@ -6483,7 +5143,7 @@ impl ExecutionIndex {
         // A standard host defines `global` only as Node's global object.
         let node_global = hints.assumptions.predefined_globals != spec::PredefinedGlobals::Unknown
             && unshadowed_global_names(body, &["global"]).contains("global");
-        let mut index = Self {
+        Self {
             source_chunk_id: hints.current_chunk_id.clone(),
             global_guards_requested,
             local_class_construction_shapes: construction_proof.clone(),
@@ -6546,8 +5206,16 @@ impl ExecutionIndex {
                 .map(|integrity| integrity.consumed_host_behavior.clone())
                 .unwrap_or_default(),
             ..Self::default()
-        };
-        let mut fresh_steps = Vec::with_capacity(body.len());
+        }
+    }
+
+    /// Seeds namespace-privacy roots, class and `const` bindings from every
+    /// item before any item is visited. Returns the last source position.
+    fn seed_top_level_declarations(
+        &mut self,
+        body: &[TopLevelItemView<'_>],
+        hints: &AnalysisInputs,
+    ) -> u32 {
         let mut max_source_position = 0u32;
         for item in body {
             max_source_position = max_source_position.max(item.as_module_item().span().hi.0);
@@ -6579,7 +5247,7 @@ impl ExecutionIndex {
                             .namespace_independent_members
                             .contains_key(name)
                     {
-                        index.namespace_privacy.members.insert(
+                        self.namespace_privacy.members.insert(
                             local.to_id(),
                             hints
                                 .assumptions
@@ -6588,7 +5256,7 @@ impl ExecutionIndex {
                                 .cloned()
                                 .unwrap_or_default(),
                         );
-                        index.namespace_privacy.import_sites.insert(local.span.lo.0);
+                        self.namespace_privacy.import_sites.insert(local.span.lo.0);
                     }
                 }
             }
@@ -6605,130 +5273,41 @@ impl ExecutionIndex {
             };
             if let Some(declaration) = declaration {
                 let id = declaration.ident.to_id();
-                index
-                    .class_bindings
+                self.class_bindings
                     .insert(declaration.class.span.lo.0, id.clone());
-                index.class_ids.insert(id);
+                self.class_ids.insert(id);
             }
             if let Some(declaration) = var_decl_of_item(item.as_module_item())
                 && declaration.kind == VarDeclKind::Const
             {
                 for declarator in &declaration.decls {
-                    index
-                        .top_const_bindings
+                    self.top_const_bindings
                         .extend(binding_targets::binding_names(&declarator.name));
                 }
             }
         }
+        max_source_position
+    }
+
+    /// Visits every item in source order. Returns each item's fresh-value step.
+    fn visit_top_level_items(
+        &mut self,
+        body: &[TopLevelItemView<'_>],
+        hints: &AnalysisInputs,
+    ) -> Vec<Option<FreshValueStep>> {
+        let mut fresh_steps = Vec::with_capacity(body.len());
         for (ordinal, item) in body.iter().enumerate() {
             let owner = SourceUnitOrdinal(ordinal);
-            if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))) =
-                item
-                && !declaration.declare
-                && let [declarator] = declaration.decls.as_slice()
-                && matches!(declarator.name, Pat::Ident(_))
-                && let Some(expression) = declarator.init.as_deref()
-                && !matches!(expression.unwrap_parens(), Expr::Ident(_))
-                && let Some(body) = LocalBody::from_initializer(expression)
-                // Only a top-level class declaration can satisfy the kernel's
-                // construct admission; other `new` roots keep the flat lane.
-                && body
-                    .construct_callees()
-                    .iter()
-                    .all(|callee| index.class_ids.contains(callee))
-            {
-                debug_assert_eq!(body.root_span(), Some(expression.span()));
-                index.ordered_initializers.insert(owner, body);
-            }
-            if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Expr(statement))) = item
-                && let Some(body) = LocalBody::from_expression_statement(&statement.expr)
-                && body.root_store_statement().is_some()
-            {
-                index.ordered_statements.insert(owner, body);
-            }
-            let source_identity = InitializationSourceIdentity::collect(item, owner);
-            if let Ok((identity, _)) = &source_identity {
-                index
-                    .initialization_source_identities
-                    .insert(owner, identity.clone());
-            }
-            // A split comma-list owner keeps its original declaration/span
-            // identity. The ordinary composed-initializer path below cannot
-            // admit a call leaf, so admit only the one exact audited root call
-            // that was independently selected from the original source.
-            if !hints.assumptions.initializer_call_effect_inputs.is_empty()
-                && matches!(
-                    item,
-                    TopLevelItemView::Owned {
-                        item: ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))),
-                        ..
-                    }
-                )
-                && let Some(declaration) = var_decl_of_item(item.as_module_item())
-                && !declaration.declare
-                && let [declarator] = declaration.decls.as_slice()
-                && let Pat::Ident(binding) = &declarator.name
-                && let Some(expression) = declarator.init.as_deref()
-                && let Some(input) = hints
-                    .assumptions
-                    .initializer_call_effect_inputs
-                    .iter()
-                    .find(|input| input.binding == binding.id.to_id())
-                && source_identity.as_ref().is_ok_and(|(identity, _)| {
-                    identity.matches(owner, &binding.id.to_id(), expression.span())
-                })
-                && let Some(body) = LocalBody::from_initializer(expression)
-                && let Some((callee, call_span)) =
-                    (if input.returns_opaque_function_from_const_primitive {
-                        body.single_identifier_call_with_binding_argument_initializer()
-                    } else {
-                        body.single_identifier_call_with_function_argument_initializer()
-                    })
-                && input.callee == *callee
-                && input.call_span == call_span
-            {
-                index.ordered_initializers.insert(owner, body);
-            }
-            match OriginalInitializer::collect(item, owner, source_identity) {
-                Ok(initializer) => {
-                    if matches!(
-                        item,
-                        TopLevelItemView::Owned {
-                            item: ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))),
-                            ..
-                        }
-                    ) && matches!(
-                        initializer.composed_expression(),
-                        Some(ValueExpr::Binding(_))
-                    ) && let Some(declaration) = var_decl_of_item(item.as_module_item())
-                        && !declaration.declare
-                        && let [declarator] = declaration.decls.as_slice()
-                        && let Pat::Ident(binding) = &declarator.name
-                        && let Some(expression) = declarator.init.as_deref()
-                        && let Some(body) = LocalBody::from_initializer(expression)
-                        && body.root_span() == Some(expression.span())
-                        && index
-                            .initialization_source_identities
-                            .get(&owner)
-                            .is_some_and(|identity| {
-                                identity.matches(owner, &binding.id.to_id(), expression.span())
-                            })
-                    {
-                        index.ordered_initializers.insert(owner, body);
-                    }
-                    index.noninvoking_initializers.insert(owner, initializer);
-                }
-                Err(reason) => index.initialization_coverage_refusals[ordinal] = Some(reason),
-            }
+            self.admit_ordered_bodies(item, owner, hints);
             fresh_steps.push(fresh_value_step(item.as_module_item()));
-            if index.global_guards_requested {
-                index.deferred_global_candidates[ordinal] =
+            if self.global_guards_requested {
+                self.deferred_global_candidates[ordinal] =
                     deferred_global_publication(item.as_module_item());
-                index.discarded_sync_iifes[ordinal] =
+                self.discarded_sync_iifes[ordinal] =
                     discarded_synchronous_iife(item.as_module_item());
             }
-            index.owner = SourceUnitOrdinal(ordinal);
-            index.direct_top_level_var_declaration = matches!(
+            self.owner = SourceUnitOrdinal(ordinal);
+            self.direct_top_level_var_declaration = matches!(
                 item.as_module_item(),
                 ModuleItem::Stmt(Stmt::Decl(Decl::Var(_)))
                     | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
@@ -6736,310 +5315,378 @@ impl ExecutionIndex {
                         ..
                     }))
             );
-            index.direct_top_level_const_declaration = var_decl_of_item(item.as_module_item())
+            self.direct_top_level_const_declaration = var_decl_of_item(item.as_module_item())
                 .is_some_and(|declaration| declaration.kind == VarDeclKind::Const);
-            index.past_await = false;
-            index.may_skip_await_depth = 0;
-            index.conditional_depth = 0;
-            index.may_skip_member_read_depth = 0;
-            index.literal_depth = 0;
-            index.factory_member_value_depth = 0;
-            index.factory_callback_depth = 0;
-            index.collect_uninitialized_lexical_bindings(item.as_module_item());
-            index.collect_export_roots(item.as_module_item());
+            self.past_await = false;
+            self.may_skip_await_depth = 0;
+            self.conditional_depth = 0;
+            self.may_skip_member_read_depth = 0;
+            self.literal_depth = 0;
+            self.factory_member_value_depth = 0;
+            self.factory_callback_depth = 0;
+            self.collect_uninitialized_lexical_bindings(item.as_module_item());
+            self.collect_export_roots(item.as_module_item());
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item() {
-                let host_async_local_storage = host_operations
-                    .contains(&ReentryFreeOperation::AsyncLocalStorageConstruct)
-                    && !import.type_only
-                    && matches!(&import.phase, ImportPhase::Evaluation)
-                    && import.with.is_none()
-                    && matches!(
-                        import.src.value.as_str(),
-                        Some("async_hooks" | "node:async_hooks")
-                    );
-                for specifier in &import.specifiers {
-                    let local = specifier.local();
-                    index.imported_bindings.insert(local.to_id());
-                    if host_async_local_storage
-                        && let ImportSpecifier::Named(named) = specifier
-                        && !named.is_type_only
-                        && binding_targets::imported_export_name(named) == "AsyncLocalStorage"
-                    {
-                        index.host_async_local_storage_imports.insert(local.to_id());
-                    }
-                    if let Some(record) = hints
-                        .imported_callables
-                        .get(local.sym.as_ref())
-                        .and_then(|summary| summary.returned_record.as_ref())
-                    {
-                        index
-                            .returned_record_summaries
-                            .insert(local.to_id(), record.clone());
-                    }
-                    if let Some(wrapper) = hints
-                        .imported_callables
-                        .get(local.sym.as_ref())
-                        .and_then(|summary| summary.namespace_wrapper.as_ref())
-                    {
-                        index
-                            .namespace_wrapper_summaries
-                            .insert(local.to_id(), wrapper.clone());
-                    }
-                    // A narrower summary or an author contract keeps its own
-                    // consumer and use reports; the derived summary fills in
-                    // only where nothing else describes the call.
-                    if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
-                        && let Some(call) = summary.foreign_call.as_ref()
-                        && summary.returned_record.is_none()
-                        && summary.namespace_wrapper.is_none()
-                        && summary.descriptor_copy_factory.is_none()
-                        && !hints
-                            .assumptions
-                            .names_imported_callable(local.sym.as_ref())
-                    {
-                        if summary.supports_callback_factory() {
-                            // An author-asserted factory keeps its contract's
-                            // consumers alone.
-                            if summary.callback_factory_evidence().iter().all(|evidence| {
-                                matches!(
-                                    evidence,
-                                    crate::analysis_inputs::CallbackFactoryEvidence::InferredImmutableWrapper { .. }
-                                )
-                            }) {
-                                index
-                                    .callback_factory_call_summaries
-                                    .insert(local.to_id(), call.clone());
-                            }
-                        } else {
-                            index
-                                .foreign_call_imports
-                                .insert(local.to_id(), call.clone());
-                        }
-                    }
-                    if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
-                        && summary.supports_callback_factory()
-                    {
-                        index.callback_factory_imports.insert(local.to_id());
-                        index
-                            .callback_factory_summaries
-                            .insert(local.to_id(), summary.clone());
-                    }
-                    if let Some(summary) = hints
-                        .imported_callables
-                        .get(local.sym.as_ref())
-                        .and_then(|summary| summary.descriptor_copy_factory.as_ref())
-                    {
-                        index
-                            .descriptor_copy_factories
-                            .insert(local.to_id(), summary.clone());
-                    }
-                    if hints
-                        .assumptions
-                        .inline_callback_factories
-                        .contains(local.sym.as_ref())
-                    {
-                        index.inline_callback_factory_imports.insert(local.to_id());
-                    }
-                    if hints
-                        .assumptions
-                        .no_reentry_exports
-                        .contains(local.sym.as_ref())
-                    {
-                        index.no_reentry_exports.insert(local.to_id());
-                    }
-                    if let Some(signatures) = hints
-                        .assumptions
-                        .no_reentry_callback_exports
-                        .get(local.sym.as_ref())
-                    {
-                        index
-                            .no_reentry_callback_imports
-                            .insert(local.to_id(), signatures.clone());
-                    }
-                    if let Some(signatures) = hints
-                        .assumptions
-                        .retained_callback_factories
-                        .get(local.sym.as_ref())
-                    {
-                        index
-                            .retained_callback_factory_imports
-                            .insert(local.to_id(), signatures.clone());
-                    }
-                    if let Some(signatures) = hints
-                        .assumptions
-                        .retained_callback_constructors
-                        .get(local.sym.as_ref())
-                    {
-                        index
-                            .retained_callback_constructor_imports
-                            .insert(local.to_id(), signatures.clone());
-                    }
-                    if let Some(members) = hints
-                        .assumptions
-                        .retained_callback_factory_members
-                        .get(local.sym.as_ref())
-                    {
-                        index
-                            .retained_callback_factory_members
-                            .insert(local.to_id(), members.clone());
-                        index
-                            .audited_factory_members
-                            .entry(local.to_id())
-                            .or_default()
-                            .extend(members.keys().cloned());
-                    }
-                    if let Some(members) = hints
-                        .assumptions
-                        .callback_factory_members
-                        .get(local.sym.as_ref())
-                    {
-                        index
-                            .callback_factory_members
-                            .insert(local.to_id(), members.clone());
-                        index
-                            .audited_factory_members
-                            .entry(local.to_id())
-                            .or_default()
-                            .extend(members.iter().cloned());
-                    }
-                    if let Some(members) =
-                        hints.assumptions.no_reentry_members.get(local.sym.as_ref())
-                    {
-                        index
-                            .no_reentry_members
-                            .insert(local.to_id(), members.clone());
-                    }
-                    if let Some(members) = hints
-                        .assumptions
-                        .no_reentry_record_members
-                        .get(local.sym.as_ref())
-                    {
-                        index
-                            .no_reentry_record_members
-                            .insert(local.to_id(), members.clone());
-                    }
-                }
+                self.record_import_specifiers(import, hints);
             }
             match item.as_module_item() {
                 ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => {
-                    index
-                        .direct_top_level_functions
+                    self.direct_top_level_functions
                         .insert(function.ident.to_id());
                 }
                 ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
                     if let Decl::Fn(function) = &export.decl {
-                        index
-                            .direct_top_level_functions
+                        self.direct_top_level_functions
                             .insert(function.ident.to_id());
                     }
                 }
                 _ => {}
             }
-            item.as_module_item().visit_with(&mut index);
-            index.direct_top_level_var_declaration = false;
-            index.direct_top_level_const_declaration = false;
+            item.as_module_item().visit_with(&mut *self);
+            self.direct_top_level_var_declaration = false;
+            self.direct_top_level_const_declaration = false;
         }
-        for (offset, proof) in index.array_iterations.values_mut().enumerate() {
-            proof.result = u32::try_from(offset)
-                .ok()
-                .and_then(|offset| max_source_position.checked_add(offset)?.checked_add(1));
+        fresh_steps
+    }
+
+    /// Admits `item`'s ordered initializer or statement body and records its
+    /// initialization source identity and non-invoking initializer.
+    fn admit_ordered_bodies(
+        &mut self,
+        item: &TopLevelItemView<'_>,
+        owner: SourceUnitOrdinal,
+        hints: &AnalysisInputs,
+    ) {
+        let ordinal = owner.0;
+        if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))) =
+            item
+            && !declaration.declare
+            && let [declarator] = declaration.decls.as_slice()
+            && matches!(declarator.name, Pat::Ident(_))
+            && let Some(expression) = declarator.init.as_deref()
+            && !matches!(expression.unwrap_parens(), Expr::Ident(_))
+            && let Some(body) = LocalBody::from_initializer(expression)
+            // Only a top-level class declaration can satisfy the kernel's
+            // construct admission; other `new` roots keep the flat lane.
+            && body
+                .construct_callees()
+                .iter()
+                .all(|callee| self.class_ids.contains(callee))
+        {
+            debug_assert_eq!(body.root_span(), Some(expression.span()));
+            self.ordered_initializers.insert(owner, body);
         }
-        // An accessor fallback may run any callable owned by this item,
-        // including a nested function installed as the setter. Union each
-        // retained synchronous prefix instead of using whole lazy bodies.
-        for callable in index.callables.values() {
-            let effects = index.owner_callable_prefix_effects[callable.owner.0]
-                .get_or_insert_with(CallablePrefixEffects::default);
-            if !callable.created_after_parent_await {
-                effects.reads.extend(callable.reads.iter().cloned());
+        if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Expr(statement))) = item
+            && let Some(body) = LocalBody::from_expression_statement(&statement.expr)
+            && body.root_store_statement().is_some()
+        {
+            self.ordered_statements.insert(owner, body);
+        }
+        let source_identity = InitializationSourceIdentity::collect(item, owner);
+        if let Ok((identity, _)) = &source_identity {
+            self.initialization_source_identities
+                .insert(owner, identity.clone());
+        }
+        // A split comma-list owner keeps its original declaration/span
+        // identity. The ordinary composed-initializer path below cannot
+        // admit a call leaf, so admit only the one exact audited root call
+        // that was independently selected from the original source.
+        if !hints.assumptions.initializer_call_effect_inputs.is_empty()
+            && matches!(
+                item,
+                TopLevelItemView::Owned {
+                    item: ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))),
+                    ..
+                }
+            )
+            && let Some(declaration) = var_decl_of_item(item.as_module_item())
+            && !declaration.declare
+            && let [declarator] = declaration.decls.as_slice()
+            && let Pat::Ident(binding) = &declarator.name
+            && let Some(expression) = declarator.init.as_deref()
+            && let Some(input) = hints
+                .assumptions
+                .initializer_call_effect_inputs
+                .iter()
+                .find(|input| input.binding == binding.id.to_id())
+            && source_identity.as_ref().is_ok_and(|(identity, _)| {
+                identity.matches(owner, &binding.id.to_id(), expression.span())
+            })
+            && let Some(body) = LocalBody::from_initializer(expression)
+            && let Some((callee, call_span)) =
+                (if input.returns_opaque_function_from_const_primitive {
+                    body.single_identifier_call_with_binding_argument_initializer()
+                } else {
+                    body.single_identifier_call_with_function_argument_initializer()
+                })
+            && input.callee == *callee
+            && input.call_span == call_span
+        {
+            self.ordered_initializers.insert(owner, body);
+        }
+        match OriginalInitializer::collect(item, owner, source_identity) {
+            Ok(initializer) => {
+                if matches!(
+                    item,
+                    TopLevelItemView::Owned {
+                        item: ModuleItem::Stmt(Stmt::Decl(Decl::Var(_))),
+                        ..
+                    }
+                ) && matches!(
+                    initializer.composed_expression(),
+                    Some(ValueExpr::Binding(_))
+                ) && let Some(declaration) = var_decl_of_item(item.as_module_item())
+                    && !declaration.declare
+                    && let [declarator] = declaration.decls.as_slice()
+                    && let Pat::Ident(binding) = &declarator.name
+                    && let Some(expression) = declarator.init.as_deref()
+                    && let Some(body) = LocalBody::from_initializer(expression)
+                    && body.root_span() == Some(expression.span())
+                    && self
+                        .initialization_source_identities
+                        .get(&owner)
+                        .is_some_and(|identity| {
+                            identity.matches(owner, &binding.id.to_id(), expression.span())
+                        })
+                {
+                    self.ordered_initializers.insert(owner, body);
+                }
+                self.noninvoking_initializers.insert(owner, initializer);
+            }
+            Err(reason) => self.initialization_coverage_refusals[ordinal] = Some(reason),
+        }
+    }
+
+    /// Records each imported binding of `import` with the summaries and author
+    /// contracts that name it.
+    fn record_import_specifiers(&mut self, import: &ImportDecl, hints: &AnalysisInputs) {
+        let host_operations = &hints.assumptions.reentry_free_operations;
+        let host_async_local_storage = host_operations
+            .contains(&ReentryFreeOperation::AsyncLocalStorageConstruct)
+            && !import.type_only
+            && matches!(&import.phase, ImportPhase::Evaluation)
+            && import.with.is_none()
+            && matches!(
+                import.src.value.as_str(),
+                Some("async_hooks" | "node:async_hooks")
+            );
+        for specifier in &import.specifiers {
+            let local = specifier.local();
+            self.imported_bindings.insert(local.to_id());
+            if host_async_local_storage
+                && let ImportSpecifier::Named(named) = specifier
+                && !named.is_type_only
+                && binding_targets::imported_export_name(named) == "AsyncLocalStorage"
+            {
+                self.host_async_local_storage_imports.insert(local.to_id());
+            }
+            if let Some(record) = hints
+                .imported_callables
+                .get(local.sym.as_ref())
+                .and_then(|summary| summary.returned_record.as_ref())
+            {
+                self.returned_record_summaries
+                    .insert(local.to_id(), record.clone());
+            }
+            if let Some(wrapper) = hints
+                .imported_callables
+                .get(local.sym.as_ref())
+                .and_then(|summary| summary.namespace_wrapper.as_ref())
+            {
+                self.namespace_wrapper_summaries
+                    .insert(local.to_id(), wrapper.clone());
+            }
+            // A narrower summary or an author contract keeps its own
+            // consumer and use reports; the derived summary fills in
+            // only where nothing else describes the call.
+            if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
+                && let Some(call) = summary.foreign_call.as_ref()
+                && summary.returned_record.is_none()
+                && summary.namespace_wrapper.is_none()
+                && summary.descriptor_copy_factory.is_none()
+                && !hints
+                    .assumptions
+                    .names_imported_callable(local.sym.as_ref())
+            {
+                if summary.supports_callback_factory() {
+                    // An author-asserted factory keeps its contract's
+                    // consumers alone.
+                    if summary.callback_factory_evidence().iter().all(|evidence| {
+                        matches!(
+                            evidence,
+                            crate::analysis_inputs::CallbackFactoryEvidence::InferredImmutableWrapper { .. }
+                        )
+                    }) {
+                        self
+                            .callback_factory_call_summaries
+                            .insert(local.to_id(), call.clone());
+                    }
+                } else {
+                    self.foreign_call_imports
+                        .insert(local.to_id(), call.clone());
+                }
+            }
+            if let Some(summary) = hints.imported_callables.get(local.sym.as_ref())
+                && summary.supports_callback_factory()
+            {
+                self.callback_factory_imports.insert(local.to_id());
+                self.callback_factory_summaries
+                    .insert(local.to_id(), summary.clone());
+            }
+            if let Some(summary) = hints
+                .imported_callables
+                .get(local.sym.as_ref())
+                .and_then(|summary| summary.descriptor_copy_factory.as_ref())
+            {
+                self.descriptor_copy_factories
+                    .insert(local.to_id(), summary.clone());
+            }
+            if hints
+                .assumptions
+                .inline_callback_factories
+                .contains(local.sym.as_ref())
+            {
+                self.inline_callback_factory_imports.insert(local.to_id());
+            }
+            if hints
+                .assumptions
+                .no_reentry_exports
+                .contains(local.sym.as_ref())
+            {
+                self.no_reentry_exports.insert(local.to_id());
+            }
+            if let Some(signatures) = hints
+                .assumptions
+                .no_reentry_callback_exports
+                .get(local.sym.as_ref())
+            {
+                self.no_reentry_callback_imports
+                    .insert(local.to_id(), signatures.clone());
+            }
+            if let Some(signatures) = hints
+                .assumptions
+                .retained_callback_factories
+                .get(local.sym.as_ref())
+            {
+                self.retained_callback_factory_imports
+                    .insert(local.to_id(), signatures.clone());
+            }
+            if let Some(signatures) = hints
+                .assumptions
+                .retained_callback_constructors
+                .get(local.sym.as_ref())
+            {
+                self.retained_callback_constructor_imports
+                    .insert(local.to_id(), signatures.clone());
+            }
+            if let Some(members) = hints
+                .assumptions
+                .retained_callback_factory_members
+                .get(local.sym.as_ref())
+            {
+                self.retained_callback_factory_members
+                    .insert(local.to_id(), members.clone());
+                self.audited_factory_members
+                    .entry(local.to_id())
+                    .or_default()
+                    .extend(members.keys().cloned());
+            }
+            if let Some(members) = hints
+                .assumptions
+                .callback_factory_members
+                .get(local.sym.as_ref())
+            {
+                self.callback_factory_members
+                    .insert(local.to_id(), members.clone());
+                self.audited_factory_members
+                    .entry(local.to_id())
+                    .or_default()
+                    .extend(members.iter().cloned());
+            }
+            if let Some(members) = hints.assumptions.no_reentry_members.get(local.sym.as_ref()) {
+                self.no_reentry_members
+                    .insert(local.to_id(), members.clone());
+            }
+            if let Some(members) = hints
+                .assumptions
+                .no_reentry_record_members
+                .get(local.sym.as_ref())
+            {
+                self.no_reentry_record_members
+                    .insert(local.to_id(), members.clone());
             }
         }
-        let owned_namespace_assignments = index
-            .top_assignments
-            .iter()
-            .flatten()
-            .chain(
-                index
-                    .callables
-                    .values()
-                    .flat_map(|callable| callable.local_assignments.iter()),
-            )
-            .cloned()
-            .collect::<Vec<_>>();
-        let namespace_assignments = owned_namespace_assignments.iter().collect::<Vec<_>>();
-        let namespace_value_facts = NamespaceValueFacts::from_assignments(
-            index.class_values.clone(),
-            fresh_steps
-                .iter()
-                .filter_map(|step| match step {
-                    Some(FreshValueStep::Literal { span, .. }) => Some(*span),
-                    _ => None,
-                })
-                .collect(),
-            &namespace_assignments,
-        );
+    }
+
+    /// Closes receiver flow, validates value inputs and resolves the native
+    /// write census. Returns the mutated intrinsic roots.
+    fn census_native_writes(
+        &mut self,
+        body: &[TopLevelItemView<'_>],
+        hints: &AnalysisInputs,
+        flow: Option<&ChunkValueFlow>,
+        namespace_assignments: &[&(Id, ValueExpr)],
+    ) -> IntrinsicRoots {
         // Track aliases to native and explicitly captured ordinary values in
         // one receiver domain. The first pass is source-only and is used to
         // reject recognized contradictions before any author input is seeded.
-        let declared = index.declared_bindings();
+        let declared = self.declared_bindings();
         for (callee, summary) in &hints.imported_callables {
             if summary.may_read_importer_cells.is_empty() {
                 continue;
             }
-            let Some(binding) = index
+            let Some(binding) = self
                 .imported_bindings
                 .iter()
                 .find(|id| id.0.as_ref() == callee.as_str())
             else {
                 continue;
             };
-            let cells = index
+            let cells = self
                 .exported_bindings
                 .iter()
                 .filter(|id| summary.may_read_importer_cells.contains(id.0.as_ref()))
                 .cloned()
                 .collect();
-            index.importer_cell_reads.insert(binding.clone(), cells);
+            self.importer_cell_reads.insert(binding.clone(), cells);
         }
-        if index.census_globals.predefined != spec::PredefinedGlobals::Unknown {
-            index.census_globals.bundle =
-                index.bundle_globals(&hints.assumptions.bundle_globals, &declared);
+        if self.census_globals.predefined != spec::PredefinedGlobals::Unknown {
+            self.census_globals.bundle =
+                self.bundle_globals(&hints.assumptions.bundle_globals, &declared);
         }
         let raw_intrinsic_aliases =
-            close_raw_intrinsic_aliases(&namespace_assignments, &index.census_globals, &declared);
-        index.validate_value_inputs(
+            close_raw_intrinsic_aliases(namespace_assignments, &self.census_globals, &declared);
+        self.validate_value_inputs(
             &hints.selected_value_inputs,
             &hints.assumptions.captured_value_inputs,
             &raw_intrinsic_aliases,
             &declared,
         );
-        index.validate_captured_callable_returns(
-            &namespace_assignments,
+        self.validate_captured_callable_returns(
+            namespace_assignments,
             flow,
             &raw_intrinsic_aliases,
         );
-        let (callable_return_inputs, intrinsic_aliases) = if index.resolved_value_inputs.is_empty()
-        {
+        let (callable_return_inputs, intrinsic_aliases) = if self.resolved_value_inputs.is_empty() {
             (
                 CallableReturnInputs::default(),
                 raw_intrinsic_aliases.clone(),
             )
         } else {
             let receiver_closure =
-                close_receiver_flow(&index, &namespace_assignments, flow, &raw_intrinsic_aliases);
+                close_receiver_flow(&*self, namespace_assignments, flow, &raw_intrinsic_aliases);
             (receiver_closure.callable_returns, receiver_closure.bindings)
         };
         let mut mutated_intrinsics = IntrinsicRoots::new();
         let mut unconditional_witnesses = Vec::new();
         let mut binding_write_sites = BTreeSet::new();
-        for (owner, assignments) in index
+        for (owner, assignments) in self
             .top_assignments
             .iter()
             .enumerate()
             .map(|(owner, values)| (SourceUnitOrdinal(owner), values))
             .chain(
-                index
-                    .callables
+                self.callables
                     .values()
                     .map(|callable| (callable.owner, &callable.local_assignments)),
             )
@@ -7093,12 +5740,12 @@ impl ExecutionIndex {
                 // Rebinding an unshadowed global-object alias
                 // (`globalThis = other`) leaves every write through that name,
                 // earlier or later, on an unknown receiver.
-                let root = index
+                let root = self
                     .census_globals
                     .binding_root(id.0.as_ref())
                     .filter(|root| {
                         *root != NativeIntrinsic::GlobalObject
-                            || index.census_globals.contains(id.0.as_ref())
+                            || self.census_globals.contains(id.0.as_ref())
                     });
                 if root == Some(NativeIntrinsic::GlobalObject) {
                     mutated_intrinsics.insert(NativeIntrinsic::GlobalObject);
@@ -7120,7 +5767,7 @@ impl ExecutionIndex {
                                 receiver: NativeReceiverPath::Unknown,
                                 key: NativePropertyKey::Unknown,
                             }])
-                        } else if index.property_key_declarations.contains(id) {
+                        } else if self.property_key_declarations.contains(id) {
                             BTreeSet::new()
                         } else {
                             BTreeSet::from([NativeWriteSlot {
@@ -7138,19 +5785,19 @@ impl ExecutionIndex {
                 }
             }
         }
-        if !index.dynamic_scope_owners.is_empty() {
+        if !self.dynamic_scope_owners.is_empty() {
             mutated_intrinsics.insert(NativeIntrinsic::GlobalObject);
         }
-        index.native_write_census.unconditional = mutated_intrinsics;
-        index.native_write_census.witnesses = Arc::new(unconditional_witnesses);
-        for write in &index.intrinsic_writes {
+        self.native_write_census.unconditional = mutated_intrinsics;
+        self.native_write_census.witnesses = Arc::new(unconditional_witnesses);
+        for write in &self.intrinsic_writes {
             // Slot evidence is source-only: author-conditioned receiver
             // refinements may narrow family roots, but cannot certify that
             // their own native-operation premise was not contradicted.
             let source_roots = intrinsic_roots(
                 &write.receiver,
                 &raw_intrinsic_aliases,
-                &index.census_globals,
+                &self.census_globals,
                 &declared,
                 &BTreeMap::new(),
                 &CallableReturnInputs::default(),
@@ -7158,11 +5805,11 @@ impl ExecutionIndex {
             let key_evidence = write
                 .key
                 .as_ref()
-                .map(|key| property_key_evidence(key, &index.property_key_assignments, &declared));
+                .map(|key| property_key_evidence(key, &self.property_key_assignments, &declared));
             let additional_key_evidence: Vec<_> = write
                 .additional_keys
                 .iter()
-                .map(|key| property_key_evidence(key, &index.property_key_assignments, &declared))
+                .map(|key| property_key_evidence(key, &self.property_key_assignments, &declared))
                 .collect();
             let mut target_slots = native_write_slots(
                 &source_roots,
@@ -7178,22 +5825,21 @@ impl ExecutionIndex {
             let receiver_roots = intrinsic_roots(
                 &write.receiver,
                 &intrinsic_aliases,
-                &index.census_globals,
+                &self.census_globals,
                 &declared,
-                &index.ordinary_input_refs,
+                &self.ordinary_input_refs,
                 &callable_return_inputs,
             );
             let projection = project_receiver_roots(&receiver_roots, write.owner);
             if projection.bundle_global {
-                index
-                    .native_write_census
+                self.native_write_census
                     .host_behavior
                     .insert(HostBehaviorKey::PredefinedGlobals);
             }
             let input_evidence = projection
                 .value_input_refs
                 .iter()
-                .filter_map(|reference| index.value_input_evidence.get(reference).cloned())
+                .filter_map(|reference| self.value_input_evidence.get(reference).cloned())
                 .collect();
             let roots = projection.effective_roots.clone();
             let witness = NativeMutationWitness {
@@ -7209,7 +5855,7 @@ impl ExecutionIndex {
                 receiver_global: receiver_global_property(
                     &write.receiver,
                     &intrinsic_aliases,
-                    &index.census_globals,
+                    &self.census_globals,
                     &declared,
                 ),
                 affected_roots: projection.affected_roots,
@@ -7251,10 +5897,9 @@ impl ExecutionIndex {
             };
             let Some(_) = &write.key else {
                 if !witness.affected_roots.is_empty() || !witness.value_input_refs.is_empty() {
-                    Arc::make_mut(&mut index.native_write_census.witnesses).push(witness);
+                    Arc::make_mut(&mut self.native_write_census.witnesses).push(witness);
                 }
-                index
-                    .native_write_census
+                self.native_write_census
                     .unconditional
                     .extend(native_mutation_roots(roots));
                 continue;
@@ -7270,7 +5915,7 @@ impl ExecutionIndex {
                 match &evidence.domain {
                     PropertyKeyDomain::FiniteStrings(keys) => {
                         for key in keys {
-                            refined.extend(index.census_globals.binding_root(key));
+                            refined.extend(self.census_globals.binding_root(key));
                         }
                     }
                     PropertyKeyDomain::Affixed { prefix, suffix } => {
@@ -7279,11 +5924,10 @@ impl ExecutionIndex {
                             suffix: suffix.clone(),
                         };
                         refined.extend(
-                            index
-                                .census_globals
+                            self.census_globals
                                 .binding_names()
                                 .filter(|name| key.may_be_string(name))
-                                .filter_map(|name| index.census_globals.binding_root(name)),
+                                .filter_map(|name| self.census_globals.binding_root(name)),
                         );
                     }
                     PropertyKeyDomain::Symbol | PropertyKeyDomain::SymbolIterator => {}
@@ -7292,8 +5936,7 @@ impl ExecutionIndex {
                     }
                 }
             }
-            index
-                .native_write_census
+            self.native_write_census
                 .conditional
                 .push(ConditionalIntrinsicWrite {
                     witness,
@@ -7302,17 +5945,16 @@ impl ExecutionIndex {
                     dependencies: evidence.dependencies,
                 });
         }
-        index.native_write_census.prototype_mutations =
-            Arc::new(index.collect_prototype_mutations(
-                &raw_intrinsic_aliases,
-                &namespace_assignments,
-                &declared,
-            ));
-        let proofs = index.native_branch_proofs(&hints.imported_callables);
-        for (write, proof) in index.native_write_census.conditional.iter_mut().zip(proofs) {
+        self.native_write_census.prototype_mutations = Arc::new(self.collect_prototype_mutations(
+            &raw_intrinsic_aliases,
+            namespace_assignments,
+            &declared,
+        ));
+        let proofs = self.native_branch_proofs(&hints.imported_callables);
+        for (write, proof) in self.native_write_census.conditional.iter_mut().zip(proofs) {
             write.witness.unreachable_branch = proof;
         }
-        let mut censuses = vec![&index.native_write_census];
+        let mut censuses = vec![&self.native_write_census];
         let external = NativeWriteCensus {
             host_behavior: hints
                 .native_integrity
@@ -7338,25 +5980,34 @@ impl ExecutionIndex {
         };
         censuses.push(&external);
         let mutated_intrinsics = if let Some(integrity) = &hints.native_integrity {
-            index.native_integrity_witnesses = integrity.witnesses.clone();
-            index.native_prototype_mutations = integrity.prototype_mutations.clone();
-            index.never_written = integrity.never_written.clone();
-            index.never_written_overrode = !integrity.never_written_overrides.is_empty();
+            self.native_integrity_witnesses = integrity.witnesses.clone();
+            self.native_prototype_mutations = integrity.prototype_mutations.clone();
+            self.never_written = integrity.never_written.clone();
+            self.never_written_overrode = !integrity.never_written_overrides.is_empty();
             let mut mutated = resolve_native_integrity_roots(&censuses);
             mutated.retain(|root| !integrity.never_written.contains(root));
             mutated
         } else {
             let integrity = resolve_native_integrity(censuses);
-            index.native_integrity_host_behavior = integrity.consumed_host_behavior;
-            index.native_integrity_witnesses = integrity.witnesses;
-            index.native_prototype_mutations = integrity.prototype_mutations;
+            self.native_integrity_host_behavior = integrity.consumed_host_behavior;
+            self.native_integrity_witnesses = integrity.witnesses;
+            self.native_prototype_mutations = integrity.prototype_mutations;
             integrity.mutated
         };
-        index.mutated_intrinsic_roots = mutated_intrinsics.clone();
-        index.populate_native_point_effects(&external);
+        self.mutated_intrinsic_roots = mutated_intrinsics.clone();
+        self.populate_native_point_effects(&external);
+        mutated_intrinsics
+    }
+
+    /// Fresh-error write sites whose every write is a certified claim.
+    fn certified_fresh_error_sites(
+        &self,
+        flow: Option<&ChunkValueFlow>,
+        mutated_intrinsics: &IntrinsicRoots,
+    ) -> BTreeMap<FreshErrorWriteSite, usize> {
         let mut claim_counts = BTreeMap::<FreshErrorWriteSite, usize>::new();
-        if !index.fresh_error_claims.is_empty()
-            && !index.audited_factory_members.is_empty()
+        if !self.fresh_error_claims.is_empty()
+            && !self.audited_factory_members.is_empty()
             && flow.is_some()
         {
             // A11 supplies the standard Error allocation/prototype behavior. Reject
@@ -7365,10 +6016,10 @@ impl ExecutionIndex {
             let intrinsic_mutated = mutated_intrinsics.contains(&NativeIntrinsic::Error)
                 || mutated_intrinsics.contains(&NativeIntrinsic::GlobalObject);
             if !intrinsic_mutated
-                && index.dynamic_scope_owners.is_empty()
+                && self.dynamic_scope_owners.is_empty()
                 && let Some(flow) = flow
             {
-                for claim in &index.fresh_error_claims {
+                for claim in &self.fresh_error_claims {
                     if !flow.is_declared(&claim.callee)
                         && claim
                             .local_read
@@ -7396,14 +6047,26 @@ impl ExecutionIndex {
                     }
                 }
             };
-            for (owner, writes) in index.top_callback_result_writes.iter().enumerate() {
+            for (owner, writes) in self.top_callback_result_writes.iter().enumerate() {
                 count_writes(SourceUnitOrdinal(owner), None, writes);
             }
-            for (key, callable) in &index.callables {
+            for (key, callable) in &self.callables {
                 count_writes(callable.owner, Some(*key), &callable.callback_result_writes);
             }
             claim_counts.retain(|site, count| write_counts.get(site) == Some(count));
         }
+        claim_counts
+    }
+
+    /// Rejects audited factory, no-reentry and record members until closure and
+    /// keeps the rejection witnesses.
+    fn close_namespace_family(
+        &mut self,
+        namespace_assignments: &[&(Id, ValueExpr)],
+        namespace_value_facts: &NamespaceValueFacts,
+        fresh_steps: &[Option<FreshValueStep>],
+        claim_counts: &BTreeMap<FreshErrorWriteSite, usize>,
+    ) {
         let certified = |owner, callable, receiver: &Id, property: &str| {
             claim_counts.contains_key(&FreshErrorWriteSite {
                 owner,
@@ -7418,9 +6081,9 @@ impl ExecutionIndex {
         // callback invoker before the apparent factory call.
         // Total source privacy proves that this family cannot reach any unrelated
         // Unknown/This slot. It grants no execution or callback timing effects.
-        let private_namespace_family = !index.namespace_privacy.members.is_empty()
-            && !index.namespace_privacy.invalid
-            && index.dynamic_scope_owners.is_empty();
+        let private_namespace_family = !self.namespace_privacy.members.is_empty()
+            && !self.namespace_privacy.invalid
+            && self.dynamic_scope_owners.is_empty();
         let namespace_member_write_witnesses =
             RefCell::new(BTreeMap::<(Id, String), CallbackFactoryWriteWitness>::new());
         let namespace_dynamic_property_write_witnesses =
@@ -7431,13 +6094,12 @@ impl ExecutionIndex {
             if private_namespace_family {
                 return true;
             }
-            let aliases =
-                infer_namespace_aliases(id, &namespace_assignments, &namespace_value_facts);
+            let aliases = infer_namespace_aliases(id, namespace_assignments, namespace_value_facts);
             let receiver_aliases = infer_mutation_receiver_aliases(
                 id,
-                &namespace_assignments,
+                namespace_assignments,
                 &aliases,
-                &namespace_value_facts,
+                namespace_value_facts,
             );
             let is_namespace_or_alias = |binding: &Id| binding == id || aliases.contains(binding);
             let is_mutation_receiver = |receiver: &ValueExpr| {
@@ -7445,12 +6107,12 @@ impl ExecutionIndex {
                     id,
                     &aliases,
                     &receiver_aliases,
-                    &namespace_value_facts,
+                    namespace_value_facts,
                 )
             };
             // Keep the original conservative admission predicate independent
             // of diagnostic witness extraction below.
-            let top_member_write_rejected = index
+            let top_member_write_rejected = self
                 .top_property_writes
                 .iter()
                 .enumerate()
@@ -7473,7 +6135,7 @@ impl ExecutionIndex {
                                 || receiver_aliases.contains(receiver))
                     })
                 });
-            let top_member_write_witness = index
+            let top_member_write_witness = self
                 .top_property_writes
                 .iter()
                 .enumerate()
@@ -7507,13 +6169,13 @@ impl ExecutionIndex {
                         .or_insert_with(|| witness.clone());
                 }
             }
-            let destructuring_write = index.destructuring_member_writes.iter().any(|write| {
+            let destructuring_write = self.destructuring_member_writes.iter().any(|write| {
                 is_mutation_receiver(&write.receiver)
                     || write
                         .source
-                        .may_publish_namespace(id, &aliases, &namespace_value_facts)
+                        .may_publish_namespace(id, &aliases, namespace_value_facts)
             });
-            let top_dynamic_write = index
+            let top_dynamic_write = self
                 .top_dynamic_property_receivers
                 .iter()
                 .flatten()
@@ -7521,7 +6183,7 @@ impl ExecutionIndex {
             // This is a diagnostic for the already rejected guard, not an
             // admission rule. Only a concrete binding receiver supplies an
             // attributable source witness; opaque receiver shapes stay unknown.
-            let dynamic_write_witness = index
+            let dynamic_write_witness = self
                 .top_property_writes
                 .iter()
                 .enumerate()
@@ -7549,7 +6211,7 @@ impl ExecutionIndex {
                         .or_insert_with(|| witness.clone());
                 }
             }
-            let top_callback_result_write = index
+            let top_callback_result_write = self
                 .top_callback_result_writes
                 .iter()
                 .enumerate()
@@ -7564,9 +6226,9 @@ impl ExecutionIndex {
                         && !certified_callback_write(owner, None, write))
                         || write
                             .value
-                            .may_publish_namespace(id, &aliases, &namespace_value_facts)
+                            .may_publish_namespace(id, &aliases, namespace_value_facts)
                 });
-            let callable_write = index.callables.iter().any(|(key, callable)| {
+            let callable_write = self.callables.iter().any(|(key, callable)| {
                 callable.member_writes.iter().any(|(receiver, property)| {
                     !certified(callable.owner, Some(*key), receiver, property)
                         && ((receiver == id && members.contains(property))
@@ -7579,12 +6241,12 @@ impl ExecutionIndex {
                     || callable.literal_exposures.iter().any(is_namespace_or_alias)
                     || callable.escaped_bindings.iter().any(is_namespace_or_alias)
                     || callable.namespace_escape_values.iter().any(|value| {
-                        value.may_publish_namespace(id, &aliases, &namespace_value_facts)
+                        value.may_publish_namespace(id, &aliases, namespace_value_facts)
                     })
                     || callable.member_value_writes.iter().any(|write| {
                         write
                             .value
-                            .may_publish_namespace(id, &aliases, &namespace_value_facts)
+                            .may_publish_namespace(id, &aliases, namespace_value_facts)
                     })
                     || callable.callback_result_writes.iter().any(|write| {
                         (is_mutation_receiver(&write.receiver)
@@ -7592,7 +6254,7 @@ impl ExecutionIndex {
                             || write.value.may_publish_namespace(
                                 id,
                                 &aliases,
-                                &namespace_value_facts,
+                                namespace_value_facts,
                             )
                     })
                     || callable
@@ -7604,27 +6266,27 @@ impl ExecutionIndex {
                             value.may_publish_namespace_in_factory_result(
                                 id,
                                 &aliases,
-                                &namespace_value_facts,
+                                namespace_value_facts,
                             )
                         })
                     || callable.calls.iter().any(|call| {
                         call.args.iter().any(|value| {
-                            value.may_publish_namespace(id, &aliases, &namespace_value_facts)
+                            value.may_publish_namespace(id, &aliases, namespace_value_facts)
                         })
                     })
             });
-            let top_member_value = index.top_member_value_writes.iter().flatten().any(|write| {
+            let top_member_value = self.top_member_value_writes.iter().flatten().any(|write| {
                 write
                     .value
-                    .may_publish_namespace(id, &aliases, &namespace_value_facts)
+                    .may_publish_namespace(id, &aliases, namespace_value_facts)
             });
-            let top_call_argument = index.top_calls.iter().flatten().any(|call| {
+            let top_call_argument = self.top_calls.iter().flatten().any(|call| {
                 call.args
                     .iter()
-                    .any(|value| value.may_publish_namespace(id, &aliases, &namespace_value_facts))
+                    .any(|value| value.may_publish_namespace(id, &aliases, namespace_value_facts))
             });
             if top_call_argument {
-                let direct = index
+                let direct = self
                     .top_calls
                     .iter()
                     .flatten()
@@ -7632,7 +6294,7 @@ impl ExecutionIndex {
                         call.kind == CallKind::Call
                             && call.caller.is_none()
                             && !call.has_spread
-                            && index.ordinary_top_call_sites.contains(&call.span.into())
+                            && self.ordinary_top_call_sites.contains(&call.span.into())
                     })
                     .flat_map(|call| {
                         call.args
@@ -7661,12 +6323,12 @@ impl ExecutionIndex {
                         .insert(id.clone(), witness);
                 }
             }
-            let exported_value = index
+            let exported_value = self
                 .top_exported_values
                 .iter()
                 .flatten()
-                .any(|value| value.may_publish_namespace(id, &aliases, &namespace_value_facts))
-                || index.exported_bindings.iter().any(is_namespace_or_alias);
+                .any(|value| value.may_publish_namespace(id, &aliases, namespace_value_facts))
+                || self.exported_bindings.iter().any(is_namespace_or_alias);
             !(top_member_write_rejected
                 || destructuring_write
                 || top_dynamic_write
@@ -7676,21 +6338,20 @@ impl ExecutionIndex {
                 || top_call_argument
                 || exported_value)
         };
-        let namespace_family: Vec<_> = index.namespace_privacy.members.keys().cloned().collect();
+        let namespace_family: Vec<_> = self.namespace_privacy.members.keys().cloned().collect();
         let family_audited_members: BTreeSet<_> = if namespace_family.is_empty() {
             BTreeSet::new()
         } else {
-            index
-                .audited_factory_members
+            self.audited_factory_members
                 .values()
-                .chain(index.no_reentry_members.values())
-                .chain(index.no_reentry_record_members.values())
+                .chain(self.no_reentry_members.values())
+                .chain(self.no_reentry_record_members.values())
                 .flat_map(|members| members.iter().cloned())
                 .collect()
         };
-        let factory_imports = index
+        let factory_imports = self
             .callback_factory_imports
-            .union(&index.inline_callback_factory_imports)
+            .union(&self.inline_callback_factory_imports)
             .cloned()
             .collect();
         // Candidate rejection grows to closure. No provisional admission is
@@ -7764,13 +6425,8 @@ impl ExecutionIndex {
             }
         }
         let derive_fresh = |legacy: &Members| {
-            if index.dynamic_scope_owners.is_empty() {
-                fresh_value_writes(
-                    &fresh_steps,
-                    &namespace_value_facts,
-                    &factory_imports,
-                    legacy,
-                )
+            if self.dynamic_scope_owners.is_empty() {
+                fresh_value_writes(fresh_steps, namespace_value_facts, &factory_imports, legacy)
             } else {
                 (BTreeSet::new(), BTreeSet::new())
             }
@@ -7787,41 +6443,42 @@ impl ExecutionIndex {
                 }
             };
         let completed = IterativeInference::new(NamespaceRules {
-            factories: &index.audited_factory_members,
-            legacy: &index.callback_factory_members,
-            no_reentry: &index.no_reentry_members,
-            records: &index.no_reentry_record_members,
-            independent: &index.namespace_privacy.members,
+            factories: &self.audited_factory_members,
+            legacy: &self.callback_factory_members,
+            no_reentry: &self.no_reentry_members,
+            records: &self.no_reentry_record_members,
+            independent: &self.namespace_privacy.members,
             fresh: &derive_fresh,
             keep: &keep_audited,
         })
         .solve([()]);
-        let retained_legacy: Members = index
+        let retained_legacy: Members = self
             .callback_factory_members
             .iter()
             .filter(|(id, _)| completed.get(&Rejected::Factory((*id).clone())).is_none())
             .map(|(id, members)| (id.clone(), members.clone()))
             .collect();
         let (_, instance_field_writes) = derive_fresh(&retained_legacy);
-        index.fresh_instance_field_writes = instance_field_writes;
-        index
-            .audited_factory_members
+        self.fresh_instance_field_writes = instance_field_writes;
+        self.audited_factory_members
             .retain(|id, _| completed.get(&Rejected::Factory(id.clone())).is_none());
-        index.callback_factory_members = retained_legacy;
-        index
-            .no_reentry_members
+        self.callback_factory_members = retained_legacy;
+        self.no_reentry_members
             .retain(|id, _| completed.get(&Rejected::NoReentry(id.clone())).is_none());
-        index.no_reentry_record_members.retain(|id, _| {
+        self.no_reentry_record_members.retain(|id, _| {
             completed
                 .get(&Rejected::NoReentryRecord(id.clone()))
                 .is_none()
         });
-        index.rejected_namespace_member_writes = namespace_member_write_witnesses.into_inner();
-        index.rejected_namespace_dynamic_property_writes =
+        self.rejected_namespace_member_writes = namespace_member_write_witnesses.into_inner();
+        self.rejected_namespace_dynamic_property_writes =
             namespace_dynamic_property_write_witnesses.into_inner();
-        index.rejected_namespace_call_arguments = namespace_call_argument_witnesses.into_inner();
-        if index.deferred_global_requested {
-            let first_publication = index
+        self.rejected_namespace_call_arguments = namespace_call_argument_witnesses.into_inner();
+    }
+
+    fn admit_deferred_global_publications(&mut self, hints: &AnalysisInputs) {
+        if self.deferred_global_requested {
+            let first_publication = self
                 .deferred_global_candidates
                 .iter()
                 .position(|candidate| {
@@ -7841,7 +6498,7 @@ impl ExecutionIndex {
                 .values()
                 .flat_map(|slots| slots.iter().cloned())
                 .collect();
-            let certified_root_ids: BTreeSet<Id> = index
+            let certified_root_ids: BTreeSet<Id> = self
                 .deferred_global_candidates
                 .iter()
                 .flatten()
@@ -7850,7 +6507,7 @@ impl ExecutionIndex {
                         BuiltinGlobalRoot::GlobalThis => "globalThis",
                         BuiltinGlobalRoot::Window => "window",
                     };
-                    index.global_object_names.contains(name)
+                    self.global_object_names.contains(name)
                         && hints
                             .assumptions
                             .deferred_global_publications
@@ -7860,45 +6517,51 @@ impl ExecutionIndex {
                 .map(|candidate| candidate.receiver_id.clone())
                 .collect();
             let global_root_exposed =
-                index.global_receiver_exposed(first_publication, &protected, &certified_root_ids);
-            if index.dynamic_scope_owners.is_empty()
-                && !index.dynamic_global_member
-                && !index.global_alias_written
+                self.global_receiver_exposed(first_publication, &protected, &certified_root_ids);
+            if self.dynamic_scope_owners.is_empty()
+                && !self.dynamic_global_member
+                && !self.global_alias_written
                 && !global_root_exposed
             {
-                for (owner, candidate) in index.deferred_global_candidates.iter().enumerate() {
+                for (owner, candidate) in self.deferred_global_candidates.iter().enumerate() {
                     let Some(candidate) = candidate else { continue };
                     let root_name = match candidate.root {
                         BuiltinGlobalRoot::GlobalThis => "globalThis",
                         BuiltinGlobalRoot::Window => "window",
                     };
-                    if !index.global_object_names.contains(root_name)
+                    if !self.global_object_names.contains(root_name)
                         || !hints
                             .assumptions
                             .deferred_global_publications
                             .get(&candidate.root)
                             .is_some_and(|slots| slots.contains(&candidate.property))
-                        || index.global_slot_mentions.get(&candidate.property) != Some(&1)
+                        || self.global_slot_mentions.get(&candidate.property) != Some(&1)
                         || candidate.property == "__proto__"
-                        || !index.top_calls[owner].is_empty()
-                        || index.top_property_writes[owner].len() != 1
-                        || index.top_member_value_writes[owner].len() != 1
-                        || index.top_callback_result_writes[owner].len() != 1
+                        || !self.top_calls[owner].is_empty()
+                        || self.top_property_writes[owner].len() != 1
+                        || self.top_member_value_writes[owner].len() != 1
+                        || self.top_callback_result_writes[owner].len() != 1
                     {
                         continue;
                     }
-                    index
-                        .deferred_global_certificates
+                    self.deferred_global_certificates
                         .insert(SourceUnitOrdinal(owner));
                 }
             }
         }
+    }
+
+    fn admit_non_reentrant_global_membership(
+        &mut self,
+        body: &[TopLevelItemView<'_>],
+        hints: &AnalysisInputs,
+    ) {
         if !hints.assumptions.non_reentrant_global_membership.is_empty() {
             let mut bindings = GlobalMembershipBindings::default();
             for item in body {
                 item.as_module_item().visit_with(&mut bindings);
             }
-            index.global_membership_candidates.retain(|_, probe| {
+            self.global_membership_candidates.retain(|_, probe| {
                 !bindings.0.contains(&probe.receiver)
                     && hints
                         .assumptions
@@ -7906,7 +6569,7 @@ impl ExecutionIndex {
                         .get(&probe.root)
                         .is_some_and(|keys| keys.contains(&probe.property))
             });
-            let first_probe = index
+            let first_probe = self
                 .global_membership_candidates
                 .values()
                 .map(|probe| probe.owner)
@@ -7918,25 +6581,24 @@ impl ExecutionIndex {
                 .values()
                 .flat_map(|keys| keys.iter().cloned())
                 .collect();
-            let roots = index
+            let roots = self
                 .global_membership_candidates
                 .values()
                 .map(|probe| probe.receiver.clone())
                 .collect();
-            let prototype_write = index
+            let prototype_write = self
                 .top_callback_result_writes
                 .iter()
                 .flatten()
                 .chain(
-                    index
-                        .callables
+                    self.callables
                         .values()
                         .flat_map(|callable| &callable.callback_result_writes),
                 )
                 .any(|write| {
                     let path = global_mutation_path(
                         &write.receiver,
-                        &index.global_object_names,
+                        &self.global_object_names,
                         &bindings.0,
                     );
                     // A visible stored back-alias defeats the descendant
@@ -7945,7 +6607,7 @@ impl ExecutionIndex {
                     // not themselves expose or mutate a global-rooted path.
                     if stored_global_alias(
                         &write.value,
-                        &index.global_object_names,
+                        &self.global_object_names,
                         &bindings.0,
                         path != GlobalMutationPath::Unrelated,
                     ) {
@@ -7954,7 +6616,7 @@ impl ExecutionIndex {
                     match write.property.as_deref() {
                         Some("__proto__" | "prototype" | "constructor") => {
                             path != GlobalMutationPath::Unrelated
-                                || global_receiver_path(&write.receiver, &index.global_object_names)
+                                || global_receiver_path(&write.receiver, &self.global_object_names)
                         }
                         None => matches!(
                             path,
@@ -7963,31 +6625,33 @@ impl ExecutionIndex {
                         _ => false,
                     }
                 });
-            if index.dynamic_scope_owners.is_empty()
-                && !index.dynamic_global_member
-                && !index.global_alias_written
+            if self.dynamic_scope_owners.is_empty()
+                && !self.dynamic_global_member
+                && !self.global_alias_written
                 && !prototype_write
-                && !index
+                && !self
                     .mutated_intrinsic_roots
                     .contains(&NativeIntrinsic::Object)
-                && !index.global_receiver_exposed(first_probe, &protected, &roots)
+                && !self.global_receiver_exposed(first_probe, &protected, &roots)
             {
-                index
-                    .non_reentrant_global_membership
-                    .extend(index.global_membership_candidates.keys().copied());
+                self.non_reentrant_global_membership
+                    .extend(self.global_membership_candidates.keys().copied());
             }
         }
-        let primitive_const_candidates = std::mem::take(&mut index.direct_primitive_const_bindings);
-        index.direct_primitive_const_bindings = primitive_const_candidates
+    }
+
+    fn finish_collection(&mut self, hints: &AnalysisInputs) {
+        let primitive_const_candidates = std::mem::take(&mut self.direct_primitive_const_bindings);
+        self.direct_primitive_const_bindings = primitive_const_candidates
             .into_iter()
             .filter(|binding| {
-                if !index.dynamic_scope_owners.is_empty()
-                    || index.reassigned_bindings.contains(binding)
+                if !self.dynamic_scope_owners.is_empty()
+                    || self.reassigned_bindings.contains(binding)
                 {
                     return false;
                 }
                 matches!(
-                    index.binding_declaration_writes.get(binding).map(Vec::as_slice),
+                    self.binding_declaration_writes.get(binding).map(Vec::as_slice),
                     Some([declaration])
                         if declaration.direct_top_level && declaration.simple_identifier
                 )
@@ -7996,13 +6660,13 @@ impl ExecutionIndex {
         // Native-operation inputs annotate exact source sites without
         // refining the native census. Array-protocol contradictions are
         // checked later against the completed all-source census.
-        index.validate_native_operation_inputs(
+        self.validate_native_operation_inputs(
             &hints.selected_native_operation_inputs,
             &hints.assumptions.native_operation_inputs,
         );
-        index.ident_references.sort_unstable();
-        index.ident_references.dedup();
-        index.this_reading_accessor_objects = index
+        self.ident_references.sort_unstable();
+        self.ident_references.dedup();
+        self.this_reading_accessor_objects = self
             .callable_creations
             .values()
             .filter_map(|creation| match *creation {
@@ -8013,17 +6677,16 @@ impl ExecutionIndex {
                 | DeferredCallableCreation::Setter {
                     callable,
                     home_object,
-                } => index.reads_this(callable).then_some(home_object),
+                } => self.reads_this(callable).then_some(home_object),
                 _ => None,
             })
             .collect();
-        index.this_reading_accessor_classes = index
+        self.this_reading_accessor_classes = self
             .class_accessors
             .iter()
-            .filter(|(_, accessors)| accessors.iter().any(|accessor| index.reads_this(*accessor)))
+            .filter(|(_, accessors)| accessors.iter().any(|accessor| self.reads_this(*accessor)))
             .map(|(class, _)| *class)
             .collect();
-        index
     }
 
     /// Whether `callable`, or an arrow or other callable nested in it, reads
@@ -8090,7 +6753,7 @@ impl ExecutionIndex {
                         && write.direct_top_level
                         && write
                             .initializer_span
-                            .is_some_and(|span| span.lo <= call.span.lo && call.span.hi <= span.hi)
+                            .is_some_and(|span| span.contains(call.span))
                 })
     }
 
@@ -8426,495 +7089,6 @@ impl ExecutionIndex {
                 }
             }
             _ => {}
-        }
-    }
-
-    fn with_callable(&mut self, span: Span, params: Vec<Parameter>, visit: impl FnOnce(&mut Self)) {
-        let key = span.lo.0;
-        self.callable_spans.insert(key, span);
-        let created_after_parent_await = self
-            .current
-            .and_then(|parent| self.callables.get(&parent))
-            .is_some_and(|parent| parent.created_after_parent_await)
-            || (self.past_await && !self.hoisted_nested_functions.contains(&key));
-        let saved_current = self.current.replace(key);
-        let saved_variable_scope = self.variable_scope.replace(key);
-        let saved_await = std::mem::replace(&mut self.past_await, false);
-        let saved_may_skip = std::mem::replace(&mut self.may_skip_await_depth, 0);
-        let saved_conditional = std::mem::replace(&mut self.conditional_depth, 0);
-        let saved_assignment_target = std::mem::replace(&mut self.assignment_target, false);
-        let opaque_params = params.iter().any(|param| param.binding.is_none());
-        self.callables.entry(key).or_insert_with(|| Callable {
-            owner: self.owner,
-            created_after_parent_await,
-            params,
-            opaque: opaque_params,
-            ..Callable::default()
-        });
-        self.prototype_capture_stack.push(key);
-        visit(self);
-        self.prototype_capture_stack.pop();
-        let callable = self.callables.get_mut(&key).unwrap();
-        if let Some(body) = callable.body_facts.take_ordered_plan()
-            // Defaults run outside the body var environment. Use the full
-            // declaration census, including dead/nested var declarations.
-            && ((callable.hoisted_vars.is_empty() && callable.local_functions.is_empty())
-                || body.parameters.iter().all(|parameter| parameter.default.is_none()))
-        {
-            callable.body_facts.set_ordered_plan(Some(
-                body.with_declarations(
-                    callable.hoisted_vars.iter().cloned(),
-                    callable
-                        .lexical_declarations
-                        .iter()
-                        .map(|(binding, kind)| (binding.clone(), *kind))
-                        .chain(callable.local_functions.iter().map(|(binding, function)| {
-                            (binding.clone(), LocalBinding::HoistedFunction(*function))
-                        })),
-                ),
-            ));
-        }
-        self.current = saved_current;
-        self.variable_scope = saved_variable_scope;
-        self.past_await = saved_await;
-        self.may_skip_await_depth = saved_may_skip;
-        self.conditional_depth = saved_conditional;
-        self.assignment_target = saved_assignment_target;
-    }
-
-    fn record_call(&mut self, call: Call) {
-        // Native property integrity includes deferred and post-await bodies.
-        let call = Arc::new(call);
-        self.prototype_calls.push(Arc::clone(&call));
-        if matches!(&call.callee, ValueExpr::Binding(id) if id.0.as_ref() == "eval") {
-            self.dynamic_scope_owners.insert(self.owner);
-        }
-        if self.current.is_some() && self.past_await {
-            return;
-        }
-        if self.current.is_none()
-            && (self.conditional_depth > 0 || self.may_skip_member_read_depth > 0)
-            && call.kind == CallKind::LocalMemberRead
-        {
-            self.conditional_top_member_reads.insert(call.span.into());
-        }
-        if let Some(key) = self.current {
-            self.callables.get_mut(&key).unwrap().calls.push(call);
-        } else {
-            self.top_calls[self.owner.0].push(call);
-        }
-    }
-
-    fn record_accessor_callee_lookup(
-        &mut self,
-        member: &MemberExpr,
-        no_reentry_call: Option<CallSite>,
-    ) {
-        if let Some(no_reentry_call) = no_reentry_call {
-            self.no_reentry_accessor_calls
-                .insert(CallSite::from(member.span), no_reentry_call);
-        }
-        self.record_call(Call {
-            kind: CallKind::AccessorCalleeLookup,
-            callee: ValueExpr::Member(
-                Arc::new(ValueExpr::from_expr(&member.obj)),
-                static_prop(&member.prop),
-                MemberKey::of(&member.prop),
-                member.span.into(),
-            ),
-            args: Vec::new(),
-            span: member.span,
-            caller: self.current,
-            owner: self.owner,
-            plain_object_sources: false,
-            no_sync_arguments: false,
-            no_reentry_candidate: false,
-            no_reentry_record_candidate: false,
-            has_spread: false,
-        });
-    }
-
-    fn record_source_protocol(&mut self, kind: CallKind, source: ValueExpr, span: Span) {
-        self.record_call(Call {
-            kind,
-            callee: ValueExpr::Unknown,
-            args: vec![source],
-            span,
-            caller: self.current,
-            owner: self.owner,
-            plain_object_sources: false,
-            no_sync_arguments: false,
-            no_reentry_candidate: false,
-            no_reentry_record_candidate: false,
-            has_spread: false,
-        });
-    }
-
-    fn record_implicit_coercion(&mut self, expression: &Expr, span: Span) {
-        if (self.current.is_some() && self.past_await)
-            || js_ast::has_definite_primitive_result(expression)
-        {
-            return;
-        }
-        self.record_implicit_coercion_value(ValueExpr::from_expr(expression), span);
-    }
-
-    fn record_implicit_coercion_value(&mut self, argument: ValueExpr, span: Span) {
-        if self.current.is_some() && self.past_await {
-            return;
-        }
-        self.record_call(Call {
-            kind: CallKind::ImplicitCoercion,
-            callee: ValueExpr::Unknown,
-            args: vec![argument],
-            span,
-            caller: self.current,
-            owner: self.owner,
-            plain_object_sources: false,
-            no_sync_arguments: false,
-            no_reentry_candidate: false,
-            no_reentry_record_candidate: false,
-            has_spread: false,
-        });
-    }
-
-    fn mark_opaque(&mut self) {
-        if self.current.is_some() && self.past_await {
-            return;
-        }
-        if let Some(key) = self.current {
-            self.callables.get_mut(&key).unwrap().opaque = true;
-        } else {
-            self.opaque_top.insert(self.owner);
-        }
-    }
-
-    fn mark_dynamic_property_effect(&mut self, receiver: Option<&Expr>) {
-        if self.past_await {
-            return;
-        }
-        if let Some(key) = self.current {
-            let callable = self.callables.get_mut(&key).unwrap();
-            callable.dynamic_property_effect = true;
-            callable
-                .dynamic_property_receivers
-                .push(receiver.map_or(ValueExpr::Unknown, ValueExpr::from_expr));
-        } else {
-            self.top_property_writes[self.owner.0].push((None, None));
-            if let Some(receiver) = receiver {
-                self.top_dynamic_property_receivers[self.owner.0]
-                    .push(ValueExpr::from_expr(receiver));
-            }
-        }
-    }
-
-    fn mark_possible_namespace_escape(&mut self, expression: &Expr) {
-        let Some(key) = self.current else {
-            return;
-        };
-        let value = ValueExpr::from_expr(expression);
-        let exposed = self
-            .audited_factory_members
-            .keys()
-            .filter(|id| value.carries_namespace(id, &BTreeSet::new()))
-            .cloned()
-            .collect::<Vec<_>>();
-        let callable = self.callables.get_mut(&key).unwrap();
-        callable.escaped_bindings.extend(exposed);
-        callable.namespace_escape_values.push(value);
-    }
-
-    fn is_factory_member_data_value(&self, key: &PropName, expression: &Expr) -> bool {
-        if object_data_property_name(key).is_none() {
-            return false;
-        }
-        let Expr::Member(member) = expression.unwrap_parens() else {
-            return false;
-        };
-        matches!(member.obj.unwrap_parens(), Expr::Ident(namespace)
-            if self.audited_factory_members.contains_key(&namespace.to_id()))
-            && matches!(member.prop, MemberProp::Ident(_))
-    }
-
-    fn is_callback_factory_member_callee(&self, expression: &Expr) -> bool {
-        let Expr::Member(member) = expression.unwrap_parens() else {
-            return false;
-        };
-        let Expr::Ident(namespace) = member.obj.unwrap_parens() else {
-            return false;
-        };
-        self.audited_factory_members
-            .contains_key(&namespace.to_id())
-            && matches!(member.prop, MemberProp::Ident(_))
-    }
-
-    fn inline_callback_callee(call: &CallExpr) -> Option<&Expr> {
-        if call.args.len() != 1
-            || call.args[0].spread.is_some()
-            || !matches!(
-                call.args[0].expr.unwrap_parens(),
-                Expr::Fn(_) | Expr::Arrow(_)
-            )
-        {
-            return None;
-        }
-        let Callee::Expr(callee) = &call.callee else {
-            return None;
-        };
-        Some(callee.unwrap_parens())
-    }
-
-    fn inline_factory_callback_argument(&self, call: &CallExpr) -> Option<usize> {
-        let is_factory = match Self::inline_callback_callee(call)? {
-            Expr::Ident(callee) => self.callback_factory_imports.contains(&callee.to_id()),
-            Expr::Member(member) => {
-                let (Expr::Ident(namespace), MemberProp::Ident(property)) =
-                    (member.obj.unwrap_parens(), &member.prop)
-                else {
-                    return None;
-                };
-                self.callback_factory_members
-                    .get(&namespace.to_id())
-                    .is_some_and(|members| members.contains(property.sym.as_ref()))
-            }
-            _ => false,
-        };
-        is_factory.then_some(0)
-    }
-
-    fn retained_callback_call(&self, call: &CallExpr) -> Option<RetainedCallbackCall> {
-        let Callee::Expr(callee) = &call.callee else {
-            return None;
-        };
-        let (signatures, namespace_member) = match callee.unwrap_parens() {
-            Expr::Ident(binding) => (
-                self.retained_callback_factory_imports
-                    .get(&binding.to_id())?,
-                None,
-            ),
-            Expr::Member(member) => {
-                let (Expr::Ident(namespace), MemberProp::Ident(property)) =
-                    (member.obj.unwrap_parens(), &member.prop)
-                else {
-                    return None;
-                };
-                (
-                    self.retained_callback_factory_members
-                        .get(&namespace.to_id())?
-                        .get(property.sym.as_ref())?,
-                    Some((namespace.to_id(), property.sym.to_string())),
-                )
-            }
-            _ => return None,
-        };
-        Self::retained_callback_invocation(signatures, &call.args, namespace_member)
-    }
-
-    fn no_reentry_callback_call(&self, call: &CallExpr) -> Option<RetainedCallbackCall> {
-        let imported = if let Callee::Expr(callee) = &call.callee
-            && let Expr::Ident(binding) = callee.unwrap_parens()
-        {
-            self.no_reentry_callback_imports
-                .get(&binding.to_id())
-                .and_then(|signatures| {
-                    Self::retained_callback_invocation(signatures, &call.args, None)
-                })
-        } else {
-            None
-        };
-        imported.or_else(|| self.source_no_reentry_callback_call(call))
-    }
-
-    fn source_no_reentry_callback_call(&self, call: &CallExpr) -> Option<RetainedCallbackCall> {
-        if call.args.iter().any(|argument| argument.spread.is_some()) {
-            return None;
-        }
-        let signature = self
-            .no_reentry_statement_calls
-            .get(&(call.span.lo.0, call.span.hi.0))?;
-        let Callee::Expr(callee) = &call.callee else {
-            return None;
-        };
-        let simple_callee = match callee.unwrap_parens() {
-            Expr::Ident(_) => true,
-            Expr::Member(member) => {
-                matches!(member.obj.unwrap_parens(), Expr::Ident(_))
-                    && matches!(member.prop, MemberProp::Ident(_))
-            }
-            _ => false,
-        };
-        if !simple_callee
-            || signature.callback_arguments.iter().any(|position| {
-                !call.args.get(*position).is_some_and(|argument| {
-                    match argument.expr.unwrap_parens() {
-                        Expr::Ident(_) => true,
-                        Expr::Fn(function) => {
-                            !function.function.is_async && !function.function.is_generator
-                        }
-                        Expr::Arrow(arrow) => !arrow.is_async,
-                        _ => false,
-                    }
-                })
-            })
-        {
-            return None;
-        }
-        let mut invocation =
-            Self::retained_callback_invocation(std::slice::from_ref(signature), &call.args, None)?;
-        invocation.require_single_callback_identity = true;
-        Some(invocation)
-    }
-
-    fn retained_constructor_call(&self, allocation: &NewExpr) -> Option<RetainedCallbackCall> {
-        let Expr::Ident(binding) = allocation.callee.unwrap_parens() else {
-            return None;
-        };
-        Self::retained_callback_invocation(
-            self.retained_callback_constructor_imports
-                .get(&binding.to_id())?,
-            allocation.args.as_deref().unwrap_or_default(),
-            None,
-        )
-    }
-
-    fn retained_callback_invocation(
-        signatures: &[spec::RetainedCallbackSignature],
-        args: &[ExprOrSpread],
-        namespace_member: Option<(Id, String)>,
-    ) -> Option<RetainedCallbackCall> {
-        if args.iter().any(|argument| argument.spread.is_some()) {
-            return None;
-        }
-        let signatures: Vec<_> = signatures
-            .iter()
-            .filter(|signature| {
-                signature.argument_count == args.len()
-                    && signature
-                        .callback_arguments
-                        .iter()
-                        .all(|position| *position < args.len())
-                    && args.iter().enumerate().all(|(position, argument)| {
-                        if signature.callback_arguments.contains(&position) {
-                            matches!(
-                                argument.expr.unwrap_parens(),
-                                Expr::Ident(_) | Expr::Fn(_) | Expr::Arrow(_) | Expr::Call(_)
-                            )
-                        } else {
-                            no_reentry_primitive_argument(&argument.expr)
-                        }
-                    })
-            })
-            .cloned()
-            .collect();
-        let callback_argument_positions: BTreeSet<_> = signatures
-            .iter()
-            .flat_map(|signature| signature.callback_arguments.iter().copied())
-            .collect();
-        let callback_argument_exprs = callback_argument_positions
-            .into_iter()
-            .map(|position| (position, ValueExpr::from_expr(&args[position].expr)))
-            .collect();
-        (!signatures.is_empty()).then_some(RetainedCallbackCall {
-            namespace_member,
-            signatures,
-            argument_count: args.len(),
-            callback_argument_exprs,
-            require_single_callback_identity: false,
-        })
-    }
-
-    fn record_published_source(&mut self, value: &Expr) {
-        let value = ValueExpr::from_expr(value);
-        match self.current {
-            Some(key) => self
-                .callables
-                .get_mut(&key)
-                .unwrap()
-                .published_sources
-                .push(value),
-            None => self
-                .top_published_sources
-                .entry(self.owner)
-                .or_default()
-                .push(value),
-        }
-    }
-
-    /// `arguments` is recorded as unknown: an own `[Symbol.iterator]` write
-    /// to it is not tracked.
-    fn record_iterated_source(&mut self, value: &Expr) {
-        let value = match value.unwrap_parens() {
-            Expr::Ident(ident) if ident.sym == "arguments" => ValueExpr::Unknown,
-            value => ValueExpr::from_expr(value),
-        };
-        self.record_iterated_value(value);
-    }
-
-    fn record_head_iterated_defaults(&mut self, head: &ForHead) {
-        match head {
-            ForHead::VarDecl(declaration) => {
-                for declarator in &declaration.decls {
-                    self.record_iterated_defaults(&declarator.name);
-                }
-            }
-            ForHead::Pat(pattern) => self.record_iterated_defaults(pattern),
-            ForHead::UsingDecl(_) => {}
-        }
-    }
-
-    fn record_iterated_defaults(&mut self, pattern: &Pat) {
-        let mut defaults = Vec::new();
-        iterated_defaults(pattern, &mut defaults);
-        for default in defaults {
-            self.record_iterated_source(default);
-        }
-    }
-
-    fn record_iterated_value(&mut self, value: ValueExpr) {
-        match self.current {
-            Some(key) => self
-                .callables
-                .get_mut(&key)
-                .unwrap()
-                .iterated_sources
-                .push(value),
-            None => self
-                .top_iterated_sources
-                .entry(self.owner)
-                .or_default()
-                .push(value),
-        }
-    }
-
-    fn record_nested_write(&mut self, binding: Id) {
-        for key in &self.prototype_capture_stack {
-            self.nested_callable_writes
-                .entry(*key)
-                .or_default()
-                .insert(binding.clone());
-        }
-    }
-
-    fn record_member_write(&mut self, member: &MemberExpr) {
-        if self.past_await {
-            return;
-        }
-        let receiver = match member.obj.unwrap_parens() {
-            Expr::Ident(object) => Some(object.to_id()),
-            _ => None,
-        };
-        let property = static_prop(&member.prop);
-        match (self.current, receiver, property) {
-            (Some(key), Some(receiver), Some(property)) => self
-                .callables
-                .get_mut(&key)
-                .unwrap()
-                .member_writes
-                .push((receiver, property)),
-            (None, receiver, property) => {
-                self.top_property_writes[self.owner.0].push((receiver, property))
-            }
-            _ => self.mark_dynamic_property_effect(Some(&member.obj)),
         }
     }
 

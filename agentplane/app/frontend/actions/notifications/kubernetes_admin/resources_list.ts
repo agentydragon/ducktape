@@ -1,19 +1,12 @@
-import { z } from "zod";
 import { actionArguments } from "../../presentation";
 
 import type { ActionRequest } from "../../../../../action_service/api/contracts/action_service_pb";
 import type { ActionNotificationParts } from "../types";
 
-const resourcesListNotificationArguments = z.strictObject({
-  apiVersion: z.string().min(1),
-  kind: z.string().min(1),
-  namespace: z.string().min(1).optional(),
-  fieldSelector: z.string().min(1).optional(),
-  labelSelector: z.string().min(1).optional(),
-});
+import { resourcesListArguments } from "../../schemas/kubernetes_admin/arguments";
 
 export function resourcesListNotification(request: ActionRequest): ActionNotificationParts | null {
-  const parsed = resourcesListNotificationArguments.safeParse(actionArguments(request));
+  const parsed = resourcesListArguments.safeParse(actionArguments(request));
   if (!parsed.success) return null;
   const { kind, namespace } = parsed.data;
 

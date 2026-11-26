@@ -7,15 +7,24 @@
   gap: 2px;
 }
 
+/* Give both links the same text metrics and vertical inset. */
+.agentplane-thread-group-links {
+  display: flex;
+  align-items: stretch;
+  font-size: var(--mantine-font-size-xs);
+  line-height: max(16px, 1.5em);
+}
+.agentplane-thread-group-links > * {
+  padding-block: 10px 4px;
+}
+
 .agentplane-thread-list-group-label {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--mantine-font-size-xs);
-  line-height: var(--mantine-line-height-xs);
   font-weight: 700;
   color: var(--mantine-color-dimmed);
-  padding: 10px 8px 4px;
+  padding-inline: 8px;
   overflow: hidden;
 }
 
@@ -42,6 +51,44 @@
 
 .agentplane-thread-list-group-link:hover:not(.current) {
   background: var(--mantine-color-default-hover);
+}
+
+.agentplane-thread-group-links > .agentplane-thread-list-group-label {
+  flex: 1 0 max-content;
+  min-width: 0;
+  max-width: 100%;
+}
+.agentplane-thread-group-links:has(.agentplane-thread-identity-link) > .agentplane-thread-list-group-label {
+  max-width: calc(100% - 24px); /* Keep the 16px fingerprint and its padding available. */
+}
+.agentplane-thread-identity-link {
+  display: inline-flex;
+  align-items: center;
+  min-width: 24px;
+  padding-inline: 4px;
+  text-decoration: none;
+  color: var(--mantine-color-anchor);
+}
+
+/* The name is one unbreakable flex item. When it would wrap below the
+   fingerprint, clip that second line, keeping the icon visible on the first. */
+.agentplane-thread-identity-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: flex-end;
+  column-gap: 4px;
+  height: 1lh;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+.agentplane-thread-identity-content > svg {
+  height: 1lh; /* Reserve the full first line even when the name wraps. */
+}
+.agentplane-thread-identity-content > * {
+  flex: none;
+  white-space: nowrap;
 }
 
 .agentplane-thread-list-state-icon {

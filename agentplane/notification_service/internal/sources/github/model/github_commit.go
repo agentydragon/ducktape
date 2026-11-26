@@ -18,6 +18,15 @@ const (
 	CheckRunCompleted  CheckRunStatus = "completed"
 )
 
+func (s CheckRunStatus) Valid() bool {
+	switch s {
+	case CheckRunQueued, CheckRunWaiting, CheckRunPending, CheckRunRequested, CheckRunInProgress, CheckRunCompleted:
+		return true
+	default:
+		return false
+	}
+}
+
 // IsCheckConclusion reports whether value is a conclusion GitHub gives a completed check run or workflow run.
 func IsCheckConclusion(value string) bool {
 	switch value {
@@ -52,6 +61,15 @@ const (
 	CommitStatusSuccess CommitStatusState = "success"
 )
 
+func (s CommitStatusState) Valid() bool {
+	switch s {
+	case CommitStatusError, CommitStatusFailure, CommitStatusPending, CommitStatusSuccess:
+		return true
+	default:
+		return false
+	}
+}
+
 // CommitStatus is one native commit-status fact, whether first found by a webhook or by subscription repair.
 type CommitStatus struct {
 	RepositoryID int64             `json:"repositoryId"`
@@ -77,9 +95,7 @@ func NormalizeCheckRun(run CheckRun) (CheckRun, error) {
 	if err := model.CheckText("check run details URL", run.DetailsURL, 0, 4096); err != nil {
 		return CheckRun{}, err
 	}
-	switch run.Status {
-	case CheckRunQueued, CheckRunWaiting, CheckRunPending, CheckRunRequested, CheckRunInProgress, CheckRunCompleted:
-	default:
+	if !run.Status.Valid() {
 		return CheckRun{}, model.Invalid("check run status is invalid")
 	}
 	if run.Conclusion != nil {
@@ -115,9 +131,7 @@ func NormalizeCommitStatus(status CommitStatus) (CommitStatus, error) {
 	if err := model.CheckText("commit status target URL", status.TargetURL, 0, 4096); err != nil {
 		return CommitStatus{}, err
 	}
-	switch status.State {
-	case CommitStatusError, CommitStatusFailure, CommitStatusPending, CommitStatusSuccess:
-	default:
+	if !status.State.Valid() {
 		return CommitStatus{}, model.Invalid("commit status state is invalid")
 	}
 	if status.UpdatedAt != nil {

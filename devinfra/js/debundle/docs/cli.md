@@ -726,35 +726,11 @@ debundle run <full tree args> --analysis analysis.dba \
 ```
 
 The full joint selector solve and all analysis assertions remain unchanged.
-The retained ownership and any fresh placement claims are combined before
-normal residual routing.
-In `coarse_atomic_groups`, `complete_partial_atomic_groups_for` may list
-authored module paths that can adopt unclaimed members of atoms they solely
-own. The paths are validated against the full authored module roster; a listed
-owner removed by the subset is not recreated and cannot adopt source units.
-Selected module names and explicit entry renames stay intact. Omitted members
-keep their source names in entry with `inline_in_entry`, in the configured
-catchall with `catchall_file`, in one module per atomic group
-with `per_atomic_group`, or in generated residual groups with
-`coarse_atomic_groups`. Coarse mode first applies any listed sole-owner
-completions, then merges remaining wholly unclaimed atomic groups
-with equal reachable fixed-owner sets in the strict constraining projection
-within intervals between fixed owners in the fine layout's simulated
-evaluation order, provided the merged module keeps each public export name
-associated with one source binding or export site. Incompatible groups remain
-separate with their names intact. Simulator-omitted groups remain separate.
-Their paths use
-`__auto/residual_groups/NNNN`. Authored names remain in the
-complete spec. Invalid full-spec selectors or duplicate/unmatched claims still
-fail even when their modules are omitted.
-
-Normal gates, translation validation, reconstruction and emission run on the
-selected assignment. `graph_summary.json` and `modules.json` carry its
-`ownership_subset` module paths and optional binding and anonymous-selector
-index lists, preserving omitted fields versus empty selections. This is partial
-output; it does not validate the full canonical assignment. Full graph export
-is available with `--graphs`; the dependency graph records the normalized
-selection and its program provenance fingerprints the exact subset-file bytes.
+Residual routing of omitted claims under each policy, coarse-group merging,
+`complete_partial_atomic_groups_for`, reported `ownership_subset` fields and the
+scope of acceptance are specified in [SPEC § Ownership subsets](../SPEC.md#ownership-subsets).
+Invalid full-spec selectors or duplicate/unmatched claims still fail even when
+their modules are omitted. Full graph export is available with `--graphs`.
 For a passing `inline_in_entry` selected baseline, `modules propose/check/apply`
 can append one fresh residual owner. The writer stores ordinary selector claims
 in the subset JSON's `placements` map and the checked final priority in the

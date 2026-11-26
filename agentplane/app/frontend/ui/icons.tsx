@@ -18,7 +18,7 @@ import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconHeartbeat from "@tabler/icons-react/dist/esm/icons/IconHeartbeat.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
-import IconId from "@tabler/icons-react/dist/esm/icons/IconId.mjs";
+import IconFingerprint from "@tabler/icons-react/dist/esm/icons/IconFingerprint.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
 import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
 import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
@@ -50,7 +50,7 @@ export {
   IconDotsVertical,
   IconHeartbeat,
   IconHistory,
-  IconId,
+  IconFingerprint,
   IconListCheck,
   IconMenu2,
   IconPlayerPause,

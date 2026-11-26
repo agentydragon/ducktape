@@ -45,13 +45,14 @@ func (s *Store) dispatchWatchFrontier(ctx context.Context, after int64, resuming
 		if _, err := tx.ExecContext(ctx, "LOCK TABLE dispatch, dispatch_tombstone IN SHARE MODE"); err != nil {
 			return err
 		}
-		if err := validateDispatchCoverage(ctx, tx, after, resuming); err != nil {
-			return err
-		}
+		var pruned int64
 		if err := tx.QueryRowContext(ctx, `SELECT GREATEST(
 			COALESCE((SELECT max(version) FROM dispatch),0),
 			COALESCE((SELECT max(version) FROM dispatch_tombstone),0),
-			(SELECT pruned_through FROM dispatch_watch_retention WHERE singleton))`).Scan(&through); err != nil {
+			pruned_through), pruned_through FROM dispatch_watch_retention WHERE singleton`).Scan(&through, &pruned); err != nil {
+			return err
+		}
+		if err := checkDispatchCoverage(after, pruned, resuming); err != nil {
 			return err
 		}
 		if after > through {
@@ -67,6 +68,10 @@ func validateDispatchCoverage(ctx context.Context, tx *sql.Tx, after int64, resu
 	if err := tx.QueryRowContext(ctx, `SELECT pruned_through FROM dispatch_watch_retention WHERE singleton`).Scan(&pruned); err != nil {
 		return err
 	}
+	return checkDispatchCoverage(after, pruned, resuming)
+}
+
+func checkDispatchCoverage(after, pruned int64, resuming bool) error {
 	if resuming && after < pruned {
 		return status.Error(codes.OutOfRange, "dispatch deletion coverage expired; resync with a fresh snapshot by clearing resume_token")
 	}

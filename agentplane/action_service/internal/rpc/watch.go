@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionstate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
@@ -28,18 +29,13 @@ const (
 	watchWriteTimeout = 5 * time.Second
 )
 
-// inFlight are the states a request leaves to satisfy WATCH_UNTIL_TERMINAL.
-var inFlight = []action_servicepb.ActionState{action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, action_servicepb.ActionState_ACTION_STATE_ALLOWED, action_servicepb.ActionState_ACTION_STATE_DISPATCHING, action_servicepb.ActionState_ACTION_STATE_RUNNING}
-
 // satisfies reads a watch's `until`: whether a receipt in a state ends the watch.
 func satisfies(until action_servicepb.WatchUntil) (func(action_servicepb.ActionState) bool, error) {
 	switch until {
 	case action_servicepb.WatchUntil_WATCH_UNTIL_DECISION:
-		return func(state action_servicepb.ActionState) bool {
-			return state != action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING
-		}, nil
+		return actionstate.Decided, nil
 	case action_servicepb.WatchUntil_WATCH_UNTIL_UNSPECIFIED, action_servicepb.WatchUntil_WATCH_UNTIL_TERMINAL:
-		return func(state action_servicepb.ActionState) bool { return !slices.Contains(inFlight, state) }, nil
+		return actionstate.Terminal, nil
 	default:
 		return nil, invalidRequest("until %v is not a watch condition", until)
 	}

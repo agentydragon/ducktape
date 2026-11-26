@@ -1,6 +1,6 @@
 /** The persistent left sidebar: the thread list, the Actions queue, and the footer's page links. */
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { IconBox, IconHeartbeat, IconId, IconListCheck, IconPlus, IconSettings, IconX } from "../ui/icons";
+import { IconBox, IconHeartbeat, IconFingerprint, IconListCheck, IconPlus, IconSettings, IconX } from "../ui/icons";
 import { type JSX, useEffect, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 
@@ -123,7 +123,7 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
             aria-label="Identities"
             onClick={() => goTo("/identities")}
           >
-            <IconId size={15} />
+            <IconFingerprint size={15} />
           </ActionIcon>
         </Tooltip>
         <Tooltip label="All actions" withArrow>

@@ -77,6 +77,13 @@ impl CaseWorkspace {
         &self.directory
     }
 
+    /// Stage text input in this case and return its path for the CLI.
+    pub fn write_text(&self, relative: impl AsRef<Path>, content: &str) -> PathBuf {
+        let path = self.path().join(relative);
+        super::write_text_file(&path, content);
+        path
+    }
+
     /// A fresh invocation output directory, removed only with the whole case.
     pub fn child(&self) -> Self {
         let directory = TempDir::new_in(self.root.directory.path())

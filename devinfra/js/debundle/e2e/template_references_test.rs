@@ -8,7 +8,7 @@
 use debundle_e2e_support::{
     Fixture, FixtureOpts, Member, assert_module_source, find_outcome, logical_module,
     logical_module_with_anon_alpha, read_selector_outcomes, run_dry_run_rejection_fixture,
-    run_fixture, run_source_only_validate, run_spec_validate, validate_json,
+    run_fixture, run_source_only_validate_json, run_spec_validate, validate_json,
     write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
@@ -528,9 +528,7 @@ fn validate_lists_free_identifiers_by_kind() {
     module("kinds/y", pin("Shared", "e"));
     module("kinds/made", claim(MADE, "made"));
     module("kinds/alias", claim(ALIAS, "alias"));
-    let out = run_source_only_validate(&modules, &source, &["--format", "json"]);
-    assert!(out.status.success(), "stderr={}", out.stderr);
-    let source_only: Value = serde_json::from_str(&out.stdout).unwrap();
+    let source_only = run_source_only_validate_json(&modules, &source);
     assert_eq!(without_chunk(&source_only), expected, "{source_only:#}");
 
     let fixture = write_validate_fixture_spec(kinds_fixture());

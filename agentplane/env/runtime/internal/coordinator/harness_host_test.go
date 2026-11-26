@@ -74,7 +74,7 @@ func nextHarnessHostUpdate(t *testing.T, stream *harnessHostWatchStream) *harnes
 
 func TestHarnessHostCommandsAndCurrentStateWatch(t *testing.T) {
 	workspace := t.TempDir()
-	r := newSessionTestRuntime(t, lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false"))
+	r := newSessionTestRuntime(t, lifecycleConfig(t, workspace, nil, "/bin/false"))
 	host := &harnessHost{runtime: r}
 	callCtx, cancelCall := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 	defer cancelCall()

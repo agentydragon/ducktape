@@ -9,30 +9,30 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use swc_common::{DUMMY_SP, Span, Spanned};
+use swc_common::{DUMMY_SP, SourceFile, Span, Spanned, sync::Lrc};
 use swc_ecma_ast::{
     Decl, ExportDecl, Module, ModuleDecl, ModuleItem, Stmt, VarDecl, VarDeclarator,
 };
 
 use binding_targets::{binding_name_strings, top_level_binding_name_strings};
 use js_ast::{
-    ParsedJsModule, emit_module_source, parse_js_module_consuming,
-    source_unit_ordinal_for_statement, split_var_declarators, statements_for_source_unit_ordinals,
+    emit_module_source, parse_js_module, source_unit_ordinal_for_statement, split_var_declarators,
+    statements_for_source_unit_ordinals,
 };
 
 /// A parsed JavaScript source file together with its original text and path.
 pub struct PreparedSource {
     path: PathBuf,
-    source: String,
+    source_file: Lrc<SourceFile>,
     line_starts: Vec<usize>,
-    parsed: ParsedJsModule,
+    module: Module,
 }
 
 impl PreparedSource {
     /// Read and parse one source file using the same parser/resolver as
     /// `debundle spec match-selector`.
     ///
-    /// Like the underlying `js_ast::parse_js_module_consuming`, this must be
+    /// Like the underlying `js_ast::parse_js_module`, this must be
     /// called inside an SWC `GLOBALS` scope. The debundle CLI provides that
     /// scope around the whole command.
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
@@ -51,17 +51,22 @@ impl PreparedSource {
     ) -> Result<Self> {
         let path = physical_path.as_ref().to_path_buf();
         let identity = source_identity.as_ref();
-        let parsed = parse_js_module_consuming(&identity.display().to_string(), source.into())
+        let parsed = parse_js_module(&identity.display().to_string(), source)
             .with_context(|| format!("parsing source file {}", path.display()))?;
-        let source = parsed.source_text();
+        let source_file = parsed.source_file();
         let line_starts = std::iter::once(0)
-            .chain(source.match_indices('\n').map(|(index, _)| index + 1))
+            .chain(
+                source_file
+                    .src
+                    .match_indices('\n')
+                    .map(|(index, _)| index + 1),
+            )
             .collect();
         Ok(Self {
             path,
-            source,
+            source_file,
             line_starts,
-            parsed,
+            module: parsed.module,
         })
     }
 
@@ -71,11 +76,11 @@ impl PreparedSource {
 
     /// Return the module produced by the shared SWC parser.
     pub fn module(&self) -> &Module {
-        &self.parsed.module
+        &self.module
     }
 
     pub fn statement_count(&self) -> usize {
-        self.parsed.module.body.len()
+        self.module.body.len()
     }
 
     /// Map graph ordinals (after comma-list splitting) to raw parsed items.
@@ -84,7 +89,7 @@ impl PreparedSource {
         &self,
         ordinals: &[SourceUnitOrdinal],
     ) -> Vec<Option<StatementId>> {
-        statements_for_source_unit_ordinals(&self.parsed.module.body, ordinals)
+        statements_for_source_unit_ordinals(&self.module.body, ordinals)
     }
 
     /// Return statements in the requested inclusive range, or all statements
@@ -109,7 +114,7 @@ impl PreparedSource {
             None => return Ok(Vec::new()),
         };
 
-        self.parsed.module.body[start..=end]
+        self.module.body[start..=end]
             .iter()
             .enumerate()
             .map(|(offset, item)| self.statement_row(start + offset, item, include_pretty))
@@ -123,7 +128,6 @@ impl PreparedSource {
         context_statements: usize,
     ) -> Result<StatementRange> {
         let matches = self
-            .parsed
             .module
             .body
             .iter()
@@ -167,7 +171,7 @@ impl PreparedSource {
         include_pretty: bool,
     ) -> Result<StatementRow> {
         let mut matches = Vec::new();
-        for (body_index, item) in self.parsed.module.body.iter().enumerate() {
+        for (body_index, item) in self.module.body.iter().enumerate() {
             let Some((var, exported)) = top_level_var_decl(item) else {
                 continue;
             };
@@ -200,8 +204,7 @@ impl PreparedSource {
             ),
         };
         let coordinates = self.span_coordinates(index, declarator.span)?;
-        let original_source = self
-            .source
+        let original_source = self.source_file.src
             .get(coordinates.byte_start..coordinates.byte_end)
             .with_context(|| {
                 format!("source span for body[{index}] declarator[{declarator_index}] is not on UTF-8 boundaries")
@@ -216,12 +219,7 @@ impl PreparedSource {
         Ok(StatementRow {
             index,
             declarator_index: Some(declarator_index),
-            byte_start: coordinates.byte_start,
-            byte_end: coordinates.byte_end,
-            start_line: coordinates.start_line,
-            start_column: coordinates.start_column,
-            end_line: coordinates.end_line,
-            end_column: coordinates.end_column,
+            coordinates,
             bindings: binding_name_strings(&declarator.name),
             original_source,
             pretty_source,
@@ -231,7 +229,6 @@ impl PreparedSource {
     /// Coordinates only, without copying or pretty-printing the source item.
     pub fn statement_coordinates(&self, index: usize) -> Result<StatementCoordinates> {
         let item = self
-            .parsed
             .module
             .body
             .get(index)
@@ -247,7 +244,7 @@ impl PreparedSource {
         body_index: usize,
         ordinal: SourceUnitOrdinal,
     ) -> Result<&str> {
-        let body = &self.parsed.module.body;
+        let body = &self.module.body;
         let item = body
             .get(body_index)
             .with_context(|| format!("body[{body_index}] is outside the parsed source"))?;
@@ -269,7 +266,8 @@ impl PreparedSource {
             None => item.span(),
         };
         let coordinates = self.span_coordinates(body_index, span)?;
-        self.source
+        self.source_file
+            .src
             .get(coordinates.byte_start..coordinates.byte_end)
             .with_context(|| {
                 format!("source span in body[{body_index}] is not on UTF-8 boundaries")
@@ -284,29 +282,22 @@ impl PreparedSource {
         if span.is_dummy() {
             bail!("parsed source item body[{index}] has no original source span");
         }
-        let source_files = self.parsed.cm.files();
-        let Some(source_file) = source_files.first() else {
-            bail!(
-                "parsed source file {} has no source map entry",
-                self.path.display()
-            );
-        };
         let byte_start = span
             .lo()
             .0
-            .checked_sub(source_file.start_pos.0)
+            .checked_sub(self.source_file.start_pos.0)
             .map(|offset| offset as usize)
             .context("source span starts before the source file")?;
         let byte_end = span
             .hi()
             .0
-            .checked_sub(source_file.start_pos.0)
+            .checked_sub(self.source_file.start_pos.0)
             .map(|offset| offset as usize)
             .context("source span ends before the source file")?;
-        if byte_start > byte_end || byte_end > self.source.len() {
+        if byte_start > byte_end || byte_end > self.source_file.src.len() {
             bail!(
                 "invalid source span for body[{index}]: byte range {byte_start}..{byte_end} exceeds source length {}",
-                self.source.len()
+                self.source_file.src.len()
             );
         }
         let (start_line, start_column) = line_and_byte_column(&self.line_starts, byte_start);
@@ -329,7 +320,8 @@ impl PreparedSource {
     ) -> Result<StatementRow> {
         let coordinates = self.item_coordinates(index, item)?;
         let original_source = self
-            .source
+            .source_file
+            .src
             .get(coordinates.byte_start..coordinates.byte_end)
             .with_context(|| format!("source span for body[{index}] is not on UTF-8 boundaries"))?
             .to_string();
@@ -342,12 +334,7 @@ impl PreparedSource {
         Ok(StatementRow {
             index,
             declarator_index: None,
-            byte_start: coordinates.byte_start,
-            byte_end: coordinates.byte_end,
-            start_line: coordinates.start_line,
-            start_column: coordinates.start_column,
-            end_line: coordinates.end_line,
-            end_column: coordinates.end_column,
+            coordinates,
             bindings: top_level_binding_name_strings(item),
             original_source,
             pretty_source,
@@ -355,10 +342,12 @@ impl PreparedSource {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct StatementCoordinates {
+    /// Half-open UTF-8 byte span in the original source file.
     pub byte_start: usize,
     pub byte_end: usize,
+    /// One-based byte position. The end position is exclusive.
     pub start_line: usize,
     pub start_column: usize,
     pub end_line: usize,
@@ -429,14 +418,8 @@ pub struct StatementRow {
     /// variable declaration; absent when the row represents a whole item.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub declarator_index: Option<usize>,
-    /// Half-open UTF-8 byte span in the original source file.
-    pub byte_start: usize,
-    pub byte_end: usize,
-    /// One-based byte position. The end position is exclusive.
-    pub start_line: usize,
-    pub start_column: usize,
-    pub end_line: usize,
-    pub end_column: usize,
+    #[serde(flatten)]
+    pub coordinates: StatementCoordinates,
     /// Names declared at module top level by this item, including imports.
     pub bindings: Vec<String>,
     /// Original source slice covered by the AST span.

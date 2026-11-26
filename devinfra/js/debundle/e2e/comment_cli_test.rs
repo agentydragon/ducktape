@@ -90,6 +90,32 @@ fn ambiguous_binding_comment_refuses_with_locations_without_writes() {
 }
 
 #[test]
+fn a_failed_editor_reports_the_recoverable_draft_and_preserves_the_spec() {
+    let fixture = fixture();
+    fixture.json(&["bindings", "comment", "a", "original"]);
+    let editor = fixture.graph.with_file_name("failing-editor.sh");
+    fs::write(&editor, "printf 'unfinished edit' > \"$1\"\nexit 1\n").unwrap();
+    let output = process::debundle_output(
+        fixture
+            .process(&["bindings", "comment", "a", "--edit"])
+            .env("EDITOR", format!("sh {}", editor.display()))
+            .env("TMPDIR", fixture.graph.parent().unwrap()),
+    )
+    .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let (_, draft) = stderr
+        .trim_end()
+        .split_once("Comment draft: ")
+        .expect("draft path in diagnostic");
+    assert_eq!(fs::read_to_string(draft).unwrap(), "unfinished edit");
+    assert_eq!(
+        fixture.json(&["bindings", "comment", "a"])["comment"],
+        "original"
+    );
+}
+
+#[test]
 fn edit_mode_replaces_or_clears_the_prepopulated_comment() {
     for (replacement, action) in [("from-fake-editor", "set"), ("", "cleared")] {
         let fixture = fixture();

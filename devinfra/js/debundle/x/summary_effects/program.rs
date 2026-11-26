@@ -502,7 +502,7 @@ pub fn load(
         let source = String::from_utf8_lossy(&bytes);
         // A chunk that does not parse may do anything: write any global,
         // await, and load any chunk.
-        let Ok(parsed) = js_ast::parse_js_module(&path.display().to_string(), &source) else {
+        let Ok(parsed) = js_ast::parse_js_module(&path.display().to_string(), source) else {
             anyhow::ensure!(path != chunk, "{} does not parse", path.display());
             unparsed_chunks += 1;
             merged.refuse_everything();

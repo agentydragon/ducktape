@@ -27,14 +27,14 @@ use clap::Args as ClapArgs;
 use command_output::write_report;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
 use peel::OutputFormat;
-use pipeline::{RunOutput, TransformRunOptions, TransformSpecSource, run_transform};
-use selector_codemod::source_input::resolve_chunk_source_file;
+use pipeline::{RunOutput, TransformRunOptions, run_transform};
 use selector_outcome::{
     Entity, InvalidSelectorError, InvalidSelectorReport, Outcome, Placement, SelectorKind,
     SelectorOutcome, SelectorOutcomeReport, SelectorValidationCounts, Severity,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use source_input::resolve_chunk_source_file;
 use source_match::source_match_claim_member_selectors;
 use spec::{AnonymousStatementSelector, MemberSelectorSpec};
 use spec_modules::read_flat_transform_spec;
@@ -43,6 +43,7 @@ use spec_resolution::{
     resolve_chunk, spec_module, validate_logical_module_claims,
 };
 use spec_tree::compile_spec_tree;
+use transform_inputs::TransformSpecSource;
 
 /// Args for `debundle spec validate`. The spec source and package-root flags
 /// mirror `debundle run` (`--spec` / `--tree-config` + roots) so the same
@@ -377,7 +378,7 @@ fn validate_modules_against_source(
 ) -> Result<SelectorOutcomeReport> {
     let source = std::fs::read_to_string(source_file)
         .with_context(|| format!("reading source file {}", source_file.display()))?;
-    let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
+    let parsed = js_ast::parse_js_module(&source_file.display().to_string(), source)
         .with_context(|| format!("parsing source file {}", source_file.display()))?;
 
     let mut outcomes = Vec::new();

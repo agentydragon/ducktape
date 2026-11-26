@@ -2,45 +2,39 @@ package coordinator
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/url"
+	"sync"
 
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
-// fixtureModelConfig lets the runtime lifecycle fixtures control a lookup, including holding it
-// open while exercising admission races. This private HTTP fixture does not model the production
-// transport, which is exercised separately over gRPC.
-type fixtureModelConfig struct{ endpoint string }
+// fixtureModelConfig supplies a budget at the model configuration client boundary.
+// Tests can install a hook to observe or block the lookup while exercising admission.
+type fixtureModelConfig struct {
+	beforeLookup func(context.Context) error
+}
 
-func (f fixtureModelConfig) GetModelConfig(ctx context.Context, request *modelconfigpb.GetModelConfigRequest, _ ...grpc.CallOption) (*modelconfigpb.GetModelConfigResponse, error) {
-	u, err := url.Parse(f.endpoint + "/test/model-config")
-	if err != nil {
-		return nil, err
+func (f fixtureModelConfig) GetModelConfig(ctx context.Context, _ *modelconfigpb.GetModelConfigRequest, _ ...grpc.CallOption) (*modelconfigpb.GetModelConfigResponse, error) {
+	if f.beforeLookup != nil {
+		if err := f.beforeLookup(ctx); err != nil {
+			return nil, err
+		}
 	}
-	q := u.Query()
-	q.Set("model", request.GetModel())
-	u.RawQuery = q.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	var model *struct {
-		Budget int64 `json:"total_context_budget_tokens"`
-	}
-	if err := json.NewDecoder(res.Body).Decode(&model); err != nil {
-		return nil, err
-	}
-	result := &modelconfigpb.GetModelConfigResponse{}
-	if model != nil {
-		result.TotalContextBudgetTokens = &model.Budget
-	}
-	return result, nil
+	return &modelconfigpb.GetModelConfigResponse{TotalContextBudgetTokens: proto.Int64(32768)}, nil
+}
+
+func blockModelConfig() (fixtureModelConfig, <-chan struct{}, func()) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	client := fixtureModelConfig{beforeLookup: func(ctx context.Context) error {
+		close(started)
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}}
+	return client, started, sync.OnceFunc(func() { close(release) })
 }

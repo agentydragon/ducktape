@@ -352,7 +352,7 @@ async def test_disk_cache_resumes_rows_and_reads_only_the_missing_body(
     thread = threads[0]
     await page.goto(f"{ingress.url}/#/threads/{thread}")
     tail = page.get_by_text("Thread 0 message 129", exact=True)
-    await expect(tail).to_be_visible()
+    await tail.wait_for(state="visible")
     # Wait for the first checkpoint and the 90 complete bodies. Opening a second document below
     # discards all in-memory thread windows.
     await page.wait_for_function("""async () => {

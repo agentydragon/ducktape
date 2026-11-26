@@ -5,10 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Result, bail};
 use clap::Args as ClapArgs;
 use pipeline::{RunOutput, project_analysis_and_apply};
-pub use transform_inputs::{
-    SpecSourceArgs, TransformContextArgs, TransformContextAuxArgs, is_inactive_transform_default,
-    validate_transform_arg_matches,
-};
+use transform_inputs::TransformContextArgs;
 
 /// Arguments for the standalone projection executable and
 /// `debundle spec project-analysis`.

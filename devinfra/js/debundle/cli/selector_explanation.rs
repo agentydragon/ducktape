@@ -10,7 +10,7 @@ use source_inspection::{PreparedSource, StatementRange, StatementRow};
 use source_match::{RangeExplanation, explain_range, template_free_identifiers};
 
 use crate::selector_input::{SelectedSelector, inline_selector, load_selectors};
-use selector_codemod::source_input::resolve_chunk_source_file;
+use source_input::resolve_chunk_source_file;
 
 pub(super) struct ExplanationConfig {
     pub source_file: Option<PathBuf>,
@@ -97,7 +97,11 @@ pub(super) fn render(report: &ExplanationReport, out: &mut String) {
         let _ = writeln!(
             out,
             "[{}] {}:{}–{}:{}",
-            row.index, row.start_line, row.start_column, row.end_line, row.end_column
+            row.index,
+            row.coordinates.start_line,
+            row.coordinates.start_column,
+            row.coordinates.end_line,
+            row.coordinates.end_column
         );
         for line in row.pretty_source.lines() {
             let _ = writeln!(out, "    {line}");

@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail, ensure};
 use graph_provenance::VerifiedGraphSourceContext;
 use ownership_subset::OwnershipSubset;
 use peel::assignment::{AssignmentProblem, accepted};
-use selector_codemod::{SourceUnitSelectorRequest, SourceUnitSelectorSynthesis};
+use selector_codemod::source_unit::{SourceUnitSelectorRequest, SourceUnitSelectorSynthesis};
 use spec::{LogicalModule, ModulePath, SourceMatchBinding, SourceMatchBindingDetail};
 
 use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
@@ -274,7 +274,7 @@ fn realize_change(
     let source = session.source(chunk_id)?;
     let body_statements =
         js_ast::statements_for_source_unit_ordinals(&source.module.body, &anonymous_ordinals);
-    let mut module = selector_codemod::with_source_unit_selector_synthesizer(
+    let mut module = selector_codemod::source_unit::with_source_unit_selector_synthesizer(
         &source.module,
         |synthesizer| {
             let mut module = LogicalModule::default();

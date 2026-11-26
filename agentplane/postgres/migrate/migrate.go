@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/sethvargo/go-retry"
 )
 
@@ -59,7 +59,7 @@ func Run(ctx context.Context, databaseURL string, up func(context.Context, *sql.
 	if settings.migrationTimeout <= 0 {
 		return fmt.Errorf("migration timeout must be positive")
 	}
-	target, err := url.Parse(strings.Replace(databaseURL, "postgresql+asyncpg://", "postgresql://", 1))
+	target, err := url.Parse(postgres.DriverURL(databaseURL))
 	if err != nil || (target.Scheme != "postgresql" && target.Scheme != "postgres") {
 		return fmt.Errorf("migration database_url must be a PostgreSQL URL")
 	}
