@@ -30,7 +30,7 @@ func (s *Store) BeginPreparedSampling(ctx context.Context, owner Owner, source *
 	id := uuid.NewString()
 	var prepared *ProviderRequest
 	var snapshot *ProviderAttemptSnapshot
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.begin_prepared_sampling", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerWithContextRefs(ctx, tx, owner)
 		if err != nil {
 			return err

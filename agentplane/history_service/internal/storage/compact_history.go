@@ -437,7 +437,7 @@ func (s *Store) runRepackBatchTransaction(ctx context.Context, sessionID uuid.UU
 	defer cancel()
 	var lockWait, lockHold time.Duration
 	var lockAcquiredAt time.Time
-	err := postgres.Transaction(batchCtx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+	err := postgres.NamedTransaction(batchCtx, s.db, sql.TxOptions{}, "history.repack_"+operation, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(batchCtx, `SELECT set_config('lock_timeout',$1,true),set_config('transaction_timeout',$2,true)`,
 			repackLockWaitTimeout.String(), budget.String()); err != nil {
 			return err

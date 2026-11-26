@@ -45,7 +45,7 @@ func (s *Store) CreateSession(ctx context.Context, request *sessionconfig.Config
 		return nil, err
 	}
 	var opened *Session
-	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err = s.transaction(ctx, "sampler.create_session", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, request.SessionId); err != nil {
 			return err
 		}
@@ -145,7 +145,7 @@ func (s *Store) GetSession(ctx context.Context, id, ownerKey string) (*Session, 
 // CodeSessionEpoch returns the durable logical JavaScript-session generation for a live owner.
 func (s *Store) CodeSessionEpoch(ctx context.Context, owner Owner) (int, error) {
 	var epoch int
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.code_session_epoch", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
 			return err
 		}
@@ -160,7 +160,7 @@ func (s *Store) StampCodeHostInstance(ctx context.Context, owner Owner, instance
 	if _, err := uuid.Parse(instanceID); err != nil {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.stamp_code_host_instance", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwner(ctx, tx, owner); err != nil {
 			return err
 		}

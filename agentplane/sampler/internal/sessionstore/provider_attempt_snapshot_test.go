@@ -276,7 +276,7 @@ func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
 			id, _, snapshot := beginSnapshotFixture(t, store, owner, snapshotFixtureRead(t, store, owner))
 			const intervening = "Fixture context committed after dispatch"
 			// Exercise a persisted context change without disturbing the pending attempt.
-			if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
+			if err := store.transaction(t.Context(), "sampler.test_fixture", func(ctx context.Context, tx *sql.Tx) error {
 				current, err := lockOwner(ctx, tx, owner)
 				if err != nil {
 					return err

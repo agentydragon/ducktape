@@ -9,7 +9,7 @@ import (
 
 func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner) (*Conversation, error) {
 	var conversation *Conversation
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.prepare_sampling_context", func(ctx context.Context, tx *sql.Tx) error {
 		var err error
 		conversation, err = lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -40,7 +40,7 @@ func (s *Store) applySamplingContext(ctx context.Context, tx *sql.Tx, conversati
 
 func (s *Store) GetSessionForConversation(ctx context.Context, owner Owner) (*Session, error) {
 	var session *Session
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.get_session_for_conversation", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := lockOwnerHeader(ctx, tx, owner); err != nil {
 			return err
 		}

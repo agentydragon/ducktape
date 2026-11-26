@@ -12,7 +12,7 @@ import (
 
 func (s *Store) Read(ctx context.Context, owner Owner) (*Conversation, error) {
 	var result *Conversation
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.read", func(ctx context.Context, tx *sql.Tx) error {
 		var err error
 		result, err = lockOwner(ctx, tx, owner)
 		return err
@@ -32,7 +32,7 @@ func (s *Store) Create(ctx context.Context, api protocol.APIStyle, prompt string
 	if err := transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: prompt}}, protocol.RecordOrigin{}); err != nil {
 		return "", err
 	}
-	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err = s.transaction(ctx, "sampler.create", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation(id,generation,owner,lease_until,pending,stopped,
    executor_session,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,$2,NULL,$3)`, id, nullableString(instructions), api); err != nil {
 			return err

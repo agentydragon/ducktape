@@ -882,7 +882,7 @@ func TestProviderRetryDistinguishesSourceAndNativeChanges(t *testing.T) {
 				t.Fatal(err)
 			}
 			setProviderRetryDueNow(t, store, id)
-			if err := store.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+			if err := store.transaction(ctx, "sampler.test_fixture", func(ctx context.Context, tx *sql.Tx) error {
 				current, err := lockOwner(ctx, tx, owner)
 				if err != nil {
 					return err

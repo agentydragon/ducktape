@@ -37,7 +37,7 @@ func (s *Store) begin(ctx context.Context, owner Owner, request IntentPayload, p
 	}
 	id := uuid.NewString()
 	var prepared *ProviderRequest
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.begin", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -134,7 +134,7 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 	if err != nil {
 		return err
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.finish", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerWithContextRefs(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -194,7 +194,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 	if failure == nil {
 		return protocol.ErrInvalid
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.reject", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -285,7 +285,7 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.begin_compaction", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -353,7 +353,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 	if err != nil {
 		return err
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.finish_compaction", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -483,7 +483,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, kind IntentKind, 
 	if err != nil {
 		return "", err
 	}
-	err = s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err = s.transaction(ctx, "sampler.record_nested", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -519,7 +519,7 @@ func (s *Store) FinishNested(ctx context.Context, owner Owner, intentID string, 
 	if err != nil {
 		return err
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.finish_nested", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
 			return err

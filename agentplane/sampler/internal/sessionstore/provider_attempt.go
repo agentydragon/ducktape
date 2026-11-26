@@ -146,7 +146,7 @@ func sameJSONValue(left, right []byte) bool {
 // finish it.
 func (s *Store) CurrentProviderAttempt(ctx context.Context, owner Owner, sessionID string) (*ProviderAttempt, error) {
 	var attempt *ProviderAttempt
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.current_provider_attempt", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -179,7 +179,7 @@ func (s *Store) CurrentProviderAttempt(ctx context.Context, owner Owner, session
 // never transfers Session ownership or makes a retry due.
 func (s *Store) ProviderRecoveryFrontier(ctx context.Context, owner Owner, sessionID string) (*ProviderAttempt, error) {
 	var attempt *ProviderAttempt
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.provider_recovery_frontier", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -229,7 +229,7 @@ func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentI
 	if err := s.validateProviderFailure(failure); err != nil {
 		return err
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.abandon_provider_attempt", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
@@ -327,7 +327,7 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 	}
 	id := uuid.NewString()
 	var request IntentPayload
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.begin_provider_retry", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockProviderResumption(ctx, tx, owner, kind, original)
 		if err != nil {
 			return err

@@ -49,7 +49,7 @@ func putRecordObject(store content.ContentWriter, object RecordObject) (string, 
 // an owned native context. transcript selects the original transcript view.
 func (s *Store) ReadRecordObject(ctx context.Context, owner Owner, transcript bool, index int) (RecordObject, error) {
 	var object RecordObject
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.read_record_object", func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err

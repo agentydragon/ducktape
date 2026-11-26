@@ -59,10 +59,10 @@ func New(db *sql.DB, operationTimeout time.Duration, settings *samplersettings.S
 
 func (s *Store) DB() *sql.DB { return s.db }
 
-func (s *Store) transaction(ctx context.Context, f func(context.Context, *sql.Tx) error) error {
+func (s *Store) transaction(ctx context.Context, operation string, f func(context.Context, *sql.Tx) error) error {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 	defer cancel()
-	return postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error { return f(ctx, tx) })
+	return postgres.NamedTransaction(ctx, s.db, sql.TxOptions{}, operation, func(tx *sql.Tx) error { return f(ctx, tx) })
 }
 
 func notify(ctx context.Context, tx *sql.Tx) error {

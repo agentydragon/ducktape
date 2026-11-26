@@ -104,7 +104,7 @@ func (s *Store) Claim(ctx context.Context, conversationID string, duration time.
 		return Owner{}, protocol.ErrInvalid
 	}
 	var owner Owner
-	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	err := s.transaction(ctx, "sampler.claim_lease", func(ctx context.Context, tx *sql.Tx) error {
 		held, err := ownership.Acquire(ctx, tx, []any{conversationID}, duration)
 		if errors.As(err, new(*lease.HeldError)) {
 			return &LostOwnershipError{Reason: "conversation already has a live sampler"}
@@ -129,7 +129,7 @@ func (s *Store) Renew(ctx context.Context, owner Owner, duration time.Duration) 
 	if err != nil {
 		return err
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.renew_lease", func(ctx context.Context, tx *sql.Tx) error {
 		_, err := ownership.Renew(ctx, tx, held, duration)
 		if errors.Is(err, lease.ErrLost) {
 			return &LostOwnershipError{}
@@ -143,7 +143,7 @@ func (s *Store) Release(ctx context.Context, owner Owner) error {
 	if err != nil {
 		return err
 	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return s.transaction(ctx, "sampler.release_lease", func(ctx context.Context, tx *sql.Tx) error {
 		if err := fenceOwner(ctx, tx, owner); err != nil {
 			return err
 		}
