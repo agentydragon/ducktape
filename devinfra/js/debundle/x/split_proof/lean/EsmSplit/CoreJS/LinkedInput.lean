@@ -6,6 +6,7 @@ import EsmSplit.CoreJS.ModuleInput
 import EsmSplit.CoreJS.OpaqueInput
 import EsmSplit.CoreJS.StructuralRefusal
 import EsmSplit.Plan
+import EsmSplit.LocalExportUnit
 import EsmSplit.ESTreeUnits
 import EsmSplit.ModulePath
 
@@ -91,6 +92,7 @@ private structure Parsed where
   imports : List Import
   units : List (Nat × Stmt × Json)
   exports : List (Name × Name)
+  localExports : List EsmSplit.LocalExportUnit
   templates : List TemplateSite
 
 /-- A structural proof retains non-pivots. A recorded replay retains a unit
@@ -204,6 +206,7 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
   let names := namespaces.toList.map Prod.fst ++ imports.toList.flatMap fun i => i.names.map Prod.snd
   let mut units := #[]
   let mut exports := #[]
+  let mut localExports : Array EsmSplit.LocalExportUnit := #[]
   let mut templates := #[]
   for (j, i) in nodes.zipIdx do
     let origin : Except StructuralRefusal Nat := match origins with
@@ -226,8 +229,9 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
       let declaration ← (j.getObjVal? "declaration").mapError StructuralRefusal.unclassified
       let specs ← (j.getObjValAs? (Array Json) "specifiers").mapError StructuralRefusal.unclassified
       if declaration == .null then
-        for sp in specs do
-          exports := exports.push (← (FromESTree.exportSpec sp).mapError StructuralRefusal.unclassified)
+        let names ← specs.mapM fun sp => (FromESTree.exportSpec sp).mapError StructuralRefusal.unclassified
+        exports := exports ++ names
+        localExports := localExports.push ⟨i, names.toList⟩
       else
         unless specs.isEmpty do throw (.unclassified "expected an inline declaration export")
         let (s, names, sites) ← decode declaration true
@@ -249,7 +253,13 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         (StructuralRefusal.mapReason fun why => s!"statement {i}: {why}")
       templates := templates ++ sites.toArray
       units := units.push (i, ← (namespaceCaptures namespaces.toList s).mapError StructuralRefusal.unclassified, j)
-  return { imports := imports.toList, units := units.toList, exports := exports.toList, templates := templates.toList }
+  return {
+    imports := imports.toList
+    units := units.toList
+    exports := exports.toList
+    localExports := localExports.toList
+    templates := templates.toList
+  }
 
 private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module where
   name := name
@@ -483,15 +493,22 @@ def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : Ho
     Except String (Program × Program) :=
   DecodedDeployment.programs <$> decodeSingleton source providers files P profile
 
-/-- Lower the import-free original before constructing a split. Use the
-ordinary linked parser with the empty profile and the same original unit IDs
-as `decodeSingleton`. The caller's constructor checks the supported syntax. -/
-def decodeSingletonSource (source : Json) (entry : String) : Except String Program := do
+/-- Lower an import-free original in one pass, retaining each actual standalone
+local export list's original ordinal and ordered `(public, local)` names. Inline
+and default exports remain in the module export table and are not invented as
+standalone units. The caller must check the source shape required by its rule. -/
+def decodeSingletonSourceWithLocalExports (source : Json) (entry : String) :
+    Except String (Program × List EsmSplit.LocalExportUnit) := do
   let nodes ← ESTreeUnits.nodes source
   let original ← (parse .linked .empty "bundle.mjs" nodes 0).mapError StructuralRefusal.reason
   unless original.imports.isEmpty do throw "checked construction requires an import-free original"
   unless original.templates.isEmpty do throw "checked construction does not install template objects"
-  return { entry, modules := [original.numbered entry 0] }
+  return ({ entry, modules := [original.numbered entry 0] }, original.localExports)
+
+/-- Project the program from the same source decoder for rules that do not use
+standalone export-unit identities. -/
+def decodeSingletonSource (source : Json) (entry : String) : Except String Program :=
+  Prod.fst <$> decodeSingletonSourceWithLocalExports source entry
 
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use

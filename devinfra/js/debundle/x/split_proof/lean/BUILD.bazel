@@ -341,6 +341,7 @@ lean_library(
         ":corejs_certificate_support",
         ":corejs_runtime",
         ":effects",
+        ":local_export_unit",
         ":planner",
     ],
 )
@@ -908,6 +909,17 @@ test_runner(
     deps = [
         ":corejs_structural",
         ":lowersplit_input",
+    ],
+)
+
+test_runner(
+    name = "local_export_decode_test_runner",
+    src = "LocalExportDecodeTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_runtime",
+        ":local_export_unit",
     ],
 )
 

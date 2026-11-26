@@ -298,7 +298,8 @@ private def tryNamedDeclarations (chunk : DeploymentChunk) (src : BundleInput)
       (← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED") == some "1" then return none
   let .authored spec := chunk.placement | return none
   unless spec.sequential do return none
-  let .ok source := CoreJS.LinkedInput.decodeSingletonSource src.program spec.entry | return none
+  let .ok (source, _localExports) :=
+    CoreJS.LinkedInput.decodeSingletonSourceWithLocalExports src.program spec.entry | return none
   let [original] := source.modules | return none
   unless !original.body.isEmpty && original.body.all (fun (_, stmt) =>
       match stmt with | .decl .const _ _ => true | _ => false) do return none

@@ -134,6 +134,17 @@ _EXCALIDRAW_SCROLL_ENV = {
 
 # Compare the production constructor route against the unchanged scroll placement.
 js_test(
+    name = "local_export_decode_test",
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:local_export_decode_test_runner",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:module_graph_fixture",
+    ],
+    entry_point = "local_export_decode_test.mjs",
+    env = {"LOCAL_EXPORT_DECODE_TEST": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:local_export_decode_test_runner)"},
+)
+
+js_test(
     name = "constructor_acceptance_test",
     size = "large",
     timeout = "long",
