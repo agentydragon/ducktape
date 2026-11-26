@@ -478,45 +478,49 @@ pub fn decode_intrinsic_families(v: pb::IntrinsicFamilies) -> Result<spec::Intri
     })
 }
 
-pub fn encode_vendor_mark(value: &spec::VendorMark) -> pb::VendorMark {
+pub fn encode_vendor_mark(value: &spec::vendor_marks::VendorMark) -> pb::VendorMark {
     pb::VendorMark {
         identity: Some(value.identity.clone()),
         level: Some(encode_vendor_level(&value.level)),
     }
 }
 
-pub fn decode_vendor_mark(v: pb::VendorMark) -> Result<spec::VendorMark> {
-    Ok(spec::VendorMark {
+pub fn decode_vendor_mark(v: pb::VendorMark) -> Result<spec::vendor_marks::VendorMark> {
+    Ok(spec::vendor_marks::VendorMark {
         identity: required(v.identity)?,
         level: decode_vendor_level(required(v.level)?)?,
     })
 }
 
-pub fn encode_vendor_level(value: &spec::VendorLevel) -> pb::VendorLevel {
+pub fn encode_vendor_level(value: &spec::vendor_marks::VendorLevel) -> pb::VendorLevel {
     use pb::vendor_level::Value;
     pb::VendorLevel {
         value: Some(match value {
-            spec::VendorLevel::Swap(v) => Value::Swap(encode_swap_mark(v)),
-            spec::VendorLevel::PartialSwap(v) => Value::PartialSwap(encode_partial_swap_mark(v)),
-            spec::VendorLevel::BundledPartialSwap(v) => {
+            spec::vendor_marks::VendorLevel::Swap(v) => Value::Swap(encode_swap_mark(v)),
+            spec::vendor_marks::VendorLevel::PartialSwap(v) => {
+                Value::PartialSwap(encode_partial_swap_mark(v))
+            }
+            spec::vendor_marks::VendorLevel::BundledPartialSwap(v) => {
                 Value::BundledPartialSwap(encode_bundled_partial_swap_mark(v))
             }
         }),
     }
 }
 
-pub fn decode_vendor_level(v: pb::VendorLevel) -> Result<spec::VendorLevel> {
+pub fn decode_vendor_level(v: pb::VendorLevel) -> Result<spec::vendor_marks::VendorLevel> {
     use pb::vendor_level::Value;
     Ok(match v.value.context("missing vendor level")? {
-        Value::Swap(v) => spec::VendorLevel::Swap(decode_swap_mark(v)?),
-        Value::PartialSwap(v) => spec::VendorLevel::PartialSwap(decode_partial_swap_mark(v)?),
-        Value::BundledPartialSwap(v) => {
-            spec::VendorLevel::BundledPartialSwap(decode_bundled_partial_swap_mark(v)?)
+        Value::Swap(v) => spec::vendor_marks::VendorLevel::Swap(decode_swap_mark(v)?),
+        Value::PartialSwap(v) => {
+            spec::vendor_marks::VendorLevel::PartialSwap(decode_partial_swap_mark(v)?)
         }
+        Value::BundledPartialSwap(v) => spec::vendor_marks::VendorLevel::BundledPartialSwap(
+            decode_bundled_partial_swap_mark(v)?,
+        ),
     })
 }
 
-pub fn encode_swap_mark(value: &spec::SwapMark) -> pb::SwapMark {
+pub fn encode_swap_mark(value: &spec::vendor_marks::SwapMark) -> pb::SwapMark {
     pb::SwapMark {
         package: Some(value.package.clone()),
         version: Some(value.version.clone()),
@@ -526,8 +530,8 @@ pub fn encode_swap_mark(value: &spec::SwapMark) -> pb::SwapMark {
     }
 }
 
-pub fn decode_swap_mark(v: pb::SwapMark) -> Result<spec::SwapMark> {
-    Ok(spec::SwapMark {
+pub fn decode_swap_mark(v: pb::SwapMark) -> Result<spec::vendor_marks::SwapMark> {
+    Ok(spec::vendor_marks::SwapMark {
         package: required(v.package)?,
         version: required(v.version)?,
         subpath: required(v.subpath)?,
@@ -539,7 +543,9 @@ pub fn decode_swap_mark(v: pb::SwapMark) -> Result<spec::SwapMark> {
     })
 }
 
-pub fn encode_partial_swap_mark(value: &spec::PartialSwapMark) -> pb::PartialSwapMark {
+pub fn encode_partial_swap_mark(
+    value: &spec::vendor_marks::PartialSwapMark,
+) -> pb::PartialSwapMark {
     pb::PartialSwapMark {
         packages: value
             .packages
@@ -554,8 +560,10 @@ pub fn encode_partial_swap_mark(value: &spec::PartialSwapMark) -> pb::PartialSwa
     }
 }
 
-pub fn decode_partial_swap_mark(v: pb::PartialSwapMark) -> Result<spec::PartialSwapMark> {
-    Ok(spec::PartialSwapMark {
+pub fn decode_partial_swap_mark(
+    v: pb::PartialSwapMark,
+) -> Result<spec::vendor_marks::PartialSwapMark> {
+    Ok(spec::vendor_marks::PartialSwapMark {
         packages: v
             .packages
             .into_iter()
@@ -569,7 +577,9 @@ pub fn decode_partial_swap_mark(v: pb::PartialSwapMark) -> Result<spec::PartialS
     })
 }
 
-pub fn encode_partial_swap_package(value: &spec::PartialSwapPackage) -> pb::PartialSwapPackage {
+pub fn encode_partial_swap_package(
+    value: &spec::vendor_marks::PartialSwapPackage,
+) -> pb::PartialSwapPackage {
     pb::PartialSwapPackage {
         version: Some(value.version.clone()),
         subpath: Some(value.subpath.clone()),
@@ -577,15 +587,19 @@ pub fn encode_partial_swap_package(value: &spec::PartialSwapPackage) -> pb::Part
     }
 }
 
-pub fn decode_partial_swap_package(v: pb::PartialSwapPackage) -> Result<spec::PartialSwapPackage> {
-    Ok(spec::PartialSwapPackage {
+pub fn decode_partial_swap_package(
+    v: pb::PartialSwapPackage,
+) -> Result<spec::vendor_marks::PartialSwapPackage> {
+    Ok(spec::vendor_marks::PartialSwapPackage {
         version: required(v.version)?,
         subpath: required(v.subpath)?,
         namespace: v.namespace,
     })
 }
 
-pub fn encode_partial_swap_symbol(value: &spec::PartialSwapSymbol) -> pb::PartialSwapSymbol {
+pub fn encode_partial_swap_symbol(
+    value: &spec::vendor_marks::PartialSwapSymbol,
+) -> pb::PartialSwapSymbol {
     pb::PartialSwapSymbol {
         package: Some(value.package.clone()),
         kind: Some(value.kind as i32),
@@ -594,8 +608,10 @@ pub fn encode_partial_swap_symbol(value: &spec::PartialSwapSymbol) -> pb::Partia
     }
 }
 
-pub fn decode_partial_swap_symbol(v: pb::PartialSwapSymbol) -> Result<spec::PartialSwapSymbol> {
-    Ok(spec::PartialSwapSymbol {
+pub fn decode_partial_swap_symbol(
+    v: pb::PartialSwapSymbol,
+) -> Result<spec::vendor_marks::PartialSwapSymbol> {
+    Ok(spec::vendor_marks::PartialSwapSymbol {
         package: required(v.package)?,
         kind: pb::PartialSwapKind::try_from(v.kind.context("missing required projection field")?)?,
         upstream_export: v.upstream_export,
@@ -604,7 +620,7 @@ pub fn decode_partial_swap_symbol(v: pb::PartialSwapSymbol) -> Result<spec::Part
 }
 
 pub fn encode_bundled_partial_swap_mark(
-    value: &spec::BundledPartialSwapMark,
+    value: &spec::vendor_marks::BundledPartialSwapMark,
 ) -> pb::BundledPartialSwapMark {
     pb::BundledPartialSwapMark {
         bundle: Some(encode_bundled_partial_swap_bundle(&value.bundle)),
@@ -623,8 +639,8 @@ pub fn encode_bundled_partial_swap_mark(
 
 pub fn decode_bundled_partial_swap_mark(
     v: pb::BundledPartialSwapMark,
-) -> Result<spec::BundledPartialSwapMark> {
-    Ok(spec::BundledPartialSwapMark {
+) -> Result<spec::vendor_marks::BundledPartialSwapMark> {
+    Ok(spec::vendor_marks::BundledPartialSwapMark {
         bundle: decode_bundled_partial_swap_bundle(required(v.bundle)?)?,
         packages: v
             .packages
@@ -640,7 +656,7 @@ pub fn decode_bundled_partial_swap_mark(
 }
 
 pub fn encode_bundled_partial_swap_bundle(
-    value: &spec::BundledPartialSwapBundle,
+    value: &spec::vendor_marks::BundledPartialSwapBundle,
 ) -> pb::BundledPartialSwapBundle {
     pb::BundledPartialSwapBundle {
         path: Some(encode_path(&value.path)),
@@ -649,14 +665,14 @@ pub fn encode_bundled_partial_swap_bundle(
 
 pub fn decode_bundled_partial_swap_bundle(
     v: pb::BundledPartialSwapBundle,
-) -> Result<spec::BundledPartialSwapBundle> {
-    Ok(spec::BundledPartialSwapBundle {
+) -> Result<spec::vendor_marks::BundledPartialSwapBundle> {
+    Ok(spec::vendor_marks::BundledPartialSwapBundle {
         path: decode_path(required(v.path)?),
     })
 }
 
 pub fn encode_bundled_partial_swap_package(
-    value: &spec::BundledPartialSwapPackage,
+    value: &spec::vendor_marks::BundledPartialSwapPackage,
 ) -> pb::BundledPartialSwapPackage {
     pb::BundledPartialSwapPackage {
         version: Some(value.version.clone()),
@@ -668,8 +684,8 @@ pub fn encode_bundled_partial_swap_package(
 
 pub fn decode_bundled_partial_swap_package(
     v: pb::BundledPartialSwapPackage,
-) -> Result<spec::BundledPartialSwapPackage> {
-    Ok(spec::BundledPartialSwapPackage {
+) -> Result<spec::vendor_marks::BundledPartialSwapPackage> {
+    Ok(spec::vendor_marks::BundledPartialSwapPackage {
         version: required(v.version)?,
         subpath: required(v.subpath)?,
         bundle_export: required(v.bundle_export)?,
@@ -727,21 +743,23 @@ pub fn decode_logical_module(v: pb::LogicalModule) -> Result<spec::LogicalModule
     })
 }
 
-pub fn encode_member(value: &spec::Member) -> pb::Member {
+pub fn encode_member(value: &spec::member_selectors::Member) -> pb::Member {
     pb::Member {
         name: value.name.clone(),
         selector: Some(encode_raw_member_selector(&value.selector)),
     }
 }
 
-pub fn decode_member(v: pb::Member) -> Result<spec::Member> {
-    Ok(spec::Member {
+pub fn decode_member(v: pb::Member) -> Result<spec::member_selectors::Member> {
+    Ok(spec::member_selectors::Member {
         name: v.name,
         selector: decode_raw_member_selector(required(v.selector)?)?,
     })
 }
 
-pub fn encode_raw_member_selector(value: &spec::RawMemberSelector) -> pb::RawMemberSelector {
+pub fn encode_raw_member_selector(
+    value: &spec::member_selectors::RawMemberSelector,
+) -> pb::RawMemberSelector {
     pb::RawMemberSelector {
         binding: value.binding.as_ref().map(encode_binding_selector),
         cross_ref: value.cross_ref.as_ref().map(encode_cross_ref_selector),
@@ -768,8 +786,10 @@ pub fn encode_raw_member_selector(value: &spec::RawMemberSelector) -> pb::RawMem
     }
 }
 
-pub fn decode_raw_member_selector(v: pb::RawMemberSelector) -> Result<spec::RawMemberSelector> {
-    Ok(spec::RawMemberSelector {
+pub fn decode_raw_member_selector(
+    v: pb::RawMemberSelector,
+) -> Result<spec::member_selectors::RawMemberSelector> {
+    Ok(spec::member_selectors::RawMemberSelector {
         binding: v.binding.map(decode_binding_selector).transpose()?,
         cross_ref: v.cross_ref.map(decode_cross_ref_selector).transpose()?,
         reads_member: v
@@ -795,35 +815,45 @@ pub fn decode_raw_member_selector(v: pb::RawMemberSelector) -> Result<spec::RawM
     })
 }
 
-pub fn encode_binding_selector(value: &spec::BindingSelector) -> pb::BindingSelector {
+pub fn encode_binding_selector(
+    value: &spec::member_selectors::BindingSelector,
+) -> pb::BindingSelector {
     pb::BindingSelector {
         name: Some(value.name.clone()),
         kind: value.kind.map(|kind| kind as i32),
     }
 }
 
-pub fn decode_binding_selector(v: pb::BindingSelector) -> Result<spec::BindingSelector> {
-    Ok(spec::BindingSelector {
+pub fn decode_binding_selector(
+    v: pb::BindingSelector,
+) -> Result<spec::member_selectors::BindingSelector> {
+    Ok(spec::member_selectors::BindingSelector {
         name: required(v.name)?,
         kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
     })
 }
 
-pub fn encode_cross_ref_selector(value: &spec::CrossRefSelector) -> pb::CrossRefSelector {
+pub fn encode_cross_ref_selector(
+    value: &spec::member_selectors::CrossRefSelector,
+) -> pb::CrossRefSelector {
     pb::CrossRefSelector {
         references: Some(value.references.clone()),
         kind: value.kind.map(|kind| kind as i32),
     }
 }
 
-pub fn decode_cross_ref_selector(v: pb::CrossRefSelector) -> Result<spec::CrossRefSelector> {
-    Ok(spec::CrossRefSelector {
+pub fn decode_cross_ref_selector(
+    v: pb::CrossRefSelector,
+) -> Result<spec::member_selectors::CrossRefSelector> {
+    Ok(spec::member_selectors::CrossRefSelector {
         references: required(v.references)?,
         kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
     })
 }
 
-pub fn encode_reads_member_selector(value: &spec::ReadsMemberSelector) -> pb::ReadsMemberSelector {
+pub fn encode_reads_member_selector(
+    value: &spec::member_selectors::ReadsMemberSelector,
+) -> pb::ReadsMemberSelector {
     pb::ReadsMemberSelector {
         member: Some(value.member.clone()),
         object: value.object.clone(),
@@ -833,8 +863,8 @@ pub fn encode_reads_member_selector(value: &spec::ReadsMemberSelector) -> pb::Re
 
 pub fn decode_reads_member_selector(
     v: pb::ReadsMemberSelector,
-) -> Result<spec::ReadsMemberSelector> {
-    Ok(spec::ReadsMemberSelector {
+) -> Result<spec::member_selectors::ReadsMemberSelector> {
+    Ok(spec::member_selectors::ReadsMemberSelector {
         member: required(v.member)?,
         object: v.object,
         kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
@@ -842,7 +872,7 @@ pub fn decode_reads_member_selector(
 }
 
 pub fn encode_member_of_module_selector(
-    value: &spec::MemberOfModuleSelector,
+    value: &spec::member_selectors::MemberOfModuleSelector,
 ) -> pb::MemberOfModuleSelector {
     pb::MemberOfModuleSelector {
         module: Some(value.module.clone()),
@@ -853,8 +883,8 @@ pub fn encode_member_of_module_selector(
 
 pub fn decode_member_of_module_selector(
     v: pb::MemberOfModuleSelector,
-) -> Result<spec::MemberOfModuleSelector> {
-    Ok(spec::MemberOfModuleSelector {
+) -> Result<spec::member_selectors::MemberOfModuleSelector> {
+    Ok(spec::member_selectors::MemberOfModuleSelector {
         module: required(v.module)?,
         member: required(v.member)?,
         kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
@@ -862,7 +892,7 @@ pub fn decode_member_of_module_selector(
 }
 
 pub fn encode_passed_to_call_selector(
-    value: &spec::PassedToCallSelector,
+    value: &spec::member_selectors::PassedToCallSelector,
 ) -> pb::PassedToCallSelector {
     pb::PassedToCallSelector {
         callee_member: Some(value.callee_member.clone()),
@@ -874,8 +904,8 @@ pub fn encode_passed_to_call_selector(
 
 pub fn decode_passed_to_call_selector(
     v: pb::PassedToCallSelector,
-) -> Result<spec::PassedToCallSelector> {
-    Ok(spec::PassedToCallSelector {
+) -> Result<spec::member_selectors::PassedToCallSelector> {
+    Ok(spec::member_selectors::PassedToCallSelector {
         callee_member: required(v.callee_member)?,
         object: v.object,
         arg_index: v.arg_index.map(usize::try_from).transpose()?,
@@ -884,7 +914,7 @@ pub fn decode_passed_to_call_selector(
 }
 
 pub fn encode_makes_decorate_call_selector(
-    value: &spec::MakesDecorateCallSelector,
+    value: &spec::member_selectors::MakesDecorateCallSelector,
 ) -> pb::MakesDecorateCallSelector {
     pb::MakesDecorateCallSelector {
         class: Some(value.class.clone()),
@@ -895,8 +925,8 @@ pub fn encode_makes_decorate_call_selector(
 
 pub fn decode_makes_decorate_call_selector(
     v: pb::MakesDecorateCallSelector,
-) -> Result<spec::MakesDecorateCallSelector> {
-    Ok(spec::MakesDecorateCallSelector {
+) -> Result<spec::member_selectors::MakesDecorateCallSelector> {
+    Ok(spec::member_selectors::MakesDecorateCallSelector {
         class: required(v.class)?,
         member: v.member,
         kind: v.kind.map(pb::BindingSourceKind::try_from).transpose()?,
@@ -904,7 +934,7 @@ pub fn decode_makes_decorate_call_selector(
 }
 
 pub fn encode_intrinsic_alias_selector(
-    value: &spec::IntrinsicAliasSelector,
+    value: &spec::member_selectors::IntrinsicAliasSelector,
 ) -> pb::IntrinsicAliasSelector {
     pb::IntrinsicAliasSelector {
         property: Some(value.property.clone()),
@@ -914,14 +944,16 @@ pub fn encode_intrinsic_alias_selector(
 
 pub fn decode_intrinsic_alias_selector(
     v: pb::IntrinsicAliasSelector,
-) -> Result<spec::IntrinsicAliasSelector> {
-    Ok(spec::IntrinsicAliasSelector {
+) -> Result<spec::member_selectors::IntrinsicAliasSelector> {
+    Ok(spec::member_selectors::IntrinsicAliasSelector {
         property: required(v.property)?,
         referenced_by: required(v.referenced_by)?,
     })
 }
 
-pub fn encode_source_match_claim(value: &spec::SourceMatchClaim) -> pb::SourceMatchClaim {
+pub fn encode_source_match_claim(
+    value: &spec::annotations::SourceMatchClaim,
+) -> pb::SourceMatchClaim {
     pb::SourceMatchClaim {
         identifiers: Some(value.identifiers as i32),
         match_source: Some(value.match_source.clone()),
@@ -934,8 +966,10 @@ pub fn encode_source_match_claim(value: &spec::SourceMatchClaim) -> pb::SourceMa
     }
 }
 
-pub fn decode_source_match_claim(v: pb::SourceMatchClaim) -> Result<spec::SourceMatchClaim> {
-    Ok(spec::SourceMatchClaim {
+pub fn decode_source_match_claim(
+    v: pb::SourceMatchClaim,
+) -> Result<spec::annotations::SourceMatchClaim> {
+    Ok(spec::annotations::SourceMatchClaim {
         identifiers: pb::SourceMatchIdentifierMode::try_from(
             v.identifiers.context("missing required projection field")?,
         )?,
@@ -949,25 +983,31 @@ pub fn decode_source_match_claim(v: pb::SourceMatchClaim) -> Result<spec::Source
     })
 }
 
-pub fn encode_source_match_binding(value: &spec::SourceMatchBinding) -> pb::SourceMatchBinding {
+pub fn encode_source_match_binding(
+    value: &spec::annotations::SourceMatchBinding,
+) -> pb::SourceMatchBinding {
     use pb::source_match_binding::Value;
     pb::SourceMatchBinding {
         value: Some(match value {
-            spec::SourceMatchBinding::Local(v) => Value::Local(v.clone()),
-            spec::SourceMatchBinding::Detailed(v) => Value::Detailed(v.clone()),
+            spec::annotations::SourceMatchBinding::Local(v) => Value::Local(v.clone()),
+            spec::annotations::SourceMatchBinding::Detailed(v) => Value::Detailed(v.clone()),
         }),
     }
 }
 
-pub fn decode_source_match_binding(v: pb::SourceMatchBinding) -> Result<spec::SourceMatchBinding> {
+pub fn decode_source_match_binding(
+    v: pb::SourceMatchBinding,
+) -> Result<spec::annotations::SourceMatchBinding> {
     use pb::source_match_binding::Value;
     Ok(match v.value.context("missing source match binding")? {
-        Value::Local(v) => spec::SourceMatchBinding::Local(v),
-        Value::Detailed(v) => spec::SourceMatchBinding::Detailed(v),
+        Value::Local(v) => spec::annotations::SourceMatchBinding::Local(v),
+        Value::Detailed(v) => spec::annotations::SourceMatchBinding::Detailed(v),
     })
 }
 
-pub fn encode_binding_annotation(value: &spec::BindingAnnotation) -> pb::BindingAnnotation {
+pub fn encode_binding_annotation(
+    value: &spec::annotations::BindingAnnotation,
+) -> pb::BindingAnnotation {
     pb::BindingAnnotation {
         retained_record_factory: Some(value.retained_record_factory),
         purity: Some(value.purity as i32),
@@ -986,8 +1026,10 @@ pub fn encode_binding_annotation(value: &spec::BindingAnnotation) -> pb::Binding
     }
 }
 
-pub fn decode_binding_annotation(v: pb::BindingAnnotation) -> Result<spec::BindingAnnotation> {
-    Ok(spec::BindingAnnotation {
+pub fn decode_binding_annotation(
+    v: pb::BindingAnnotation,
+) -> Result<spec::annotations::BindingAnnotation> {
+    Ok(spec::annotations::BindingAnnotation {
         retained_record_factory: required(v.retained_record_factory)?,
         purity: pb::MemberPurity::try_from(v.purity.context("missing member purity")?)?,
         initializer_purity: pb::InitializerPurity::try_from(
@@ -1009,7 +1051,9 @@ pub fn decode_binding_annotation(v: pb::BindingAnnotation) -> Result<spec::Bindi
     })
 }
 
-pub fn encode_anonymous_statement(value: &spec::AnonymousStatement) -> pb::AnonymousStatement {
+pub fn encode_anonymous_statement(
+    value: &spec::annotations::AnonymousStatement,
+) -> pb::AnonymousStatement {
     pb::AnonymousStatement {
         match_source: value.match_source.clone(),
         source_match: value.source_match.as_ref().map(encode_source_match),
@@ -1019,8 +1063,10 @@ pub fn encode_anonymous_statement(value: &spec::AnonymousStatement) -> pb::Anony
     }
 }
 
-pub fn decode_anonymous_statement(v: pb::AnonymousStatement) -> Result<spec::AnonymousStatement> {
-    Ok(spec::AnonymousStatement {
+pub fn decode_anonymous_statement(
+    v: pb::AnonymousStatement,
+) -> Result<spec::annotations::AnonymousStatement> {
+    Ok(spec::annotations::AnonymousStatement {
         match_source: v.match_source,
         source_match: v.source_match.map(decode_source_match).transpose()?,
         no_reentry_call: v.no_reentry_call.map(decode_no_reentry_call).transpose()?,
@@ -1029,7 +1075,7 @@ pub fn decode_anonymous_statement(v: pb::AnonymousStatement) -> Result<spec::Ano
     })
 }
 
-pub fn encode_source_match(value: &spec::SourceMatch) -> pb::SourceMatch {
+pub fn encode_source_match(value: &spec::annotations::SourceMatch) -> pb::SourceMatch {
     pb::SourceMatch {
         identifiers: Some(value.identifiers as i32),
         target_binding: value.target_binding.clone(),
@@ -1037,8 +1083,8 @@ pub fn encode_source_match(value: &spec::SourceMatch) -> pb::SourceMatch {
     }
 }
 
-pub fn decode_source_match(v: pb::SourceMatch) -> Result<spec::SourceMatch> {
-    Ok(spec::SourceMatch {
+pub fn decode_source_match(v: pb::SourceMatch) -> Result<spec::annotations::SourceMatch> {
+    Ok(spec::annotations::SourceMatch {
         identifiers: pb::SourceMatchIdentifierMode::try_from(
             v.identifiers.context("missing required projection field")?,
         )?,
@@ -1047,7 +1093,7 @@ pub fn decode_source_match(v: pb::SourceMatch) -> Result<spec::SourceMatch> {
     })
 }
 
-pub fn encode_no_reentry_call(value: &spec::NoReentryCall) -> pb::NoReentryCall {
+pub fn encode_no_reentry_call(value: &spec::annotations::NoReentryCall) -> pb::NoReentryCall {
     pb::NoReentryCall {
         callback_arguments: value
             .callback_arguments
@@ -1057,8 +1103,8 @@ pub fn encode_no_reentry_call(value: &spec::NoReentryCall) -> pb::NoReentryCall 
     }
 }
 
-pub fn decode_no_reentry_call(v: pb::NoReentryCall) -> Result<spec::NoReentryCall> {
-    let result = spec::NoReentryCall {
+pub fn decode_no_reentry_call(v: pb::NoReentryCall) -> Result<spec::annotations::NoReentryCall> {
+    let result = spec::annotations::NoReentryCall {
         callback_arguments: v
             .callback_arguments
             .into_iter()
@@ -1281,7 +1327,9 @@ pub fn decode_dependency_graph_options(
     })
 }
 
-pub fn encode_value_input_contract(value: &spec::ValueInputContract) -> pb::ValueInputContract {
+pub fn encode_value_input_contract(
+    value: &spec::input_contracts::ValueInputContract,
+) -> pb::ValueInputContract {
     pb::ValueInputContract {
         source_match: Some(encode_source_match_claim(&value.source_match)),
         value: Some(encode_captured_value_contract(&value.value)),
@@ -1291,8 +1339,10 @@ pub fn encode_value_input_contract(value: &spec::ValueInputContract) -> pb::Valu
     }
 }
 
-pub fn decode_value_input_contract(v: pb::ValueInputContract) -> Result<spec::ValueInputContract> {
-    Ok(spec::ValueInputContract {
+pub fn decode_value_input_contract(
+    v: pb::ValueInputContract,
+) -> Result<spec::input_contracts::ValueInputContract> {
+    Ok(spec::input_contracts::ValueInputContract {
         source_match: decode_source_match_claim(required(v.source_match)?)?,
         value: decode_captured_value_contract(required(v.value)?)?,
         audited_source_sha256: required(v.audited_source_sha256)?,
@@ -1302,7 +1352,7 @@ pub fn decode_value_input_contract(v: pb::ValueInputContract) -> Result<spec::Va
 }
 
 pub fn encode_captured_value_contract(
-    value: &spec::CapturedValueContract,
+    value: &spec::input_contracts::CapturedValueContract,
 ) -> pb::CapturedValueContract {
     pb::CapturedValueContract {
         kind: Some(value.kind as i32),
@@ -1311,8 +1361,8 @@ pub fn encode_captured_value_contract(
 
 pub fn decode_captured_value_contract(
     v: pb::CapturedValueContract,
-) -> Result<spec::CapturedValueContract> {
-    Ok(spec::CapturedValueContract {
+) -> Result<spec::input_contracts::CapturedValueContract> {
+    Ok(spec::input_contracts::CapturedValueContract {
         kind: pb::CapturedValueKind::try_from(
             v.kind.context("missing required projection field")?,
         )?,
@@ -1320,7 +1370,7 @@ pub fn decode_captured_value_contract(
 }
 
 pub fn encode_native_operation_input_contract(
-    value: &spec::NativeOperationInputContract,
+    value: &spec::input_contracts::NativeOperationInputContract,
 ) -> pb::NativeOperationInputContract {
     pb::NativeOperationInputContract {
         selector: Some(encode_source_unit_selector(&value.selector)),
@@ -1332,8 +1382,8 @@ pub fn encode_native_operation_input_contract(
 
 pub fn decode_native_operation_input_contract(
     v: pb::NativeOperationInputContract,
-) -> Result<spec::NativeOperationInputContract> {
-    Ok(spec::NativeOperationInputContract {
+) -> Result<spec::input_contracts::NativeOperationInputContract> {
+    Ok(spec::input_contracts::NativeOperationInputContract {
         selector: decode_source_unit_selector(required(v.selector)?)?,
         operation: pb::NativeOperationKind::try_from(
             v.operation.context("missing required projection field")?,
@@ -1343,30 +1393,36 @@ pub fn decode_native_operation_input_contract(
     })
 }
 
-pub fn encode_source_unit_selector(value: &spec::SourceUnitSelector) -> pb::SourceUnitSelector {
+pub fn encode_source_unit_selector(
+    value: &spec::input_contracts::SourceUnitSelector,
+) -> pb::SourceUnitSelector {
     use pb::source_unit_selector::Value;
     pb::SourceUnitSelector {
         value: Some(match value {
-            spec::SourceUnitSelector::SourceMatch(v) => {
+            spec::input_contracts::SourceUnitSelector::SourceMatch(v) => {
                 Value::SourceMatch(encode_source_match_claim(v))
             }
-            spec::SourceUnitSelector::ResolvedMember(v) => Value::ResolvedMember(v.clone()),
+            spec::input_contracts::SourceUnitSelector::ResolvedMember(v) => {
+                Value::ResolvedMember(v.clone())
+            }
         }),
     }
 }
 
-pub fn decode_source_unit_selector(v: pb::SourceUnitSelector) -> Result<spec::SourceUnitSelector> {
+pub fn decode_source_unit_selector(
+    v: pb::SourceUnitSelector,
+) -> Result<spec::input_contracts::SourceUnitSelector> {
     use pb::source_unit_selector::Value;
     Ok(match v.value.context("missing source unit selector")? {
         Value::SourceMatch(v) => {
-            spec::SourceUnitSelector::SourceMatch(decode_source_match_claim(v)?)
+            spec::input_contracts::SourceUnitSelector::SourceMatch(decode_source_match_claim(v)?)
         }
-        Value::ResolvedMember(v) => spec::SourceUnitSelector::ResolvedMember(v),
+        Value::ResolvedMember(v) => spec::input_contracts::SourceUnitSelector::ResolvedMember(v),
     })
 }
 
 pub fn encode_initializer_call_effect_input_contract(
-    value: &spec::InitializerCallEffectInputContract,
+    value: &spec::input_contracts::InitializerCallEffectInputContract,
 ) -> pb::InitializerCallEffectInputContract {
     pb::InitializerCallEffectInputContract {
         resolved_member: Some(value.resolved_member.clone()),
@@ -1387,8 +1443,8 @@ pub fn encode_initializer_call_effect_input_contract(
 
 pub fn decode_initializer_call_effect_input_contract(
     v: pb::InitializerCallEffectInputContract,
-) -> Result<spec::InitializerCallEffectInputContract> {
-    Ok(spec::InitializerCallEffectInputContract {
+) -> Result<spec::input_contracts::InitializerCallEffectInputContract> {
+    Ok(spec::input_contracts::InitializerCallEffectInputContract {
         resolved_member: v
             .resolved_member
             .context("missing required projection field")?,
@@ -1408,7 +1464,7 @@ pub fn decode_initializer_call_effect_input_contract(
 }
 
 pub fn encode_initializer_call_effective_replacement(
-    value: &spec::InitializerCallEffectiveReplacement,
+    value: &spec::input_contracts::InitializerCallEffectiveReplacement,
 ) -> pb::InitializerCallEffectiveReplacement {
     pb::InitializerCallEffectiveReplacement {
         package: Some(value.package.clone()),
@@ -1421,8 +1477,8 @@ pub fn encode_initializer_call_effective_replacement(
 
 pub fn decode_initializer_call_effective_replacement(
     v: pb::InitializerCallEffectiveReplacement,
-) -> Result<spec::InitializerCallEffectiveReplacement> {
-    Ok(spec::InitializerCallEffectiveReplacement {
+) -> Result<spec::input_contracts::InitializerCallEffectiveReplacement> {
+    Ok(spec::input_contracts::InitializerCallEffectiveReplacement {
         package: required(v.package)?,
         bundle_export: required(v.bundle_export)?,
         symbol_kind: pb::PartialSwapKind::try_from(
@@ -1434,7 +1490,7 @@ pub fn decode_initializer_call_effective_replacement(
 }
 
 pub fn encode_imported_primitive_array_spread_input_contract(
-    value: &spec::ImportedPrimitiveArraySpreadInputContract,
+    value: &spec::input_contracts::ImportedPrimitiveArraySpreadInputContract,
 ) -> pb::ImportedPrimitiveArraySpreadInputContract {
     pb::ImportedPrimitiveArraySpreadInputContract {
         source_match: Some(encode_source_match_claim(&value.source_match)),
@@ -1453,22 +1509,24 @@ pub fn encode_imported_primitive_array_spread_input_contract(
 
 pub fn decode_imported_primitive_array_spread_input_contract(
     v: pb::ImportedPrimitiveArraySpreadInputContract,
-) -> Result<spec::ImportedPrimitiveArraySpreadInputContract> {
-    Ok(spec::ImportedPrimitiveArraySpreadInputContract {
-        source_match: decode_source_match_claim(required(v.source_match)?)?,
-        operands: v
-            .operands
-            .into_iter()
-            .map(decode_imported_primitive_array_operand_contract)
-            .collect::<Result<_>>()?,
-        audited_source_sha256: required(v.audited_source_sha256)?,
-        lifetime: decode_imported_primitive_array_lifetime_contract(required(v.lifetime)?)?,
-        note: v.note,
-    })
+) -> Result<spec::input_contracts::ImportedPrimitiveArraySpreadInputContract> {
+    Ok(
+        spec::input_contracts::ImportedPrimitiveArraySpreadInputContract {
+            source_match: decode_source_match_claim(required(v.source_match)?)?,
+            operands: v
+                .operands
+                .into_iter()
+                .map(decode_imported_primitive_array_operand_contract)
+                .collect::<Result<_>>()?,
+            audited_source_sha256: required(v.audited_source_sha256)?,
+            lifetime: decode_imported_primitive_array_lifetime_contract(required(v.lifetime)?)?,
+            note: v.note,
+        },
+    )
 }
 
 pub fn encode_imported_primitive_array_operand_contract(
-    value: &spec::ImportedPrimitiveArrayOperandContract,
+    value: &spec::input_contracts::ImportedPrimitiveArrayOperandContract,
 ) -> pb::ImportedPrimitiveArrayOperandContract {
     pb::ImportedPrimitiveArrayOperandContract {
         selector_local: Some(value.selector_local.clone()),
@@ -1480,17 +1538,19 @@ pub fn encode_imported_primitive_array_operand_contract(
 
 pub fn decode_imported_primitive_array_operand_contract(
     v: pb::ImportedPrimitiveArrayOperandContract,
-) -> Result<spec::ImportedPrimitiveArrayOperandContract> {
-    Ok(spec::ImportedPrimitiveArrayOperandContract {
-        selector_local: required(v.selector_local)?,
-        provider_chunk: required(v.provider_chunk)?,
-        provider_source_match: decode_source_match_claim(required(v.provider_source_match)?)?,
-        audited_provider_source_sha256: required(v.audited_provider_source_sha256)?,
-    })
+) -> Result<spec::input_contracts::ImportedPrimitiveArrayOperandContract> {
+    Ok(
+        spec::input_contracts::ImportedPrimitiveArrayOperandContract {
+            selector_local: required(v.selector_local)?,
+            provider_chunk: required(v.provider_chunk)?,
+            provider_source_match: decode_source_match_claim(required(v.provider_source_match)?)?,
+            audited_provider_source_sha256: required(v.audited_provider_source_sha256)?,
+        },
+    )
 }
 
 pub fn encode_imported_primitive_array_lifetime_contract(
-    value: &spec::ImportedPrimitiveArrayLifetimeContract,
+    value: &spec::input_contracts::ImportedPrimitiveArrayLifetimeContract,
 ) -> pb::ImportedPrimitiveArrayLifetimeContract {
     pb::ImportedPrimitiveArrayLifetimeContract {
         identity_unchanged_through_spread: Some(value.identity_unchanged_through_spread),
@@ -1509,24 +1569,26 @@ pub fn encode_imported_primitive_array_lifetime_contract(
 
 pub fn decode_imported_primitive_array_lifetime_contract(
     v: pb::ImportedPrimitiveArrayLifetimeContract,
-) -> Result<spec::ImportedPrimitiveArrayLifetimeContract> {
-    Ok(spec::ImportedPrimitiveArrayLifetimeContract {
-        identity_unchanged_through_spread: required(v.identity_unchanged_through_spread)?,
-        dense_own_data_primitive_contents_unchanged_through_spread: required(
-            v.dense_own_data_primitive_contents_unchanged_through_spread,
-        )?,
-        ordinary_array_prototype_chain_unchanged_through_spread: required(
-            v.ordinary_array_prototype_chain_unchanged_through_spread,
-        )?,
-        no_own_iterator_or_accessors_through_spread: required(
-            v.no_own_iterator_or_accessors_through_spread,
-        )?,
-        no_rebinding_through_spread: required(v.no_rebinding_through_spread)?,
-    })
+) -> Result<spec::input_contracts::ImportedPrimitiveArrayLifetimeContract> {
+    Ok(
+        spec::input_contracts::ImportedPrimitiveArrayLifetimeContract {
+            identity_unchanged_through_spread: required(v.identity_unchanged_through_spread)?,
+            dense_own_data_primitive_contents_unchanged_through_spread: required(
+                v.dense_own_data_primitive_contents_unchanged_through_spread,
+            )?,
+            ordinary_array_prototype_chain_unchanged_through_spread: required(
+                v.ordinary_array_prototype_chain_unchanged_through_spread,
+            )?,
+            no_own_iterator_or_accessors_through_spread: required(
+                v.no_own_iterator_or_accessors_through_spread,
+            )?,
+            no_rebinding_through_spread: required(v.no_rebinding_through_spread)?,
+        },
+    )
 }
 
 pub fn encode_commuting_statements_contract(
-    value: &spec::CommutingStatementsContract,
+    value: &spec::input_contracts::CommutingStatementsContract,
 ) -> pb::CommutingStatementsContract {
     pb::CommutingStatementsContract {
         a: Some(encode_source_unit_selector(&value.a)),
@@ -1537,8 +1599,8 @@ pub fn encode_commuting_statements_contract(
 
 pub fn decode_commuting_statements_contract(
     v: pb::CommutingStatementsContract,
-) -> Result<spec::CommutingStatementsContract> {
-    Ok(spec::CommutingStatementsContract {
+) -> Result<spec::input_contracts::CommutingStatementsContract> {
+    Ok(spec::input_contracts::CommutingStatementsContract {
         a: decode_source_unit_selector(required(v.a)?)?,
         b: decode_source_unit_selector(required(v.b)?)?,
         note: v.note,
@@ -1546,7 +1608,7 @@ pub fn decode_commuting_statements_contract(
 }
 
 pub fn encode_native_call_identity_input_contract(
-    value: &spec::NativeCallIdentityInputContract,
+    value: &spec::input_contracts::NativeCallIdentityInputContract,
 ) -> pb::NativeCallIdentityInputContract {
     pb::NativeCallIdentityInputContract {
         source_match: Some(encode_source_match_claim(&value.source_match)),
@@ -1558,8 +1620,8 @@ pub fn encode_native_call_identity_input_contract(
 
 pub fn decode_native_call_identity_input_contract(
     v: pb::NativeCallIdentityInputContract,
-) -> Result<spec::NativeCallIdentityInputContract> {
-    Ok(spec::NativeCallIdentityInputContract {
+) -> Result<spec::input_contracts::NativeCallIdentityInputContract> {
+    Ok(spec::input_contracts::NativeCallIdentityInputContract {
         source_match: decode_source_match_claim(required(v.source_match)?)?,
         callee: pb::NativeCallIdentityKind::try_from(
             v.callee.context("missing required projection field")?,
@@ -1570,7 +1632,7 @@ pub fn decode_native_call_identity_input_contract(
 }
 
 pub fn encode_argument_input_contract(
-    value: &spec::ArgumentInputContract,
+    value: &spec::input_contracts::ArgumentInputContract,
 ) -> pb::ArgumentInputContract {
     pb::ArgumentInputContract {
         source_match: Some(encode_source_match_claim(&value.source_match)),
@@ -1583,8 +1645,8 @@ pub fn encode_argument_input_contract(
 
 pub fn decode_argument_input_contract(
     v: pb::ArgumentInputContract,
-) -> Result<spec::ArgumentInputContract> {
-    Ok(spec::ArgumentInputContract {
+) -> Result<spec::input_contracts::ArgumentInputContract> {
+    Ok(spec::input_contracts::ArgumentInputContract {
         source_match: decode_source_match_claim(required(v.source_match)?)?,
         parameter_index: usize::try_from(required(v.parameter_index)?)?,
         exact_arity: usize::try_from(required(v.exact_arity)?)?,
@@ -1594,7 +1656,7 @@ pub fn decode_argument_input_contract(
 }
 
 pub fn encode_no_accessor_install_callable_contract(
-    value: &spec::NoAccessorInstallCallableContract,
+    value: &spec::input_contracts::NoAccessorInstallCallableContract,
 ) -> pb::NoAccessorInstallCallableContract {
     pb::NoAccessorInstallCallableContract {
         source_match: Some(encode_source_match_claim(&value.source_match)),
@@ -1604,8 +1666,8 @@ pub fn encode_no_accessor_install_callable_contract(
 
 pub fn decode_no_accessor_install_callable_contract(
     v: pb::NoAccessorInstallCallableContract,
-) -> Result<spec::NoAccessorInstallCallableContract> {
-    Ok(spec::NoAccessorInstallCallableContract {
+) -> Result<spec::input_contracts::NoAccessorInstallCallableContract> {
+    Ok(spec::input_contracts::NoAccessorInstallCallableContract {
         source_match: decode_source_match_claim(required(v.source_match)?)?,
         note: v.note,
     })

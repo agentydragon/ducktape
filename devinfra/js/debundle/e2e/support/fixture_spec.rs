@@ -5,48 +5,57 @@ use super::ast_assertions::declared_bindings_in_source_match;
 use serde::Deserialize;
 use serde::de::value::{Error as DeserializeError, SeqDeserializer};
 use spec::InitializerPurity;
+use spec::annotations::{
+    AnonymousStatement, BindingAnnotation, SourceMatch, SourceMatchBinding, SourceMatchClaim,
+};
+use spec::member_selectors::{
+    BindingSelector, CrossRefSelector, IntrinsicAliasSelector, MakesDecorateCallSelector,
+    Member as SpecMember, RawMemberSelector, ReadsMemberSelector,
+};
 use spec::{
-    AnonymousStatement, BindingAnnotation, BindingSelector, BindingSourceKind, ChunkRenameMember,
-    ChunkRenameSelector, ChunkRenames, CrossRefSelector, DependencyGraphOptions,
-    EmitBrowserHarnessConfig, IntrinsicAliasSelector, LoadJsChunksArgs, LogicalModule,
-    MakesDecorateCallSelector, MaterializeLogicalModulesConfig, Member as SpecMember,
-    RawMemberSelector, ReadsMemberSelector, SourceMatch, SourceMatchBinding,
-    SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode, SwapVendorChunksConfig,
-    TransformSpec, UnassignedMode, WriteJsTreeConfig,
+    BindingSourceKind, ChunkRenameMember, ChunkRenameSelector, ChunkRenames,
+    DependencyGraphOptions, EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule,
+    MaterializeLogicalModulesConfig, SourceMatchBindingDetail, SourceMatchIdentifierMode,
+    SwapVendorChunksConfig, TransformSpec, UnassignedMode, WriteJsTreeConfig,
 };
 use spec::{MemberEffect, MemberPurity};
 use std::collections::BTreeMap;
 
 /// One fixture package projected from a prebuilt ESM bundle's `replacement` export.
-pub fn bundled_vendor_mark(bundle_path: std::path::PathBuf, exports: &[&str]) -> spec::VendorMark {
-    spec::VendorMark {
+pub fn bundled_vendor_mark(
+    bundle_path: std::path::PathBuf,
+    exports: &[&str],
+) -> spec::vendor_marks::VendorMark {
+    spec::vendor_marks::VendorMark {
         identity: "fixture-provider".into(),
-        level: spec::VendorLevel::BundledPartialSwap(spec::BundledPartialSwapMark {
-            bundle: spec::BundledPartialSwapBundle { path: bundle_path },
-            packages: BTreeMap::from([(
-                "fixture-provider".into(),
-                spec::BundledPartialSwapPackage {
-                    version: "1.0.0".into(),
-                    subpath: "replacement.mjs".into(),
-                    bundle_export: "replacement".into(),
-                    namespace: Some("replacement".into()),
-                },
-            )]),
-            symbols: exports
-                .iter()
-                .map(|export| {
-                    (
-                        (*export).into(),
-                        spec::PartialSwapSymbol {
-                            package: "fixture-provider".into(),
-                            kind: spec::PartialSwapKind::Named,
-                            upstream_export: Some((*export).into()),
-                            local: None,
-                        },
-                    )
-                })
-                .collect(),
-        }),
+        level: spec::vendor_marks::VendorLevel::BundledPartialSwap(
+            spec::vendor_marks::BundledPartialSwapMark {
+                bundle: spec::vendor_marks::BundledPartialSwapBundle { path: bundle_path },
+                packages: BTreeMap::from([(
+                    "fixture-provider".into(),
+                    spec::vendor_marks::BundledPartialSwapPackage {
+                        version: "1.0.0".into(),
+                        subpath: "replacement.mjs".into(),
+                        bundle_export: "replacement".into(),
+                        namespace: Some("replacement".into()),
+                    },
+                )]),
+                symbols: exports
+                    .iter()
+                    .map(|export| {
+                        (
+                            (*export).into(),
+                            spec::vendor_marks::PartialSwapSymbol {
+                                package: "fixture-provider".into(),
+                                kind: spec::PartialSwapKind::Named,
+                                upstream_export: Some((*export).into()),
+                                local: None,
+                            },
+                        )
+                    })
+                    .collect(),
+            },
+        ),
     }
 }
 
@@ -103,7 +112,7 @@ pub const OPAQUE_TRACE_CYCLE_OUTPUT: &str = "A B C alpha,beta,gamma\n";
 /// Two-module fixture for the authored opaque trace-cycle commutation cases.
 /// Keep its explicit import priority with the shared source and placement.
 pub fn opaque_trace_cycle_fixture(
-    pairs: Vec<spec::CommutingStatementsContract>,
+    pairs: Vec<spec::input_contracts::CommutingStatementsContract>,
 ) -> FixtureOpts<'static> {
     FixtureOpts::new(
         OPAQUE_TRACE_CYCLE_SOURCE,
@@ -353,14 +362,14 @@ impl Member {
     }
 
     /// Attach an author comment to be emitted above the binding's source_unit
-    /// statement in the lowered module body. See `spec::Member::comment`.
+    /// statement in the lowered module body. See `spec::member_selectors::Member::comment`.
     pub fn with_comment(mut self, comment: impl Into<String>) -> Self {
         self.comment = Some(comment.into());
         self
     }
 
     /// Attach a spec-level purity annotation (`pure` / `pure_new`) to the
-    /// binding. See `spec::BindingAnnotation::purity`.
+    /// binding. See `spec::annotations::BindingAnnotation::purity`.
     pub fn with_purity(mut self, purity: MemberPurity) -> Self {
         self.purity = Some(purity);
         self
@@ -374,7 +383,7 @@ impl Member {
     }
 
     /// Attach a spec-level local-effect annotation to the binding. See
-    /// `spec::BindingAnnotation::effect`.
+    /// `spec::annotations::BindingAnnotation::effect`.
     pub fn with_effect(mut self, effect: MemberEffect) -> Self {
         self.effect = Some(effect);
         self
@@ -382,14 +391,14 @@ impl Member {
 
     /// Assert that this stable local function retains its fresh record argument
     /// and defers its callback graph. See
-    /// `spec::BindingAnnotation::retained_record_factory`.
+    /// `spec::annotations::BindingAnnotation::retained_record_factory`.
     pub fn with_retained_record_factory(mut self) -> Self {
         self.retained_record_factory = true;
         self
     }
 
     /// Assert that these calls store callback arguments without invoking them
-    /// synchronously. See `spec::BindingAnnotation::no_sync_callback_members`.
+    /// synchronously. See `spec::annotations::BindingAnnotation::no_sync_callback_members`.
     pub fn with_no_sync_callback_members(mut self, members: &[&str]) -> Self {
         self.no_sync_callback_members =
             members.iter().map(|member| (*member).to_string()).collect();
@@ -423,7 +432,7 @@ fn source_match_binding(local: impl Into<String>, name: impl Into<String>) -> So
     }
 }
 
-/// Newtype over `spec::AnonymousStatement` so the harness keeps its
+/// Newtype over `spec::annotations::AnonymousStatement` so the harness keeps its
 /// `::exact` / `::alpha_all` / `.with_comment` builder spelling.
 #[derive(Clone)]
 struct FixtureAnonymousStatement(AnonymousStatement);
@@ -760,22 +769,38 @@ pub struct FixtureOpts<'a> {
     /// built via [`ChunkExportPurityBuilder`]. Default empty.
     pub chunk_export_purity: &'a [(&'a str, spec::ChunkExportPurity)],
     /// Author-conditioned captured-value inputs keyed by their defining chunk.
-    pub value_inputs: Vec<(String, Vec<spec::ValueInputContract>)>,
+    pub value_inputs: Vec<(String, Vec<spec::input_contracts::ValueInputContract>)>,
     /// Source-selected native-operation identity premises keyed by provider.
-    pub native_operation_inputs: Vec<(String, Vec<spec::NativeOperationInputContract>)>,
-    pub initializer_call_effect_inputs:
-        Vec<(String, Vec<spec::InitializerCallEffectInputContract>)>,
+    pub native_operation_inputs: Vec<(
+        String,
+        Vec<spec::input_contracts::NativeOperationInputContract>,
+    )>,
+    pub initializer_call_effect_inputs: Vec<(
+        String,
+        Vec<spec::input_contracts::InitializerCallEffectInputContract>,
+    )>,
     /// Exact-site imported primitive-array spread premises keyed by consumer.
-    pub imported_primitive_array_spread_inputs:
-        Vec<(String, Vec<spec::ImportedPrimitiveArraySpreadInputContract>)>,
+    pub imported_primitive_array_spread_inputs: Vec<(
+        String,
+        Vec<spec::input_contracts::ImportedPrimitiveArraySpreadInputContract>,
+    )>,
     /// Source-selected exact native callee identity premises keyed by provider.
-    pub native_call_identity_inputs: Vec<(String, Vec<spec::NativeCallIdentityInputContract>)>,
-    pub argument_inputs: Vec<(String, Vec<spec::ArgumentInputContract>)>,
-    pub no_accessor_install_callables: Vec<(String, Vec<spec::NoAccessorInstallCallableContract>)>,
+    pub native_call_identity_inputs: Vec<(
+        String,
+        Vec<spec::input_contracts::NativeCallIdentityInputContract>,
+    )>,
+    pub argument_inputs: Vec<(String, Vec<spec::input_contracts::ArgumentInputContract>)>,
+    pub no_accessor_install_callables: Vec<(
+        String,
+        Vec<spec::input_contracts::NoAccessorInstallCallableContract>,
+    )>,
     /// Author-certified commuting source-unit pairs keyed by their chunk.
-    pub commuting_statements: Vec<(String, Vec<spec::CommutingStatementsContract>)>,
+    pub commuting_statements: Vec<(
+        String,
+        Vec<spec::input_contracts::CommutingStatementsContract>,
+    )>,
     /// Additional vendor marks keyed by chunk ID, for report and rewrite cases.
-    pub vendor_marks: &'a [(&'a str, spec::VendorMark)],
+    pub vendor_marks: &'a [(&'a str, spec::vendor_marks::VendorMark)],
     /// Keep only `chunk_id` in the materialization artifact while retaining
     /// the full chunk table, exercising incomplete-artifact fallback.
     pub prune_other_chunks: bool,
@@ -869,7 +894,7 @@ impl<'a> FixtureOpts<'a> {
     pub fn with_value_inputs(
         mut self,
         chunk: impl Into<String>,
-        inputs: Vec<spec::ValueInputContract>,
+        inputs: Vec<spec::input_contracts::ValueInputContract>,
     ) -> Self {
         self.value_inputs.push((chunk.into(), inputs));
         self
@@ -879,7 +904,7 @@ impl<'a> FixtureOpts<'a> {
     pub fn with_native_operation_inputs(
         mut self,
         chunk: impl Into<String>,
-        inputs: Vec<spec::NativeOperationInputContract>,
+        inputs: Vec<spec::input_contracts::NativeOperationInputContract>,
     ) -> Self {
         self.native_operation_inputs.push((chunk.into(), inputs));
         self
@@ -888,7 +913,7 @@ impl<'a> FixtureOpts<'a> {
     pub fn with_initializer_call_effect_inputs(
         mut self,
         chunk: impl Into<String>,
-        inputs: Vec<spec::InitializerCallEffectInputContract>,
+        inputs: Vec<spec::input_contracts::InitializerCallEffectInputContract>,
     ) -> Self {
         self.initializer_call_effect_inputs
             .push((chunk.into(), inputs));
@@ -898,7 +923,7 @@ impl<'a> FixtureOpts<'a> {
     pub fn with_imported_primitive_array_spread_inputs(
         mut self,
         chunk: impl Into<String>,
-        inputs: Vec<spec::ImportedPrimitiveArraySpreadInputContract>,
+        inputs: Vec<spec::input_contracts::ImportedPrimitiveArraySpreadInputContract>,
     ) -> Self {
         self.imported_primitive_array_spread_inputs
             .push((chunk.into(), inputs));
@@ -908,7 +933,7 @@ impl<'a> FixtureOpts<'a> {
     pub fn with_native_call_identity_inputs(
         mut self,
         chunk: impl Into<String>,
-        inputs: Vec<spec::NativeCallIdentityInputContract>,
+        inputs: Vec<spec::input_contracts::NativeCallIdentityInputContract>,
     ) -> Self {
         self.native_call_identity_inputs
             .push((chunk.into(), inputs));
@@ -918,7 +943,7 @@ impl<'a> FixtureOpts<'a> {
     pub fn with_argument_inputs(
         mut self,
         chunk: impl Into<String>,
-        inputs: Vec<spec::ArgumentInputContract>,
+        inputs: Vec<spec::input_contracts::ArgumentInputContract>,
     ) -> Self {
         self.argument_inputs.push((chunk.into(), inputs));
         self
@@ -927,7 +952,7 @@ impl<'a> FixtureOpts<'a> {
     pub fn with_no_accessor_install_callables(
         mut self,
         chunk: impl Into<String>,
-        callables: Vec<spec::NoAccessorInstallCallableContract>,
+        callables: Vec<spec::input_contracts::NoAccessorInstallCallableContract>,
     ) -> Self {
         self.no_accessor_install_callables
             .push((chunk.into(), callables));
@@ -937,7 +962,7 @@ impl<'a> FixtureOpts<'a> {
     pub fn with_commuting_statements(
         mut self,
         chunk: impl Into<String>,
-        pairs: Vec<spec::CommutingStatementsContract>,
+        pairs: Vec<spec::input_contracts::CommutingStatementsContract>,
     ) -> Self {
         self.commuting_statements.push((chunk.into(), pairs));
         self
@@ -964,7 +989,10 @@ impl<'a> FixtureOpts<'a> {
         self
     }
 
-    pub fn with_vendor_marks(mut self, vendor_marks: &'a [(&'a str, spec::VendorMark)]) -> Self {
+    pub fn with_vendor_marks(
+        mut self,
+        vendor_marks: &'a [(&'a str, spec::vendor_marks::VendorMark)],
+    ) -> Self {
         self.vendor_marks = vendor_marks;
         self
     }
@@ -1081,18 +1109,24 @@ pub fn source_match_module_yaml(statement: &str, local: &str, name: &str) -> Str
 
 /// `commuting_statements` endpoint: the anonymous statement matching
 /// `statement` exactly.
-pub fn anonymous_source_unit(statement: &str) -> spec::SourceUnitSelector {
-    spec::SourceUnitSelector::SourceMatch(source_match_selector(statement, &[]))
+pub fn anonymous_source_unit(statement: &str) -> spec::input_contracts::SourceUnitSelector {
+    spec::input_contracts::SourceUnitSelector::SourceMatch(source_match_selector(statement, &[]))
 }
 
 /// Select `binding`'s declaration inside the statement matching `statement` exactly.
-pub fn declared_source_unit(statement: &str, binding: &str) -> spec::SourceUnitSelector {
-    spec::SourceUnitSelector::SourceMatch(source_match_selector(statement, &[binding]))
+pub fn declared_source_unit(
+    statement: &str,
+    binding: &str,
+) -> spec::input_contracts::SourceUnitSelector {
+    spec::input_contracts::SourceUnitSelector::SourceMatch(source_match_selector(
+        statement,
+        &[binding],
+    ))
 }
 
 /// Select the source unit of an already resolved logical member.
-pub fn member_source_unit(module: &str, name: &str) -> spec::SourceUnitSelector {
-    spec::SourceUnitSelector::ResolvedMember(spec::ResolvedMemberSelector {
+pub fn member_source_unit(module: &str, name: &str) -> spec::input_contracts::SourceUnitSelector {
+    spec::input_contracts::SourceUnitSelector::ResolvedMember(spec::ResolvedMemberSelector {
         module: module.to_owned(),
         name: name.to_owned(),
     })
@@ -1101,11 +1135,11 @@ pub fn member_source_unit(module: &str, name: &str) -> spec::SourceUnitSelector 
 /// Tie an audited operation to the full source capture.
 pub fn native_operation_input(
     source: &str,
-    selector: spec::SourceUnitSelector,
+    selector: spec::input_contracts::SourceUnitSelector,
     operation: spec::NativeOperationKind,
     note: &str,
-) -> spec::NativeOperationInputContract {
-    spec::NativeOperationInputContract {
+) -> spec::input_contracts::NativeOperationInputContract {
+    spec::input_contracts::NativeOperationInputContract {
         selector,
         operation,
         audited_source_sha256: source_sha256(source),
@@ -1115,10 +1149,10 @@ pub fn native_operation_input(
 
 /// One `commuting_statements` entry over two endpoint selectors.
 pub fn commuting_pair(
-    a: spec::SourceUnitSelector,
-    b: spec::SourceUnitSelector,
-) -> spec::CommutingStatementsContract {
-    spec::CommutingStatementsContract {
+    a: spec::input_contracts::SourceUnitSelector,
+    b: spec::input_contracts::SourceUnitSelector,
+) -> spec::input_contracts::CommutingStatementsContract {
+    spec::input_contracts::CommutingStatementsContract {
         a,
         b,
         note: Some("Neutral fixture; neither statement observes the other.".to_owned()),

@@ -5,12 +5,14 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use output_layout::DebundleOutputLayout;
+use spec::vendor_marks::{
+    BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, PartialSwapMark,
+    PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel, VendorMark,
+};
 use spec::{
-    BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, ChunkExportPurity,
-    ChunkRenames, DependencyGraphOptions, EmitBrowserHarnessConfig, LoadJsChunksArgs,
-    LogicalModule, MaterializeLogicalModulesConfig, ModulePath, PartialSwapMark,
-    PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig, TransformSpec,
-    UnassignedMode, VendorLevel, VendorMark, WrapperShape, WriteJsTreeConfig,
+    ChunkExportPurity, ChunkRenames, DependencyGraphOptions, EmitBrowserHarnessConfig,
+    LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, ModulePath,
+    SwapVendorChunksConfig, TransformSpec, UnassignedMode, WrapperShape, WriteJsTreeConfig,
 };
 use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 
@@ -229,7 +231,7 @@ struct VendorMarkSource {
     #[serde(default)]
     wrapper_shape: Option<WrapperShape>,
     /// `swap`-only: upstream named exports asserted as aliases of the
-    /// package default (see `spec::SwapMark::default_export_aliases`).
+    /// package default (see `spec::vendor_marks::SwapMark::default_export_aliases`).
     #[serde(default)]
     default_export_aliases: Vec<String>,
     /// `partial_swap` / `bundled_partial_swap`: per-package upstream

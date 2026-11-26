@@ -242,7 +242,7 @@ fn analysis_rejects_non_utf8_paths_when_encoding_and_decoding() {
             1 => value.inputs.js_list_path = path.clone(),
             2 => value.inputs.embedded_loaders_path = Some(path.clone()),
             3 => {
-                let spec::VendorLevel::BundledPartialSwap(mark) =
+                let spec::vendor_marks::VendorLevel::BundledPartialSwap(mark) =
                     &mut value.vendor.get_mut("note").unwrap().level
                 else {
                     unreachable!()

@@ -21,7 +21,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use selector_outcome::SelectorKind;
 
-use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchClaim, TransformSpec};
+use spec::TransformSpec;
+use spec::annotations::{AnonymousStatementSelector, SourceMatchClaim};
+use spec::member_selectors::MemberSelectorSpec;
 
 /// The on-disk module and the logical module share one canonical schema.
 pub type ModuleFile = spec::LogicalModule;

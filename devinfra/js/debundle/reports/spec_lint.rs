@@ -391,7 +391,7 @@ pub struct CommutingStatementsUnused {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnusedCommutingEndpoint {
     /// The endpoint selector exactly as authored.
-    pub selector: spec::SourceUnitSelector,
+    pub selector: spec::input_contracts::SourceUnitSelector,
     /// Authored module/member assignments that resolve to this endpoint.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logical_members: Vec<spec::ResolvedMemberSelector>,
@@ -409,10 +409,10 @@ impl fmt::Display for UnusedCommutingEndpoint {
             .collect::<Vec<_>>();
         match (members.as_slice(), &self.selector) {
             ([member], _) => f.write_str(member)?,
-            ([], spec::SourceUnitSelector::ResolvedMember(member)) => {
+            ([], spec::input_contracts::SourceUnitSelector::ResolvedMember(member)) => {
                 write!(f, "module `{}` member `{}`", member.module, member.name)?;
             }
-            ([], spec::SourceUnitSelector::SourceMatch(claim)) => {
+            ([], spec::input_contracts::SourceUnitSelector::SourceMatch(claim)) => {
                 let source = claim.match_source.split_whitespace().collect::<Vec<_>>();
                 let mut preview = source.join(" ");
                 if preview.chars().count() > 60 {
