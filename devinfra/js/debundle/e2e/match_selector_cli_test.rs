@@ -6,7 +6,9 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use debundle_e2e_support::{debundler_path, process, run_match_selector, write_text_file};
+use debundle_e2e_support::{
+    CaseWorkspace, debundler_path, process, run_match_selector, write_text_file,
+};
 use serde_json::{Value, json};
 
 /// The one outcome a match-selector report carries.
@@ -28,16 +30,15 @@ function computeTotal(items) {
 }
 "#;
 
-fn fixture() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("app.js");
-    write_text_file(&source, CHUNK);
-    (dir, source)
+fn fixture(chunk: &str) -> (CaseWorkspace, PathBuf) {
+    let workspace = CaseWorkspace::default();
+    let source = workspace.write_text("app.js", chunk);
+    (workspace, source)
 }
 
 #[test]
 fn addressed_selectors_use_the_full_typed_spec_schema() {
-    let (dir, source) = fixture();
+    let (dir, source) = fixture(CHUNK);
     let module = dir.path().join("module.yaml");
     let claim =
         "source_matches: [{match: 'const value = renderPanel(\"left\");', bindings: [value]}]";
@@ -114,7 +115,7 @@ fn addressed_selectors_use_the_full_typed_spec_schema() {
 
 #[test]
 fn unique_match_reports_the_bound_target() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     let report = run_match_selector(
         &source,
         "const w = makeWidget(\"widget\", 3, theme);",
@@ -137,10 +138,7 @@ fn unique_match_reports_the_bound_target() {
 
 #[test]
 fn split_declarator_match_reports_pre_split_body_index() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("app.js");
-    write_text_file(
-        &source,
+    let (_workspace, source) = fixture(
         "const runtimeFirst = build(\"left\"), runtimeSecond = build(\"right\");\n\
          const after = initAfter();\n",
     );
@@ -156,7 +154,7 @@ fn split_declarator_match_reports_pre_split_body_index() {
 
 #[test]
 fn no_match_is_not_unique() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     let report = run_match_selector(
         &source,
         "const w = { kind: \"missing\" };",
@@ -169,9 +167,7 @@ fn no_match_is_not_unique() {
 
 #[test]
 fn no_match_identifies_the_first_differing_declarator() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("app.js");
-    write_text_file(&source, "const a = 1, b = 2;\n");
+    let (_workspace, source) = fixture("const a = 1, b = 2;\n");
 
     let report = run_match_selector(
         &source,
@@ -213,12 +209,8 @@ fn no_match_identifies_the_first_differing_declarator() {
 
 #[test]
 fn defaulted_destructure_local_can_be_renamed() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("app.js");
-    write_text_file(
-        &source,
-        "const actual = function({ key: local = 0 }) { return local.value; };\n",
-    );
+    let (_workspace, source) =
+        fixture("const actual = function({ key: local = 0 }) { return local.value; };\n");
     let report = run_match_selector(
         &source,
         "const selected = function({ key = 0 }) { return key.value; };",
@@ -230,7 +222,7 @@ fn defaulted_destructure_local_can_be_renamed() {
 
 #[test]
 fn ambiguous_match_lists_candidates_in_body_order() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     let report = run_match_selector(
         &source,
         "const p = renderPanel(ANYTHING);",
@@ -256,7 +248,7 @@ fn ambiguous_match_lists_candidates_in_body_order() {
 
 #[test]
 fn over_pinned_selector_reports_holeable_slack() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     // The callee + arity already single out the one `makeWidget` call, so the
     // pinned literal arguments are unnecessary precision.
     let report = run_match_selector(
@@ -281,7 +273,7 @@ fn over_pinned_selector_reports_holeable_slack() {
 
 #[test]
 fn minimally_pinned_selector_reports_empty_slack() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     // The "left" literal is the only thing distinguishing leftPanel from
     // rightPanel; holing it would make the selector ambiguous, so there is no
     // slack to report.
@@ -297,7 +289,7 @@ fn minimally_pinned_selector_reports_empty_slack() {
 
 #[test]
 fn no_slack_flag_skips_slack_analysis() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     let report = run_match_selector(
         &source,
         "const w = makeWidget(\"widget\", 3, theme);",
@@ -310,7 +302,7 @@ fn no_slack_flag_skips_slack_analysis() {
 
 #[test]
 fn slack_drops_an_unneeded_object_property() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     // errorState is the only object literal, so any one of its keys alone pins
     // it — the others are droppable kvps, not just holeable values.
     let report = run_match_selector(
@@ -334,7 +326,7 @@ fn slack_drops_an_unneeded_object_property() {
 
 #[test]
 fn slack_drops_a_statement_from_an_over_pinned_body() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     // computeTotal is the only function, so its body statements are not needed
     // for uniqueness and collapse to STMT_LIST runs.
     let report = run_match_selector(
@@ -356,13 +348,10 @@ fn slack_drops_a_statement_from_an_over_pinned_body() {
 
 #[test]
 fn slack_drops_a_destructure_pattern_property() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("app.js");
     // One object-destructuring statement; the `loadConfig` initializer plus any
     // one destructured key already pin it, so the sibling pattern props are
     // droppable (the destructure analogue of an object-literal property drop).
-    write_text_file(
-        &source,
+    let (_workspace, source) = fixture(
         "const lone = initLone();\nconst { primary, secondary, tertiary } = loadConfig();\n",
     );
     let report = run_match_selector(
@@ -387,7 +376,7 @@ fn slack_drops_a_destructure_pattern_property() {
 
 #[test]
 fn slack_drops_a_top_level_context_statement() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     // The `makeWidget` call alone pins widgetConfig, so the trailing `rightPanel`
     // context statement is unnecessary precision and is dropped outright (a
     // top-level STMT_LIST is not honored on the member-resolution path). No error:
@@ -415,12 +404,9 @@ fn slack_drops_a_top_level_context_statement() {
 
 #[test]
 fn seq_exprs_selector_resolves_a_memoized_hook() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("app.js");
     // One memoized hook and one sibling that never assigns a memo, so the
     // memoized-callback anchor is the only thing the probe needs.
-    write_text_file(
-        &source,
+    let (_workspace, source) = fixture(
         "const slots = [];\n\
          function loadLabel(cache, label) {\n\
            let memo;\n\
@@ -453,13 +439,10 @@ fn seq_exprs_selector_resolves_a_memoized_hook() {
 
 #[test]
 fn slack_holes_a_comma_sequence_element() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("app.js");
     // The one sequence-valued declaration: any element of it already pins it,
     // so the siblings are droppable — the sequence analogue of dropping an
     // object property.
-    write_text_file(
-        &source,
+    let (_workspace, source) = fixture(
         "const leftFlag = readLeft();\n\
          const rightFlag = readRight();\n\
          const sequenced = (leftFlag, \"marker\", rightFlag);\n",
@@ -483,7 +466,7 @@ fn slack_holes_a_comma_sequence_element() {
 
 #[test]
 fn seq_exprs_outside_a_sequence_is_an_invalid_probe() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     let report = run_match_selector(
         &source,
         "const w = (SEQ_EXPRS);",
@@ -501,9 +484,7 @@ fn seq_exprs_outside_a_sequence_is_an_invalid_probe() {
 }
 
 fn assert_class_members_differ(left: &str, right: &str) {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("app.js");
-    write_text_file(&source, &format!("class C {{ {left} }}"));
+    let (_workspace, source) = fixture(&format!("class C {{ {left} }}"));
     for (member, expected) in [(left, "resolved"), (right, "no_match")] {
         let report = run_match_selector(
             &source,
@@ -540,9 +521,7 @@ fn class_methods_preserve_accessor_kind() {
 
 #[test]
 fn unprojected_decorators_are_invalid_selectors() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("app.js");
-    write_text_file(&source, "class C { x = 1; m() {} }");
+    let (_workspace, source) = fixture("class C { x = 1; m() {} }");
     for selector in [
         "@dec class C { x = 1; m() {} }",
         "class C { @dec x = 1; m() {} }",
@@ -560,7 +539,7 @@ fn unprojected_decorators_are_invalid_selectors() {
 
 #[test]
 fn invalid_regex_predicate_is_not_a_no_match() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     for (selector, error) in [
         ("const w = STR_LITERAL_MATCHING_RE(\"[\");", "regex"),
         ("const w = STR_LITERAL_MATCHING_RE();", "malformed"),
@@ -584,12 +563,8 @@ fn invalid_regex_predicate_is_not_a_no_match() {
 
 #[test]
 fn ast_contains_string_matches_an_exact_descendant_literal() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("app.js");
-    write_text_file(
-        &source,
-        "const a = wrap(inner(\"key\"));\nconst b = wrap(inner(\"keyish\"));\n",
-    );
+    let (_workspace, source) =
+        fixture("const a = wrap(inner(\"key\"));\nconst b = wrap(inner(\"keyish\"));\n");
     let report = run_match_selector(
         &source,
         "const Selected = AST_CONTAINS_STRING(\"key\");",
@@ -607,7 +582,7 @@ fn ast_contains_string_matches_an_exact_descendant_literal() {
 
 #[test]
 fn invalid_selector_reports_keep_native_parser_diagnostics_and_source_context() {
-    let (_dir, source) = fixture();
+    let (_dir, source) = fixture(CHUNK);
     for (selector, minimum_diagnostics) in [
         ("with (first) {} with (second) {}", 2),
         ("42 = 1;", 1),
@@ -659,7 +634,7 @@ fn invalid_selector_reports_keep_native_parser_diagnostics_and_source_context() 
 
 #[test]
 fn solver_stop_and_operational_settings_failure_remain_distinct() {
-    let (dir, source) = fixture();
+    let (dir, source) = fixture(CHUNK);
     let modules = dir.path().join("modules");
     write_text_file(
         &modules.join("probe.yaml"),

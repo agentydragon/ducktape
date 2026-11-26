@@ -7,9 +7,9 @@ use std::process::Command;
 
 use debundle_e2e_support::process;
 use debundle_e2e_support::{
-    CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module,
-    logical_module_with_anon, mixed_selector_failure_fixture, outcomes, run_source_only_validate,
-    run_spec_validate, write_text_file, write_validate_fixture_spec,
+    CaseWorkspace, CommandResult, FixtureOpts, Member, debundler_path, find_outcome,
+    logical_module, logical_module_with_anon, mixed_selector_failure_fixture, outcomes,
+    run_source_only_validate, run_spec_validate, write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
 
@@ -634,17 +634,16 @@ const leftTwo = renderPanel("shared"), rightTwo = renderPanel("shared");
 }
 
 struct SourceOnlyValidateFixture {
-    _root: tempfile::TempDir,
+    _root: CaseWorkspace,
     modules_root: std::path::PathBuf,
     source_file: std::path::PathBuf,
 }
 
 impl SourceOnlyValidateFixture {
     fn new(source: &str, modules: &[(&str, &str)]) -> Self {
-        let root = tempfile::tempdir().unwrap();
-        let source_file = root.path().join("chunk.js");
+        let root = CaseWorkspace::default();
+        let source_file = root.write_text("chunk.js", source);
         let modules_root = root.path().join("modules");
-        write_text_file(&source_file, source);
         std::fs::create_dir_all(&modules_root).unwrap();
         for (path, yaml) in modules {
             write_text_file(&modules_root.join(path), yaml);
