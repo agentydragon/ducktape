@@ -158,7 +158,7 @@ impl ExecutionIndex {
         let callable = self
             .callable_spans
             .iter()
-            .filter(|(_, span)| span.lo <= write.lo && write.hi <= span.hi)
+            .filter(|(_, span)| span.contains(write))
             .min_by_key(|(_, span)| span.hi.0 - span.lo.0)?
             .0;
         for region in &self.native_guarded_regions {

@@ -405,16 +405,12 @@ fn safe_guard_term(expression: &Expr) -> Option<(Id, bool)> {
     Some((binding.to_id(), false))
 }
 
-fn span_contains(outer: Span, inner: Span) -> bool {
-    outer.lo.0 <= inner.lo.0 && inner.hi.0 <= outer.hi.0
-}
-
 fn has_write(writes: &[Span], range: Span) -> bool {
     let start = writes.partition_point(|span| span.lo.0 < range.lo.0);
     writes[start..]
         .iter()
         .take_while(|span| span.lo.0 <= range.hi.0)
-        .any(|span| span_contains(range, *span))
+        .any(|span| range.contains(*span))
 }
 
 fn add_member_reads(reads: &[Span], range: Span, spans: &mut BTreeSet<(u32, u32)>) {
@@ -423,7 +419,7 @@ fn add_member_reads(reads: &[Span], range: Span, spans: &mut BTreeSet<(u32, u32)
         .iter()
         .take_while(|span| span.lo.0 <= range.hi.0)
     {
-        if span_contains(range, *span) {
+        if range.contains(*span) {
             spans.insert((span.lo.0, span.hi.0));
         }
     }
