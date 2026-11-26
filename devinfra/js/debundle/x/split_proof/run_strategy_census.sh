@@ -22,7 +22,6 @@ else
     //devinfra/js/debundle/x/split_proof/integration/library_splits:library_certificate_test
     //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_scroll_certificate
     //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_scroll_single_certificate
-    //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_certified_browser_smoke
     //devinfra/js/debundle/x/split_proof/integration/excalidraw:native_metadata_browser_test
     //devinfra/js/debundle/x/split_proof/integration/excalidraw:bare_import_browser_test
   )

@@ -6,7 +6,7 @@ The goal is a runnable, Lean-certified split of the pinned bundle that recovers 
 
 | Placement                                                                                     | What the evidence establishes                                                                                                                                                                                                        |
 | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [Checked-in editor subset](#browser-smoke)                                                    | Rust resolves the selected owners and import priority. Lean certifies the emitted modules and rechecks them from disk under the browser deployment contract. Chromium exercises the overlay. This is the baseline to extend.         |
+| [Former browser deployment replay](#browser-deployment-replay)                                | Historical structural certification and Chromium evidence for the checked-in subset. There is no active certified-browser gate until a real placement meets the criterion below.                                                     |
 | [236-unit scroll proposal](proposals/scroll/README.md)                                        | Additional upstream groups passed emit, disk and Chromium checks with the recorded Lean order. The same owners were refused with the authored priority. The proposal and its order are separate from the checked-in smoke selection. |
 | [Full authored editor and main replay](#building-and-replaying-the-authored-excalidraw-specs) | Compares placement and execution order with the Rust reports and records refusals. It does not establish a certificate for the full split.                                                                                           |
 
@@ -153,40 +153,27 @@ lexical `Symbol` binding passes strict certification and the Node control in
 the existing local host-binding proof.
 [Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
 
-### Certified browser deployment
+### Browser deployment replay
 
-The [ownership subset](../../../../excalidraw/deployment_smoke_subset.json)
-selects the main renderer and 365 editor bindings in 45 upstream modules.
-The standalone Rust placement resolver solves selectors across both chunks and exports
-the canonical and selected placements. The smoke verifies the source hashes,
-checks each selected owner against the canonical result, and retains unselected
-units in their original entries. See the [recovery notes](recovery.md) for
-remaining editor candidates and the [spec authoring instructions](../../../../excalidraw/AGENTS.md)
-for choosing an owner from the pinned upstream source.
+The certified Excalidraw browser target is retired. Its historical
+[ownership subset](../../../../excalidraw/deployment_smoke_subset.json),
+[deployment notes](joint.md), pinned inputs, and
+[browser assertions](browser_smoke_test.py) remain available for investigation.
+Past structural certificates and browser replays describe those specific runs;
+they are not evidence that the current production constructor can certify the
+placement under strict observations.
+
+Restore a certified browser test when the production source/spec constructor
+emits a small, pinned real Excalidraw placement under the stated strict
+observation contract, the emitted files pass an independent disk recheck, and
+Chromium exercises an observable result from those files. The test must use the
+actual production output and report that contract.
+
+The independent original editor baseline remains available:
 
 ```sh
-p=//devinfra/js/debundle/x/split_proof/integration/excalidraw
-bbr test --config=ci "${p}:excalidraw_certified_browser_smoke"
+bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_original_editor_browser_smoke
 ```
-
-To check the boundary in the build graph, query the smoke target's dependencies.
-Of these targets, only the placement resolver should appear:
-
-```sh
-d=//devinfra/js/debundle
-bazel query "deps(${p}:excalidraw_certified_browser_smoke) intersect set(${d}:debundle_resolve_placement ${d}:gate ${d}:lowering ${d}:pipeline ${d}/excalidraw:debundle)"
-```
-
-Lean emits both splits and the fixed static providers as one deployment rooted
-at `main.js`. It certifies the staged files, then rechecks the published tree
-with `--check-output`. Both verdicts record the browser-page contract and the
-stable `Math.PI@1`, native metadata, and empty import-map premises. Chromium
-compares the original and checked deployments, including the served module
-bytes, editor export names, drawing, Undo, and the extracted helpers.
-
-Run `:excalidraw_original_editor_browser_smoke` for the original app baseline.
-The [deployment notes](joint.md) and [smoke test](browser_smoke_test.py) describe
-the shared closure and browser replay.
 
 ### Direct AST lowering for negated initializers
 
