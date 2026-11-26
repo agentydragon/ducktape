@@ -140,6 +140,8 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 	if _, fromFlux := binding.Labels[policyapi.FluxKustomizationNameLabel]; fromFlux {
 		return nil, status.Error(codes.Aborted, "PolicyBinding is managed by Flux")
 	}
+	// Only the grant Grant wrote for this Sandbox incarnation: its one non-controller Sandbox owner reference.
+	ownedBySandbox := false
 	for _, owner := range binding.OwnerReferences {
 		if owner.Kind != sandboxapi.SandboxKind {
 			continue
@@ -150,6 +152,10 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 		if owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Name != target.Name || string(owner.UID) != target.Uid {
 			return nil, status.Error(codes.Aborted, "PolicyBinding belongs to another Sandbox incarnation")
 		}
+		ownedBySandbox = true
+	}
+	if !ownedBySandbox {
+		return nil, status.Error(codes.Aborted, "PolicyBinding is not this Sandbox's grant")
 	}
 	if binding.Spec.Subject.Identity == nil || binding.Spec.Subject.Identity.Name != identity.Name {
 		return nil, status.Error(codes.Aborted, "PolicyBinding belongs to another Identity")
