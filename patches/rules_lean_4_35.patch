@@ -19,3 +19,25 @@ diff --git a/lean/lake.bzl b/lean/lake.bzl
 -              "Add an entry to known_lean_versions.bzl for hermetic builds.")
 +        fail("rules_lean: no pinned sha256 for Lean %s on %s" % (version, platform))
      rctx.download_and_extract(
+diff --git a/lean/lean.bzl b/lean/lean.bzl
+--- a/lean/lean.bzl
++++ b/lean/lean.bzl
+@@ -64,2 +64,3 @@
+         "lean": "File: the lean compiler binary (executable).",
++        "native_cc": "Optional File: native C compiler from the same Lean distribution.",
+         "runtime": "depset[File]: stdlib oleans, shared libs, etc.",
+@@ -196,2 +197,3 @@
+             lean = ctx.executable.lean,
++            native_cc = ctx.file.native_cc,
+             runtime = ctx.attr.runtime[DefaultInfo].files,
+@@ -209,2 +211,3 @@
+         ),
++        "native_cc": attr.label(allow_single_file = True),
+         "runtime": attr.label(mandatory = True),
+diff --git a/lean/lake.bzl b/lean/lake.bzl
+--- a/lean/lake.bzl
++++ b/lean/lake.bzl
+@@ -134,2 +134,3 @@
+     lean = ":lean_bin",
++    native_cc = "lean_toolchain/bin/clang",
+     runtime = ":runtime",

@@ -2,6 +2,7 @@ load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@rules_lean//lean:lean.bzl", "lean_axiom_test", "lean_binary", "lean_library", "lean_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//devinfra/js/debundle/x/split_proof/lean/native:native.bzl", "native_lean_binary", "native_lean_module")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load(":splitter_launcher.bzl", "splitter_launcher")
 
@@ -1145,4 +1146,66 @@ lean_axiom_test(
         "CoreJS.StackReadComposition.shadowConstructionUnknown",
     ],
     deps = [":corejs_runtime"],
+)
+
+native_lean_module(
+    name = "native_syntax",
+    src = "EsmSplit/CoreJS/Syntax.lean",
+    module = "EsmSplit.CoreJS.Syntax",
+)
+
+native_lean_module(
+    name = "native_fragment",
+    src = "EsmSplit/CoreJS/Fragment.lean",
+    module = "EsmSplit.CoreJS.Fragment",
+    deps = [":native_syntax"],
+)
+
+native_lean_module(
+    name = "native_fragment_main",
+    src = "NativeFragmentMain.lean",
+    module = "NativeFragmentMain",
+    deps = [":native_fragment"],
+)
+
+native_lean_binary(
+    name = "native_fragment_program",
+    root = ":native_fragment_main",
+)
+
+sh_test(
+    name = "native_fragment_test",
+    srcs = ["native_fragment_test.sh"],
+    args = ["$(rlocationpath :native_fragment_program)"],
+    data = [":native_fragment_program"],
+    use_bash_launcher = True,
+)
+
+lean_library(
+    name = "native_fragment_reference_modules",
+    srcs = [
+        "EsmSplit/CoreJS/Fragment.lean",
+        "EsmSplit/CoreJS/Syntax.lean",
+    ],
+)
+
+lean_binary(
+    name = "native_fragment_reference",
+    srcs = ["NativeFragmentMain.lean"],
+    entry = "NativeFragmentMain.lean",
+    deps = [":native_fragment_reference_modules"],
+)
+
+sh_test(
+    name = "native_fragment_parity_test",
+    srcs = ["native_fragment_parity_test.sh"],
+    args = [
+        "$(rlocationpath :native_fragment_program)",
+        "$(rlocationpath :native_fragment_reference)",
+    ],
+    data = [
+        ":native_fragment_program",
+        ":native_fragment_reference",
+    ],
+    use_bash_launcher = True,
 )
