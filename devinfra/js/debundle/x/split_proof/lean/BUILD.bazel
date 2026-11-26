@@ -761,7 +761,10 @@ lean_library(
 executable_test(
     name = "checked_move_split_test",
     src = "CheckedMoveSplitTest.lean",
-    deps = [":corejs_checked_move_split"],
+    deps = [
+        ":corejs_checked_move_split",
+        ":literal_reorder_link",
+    ],
 )
 
 lean_proof_test(
@@ -1855,4 +1858,48 @@ lean_proof_test(
         "CoreJS.ExactLiteralMove.AuthoredFixture.sameExports",
     ],
     deps = [":exact_literal_move"],
+)
+
+lean_library(
+    name = "literal_swap_check",
+    srcs = ["EsmSplit/CoreJS/LiteralSwapCheck.lean"],
+    deps = [":exact_literal_move"],
+)
+
+lean_proof_test(
+    name = "literal_swap_check_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LiteralSwapCheck"],
+    required_theorems = [
+        "CoreJS.LiteralSwapCheck.refuses_read",
+        "CoreJS.LiteralSwapCheck.refuses_throw",
+        "CoreJS.LiteralSwapCheck.sequence_sound",
+        "CoreJS.LiteralSwapCheck.throw_order",
+    ],
+    deps = [":literal_swap_check"],
+)
+
+lean_library(
+    name = "literal_reorder_link",
+    srcs = ["EsmSplit/CoreJS/LiteralReorderLink.lean"],
+    deps = [
+        ":corejs_linked_input",
+        ":literal_swap_check",
+    ],
+)
+
+lean_proof_test(
+    name = "literal_reorder_link_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LiteralReorderLink"],
+    required_theorems = [
+        "CoreJS.LiteralReorderLink.construct",
+        "CoreJS.LiteralReorderLink.fixture_plan",
+        "CoreJS.LiteralReorderLink.outcomes",
+        "CoreJS.LiteralReorderLink.outputLink",
+        "CoreJS.LiteralReorderLink.placement",
+        "CoreJS.LiteralReorderLink.sameExports",
+        "CoreJS.LiteralReorderLink.sound",
+    ],
+    deps = [":literal_reorder_link"],
 )
