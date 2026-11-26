@@ -215,12 +215,6 @@ annotations are checked before ownership is reduced. The selection does not
 change the analysis projection or source graph. Retained bindings, imported
 re-exports, destructuring companions and anonymous statements use the same
 normal assignment assembly, gate, translation validation and emission.
-For an actual Pass-1 constraining SCC, `cycles.json` includes a complete
-`pass_one_witness` closed walk of ordered, typed edge causes. Its text summary
-previews a bounded number of steps and states how many were omitted from the
-preview. Actual Pass-2 TDZ and conditional after-collapse diagnoses have
-`pass_one_witness: null`; their cuts remain available, but this witness does
-not claim to explain their reciprocal import path.
 Omitted claims follow the selected residual policy: they return to entry under
 `inline_in_entry`, move into the configured catchall under `catchall_file`, or
 move into generated atomic-group modules under
@@ -4141,33 +4135,10 @@ contract. Result mutation and later callback invocation/publication retain the
 ordinary synchronous-effect checks. No callback deferral assertion implies
 purity or permission to reorder argument evaluation.
 
-`debundle gate diagnose <binding>` provides a bounded source-backed trace for
-one ownership target through constraining promoted callback dependencies. Its
-supported rejection family is a matched imported namespace-member
-callback-factory signature rejected by a top-level static write to that member
-or a recognized alias, or by a computed-key write whose receiver is the
-namespace binding or a recognized alias, or by the exact namespace binding
-passed as a non-spread ordinary top-level call argument. The report names the
-matched signature and exact source witness: write receiver/property or call
-span/argument index, with a graph source-unit reference. An opaque-call label
-requires a matching `UnknownCallTarget` loss at the same owner and span; the
-guard alone does not prove a mutation occurred. A
-supported row also requires the promoted edge's callee source unit to match a
-statically resolved callback argument root from that exact signature.
-Unresolved callback arguments and source-unit mismatches are inconclusive. The
-report provides an explicit-path `inspect-source` command. Diagnose currently
-does not read or fingerprint the source input, so it does not emit a parsed
-statement ID or apply a possibly stale `SourceUnitOrdinal -> StatementId`
-crosswalk. Five rows are returned by
-default; `--all` requests exhaustive output, while query status summarizes all
-uniquely linked candidate edges regardless of the output limit. This is a
-local witness for this guard family, not a claim of a sole or globally earliest
-cause. Computed-key writes through other receiver expressions, other guard
-families, and absent promoted
-dependencies are inconclusive. Multiple candidate barriers at one source unit
-are also reported as an ambiguous link rather than cross-paired with callback
-dependencies. Configured overloads are included only when their arity and
-callback argument positions apply to the actual call.
+`debundle gate diagnose <binding>` gives a bounded, source-backed local witness
+for a namespace-member factory signature rejected by a supported write or
+publication guard; other guard families stay inconclusive. Supported shapes and
+output: [CLI § Gate queries](docs/cli.md#gate-queries).
 
 ### Retaining callbacks in constructed instances
 
