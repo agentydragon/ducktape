@@ -143,18 +143,16 @@ the tree-shaped config) reads its own env var, `DEBUNDLE_TREE_SOURCE_ROOT` —
 deliberately **not** `DEBUNDLE_SOURCE_ROOT`, because the two roots are
 different directories in real corpora (spec tree vs. upstream snapshot).
 
-Export the env vars once per shell session and subsequent commands run
-without repeating the flags:
+For example, after exporting graphs for a tree spec, set these paths to match
+one chunk and run read-only inspection:
 
 ```bash
-export DEBUNDLE_GRAPH=<debundle-output>/reports/tree/<chunk-id>/dependency_graph.json.gz
-export DEBUNDLE_MODULES=<matching-chunk-modules-subtree>
-export DEBUNDLE_SOURCE_ROOT=<captured-source-lookup-root>
-export DEBUNDLE_OUT=<debundle-output-root>
+export DEBUNDLE_GRAPH=out/reports/tree/main/dependency_graph.json.gz
+export DEBUNDLE_MODULES=spec/modules/main
+export DEBUNDLE_SOURCE_ROOT=snapshot
 
 debundle describe XOe
 debundle scc --binding XOe
-debundle bindings assign XOe:runtime/plugins
 ```
 
 Use the matching captured input root for source lookup. Obtain its path and the
@@ -457,15 +455,9 @@ assessed against the full candidate.
 
 ## Running the pipeline
 
-```bash
-debundle run --spec <transform-spec.yaml>
-
-debundle run \
-  --tree-config <spec-config.yaml> \
-  --tree-modules <modules-dir> \
-  --tree-vendor-marks <vendor-marks.yaml> \
-  --out-root <out-dir>
-```
+Use the [tree spec invocation](../README.md#getting-started) for authored module
+YAML. For a flat transform spec named `transform-spec.yaml`, run
+`debundle run --spec transform-spec.yaml`.
 
 If the gate rejects an assignment, `debundle run` emits each nonempty
 structured evidence report (`cycles.json`, `atomic_group_conflicts.json`) under
@@ -1246,11 +1238,15 @@ For residual discovery, use [`modules propose`](module_proposals.md), including
 `--graphs` for a configured corpus. Keep each returned chunk-local plan together.
 
 `modules check --batch changes.json` checks an explicit source-unit assignment
-against the accepted starting graph. Supply the same `--graph`, `--modules`,
+against the matching starting graph. Supply the same `--graph`, `--modules`,
 `--source-root` and `--tree-config` used by the other graph commands.
 The batch is a JSON array of `{ "unit_id": "unit:1", "module": "helpers/value" }`
 rows; omitted units keep their current destinations. With `--tree-config`, use
 destinations under the configured physical module roots. `--batch -` reads stdin.
+
+If the batch changes the owner set or import priority, pass the complete final
+nonentry order with `--import-order final-order.json`. Keep that file with the
+raw batch when previewing or applying it.
 
 The complete check covers structural atoms, cross-module rebinding and global
 ESM evaluation, including remaining residual code. It supports unions of atoms,
@@ -1283,20 +1279,27 @@ configured physical tree root. `--plan` and a raw batch are mutually exclusive.
 
 ## Applying explicit assignments (`modules apply --assignments`)
 
-Pass the same JSON array checked by `modules check --batch` to
-`modules apply --assignments changes.json`. Omitted units retain their owners.
+Prefer the saved checked plan. Preview with `modules apply --plan plan.json --dry-run`,
+then apply with the same arguments minus `--dry-run`. If applying a raw batch,
+pass the same JSON array as `--assignments changes.json` and the same
+`--import-order` as in the check when required. Omitted units retain their owners.
 The command supports new residual declarations, anonymous statements, existing
-claims and several destinations in one batch. Use `--dry-run` first; preview and
-write perform the same checks. Both require the current graph, modules tree and
-source context. `--assignments -` reads stdin.
+claims and several destinations in one batch. Both preview and write require
+the current graph, modules tree and source context and perform the same checks. `--assignments -` reads stdin.
 
 Residual declarations receive proven structural `source_matches`; anonymous
 units receive proven `anonymous_statements` selectors. An ambiguous selector is
 a realization failure even when the graph assignment passed. Existing selectors
 and binding/statement metadata move intact. Module notes/comments remain with
 their owner, and this mode keeps empty authored owners so its module order agrees
-with the checked assignment. A JSON map supplied with `--readable-names FILE`
-can name newly claimed bindings; omitted names retain their source spelling.
+with the checked assignment. For either a saved plan or a raw batch, use
+`--readable-names FILE` to map new runtime bindings to reviewed readable names.
+Omitted entries retain their source spelling. Use `--selector-overrides FILE`
+to map source-unit IDs to binding names and reviewed selectors. Entries may use
+the `source_matches` claim shape or a relational `members[].selector`. An
+override must claim exactly the selected binding. Binding-name pins are rejected.
+Omitted overrides use selector synthesis. Review with the same options on the
+dry run and the write.
 
 Before writing, the complete scoped spec resolves again and its authored-claim
 map must equal the starting graph's claims overlaid with the requested logical
@@ -1316,14 +1319,6 @@ roots. Check and apply accept logical destinations under those roots and scope
 the complete selector and assignment checks to the selected graph chunk.
 Single-chunk specs can omit the config when `--modules` already names that
 chunk's tree.
-
-For newly claimed bindings, `--readable-names FILE` maps runtime binding names
-to reviewed readable names. `--selector-overrides FILE` maps source-unit IDs to
-binding names and reviewed selectors; entries may use the normal
-`source_matches` claim shape or a relational `members[].selector`. Overrides
-must claim exactly the selected binding, and binding-name pins are rejected.
-Omitted entries use selector synthesis. Existing claims move with their
-selectors and metadata intact. Preview and write run the same final checks.
 
 ## Rejection diagnostics
 
