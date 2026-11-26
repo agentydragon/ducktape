@@ -5,19 +5,19 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/migrations"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/server"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/observability"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func main() {
-	configureLogLevels(nil)
+	configureLogging(slog.LevelInfo)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if handled, err := dbmigrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_DATABASE_URL", migrations.Up); handled {
@@ -36,28 +36,19 @@ func main() {
 		slog.Error("invalid Agentplane app configuration", "error", err)
 		os.Exit(1)
 	}
-	configureLogLevels(config.LogLevels)
+	level, err := observability.RootLogLevel(config.LogLevels)
+	if err != nil {
+		slog.Error("invalid Agentplane app configuration", "error", err)
+		os.Exit(1)
+	}
+	configureLogging(level)
 	if err := server.Run(ctx, config); err != nil && ctx.Err() == nil {
 		slog.Error("Agentplane app stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
-func configureLogLevels(levels map[string]string) {
-	level := slog.LevelInfo
-	if configured, ok := levels["root"]; ok {
-		switch strings.ToUpper(configured) {
-		case "DEBUG":
-			level = slog.LevelDebug
-		case "INFO":
-			level = slog.LevelInfo
-		case "WARNING", "WARN":
-			level = slog.LevelWarn
-		case "ERROR", "CRITICAL":
-			level = slog.LevelError
-		default:
-		}
-	}
+func configureLogging(level slog.Level) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 	log.SetLogger(logr.FromSlogHandler(slog.Default().Handler()))
 }

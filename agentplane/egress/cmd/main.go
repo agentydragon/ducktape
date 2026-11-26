@@ -63,7 +63,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "egress-proxy:", err)
 		os.Exit(2)
 	}
-	level, err := logLevel(c.LogLevels["root"])
+	level, err := observability.RootLogLevel(c.LogLevels)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "egress-proxy:", err)
 		os.Exit(2)
@@ -80,21 +80,6 @@ func main() {
 		slog.Error("egress-proxy stopped", "error", err)
 		os.Exit(1)
 	}
-}
-
-// logLevel maps a Python-style level name; the empty name is the default, INFO.
-func logLevel(name string) (slog.Level, error) {
-	switch name {
-	case "", "INFO":
-		return slog.LevelInfo, nil
-	case "DEBUG":
-		return slog.LevelDebug, nil
-	case "WARNING":
-		return slog.LevelWarn, nil
-	case "ERROR":
-		return slog.LevelError, nil
-	}
-	return 0, errors.New("log_levels values must be DEBUG, INFO, WARNING, or ERROR")
 }
 
 func kubernetesConfig(kubeconfig string) (*rest.Config, error) {

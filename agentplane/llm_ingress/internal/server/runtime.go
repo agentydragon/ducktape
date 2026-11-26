@@ -32,7 +32,13 @@ func Run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	logger := configureLogging(c.LogLevels)
+	level, err := observability.RootLogLevel(c.LogLevels)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(logger)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	shutdownTracing, err := observability.Init(ctx, "llm-ingress")
@@ -161,25 +167,4 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	kubeconfig.ContentType = "application/json"
 	kubeconfig.AcceptContentTypes = "application/json"
 	return kubeconfig, nil
-}
-
-func configureLogging(levels map[string]string) *slog.Logger {
-	levelName, found := levels["agentplane.llm_ingress"]
-	if !found {
-		levelName, found = levels["root"]
-	}
-	level := slog.LevelInfo
-	if found {
-		switch levelName {
-		case "DEBUG":
-			level = slog.LevelDebug
-		case "WARNING":
-			level = slog.LevelWarn
-		case "ERROR":
-			level = slog.LevelError
-		}
-	}
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
-	slog.SetDefault(logger)
-	return logger
 }
