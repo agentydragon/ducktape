@@ -311,7 +311,10 @@ js_test(
 
 js_test(
     name = "strict_cli_no_write_test",
-    data = ["//devinfra/js/debundle/x/split_proof/lean:lowersplit"],
+    data = [
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    ],
     entry_point = "strict_cli_no_write_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
 )

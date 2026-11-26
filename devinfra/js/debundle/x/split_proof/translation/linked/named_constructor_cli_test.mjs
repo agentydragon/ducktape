@@ -1,10 +1,22 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { split } from "../testing/split.mjs";
 
 const root = process.env.TEST_TMPDIR;
+// A compiled split and check-output must not consult a runtime Lean compiler or SDK.
+const fakeBin = path.join(root, "no-lean-bin");
+const leanMarker = path.join(root, "lean-invoked");
+mkdirSync(fakeBin);
+writeFileSync(path.join(fakeBin, "lean"), '#!/usr/bin/env bash\nprintf attempted > "$FAKE_LEAN_MARKER"\nexit 97\n', {
+  mode: 0o755,
+});
+process.env.FAKE_LEAN_MARKER = leanMarker;
+process.env.PATH = `${fakeBin}:${process.env.PATH ?? ""}`;
+process.env.LEAN_PATH = path.join(root, "unavailable-imports");
+process.env.LEAN_SRC_PATH = path.join(root, "unavailable-sources");
+process.env.LEAN_SYSROOT = path.join(root, "unavailable-sdk");
 const source = path.join(root, "source.mjs");
 const spec = path.join(root, "spec.json");
 const out = path.join(root, "out");
@@ -50,3 +62,5 @@ const refusedOut = path.join(root, "refused");
 const refused = split({ source, spec, out: refusedOut, require: "all-outcomes" });
 assert.equal(refused.status, "refused", refused.log);
 assert(!existsSync(refusedOut));
+
+assert(!existsSync(leanMarker), "a split or check-output invoked lean from PATH");

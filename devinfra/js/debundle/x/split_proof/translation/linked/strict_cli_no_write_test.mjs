@@ -2,17 +2,29 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { writeDeployment } from "../testing/deployment_manifest.mjs";
 
 const root = process.env.TEST_TMPDIR;
 assert(root, "TEST_TMPDIR is required");
 const lowersplit = process.env.LOWERSPLIT;
 assert(lowersplit, "LOWERSPLIT is required");
 
-const missingManifest = path.join(root, "missing-deployment.json");
-assert(!existsSync(missingManifest));
+const source = path.join(root, "unsupported.mjs");
+const spec = path.join(root, "unsupported-spec.json");
+writeFileSync(source, "const seed = Math.random(); export const result = seed;\n");
+writeFileSync(
+  spec,
+  JSON.stringify({
+    entry: "entry.mjs",
+    modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1"] },
+    order: ["worker.mjs"],
+    sequential: true,
+  })
+);
 
 function assertRefused(out, args, requested) {
-  const result = spawnSync(lowersplit, [missingManifest, out, ...args], { encoding: "utf8" });
+  const manifest = writeDeployment(source, spec, out);
+  const result = spawnSync(lowersplit, [manifest, out, ...args], { encoding: "utf8" });
   assert.ifError(result.error);
   assert.equal(result.status, 1, result.stdout + result.stderr);
   const lines = result.stdout.trim().split(/\r?\n/);
@@ -25,7 +37,7 @@ function assertRefused(out, args, requested) {
   assert.match(verdict.reason, /no JavaScript was written/);
 }
 
-// The ordinary command refuses before reading the nonexistent deployment or creating output.
+// An unsupported initializer is refused without creating output.
 const freshOut = path.join(root, "fresh-output");
 assertRefused(freshOut, [], "all-outcomes");
 assert(!existsSync(freshOut), "refusal created a fresh output path");
