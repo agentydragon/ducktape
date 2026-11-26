@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -14,13 +15,15 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	blockEntries = 256
-	blockMinimum = 64
-	blockBytes   = 128 * 1024
+	blockEntries       = 256
+	blockMinimum       = 64
+	blockBytes         = 128 * 1024
+	legacyDecodedLimit = blockBytes + 6*blockEntries
 )
 
 // Blocks retain original entries, including unknown protobuf fields and native JSON bytes. Kind and
@@ -92,54 +95,81 @@ func encodeBlock(entries []*eventlogpb.EventEntry) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-func decodeBlock(payload []byte) ([]*eventlogpb.EventEntry, error) {
+// blockFrames returns immutable views of the original EventEntry messages. A legacy
+// block is a gzipped Entries protobuf. Read its repeated field directly so rewriting
+// a block can preserve even noncanonical encodings of the entries.
+func blockFrames(payload []byte) ([][]byte, error) {
 	if eventblock.IsBlock(payload) {
-		frames, err := eventblock.Decode(payload)
-		if err != nil {
-			return nil, err
-		}
-		entries := make([]*eventlogpb.EventEntry, 0, len(frames))
-		var previous uint64
-		for _, f := range frames {
-			e := new(eventlogpb.EventEntry)
-			if err := proto.Unmarshal(f, e); err != nil {
-				return nil, err
-			}
-			if e.GetCursor() <= previous || e.GetEvent() == nil {
-				return nil, fmt.Errorf("invalid event block cursor or event")
-			}
-			entries = append(entries, e)
-			previous = e.Cursor
-		}
-		return entries, nil
+		return eventblock.Decode(payload)
 	}
 	reader, err := gzip.NewReader(bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("event block gzip: %w", err)
+		return nil, fmt.Errorf("legacy event block gzip: %w", err)
 	}
-	defer reader.Close()
-	raw, err := io.ReadAll(io.LimitReader(reader, blockBytes+6*blockEntries+1))
-	if err != nil {
-		return nil, err
+	raw, readErr := io.ReadAll(io.LimitReader(reader, legacyDecodedLimit+1))
+	closeErr := reader.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("legacy event block read: %w", readErr)
 	}
-	if len(raw) > blockBytes+6*blockEntries {
-		return nil, fmt.Errorf("event block exceeds decoded size limit")
+	if closeErr != nil {
+		return nil, fmt.Errorf("legacy event block close: %w", closeErr)
 	}
-	var block historypb.Entries
-	if err := proto.Unmarshal(raw, &block); err != nil {
-		return nil, err
+	if len(raw) > legacyDecodedLimit {
+		return nil, errors.New("legacy event block exceeds decoded size limit")
 	}
-	if len(block.Entries) == 0 || len(block.Entries) > blockEntries {
-		return nil, fmt.Errorf("event block has %d entries", len(block.Entries))
-	}
-	var previous uint64
-	for _, entry := range block.Entries {
-		if entry.GetCursor() <= previous || entry.GetEvent() == nil {
-			return nil, fmt.Errorf("event block contains an invalid cursor or event")
+	var wireFrames [][]byte
+	for len(raw) > 0 {
+		number, typ, n := protowire.ConsumeTag(raw)
+		if n < 0 {
+			return nil, protowire.ParseError(n)
 		}
-		previous = entry.GetCursor()
+		if !number.IsValid() {
+			return nil, fmt.Errorf("invalid legacy event block field %d", number)
+		}
+		raw = raw[n:]
+		if number == 1 && typ == protowire.BytesType {
+			frame, consumed := protowire.ConsumeBytes(raw)
+			if consumed < 0 {
+				return nil, protowire.ParseError(consumed)
+			}
+			if len(wireFrames) == blockEntries {
+				return nil, fmt.Errorf("legacy event block exceeds %d entries", blockEntries)
+			}
+			wireFrames = append(wireFrames, frame[:len(frame):len(frame)])
+			raw = raw[consumed:]
+			continue
+		}
+		consumed := protowire.ConsumeFieldValue(number, typ, raw)
+		if consumed < 0 {
+			return nil, protowire.ParseError(consumed)
+		}
+		raw = raw[consumed:]
 	}
-	return block.Entries, nil
+	if len(wireFrames) == 0 {
+		return nil, errors.New("empty legacy event block")
+	}
+	return wireFrames, nil
+}
+
+func decodeBlock(payload []byte) ([]*eventlogpb.EventEntry, [][]byte, error) {
+	frames, err := blockFrames(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	entries := make([]*eventlogpb.EventEntry, len(frames))
+	var previous uint64
+	for i, wire := range frames {
+		entry, err := unmarshalRawEntry(wire)
+		if err != nil {
+			return nil, nil, fmt.Errorf("event block entry: %w", err)
+		}
+		if entry.Cursor <= previous {
+			return nil, nil, errors.New("event block cursors are out of order")
+		}
+		entries[i] = entry
+		previous = entry.Cursor
+	}
+	return entries, frames, nil
 }
 
 func insertBlock(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, entries []*eventlogpb.EventEntry) (int, error) {
@@ -399,7 +429,7 @@ func loadEntries(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, reference
 				rows.Close()
 				return nil, err
 			}
-			entries, err := decodeBlock(payload)
+			entries, _, err := decodeBlock(payload)
 			if err != nil {
 				rows.Close()
 				return nil, err
@@ -495,30 +525,23 @@ func deleteEventRanges(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, ran
 			rows.Close()
 			return err
 		}
-		entries, err := decodeBlock(payload)
+		entries, frames, err := decodeBlock(payload)
 		if err != nil {
 			rows.Close()
 			return err
 		}
 		kept := retainedBlock{first: first}
-		if eventblock.IsBlock(payload) {
-			frames, err := eventblock.Decode(payload)
-			if err != nil {
-				rows.Close()
-				return err
+		versioned := eventblock.IsBlock(payload)
+		for i, entry := range entries {
+			if slices.ContainsFunc(ranges, func(r *historypb.CursorRange) bool { return entry.Cursor >= r.First && entry.Cursor <= r.Last }) {
+				continue
 			}
-			for i, e := range entries {
-				if !slices.ContainsFunc(ranges, func(r *historypb.CursorRange) bool { return e.Cursor >= r.First && e.Cursor <= r.Last }) {
-					kept.frames = append(kept.frames, frames[i])
-					kept.entries = append(kept.entries, e)
-				}
+			kept.entries = append(kept.entries, entry)
+			if versioned {
+				kept.frames = append(kept.frames, frames[i])
 			}
-		} else {
-			kept.entries = slices.DeleteFunc(entries, func(entry *eventlogpb.EventEntry) bool {
-				return slices.ContainsFunc(ranges, func(r *historypb.CursorRange) bool { return entry.Cursor >= r.First && entry.Cursor <= r.Last })
-			})
 		}
-		if len(kept.entries) < len(entries) || !eventblock.IsBlock(payload) {
+		if len(kept.entries) < len(entries) || !versioned {
 			retained = append(retained, kept)
 		}
 	}

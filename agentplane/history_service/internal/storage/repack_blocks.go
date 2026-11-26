@@ -1,25 +1,17 @@
 package storage
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"io"
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
-
-const legacyDecodedLimit = blockBytes + 6*blockEntries
 
 type rawFrame struct {
 	cursor  uint64
@@ -72,71 +64,14 @@ func validStoredBlockIndex(block storedBlock, frames []rawFrame) bool {
 	return true
 }
 
-// decodeStoredBlock returns the original serialized EventEntry frames. The legacy
-// container is parsed with protowire so repacking never re-marshals event payloads.
 func decodeStoredBlock(payload []byte) ([]rawFrame, error) {
-	var wireFrames [][]byte
-	if eventblock.IsBlock(payload) {
-		frames, err := eventblock.Decode(payload)
-		if err != nil {
-			return nil, fmt.Errorf("versioned event block: %w", err)
-		}
-		wireFrames = frames
-	} else {
-		reader, err := gzip.NewReader(bytes.NewReader(payload))
-		if err != nil {
-			return nil, fmt.Errorf("legacy event block gzip: %w", err)
-		}
-		raw, readErr := io.ReadAll(io.LimitReader(reader, legacyDecodedLimit+1))
-		closeErr := reader.Close()
-		if readErr != nil {
-			return nil, fmt.Errorf("legacy event block read: %w", readErr)
-		}
-		if closeErr != nil {
-			return nil, fmt.Errorf("legacy event block close: %w", closeErr)
-		}
-		if len(raw) > legacyDecodedLimit {
-			return nil, errors.New("legacy event block exceeds decoded size limit")
-		}
-		for len(raw) > 0 {
-			number, typ, n := protowire.ConsumeTag(raw)
-			if n < 0 {
-				return nil, protowire.ParseError(n)
-			}
-			raw = raw[n:]
-			if number == 1 && typ == protowire.BytesType {
-				frame, consumed := protowire.ConsumeBytes(raw)
-				if consumed < 0 {
-					return nil, protowire.ParseError(consumed)
-				}
-				wireFrames = append(wireFrames, bytes.Clone(frame))
-				raw = raw[consumed:]
-				continue
-			}
-			consumed := protowire.ConsumeFieldValue(number, typ, raw)
-			if consumed < 0 {
-				return nil, protowire.ParseError(consumed)
-			}
-			raw = raw[consumed:]
-		}
+	entries, wire, err := decodeBlock(payload)
+	if err != nil {
+		return nil, err
 	}
-	if len(wireFrames) == 0 || len(wireFrames) > eventblock.MaxEntries {
-		return nil, fmt.Errorf("event block contains %d frames", len(wireFrames))
-	}
-	frames := make([]rawFrame, 0, len(wireFrames))
-	var previous uint64
-	for _, wire := range wireFrames {
-		entry := new(eventlogpb.EventEntry)
-		if err := proto.Unmarshal(wire, entry); err != nil {
-			return nil, fmt.Errorf("event block entry: %w", err)
-		}
-		if entry.GetCursor() == 0 || entry.GetCursor() <= previous || entry.GetEvent() == nil {
-			return nil, errors.New("event block contains an invalid cursor or event")
-		}
-		frames = append(frames, rawFrame{
-			cursor: entry.GetCursor(), kind: historypb.EventKind(observationNumber(entry)), size: proto.Size(entry), payload: bytes.Clone(wire),
-		})
-		previous = entry.GetCursor()
+	frames := make([]rawFrame, len(entries))
+	for i, entry := range entries {
+		frames[i] = rawFrame{cursor: entry.Cursor, kind: historypb.EventKind(observationNumber(entry)), size: proto.Size(entry), payload: wire[i]}
 	}
 	return frames, nil
 }
