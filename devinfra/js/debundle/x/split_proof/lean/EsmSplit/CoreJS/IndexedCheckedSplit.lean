@@ -44,6 +44,9 @@ structure Construction (source : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Sp
   body : List (Nat × Stmt)
   plan : EsmSplit.Plan
   planEq : plan = EsmSplit.mkPlan B S
+  publicEntry : S.privateEntryBody = false
+  orderRequiresSequential : S.order ≠ [] → S.sequential = true
+  schedule : S.sequential = true → plan.evalOrder = S.order ++ [S.entry]
   program : Program
   constructed : program = splitProgramIndexed body B plan
   assignment : List UnitPlacement
@@ -71,8 +74,10 @@ private theorem forRequest {source output : Program} (requested : Guarantee)
 def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
     (row : EsmSplit.LocalExportUnit) (requested : Guarantee) :
     Except String (Construction original B S row requested) := do
-  unless !S.privateEntryBody && (S.sequential || S.order.isEmpty) do
-    throw "checked split requires no private entry body and a sequential request when an order is supplied"
+  let .isTrue publicEntry := (inferInstance : Decidable (S.privateEntryBody = false)) |
+    throw "checked split requires no private entry body"
+  let .isTrue orderRequiresSequential := (inferInstance : Decidable (S.order ≠ [] → S.sequential = true)) |
+    throw "an explicit module order requires a sequential request"
   match single : original.modules with
   | [source] =>
     if sourceEntry : original.entry = source.name then
@@ -84,9 +89,9 @@ def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
               if ordered : body.Pairwise (fun a b => a.1 ≤ b.1) then
                 if consts : ∀ p ∈ body, isConst p.2 = true then
                   let P := EsmSplit.mkPlan B S
-                  if S.sequential then
-                    unless P.evalOrder == S.order ++ [S.entry] do
-                      throw "constructed modules do not follow the requested order"
+                  let .isTrue schedule := (inferInstance : Decidable
+                      (S.sequential = true → P.evalOrder = S.order ++ [S.entry])) |
+                    throw "constructed modules do not follow the requested order"
                   if valid : EsmSplit.Valid B S P then
                     if kept : SparseProjectedOrder.OrderKept body P then
                       if safe : ∀ m ∈ P.mods, EsmSplit.safeModulePath m.name = true then
@@ -154,7 +159,8 @@ def construct (original : Program) (B : EsmSplit.Bundle) (S : EsmSplit.Spec)
                                                       apply SparseProjectedOrder.split_indexed_authored_owner valid.2.2.1 safe
                                                       rw [SparseProjectedOrder.split_indexed_fileUnitPlacements safe]
                                                       exact member
-                                                    return ⟨body, P, rfl, splitProgramIndexed body B P, rfl, labels, rfl,
+                                                    return ⟨body, P, rfl, publicEntry, orderRequiresSequential, schedule,
+                                                      splitProgramIndexed body B P, rfl, labels, rfl,
                                                       placed, ownerProof, rowOwner, rowPlaced, exports, runs, forRequest requested runs⟩
                                                   else throw "entry has other public export rows"
                                                 else throw "entry needs unsupported glue exports"
