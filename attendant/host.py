@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from pathlib import Path
@@ -13,6 +14,8 @@ from starlette.websockets import WebSocket
 
 from attendant.runtime import Operation, Provider, Reply, SessionError, Tab, valid_target
 from platform_sessions.provider.interactive_browser import InteractiveBrowserRuntime
+
+logger = logging.getLogger(__name__)
 
 
 class Session:
@@ -79,6 +82,7 @@ class Session:
         provider = self.providers[name]
         if not valid_target(op.target) or not provider.allows(op):
             raise SessionError("denied")
+        logger.info("provider request started provider=%s", name)
         with Tab.open(self.context, provider.origin) as tab:
             return provider.request(tab, op)
 

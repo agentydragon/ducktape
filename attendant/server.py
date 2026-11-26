@@ -336,12 +336,15 @@ def create_app(
     @owner.post("/providers/{provider}/open", dependencies=[Depends(require_provider)])
     async def open_provider(provider: str) -> Response:
         await _invoke(host.open(provider))
+        logger.info("provider opened provider=%s", provider)
         return Response(status_code=204)
 
     @owner.post("/providers/{provider}/verify", dependencies=[Depends(require_provider)])
     async def verify_provider(provider: str) -> dict[str, str]:
         state = await _invoke(host.status(provider))
-        return {"state": state if state == "ready" or state in _ISSUE_STATUS else "upstream_error"}
+        state = state if state == "ready" or state in _ISSUE_STATUS else "upstream_error"
+        logger.info("session check provider=%s state=%s", provider, state)
+        return {"state": state}
 
     app.include_router(owner)
 
