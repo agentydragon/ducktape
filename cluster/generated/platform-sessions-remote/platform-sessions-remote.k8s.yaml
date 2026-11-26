@@ -3204,6 +3204,294 @@ spec:
     matchLabels:
       app: platform-sessions-thrive
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: attendant-profile
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: piraeus-ssd-2-autodiskful
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: attendant-owner
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: attendant-owner
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: attendant-owner
+  refreshPolicy: CreatedOnce
+  target:
+    immutable: true
+    name: attendant-owner
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: attendant-blueshield
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: attendant-blueshield
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: attendant-blueshield
+  refreshPolicy: CreatedOnce
+  target:
+    immutable: true
+    name: attendant-blueshield
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: attendant-myquest
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: attendant-myquest
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: attendant-myquest
+  refreshPolicy: CreatedOnce
+  target:
+    immutable: true
+    name: attendant-myquest
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: attendant-quest-scheduler
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: attendant-quest-scheduler
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: attendant-quest-scheduler
+  refreshPolicy: CreatedOnce
+  target:
+    immutable: true
+    name: attendant-quest-scheduler
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attendant
+  namespace: platform-sessions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: attendant
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: attendant
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --state-dir
+            - /data/attendant
+            - --host
+            - 0.0.0.0
+          env:
+            - name: HOME
+              value: /tmp
+            - name: ATTENDANT_OWNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: attendant-owner
+            - name: ATTENDANT_BLUESHIELD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: attendant-blueshield
+            - name: ATTENDANT_MYQUEST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: attendant-myquest
+            - name: ATTENDANT_QUEST_SCHEDULER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: attendant-quest-scheduler
+          image: git.allegedly.works/ducktape-ci/attendant:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          name: attendant
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            failureThreshold: 24
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          volumeMounts:
+            - mountPath: /data
+              name: data
+            - mountPath: /tmp
+              name: tmp
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: attendant-profile
+        - emptyDir: {}
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: attendant
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: attendant
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: attendant
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/attendant
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: attendant
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: attendant
+  policy:
+    alphabetical:
+      order: asc
+---
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:

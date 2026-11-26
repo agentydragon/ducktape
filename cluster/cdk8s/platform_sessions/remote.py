@@ -92,7 +92,7 @@ def _provider_image(instance: str) -> str:
     return _provider_name(instance)
 
 
-PROVIDER_IMAGES = tuple(sorted({_provider_image(instance) for instance in PROVIDERS}))
+PRIVATE_IMAGES = ("attendant", *sorted({_provider_image(instance) for instance in PROVIDERS}))
 
 
 def _connections_json(instances: tuple[str, ...]) -> str:
@@ -521,6 +521,60 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
     )
 
 
+def _attendant(chart: Chart) -> None:
+    name = "attendant"
+    profile = volume_claim(
+        chart,
+        "attendant-profile",
+        name="attendant-profile",
+        namespace=NAMESPACE,
+        storage_class=piraeus_storage.SSD_REPLICATED,
+        size="2Gi",
+        annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
+    )
+    env = [k8s.EnvVar(name="HOME", value="/tmp")]
+    for role in ("owner", "blueshield", "myquest", "quest-scheduler"):
+        key = SecretRef(namespace=NAMESPACE, name=f"attendant-{role}").key("token")
+        mint_bearer_secret(chart, key.secret.name, target=key, immutable=True)
+        env.append(key.env_var(f"ATTENDANT_{role.upper().replace('-', '_')}_TOKEN"))
+    port = k8s.IntOrString.from_string(GATEWAY_PORT.name)
+    health = k8s.HttpGetAction(path="/healthz", port=port)
+    _deployment(
+        chart,
+        name,
+        k8s.Container(
+            name=name,
+            image=f"{forgejo_images.REGISTRY}/{name}:unset",
+            args=["--state-dir", "/data/attendant", "--host", "0.0.0.0"],
+            env=env,
+            ports=[k8s.ContainerPort(name=GATEWAY_PORT.name, container_port=GATEWAY_PORT.number)],
+            readiness_probe=k8s.Probe(http_get=health),
+            startup_probe=k8s.Probe(http_get=health, period_seconds=5, failure_threshold=24),
+            liveness_probe=k8s.Probe(http_get=health),
+            resources=container_resources(cpu="100m", memory="512Mi", cpu_limit="2", memory_limit="2Gi"),
+            security_context=_container_security(),
+            volume_mounts=[
+                k8s.VolumeMount(name="data", mount_path="/data"),
+                k8s.VolumeMount(name="tmp", mount_path="/tmp"),
+            ],
+        ),
+        [
+            k8s.Volume(
+                name="data", persistent_volume_claim=k8s.PersistentVolumeClaimVolumeSource(claim_name=profile.name)
+            ),
+            k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource()),
+        ],
+        selector_name=name,
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+    )
+    _service(
+        chart,
+        name,
+        [k8s.ServicePort(name=GATEWAY_PORT.name, port=GATEWAY_PORT.number, target_port=port)],
+        selector_name=name,
+    )
+
+
 def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
     recorded = set(BASE_PROVIDERS) - {"myquest"} if record_upstream_traffic else set()
     if config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC:
@@ -541,7 +595,8 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
         _provider_workload(
             chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=instance in recorded
         )
-    for image in PROVIDER_IMAGES:
+    _attendant(chart)
+    for image in PRIVATE_IMAGES:
         forgejo_images.track_ci_image(chart, image, prefix="main")
     provider_credentials = k8s.Volume(
         name="provider-credentials",
