@@ -17,6 +17,7 @@ type Runtime struct {
 	turnWakeups     *wakeups.Hub
 	store           *sessionstore.Store
 	settings        samplersettings.Settings
+	providerClients *samplersettings.ProviderClients
 	claimLease      func(context.Context, string, time.Duration) (sessionstore.Owner, error)
 	releaseLease    func(context.Context, sessionstore.Owner) error
 	newExecutor     func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*executor.Executor, func() error, error)
@@ -54,7 +55,7 @@ func (s *residentSession) signal() {
 // New takes the shared Code Mode host it attaches logical sessions to and shuts down.
 func New(store *sessionstore.Store, settings samplersettings.Settings, codeHost *session.CodeModeHost) *Runtime {
 	return &Runtime{
-		store: store, settings: settings, codeHost: codeHost, claimLease: store.Claim, releaseLease: store.Release, newExecutor: executor.New,
+		store: store, settings: settings, providerClients: samplersettings.NewProviderClients(settings.Connections), codeHost: codeHost, claimLease: store.Claim, releaseLease: store.Release, newExecutor: executor.New,
 		openCodeSession: codeHost.OpenSession,
 		tasks:           map[string]*residentSession{}, executing: make(chan struct{}, settings.MaxLiveSessions),
 		changed: make(chan struct{}, 1), draining: make(chan struct{}),

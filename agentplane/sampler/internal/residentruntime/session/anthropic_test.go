@@ -147,8 +147,8 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	codeHost, _ := newFakeCodeModeManager(t)
-	runtime := &Driver{store: store, settings: settings, codeHost: codeHost, slot: testSlot{}}
-	_, dispatchErr := runtime.advance(t.Context(), owner, nil, server.Client(), session)
+	runtime := &Driver{store: store, settings: settings, providerClients: samplersettings.NewProviderClients(settings.Connections), codeHost: codeHost, slot: testSlot{}}
+	_, dispatchErr := runtime.advance(t.Context(), owner, nil, session)
 	var constraint *pq.Error
 	if !errors.As(dispatchErr, &constraint) || constraint.Code != "23514" || constraint.Constraint != "reject_test_intent" {
 		t.Fatalf("expected the injected intent-journal constraint failure, got %v", dispatchErr)

@@ -152,7 +152,7 @@ func TestRemovedRouteFailsWithoutBlockingSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime := &Driver{store: store, settings: samplersettings.Settings{RPCTimeoutSeconds: 5}}
-	_, err = runtime.advance(t.Context(), owner, nil, nil, current)
+	_, err = runtime.advance(t.Context(), owner, nil, current)
 	var known *protocol.KnownFailureError
 	if !errors.As(err, &known) {
 		t.Fatalf("missing route error=%v", err)
