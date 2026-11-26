@@ -428,12 +428,20 @@ pub fn build_dependency_graph_with(
             raw_edges.push((
                 source_unit,
                 sites[0],
-                EdgeReason::co_declaration(SourceUnitOrdinal(source_unit.0), binding.clone()),
+                EdgeReason::for_binding(
+                    DepKind::CoDeclaration,
+                    SourceUnitOrdinal(source_unit.0),
+                    binding.clone(),
+                ),
             ));
             raw_edges.push((
                 sites[0],
                 source_unit,
-                EdgeReason::co_declaration(SourceUnitOrdinal(sites[0].0), binding.clone()),
+                EdgeReason::for_binding(
+                    DepKind::CoDeclaration,
+                    SourceUnitOrdinal(sites[0].0),
+                    binding.clone(),
+                ),
             ));
         }
     }
@@ -450,12 +458,16 @@ pub fn build_dependency_graph_with(
             raw_edges.push((
                 consumer,
                 producer,
-                EdgeReason::co_location(stmt.ordinal, binding.clone()),
+                EdgeReason::for_binding(DepKind::CoLocation, stmt.ordinal, binding.clone()),
             ));
             raw_edges.push((
                 producer,
                 consumer,
-                EdgeReason::co_location(SourceUnitOrdinal(producer.0), binding),
+                EdgeReason::for_binding(
+                    DepKind::CoLocation,
+                    SourceUnitOrdinal(producer.0),
+                    binding,
+                ),
             ));
         }
     }
@@ -484,51 +496,34 @@ pub fn build_dependency_graph_with(
             .map(|stmt| stmt.kind == StatementKind::FnDecl)
             .unwrap_or(false)
     };
-    let push_binding_edge = |raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
-                             from: SourceUnitId,
-                             binding: &Id,
-                             make_reason: fn(SourceUnitOrdinal, Id) -> EdgeReason,
-                             statement_ordinal: SourceUnitOrdinal| {
-        let Some(to) = binding_source_unit.get(binding) else {
-            return; // not declared in this chunk (global, ImportSpecifier, never-declared)
-        };
-        if from == *to {
-            return;
-        }
-        raw_edges.push((from, *to, make_reason(statement_ordinal, binding.clone())));
-    };
     for stmt in facts {
         let from = SourceUnitId(stmt.ordinal.0);
+        let mut push_binding_edge = |binding: &Id, kind: DepKind| {
+            if let Some(&to) = binding_source_unit.get(binding)
+                && from != to
+            {
+                raw_edges.push((
+                    from,
+                    to,
+                    EdgeReason::for_binding(kind, stmt.ordinal, binding.clone()),
+                ));
+            }
+        };
         for binding in &stmt.reads.eager {
             push_binding_edge(
-                &mut raw_edges,
-                from,
                 binding,
                 if target_is_hoisted(binding) {
-                    EdgeReason::hoisted_use
+                    DepKind::HoistedUse
                 } else {
-                    EdgeReason::eager_use
+                    DepKind::EagerUse
                 },
-                stmt.ordinal,
             );
         }
         for binding in &stmt.reads.lazy {
-            push_binding_edge(
-                &mut raw_edges,
-                from,
-                binding,
-                EdgeReason::lazy_use,
-                stmt.ordinal,
-            );
+            push_binding_edge(binding, DepKind::LazyUse);
         }
         for binding in &stmt.rebinds.eager {
-            push_binding_edge(
-                &mut raw_edges,
-                from,
-                binding,
-                EdgeReason::eager_rebind,
-                stmt.ordinal,
-            );
+            push_binding_edge(binding, DepKind::EagerRebind);
         }
         // Only first-order body rebinds emit a constraining
         // `LazyRebind` edge: a rebind inside a nested closure (e.g.
@@ -537,13 +532,7 @@ pub fn build_dependency_graph_with(
         // constrain init order or feed at-init call promotion. See
         // the e2e test `e2e/cases/initialization/nested_closure_{read,rebind}`.
         for binding in &stmt.rebinds.first_order_lazy {
-            push_binding_edge(
-                &mut raw_edges,
-                from,
-                binding,
-                EdgeReason::lazy_rebind,
-                stmt.ordinal,
-            );
+            push_binding_edge(binding, DepKind::LazyRebind);
         }
         // Deeper-nested (or post-await) rebinds still rebind the
         // binding cell whenever they DO fire — and ESM imports are
@@ -556,22 +545,10 @@ pub fn build_dependency_graph_with(
             if stmt.rebinds.first_order_lazy.contains(binding) {
                 continue;
             }
-            push_binding_edge(
-                &mut raw_edges,
-                from,
-                binding,
-                EdgeReason::deferred_rebind,
-                stmt.ordinal,
-            );
+            push_binding_edge(binding, DepKind::DeferredRebind);
         }
         for binding in &stmt.local_effects {
-            push_binding_edge(
-                &mut raw_edges,
-                from,
-                binding,
-                EdgeReason::local_effect,
-                stmt.ordinal,
-            );
+            push_binding_edge(binding, DepKind::LocalEffect);
         }
     }
 
@@ -2147,7 +2124,11 @@ fn promote_at_init_calls(
                     raw_edges.push((
                         caller,
                         target_source_unit,
-                        EdgeReason::eager_use(stmt.ordinal, target_binding.clone()),
+                        EdgeReason::for_binding(
+                            DepKind::EagerUse,
+                            stmt.ordinal,
+                            target_binding.clone(),
+                        ),
                     ));
                 }
                 if caller < target_source_unit {
@@ -2192,8 +2173,12 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     caller,
                     target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(callee_source_unit),
+                    EdgeReason::for_binding(
+                        DepKind::EagerUse,
+                        stmt.ordinal,
+                        target_binding.clone(),
+                    )
+                    .promoted_at_init(callee_source_unit),
                 ));
             }
             match synchronous.binding_effect_authority() {
@@ -2237,8 +2222,12 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     caller,
                     *target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(caller),
+                    EdgeReason::for_binding(
+                        DepKind::EagerUse,
+                        stmt.ordinal,
+                        target_binding.clone(),
+                    )
+                    .promoted_at_init(caller),
                 ));
             }
             for target_binding in &scc_rebinds[scc_idx] {
@@ -2254,8 +2243,12 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     caller,
                     *target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(caller),
+                    EdgeReason::for_binding(
+                        DepKind::EagerUse,
+                        stmt.ordinal,
+                        target_binding.clone(),
+                    )
+                    .promoted_at_init(caller),
                 ));
             }
         }
@@ -2297,8 +2290,12 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     caller,
                     *target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(callee_source_unit),
+                    EdgeReason::for_binding(
+                        DepKind::EagerUse,
+                        stmt.ordinal,
+                        target_binding.clone(),
+                    )
+                    .promoted_at_init(callee_source_unit),
                 ));
             }
             for target_binding in &scc_rebinds[scc_idx] {
@@ -2314,8 +2311,12 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     caller,
                     *target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(callee_source_unit),
+                    EdgeReason::for_binding(
+                        DepKind::EagerUse,
+                        stmt.ordinal,
+                        target_binding.clone(),
+                    )
+                    .promoted_at_init(callee_source_unit),
                 ));
             }
         }
@@ -2356,8 +2357,12 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     caller,
                     *target_source_unit,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .promoted_at_init(caller),
+                    EdgeReason::for_binding(
+                        DepKind::EagerUse,
+                        stmt.ordinal,
+                        target_binding.clone(),
+                    )
+                    .promoted_at_init(caller),
                 ));
             }
         }
