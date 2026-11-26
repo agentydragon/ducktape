@@ -9,9 +9,9 @@ use super::super::runtime_inference::{CallOperands, CallTransfer};
 use super::super::value_model::{
     AbstractValue, Context, HeapAddress, MemberKey, RetainedResultKind, ValueExpr, Values,
 };
-use analysis::analysis_inputs::{ForeignCallSummary, ForeignInvocation, ForeignReturn};
-use analysis::facts::abstract_domain::value::Kind;
-use analysis::reports::schema::CallbackFactoryUseKind;
+use analysis_vocabulary::inputs::{ForeignCallSummary, ForeignInvocation, ForeignReturn};
+use analysis_vocabulary::report_schema::CallbackFactoryUseKind;
+use analysis_vocabulary::value::Kind;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -59,7 +59,7 @@ impl Executor<'_, '_> {
             || !callback.iter().all(|value| {
                 matches!(
                     value,
-                    AbstractValue::Value(analysis::facts::abstract_domain::value::Value::Alloc(
+                    AbstractValue::Value(analysis_vocabulary::value::Value::Alloc(
                         Kind::Function,
                         actual,
                     )) | AbstractValue::Closure(HeapAddress { callable: actual, .. }, _)

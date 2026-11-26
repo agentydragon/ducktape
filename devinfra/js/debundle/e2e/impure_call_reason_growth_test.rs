@@ -7,17 +7,17 @@ use std::collections::BTreeSet;
 
 fn reachable_assignments<'a>(
     graph: &'a graph::DependencyGraphReport,
-    root: &'a analysis::Purity,
-) -> Vec<&'a analysis::PurityReason> {
+    root: &'a analysis_vocabulary::purity::Purity,
+) -> Vec<&'a analysis_vocabulary::purity::PurityReason> {
     let mut pending = vec![root];
     let mut seen = BTreeSet::new();
     let mut assignments = Vec::new();
     while let Some(purity) = pending.pop() {
-        let analysis::Purity::NotPure { reasons } = purity else {
+        let analysis_vocabulary::purity::Purity::NotPure { reasons } = purity else {
             continue;
         };
         for reason in reasons {
-            if reason.rule == analysis::PurityRule::AssignOrUpdate {
+            if reason.rule == analysis_vocabulary::purity::PurityRule::AssignOrUpdate {
                 assignments.push(reason);
             }
             if let Some(id) = &reason.cause_ref {

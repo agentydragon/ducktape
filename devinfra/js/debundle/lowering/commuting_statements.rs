@@ -5,10 +5,10 @@
 
 use std::{borrow::Cow, collections::BTreeMap};
 
-use analysis::analysis_inputs::{
+use analysis::facts::StructuralChunkSourceFacts;
+use analysis_vocabulary::inputs::{
     CommutingEndpoint, CommutingStatementsRef, ResolvedCommutingStatements,
 };
-use analysis::facts::StructuralChunkSourceFacts;
 use anyhow::{Context, Result, bail, ensure};
 use binding_targets::binding_name_strings;
 use graph_provenance::GraphProvenance;

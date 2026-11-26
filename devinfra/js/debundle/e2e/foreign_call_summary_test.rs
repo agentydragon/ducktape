@@ -2,7 +2,7 @@
 //! a provider export whose body only allocates is no unknown callee at the
 //! importer; anything that can run other code stays conservative.
 
-use analysis::analysis_provenance::InferenceRule;
+use analysis_vocabulary::provenance::InferenceRule;
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_binding};
 use debundle_e2e_support::*;
 

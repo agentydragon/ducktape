@@ -34,21 +34,12 @@ use super::value_model::{
     OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr, infer_namespace_aliases,
     object_data_property_name, static_prop, static_property_name,
 };
-use analysis::analysis_inputs::{
-    AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
-    InferredSetOperation, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
-    NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef, ProgramPremiseKey,
-    ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
-    SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
-};
-use analysis::execution_evidence::SourceLocator;
 use analysis::facts::abstract_domain::builtins::{
     self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
 };
 use analysis::facts::abstract_domain::integrity::{
     IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
 };
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis::facts::at_init_fallback::{
     is_no_sync_callback_member_call, member_row_invokes_no_argument,
 };
@@ -73,12 +64,21 @@ use analysis::facts::{
     LocalClassConstructionProof, LocalClassConstructionShapes,
     OwnerInitializationCoverageRefusalReason, SetIterableShapes, StableArraySpreadShapes,
 };
-use analysis::inference::{FactContext, IterativeInference, IterativeRules};
-use analysis::reports::schema::{
+use analysis_model::PrimKinds;
+use analysis_vocabulary::execution_evidence::SourceLocator;
+use analysis_vocabulary::inputs::{
+    AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
+    InferredSetOperation, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
+    NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef, ProgramPremiseKey,
+    ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
+};
+use analysis_vocabulary::report_schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
 };
-use analysis_model::PrimKinds;
+use analysis_vocabulary::value::{Kind, Value};
+use inference::{FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
 use std::cell::RefCell;
@@ -2793,7 +2793,7 @@ mod iterative_alias_closure_tests {
         close_prepublication_derived_bindings, close_raw_intrinsic_aliases,
         infer_mutation_receiver_aliases,
     };
-    use analysis::analysis_inputs::NativeIntrinsic;
+    use analysis_vocabulary::inputs::NativeIntrinsic;
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
     use swc_common::SyntaxContext;
@@ -4608,7 +4608,7 @@ pub(super) struct ExecutionIndex {
     pub(super) object_literal_owners: BTreeMap<u32, SourceUnitOrdinal>,
     pub(super) own_descriptor_shapes: BTreeMap<u32, OwnPropertyShape>,
     descriptor_copy_factories:
-        BTreeMap<Id, analysis::analysis_inputs::DescriptorCopyFactorySummary>,
+        BTreeMap<Id, analysis_vocabulary::inputs::DescriptorCopyFactorySummary>,
     pub(super) descriptor_copy_calls: BTreeMap<CallSite, DescriptorCopyCallCandidate>,
     pub(super) null_proto_data_objects: BTreeSet<u32>,
     pub(super) exact_object_spread_copies: BTreeSet<u32>,
@@ -4767,17 +4767,18 @@ pub(super) struct ExecutionIndex {
     pub(super) opaque_top: BTreeSet<SourceUnitOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
     pub(super) callback_factory_imports: BTreeSet<Id>,
-    pub(super) callback_factory_summaries: BTreeMap<Id, analysis::analysis_inputs::CallableSummary>,
+    pub(super) callback_factory_summaries:
+        BTreeMap<Id, analysis_vocabulary::inputs::CallableSummary>,
     /// The existing canonical call-shape check accepted one syntactic inline
     /// callback. Lowered values cannot establish this source prerequisite.
     pub(super) direct_inline_callback_calls: BTreeMap<CallSite, Id>,
-    pub(super) foreign_call_imports: BTreeMap<Id, analysis::analysis_inputs::ForeignCallSummary>,
+    pub(super) foreign_call_imports: BTreeMap<Id, analysis_vocabulary::inputs::ForeignCallSummary>,
     pub(super) importer_cell_reads: BTreeMap<Id, BTreeSet<Id>>,
     /// The derived summary of an import whose callback-factory evidence is
     /// all source-inferred. The evidence keeps the call's timing and result
     /// consumers; the summary is the receipt for the provider body's effects.
     pub(super) callback_factory_call_summaries:
-        BTreeMap<Id, analysis::analysis_inputs::ForeignCallSummary>,
+        BTreeMap<Id, analysis_vocabulary::inputs::ForeignCallSummary>,
     pub(super) inline_callback_factory_imports: BTreeSet<Id>,
     pub(super) callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     /// Union used only for namespace privacy/mutation guards. Admission of the
@@ -4809,7 +4810,7 @@ pub(super) struct ExecutionIndex {
     pub(super) no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
     pub(super) no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
     pub(super) returned_record_summaries:
-        BTreeMap<Id, analysis::analysis_inputs::ReturnedRecordSummary>,
+        BTreeMap<Id, analysis_vocabulary::inputs::ReturnedRecordSummary>,
     pub(super) namespace_wrapper_summaries: BTreeMap<Id, NamespaceWrapperSummary>,
 }
 
@@ -5515,7 +5516,7 @@ impl ExecutionIndex {
                     if summary.callback_factory_evidence().iter().all(|evidence| {
                         matches!(
                             evidence,
-                            analysis::analysis_inputs::CallbackFactoryEvidence::InferredImmutableWrapper { .. }
+                            analysis_vocabulary::inputs::CallbackFactoryEvidence::InferredImmutableWrapper { .. }
                         )
                     }) {
                         self
@@ -6933,13 +6934,13 @@ impl ExecutionIndex {
             &self.integrity,
             slots,
             Some(span.lo.0),
-            analysis::analysis_provenance::InferenceRule::NativeOwnDataRead,
+            analysis_vocabulary::provenance::InferenceRule::NativeOwnDataRead,
         )
     }
 
     pub(crate) fn locate_native_integrity_witnesses(
         &mut self,
-        mut locate: impl FnMut(Span) -> Option<analysis::execution_evidence::SourceLocation>,
+        mut locate: impl FnMut(Span) -> Option<analysis_vocabulary::execution_evidence::SourceLocation>,
     ) {
         if self
             .native_integrity_witnesses
@@ -9813,12 +9814,12 @@ fn deferred_callback_closure(index: &ExecutionIndex, outer: u32, closure: &Range
 /// captures for the report.
 pub struct InferredReturnedRecord {
     pub members: Vec<(String, u32, BTreeSet<String>)>,
-    pub inference: analysis::analysis_provenance::InferenceUse,
+    pub inference: analysis_vocabulary::provenance::InferenceUse,
 }
 
 pub struct InferredNamespaceWrapper {
     pub function_start: u32,
-    pub inference: analysis::analysis_provenance::InferenceUse,
+    pub inference: analysis_vocabulary::provenance::InferenceUse,
     pub dependencies: ProofDependencies,
 }
 
@@ -10122,7 +10123,7 @@ impl PreparedCallableCapabilities {
 
     pub fn refine_native_branches(
         &mut self,
-        summaries: &BTreeMap<String, analysis::analysis_inputs::CallableSummary>,
+        summaries: &BTreeMap<String, analysis_vocabulary::inputs::CallableSummary>,
     ) {
         self.index.refine_native_branches(summaries);
     }
@@ -10198,7 +10199,7 @@ pub fn prepare_callable_capabilities(
             &AnalysisInputs {
                 selected_value_inputs,
                 selected_native_operation_inputs,
-                assumptions: analysis::analysis_inputs::AnalysisAssumptions {
+                assumptions: analysis_vocabulary::inputs::AnalysisAssumptions {
                     predefined_globals,
                     bundle_globals,
                     namespace_independent_members: namespace_privacy_members,
@@ -10413,7 +10414,7 @@ fn foreign_call(
         .map(|members| returned_record(index, members, &derived, &dependencies));
     let callback_factory = derived.closure.as_ref().is_some_and(|closure| {
         derived.returns
-            == BTreeSet::from([analysis::analysis_inputs::ForeignReturn::FreshAllocation])
+            == BTreeSet::from([analysis_vocabulary::inputs::ForeignReturn::FreshAllocation])
             && deferred_callback_closure(index, declaration_start, closure)
     });
     InferredForeignCall {
@@ -10434,7 +10435,7 @@ fn returned_record(
     derived: &analysis::facts::abstract_domain::foreign_call::DerivedForeignCall,
     dependencies: &ProofDependencies,
 ) -> InferredReturnedRecord {
-    use analysis::analysis_provenance::{InferenceRule, InferenceUse};
+    use analysis_vocabulary::provenance::{InferenceRule, InferenceUse};
     let members = members
         .iter()
         .map(|member| {

@@ -101,7 +101,7 @@ pub struct ChunkModulesReport {
     /// Bare imported callable capabilities used by this chunk, with their
     /// defining evidence. Empty when no such import was resolved.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub imported_callables: BTreeMap<String, analysis::CallableSummary>,
+    pub imported_callables: BTreeMap<String, analysis_vocabulary::inputs::CallableSummary>,
     /// `purity: pure` hints the analyzer inferred automatically.
     /// Same content as the stderr warnings the build prints; carried
     /// on the report so JSON consumers can pin behavior across runs.

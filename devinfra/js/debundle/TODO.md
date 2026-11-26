@@ -206,7 +206,7 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   reconsideration.
 
 - **AR3 — Compose callable capabilities and initialization availability.**
-  `CallableSummary` in <analysis_inputs.rs> and <cross_module_purity.rs> still
+  `CallableSummary` in <analysis_vocabulary/inputs.rs> and <cross_module_purity.rs> still
   distribute return, callback, capture and availability proofs across
   specialized paths. Source initialization sites and summary eligibility share
   the flow census (<docs/inference.md>); reached-prefix readiness remains
@@ -229,8 +229,8 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   interface. <lowering/mod.rs> also prepares whole-program summaries and loads
   analysis. Extract immutable execution program/index interfaces. Put phase
   orchestration above those services; finish moving
-  semantic records still owned by `reports/schema.rs` to domain owners, retaining
-  <execution_evidence.rs> and report projections. Close when real callers use
+  semantic records still owned by `analysis_vocabulary/report_schema.rs` to domain owners, retaining
+  <analysis_vocabulary/execution_evidence.rs> and report projections. Close when real callers use
   those interfaces without reverse ownership, with unchanged semantic facts,
   report/saved fields, proof provenance, gate results and staged replay. File
   moves alone do not establish that boundary. PS1/PS2 in

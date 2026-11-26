@@ -11,6 +11,7 @@ rust_library(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:source_identity",
         "//devinfra/js/debundle:work_metrics",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/facts/sync_effects",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",

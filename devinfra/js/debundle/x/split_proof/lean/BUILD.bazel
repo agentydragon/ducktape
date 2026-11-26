@@ -511,6 +511,36 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "corejs_plan_placement",
+    srcs = ["EsmSplit/CoreJS/PlanPlacement.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_linked_input",
+        ":planner",
+    ],
+)
+
+executable_test(
+    name = "corejs_plan_placement_test",
+    src = "PlanPlacementTest.lean",
+    deps = [":corejs_plan_placement"],
+)
+
+lean_proof_test(
+    name = "corejs_plan_placement_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.PlanPlacement"],
+    required_theorems = [
+        "CoreJS.PlanPlacement.assignments",
+        "CoreJS.PlanPlacement.authored_owner",
+        "CoreJS.PlanPlacement.faithful_planned_places",
+        "CoreJS.PlanPlacement.output_assignments",
+        "CoreJS.PlanPlacement.planned_places",
+    ],
+    deps = [":corejs_plan_placement"],
+)
+
+lean_library(
     name = "named_declaration_split",
     srcs = ["EsmSplit/CoreJS/NamedDeclarationSplit.lean"],
     deps = [
@@ -1596,6 +1626,34 @@ lean_proof_test(
         "CoreJS.TerminalReaderConstruction.same_exports",
     ],
     deps = [":terminal_reader_construction"],
+)
+
+lean_library(
+    name = "terminal_export_placement",
+    srcs = ["EsmSplit/CoreJS/TerminalExportPlacement.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_resolved_placement",
+    ],
+)
+
+executable_test(
+    name = "terminal_export_placement_test",
+    src = "TerminalExportPlacementTest.lean",
+    deps = [":terminal_export_placement"],
+)
+
+lean_proof_test(
+    name = "terminal_export_placement_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalExportPlacement"],
+    required_theorems = [
+        "CoreJS.TerminalExportPlacement.resolve",
+        "CoreJS.TerminalExportPlacement.resolve_sound",
+        "CoreJS.TerminalExportPlacement.terminal_export_in_owner",
+        "CoreJS.TerminalExportPlacement.wrong_owner_not_placed",
+    ],
+    deps = [":terminal_export_placement"],
 )
 
 lean_library(

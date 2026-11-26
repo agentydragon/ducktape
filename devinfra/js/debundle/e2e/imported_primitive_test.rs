@@ -1,7 +1,7 @@
 //! Stable imported primitives cannot execute ToPrimitive callbacks, and a
 //! coercion of operands whose types cannot throw is pure.
-use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
 use analysis_model::DepKind;
+use analysis_vocabulary::report_schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
@@ -98,8 +98,9 @@ fn assert_root_read_receipt(fixture: &Fixture, binding: &str) {
         .as_ref()
         .unwrap_or_else(|| panic!("missing execution report for {binding}: {node:#?}"));
     assert!(execution.complete, "{execution:#?}");
-    let Some(analysis::reports::schema::BindingEffectAuthorityReport::OperationReceipt { receipt }) =
-        execution.binding_effect_authority.as_ref()
+    let Some(analysis_vocabulary::report_schema::BindingEffectAuthorityReport::OperationReceipt {
+        receipt,
+    }) = execution.binding_effect_authority.as_ref()
     else {
         panic!("binding read lacks an operation receipt: {execution:#?}");
     };
@@ -310,7 +311,7 @@ fn assert_uncovered_root_read(fixture: &Fixture, binding: &str) {
     assert!(
         matches!(
             execution.binding_effect_authority.as_ref(),
-            Some(analysis::reports::schema::BindingEffectAuthorityReport::OrderedRootInitializerUncovered {
+            Some(analysis_vocabulary::report_schema::BindingEffectAuthorityReport::OrderedRootInitializerUncovered {
                 binding: actual,
                 ..
             }) if actual == binding

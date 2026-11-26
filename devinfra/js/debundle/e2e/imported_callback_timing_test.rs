@@ -1,7 +1,7 @@
 //! Imported wrappers keep callback-body reads deferred until invocation.
 
-use analysis::reports::schema::CallbackFactoryUseKind;
 use analysis_model::DepKind;
+use analysis_vocabulary::report_schema::CallbackFactoryUseKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
@@ -1417,10 +1417,12 @@ fn private_factory_result_retains_the_audited_summary() {
             .find(|summary| summary.id == uses[0].summary_ref)
             .unwrap()
             .callback_factory_evidence,
-        vec![analysis::CallbackFactoryEvidence::AuthorAssertion {
-            defining_module: "static/peer".into(),
-            export: "factory".into(),
-        }]
+        vec![
+            analysis_vocabulary::inputs::CallbackFactoryEvidence::AuthorAssertion {
+                defining_module: "static/peer".into(),
+                export: "factory".into(),
+            }
+        ]
     );
 }
 
@@ -3792,7 +3794,7 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
     let certificate = &graph.imported_callable_summaries[0];
     assert!(certificate.callback_factory_evidence.is_empty());
     let record = certificate.returned_record.as_ref().unwrap();
-    use analysis::analysis_provenance::InferenceRule;
+    use analysis_vocabulary::provenance::InferenceRule;
     assert_eq!(record.inference.conclusion, InferenceRule::ReturnedRecord);
     assert_eq!(
         record.inference.derivation_rules,
@@ -3823,15 +3825,16 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
         .unwrap();
     let execution = queue.synchronous_execution.as_ref().unwrap();
     assert!(execution.inference_uses.contains(
-        &analysis::reports::schema::InferenceUseReport::from(&record.inference)
+        &analysis_vocabulary::report_schema::InferenceUseReport::from(&record.inference)
     ));
     assert!(execution.callback_factory_uses.is_empty());
     let uses = &execution.returned_record_uses;
-    assert!(uses.iter().any(|proof| proof.kind == analysis::reports::schema::ReturnedRecordUseKind::CallTiming));
     assert!(
         uses.iter().any(|proof| proof.kind
-            == analysis::reports::schema::ReturnedRecordUseKind::ReturnCapability)
+            == analysis_vocabulary::report_schema::ReturnedRecordUseKind::CallTiming)
     );
+    assert!(uses.iter().any(|proof| proof.kind
+        == analysis_vocabulary::report_schema::ReturnedRecordUseKind::ReturnCapability));
     assert!(uses.iter().all(|proof| proof.summary_ref == certificate.id
         && proof.source_location.as_ref().unwrap().start_line == 3));
 }

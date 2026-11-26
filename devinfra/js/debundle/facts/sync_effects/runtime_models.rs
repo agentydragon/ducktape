@@ -34,7 +34,12 @@ pub(super) enum ModelResult {
         outcome: Box<Outcome>,
     },
     LocalClassConstruction(
-        Box<Result<(Outcome, AbstractValue), analysis::execution_evidence::ConstructionRejection>>,
+        Box<
+            Result<
+                (Outcome, AbstractValue),
+                analysis_vocabulary::execution_evidence::ConstructionRejection,
+            >,
+        >,
     ),
     MetadataDecoration {
         outcome: Box<Outcome>,

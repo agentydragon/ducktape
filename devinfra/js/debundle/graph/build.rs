@@ -7,17 +7,17 @@ use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
-use analysis::analysis_inputs::{CommutingEndpoint, ResolvedCommutingStatements};
-use analysis::execution_evidence::SourceLocation;
 use analysis::facts::{
     CellOverlap, CellOverlapIndex, EffectCell, HeapContentCells, SourceUnitReadClosure,
     first_overlapping, may_conflict, may_overlap,
 };
-use analysis::reports::schema::EffectCellReport;
 use analysis::reports::spec_lint::{
     CommutingStatementsUnused, UnusedCommutingEndpoint, UnusedPremiseReason,
 };
 use analysis::{StatementEffectSummary, StatementFacts, StatementKind};
+use analysis_vocabulary::execution_evidence::SourceLocation;
+use analysis_vocabulary::inputs::{CommutingEndpoint, ResolvedCommutingStatements};
+use analysis_vocabulary::report_schema::EffectCellReport;
 
 mod at_init;
 mod cell_order;
@@ -41,8 +41,8 @@ use super::edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport, DependencyEdge,
     DependencyEdgeId, EdgeReason, EdgeRole, EffectProvenance, HeapBarrierCause, SequencedCause,
 };
-use analysis::execution_evidence::AssumedEffectReason;
 use analysis::facts::DataflowOpacityCause;
+use analysis_vocabulary::execution_evidence::AssumedEffectReason;
 
 const HEAP_CELL_SAMPLE_LIMIT: usize = 8;
 
@@ -51,8 +51,8 @@ fn report_heap_frontier(
     composed_synchronous_calls: &HeapContentCells,
     non_assumed_reads: &BTreeSet<EffectCell>,
     non_assumed_writes: &BTreeSet<EffectCell>,
-) -> Option<analysis::reports::schema::HeapFrontierEvidence> {
-    use analysis::reports::schema::{
+) -> Option<analysis_vocabulary::report_schema::HeapFrontierEvidence> {
+    use analysis_vocabulary::report_schema::{
         HeapCellSetReport, HeapContentSummaryReport, HeapFrontierEvidence,
         NonAssumedHeapAccessReport,
     };
@@ -229,7 +229,7 @@ fn source_unit_node(stmt: &StatementFacts) -> SourceUnit {
         callback_factory_barriers: stmt.callback_factory_barriers.clone(),
         heap_native_integrity_uses: stmt.heap_native_integrity_uses.clone(),
         synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
-            analysis::reports::schema::SynchronousExecutionReport {
+            analysis_vocabulary::report_schema::SynchronousExecutionReport {
                 initializer_binding_effects: calls.initializer_binding_effects.clone(),
                 initializer_external_effects: calls.initializer_external_effects.clone(),
                 purity_disagreement: calls.purity_disagreement.clone(),
@@ -248,7 +248,7 @@ fn source_unit_node(stmt: &StatementFacts) -> SourceUnit {
                 inference_uses: calls
                     .inference_uses
                     .iter()
-                    .map(analysis::reports::schema::InferenceUseReport::from)
+                    .map(analysis_vocabulary::report_schema::InferenceUseReport::from)
                     .collect(),
                 precision_losses: calls.precision_losses.clone(),
                 callback_factory_uses: Vec::new(),

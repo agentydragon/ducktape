@@ -1,0 +1,26 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "inference",
+    srcs = glob(["**/*.rs"]),
+    crate_root = "lib.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:work_metrics",
+        "//devinfra/js/debundle/analysis_vocabulary",
+        "@crates//:rustc-hash",
+    ],
+)
+
+rust_test(
+    name = "inference_test",
+    crate = ":inference",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:telemetry",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)

@@ -42,7 +42,8 @@ use js_ast::SourceLineIndex;
 use swc_common::{BytePos, Spanned};
 use swc_ecma_ast::{Decl, Expr, Lit, ModuleDecl, ModuleItem, Pat, Stmt};
 
-use analysis::analysis_inputs::{
+use analysis_vocabulary::execution_evidence::SourceLocator;
+use analysis_vocabulary::inputs::{
     BundleGlobalNames, CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments,
     DeferredRecordMember, DescriptorCopyFactorySummary, ForeignCallSummary,
     ImportedPrimitiveArrayOperandEvidence, ImportedPrimitiveArraySpreadInputEvidence,
@@ -52,15 +53,15 @@ use analysis::analysis_inputs::{
     ResolvedNativeOperationInput, ReturnedRecordSummary, SelectedBindingValueInput,
     SelectedNativeOperationInput,
 };
-use analysis::execution_evidence::SourceLocator;
 
-use analysis::facts::abstract_domain::value::Value;
 use analysis::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
-use analysis::inference::{FactContext, IterativeInference, IterativeRules};
 use analysis::program_bindings::{
     BindingId, ExportId, ModuleBindings, ProgramBindings, ResolvedImport, SourceModuleKey,
 };
-use analysis::purity::{ChunkCodeGraph, Purity, PurityEffectRules, PurityMode};
+use analysis::purity::{ChunkCodeGraph, PurityEffectRules, PurityMode};
+use analysis_vocabulary::purity::Purity;
+use analysis_vocabulary::value::Value;
+use inference::{FactContext, IterativeInference, IterativeRules};
 use sync_effects::execution_index::{InferredCallableCapabilities, PreparedCallableCapabilities};
 
 /// A stable export after its imports resolved: its own types and the exports
@@ -207,9 +208,9 @@ struct PreparedModulePurityFacts<'a> {
     set_iterable_proof: analysis::facts::SetIterableProof,
     local_class_construction_proof: analysis::facts::LocalClassConstructionProof,
     plain_data_bindings: Vec<String>,
-    plain_data_dependencies: BTreeMap<String, analysis::analysis_inputs::ProofDependencies>,
+    plain_data_dependencies: BTreeMap<String, analysis_vocabulary::inputs::ProofDependencies>,
     plain_data_inference_uses:
-        BTreeMap<String, BTreeSet<analysis::analysis_provenance::InferenceUse>>,
+        BTreeMap<String, BTreeSet<analysis_vocabulary::provenance::InferenceUse>>,
     plain_array_bindings: BTreeSet<String>,
     known_eager_rebindings: BTreeMap<swc_ecma_ast::Id, BTreeSet<u32>>,
     known_lazy_rebindings: BTreeSet<swc_ecma_ast::Id>,
@@ -236,7 +237,7 @@ fn var_decl_for_source_item(item: &ModuleItem) -> Option<&swc_ecma_ast::VarDecl>
 
 fn selected_array_declarator<'a>(
     module: &'a ModulePurityFacts<'_>,
-    declaration: &analysis::analysis_inputs::SourceDeclaration,
+    declaration: &analysis_vocabulary::inputs::SourceDeclaration,
     request: &str,
 ) -> Result<(&'a swc_ecma_ast::VarDeclarator, swc_ecma_ast::Id)> {
     let item = module
@@ -307,7 +308,7 @@ fn resolve_imported_primitive_array_spread_inputs(
     prepared: &BTreeMap<SourceModuleKey, PreparedModulePurityFacts<'_>>,
     selected: &BTreeMap<
         SourceModuleKey,
-        Vec<analysis::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+        Vec<analysis_vocabulary::inputs::AnalysisImportedPrimitiveArraySpreadInput>,
     >,
 ) -> Result<BTreeMap<SourceModuleKey, Vec<ResolvedImportedPrimitiveArraySpreadInput>>> {
     let mut resolved = BTreeMap::new();
@@ -544,7 +545,7 @@ impl<'a> ModulePurityFacts<'a> {
     /// summary pass already solved it.
     fn prepare(
         &self,
-        inputs: &analysis::analysis_inputs::AnalysisInputs,
+        inputs: &analysis_vocabulary::inputs::AnalysisInputs,
         structural_flow: Option<Arc<ChunkValueFlow>>,
         options: PreparationOptions,
     ) -> PreparedModulePurityFacts<'a> {
@@ -816,14 +817,14 @@ pub fn resolve_imported_purities(
             // receiver and imported-call facts that established the program census.
             // A native-integrity result alone cannot refine the provider's local
             // mutation census, which would otherwise reintroduce unknown aliases.
-            let inputs = analysis::analysis_inputs::AnalysisInputs {
+            let inputs = analysis_vocabulary::inputs::AnalysisInputs {
                 native_integrity: callable_summaries.native_integrity.clone(),
                 inferred_set_constructions: callable_summaries
                     .inferred_set_constructions
                     .get(key)
                     .cloned()
                     .unwrap_or_default(),
-                assumptions: analysis::analysis_inputs::AnalysisAssumptions {
+                assumptions: analysis_vocabulary::inputs::AnalysisAssumptions {
                     captured_value_inputs: callable_summaries
                         .value_inputs
                         .get(key)
@@ -1062,18 +1063,18 @@ pub struct ResolvedCallableSummaries {
     pub native_operation_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedNativeOperationInput>>,
     pub imported_primitive_array_spread_inputs: BTreeMap<
         SourceModuleKey,
-        Vec<analysis::analysis_inputs::ResolvedImportedPrimitiveArraySpreadInput>,
+        Vec<analysis_vocabulary::inputs::ResolvedImportedPrimitiveArraySpreadInput>,
     >,
     pub(crate) selected_imported_primitive_array_spread_inputs: BTreeMap<
         SourceModuleKey,
-        Vec<analysis::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+        Vec<analysis_vocabulary::inputs::AnalysisImportedPrimitiveArraySpreadInput>,
     >,
     pub inferred_set_constructions: BTreeMap<
         SourceModuleKey,
-        BTreeMap<u32, analysis::analysis_inputs::InferredSetConstruction>,
+        BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
     >,
     pub argument_inputs:
-        BTreeMap<SourceModuleKey, Vec<analysis::analysis_inputs::ResolvedArgumentInput>>,
+        BTreeMap<SourceModuleKey, Vec<analysis_vocabulary::inputs::ResolvedArgumentInput>>,
     /// The whole-program bundle-owned globals the census used.
     pub bundle_globals: BundleGlobalNames,
     /// Structural value flows already solved while deriving summaries, which
@@ -1220,13 +1221,13 @@ pub struct CallableSummaryInputs<'a> {
         &'a BTreeMap<SourceModuleKey, Vec<SelectedNativeOperationInput>>,
     pub selected_imported_primitive_array_spread_inputs: &'a BTreeMap<
         SourceModuleKey,
-        Vec<analysis::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+        Vec<analysis_vocabulary::inputs::AnalysisImportedPrimitiveArraySpreadInput>,
     >,
     pub argument_inputs:
-        &'a BTreeMap<SourceModuleKey, Vec<analysis::analysis_inputs::ResolvedArgumentInput>>,
+        &'a BTreeMap<SourceModuleKey, Vec<analysis_vocabulary::inputs::ResolvedArgumentInput>>,
     pub predefined_globals: spec::PredefinedGlobals,
     pub no_accessor_install_callables:
-        &'a BTreeMap<SourceModuleKey, Vec<analysis::analysis_inputs::ResolvedNoAccessorInstall>>,
+        &'a BTreeMap<SourceModuleKey, Vec<analysis_vocabulary::inputs::ResolvedNoAccessorInstall>>,
     /// `program_premises.intrinsics_never_written` families.
     pub intrinsics_never_written: BTreeSet<NativeIntrinsic>,
 }
@@ -1761,7 +1762,8 @@ fn reject_contradicted_native_operation_inputs(
 fn preflow_set_constructions(
     prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
     intrinsics_never_written: &BTreeSet<NativeIntrinsic>,
-) -> BTreeMap<SourceModuleKey, BTreeMap<u32, analysis::analysis_inputs::InferredSetConstruction>> {
+) -> BTreeMap<SourceModuleKey, BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>>
+{
     // Source inference must finish before any root can seed structural flow.
     // The completed raw census is conservative; later branch refinement may
     // not retroactively introduce a root into an already solved flow.
@@ -1905,7 +1907,7 @@ fn validate_descriptor_copy_assertions(
 fn reject_contradicted_array_spread_inputs(
     selected_imported_primitive_array_spread_inputs: &BTreeMap<
         SourceModuleKey,
-        Vec<analysis::analysis_inputs::AnalysisImportedPrimitiveArraySpreadInput>,
+        Vec<analysis_vocabulary::inputs::AnalysisImportedPrimitiveArraySpreadInput>,
     >,
     prepared: &BTreeMap<&SourceModuleKey, PreparedCallableCapabilities>,
 ) -> Result<()> {
@@ -2148,7 +2150,7 @@ fn add_inferred_capability_summaries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::analysis_inputs::{ProofDependencies, ValueInputRef};
+    use analysis_vocabulary::inputs::{ProofDependencies, ValueInputRef};
     use swc_common::{FileName, Span, sync::Lrc};
     use swc_ecma_ast::{Expr, Module, NewExpr};
     use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
@@ -2412,7 +2414,7 @@ mod tests {
         let module = parse(source);
         let facts = facts(&module, &[], &[("out", local)]);
         let prepared = facts.prepare(
-            &analysis::analysis_inputs::AnalysisInputs::default(),
+            &analysis_vocabulary::inputs::AnalysisInputs::default(),
             None,
             PreparationOptions::default(),
         );
@@ -2458,10 +2460,10 @@ mod tests {
             local: "build".to_string(),
             source_location: None,
             members: Vec::new(),
-            inference: analysis::analysis_provenance::InferenceUse {
-                conclusion: analysis::analysis_provenance::InferenceRule::ReturnedRecord,
+            inference: analysis_vocabulary::provenance::InferenceUse {
+                conclusion: analysis_vocabulary::provenance::InferenceRule::ReturnedRecord,
                 derivation_rules: BTreeSet::from([
-                    analysis::analysis_provenance::InferenceRule::ReturnedRecord,
+                    analysis_vocabulary::provenance::InferenceRule::ReturnedRecord,
                 ]),
                 value_input_refs: BTreeSet::from([reported_dependencies]),
                 descriptor_copy_author_refs: Default::default(),
@@ -2679,7 +2681,7 @@ mod tests {
             "const values = [1]; Set.prototype.add = function add(value) {}; new Set(values);",
         );
         let prepared = facts(&module, &[], &[]).prepare(
-            &analysis::analysis_inputs::AnalysisInputs::default(),
+            &analysis_vocabulary::inputs::AnalysisInputs::default(),
             None,
             PreparationOptions::default(),
         );

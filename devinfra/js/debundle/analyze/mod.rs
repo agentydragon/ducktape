@@ -3,10 +3,6 @@
 //! purity classification and local effects into a `ChunkFactAnalysis`.
 //! Sits above both crates; `analyze_chunk` is the entry point.
 
-use analysis::LocalEffectPolicy;
-use analysis::analysis_inputs::AnalysisInputs;
-use analysis::analysis_inputs::ValidatedNativeOperationFacts;
-use analysis::execution_evidence::SourceLocator;
 use analysis::facts::analyze::ExportReentryPolicy;
 use analysis::facts::analyze::analyze_chunk_structural;
 use analysis::facts::at_init_fallback::has_opaque_at_init_call;
@@ -26,9 +22,13 @@ use analysis::facts::statement_facts::StatementFacts;
 use analysis::facts::statement_facts::StructuralChunkAnalysis;
 use analysis::facts::statement_facts::StructuralStatementFacts;
 use analysis::purity::code_graph::ChunkCodeGraph;
-use analysis::purity::purity_type::Purity;
 use analysis::purity::redundant_hints::detect_redundant_pure_member_hints;
 use analysis::purity::redundant_hints::detect_redundant_purity_hints;
+use analysis_vocabulary::execution_evidence::SourceLocator;
+use analysis_vocabulary::inputs::AnalysisInputs;
+use analysis_vocabulary::inputs::LocalEffectPolicy;
+use analysis_vocabulary::inputs::ValidatedNativeOperationFacts;
+use analysis_vocabulary::purity::Purity;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use swc_ecma_ast::{Id, Module, ModuleItem};

@@ -5,9 +5,9 @@
 //! scales with nodes rather than with candidate edges.
 
 use super::{FlowFact, FlowKey, OriginId, OriginTable, Values};
-use crate::analysis_inputs::ProofDependencies;
-use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::inference::IterativeFacts;
+use analysis_vocabulary::inputs::ProofDependencies;
+use analysis_vocabulary::value::{Kind, Value};
+use inference::IterativeFacts;
 use petgraph::algo::tarjan_scc;
 use petgraph::visit::{GraphBase, IntoNeighbors, IntoNodeIdentifiers, NodeIndexable};
 use roaring::{RoaringBitmap, bitmap::Iter as RoaringIter};
@@ -477,8 +477,8 @@ struct CandidateClosureWork {
 mod tests {
     use super::super::{BindingSlot, Values};
     use super::*;
-    use crate::analysis_inputs::ValueInputRef;
-    use crate::inference::{FactContext, IterativeInference, IterativeRules};
+    use analysis_vocabulary::inputs::ValueInputRef;
+    use inference::{FactContext, IterativeInference, IterativeRules};
     use petgraph::graphmap::DiGraphMap;
     use std::cell::Cell;
     use std::collections::VecDeque;

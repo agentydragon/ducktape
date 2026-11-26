@@ -39,9 +39,9 @@ use crate::{
     DependencyEdge, DependencyGraph, DependencyGraphBuildError, GraphOptions,
     build_dependency_graph_with,
 };
-use analysis::analysis_inputs::ResolvedCommutingStatements;
 use analysis::facts::StatementFacts;
 use analysis::reports::spec_lint::CommutingStatementsUnused;
+use analysis_vocabulary::inputs::ResolvedCommutingStatements;
 
 /// One atomic factor group: a set of source units that any valid
 /// factorization must keep co-located, plus the `DepKind`s of edges that
@@ -220,7 +220,7 @@ pub fn compute_atomic_groups(dependency_graph: &DependencyGraph) -> Vec<AtomicGr
 mod tests {
     use super::*;
     use crate::{DependencyEdgeId, EdgeReason, EdgeRole};
-    use analysis::analysis_inputs::CommutingStatementsRef;
+    use analysis_vocabulary::inputs::CommutingStatementsRef;
     use source_identity::SourceUnitOrdinal;
 
     fn edge(kind: DepKind, inert: bool) -> DependencyEdge {

@@ -1,10 +1,8 @@
 use std::{collections::BTreeSet, sync::Arc};
 
-use super::{
-    ArrowExpr, ChunkValueFlow, Decl, ModuleItem, Stmt, Visit, VisitWith,
-    abstract_domain::value::{Kind, Value},
-    value_flow::{OriginTable, Values},
-};
+use super::value_flow::{OriginTable, Values};
+use super::{ArrowExpr, ChunkValueFlow, Decl, ModuleItem, Stmt, Visit, VisitWith};
+use analysis_vocabulary::value::{Kind, Value};
 
 const DOMAIN: [Value; 10] = [
     Value::Alloc(Kind::Function, 0),

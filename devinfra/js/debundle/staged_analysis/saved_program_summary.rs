@@ -6,16 +6,16 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::analysis_inputs::saved::{SavedCallableSummary, SavedNativeIntegrity};
-use analysis::analysis_inputs::{
+use analysis_codec::{ContextOrdinals, SavedBinding};
+use analysis_vocabulary::inputs::saved::{SavedCallableSummary, SavedNativeIntegrity};
+use analysis_vocabulary::inputs::{
     ArgumentInputEvidence, ImportedPrimitiveRead, InferredSetConstruction, InferredSetOperation,
     InitializerCallEffectInputRef, NativeOperationInputEvidence, ResolvedArgumentInput,
     ResolvedBindingValueInput, ResolvedImportedPrimitiveArraySpreadInput,
     ResolvedInitializerCallEffectInput, ResolvedNativeOperationInput, StableSetIterableUse,
     ValueInputEvidence,
 };
-use analysis::facts::abstract_domain::value::Value;
-use analysis_codec::{ContextOrdinals, SavedBinding};
+use analysis_vocabulary::value::Value;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
@@ -37,7 +37,7 @@ pub(super) struct SavedProgramSummary<'a> {
     /// Required field, nullable value: missing must differ from explicit None.
     #[serde(deserialize_with = "Deserialize::deserialize")]
     native_integrity: Option<SavedNativeIntegrity<'a>>,
-    bundle_globals: Cow<'a, analysis::analysis_inputs::BundleGlobalNames>,
+    bundle_globals: Cow<'a, analysis_vocabulary::inputs::BundleGlobalNames>,
     value_inputs: BTreeMap<String, Vec<SavedValueInput>>,
     native_operation_inputs: BTreeMap<String, Vec<SavedNativeOperationInput>>,
     initializer_call_effect_inputs: BTreeMap<String, Vec<SavedInitializerCallEffectInput>>,
@@ -399,7 +399,7 @@ struct SavedInitializerCallEffectInput {
     provider_sha256: String,
     #[serde(default)]
     returns_opaque_function_from_const_primitive: bool,
-    effective_replacement: Option<analysis::analysis_inputs::EffectiveInitializerCallReplacement>,
+    effective_replacement: Option<analysis_vocabulary::inputs::EffectiveInitializerCallReplacement>,
     provider_dependency_closure: BTreeSet<String>,
 }
 
@@ -484,7 +484,7 @@ struct SavedStableSetIterableUse {
     source_span: Span,
     spread_token_span: Span,
     interval_bindings: Vec<SavedBinding>,
-    dependencies: analysis::analysis_inputs::ProofDependencies,
+    dependencies: analysis_vocabulary::inputs::ProofDependencies,
 }
 
 impl SavedStableSetIterableUse {
@@ -519,8 +519,8 @@ impl SavedStableSetIterableUse {
 struct SavedInferredSetConstruction {
     binding: SavedBinding,
     operation: SavedInferredSetOperation,
-    dependencies: analysis::analysis_inputs::ProofDependencies,
-    inference: analysis::analysis_provenance::InferenceUse,
+    dependencies: analysis_vocabulary::inputs::ProofDependencies,
+    inference: analysis_vocabulary::provenance::InferenceUse,
 }
 
 impl SavedInferredSetConstruction {
@@ -593,7 +593,7 @@ mod tests {
                     provider_module: "provider".to_string(),
                     dependency_closure: BTreeSet::from(["provider".to_string()]),
                     source_cells: BTreeSet::from([
-                        analysis::analysis_inputs::PrimitiveExportCell {
+                        analysis_vocabulary::inputs::PrimitiveExportCell {
                             module: "provider".to_string(),
                             export: "limit".to_string(),
                         },

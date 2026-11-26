@@ -1,5 +1,5 @@
 use super::*;
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use inference::{FactContext, IterativeInference, IterativeRules};
 
 /// Identifier names that, when not shadowed by a chunk-top-level
 /// declaration or import, evaluate to the global object in the

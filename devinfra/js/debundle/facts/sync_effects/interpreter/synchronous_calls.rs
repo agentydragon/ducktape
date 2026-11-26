@@ -11,11 +11,7 @@ use super::super::world::{World, WorldScope};
 use super::{
     CallbackFallbackSummary, ExecutionInputs, ExecutionState, ExportCallbackMemos, Outcome,
 };
-use analysis::analysis_inputs::{
-    AnalysisInputs, NativeInputKind, NativeIntrinsic, ProofDependencies,
-};
 use analysis::facts::abstract_domain::integrity::IntrinsicSlot;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis::facts::callable_inference::CallableInferenceInputs;
 use analysis::facts::item_views::TopLevelItemView;
 use analysis::facts::semantic_inference::SemanticFacts;
@@ -30,9 +26,14 @@ use analysis::facts::{
     SetIterableProof, SetIterableShapes, StableArraySpreadShapes, StatementPurityContext,
     TopLevelNativeIterableOperandSite,
 };
-use analysis::inference::{FactContext, IterativeInference, IterativeRules};
-use analysis::purity::{ChunkCodeGraph, Effects};
+use analysis::purity::ChunkCodeGraph;
+use analysis_vocabulary::inputs::{
+    AnalysisInputs, NativeInputKind, NativeIntrinsic, ProofDependencies,
+};
+use analysis_vocabulary::purity::Effects;
+use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
+use inference::{FactContext, IterativeInference, IterativeRules};
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
@@ -246,14 +247,14 @@ enum NativeOwnDataReadCandidate {
 pub struct FreshRecordFreezeHeapProof {
     /// Each certified call site and the `native_call_identity_inputs` entry
     /// that certified it.
-    sites: BTreeMap<(u32, u32), analysis::analysis_inputs::NativeOperationInputEvidence>,
+    sites: BTreeMap<(u32, u32), analysis_vocabulary::inputs::NativeOperationInputEvidence>,
 }
 
 impl analysis::facts::heap_contents::FreshFreezeInputs for FreshRecordFreezeHeapProof {
     fn input_evidence(
         &self,
         call: &CallExpr,
-    ) -> Option<&analysis::analysis_inputs::NativeOperationInputEvidence> {
+    ) -> Option<&analysis_vocabulary::inputs::NativeOperationInputEvidence> {
         self.sites.get(&(call.span.lo.0, call.span.hi.0))
     }
 }
@@ -263,8 +264,8 @@ impl analysis::facts::heap_contents::NativeHeapReads for PreparedSynchronousCall
         &self,
         span: Span,
     ) -> Option<(
-        analysis::analysis_provenance::InferenceUse,
-        Option<analysis::analysis_inputs::NativeOperationInputEvidence>,
+        analysis_vocabulary::provenance::InferenceUse,
+        Option<analysis_vocabulary::inputs::NativeOperationInputEvidence>,
         ProofDependencies,
     )> {
         PreparedSynchronousCallIndex::native_own_data_read(self, span)
@@ -414,13 +415,13 @@ impl PreparedSynchronousCallIndex {
 
     pub fn resolved_native_operation_inputs(
         &self,
-    ) -> Vec<analysis::analysis_inputs::ResolvedNativeOperationInput> {
+    ) -> Vec<analysis_vocabulary::inputs::ResolvedNativeOperationInput> {
         self.index.validated_native_operation_inputs()
     }
 
     pub fn locate_native_integrity_witnesses(
         &mut self,
-        locate: impl FnMut(Span) -> Option<analysis::execution_evidence::SourceLocation>,
+        locate: impl FnMut(Span) -> Option<analysis_vocabulary::execution_evidence::SourceLocation>,
     ) {
         self.index.locate_native_integrity_witnesses(locate);
     }
@@ -464,8 +465,8 @@ impl PreparedSynchronousCallIndex {
         &self,
         span: Span,
     ) -> Option<(
-        analysis::analysis_provenance::InferenceUse,
-        Option<analysis::analysis_inputs::NativeOperationInputEvidence>,
+        analysis_vocabulary::provenance::InferenceUse,
+        Option<analysis_vocabulary::inputs::NativeOperationInputEvidence>,
         ProofDependencies,
     )> {
         let premise = self.index.native_own_data_read_premise(span)?;

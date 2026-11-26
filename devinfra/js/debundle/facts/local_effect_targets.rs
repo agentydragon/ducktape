@@ -1,5 +1,5 @@
 use super::*;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis_vocabulary::value::{Kind, Value};
 
 pub fn collect_local_effects(
     item: &ModuleItem,

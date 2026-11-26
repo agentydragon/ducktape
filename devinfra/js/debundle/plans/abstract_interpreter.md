@@ -72,7 +72,7 @@ itself (A1–A11 and the shared native census are implicit everywhere).
 | #   | Family                            | Files                                                                                                 | Proves                                                                                                                                                          | Premises                                                              | Contract tests                                                                                                                                                                                                 | Docs                                                                             |
 | --- | --------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | 23  | Builtin summary rows              | `facts/abstract_domain/builtins.rs` rows and `DATA_PROPERTIES`; `purity/native_rows.rs` projects them | Rows with `assumed_intact`; purity admits a row when its listed steps are silent for the syntactic operands                                                     | ECMA-262 citation per row; receiver unshadowed; A11                   | `purity_test`, `native_integrity_test::object_plain_data_calls`, `corpus_test::emission/proxy_constructor`; unit `purity/classifier_tests.rs`                                                                  | purity_soundness § Admission rule: builtin summary rows                          |
-| 24  | Expression classifier             | `purity/classifier.rs`, `purity_type.rs`                                                              | `Purity` with `PurityRule` reasons: coercing operators, `ToPropertyKey`, iteration, destructuring, spreads, tagged templates, `new` shapes, member reads        | Syntactic; result-primitive gate for coercion                         | `purity_test`, `initializer_purity_test`, `corpus_test::emission/export_default`, `dependency_graph_purity_reason_test`, `impure_call_reason_growth_test`, `corpus_test::initialization/repeated_var_accessor` | purity_soundness § Declared purity — spec trust contracts                        |
+| 24  | Expression classifier             | `purity/classifier.rs`, `analysis_vocabulary/purity.rs`                                               | `Purity` with `PurityRule` reasons: coercing operators, `ToPropertyKey`, iteration, destructuring, spreads, tagged templates, `new` shapes, member reads        | Syntactic; result-primitive gate for coercion                         | `purity_test`, `initializer_purity_test`, `corpus_test::emission/export_default`, `dependency_graph_purity_reason_test`, `impure_call_reason_growth_test`, `corpus_test::initialization/repeated_var_accessor` | purity_soundness § Declared purity — spec trust contracts                        |
 | 25  | Code graph and PlainData          | `purity/code_graph.rs`, `facts/abstract_domain/heap.rs`, `ts_enum_iife.rs`                            | `ChunkBinding` kinds; PlainData as heap `escape`/`taint` projection; TS enum IIFE admission shape                                                               | Name-based write scan plus value-flow alias check                     | `native_integrity_test::object_plain_data_calls`, `bench:plain_data_escape_bench_test`, `soundness_plain_data_escape_test`                                                                                     | purity_soundness § `ChunkBinding::PlainData`; SPEC § Synchronous analysis limits |
 | 26  | Value classes                     | `facts/abstract_domain/primitive.rs` (`collect_binding_prims`), `heap.rs`, `purity/fluent.rs`         | Primitive types of chunk-top `const` and stable Number `var` bindings (projected to result-primitive and Symbol classes); fluent and plain-array alias closures | Whole-chunk write/escape gates in #25; written or shadowed intrinsics | `purity_test`, `captured_value_input_test`                                                                                                                                                                     | purity_soundness § Immutable Symbol computed keys                                |
 | 27  | Recursive and cross-module purity | `purity/effect_inference.rs`, `cross_module_purity.rs`                                                | Bottom-up function effects to closure across modules; pinned exports as axioms                                                                                  | Resolved import graph; absent export stays `unknown_call`             | `bench:cross_module_purity_bench_test`, `pure_members_test`, `purity_test`                                                                                                                                     | inference § Scheduling                                                           |
@@ -81,10 +81,10 @@ itself (A1–A11 and the shared native census are implicit everywhere).
 
 ### Admission and author inputs
 
-| #   | Family             | Files                                                        | Proves                                | Premises                              | Contract tests         | Docs                                         |
-| --- | ------------------ | ------------------------------------------------------------ | ------------------------------------- | ------------------------------------- | ---------------------- | -------------------------------------------- |
-| 30  | Chunk admission    | `chunk_analysis/chunk_admission.rs`, `chunk_analysis/mod.rs` | A1/A3/A5 shapes rejected; A2 TLA bail | —                                     | `chunk_admission_test` | design § A1–A11, § Coverage gaps             |
-| 31  | Author assumptions | `analysis_inputs.rs::AnalysisAssumptions` (30 fields)        | Axioms consumed by #5–#27             | Author audit; `audited_source_sha256` | § 4                    | design § Conditionally-correct optimizations |
+| #   | Family             | Files                                                            | Proves                                | Premises                              | Contract tests         | Docs                                         |
+| --- | ------------------ | ---------------------------------------------------------------- | ------------------------------------- | ------------------------------------- | ---------------------- | -------------------------------------------- |
+| 30  | Chunk admission    | `chunk_analysis/chunk_admission.rs`, `chunk_analysis/mod.rs`     | A1/A3/A5 shapes rejected; A2 TLA bail | —                                     | `chunk_admission_test` | design § A1–A11, § Coverage gaps             |
+| 31  | Author assumptions | `analysis_vocabulary/inputs.rs::AnalysisAssumptions` (30 fields) | Axioms consumed by #5–#27             | Author audit; `audited_source_sha256` | § 4                    | design § Conditionally-correct optimizations |
 
 Consumers unchanged by this plan: the realizability gate (`gate.rs`,
 `realizability/`), quotient and edge roles (`graph/edge.rs`), reports.
@@ -184,10 +184,10 @@ own data. This single resolution rule replaces #24's `CoercingOperator`,
 reads as an opaque barrier (#13 `CellOrderBarrier::AllPriorEvents`) and what
 purity reads as `UnknownCall`.
 
-Current purity representation: purity's effects are `facts/abstract_domain/effect.rs`
+Current purity representation: purity's effects are `analysis_vocabulary/effect.rs`
 `Effect ::= Write | Delete | Coerce(site) | Invoke(site) | Throws |
 Havoc(cause)`; the classifier returns them in evaluation order with calls of
-projected functions (`purity/purity_type.rs::Effects`), and `Purity` with its
+projected functions (`analysis_vocabulary/purity.rs::Effects`), and `Purity` with its
 `PurityRule` reasons is their projection. Cells, `Read`, `Alloc` and value
 operands arrive with the steps that first read them.
 
@@ -396,7 +396,7 @@ its cost.
   allocations carrying primitive elements.
 - Remove `ts_enum_iife.rs`'s pre-purity admission shape and the remaining
   bespoke cases in `classifier.rs` as execution supplies their proofs. Keep
-  `purity_type.rs` as the projection and `effect_inference.rs` as the
+  `analysis_vocabulary/purity.rs` as the projection and `effect_inference.rs` as the
   cross-module worklist. The vendor-prune path must retain equivalent proofs
   even though it currently finalizes the classifier without execution.
 - Recover enum-member coercion precision inside function bodies: a body has

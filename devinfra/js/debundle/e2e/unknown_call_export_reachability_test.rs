@@ -1,7 +1,9 @@
 //! Export bindings become externally reachable according to their ESM initialization timing.
 
-use analysis::reports::schema::{BindingEffectAuthorityReport, SynchronousExecutionReport};
 use analysis_model::DepKind;
+use analysis_vocabulary::report_schema::{
+    BindingEffectAuthorityReport, SynchronousExecutionReport,
+};
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 

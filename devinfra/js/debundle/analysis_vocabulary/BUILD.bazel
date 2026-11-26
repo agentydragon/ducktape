@@ -1,0 +1,32 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "analysis_vocabulary",
+    srcs = glob(["**/*.rs"]),
+    crate_root = "lib.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:analysis_projection_wire_rust_proto",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:saved_purity_rust_proto",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:strum",
+        "@crates//:swc_atoms",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "analysis_vocabulary_test",
+    crate = ":analysis_vocabulary",
+    edition = "2024",
+    deps = ["@crates//:rmp-serde"],
+)

@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use super::*;
 use analysis::*;
 use analysis_model::DepKind;
+use analysis_vocabulary::inputs::AnalysisInputs;
 use graph::*;
 use raw_js_test_support::parse;
 use source_identity::ChunkId;

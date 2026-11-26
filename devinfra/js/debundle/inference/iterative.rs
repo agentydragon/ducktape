@@ -8,7 +8,7 @@
 //! require a separate completion boundary before becoming positive certificates.
 
 use super::Judgment;
-use crate::analysis_inputs::ProofDependencies;
+use analysis_vocabulary::inputs::ProofDependencies;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::hash::Hash;
@@ -24,8 +24,8 @@ use context::*;
 /// Independent semantic and typed-evidence changes from one contribution.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FactChange {
-    pub(crate) value: bool,
-    pub(crate) proof: bool,
+    pub value: bool,
+    pub proof: bool,
 }
 
 /// Typed access to facts during one producer evaluation. A family adapter can
@@ -68,14 +68,14 @@ pub struct GuardedContext<'a, Context> {
 }
 
 impl<'a, Context> GuardedContext<'a, Context> {
-    pub(crate) fn new(inner: &'a mut Context) -> Self {
+    pub fn new(inner: &'a mut Context) -> Self {
         Self {
             inner,
             missing: false,
         }
     }
 
-    pub(crate) fn finish<Fact>(self, contribution: Option<Fact>) -> Option<Fact> {
+    pub fn finish<Fact>(self, contribution: Option<Fact>) -> Option<Fact> {
         contribution.filter(|_| !self.missing)
     }
 }
@@ -145,8 +145,8 @@ pub trait IterativeRules: Sized {
         panic!("this rule family does not define value deltas")
     }
 
-    /// Test-only cost of the actual delta operand submitted to the fact join.
-    #[cfg(test)]
+    /// Cost of the actual delta operand submitted to the fact join, which
+    /// tests read through `IterativeFacts::delta_deliveries`.
     fn delta_atoms(_delta: &Self::Fact) -> usize {
         0
     }
@@ -236,7 +236,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
 
     /// Borrow completed positive evidence without making it writable. Missing
     /// keys remain growing reads in this solve; sealing certifies no absence.
-    pub(crate) fn with_sealed(rules: R, sealed: &'input SealedFacts<R::Key, R::Fact>) -> Self {
+    pub fn with_sealed(rules: R, sealed: &'input SealedFacts<R::Key, R::Fact>) -> Self {
         assert!(
             !R::SOURCE_ONLY
                 || sealed
@@ -254,7 +254,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
         }
     }
 
-    pub(crate) fn observed(mut self, metrics: &WorkMetrics) -> Self {
+    pub fn observed(mut self, metrics: &WorkMetrics) -> Self {
         self.metrics = metrics.batch();
         self
     }
@@ -336,7 +336,6 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
         // backfills existing atoms; later additions cross it without a rule run.
         let mut proof_edges = ProofTransfers::default();
         let mut evaluations = 0usize;
-        #[cfg(test)]
         let mut delta_deliveries = 0usize;
         #[cfg(test)]
         let mut work = InferenceWork {
@@ -374,9 +373,9 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                 None => rules.evaluate(&rule, &mut context),
             }
             evaluations += 1;
+            delta_deliveries += context.delta_deliveries;
             #[cfg(test)]
             {
-                delta_deliveries += context.delta_deliveries;
                 work.reads += context.read_attempts;
                 work.proposals += context.proposals;
                 work.value_changes += context.value_changes;
@@ -472,7 +471,6 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
             evaluations,
             #[cfg(test)]
             proof_deliveries,
-            #[cfg(test)]
             delta_deliveries,
         }
     }
@@ -484,7 +482,7 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
 pub struct SealedFacts<Key, Fact>(IterativeFacts<Key, Fact>);
 
 impl<Key: Ord + Hash, Fact> SealedFacts<Key, Fact> {
-    pub(crate) fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
+    pub fn get(&self, key: &Key) -> Option<&Judgment<Key, Fact>> {
         self.0.get(key)
     }
 }
@@ -523,12 +521,11 @@ pub struct IterativeFacts<Key, Fact> {
     evaluations: usize,
     #[cfg(test)]
     proof_deliveries: usize,
-    #[cfg(test)]
     delta_deliveries: usize,
 }
 
 impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
-    pub(crate) fn seal(self) -> SealedFacts<Key, Fact> {
+    pub fn seal(self) -> SealedFacts<Key, Fact> {
         SealedFacts(self)
     }
 
@@ -552,8 +549,7 @@ impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
         self.evaluations
     }
 
-    #[cfg(test)]
-    pub(crate) fn delta_deliveries(&self) -> usize {
+    pub fn delta_deliveries(&self) -> usize {
         self.delta_deliveries
     }
 }

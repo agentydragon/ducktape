@@ -228,9 +228,12 @@ pub fn complete_chunk_structural(
 /// The argument analysis and native allocation roots share one canonical flow.
 pub fn complete_chunk_structural_with_inputs<'a>(
     source: StructuralChunkSourceFacts<'a>,
-    native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
-    inferred_set_constructions: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
-    argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
+    native_operation_inputs: &[analysis_vocabulary::inputs::ResolvedNativeOperationInput],
+    inferred_set_constructions: &BTreeMap<
+        u32,
+        analysis_vocabulary::inputs::InferredSetConstruction,
+    >,
+    argument_inputs: &[analysis_vocabulary::inputs::ResolvedArgumentInput],
 ) -> StructuralChunkAnalysis<'a> {
     let value_flow = ChunkValueFlow::analyze_structural(
         &source.body,
@@ -244,7 +247,7 @@ pub fn complete_chunk_structural_with_inputs<'a>(
 /// the program value flow already solved for the same body and inputs.
 pub fn complete_chunk_structural_with_flow<'a>(
     source: StructuralChunkSourceFacts<'a>,
-    argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
+    argument_inputs: &[analysis_vocabulary::inputs::ResolvedArgumentInput],
     value_flow: std::sync::Arc<ChunkValueFlow>,
 ) -> StructuralChunkAnalysis<'a> {
     let StructuralChunkSourceFacts {

@@ -190,15 +190,15 @@ fn identifier_modes_and_resolved_source_sites_survive_the_wire_boundary() {
         .insert("entry".into(), "fake-digest".into());
     original.source_sites.value_inputs.insert(
         "entry".into(),
-        vec![analysis::analysis_inputs::SourceDeclaration {
+        vec![analysis_vocabulary::inputs::SourceDeclaration {
             binding: "value".into(),
             body_index: usize::MAX,
         }],
     );
-    let mut assumptions = analysis::AnalysisAssumptions::default();
+    let mut assumptions = analysis_vocabulary::inputs::AnalysisAssumptions::default();
     assumptions.known_effects.insert(
         "decorate".into(),
-        analysis::analysis_inputs::KnownEffect::TypescriptDecorateHelper,
+        analysis_vocabulary::inputs::KnownEffect::TypescriptDecorateHelper,
     );
     assumptions.no_reentry_statement_calls.insert(
         (12, 24),
@@ -286,10 +286,10 @@ fn analysis_unit_enums_preserve_real_zero_and_reject_invalid_values() {
     }
     {
         let mut message = projection().to_proto().unwrap();
-        let mut assumptions = analysis::AnalysisAssumptions::default();
+        let mut assumptions = analysis_vocabulary::inputs::AnalysisAssumptions::default();
         assumptions.known_effects.insert(
             "decorate".into(),
-            analysis::analysis_inputs::KnownEffect::TypescriptDecorateHelper,
+            analysis_vocabulary::inputs::KnownEffect::TypescriptDecorateHelper,
         );
         let mut assumptions = encode_assumptions(&assumptions).unwrap();
         assumptions
@@ -307,10 +307,10 @@ fn analysis_unit_enums_preserve_real_zero_and_reject_invalid_values() {
         .get_mut("entry")
         .unwrap()
         .local_effect_policy = Some(0);
-    let mut assumptions = analysis::AnalysisAssumptions::default();
+    let mut assumptions = analysis_vocabulary::inputs::AnalysisAssumptions::default();
     assumptions.known_effects.insert(
         "decorate".into(),
-        analysis::analysis_inputs::KnownEffect::TypescriptDecorateHelper,
+        analysis_vocabulary::inputs::KnownEffect::TypescriptDecorateHelper,
     );
     message
         .declared_assumptions
@@ -318,19 +318,19 @@ fn analysis_unit_enums_preserve_real_zero_and_reject_invalid_values() {
     let restored = AnalysisSpec::from_proto(message).unwrap();
     assert_eq!(
         restored.chunk_analysis_inputs["entry"].local_effect_policy,
-        analysis::analysis_inputs::LocalEffectPolicy::KnownEffectsOnly
+        analysis_vocabulary::inputs::LocalEffectPolicy::KnownEffectsOnly
     );
     assert_eq!(
         restored.declared_assumptions["entry"].known_effects["decorate"],
-        analysis::analysis_inputs::KnownEffect::TypescriptDecorateHelper
+        analysis_vocabulary::inputs::KnownEffect::TypescriptDecorateHelper
     );
     assert_eq!(
-        serde_yaml::to_value(analysis::analysis_inputs::LocalEffectPolicy::KnownEffectsOnly)
+        serde_yaml::to_value(analysis_vocabulary::inputs::LocalEffectPolicy::KnownEffectsOnly)
             .unwrap(),
         serde_yaml::Value::String("known_effects_only".into())
     );
     assert_eq!(
-        serde_yaml::to_value(analysis::analysis_inputs::KnownEffect::TypescriptDecorateHelper)
+        serde_yaml::to_value(analysis_vocabulary::inputs::KnownEffect::TypescriptDecorateHelper)
             .unwrap(),
         serde_yaml::Value::String("typescript_decorate_helper".into())
     );

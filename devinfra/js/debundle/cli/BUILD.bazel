@@ -56,6 +56,7 @@ rust_library(
         "//devinfra/js/debundle:spec_resolution",
         "//devinfra/js/debundle:transform_command",
         "//devinfra/js/debundle:transform_inputs",
+        "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/artifacts:artifact",
         "//devinfra/js/debundle/artifacts:output_layout",
         "//devinfra/js/debundle/esm_schedule",

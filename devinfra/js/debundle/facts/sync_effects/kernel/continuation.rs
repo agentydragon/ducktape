@@ -26,10 +26,10 @@ use super::frame::{
     CallableSelection, EvaluatedCallee, Invocation, LocalCallRequest, LocalExecutionAttempt,
     LocalFrame, LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
 };
-use analysis::execution_evidence::OrderedFieldReadRefusal;
 use analysis::facts::EffectCell;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
+use analysis_vocabulary::execution_evidence::OrderedFieldReadRefusal;
+use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use swc_common::Span;

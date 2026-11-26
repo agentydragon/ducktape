@@ -14,8 +14,9 @@ use graph::{DependencyEdgeId, EndpointView, assignment_endpoints};
 use spec::ModulePath;
 use swc_atoms::Atom;
 
-use analysis::analysis_inputs::CommutingStatementsRef;
-use analysis::{ModuleId, Purity, PurityReason};
+use analysis::ModuleId;
+use analysis_vocabulary::inputs::CommutingStatementsRef;
+use analysis_vocabulary::purity::{Purity, PurityReason};
 use graph::{DependencyEdge, DependencyGraph, EdgeRole, SequencedCause, SequencedSourceUnitCause};
 
 /// Result of validating a module dep graph.

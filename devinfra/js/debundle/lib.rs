@@ -4,7 +4,8 @@
 //! of per-chunk analysis: top-level source-unit facts (declarations, at-init
 //! reads/writes, lazy reads/writes, side effects, imports, source locations,
 //! top-level await), value flow, purity rules and the fact-level evidence
-//! reports (`facts`, `purity`, `reports`).
+//! reports (`facts`, `purity`, `reports`). The types these passes consume
+//! and report live below it in the `analysis_vocabulary` crate.
 //!
 //! The `sync_effects` crate (`facts/sync_effects/`) runs the synchronous
 //! interpreter over this layer; the `analyze` crate (`analyze/`) combines both
@@ -13,23 +14,14 @@
 //! validation live in the `gate` crate; the spec-independent per-chunk
 //! composer lives in the `chunk_analysis` crate.
 
-pub mod analysis_inputs;
-pub mod analysis_provenance;
 pub mod diagnostics;
-pub mod execution_evidence;
 pub mod facts;
 pub mod ids;
-pub mod inference;
 pub mod loader_closure;
 pub mod program_bindings;
 pub mod purity;
 pub mod reports;
 
-pub use analysis_inputs::{
-    AnalysisAssumptions, AnalysisInputs, CallableSummary, CallbackFactoryEvidence,
-    DeferredRecordMember, KnownEffect, LocalEffectPolicy, ReturnedRecordSummary,
-};
-pub use execution_evidence::SourceLocation;
 pub use facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, CallbackFactoryWriteWitness,
     CellOverlap, CellOverlapIndex, CellOverlapLaw, ChunkFactAnalysis, DataflowOpacityCause,
@@ -42,6 +34,5 @@ pub use ids::{
     ImportedSourceTarget, LocalBindings, ModuleId, ModuleRole, PlannedModule, top_level_id,
 };
 pub use purity::{
-    Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPureMemberReason,
-    RedundantPurityHint, RedundantPurityReason,
+    RedundantPureMemberHint, RedundantPureMemberReason, RedundantPurityHint, RedundantPurityReason,
 };

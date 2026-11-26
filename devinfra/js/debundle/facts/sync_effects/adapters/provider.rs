@@ -27,10 +27,10 @@ use super::super::value_model::{
 };
 use super::super::world::join::Joined;
 use super::super::world::{World, WorldScope};
-use analysis::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use analysis::facts::abstract_domain::builtins::{self, Invocation};
 use analysis::facts::abstract_domain::integrity::Integrity;
-use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
+use analysis_vocabulary::value::{Kind, Value};
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;

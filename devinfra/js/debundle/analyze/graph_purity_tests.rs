@@ -1,7 +1,7 @@
 use crate::analyze_chunk;
-use analysis::AnalysisInputs;
-use analysis::analysis_inputs::AnalysisAssumptions;
 use analysis::purity::classifier::classify_expr_purity;
+use analysis_vocabulary::inputs::AnalysisAssumptions;
+use analysis_vocabulary::inputs::AnalysisInputs;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Decl;
 use swc_ecma_ast::ModuleItem;
@@ -10,6 +10,7 @@ use swc_ecma_ast::Stmt;
 use crate::test_support::{analyze_facts, test_id};
 use analysis::facts::{compute_shadowed_globals, top_level_item_views};
 use analysis::purity::*;
+use analysis_vocabulary::purity::{Purity, PurityRule};
 
 #[test]
 fn local_class_construction_before_declaration_is_not_pure() {

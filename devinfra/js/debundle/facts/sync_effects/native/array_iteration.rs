@@ -21,15 +21,15 @@ use super::super::kernel::frame::{
 use super::super::own_data_transfer::OwnDataContext;
 use super::super::value_model::{AbstractValue, CallSite, CapturedContext, HeapAddress, Values};
 use super::operation::{self, IterationResultArray};
-use analysis::analysis_inputs::NativeIntrinsic;
-use analysis::execution_evidence::{
-    ExecutionOperation, ExecutionPrecisionLossReason, OrderedCallAdmissionRefusal,
-};
 use analysis::facts::EffectCell;
 use analysis::facts::abstract_domain::builtins::IterationResult;
-use analysis::facts::abstract_domain::value::{Kind, Value};
 use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
 use analysis_model::PrimKinds;
+use analysis_vocabulary::execution_evidence::{
+    ExecutionOperation, ExecutionPrecisionLossReason, OrderedCallAdmissionRefusal,
+};
+use analysis_vocabulary::inputs::NativeIntrinsic;
+use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeSet;
 use swc_common::Span;
 

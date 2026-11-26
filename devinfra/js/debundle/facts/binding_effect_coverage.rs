@@ -2,9 +2,9 @@
 //! its lexical binding effects, the receipts proving it, and their saved form.
 //! Produced by the synchronous interpreter, stored in statement facts.
 
-use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
-use crate::reports::schema::BindingEffectAuthorityReport;
 use analysis_codec::{ContextOrdinals, SavedBinding};
+use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
+use analysis_vocabulary::report_schema::BindingEffectAuthorityReport;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
@@ -251,8 +251,12 @@ impl SavedLexicalBindingEffectReceipt {
 }
 
 impl LexicalBindingEffectReceipt {
-    pub(super) fn to_report(&self) -> crate::reports::schema::LexicalBindingEffectReceipt {
-        use crate::reports::schema::{LexicalBindingEffectCall, LexicalBindingEffectReceipt};
+    pub(super) fn to_report(
+        &self,
+    ) -> analysis_vocabulary::report_schema::LexicalBindingEffectReceipt {
+        use analysis_vocabulary::report_schema::{
+            LexicalBindingEffectCall, LexicalBindingEffectReceipt,
+        };
 
         LexicalBindingEffectReceipt {
             owner: self.identity.owner,
@@ -275,8 +279,8 @@ impl LexicalBindingEffectReceipt {
 }
 
 impl LocalBodyIdentity {
-    fn to_report(&self) -> crate::reports::schema::LexicalBindingEffectBody {
-        use crate::reports::schema::LexicalBindingEffectBody;
+    fn to_report(&self) -> analysis_vocabulary::report_schema::LexicalBindingEffectBody {
+        use analysis_vocabulary::report_schema::LexicalBindingEffectBody;
 
         match self {
             Self::RootInitializer {

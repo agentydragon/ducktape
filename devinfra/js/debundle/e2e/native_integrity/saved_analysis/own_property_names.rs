@@ -1,7 +1,7 @@
 //! Guarded own-name inspection preserves exact keys without invoking getters.
 
-use analysis::analysis_provenance::InferenceRule;
-use analysis::reports::schema::InferenceUseReport;
+use analysis_vocabulary::provenance::InferenceRule;
+use analysis_vocabulary::report_schema::InferenceUseReport;
 use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 use std::collections::BTreeSet;

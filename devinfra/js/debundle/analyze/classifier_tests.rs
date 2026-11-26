@@ -1,11 +1,11 @@
-use analysis::facts::abstract_domain::effect::CoerceSite;
-use analysis::facts::abstract_domain::effect::Effect;
-use analysis::facts::abstract_domain::effect::InvokeSite;
 use analysis::facts::item_views::TopLevelItemView;
 use analysis::purity::classifier::classify_class_static_purity;
 use analysis::purity::classifier::classify_expr_purity;
 use analysis::purity::classifier::classify_var_decl_purity;
 use analysis_model::PrimKinds;
+use analysis_vocabulary::effect::CoerceSite;
+use analysis_vocabulary::effect::Effect;
+use analysis_vocabulary::effect::InvokeSite;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Decl;
 use swc_ecma_ast::Expr;
@@ -13,7 +13,6 @@ use swc_ecma_ast::Module;
 use swc_ecma_ast::ModuleItem;
 use swc_ecma_ast::Stmt;
 
-use analysis::analysis_inputs::{ProofDependencies, ValueInputRef};
 use analysis::facts::abstract_domain::heap::{
     ChunkHeap, plain_array_bindings, tracked_allocation_roots,
 };
@@ -23,6 +22,8 @@ use analysis::facts::{
     top_level_item_views,
 };
 use analysis::purity::*;
+use analysis_vocabulary::inputs::{ProofDependencies, ValueInputRef};
+use analysis_vocabulary::purity::{Effects, Purity};
 use swc_common::{FileName, sync::Lrc};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
@@ -129,8 +130,8 @@ fn graph_with_conditioned_set_proof(
     let prepared = sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index(
         &views,
         &flow,
-        &analysis::analysis_inputs::AnalysisInputs {
-            native_integrity: Some(analysis::analysis_inputs::NativeIntegrity {
+        &analysis_vocabulary::inputs::AnalysisInputs {
+            native_integrity: Some(analysis_vocabulary::inputs::NativeIntegrity {
                 consumed_value_inputs: dependencies.value_inputs.clone(),
                 ..Default::default()
             }),
@@ -1627,8 +1628,8 @@ fn conditioned_local_class_dependencies_reach_the_construction_expression() {
     let prepared = sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index(
         &views,
         &flow,
-        &analysis::analysis_inputs::AnalysisInputs {
-            native_integrity: Some(analysis::analysis_inputs::NativeIntegrity {
+        &analysis_vocabulary::inputs::AnalysisInputs {
+            native_integrity: Some(analysis_vocabulary::inputs::NativeIntegrity {
                 consumed_value_inputs: dependencies.value_inputs.clone(),
                 ..Default::default()
             }),

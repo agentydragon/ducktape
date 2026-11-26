@@ -7,7 +7,7 @@ use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::value_model::{AbstractValue, Values};
 use super::context::{Disposition, KernelContext, Unproved};
 use super::frame::{LocalFrame, RemainderDisposition};
-use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis_vocabulary::value::{Kind, Value};
 use swc_common::Span;
 
 /// Bind the activation of a base constructor of `class` to its receiver:

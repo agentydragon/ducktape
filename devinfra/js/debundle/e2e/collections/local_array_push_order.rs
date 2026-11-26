@@ -636,7 +636,9 @@ fn dense_array_primitive_push_does_not_invoke_published_callbacks() {
 
 #[test]
 fn primitive_push_composes_with_callable_effects_and_tracks_later_lengths() {
-    use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
+    use analysis_vocabulary::report_schema::{
+        BindingEffectAuthorityReport, LexicalBindingEffectBody,
+    };
 
     let source = "const values = [];\nfunction append() { return values.push(1, 2); }\nconst first = append();\nconst second = append();\nconst later = 42;\nconsole.log(first, second, values.join(','), later);\n";
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
@@ -676,7 +678,7 @@ fn primitive_push_composes_with_callable_effects_and_tracks_later_lengths() {
 
 #[test]
 fn pooled_array_allocations_do_not_restore_descriptor_proofs() {
-    use analysis::reports::schema::BindingEffectAuthorityReport;
+    use analysis_vocabulary::report_schema::BindingEffectAuthorityReport;
 
     for (extra, covered) in [("", true), ("const second = make();\n", false)] {
         let source = format!(

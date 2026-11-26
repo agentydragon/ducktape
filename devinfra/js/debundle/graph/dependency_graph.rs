@@ -4,10 +4,10 @@ use std::collections::{BTreeSet, HashMap};
 use swc_ecma_ast::Id;
 
 use analysis::StatementKind;
-use analysis::analysis_inputs::CommutingStatementsRef;
-use analysis::execution_evidence::SourceLocation;
 use analysis::facts::CallbackFactoryBarrierFact;
-use analysis::purity::Purity;
+use analysis_vocabulary::execution_evidence::SourceLocation;
+use analysis_vocabulary::inputs::CommutingStatementsRef;
+use analysis_vocabulary::purity::Purity;
 
 use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
 
@@ -59,8 +59,9 @@ pub struct SourceUnit {
     pub kind: StatementKind,
     pub purity: Purity,
     pub callback_factory_barriers: Vec<CallbackFactoryBarrierFact>,
-    pub heap_native_integrity_uses: Vec<analysis::reports::schema::NativeIntegrityUse>,
-    pub synchronous_execution: Option<analysis::reports::schema::SynchronousExecutionReport>,
+    pub heap_native_integrity_uses: Vec<analysis_vocabulary::report_schema::NativeIntegrityUse>,
+    pub synchronous_execution:
+        Option<analysis_vocabulary::report_schema::SynchronousExecutionReport>,
     pub callback_factory_uses: Vec<analysis::facts::CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<analysis::facts::ReturnedRecordUseFact>,
 }

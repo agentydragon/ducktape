@@ -1,6 +1,6 @@
 //! dependency graph report builders: project a [`AssignmentAnalysis`]
 //! into the wire-format `DependencyGraphReport` family defined in
-//! `analysis::reports::schema`. The wire-stable key codecs
+//! `analysis_vocabulary::report_schema`. The wire-stable key codecs
 //! (`source_unit_key`, `module_key`, …) live in `analysis::reports`.
 
 use analysis_model::DepKind;
@@ -12,10 +12,9 @@ use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
 use analysis::reports::author_inputs::AuthorInputLocations;
-use analysis::{BindingId, CallbackFactoryBarrierRejection, ModuleId, ModuleRole, Purity};
-use analysis::{
-    reports::schema::CallbackFactoryUseReport, reports::schema::ReturnedRecordUseReport,
-};
+use analysis::{BindingId, CallbackFactoryBarrierRejection, ModuleId, ModuleRole};
+use analysis_vocabulary::purity::Purity;
+use analysis_vocabulary::report_schema::{CallbackFactoryUseReport, ReturnedRecordUseReport};
 use graph::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
     CallbackFactoryBarrierReport, CallbackFactoryCallArgumentWitnessReport,

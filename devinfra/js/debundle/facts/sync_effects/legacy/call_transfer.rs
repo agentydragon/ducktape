@@ -13,8 +13,8 @@ use super::super::interpreter::{EvaluatedCallOperands, Executor, Outcome, unknow
 use super::super::runtime_heap::NativeIterableUse;
 use super::super::runtime_inference::CallTransfer;
 use super::super::value_model::{AbstractValue, CallSite, Context, ValueExpr, Values};
-use analysis::execution_evidence::ExecutionOperation;
-use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis_vocabulary::execution_evidence::ExecutionOperation;
+use analysis_vocabulary::value::{Kind, Value};
 
 impl Executor<'_, '_> {
     pub(crate) fn execute_call_transfer(

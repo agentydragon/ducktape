@@ -57,7 +57,7 @@ impl ExecutionIndex {
     ) -> BTreeMap<u32, InferredSetConstruction> {
         use IntrinsicSlot::{ArrayIteratorPrototype, Global, Prototype, SetIteratorPrototype};
         use NativeIntrinsic::{Array, Set};
-        use analysis::analysis_provenance::InferenceRule;
+        use analysis_vocabulary::provenance::InferenceRule;
         if !self.dynamic_scope_owners.is_empty() {
             return BTreeMap::new();
         }
@@ -145,7 +145,7 @@ impl ExecutionIndex {
                 interval_bindings.push((*binding).clone());
                 InferredSetOperation::ProtectedSpread {
                     source: source.clone(),
-                    interval: Box::new(analysis::analysis_inputs::StableSetIterableUse {
+                    interval: Box::new(analysis_vocabulary::inputs::StableSetIterableUse {
                         source_span: *source_span,
                         spread_token_span: *spread_token_span,
                         interval_bindings,

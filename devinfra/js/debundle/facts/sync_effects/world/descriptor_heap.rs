@@ -12,8 +12,8 @@ use super::super::property_inference::{
 };
 use super::super::value_model::{AbstractValue, CallSite, DenseArray, Values};
 use super::object_surface::ObjectSurfaceStore;
-use analysis::analysis_inputs::ProofDependencies;
-use analysis::facts::abstract_domain::value::{Kind, Value};
+use analysis_vocabulary::inputs::ProofDependencies;
+use analysis_vocabulary::value::{Kind, Value};
 use imbl::OrdMap;
 use std::collections::BTreeMap;
 

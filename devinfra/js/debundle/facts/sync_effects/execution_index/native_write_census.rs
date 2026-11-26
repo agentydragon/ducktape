@@ -5,13 +5,13 @@
 
 use super::property_keys::{PropertyKeyDomain, PropertyKeyExpr};
 use super::{IntrinsicRoots, NativeReceiverRoot, NativeReceiverRoots, ValueExpr};
-use analysis::analysis_inputs::{HostBehaviorKey, NativeIntegrity, NativeIntrinsic};
-use analysis::inference::{FactContext, IterativeInference, IterativeRules};
-use analysis::reports::schema::{
+use analysis_vocabulary::inputs::{HostBehaviorKey, NativeIntegrity, NativeIntrinsic};
+use analysis_vocabulary::report_schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativeReceiverPath, NativeWriteSlot,
 };
 use binding_targets;
+use inference::{FactContext, IterativeInference, IterativeRules};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -531,7 +531,7 @@ pub fn apply_intrinsics_never_written(
     integrity: &mut NativeIntegrity,
     families: &BTreeSet<NativeIntrinsic>,
 ) -> std::result::Result<(), Vec<String>> {
-    use analysis::reports::schema::{NeverWrittenOverride, NeverWrittenReach};
+    use analysis_vocabulary::report_schema::{NeverWrittenOverride, NeverWrittenReach};
     let exact_family = |slot: &NativeWriteSlot| match &slot.receiver {
         NativeReceiverPath::Constructor(family) | NativeReceiverPath::Prototype(family) => {
             families.contains(family).then_some(*family)
@@ -701,10 +701,10 @@ mod native_integrity_closure_tests {
         NativeSlotOverlap, NativeWriteCensus, array_spread_protocol_slot_overlap,
         resolve_array_spread_protocol_integrity, resolve_native_integrity, source_slot_overlap,
     };
-    use analysis::analysis_inputs::{
+    use analysis_vocabulary::inputs::{
         CallbackFactoryEvidence, CallbackObjectArguments, NativeIntrinsic,
     };
-    use analysis::reports::schema::{
+    use analysis_vocabulary::report_schema::{
         NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativeReceiverPath,
         NativeUnreachableBranch, NativeWriteSlot,
     };
@@ -1066,13 +1066,12 @@ mod native_integrity_closure_tests {
         );
 
         let mut input_dependent = array_iterator_next_candidate(3);
-        input_dependent
-            .witness
-            .value_input_refs
-            .insert(analysis::analysis_inputs::ValueInputRef {
+        input_dependent.witness.value_input_refs.insert(
+            analysis_vocabulary::inputs::ValueInputRef {
                 defining_chunk: "test".to_owned(),
                 input_index: 0,
-            });
+            },
+        );
         let input_census = NativeWriteCensus {
             conditional: vec![input_dependent],
             ..NativeWriteCensus::default()

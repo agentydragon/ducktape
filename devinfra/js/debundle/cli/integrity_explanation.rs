@@ -2,16 +2,15 @@
 //! integrity slot unknown, from the saved graph and its program graph.
 
 use crate::emit_report;
-use analysis::analysis_inputs::NativeIntrinsic;
-use analysis::execution_evidence::{
-    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, SourceLocation,
-};
 use analysis::facts::abstract_domain::integrity::{CensusExplanation, SlotName, SlotReach};
 use analysis::facts::standard_globals::is_standard_global;
-use analysis::{
-    reports::schema::NativeIntegrityCheck, reports::schema::NativeIntegrityGuard,
-    reports::schema::NativeMutationOperation, reports::schema::NativeMutationWitness,
-    reports::schema::NativePrototypeMutationKind, reports::schema::NativeWriteSlot,
+use analysis_vocabulary::execution_evidence::{
+    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, SourceLocation,
+};
+use analysis_vocabulary::inputs::NativeIntrinsic;
+use analysis_vocabulary::report_schema::{
+    NativeIntegrityCheck, NativeIntegrityGuard, NativeMutationOperation, NativeMutationWitness,
+    NativePrototypeMutationKind, NativeWriteSlot,
 };
 use anyhow::{Context, Result, bail};
 use clap::{ArgGroup, Args as ClapArgs};

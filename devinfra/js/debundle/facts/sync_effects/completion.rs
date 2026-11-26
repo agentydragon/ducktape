@@ -3,8 +3,8 @@
 use super::allocation_transfer::AllocationJudgment;
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, Values};
-use analysis::facts::abstract_domain::value::Value;
 use analysis::facts::statement_facts::HeapContentAccesses;
+use analysis_vocabulary::value::Value;
 
 /// A completion summary. `OpaqueMayNormal` preserves a possible normal
 /// payload while recording unresolved behavior separately from throws.
@@ -241,7 +241,7 @@ impl<N, A> TransferLedger<N, A> {
 mod tests {
     use super::{AbruptAlternative, Completion, NonNormalPossibilities, UnknownThrowValues};
     use crate::value_model::{AbstractValue, Values};
-    use analysis::facts::abstract_domain::value::Value;
+    use analysis_vocabulary::value::Value;
 
     #[test]
     fn opaque_prefix_then_throw_has_no_normal_path_and_keeps_unresolved_behavior() {
