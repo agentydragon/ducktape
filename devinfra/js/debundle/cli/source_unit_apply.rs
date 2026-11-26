@@ -215,66 +215,11 @@ pub fn run_source_unit_apply(
         &claim_projection,
         scope.as_ref(),
     )?;
-    let mut locations_by_source_unit = BTreeMap::<String, Vec<SourceUnitClaimLocation>>::new();
-    for location in locations {
-        let expected_module = current_source_unit_modules
-            .get(&location.source_unit_id)
-            .and_then(Option::as_ref)
-            .with_context(|| {
-                format!(
-                    "source unit {:?} has a module claim location but resolves to residual",
-                    location.source_unit_id
-                )
-            })?;
-        anyhow::ensure!(
-            expected_module.as_str() == location.logical_module,
-            "source unit {:?} selector is stored in {}, but the complete spec resolves it to {}",
-            location.source_unit_id,
-            location.logical_module,
-            expected_module
-        );
-        locations_by_source_unit
-            .entry(location.source_unit_id.clone())
-            .or_default()
-            .push(location);
-    }
+    let locations_by_source_unit =
+        claim_locations_by_source_unit(locations, &current_source_unit_modules)?;
 
-    let mut requested_destinations = BTreeMap::<String, String>::new();
-    for assignment in assignments {
-        let source_unit = graph_input
-            .source_unit_id(&assignment.unit_id)
-            .with_context(|| {
-                format!(
-                    "source unit ID {:?} is absent from dependency_graph.json.gz",
-                    assignment.unit_id
-                )
-            })?;
-        anyhow::ensure!(
-            !requested_destinations.contains_key(&assignment.unit_id),
-            "source unit assignment batch repeats {:?}",
-            assignment.unit_id
-        );
-        let node = graph_input.source_unit_report(source_unit);
-        anyhow::ensure!(
-            !matches!(
-                node.statement_kind,
-                StatementKind::Import | StatementKind::Export
-            ),
-            "source unit {:?} is import/export scaffolding and cannot be moved by modules apply",
-            assignment.unit_id
-        );
-        let destination = if let Some(scope) = &scope {
-            scope.canonical_destination(&assignment.module)?
-        } else {
-            canonical_module_path(&assignment.module)?
-        };
-        anyhow::ensure!(
-            !is_residual_namespace_path(&destination),
-            "destination {:?} is a reserved residual path",
-            destination
-        );
-        requested_destinations.insert(assignment.unit_id, destination);
-    }
+    let requested_destinations =
+        requested_source_unit_destinations(&graph_input, assignments, scope.as_ref())?;
 
     let changes = requested_destinations
         .iter()
@@ -300,35 +245,15 @@ pub fn run_source_unit_apply(
         validation.report
     );
 
-    let staged_tree_config = if import_order != dependency_graph.import_order {
-        let config_path = tree_config.context(
-            "changing the global import priority requires --tree-config so the checked order can be persisted",
-        )?;
-        let config_bytes = std::fs::read(config_path)
-            .with_context(|| format!("reading tree config {}", config_path.display()))?;
-        let updated = spec_tree::update_chunk_import_order(
-            &config_bytes,
-            &dependency_graph.chunk_id,
-            import_order.clone(),
-        )?;
-        Some((config_path, updated))
-    } else {
-        None
-    };
+    let staged_tree_config =
+        staged_import_order_config(tree_config, dependency_graph, &import_order)?;
 
     let mut expected_source_unit_modules = current_source_unit_modules.clone();
     let mut planned_moves = Vec::<PlannedSourceUnitMove>::new();
     let mut planned_move_by_slot = BTreeMap::<(String, SourceUnitClaimSlot), usize>::new();
     let mut source_units_reassigned = 0;
     let mut residual_source_units_claimed = 0;
-    let mut fresh_bindings =
-        BTreeMap::<std::path::PathBuf, BTreeMap<String, BTreeMap<String, String>>>::new();
-    let mut fresh_anonymous = BTreeMap::<
-        std::path::PathBuf,
-        BTreeMap<String, Vec<source_identity::SourceUnitOrdinal>>,
-    >::new();
-    let mut selected_binding_names = BTreeSet::new();
-    let mut provided_selectors = Vec::new();
+    let mut residual_claims = ResidualClaimPlan::default();
     let existing_destinations = physical_modules_by_logical_destination(&docs, scope.as_ref())?;
     for (source_unit_id, destination) in &requested_destinations {
         let Some(source_logical_module) = current_source_unit_modules[source_unit_id].as_ref()
@@ -348,46 +273,14 @@ pub fn run_source_unit_apply(
                 modules_root,
                 source_context,
             )?;
-            if node.declared_bindings.is_empty() {
-                fresh_anonymous
-                    .entry(source)
-                    .or_default()
-                    .entry(destination.clone())
-                    .or_default()
-                    .push(node.statement_ordinal);
-            } else {
-                for binding in &node.declared_bindings {
-                    let runtime = binding.binding.to_string();
-                    anyhow::ensure!(
-                        selected_binding_names.insert(runtime.clone()),
-                        "binding {runtime:?} is declared by several selected source units"
-                    );
-                    let readable = readable_names
-                        .remove(&runtime)
-                        .unwrap_or_else(|| binding.export_name.to_string());
-                    anyhow::ensure!(
-                        !readable.is_empty(),
-                        "readable name for {runtime:?} is empty"
-                    );
-                    if let Some(selector) = selector_overrides
-                        .get_mut(source_unit_id)
-                        .and_then(|selectors| selectors.remove(&runtime))
-                    {
-                        provided_selectors.push((destination.clone(), runtime, readable, selector));
-                    } else {
-                        anyhow::ensure!(
-                            fresh_bindings
-                                .entry(source.clone())
-                                .or_default()
-                                .entry(destination.clone())
-                                .or_default()
-                                .insert(runtime.clone(), readable)
-                                .is_none(),
-                            "binding {runtime:?} has several declaration units; selector realization requires an explicit spec claim"
-                        );
-                    }
-                }
-            }
+            residual_claims.claim(
+                node,
+                source,
+                destination,
+                source_unit_id,
+                &mut readable_names,
+                &mut selector_overrides,
+            )?;
             expected_source_unit_modules.insert(source_unit_id.clone(), Some(destination.clone()));
             residual_source_units_claimed += 1;
             continue;
@@ -398,55 +291,15 @@ pub fn run_source_unit_apply(
         }
         source_units_reassigned += 1;
         expected_source_unit_modules.insert(source_unit_id.clone(), Some(destination.clone()));
-        let source_unit_locations = locations_by_source_unit.get(source_unit_id).with_context(|| {
-            format!("source unit {source_unit_id:?} has no movable member or anonymous selector in the spec")
-        })?;
-        let mut physical_sources = BTreeSet::new();
-        for location in source_unit_locations {
-            anyhow::ensure!(
-                location.logical_module == source_logical_module,
-                "source unit {source_unit_id:?} has claims in more than one source module"
-            );
-            physical_sources.insert(location.physical_module.clone());
-        }
-        anyhow::ensure!(
-            physical_sources.len() == 1,
-            "source unit {source_unit_id:?} resolves to multiple physical module files with the same logical identity"
-        );
-        let source_module = physical_sources
-            .into_iter()
-            .next()
-            .expect("movable source unit has at least one location");
-        let destination_module = match existing_destinations.get(destination) {
-            Some(paths) if paths.len() == 1 => paths[0].clone(),
-            Some(paths) => anyhow::bail!(
-                "logical destination {destination:?} matches multiple module files: {}",
-                paths.join(", ")
-            ),
-            None => destination.clone(),
-        };
-        for location in source_unit_locations {
-            let key = (source_module.clone(), location.slot.clone());
-            if let Some(&move_index) = planned_move_by_slot.get(&key) {
-                let movement = &mut planned_moves[move_index];
-                anyhow::ensure!(
-                    movement.destination == destination_module,
-                    "one spec claim resolves to multiple requested destinations for source units {:?} and {:?}",
-                    movement.source_unit_ids,
-                    source_unit_id
-                );
-                movement.source_unit_ids.insert(source_unit_id.clone());
-            } else {
-                let move_index = planned_moves.len();
-                planned_move_by_slot.insert(key, move_index);
-                planned_moves.push(PlannedSourceUnitMove {
-                    source_unit_ids: BTreeSet::from([source_unit_id.clone()]),
-                    source_module: source_module.clone(),
-                    destination: destination_module.clone(),
-                    slot: location.slot.clone(),
-                });
-            }
-        }
+        plan_claim_moves(
+            &mut planned_moves,
+            &mut planned_move_by_slot,
+            &locations_by_source_unit,
+            &existing_destinations,
+            source_unit_id,
+            destination,
+            &source_logical_module,
+        )?;
     }
 
     anyhow::ensure!(
@@ -458,203 +311,11 @@ pub fn run_source_unit_apply(
         selector_overrides.is_empty(),
         "selector_overrides must name newly claimed bindings by selected source-unit ID"
     );
-    let mut synthesized_claims = BTreeMap::<String, LogicalModule>::new();
-    for (source, modules) in fresh_bindings {
-        for (destination, claims) in
-            selector_codemod::source_unit::synthesize_residual_claims_for_modules(
-                &source, &modules,
-            )?
-        {
-            synthesized_claims
-                .entry(destination.clone())
-                .or_default()
-                .source_matches
-                .extend(claims.iter().cloned());
-            ensure_source_unit_destination(&mut docs, modules_root, &destination)
-                .source_matches
-                .extend(claims);
-        }
-    }
-    for (source, modules) in fresh_anonymous {
-        for (destination, statements) in
-            selector_codemod::source_unit::synthesize_anonymous_claims_for_modules(
-                &source, &modules,
-            )?
-        {
-            synthesized_claims
-                .entry(destination.clone())
-                .or_default()
-                .anonymous_statements
-                .extend(statements.iter().cloned());
-            ensure_source_unit_destination(&mut docs, modules_root, &destination)
-                .anonymous_statements
-                .extend(statements);
-        }
-    }
-    for (destination, runtime, readable, selector) in provided_selectors {
-        let doc = ensure_source_unit_destination(&mut docs, modules_root, &destination);
-        match selector {
-            SelectorOverride::SourceMatch(claim) => {
-                let [binding] = claim.bindings.as_slice() else {
-                    bail!("source_match override for {runtime:?} must claim exactly one binding");
-                };
-                anyhow::ensure!(
-                    binding.name() == readable,
-                    "source_match override for {runtime:?} exports {:?}, expected {readable:?}",
-                    binding.name()
-                );
-                anyhow::ensure!(
-                    binding.local() != runtime || readable == runtime,
-                    "source_match override for {runtime:?} retains its capture local; use a neutral selector-local name"
-                );
-                doc.source_matches.push(claim);
-            }
-            SelectorOverride::Relational(selector) => {
-                if matches!(selector.validate()?, spec::MemberSelectorSpec::Binding(_)) {
-                    bail!("relational override for {runtime:?} cannot use a binding name pin");
-                }
-                doc.members.push(spec::Member {
-                    name: Some(readable),
-                    selector: *selector,
-                });
-            }
-        }
-    }
+    let synthesized_claims = residual_claims.realize(&mut docs, modules_root)?;
 
-    let moved_members = planned_moves
-        .iter()
-        .filter_map(|movement| match movement.slot {
-            SourceUnitClaimSlot::Member(index) => Some((movement.source_module.clone(), index)),
-            _ => None,
-        });
-    let mut pulled_members = take_indexed(&mut docs, moved_members, |doc| &mut doc.members);
-    let moved_source_match_bindings =
-        planned_moves
-            .iter()
-            .filter_map(|movement| match movement.slot {
-                SourceUnitClaimSlot::SourceMatch(claim, binding) => {
-                    Some((movement.source_module.clone(), claim, binding))
-                }
-                _ => None,
-            });
-    let mut pulled_source_match_bindings =
-        take_source_match_bindings(&mut docs, moved_source_match_bindings);
-    let moved_anonymous = planned_moves
-        .iter()
-        .filter_map(|movement| match movement.slot {
-            SourceUnitClaimSlot::Anonymous(index) => Some((movement.source_module.clone(), index)),
-            _ => None,
-        });
-    let mut pulled_anonymous = take_indexed(&mut docs, moved_anonymous, |doc| {
-        &mut doc.anonymous_statements
-    });
+    let moved_names_by_destination = apply_planned_moves(&mut docs, modules_root, &planned_moves)?;
 
-    let mut destination_claims = BTreeMap::<(String, String, usize), usize>::new();
-    let mut moved_names_by_destination = BTreeMap::<String, BTreeSet<String>>::new();
-    for movement in &planned_moves {
-        match movement.slot {
-            SourceUnitClaimSlot::Member(index) => {
-                let member = pulled_members
-                    .remove(&(movement.source_module.clone(), index))
-                    .expect("planned member was extracted");
-                let name = member_effective_name(&member).with_context(|| {
-                    format!(
-                        "source unit(s) {:?} member has no binding name",
-                        movement.source_unit_ids
-                    )
-                })?;
-                moved_names_by_destination
-                    .entry(movement.destination.clone())
-                    .or_default()
-                    .insert(name.clone());
-                let annotation = docs
-                    .get_mut(&movement.source_module)
-                    .expect("source module remains loaded")
-                    .1
-                    .annotations
-                    .remove(&name);
-                let destination =
-                    ensure_source_unit_destination(&mut docs, modules_root, &movement.destination);
-                destination.members.push(member);
-                insert_annotation(destination, &name, annotation)?;
-            }
-            SourceUnitClaimSlot::SourceMatch(claim_index, binding_index) => {
-                let mut claim = pulled_source_match_bindings
-                    .remove(&(movement.source_module.clone(), claim_index, binding_index))
-                    .expect("planned source-match binding was extracted");
-                anyhow::ensure!(
-                    claim.bindings.len() == 1,
-                    "source-match split did not isolate one binding"
-                );
-                let binding = &claim.bindings[0];
-                let label = BindingLabel::new(
-                    BindingIdentity::SourceMatchCapture {
-                        local: binding.local().to_string(),
-                    },
-                    source_match_readable(binding),
-                );
-                let effective_name = binding_effective_name(&label).to_string();
-                moved_names_by_destination
-                    .entry(movement.destination.clone())
-                    .or_default()
-                    .insert(effective_name.clone());
-                let annotation = docs
-                    .get_mut(&movement.source_module)
-                    .expect("source module remains loaded")
-                    .1
-                    .annotations
-                    .remove(&effective_name);
-                let destination =
-                    ensure_source_unit_destination(&mut docs, modules_root, &movement.destination);
-                let key = (
-                    movement.destination.clone(),
-                    movement.source_module.clone(),
-                    claim_index,
-                );
-                if let Some(index) = destination_claims.get(&key) {
-                    destination.source_matches[*index]
-                        .bindings
-                        .append(&mut claim.bindings);
-                } else {
-                    let index = destination.source_matches.len();
-                    destination.source_matches.push(claim);
-                    destination_claims.insert(key, index);
-                }
-                insert_annotation(destination, &effective_name, annotation)?;
-            }
-            SourceUnitClaimSlot::Anonymous(index) => {
-                let statement = pulled_anonymous
-                    .remove(&(movement.source_module.clone(), index))
-                    .expect("planned anonymous selector was extracted");
-                ensure_source_unit_destination(&mut docs, modules_root, &movement.destination)
-                    .anonymous_statements
-                    .push(statement);
-            }
-        }
-    }
-
-    for (destination, moved_names) in &moved_names_by_destination {
-        let (_, module) = docs
-            .get(destination)
-            .with_context(|| format!("destination module {destination:?} is missing"))?;
-        let mut counts = BTreeMap::<String, usize>::new();
-        for binding in binding_matches_in_doc(
-            &modules_root.join(format!("{destination}.yaml")),
-            destination,
-            module,
-        ) {
-            *counts
-                .entry(binding_effective_name(&binding.label).to_string())
-                .or_default() += 1;
-        }
-        for name in moved_names {
-            let count = counts.get(name).copied().unwrap_or_default();
-            anyhow::ensure!(
-                count == 1,
-                "moving a claim named {name:?} into {destination} would create a binding-name collision ({count} entries)"
-            );
-        }
-    }
+    check_moved_name_collisions(&docs, modules_root, &moved_names_by_destination)?;
 
     // Normalize only the reviewed destinations, including an unchanged-owner
     // request. Resolve this exact document through the complete identity gate.
@@ -732,6 +393,463 @@ pub fn run_source_unit_apply(
         synthesized_claims,
         effect_relocation_assessment,
     })
+}
+
+/// Groups claim locations by source unit, checking each against the module
+/// the complete spec resolves it to.
+fn claim_locations_by_source_unit(
+    locations: Vec<SourceUnitClaimLocation>,
+    current_source_unit_modules: &SourceUnitModuleAssignments,
+) -> Result<BTreeMap<String, Vec<SourceUnitClaimLocation>>> {
+    let mut locations_by_source_unit = BTreeMap::<String, Vec<SourceUnitClaimLocation>>::new();
+    for location in locations {
+        let expected_module = current_source_unit_modules
+            .get(&location.source_unit_id)
+            .and_then(Option::as_ref)
+            .with_context(|| {
+                format!(
+                    "source unit {:?} has a module claim location but resolves to residual",
+                    location.source_unit_id
+                )
+            })?;
+        anyhow::ensure!(
+            expected_module.as_str() == location.logical_module,
+            "source unit {:?} selector is stored in {}, but the complete spec resolves it to {}",
+            location.source_unit_id,
+            location.logical_module,
+            expected_module
+        );
+        locations_by_source_unit
+            .entry(location.source_unit_id.clone())
+            .or_default()
+            .push(location);
+    }
+    Ok(locations_by_source_unit)
+}
+
+/// The batch's canonical destination per source unit; rejects repeats,
+/// import/export scaffolding and reserved residual paths.
+fn requested_source_unit_destinations(
+    graph_input: &analysis::DependencyGraphInput,
+    assignments: Vec<SourceUnitAssignment>,
+    scope: Option<&ModuleTreeScope>,
+) -> Result<BTreeMap<String, String>> {
+    let mut requested_destinations = BTreeMap::<String, String>::new();
+    for assignment in assignments {
+        let source_unit = graph_input
+            .source_unit_id(&assignment.unit_id)
+            .with_context(|| {
+                format!(
+                    "source unit ID {:?} is absent from dependency_graph.json.gz",
+                    assignment.unit_id
+                )
+            })?;
+        anyhow::ensure!(
+            !requested_destinations.contains_key(&assignment.unit_id),
+            "source unit assignment batch repeats {:?}",
+            assignment.unit_id
+        );
+        let node = graph_input.source_unit_report(source_unit);
+        anyhow::ensure!(
+            !matches!(
+                node.statement_kind,
+                StatementKind::Import | StatementKind::Export
+            ),
+            "source unit {:?} is import/export scaffolding and cannot be moved by modules apply",
+            assignment.unit_id
+        );
+        let destination = if let Some(scope) = scope {
+            scope.canonical_destination(&assignment.module)?
+        } else {
+            canonical_module_path(&assignment.module)?
+        };
+        anyhow::ensure!(
+            !is_residual_namespace_path(&destination),
+            "destination {:?} is a reserved residual path",
+            destination
+        );
+        requested_destinations.insert(assignment.unit_id, destination);
+    }
+    Ok(requested_destinations)
+}
+
+/// The tree config rewritten with a changed global import priority, if any.
+fn staged_import_order_config<'a>(
+    tree_config: Option<&'a Path>,
+    dependency_graph: &DependencyGraphReport,
+    import_order: &[ModulePath],
+) -> Result<Option<(&'a Path, Vec<u8>)>> {
+    Ok(if import_order != dependency_graph.import_order {
+        let config_path = tree_config.context(
+            "changing the global import priority requires --tree-config so the checked order can be persisted",
+        )?;
+        let config_bytes = std::fs::read(config_path)
+            .with_context(|| format!("reading tree config {}", config_path.display()))?;
+        let updated = spec_tree::update_chunk_import_order(
+            &config_bytes,
+            &dependency_graph.chunk_id,
+            import_order.to_vec(),
+        )?;
+        Some((config_path, updated))
+    } else {
+        None
+    })
+}
+
+/// Residual source units the batch claims fresh: bindings and anonymous
+/// statements whose selectors are synthesized, and author-provided selectors.
+#[derive(Default)]
+struct ResidualClaimPlan {
+    selected_binding_names: BTreeSet<String>,
+    fresh_bindings: BTreeMap<std::path::PathBuf, BTreeMap<String, BTreeMap<String, String>>>,
+    fresh_anonymous:
+        BTreeMap<std::path::PathBuf, BTreeMap<String, Vec<source_identity::SourceUnitOrdinal>>>,
+    provided_selectors: Vec<(String, String, String, SelectorOverride)>,
+}
+
+impl ResidualClaimPlan {
+    fn claim(
+        &mut self,
+        node: &analysis::SourceUnitReport,
+        source: std::path::PathBuf,
+        destination: &str,
+        source_unit_id: &str,
+        readable_names: &mut BTreeMap<String, String>,
+        selector_overrides: &mut BTreeMap<String, BTreeMap<String, SelectorOverride>>,
+    ) -> Result<()> {
+        if node.declared_bindings.is_empty() {
+            self.fresh_anonymous
+                .entry(source)
+                .or_default()
+                .entry(destination.to_string())
+                .or_default()
+                .push(node.statement_ordinal);
+        } else {
+            for binding in &node.declared_bindings {
+                let runtime = binding.binding.to_string();
+                anyhow::ensure!(
+                    self.selected_binding_names.insert(runtime.clone()),
+                    "binding {runtime:?} is declared by several selected source units"
+                );
+                let readable = readable_names
+                    .remove(&runtime)
+                    .unwrap_or_else(|| binding.export_name.to_string());
+                anyhow::ensure!(
+                    !readable.is_empty(),
+                    "readable name for {runtime:?} is empty"
+                );
+                if let Some(selector) = selector_overrides
+                    .get_mut(source_unit_id)
+                    .and_then(|selectors| selectors.remove(&runtime))
+                {
+                    self.provided_selectors.push((
+                        destination.to_string(),
+                        runtime,
+                        readable,
+                        selector,
+                    ));
+                } else {
+                    anyhow::ensure!(
+                        self.fresh_bindings
+                            .entry(source.clone())
+                            .or_default()
+                            .entry(destination.to_string())
+                            .or_default()
+                            .insert(runtime.clone(), readable)
+                            .is_none(),
+                        "binding {runtime:?} has several declaration units; selector realization requires an explicit spec claim"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn realize(
+        self,
+        docs: &mut ModuleDocs,
+        modules_root: &Path,
+    ) -> Result<BTreeMap<String, LogicalModule>> {
+        let mut synthesized_claims = BTreeMap::<String, LogicalModule>::new();
+        for (source, modules) in self.fresh_bindings {
+            for (destination, claims) in
+                selector_codemod::source_unit::synthesize_residual_claims_for_modules(
+                    &source, &modules,
+                )?
+            {
+                synthesized_claims
+                    .entry(destination.clone())
+                    .or_default()
+                    .source_matches
+                    .extend(claims.iter().cloned());
+                ensure_source_unit_destination(docs, modules_root, &destination)
+                    .source_matches
+                    .extend(claims);
+            }
+        }
+        for (source, modules) in self.fresh_anonymous {
+            for (destination, statements) in
+                selector_codemod::source_unit::synthesize_anonymous_claims_for_modules(
+                    &source, &modules,
+                )?
+            {
+                synthesized_claims
+                    .entry(destination.clone())
+                    .or_default()
+                    .anonymous_statements
+                    .extend(statements.iter().cloned());
+                ensure_source_unit_destination(docs, modules_root, &destination)
+                    .anonymous_statements
+                    .extend(statements);
+            }
+        }
+        for (destination, runtime, readable, selector) in self.provided_selectors {
+            let doc = ensure_source_unit_destination(docs, modules_root, &destination);
+            match selector {
+                SelectorOverride::SourceMatch(claim) => {
+                    let [binding] = claim.bindings.as_slice() else {
+                        bail!(
+                            "source_match override for {runtime:?} must claim exactly one binding"
+                        );
+                    };
+                    anyhow::ensure!(
+                        binding.name() == readable,
+                        "source_match override for {runtime:?} exports {:?}, expected {readable:?}",
+                        binding.name()
+                    );
+                    anyhow::ensure!(
+                        binding.local() != runtime || readable == runtime,
+                        "source_match override for {runtime:?} retains its capture local; use a neutral selector-local name"
+                    );
+                    doc.source_matches.push(claim);
+                }
+                SelectorOverride::Relational(selector) => {
+                    if matches!(selector.validate()?, spec::MemberSelectorSpec::Binding(_)) {
+                        bail!("relational override for {runtime:?} cannot use a binding name pin");
+                    }
+                    doc.members.push(spec::Member {
+                        name: Some(readable),
+                        selector: *selector,
+                    });
+                }
+            }
+        }
+        Ok(synthesized_claims)
+    }
+}
+
+/// Moves each planned claim slot and its annotation into its destination;
+/// returns the binding names moved into each destination.
+fn apply_planned_moves(
+    docs: &mut ModuleDocs,
+    modules_root: &Path,
+    planned_moves: &[PlannedSourceUnitMove],
+) -> Result<BTreeMap<String, BTreeSet<String>>> {
+    let moved_members = planned_moves
+        .iter()
+        .filter_map(|movement| match movement.slot {
+            SourceUnitClaimSlot::Member(index) => Some((movement.source_module.clone(), index)),
+            _ => None,
+        });
+    let mut pulled_members = take_indexed(docs, moved_members, |doc| &mut doc.members);
+    let moved_source_match_bindings =
+        planned_moves
+            .iter()
+            .filter_map(|movement| match movement.slot {
+                SourceUnitClaimSlot::SourceMatch(claim, binding) => {
+                    Some((movement.source_module.clone(), claim, binding))
+                }
+                _ => None,
+            });
+    let mut pulled_source_match_bindings =
+        take_source_match_bindings(docs, moved_source_match_bindings);
+    let moved_anonymous = planned_moves
+        .iter()
+        .filter_map(|movement| match movement.slot {
+            SourceUnitClaimSlot::Anonymous(index) => Some((movement.source_module.clone(), index)),
+            _ => None,
+        });
+    let mut pulled_anonymous =
+        take_indexed(docs, moved_anonymous, |doc| &mut doc.anonymous_statements);
+
+    let mut destination_claims = BTreeMap::<(String, String, usize), usize>::new();
+    let mut moved_names_by_destination = BTreeMap::<String, BTreeSet<String>>::new();
+    for movement in planned_moves {
+        match movement.slot {
+            SourceUnitClaimSlot::Member(index) => {
+                let member = pulled_members
+                    .remove(&(movement.source_module.clone(), index))
+                    .expect("planned member was extracted");
+                let name = member_effective_name(&member).with_context(|| {
+                    format!(
+                        "source unit(s) {:?} member has no binding name",
+                        movement.source_unit_ids
+                    )
+                })?;
+                moved_names_by_destination
+                    .entry(movement.destination.clone())
+                    .or_default()
+                    .insert(name.clone());
+                let annotation = docs
+                    .get_mut(&movement.source_module)
+                    .expect("source module remains loaded")
+                    .1
+                    .annotations
+                    .remove(&name);
+                let destination =
+                    ensure_source_unit_destination(docs, modules_root, &movement.destination);
+                destination.members.push(member);
+                insert_annotation(destination, &name, annotation)?;
+            }
+            SourceUnitClaimSlot::SourceMatch(claim_index, binding_index) => {
+                let mut claim = pulled_source_match_bindings
+                    .remove(&(movement.source_module.clone(), claim_index, binding_index))
+                    .expect("planned source-match binding was extracted");
+                anyhow::ensure!(
+                    claim.bindings.len() == 1,
+                    "source-match split did not isolate one binding"
+                );
+                let binding = &claim.bindings[0];
+                let label = BindingLabel::new(
+                    BindingIdentity::SourceMatchCapture {
+                        local: binding.local().to_string(),
+                    },
+                    source_match_readable(binding),
+                );
+                let effective_name = binding_effective_name(&label).to_string();
+                moved_names_by_destination
+                    .entry(movement.destination.clone())
+                    .or_default()
+                    .insert(effective_name.clone());
+                let annotation = docs
+                    .get_mut(&movement.source_module)
+                    .expect("source module remains loaded")
+                    .1
+                    .annotations
+                    .remove(&effective_name);
+                let destination =
+                    ensure_source_unit_destination(docs, modules_root, &movement.destination);
+                let key = (
+                    movement.destination.clone(),
+                    movement.source_module.clone(),
+                    claim_index,
+                );
+                if let Some(index) = destination_claims.get(&key) {
+                    destination.source_matches[*index]
+                        .bindings
+                        .append(&mut claim.bindings);
+                } else {
+                    let index = destination.source_matches.len();
+                    destination.source_matches.push(claim);
+                    destination_claims.insert(key, index);
+                }
+                insert_annotation(destination, &effective_name, annotation)?;
+            }
+            SourceUnitClaimSlot::Anonymous(index) => {
+                let statement = pulled_anonymous
+                    .remove(&(movement.source_module.clone(), index))
+                    .expect("planned anonymous selector was extracted");
+                ensure_source_unit_destination(docs, modules_root, &movement.destination)
+                    .anonymous_statements
+                    .push(statement);
+            }
+        }
+    }
+    Ok(moved_names_by_destination)
+}
+
+fn check_moved_name_collisions(
+    docs: &ModuleDocs,
+    modules_root: &Path,
+    moved_names_by_destination: &BTreeMap<String, BTreeSet<String>>,
+) -> Result<()> {
+    for (destination, moved_names) in moved_names_by_destination {
+        let (_, module) = docs
+            .get(destination)
+            .with_context(|| format!("destination module {destination:?} is missing"))?;
+        let mut counts = BTreeMap::<String, usize>::new();
+        for binding in binding_matches_in_doc(
+            &modules_root.join(format!("{destination}.yaml")),
+            destination,
+            module,
+        ) {
+            *counts
+                .entry(binding_effective_name(&binding.label).to_string())
+                .or_default() += 1;
+        }
+        for name in moved_names {
+            let count = counts.get(name).copied().unwrap_or_default();
+            anyhow::ensure!(
+                count == 1,
+                "moving a claim named {name:?} into {destination} would create a binding-name collision ({count} entries)"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Plans moving every claim slot of an assigned source unit from its one
+/// physical source module to the destination, merging slots shared with
+/// source units already planned.
+fn plan_claim_moves(
+    planned_moves: &mut Vec<PlannedSourceUnitMove>,
+    planned_move_by_slot: &mut BTreeMap<(String, SourceUnitClaimSlot), usize>,
+    locations_by_source_unit: &BTreeMap<String, Vec<SourceUnitClaimLocation>>,
+    existing_destinations: &BTreeMap<String, Vec<String>>,
+    source_unit_id: &str,
+    destination: &str,
+    source_logical_module: &str,
+) -> Result<()> {
+    let source_unit_locations = locations_by_source_unit.get(source_unit_id).with_context(|| {
+        format!("source unit {source_unit_id:?} has no movable member or anonymous selector in the spec")
+    })?;
+    let mut physical_sources = BTreeSet::new();
+    for location in source_unit_locations {
+        anyhow::ensure!(
+            location.logical_module == source_logical_module,
+            "source unit {source_unit_id:?} has claims in more than one source module"
+        );
+        physical_sources.insert(location.physical_module.clone());
+    }
+    anyhow::ensure!(
+        physical_sources.len() == 1,
+        "source unit {source_unit_id:?} resolves to multiple physical module files with the same logical identity"
+    );
+    let source_module = physical_sources
+        .into_iter()
+        .next()
+        .expect("movable source unit has at least one location");
+    let destination_module = match existing_destinations.get(destination) {
+        Some(paths) if paths.len() == 1 => paths[0].clone(),
+        Some(paths) => anyhow::bail!(
+            "logical destination {destination:?} matches multiple module files: {}",
+            paths.join(", ")
+        ),
+        None => destination.to_string(),
+    };
+    for location in source_unit_locations {
+        let key = (source_module.clone(), location.slot.clone());
+        if let Some(&move_index) = planned_move_by_slot.get(&key) {
+            let movement = &mut planned_moves[move_index];
+            anyhow::ensure!(
+                movement.destination == destination_module,
+                "one spec claim resolves to multiple requested destinations for source units {:?} and {:?}",
+                movement.source_unit_ids,
+                source_unit_id
+            );
+            movement.source_unit_ids.insert(source_unit_id.to_string());
+        } else {
+            let move_index = planned_moves.len();
+            planned_move_by_slot.insert(key, move_index);
+            planned_moves.push(PlannedSourceUnitMove {
+                source_unit_ids: BTreeSet::from([source_unit_id.to_string()]),
+                source_module: source_module.clone(),
+                destination: destination_module.clone(),
+                slot: location.slot.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn source_unit_claim_locations(
