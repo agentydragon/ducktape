@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wiretest"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -757,6 +759,16 @@ func TestStoreRecoverSessionAbandonsSoleUnresolvedSamplingIntent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	const partialItemID = "interrupted-sampling-item"
+	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}).Record(t.Context(),
+		protocol.WireBytes{Bytes: []byte("provider response prefix")}, true,
+		&eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: partialItemID}}}); err != nil {
+		t.Fatal(err)
+	}
+	var dispatchSequence int64
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT dispatch_sequence FROM sampler_intent WHERE id=$1`, intentID).Scan(&dispatchSequence); err != nil {
+		t.Fatal(err)
+	}
 	activeCommand := commandID
 	if err := store.FailExecution(t.Context(), owner, session.ID, &activeCommand, errors.New("provider stream interrupted")); err != nil {
 		t.Fatal(err)
@@ -793,6 +805,30 @@ func TestStoreRecoverSessionAbandonsSoleUnresolvedSamplingIntent(t *testing.T) {
 	if result["status"] != "abandoned" || result["remote_outcome"] != "unknown" || result["automatic_replay"] != false ||
 		result["provider_completion_unknown"] != true || result["output_committed"] != false {
 		t.Fatalf("sampling abandonment result=%v", result)
+	}
+	events, err := store.Events(t.Context(), session.ID, 0, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reconciliation *eventpb.ConversationReconciled
+	var reconciliationSources []uint64
+	for _, entry := range events {
+		if candidate := entry.GetEvent().GetConversationReconciled(); candidate != nil {
+			reconciliation = candidate
+			reconciliationSources = entry.GetEvent().GetSourceSequences()
+		}
+	}
+	if reconciliation == nil || reconciliation.GetTurnId() != commandID || len(reconciliation.GetItems()) != 1 ||
+		reconciliation.GetItems()[0].GetItemId() != partialItemID ||
+		reconciliation.GetItems()[0].GetDisposition() != eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_ABSENT ||
+		!slices.Contains(reconciliationSources, uint64(dispatchSequence)) {
+		t.Fatalf("interrupted sampling reconciliation=%+v, dispatch sequence=%d", reconciliation, dispatchSequence)
+	}
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_intent_source WHERE intent_id=$1`, intentID); got != 0 {
+		t.Fatalf("interrupted sampling recovery retained source projection rows: %d", got)
+	}
+	if got := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_intent_started_item WHERE intent_id=$1`, intentID); got != 0 {
+		t.Fatalf("interrupted sampling recovery retained item projection rows: %d", got)
 	}
 	command, err := store.GetCommand(t.Context(), session.ID, commandID)
 	if err != nil || command.GetOutcome() != samplerpb.CommandOutcome_COMMAND_OUTCOME_UNKNOWN {

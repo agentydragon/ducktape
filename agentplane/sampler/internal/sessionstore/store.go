@@ -67,7 +67,15 @@ func (s *Store) DB() *sql.DB { return s.db }
 func (s *Store) transaction(ctx context.Context, operation string, f func(context.Context, *sql.Tx) error) error {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 	defer cancel()
-	return postgres.NamedTransaction(ctx, s.db, sql.TxOptions{}, operation, func(tx *sql.Tx) error { return f(ctx, tx) })
+	return postgres.NamedTransaction(ctx, s.db, sql.TxOptions{}, operation, func(tx *sql.Tx) error {
+		// Migration 25's trigger invalidates a sampling recovery projection when an older
+		// binary appends a journal row. This transaction is running the projection-aware
+		// writer, which records dispatch and source-linked item metadata atomically.
+		if _, err := tx.ExecContext(ctx, `SELECT set_config('agentplane.sampler_indexed_recovery_writer', 'on', TRUE)`); err != nil {
+			return err
+		}
+		return f(ctx, tx)
+	})
 }
 
 func notify(ctx context.Context, tx *sql.Tx) error {

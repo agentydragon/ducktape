@@ -296,6 +296,9 @@ func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentI
 			if _, err := s.appendEvent(ctx, tx, session, reconciliation); err != nil {
 				return err
 			}
+			if err := deleteSamplingRecoveryProjection(ctx, tx, intentID); err != nil {
+				return err
+			}
 		}
 		conversation.Pending = nil
 		return s.updateConversation(ctx, tx, conversation)

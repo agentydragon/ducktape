@@ -99,6 +99,7 @@ go_test(
         "provider_attempt_snapshot_test.go",
         "provider_attempt_test.go",
         "request_plan_test.go",
+        "sampling_recovery_test.go",
         "status_test.go",
     ],
     embed = [":sessionstore"],

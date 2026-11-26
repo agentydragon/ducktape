@@ -1016,6 +1016,17 @@ A new owner can abandon an unfinished provider intent while old-owner writes rem
 Proven host loss prepares fresh model-visible reset context while preserving step ancestry,
 attempt count and budget. There is no elapsed turn deadline.
 
+Migration 25 stores only the recovery projection keyed by sampling attempt UUID: dispatch turn and
+the final dispatch-boundary sequence on `sampler_intent`, source sequences actually referenced by
+`ItemStarted`, and deduplicated started item IDs. The projection reconstructs the same sorted source
+sequences, turn ID and sorted `ABSENT` items as the journal scan. A complete projection avoids
+reading journal blocks. Existing attempts have null dispatch metadata and use the journal fallback.
+During mixed-version operation, an older writer's journal insert clears the dispatch metadata, so a
+new owner falls back rather than trusting a projection that may have missed evidence. The newer
+writer records dispatch and source-linked item facts in the same transactions as their journal
+events. Settlement deletes the attempt's projection in that settlement transaction; the journal
+continues to retain the raw evidence.
+
 Sampling appends new records without editing the sampled prefix, including historical handle
 notices and encrypted reasoning. Prepared requests still replay their original records and controls.
 Compaction writes its deterministically ordered snapshot only to the new active context. The
