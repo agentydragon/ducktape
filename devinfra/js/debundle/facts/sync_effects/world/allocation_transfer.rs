@@ -5,11 +5,9 @@
 
 use crate::effect_coverage::EffectCoverageFragment;
 use crate::object_surface::ObjectSurfaceStore;
-use analysis::facts::abstract_domain::builtins::{
-    ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
-};
-use analysis::facts::abstract_domain::integrity::IntrinsicSlot;
-use analysis::facts::abstract_domain::primitive;
+use analysis_domain::builtins::{ArgSel, IntrinsicOp, Invocation, Return, Row, Throws};
+use analysis_domain::integrity::IntrinsicSlot;
+use analysis_domain::primitive;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::effect::binary_throws;
 use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};

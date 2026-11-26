@@ -14,7 +14,19 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
-from agentplane.net.peertls.config import APP_URI, MCP_EDGE_URI, POLICY_CONTROLLER_URI, ServerTLSListener
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    APP_URI,
+    EGRESS_PROXY_URI,
+    GATEWAY_SESSIONS_URI,
+    HISTORY_SERVICE_URI,
+    LLM_INGRESS_URI,
+    MCP_EDGE_URI,
+    NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
+    SANDBOX_CONTROLLER_URI,
+    ServerTLSListener,
+)
 from agentplane.policy_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import workload_tls
@@ -92,8 +104,23 @@ class PolicyController(Construct):
             workload_issuer=WORKLOAD_ISSUER.name,
             # policy_controller_rbac.py grants the issuer the same namespaces.
             workload_namespaces=workload_namespaces,
-            reader_services=frozenset({APP_URI, MCP_EDGE_URI}),
-            writer_services=frozenset({APP_URI}),
+            # The Session Dispatcher reads as the gateway Sessions SVID, its only client certificate.
+            reader_services=frozenset(
+                {
+                    ACTIONS_URI,
+                    APP_URI,
+                    EGRESS_PROXY_URI,
+                    GATEWAY_SESSIONS_URI,
+                    HISTORY_SERVICE_URI,
+                    LLM_INGRESS_URI,
+                    MCP_EDGE_URI,
+                    NOTIFICATIONS_URI,
+                    SANDBOX_CONTROLLER_URI,
+                }
+            ),
+            # The Action Service's orchestration_v1 launcher creates, binds and rolls back launch
+            # Identities through PolicyService.
+            writer_services=frozenset({ACTIONS_URI, APP_URI}),
         )
         settings_file = SettingsFile(
             self,

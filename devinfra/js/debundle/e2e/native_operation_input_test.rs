@@ -1,7 +1,7 @@
 //! A narrowly selected native call can retain the existing call model while
 //! unknown receiver writes elsewhere in the provider remain visible.
 
-use analysis::StatementKind;
+use analysis_domain::item_views::StatementKind;
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::effect_validation::assert_commutation_accepted;
 use debundle_e2e_graph_support::reflective_provider::{

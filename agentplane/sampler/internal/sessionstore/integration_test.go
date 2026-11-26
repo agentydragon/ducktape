@@ -26,7 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wiretest"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -1983,7 +1983,7 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 	// Stored and freshly built items serialize their keys in different orders.
 	normalized := func(item responses.Item) string {
 		var fields map[string]any
-		if err := json.Unmarshal([]byte(string(wirefixture.MustMarshalJSON(t, item))), &fields); err != nil {
+		if err := json.Unmarshal([]byte(string(wiretest.MustMarshalJSON(t, item))), &fields); err != nil {
 			t.Fatal(err)
 		}
 		encoded, err := json.Marshal(fields)

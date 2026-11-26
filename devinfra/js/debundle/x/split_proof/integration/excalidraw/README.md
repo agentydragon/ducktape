@@ -36,7 +36,7 @@ prefix just before it (`prefix-before-factory`). Both use the original chunk
 filename so the entry can be served at the original URL. The other probes use
 `entry.mjs`. A successful investigation target means the measurements
 completed, not that its splits were certified or executed successfully in a browser.
-The census results below are historical structural and CoreJS model diagnostics.
+The census results below are historical structural and CoreJS model diagnostics. Current `lowersplit --diagnostic` verdicts lower source AST directly; unsupported units produce no model verdict. The historical model counts below used a separately generated CoreJS program and do not establish a current splitter verdict.
 Only an artifact-verified success from the normal `lowersplit` command certifies
 emitted JavaScript; diagnostic model proofs do not validate the printer's output.
 
@@ -177,7 +177,7 @@ bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_
 
 ### Direct AST lowering for negated initializers
 
-On the same authored placement, adding logical negation and negated number literals to Lean's ESTree lowerer gave these counts. Each row counts source units after static imports are removed. In each replay's `moves.json`, subtract `externallyLowered` from `statements.length` to get the number Lean lowered directly.
+On the same authored placement, adding logical negation and negated number literals to Lean's ESTree lowerer gave these historical counts. Each row counts source units after static imports are removed. The replay predates source-only diagnostics; `externallyLowered` records how many statements came from the supplied CoreJS program.
 
 | Chunk  | Non-import units | Directly lowered before | Directly lowered after | Still externally lowered |
 | ------ | ---------------: | ----------------------: | ---------------------: | -----------------------: |

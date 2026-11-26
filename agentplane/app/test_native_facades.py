@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import signal
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -211,7 +210,7 @@ async def test_dispatcher_stream_cancels_upstream_and_closes_cleanly(
                 )
                 await connection.execute(text("SELECT pg_notify('agentplane_operator_sessions', '')"))
         elif ending == "sigterm":
-            app.process.send_signal(signal.SIGTERM)
+            app.process.terminate()
         if ending != "disconnect":
             async with asyncio.timeout(5):
                 assert all([json.loads(line)["error"]["code"] == 1 async for line in lines])
@@ -219,7 +218,7 @@ async def test_dispatcher_stream_cancels_upstream_and_closes_cleanly(
         await peer.service.cancelled.wait()
     if ending == "sigterm":
         async with asyncio.timeout(10):
-            assert await app.process.wait() == 0, app.stderr.read_text()
+            assert await app.process.process.wait() == 0, app.process.stderr.read_text()
         async with engine.connect() as connection:
             assert (
                 await connection.scalar(

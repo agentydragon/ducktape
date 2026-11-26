@@ -105,30 +105,21 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	defer rpcListener.Close()
-	return serve(ctx, c, rpcListener)
-}
-
-// startIdentities is the one Identity source for SVID resolution and delegation: the PolicyService view when
-// policy_service is set, else live Policy namespace reads. stop ends the view.
-func startIdentities(ctx context.Context, base *rest.Config, c config) (auth.IdentityUIDReader, func(), error) {
-	if c.PolicyService == nil {
-		identities, err := auth.NewKubernetesIdentityUIDs(base, c.PolicyNamespace)
-		return identities, func() {}, err
-	}
-	return identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
-}
-
-// serve answers the read API and journal ingress on one native gRPC listener until ctx ends.
-func serve(ctx context.Context, c config, rpcListener net.Listener) error {
-	base, err := kubernetesConfig(c)
-	if err != nil {
-		return err
-	}
-	identities, stopIdentities, err := startIdentities(ctx, base, c)
+	identities, stopIdentities, err := identitycache.Start(ctx, c.PolicyService, identitycache.StandardGrace)
 	if err != nil {
 		return err
 	}
 	defer stopIdentities()
+	return serve(ctx, c, rpcListener, identities)
+}
+
+// serve answers the read API and journal ingress on one native gRPC listener until ctx ends. identities resolves
+// Identity names for SVID resolution and delegation.
+func serve(ctx context.Context, c config, rpcListener net.Listener, identities auth.IdentityUIDReader) error {
+	base, err := kubernetesConfig(c)
+	if err != nil {
+		return err
+	}
 	svids, err := auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces, identities)
 	if err != nil {
 		return err

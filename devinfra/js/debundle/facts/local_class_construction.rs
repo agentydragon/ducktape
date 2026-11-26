@@ -6,8 +6,9 @@
 //! after the declaration and a unique class value in whole-chunk flow.
 
 use super::*;
-use crate::facts::abstract_domain::builtins::{self, Invocation};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
+use analysis_domain::builtins::{self, Invocation};
+use analysis_domain::dynamic_scope::DynamicScopeFact;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
 use std::sync::Arc;

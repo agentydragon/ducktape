@@ -6,8 +6,8 @@
 
 use super::super::alternatives::outcome::join_allocation_judgments;
 use super::super::execution_index::ExecutionIndex;
-use analysis::facts::abstract_domain::builtins::{self, Invocation};
-use analysis::facts::abstract_domain::integrity::Integrity;
+use analysis_domain::builtins::{self, Invocation};
+use analysis_domain::integrity::Integrity;
 use analysis_vocabulary::inputs::{NativeIntrinsic, ProofDependencies};
 use analysis_vocabulary::value::{Kind, Value};
 use kernel::alternatives::{Family, Leaf, PathState, join_worlds};

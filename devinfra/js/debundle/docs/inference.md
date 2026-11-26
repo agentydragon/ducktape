@@ -351,7 +351,7 @@ operations, and preparation retains the census's O(N log N) expected bound.
 
 ## Native premises
 
-Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`
+Native premises are flags, not judgments. `analysis_domain/integrity.rs`
 answers `integrity(slot)` for an intrinsic slot (`%Set%`, `%Object.freeze%`,
 `%Array.prototype%`, `%ArrayIteratorPrototype%`) from the completed census and
 the `IntrinsicIntact` axioms resolved from validated author inputs; rules and
@@ -683,7 +683,7 @@ fact without a native call key; the consumer composes that origin with its
 separately guarded provider proof.
 
 Native call identity feeds the builtin summary table,
-`facts/abstract_domain/builtins.rs`. Once identity holds for a call's
+`analysis_domain/builtins.rs`. Once identity holds for a call's
 callee, the interpreter looks up the operation's row and admits the call only
 when the row's arity holds, it invokes nothing, every write it lists is proved
 on the call's operands, and every coercion it lists lands on a primitive or
@@ -1365,7 +1365,7 @@ call adds bounded shape checks and indexed identity lookups. The importer
 allocation mask is still shared, and ordinary source propagation retains its
 existing cost.
 
-`facts/value_flow/program.rs` prepares a source-qualified instance of the existing
+`value_flow/program.rs` prepares a source-qualified instance of the existing
 `FlowRules`, lexical-access rules and candidate reachability closure.
 `cross_module_purity` builds it after the raw
 native census and inferred Set roots have closed, then hands its chunk views to

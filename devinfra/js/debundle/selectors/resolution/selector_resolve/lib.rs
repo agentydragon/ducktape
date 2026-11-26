@@ -26,8 +26,8 @@ use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use analysis::StatementKind;
 use analysis::facts::StructuralChunkSourceFacts;
+use analysis_domain::item_views::StatementKind;
 use anyhow::{Context, Result};
 use js_ast::statement_for_source_unit_ordinal;
 use rayon::prelude::*;

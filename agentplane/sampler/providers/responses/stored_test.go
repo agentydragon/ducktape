@@ -7,11 +7,11 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providertest"
 )
 
 func TestStoreRecordSharesCompleteNativeItemsAndPreservesProviderFields(t *testing.T) {
-	memory := providerfixture.MemoryContent{}
+	memory := providertest.MemoryContent{}
 	originals := []json.RawMessage{
 		json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"shared payload"}],"encrypted_content":"opaque-reasoning","provider_sequence":9007199254740993}`),
 		json.RawMessage(`{"type":"custom_tool_call","call_id":"call_custom","name":"exec","input":"shared payload","provider_call_number":9007199254740993}`),
@@ -25,12 +25,12 @@ func TestStoreRecordSharesCompleteNativeItemsAndPreservesProviderFields(t *testi
 		if err != nil {
 			t.Fatal(err)
 		}
-		providerfixture.AssertJSONEqual(t, original, memory[id].Payload)
+		providertest.AssertJSONEqual(t, original, memory[id].Payload)
 		roundTripped, err := RestoreRecord(memory, id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		providerfixture.AssertJSONEqual(t, original, roundTripped)
+		providertest.AssertJSONEqual(t, original, roundTripped)
 		repeatedID, err := StoreRecord(memory, original)
 		if err != nil {
 			t.Fatal(err)
@@ -42,7 +42,7 @@ func TestStoreRecordSharesCompleteNativeItemsAndPreservesProviderFields(t *testi
 }
 
 func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *testing.T) {
-	memory := providerfixture.MemoryContent{}
+	memory := providertest.MemoryContent{}
 	items := []json.RawMessage{
 		json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"shared payload"}],"encrypted_content":"opaque","provider_number":9007199254740993}`),
 		json.RawMessage(`{"type":"custom_tool_call","call_id":"call_custom","name":"exec","input":"shared payload"}`),
@@ -90,7 +90,7 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	providerfixture.AssertJSONEqual(t, want, rendered)
+	providertest.AssertJSONEqual(t, want, rendered)
 
 	var firstProfile storedRequestProfile
 	mustUnmarshal(t, memory[profileID].Payload, &firstProfile)
@@ -128,7 +128,7 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 }
 
 func TestRestoreRecordRejectsWrongContentKind(t *testing.T) {
-	memory := providerfixture.MemoryContent{}
+	memory := providertest.MemoryContent{}
 	id, err := memory.PutContent(content.ContentText, json.RawMessage(`"not an item"`))
 	if err != nil {
 		t.Fatal(err)
@@ -184,7 +184,7 @@ func TestContentReferencesRejectsEmptyReference(t *testing.T) {
 	}
 }
 
-func findStringContent(t *testing.T, memory providerfixture.MemoryContent, kind content.ContentKind, expected string) content.ContentID {
+func findStringContent(t *testing.T, memory providertest.MemoryContent, kind content.ContentKind, expected string) content.ContentID {
 	t.Helper()
 	for id, content := range memory {
 		if content.Kind != kind {
@@ -229,7 +229,7 @@ func TestIncrementalProjectionRecognizesOutputsInRetainedPrefix(t *testing.T) {
 				if len(suffix) != 1 {
 					t.Fatalf("suffix has %d records", len(suffix))
 				}
-				providerfixture.AssertJSONEqual(t, all[2], suffix[0])
+				providertest.AssertJSONEqual(t, all[2], suffix[0])
 				var item Item
 				if err := json.Unmarshal(suffix[0], &item); err != nil {
 					t.Fatal(err)

@@ -4,15 +4,14 @@
 //! after their mandatory premises have been proved, and unions their captured
 //! input dependencies. Purity, timing and heap ordering share this same store.
 //! Native premises are not keys: a rule reads the callee's binding identity and
-//! the integrity flags of the slots it needs (`abstract_domain::integrity`).
+//! the integrity flags of the slots it needs (`analysis_domain::integrity`).
 
-use super::abstract_domain::builtins::Row;
-use super::abstract_domain::integrity::{Integrity, IntegrityFlags, IntrinsicSlot};
 use super::callable_inference::{CallableInferenceInputs, FunctionBindingFacts};
 use super::local_class_construction::LocalClassConstructionShapes;
 use super::set_iterables::SetIterableShapes;
 use super::statement_facts::StructuralStatementFacts;
-use super::value_flow::ChunkValueFlow;
+use analysis_domain::builtins::Row;
+use analysis_domain::integrity::{Integrity, IntegrityFlags, IntrinsicSlot};
 use analysis_vocabulary::inputs::{
     ArgumentInputRef, DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeIntrinsic,
     ProofDependencies, ResolvedArgumentInput,
@@ -30,6 +29,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::Id;
+use value_flow::ChunkValueFlow;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SemanticKey {

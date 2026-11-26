@@ -779,7 +779,7 @@ mod tests {
             }
             source.push_str("function poison() { globalThis.leftRegistry = globalThis; }");
             let parsed = parse(&source);
-            let views = analysis::facts::top_level_item_views(&parsed.body);
+            let views = analysis_domain::item_views::top_level_item_views(&parsed.body);
             let prepared = prepare_callable_capabilities(
                 &views,
                 BTreeSet::new(),

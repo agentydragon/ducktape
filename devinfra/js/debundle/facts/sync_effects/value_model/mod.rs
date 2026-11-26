@@ -5,8 +5,7 @@ pub mod local_operations;
 pub mod own_data_transfer;
 pub mod property_inference;
 
-use analysis::facts::abstract_domain::builtins::IterationRow;
-use analysis::facts::value_flow::static_prop as static_string_prop;
+use analysis_domain::builtins::IterationRow;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::inputs::ProofDependencies;
 use analysis_vocabulary::value::{Kind, Value};
@@ -19,6 +18,7 @@ use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::{Arc, Weak};
 use swc_common::{BytePos, Span};
 use swc_ecma_ast::*;
+use value_flow::static_prop as static_string_prop;
 
 pub fn static_prop(property: &MemberProp) -> Option<String> {
     static_string_prop(property).or_else(|| match property {

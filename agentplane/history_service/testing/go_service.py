@@ -12,7 +12,7 @@ import asyncio
 import subprocess
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
-from contextlib import ExitStack, aclosing, asynccontextmanager, contextmanager
+from contextlib import AsyncExitStack, ExitStack, aclosing, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -28,11 +28,19 @@ from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.settings import IngressSettings, Settings
+from agentplane.history_service.testing.fake_policy_service import fake_policy_service
 from agentplane.identity.auth import listener as workload_listener
-from agentplane.net.peertls.config import APP_URI, CENTRAL_SAMPLER_URI, HISTORY_SERVICE_URI, ClientTLS
+from agentplane.net.peertls.config import (
+    APP_URI,
+    CENTRAL_SAMPLER_URI,
+    HISTORY_SERVICE_URI,
+    POLICY_CONTROLLER_URI,
+    ClientTLS,
+    PolicyServicePeer,
+)
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.go_process import GoProcess, go_process
+from agentplane.testing.go_process import GoProcess, GrpcHealth, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, workload_uri, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -70,7 +78,16 @@ def migrate_history_database(database_url: str) -> None:
             ca, "spiffe://agentplane/history-ingress", directory, dns_name="localhost"
         )
         settings = Settings(
-            policy_namespace="test-policy-namespace",
+            policy_service=PolicyServicePeer(
+                target="test-policy-controller:8443",
+                tls=ClientTLS(
+                    ca_file=ca_file,
+                    server_uri=POLICY_CONTROLLER_URI,
+                    cert_file=cert_file,
+                    key_file=key_file,
+                    client_uri=HISTORY_SERVICE_URI,
+                ),
+            ),
             rpc=workload_listener.Listener(
                 listen_address="127.0.0.1:8080",
                 tls=workload_listener.TLS(cert_file=cert_file, key_file=key_file),
@@ -351,9 +368,13 @@ async def go_history_service(
     policy_namespace: str = WRITER.namespace,
 ) -> AsyncIterator[GoHistoryService]:
     """The Go History Service on `database_url`, using service SVID reads and workload SVID writes."""
-    with ExitStack() as listeners:
+    async with AsyncExitStack() as services:
+        listeners = services.enter_context(ExitStack())
         reader_listener = listeners.enter_context(listen_tcp())
         svid_ca = svid_ca or make_ca("history test services")
+        policy_target = await services.enter_async_context(
+            fake_policy_service(api, namespace=policy_namespace, ca=svid_ca, directory=directory / "policy-tls")
+        )
         config = directory / "history-service.yaml"
         reader_fd = reader_listener.socket.fileno()
         tls_directory = directory / "history-tls"
@@ -391,7 +412,16 @@ async def go_history_service(
         )
         settings = Settings(
             reader_service_callers=frozenset({APP_URI, CENTRAL_SAMPLER_URI}),
-            policy_namespace=policy_namespace,
+            policy_service=PolicyServicePeer(
+                target=policy_target,
+                tls=ClientTLS(
+                    ca_file=ca_file,
+                    server_uri=POLICY_CONTROLLER_URI,
+                    cert_file=server_cert,
+                    key_file=server_key,
+                    client_uri=HISTORY_SERVICE_URI,
+                ),
+            ),
             request_timeout_s=10,
             rpc=rpc,
             kubeconfig=api.kubeconfig,
@@ -410,10 +440,9 @@ async def go_history_service(
             _SERVICE,
             env={_DATABASE_URL_ENV: _go_database_url(database_url), _CONFIG_FILE_ENV: str(config)},
             stderr=undeclared_outputs_dir() / f"history-service-{uuid4().hex}.log",
-            health_port=reader_listener.port,
+            readiness=GrpcHealth(port=reader_listener.port, credentials=reader_channel_credentials),
             grace_s=_GRACE_SECONDS,
             pass_fds=(reader_fd,),
-            health_credentials=reader_channel_credentials,
         ) as process:
             listeners.close()
             read_target = f"localhost:{reader_listener.port}"

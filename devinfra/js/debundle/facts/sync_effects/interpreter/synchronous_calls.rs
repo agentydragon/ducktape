@@ -6,15 +6,12 @@ use super::super::execution_index::{
 use super::{
     CallbackFallbackSummary, ExecutionInputs, ExecutionState, ExportCallbackMemos, Outcome,
 };
-use analysis::facts::abstract_domain::integrity::IntrinsicSlot;
 use analysis::facts::callable_inference::CallableInferenceInputs;
-use analysis::facts::item_views::TopLevelItemView;
 use analysis::facts::semantic_inference::SemanticFacts;
 use analysis::facts::source_unit_read_closure::SourceUnitReadClosure;
 use analysis::facts::statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection, HeapContentCells, StatementFacts,
 };
-use analysis::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use analysis::facts::{
     DataflowOpacityCause, ExportReentryPolicy, LocalClassConstructionProof,
     LocalClassConstructionShapes, NativeIterableOperandOrigin, NativeOwnDataReadDiagnostic,
@@ -22,6 +19,8 @@ use analysis::facts::{
     TopLevelNativeIterableOperandSite,
 };
 use analysis::purity::ChunkCodeGraph;
+use analysis_domain::integrity::IntrinsicSlot;
+use analysis_domain::item_views::TopLevelItemView;
 use analysis_vocabulary::inputs::{
     AnalysisInputs, NativeInputKind, NativeIntrinsic, ProofDependencies,
 };
@@ -35,6 +34,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::*;
+use value_flow::ChunkValueFlow;
+use value_flow::values::Values as FlowValues;
 use value_model::WorldScope;
 use value_model::{AbstractValue, CallSite, CaptureInterner, MemberKey, ValueExpr, Values};
 use world::World;

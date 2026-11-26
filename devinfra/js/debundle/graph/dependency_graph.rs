@@ -3,8 +3,8 @@ use std::collections::{BTreeSet, HashMap};
 
 use swc_ecma_ast::Id;
 
-use analysis::StatementKind;
 use analysis::facts::CallbackFactoryBarrierFact;
+use analysis_domain::item_views::StatementKind;
 use analysis_vocabulary::execution_evidence::SourceLocation;
 use analysis_vocabulary::inputs::CommutingStatementsRef;
 use analysis_vocabulary::purity::Purity;

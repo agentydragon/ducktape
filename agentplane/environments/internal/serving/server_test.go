@@ -11,6 +11,7 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/environments/testing/identityview"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
@@ -19,7 +20,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -183,7 +183,11 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 	leaseDuration, renewDeadline, retryPeriod := 6*time.Second, 4*time.Second, time.Second
 	startReplica := func() *replica {
 		t.Helper()
-		server, err := New(c, servingTestNamespace, kube.Config, scheme, reader.KubernetesIdentities{})
+		identities, err := identityview.Start(t.Context(), kube.Config, servingTestNamespace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		server, err := New(c, servingTestNamespace, kube.Config, scheme, identities)
 		if err != nil {
 			t.Fatal(err)
 		}

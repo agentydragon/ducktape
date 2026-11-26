@@ -151,6 +151,7 @@ debundle_graph_e2e_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle/analysis_domain",
         "@crates//:serde_json",
     ],
 )

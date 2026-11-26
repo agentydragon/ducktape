@@ -31,9 +31,7 @@ type config struct {
 	Namespace string `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
 	PolicyNamespace string `mapstructure:"policy_namespace"`
-	// PolicyService, when set, replaces every Kubernetes Identity read with one PolicyService Identity view.
-	// CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
-	//   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+	// PolicyService serves every Identity read.
 	PolicyService               *identitycache.Peer           `mapstructure:"policy_service"`
 	DispatcherDatabaseURL       string                        `mapstructure:"-"`
 	RunnerTokenFile             string                        `mapstructure:"runner_token_file"`
@@ -131,10 +129,11 @@ func (c *config) validate() error {
 	if err := c.GatewayTLS.ValidateCaller(c.RunnerTokenFile, peertls.SessionsURI); err != nil {
 		return fmt.Errorf("gateway_tls caller authentication: %w", err)
 	}
-	if c.PolicyService != nil {
-		if err := c.PolicyService.Validate(peertls.SessionsURI); err != nil {
-			return err
-		}
+	if c.PolicyService == nil {
+		return errors.New("policy_service is required")
+	}
+	if err := c.PolicyService.Validate(peertls.SessionsURI); err != nil {
+		return err
 	}
 	if math.IsNaN(float64(c.KubernetesClientQPS)) || math.IsInf(float64(c.KubernetesClientQPS), 0) {
 		return errors.New("kubernetes_client_qps must be finite")

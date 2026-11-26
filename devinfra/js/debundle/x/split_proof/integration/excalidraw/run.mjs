@@ -27,13 +27,6 @@ for (const file of files) {
     const saved = path.join(process.env.TEST_TMPDIR, "parsed", file);
     mkdirSync(saved, { recursive: true });
     writeFileSync(path.join(saved, "ast.json"), JSON.stringify(dump));
-    writeFileSync(
-      path.join(saved, "program.json"),
-      JSON.stringify({
-        entry: "main",
-        modules: [{ name: "main", imports: [], exports: core.exports, ids: core.ids, tokens: core.tokens }],
-      })
-    );
     Object.assign(row, {
       statements: core.numbered,
       modeled: core.units - core.opaque.length,
@@ -101,10 +94,8 @@ for (const chunk of selected) {
   }
   const saved = path.join(process.env.TEST_TMPDIR, "parsed", chunk.file);
   const astFile = path.join(dir, "ast.json");
-  const programFile = path.join(dir, "program.json");
   const fpFile = path.join(dir, "footprints.jsonl");
   copyFileSync(path.join(saved, "ast.json"), astFile);
-  copyFileSync(path.join(saved, "program.json"), programFile);
   const dump = JSON.parse(readFileSync(astFile, "utf8"));
   const units = topLevelStatements(dump);
   const analysis = await run(process.env.LOWER, [astFile], path.join(dir, "lower"));
@@ -156,8 +147,6 @@ for (const chunk of selected) {
         path.join(dir, name),
         "--footprints",
         fpFile,
-        "--corejs",
-        programFile,
         "--plan",
         path.join(dir, `${name}.plan.json`),
         "--move-report",

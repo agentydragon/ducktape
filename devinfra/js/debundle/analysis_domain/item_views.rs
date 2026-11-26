@@ -1,0 +1,349 @@
+use super::*;
+use crate::builtins;
+use binding_targets::{declaration_ids, hoisted_var_ids};
+use inference::{FactContext, IterativeInference, IterativeRules};
+
+#[derive(Clone)]
+pub enum TopLevelItemView<'a> {
+    Borrowed(&'a ModuleItem),
+    Owned {
+        item: ModuleItem,
+        provenance: SplitDeclaratorProvenance<'a>,
+    },
+}
+
+/// Original parent and child coordinates for a canonical comma-list split.
+/// The cloned analysis item is still the one consumed by per-source-unit
+/// analysis; this borrowed origin lets source-based proofs check that item
+/// against its exact original declarator without rediscovering it by name.
+#[derive(Clone)]
+pub struct SplitDeclaratorProvenance<'a> {
+    pub parent_item: &'a ModuleItem,
+    pub declarator_index: usize,
+}
+
+impl TopLevelItemView<'_> {
+    pub fn as_module_item(&self) -> &ModuleItem {
+        match self {
+            Self::Borrowed(item) => item,
+            Self::Owned { item, .. } => item,
+        }
+    }
+}
+
+/// View the top-level body as analysis statements. Multi-declarator
+/// top-level `var/let/const` statements are split into N
+/// single-declarator statements preserving source order; unchanged
+/// statements stay borrowed so the analyzer does not clone the whole
+/// app chunk just to get per-declarator ownership.
+pub fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<'_>> {
+    let mut out = Vec::with_capacity(body.len());
+    for item in body {
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.decls.len() > 1 => {
+                for (declarator_index, decl) in var.decls.iter().enumerate() {
+                    let single = VarDecl {
+                        span: decl.span,
+                        ctxt: var.ctxt,
+                        kind: var.kind,
+                        declare: var.declare,
+                        decls: vec![decl.clone()],
+                    };
+                    let item_view = ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(single))));
+                    out.push(TopLevelItemView::Owned {
+                        item: item_view,
+                        provenance: SplitDeclaratorProvenance {
+                            parent_item: item,
+                            declarator_index,
+                        },
+                    });
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
+                match &export_decl.decl {
+                    Decl::Var(var) if var.decls.len() > 1 => {
+                        for (declarator_index, decl) in var.decls.iter().enumerate() {
+                            let single = VarDecl {
+                                span: decl.span,
+                                ctxt: var.ctxt,
+                                kind: var.kind,
+                                declare: var.declare,
+                                decls: vec![decl.clone()],
+                            };
+                            let item_view =
+                                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                                    span: decl.span,
+                                    decl: Decl::Var(Box::new(single)),
+                                }));
+                            out.push(TopLevelItemView::Owned {
+                                item: item_view,
+                                provenance: SplitDeclaratorProvenance {
+                                    parent_item: item,
+                                    declarator_index,
+                                },
+                            });
+                        }
+                    }
+                    _ => out.push(TopLevelItemView::Borrowed(item)),
+                }
+            }
+            _ => out.push(TopLevelItemView::Borrowed(item)),
+        }
+    }
+    out
+}
+
+/// Walk `body` and collect the subset of `builtins::GLOBALS` (every
+/// global a builtin row or data property names — receivers like
+/// `Math`/`Object`, callables like `Boolean`/`Symbol`, constructors
+/// like `Map`/`Set`) that are
+/// declared at the chunk's top-level scope (`var/let/const`,
+/// `function`, `class`, exported decls) or bound by an import
+/// specifier (default / namespace / named). The classifier consults
+/// this set to skip the builtin table for any name the chunk shadows —
+/// `const Math = …` and `import { Math } from "./userland"` both
+/// make `Math.PI` an Unknown read, and `const Map = class { … }`
+/// makes `new Map()` an Unknown construction, not the built-in.
+/// See docs/design.md A8.
+pub fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
+    let mut shadowed = BTreeSet::new();
+    let try_shadow = |name: &str, into: &mut BTreeSet<&'static str>| {
+        if let Some(global) = builtins::GLOBALS.get(name) {
+            into.insert(*global);
+        }
+    };
+    for item in body {
+        let item = item.as_module_item();
+        for id in collect_declared_names(item) {
+            try_shadow(id.0.as_ref(), &mut shadowed);
+        }
+        if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
+            for spec in &import.specifiers {
+                try_shadow(spec.local().sym.as_ref(), &mut shadowed);
+            }
+        }
+    }
+    shadowed
+}
+
+pub fn var_decl_of_item(item: &ModuleItem) -> Option<&VarDecl> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
+            Decl::Var(var) => Some(var),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// `(name, init, kind)` for every chunk-top `const`/`let`/`var` declarator
+/// binding one identifier to a non-function initializer. Comma-list
+/// declarations are pre-split by `top_level_item_views`.
+pub fn top_level_initializers(item: &ModuleItem) -> Vec<(String, &Expr, VarDeclKind)> {
+    let Some(var) = var_decl_of_item(item) else {
+        return Vec::new();
+    };
+    var.decls
+        .iter()
+        .filter_map(|decl| {
+            let Pat::Ident(binding) = &decl.name else {
+                return None;
+            };
+            let init = decl.init.as_deref()?;
+            (!matches!(init, Expr::Fn(_) | Expr::Arrow(_)))
+                .then(|| (binding.id.sym.to_string(), init, var.kind))
+        })
+        .collect()
+}
+
+/// The positive closure of a value class over chunk-top `const` aliases:
+/// `(target, None)` holds the class outright, `(target, Some(source))` when
+/// `source` does. A closure rather than one source pass, so an alias of a
+/// later declaration still closes.
+pub fn close_const_aliases(
+    seed: &BTreeSet<String>,
+    aliases: impl IntoIterator<Item = (String, Option<String>)>,
+) -> BTreeSet<String> {
+    let mut inference = IterativeInference::new(ConstAliasRules);
+    for name in seed {
+        inference.seed(name.clone(), ());
+    }
+    inference.solve_values(aliases).into_keys().collect()
+}
+
+struct ConstAliasRules;
+
+impl IterativeRules for ConstAliasRules {
+    type Key = String;
+    type Fact = ();
+    type Rule = (String, Option<String>);
+
+    type MergeScratch = ();
+    fn evaluate(&self, (target, source): &Self::Rule, context: &mut impl FactContext<String, ()>) {
+        if source
+            .as_ref()
+            .is_none_or(|source| context.read(source.clone()).is_some())
+        {
+            context.propose(target.clone(), ());
+        }
+    }
+
+    fn merge(_: &String, _: &mut (), _: ()) -> bool {
+        false
+    }
+}
+
+pub fn class_of_item(item: &ModuleItem) -> Option<&Class> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Class(cls))) => Some(&cls.class),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
+            Decl::Class(cls) => Some(&cls.class),
+            _ => None,
+        },
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(decl)) => match &decl.decl {
+            DefaultDecl::Class(cls) => Some(&cls.class),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+pub fn classify_item(item: &ModuleItem) -> StatementKind {
+    let decl = match item {
+        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => return StatementKind::Import,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => &decl.decl,
+        ModuleItem::ModuleDecl(_) => return StatementKind::Export,
+        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
+        _ => return StatementKind::SideEffect,
+    };
+    match binding_targets::decl_shape(decl) {
+        Some(binding_targets::DeclShape::Variable) => StatementKind::VarDecl,
+        Some(binding_targets::DeclShape::Function) => StatementKind::FnDecl,
+        Some(binding_targets::DeclShape::Class) => StatementKind::ClassDecl,
+        // An unsupported exported declaration is still an export, whereas
+        // an unsupported bare declaration is a side effect to the analyzer.
+        None if matches!(item, ModuleItem::ModuleDecl(_)) => StatementKind::Export,
+        None => StatementKind::SideEffect,
+    }
+}
+
+pub fn collect_declared_names(item: &ModuleItem) -> BTreeSet<Id> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_names(decl),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => declaration_names(&decl.decl),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(decl)) => match &decl.decl {
+            DefaultDecl::Fn(fn_expr) => fn_expr
+                .ident
+                .as_ref()
+                .map(|id| BTreeSet::from([id.to_id()]))
+                .unwrap_or_default(),
+            DefaultDecl::Class(class_expr) => class_expr
+                .ident
+                .as_ref()
+                .map(|id| BTreeSet::from([id.to_id()]))
+                .unwrap_or_default(),
+            _ => BTreeSet::new(),
+        },
+        // `var` declarations hoist to module scope out of blocks
+        // (`try { var impl = ...; } catch { var impl = ...; }`,
+        // `if`, loop bodies). The enclosing top-level statement is
+        // the binding's source_unit.
+        ModuleItem::Stmt(stmt) => hoisted_var_ids(stmt).into_iter().collect(),
+        _ => BTreeSet::new(),
+    }
+}
+
+fn declaration_names(decl: &Decl) -> BTreeSet<Id> {
+    declaration_ids(decl).into_iter().collect()
+}
+
+/// `true` when the statement's declared binding is directly a
+/// function value. See [`StatementFacts::declares_direct_function`].
+pub fn declares_direct_function(item: &ModuleItem) -> bool {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => true,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl))
+            if matches!(decl.decl, Decl::Fn(_)) =>
+        {
+            true
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(decl))
+            if matches!(decl.decl, DefaultDecl::Fn(_)) =>
+        {
+            true
+        }
+        _ => var_decl_of_item(item).is_some_and(|var| {
+            var.decls.len() == 1
+                && matches!(&var.decls[0].name, Pat::Ident(_))
+                && var.decls[0]
+                    .init
+                    .as_deref()
+                    .map(Expr::unwrap_parens)
+                    .is_some_and(|init| matches!(init, Expr::Fn(_) | Expr::Arrow(_)))
+        }),
+    }
+}
+
+pub fn collect_async_direct_function_bindings(body: &[TopLevelItemView<'_>]) -> BTreeSet<Id> {
+    body.iter()
+        .filter_map(|item| async_direct_function_binding(item.as_module_item()))
+        .collect()
+}
+
+fn async_direct_function_binding(item: &ModuleItem) -> Option<Id> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(fn_decl))) if fn_decl.function.is_async => {
+            Some(fn_decl.ident.to_id())
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => match &decl.decl {
+            Decl::Fn(fn_decl) if fn_decl.function.is_async => Some(fn_decl.ident.to_id()),
+            _ => var_decl_of_item(item).and_then(async_var_function_binding),
+        },
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(decl)) => match &decl.decl {
+            DefaultDecl::Fn(fn_expr) if fn_expr.function.is_async => {
+                fn_expr.ident.as_ref().map(|ident| ident.to_id())
+            }
+            _ => None,
+        },
+        _ => var_decl_of_item(item).and_then(async_var_function_binding),
+    }
+}
+
+fn async_var_function_binding(var: &VarDecl) -> Option<Id> {
+    if var.decls.len() != 1 {
+        return None;
+    }
+    let Pat::Ident(binding) = &var.decls[0].name else {
+        return None;
+    };
+    let init = var.decls[0].init.as_deref().map(Expr::unwrap_parens)?;
+    let is_async = match init {
+        Expr::Fn(fn_expr) => fn_expr.function.is_async,
+        Expr::Arrow(arrow) => arrow.is_async,
+        _ => false,
+    };
+    is_async.then(|| binding.id.to_id())
+}
+
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::IntoStaticStr, strum::Display,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum StatementKind {
+    /// `var X = ...`, `let X = ...`, `const X = ...`. RHS reads at-init.
+    VarDecl,
+    /// `function X() { ... }`. Hoisted; no at-init reads from body.
+    FnDecl,
+    /// `class X { ... }`. Extends, decorators, computed keys, and
+    /// static blocks read at-init.
+    ClassDecl,
+    /// `export { ... }`, `export X`, etc. Lazy reads (re-exports).
+    Export,
+    /// `import { ... } from ...`. Linked, no at-init body code.
+    Import,
+    /// Bare expression / control-flow / etc. that doesn't declare a
+    /// top-level binding.
+    SideEffect,
+}

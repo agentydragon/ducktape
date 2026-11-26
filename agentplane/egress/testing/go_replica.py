@@ -13,7 +13,7 @@ from python.runfiles import Runfiles
 
 from agentplane.egress.settings import Settings
 from agentplane.identity.auth.listener import SPIFFEAuth
-from agentplane.testing.go_process import GoProcess, go_process
+from agentplane.testing.go_process import GoProcess, GrpcHealth, go_process
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
 
@@ -75,8 +75,7 @@ async def go_replica(
             _PROXY,
             env={Settings.config_file_env: str(config), Settings.database_url_env: database_url},
             stderr=config.with_suffix(".stderr"),
-            health_port=admin_listener.port,
-            health_credentials=health_credentials,
+            readiness=GrpcHealth(port=admin_listener.port, credentials=health_credentials),
             pass_fds=(proxy_listener.socket.fileno(), admin_listener.socket.fileno()),
             grace_s=_GRACE_SECONDS,
         ) as process:

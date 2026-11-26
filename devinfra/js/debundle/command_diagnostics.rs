@@ -4,9 +4,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use analysis::diagnostics::{
-    ChunkDiagnostic, Diagnostics, InvocationDiagnostic, WorkMetrics, progress,
-};
+use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, InvocationDiagnostic, WorkMetrics};
 use anyhow::Result;
 
 pub fn report(

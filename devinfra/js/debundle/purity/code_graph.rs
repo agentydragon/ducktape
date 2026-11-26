@@ -1,10 +1,10 @@
 use super::*;
 use crate::facts::abstract_domain::heap;
-use crate::facts::abstract_domain::primitive::{BindingPrims, collect_binding_prims};
 use crate::facts::{
-    DynamicScopeFact, LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof,
-    SetIterableShapes,
+    LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof, SetIterableShapes,
 };
+use analysis_domain::dynamic_scope::DynamicScopeFact;
+use analysis_domain::primitive::{BindingPrims, collect_binding_prims};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -215,7 +215,7 @@ impl ChunkCodeGraph {
         let stable_imports = BTreeSet::new();
         let value_flow = crate::facts::ChunkValueFlow::analyze_with_candidates(
             body,
-            &heap::tracked_allocation_roots(body),
+            &analysis_domain::allocation_roots::tracked_allocation_roots(body),
         );
         let plain_data_bindings = heap::ChunkHeap::analyze(body, shadowed, &value_flow, None)
             .plain_data_bindings()

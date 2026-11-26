@@ -27,14 +27,9 @@ class Settings(BaseModel):
     )
 
     actions_target: str = Field(min_length=1)
-    policy_namespace: str = Field(min_length=1, description="Namespace holding the live Identity objects.")
-    # CLEANUP(added 2026-11-26): require policy_service and drop policy_namespace once the edge no longer reads
-    #   Identities from Kubernetes (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
-    policy_service: PolicyServicePeer | None = Field(
-        default=None,
-        exclude_if=lambda value: value is None,
-        description="When set, Identities come from PolicyService.WatchIdentities instead of policy_namespace.",
-    )
+    # CLEANUP(added 2026-11-26): Remove once the manifests stop setting policy_namespace for the MCP edge (manifest PR after this one).
+    policy_namespace: str | None = Field(default=None, exclude_if=lambda value: value is None, description="Unused.")
+    policy_service: PolicyServicePeer = Field(description="Where Identities come from: PolicyService.WatchIdentities.")
     actions_token_file: str | None = Field(
         default=None, description="The MCP edge's projected token when it uses bearer authentication to Action Service."
     )
@@ -63,8 +58,7 @@ class Settings(BaseModel):
             raise ValueError("operator_services requires rpc_tls.client_ca_file")
         if self.rpc_tls.client_ca_file is not None and not self.operator_services:
             raise ValueError("rpc_tls.client_ca_file requires operator_services")
-        if self.policy_service is not None:
-            self.policy_service.tls.validate_caller(None, MCP_EDGE_URI)
+        self.policy_service.tls.validate_caller(None, MCP_EDGE_URI)
         if self.oauth_file is not None and self.oauth is not None:
             raise ValueError("oauth_file and inline oauth settings are mutually exclusive")
         if self.oauth_file is not None or self.oauth is not None:

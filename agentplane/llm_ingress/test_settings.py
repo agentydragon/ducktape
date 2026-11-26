@@ -28,8 +28,12 @@ _TLS = {
 _POLICY_SERVICE = {"target": "policy-controller.test.invalid:8443", "tls": _TLS}
 
 
-def test_policy_service_is_omitted_when_unset_and_rendered_when_set() -> None:
-    assert "policy_service" not in Settings.model_validate(_BASE).model_dump(mode="json")
+def test_policy_service_is_required() -> None:
+    with pytest.raises(ValidationError):
+        Settings.model_validate(_BASE)
+
+
+def test_policy_service_is_rendered() -> None:
     rendered = Settings.model_validate({**_BASE, "policy_service": _POLICY_SERVICE}).model_dump(mode="json")
     assert rendered["policy_service"]["tls"]["client_uri"] == LLM_INGRESS_URI
 

@@ -8,11 +8,11 @@ mod outcome_sink;
 mod plan_builder;
 mod residual_atomic_report;
 
-use analysis::diagnostics::progress::{Phase, State};
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use frontend_elaboration::ResolvedMemberSite;
 use graph::assignment_assembly::assemble_assignment;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
+use progress::{Phase, State};
 use source_identity::{ChunkId, StatementId};
 use staged_analysis::chunk_facts::{
     ChunkFacts, ChunkFactsContext, LogicalChunkFacts, compute_logical_chunk_facts,
