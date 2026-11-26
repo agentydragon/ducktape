@@ -24,6 +24,16 @@ const forwardSettings = `forward:
       ca_file: /svid/ca.crt
 `
 
+const policyServiceSettings = `policy_service:
+  target: policy-controller:8443
+  tls:
+    ca_file: /etc/agentplane/tls/ca.crt
+    server_uri: spiffe://agentplane/policy-controller
+    cert_file: /etc/agentplane/tls/tls.crt
+    key_file: /etc/agentplane/tls/tls.key
+    client_uri: spiffe://agentplane/egress-proxy
+`
+
 const validSettings = `rules_namespace: file-rules
 credentials_namespace: file-credentials
 allowed_service_account_namespaces: [file-namespace]
@@ -33,7 +43,7 @@ ca_key: /ca.key
 log_levels:
   root: INFO
 exempt_networks: [127.0.0.0/8]
-`
+` + policyServiceSettings
 
 func environment(t *testing.T, contents string, extra ...string) []string {
 	t.Helper()
@@ -155,6 +165,7 @@ func TestRequiredStaticSettingsMustBePresent(t *testing.T) {
 		"forward":                            withForward(validSettings, ""),
 		"ca_cert":                            strings.Replace(validSettings, "ca_cert: /ca.crt\n", "", 1),
 		"ca_key":                             strings.Replace(validSettings, "ca_key: /ca.key\n", "", 1),
+		"policy_service":                     strings.Replace(validSettings, policyServiceSettings, "", 1),
 	}
 	for name, contents := range missing {
 		t.Run(name, func(t *testing.T) {
@@ -309,8 +320,8 @@ func TestPolicyServiceMustBeACompleteMutualTLSCallerAsTheProxy(t *testing.T) {
 		{"no client SVID", "policy_service:\n  target: policy-controller:8443\n  tls:\n    ca_file: /etc/agentplane/tls/ca.crt\n    server_uri: " + policy + "\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings+tc.settings))
-			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "policy-controller:8443") {
+			c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, strings.Replace(validSettings, policyServiceSettings, tc.settings, 1)))
+			if tc.valid && (err != nil || c.PolicyService.Target != "policy-controller:8443") {
 				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
 			}
 			if !tc.valid && err == nil {
