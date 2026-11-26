@@ -3594,33 +3594,33 @@ old checkpoint is never resumed as the replacement Identity.
 
 ### `APP_IDENTITIES_UI` — identities in the app
 
-**Paused; landed so far: the identities list with bindings, expiries and the accounts its use
-rules reach, the identity page, references, origin and delete refused while referenced or from git
-(`app/frontend/identities/`); the session form showing an existing environment's Identity
-(#15443); optional identity cleanup on Sandbox deletion (#15444); a stopped environment's identity
-changed or cleared, guarded against placed Sessions (#15445). Remaining slices are candidates.**
-`PolicyService` already watches Identities and deletes one for it (#15151;
-[Policy Controller SPEC](../policy_controller/SPEC.md#policy-resource-watches)). Left: the new-environment identity picker (`CreateEnvironment` still takes no Identity); the permission-request approval card with new
-temporary account, widen shared, or deny; a Thread finish action that offers Identity cleanup after
-the authoritative Session finish/lifetime contract and its selected backend operation exist
-(`SESSION_AND_INBOX_LIFETIME`, `SESSION_LIFETIME_IMPLEMENTATION`); the finish dialog's default to
-delete an app-minted identity once the app mints any; the identities an environment
-has run as on its page. Thread finish's prerequisites do not block the other slices. The Connection consent page (`/#/connection-enrollments/{handle}`) and
-the OAuth clients tab's rebind picker should choose an eligible live Identity in the policy
-namespace under operator-approved consent/rebind; there is no static Identity-name allowlist. A
-Connection's **View grants** shows that Identity's bindings, and an identity's page lists the
-Connections bound to it beside its Sandboxes and Sessions (operator, 2026-11-09; today's flow is in
-`app/README.md`). These UI slices no longer wait on the completed workload cutover. Mockups: the
-plan's operator UI section. **Exit:** BFF routes with
-tests, visual tests capturing each screen, and a browser test that a referenced identity cannot be
-deleted. The landed slice shows every identity not applied from git as of unknown origin. When
-Session-managed identity provisioning (`SESSION_MANAGED_IDENTITY`) is implemented, it needs to
-stamp an origin marker that `identities/origin.ts` can read. The new-environment identity picker
-remains an independent app UI slice; the Sandbox launch sequence is already settled in the identity
-plan.
-The environment page reads only its current Sandbox-owned WorkloadCredential at the last check;
-revoked records do not supply a complete identity history. Choose a retained source and retention
-contract before claiming to show earlier identities.
+**Paused.** The app lists Identities, their references, origin, bindings, expiries and reachable
+accounts. PolicyService watches Identities and refuses unsafe deletion (#15151). The Thread form
+shows the existing Sandbox’s Identity (#15443). Operators can request Identity cleanup on Sandbox
+deletion (#15444), rebind a stopped Sandbox with placed-Session checks (#15445), and launch a
+Sandbox with a new or existing Identity (#20089).
+[Policy resource watches](../policy_controller/SPEC.md#policy-resource-watches) ·
+[Thread creation](../app/frontend/SPEC.md#thread-creation) ·
+[Sandbox deletion and cleanup](../app/frontend/SPEC.md#sandbox-deletion-and-identity-cleanup)
+
+Remaining UI slices can proceed independently of the completed workload cutover.
+
+- Give permission requests an approval card with choices to create a temporary account, widen the
+  shared account, or deny.
+- Offer Identity cleanup on Thread finish once `SESSION_AND_INBOX_LIFETIME` and
+  `SESSION_LIFETIME_IMPLEMENTATION` define the backend operation. Default cleanup to selected
+  only when creation evidence identifies the Identity the app minted for that launch. Today only
+  Flux origin is recognizable. `SESSION_MANAGED_IDENTITY` must stamp Session-created Identities
+  so `identities/origin.ts` can distinguish them.
+- On Connection consent (`/#/connection-enrollments/{handle}`) and OAuth client rebind, let the
+  operator choose an eligible live Identity in the policy namespace. **View grants** should show
+  its bindings. The Identity page should list its bound Connections alongside Sandboxes and
+  Sessions (operator, 2026-11-09). [Current Connection flow](../app/README.md)
+- Choose a retained source and retention policy for the Identities an environment previously ran
+  as. Its current Sandbox-owned WorkloadCredential and revoked records give an incomplete history.
+
+**Exit:** cover the BFF routes, capture each screen in visual tests, and exercise refusal to delete
+a referenced Identity in the browser. [Operator UI design](identity_and_kubernetes_accounts.md#operator-ui)
 
 The merged #15444 and #15445 slices have no recorded k3s system test or post-Flux staging proof as
 of 2026-11-10. #15445's browser test exercises a running refusal by `EnvironmentService` and a
