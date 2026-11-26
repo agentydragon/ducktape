@@ -74,11 +74,7 @@ func (conversation *Conversation) storeContext(store *contentdb.Store, native pr
 			if err := entry.validate(); err != nil {
 				return "", err
 			}
-			payload, err := json.Marshal(entry)
-			if err != nil {
-				return "", err
-			}
-			id, err = store.PutContent(contextRecordKind, payload)
+			id, err = content.PutJSON(store, contextRecordKind, entry)
 			if err != nil {
 				return "", err
 			}

@@ -32,6 +32,15 @@ type ContentWriter interface {
 	PutContent(ContentKind, json.RawMessage) (ContentID, error)
 }
 
+// PutJSON marshals a Go value and stores it under the given content kind.
+func PutJSON(writer ContentWriter, kind ContentKind, value any) (ContentID, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return writer.PutContent(kind, payload)
+}
+
 type ContentReader interface {
 	GetContent(ContentID) (StoredContent, error)
 }

@@ -47,22 +47,14 @@ func PrepareRequest(store content.ContentWriter, model, effort string, instructi
 	if instructions != nil && *instructions != "" {
 		system += "\n\n" + *instructions
 	}
-	systemRecord, err := json.Marshal(message{Role: "system", Content: system})
-	if err != nil {
-		return "", "", err
-	}
-	profile, err := json.Marshal(requestProfile{
+	profileID, err := content.PutJSON(store, profileKind, requestProfile{
 		Model: model, ReasoningEffort: effort, Stream: true, StreamOptions: &streamOptions{IncludeUsage: true},
 		Tools: []tool{{Type: "function", Function: toolDefinition{Name: "exec", Description: surface.Description, Parameters: surface.Parameters}}},
 	})
 	if err != nil {
 		return "", "", err
 	}
-	profileID, err := store.PutContent(profileKind, profile)
-	if err != nil {
-		return "", "", err
-	}
-	systemID, err := StoreRecord(store, systemRecord)
+	systemID, err := content.PutJSON(store, messageKind, message{Role: "system", Content: system})
 	return profileID, systemID, err
 }
 
@@ -87,11 +79,7 @@ func PrepareNextProfile(store interface {
 	profile.StreamOptions = &streamOptions{IncludeUsage: true}
 	profile.ReasoningEffort = effort
 	profile.Model = model
-	raw, err = json.Marshal(profile)
-	if err != nil {
-		return "", err
-	}
-	return store.PutContent(profileKind, raw)
+	return content.PutJSON(store, profileKind, profile)
 }
 
 // PrepareCompactionRequest keeps the sampling tool definitions in the prompt and
@@ -111,11 +99,7 @@ func PrepareCompactionRequest(store interface {
 	}
 	profile.ToolChoice = "none"
 	profile.MaxTokens = config.MaxTokens
-	raw, err = json.Marshal(profile)
-	if err != nil {
-		return "", "", err
-	}
-	profileID, err = store.PutContent(profileKind, raw)
+	profileID, err = content.PutJSON(store, profileKind, profile)
 	if err != nil {
 		return "", "", err
 	}
@@ -123,11 +107,7 @@ func PrepareCompactionRequest(store interface {
 	if err != nil {
 		return "", "", err
 	}
-	raw, err = json.Marshal(message{Role: "user", Content: instruction})
-	if err != nil {
-		return "", "", err
-	}
-	instructionID, err := StoreRecord(store, raw)
+	instructionID, err := content.PutJSON(store, messageKind, message{Role: "user", Content: instruction})
 	return profileID, instructionID, err
 }
 
