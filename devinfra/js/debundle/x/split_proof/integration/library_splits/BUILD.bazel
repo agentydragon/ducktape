@@ -1,7 +1,6 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
 load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/lint:linters.bzl", "eslint_test")
-load(":sweep.bzl", "real_split_sweeps")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -39,32 +38,35 @@ js_test(
 )
 
 js_binary(
-    name = "real_split",
-    data = [
-        "gen_spec.mjs",
-        "smoke.mjs",
-        "//devinfra/js/debundle/x/split_proof:seeded_random",
-        "//devinfra/js/debundle/x/split_proof/lean:lower",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
-    ],
-    entry_point = "run_splits.mjs",
-    env = {
-        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-    },
-    tags = ["manual"],
-)
-
-js_binary(
     name = "summarize_real_splits",
     data = ["//devinfra/js/debundle/x/split_proof:reporting"],
     entry_point = "summarize.mjs",
     tags = ["manual"],
 )
 
-real_split_sweeps()
+[
+    js_run_binary(
+        name = "prepare_" + library.replace(".", "_"),
+        outs = ["real_bundles/" + library + ext for ext in [
+            ".mjs",
+            ".json",
+        ]],
+        args = [
+            "real_bundles",
+            library,
+        ],
+        chdir = package_name(),
+        tool = ":prepare",
+    )
+    for library in [
+        "acorn",
+        "acorn.min",
+        "lodash",
+        "semver",
+        "zod",
+        "zod.min",
+    ]
+]
 
 _LIBRARY_SOURCES = [
     ":real_bundles/" + library + ".mjs"
@@ -75,20 +77,11 @@ _LIBRARY_SOURCES = [
 ]
 
 js_test(
-    name = "library_certificate_test",
+    name = "library_source_smoke_test",
     size = "medium",
     args = ["$(rootpath " + src + ")" for src in _LIBRARY_SOURCES],
-    data = _LIBRARY_SOURCES + [src.removesuffix(".mjs") + ".json" for src in _LIBRARY_SOURCES] + [
-        "gen_spec.mjs",
-        "smoke.mjs",
-        "//devinfra/js/debundle/x/split_proof:seeded_random",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
-    ],
-    entry_point = "certificate_test.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    data = _LIBRARY_SOURCES + ["smoke.mjs"],
+    entry_point = "source_smoke_test.mjs",
 )
 
 js_library(
