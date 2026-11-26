@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/proto/sessionplacement"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -50,10 +51,7 @@ func (c *SessionClient) CreateSession(
 	request := &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID.String(), Spec: proto.Clone(spec).(*sessionpb.SessionSpec),
 	}
-	target := spec.GetPlacement().GetEnvironmentHosted().GetEnvironment()
-	if spec.GetPlacement().GetCentralSamplerV1() != nil {
-		target = spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
-	}
+	target := sessionplacement.Target(spec.GetPlacement())
 	if target.GetName() != sandbox || target.GetUid() != sandboxUID {
 		return nil, errors.New("Session placement does not match requested Sandbox")
 	}
@@ -72,13 +70,7 @@ func (c *SessionClient) CreateSession(
 		return nil, err
 	}
 	session := response.GetSession()
-	var returnedTarget *sessionpb.ExactEnvironment
-	if session != nil {
-		returnedTarget = session.GetPlacement().GetEnvironmentHosted().GetEnvironment()
-		if session.GetPlacement().GetCentralSamplerV1() != nil {
-			returnedTarget = session.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
-		}
-	}
+	returnedTarget := sessionplacement.Target(session.GetPlacement())
 	if session == nil || session.GetSessionId() != sessionID.String() || returnedTarget.GetName() != sandbox ||
 		returnedTarget.GetUid() != sandboxUID {
 		return nil, &SessionNotFoundError{SessionID: sessionID, Sandbox: sandbox}

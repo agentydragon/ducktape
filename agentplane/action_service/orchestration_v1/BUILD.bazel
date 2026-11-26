@@ -28,6 +28,7 @@ go_library(
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
+        "//agentplane/proto/sessionplacement",
         "//agentplane/sandboxes/api",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",

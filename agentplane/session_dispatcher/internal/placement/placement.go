@@ -2,6 +2,7 @@ package placement
 
 import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/proto/sessionplacement"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -35,16 +36,17 @@ func PlacementFromRequest(request *dispatcherpb.CreateSessionRequest) (SessionPl
 		return "", status.Error(codes.InvalidArgument, "Session spec is required")
 	}
 	spec := request.GetSpec()
+	target := sessionplacement.Target(spec.GetPlacement())
 	switch PlacementOf(spec) {
 	case EnvironmentHosted:
-		if !validExactEnvironment(spec.GetPlacement().GetEnvironmentHosted().GetEnvironment()) ||
+		if !validExactEnvironment(target) ||
 			(spec.GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CLAUDE &&
 				spec.GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX) {
 			return "", status.Error(codes.InvalidArgument, "environment_hosted requires one exact environment and a native harness")
 		}
 		return EnvironmentHosted, nil
 	case CentralSampler:
-		if !validExactEnvironment(spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()) {
+		if !validExactEnvironment(target) {
 			return "", status.Error(codes.InvalidArgument, "central_sampler_v1 currently requires one exact executor environment")
 		}
 		return CentralSampler, nil
@@ -59,13 +61,6 @@ func validExactEnvironment(target *sessionpb.ExactEnvironment) bool {
 	}
 	_, err := uuid.Parse(target.GetUid())
 	return err == nil
-}
-
-func RequestTarget(request *dispatcherpb.CreateSessionRequest) *sessionpb.ExactEnvironment {
-	if request.GetSpec().GetPlacement().GetEnvironmentHosted() != nil {
-		return request.GetSpec().GetPlacement().GetEnvironmentHosted().GetEnvironment()
-	}
-	return request.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 }
 
 func (p SessionPlacement) RequiresReadyExecutor() bool { return p == EnvironmentHosted }

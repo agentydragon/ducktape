@@ -15,6 +15,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/proto/sessionplacement"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
@@ -377,11 +378,12 @@ func (s *Service) ChangeReasoningEffort(ctx context.Context, request *dispatcher
 }
 
 func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.CreateSessionRequest) (response *dispatcherpb.CreateSessionResponse, resultErr error) {
+	target := sessionplacement.Target(request.GetSpec().GetPlacement())
 	ctx, span := observability.Start(
 		ctx, "Dispatcher CreateSession",
 		trace.WithAttributes(
 			attribute.String("session.id", request.GetSessionId()),
-			attribute.String("sandbox.name", placement.RequestTarget(request).GetName()),
+			attribute.String("sandbox.name", target.GetName()),
 		),
 	)
 	defer func() { observability.End(span, resultErr) }()
@@ -406,7 +408,6 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 		if err != nil {
 			return nil, apiError(store.ErrSessionConflict)
 		}
-		target := placement.RequestTarget(request)
 		if err := row.MatchRequest(target.GetName(), target.GetUid(), sessionPlacement, request.GetSpec(), request.SetupScript); err != nil {
 			return nil, apiError(err)
 		}
@@ -427,7 +428,6 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if isIdentityCaller && sessionPlacement != placement.EnvironmentHosted {
 		return nil, status.Error(codes.PermissionDenied, "an Identity caller may only create a native Session on a granted sandbox")
 	}
-	target := placement.RequestTarget(request)
 	current, err := s.sandbox(ctx, target.GetName())
 	if err != nil {
 		return nil, err
