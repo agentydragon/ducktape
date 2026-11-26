@@ -18,63 +18,77 @@ open Lean EsmSplit.SplitFiles
 
 open CoreJS (Guarantee)
 
-/-- Check the generated proof with the same toolchain and model as the splitter. -/
-private def checkLean (work : System.FilePath) (args : Array String) : IO Unit := do
-  let exe ← IO.appPath
-  let args := #["-DwarningAsError=true", s!"--root={work}"] ++ args
-  let proc ← if exe.fileName == some "lean" then
-      IO.Process.output { cmd := exe.toString, args }
-    else do
-      -- The native Lake executable is <project>/.lake/build/bin/lowersplit.
-      -- TODO: Consider resolving the project environment once per run (see split_proof/TODO.md).
-      let mut project := exe
-      for _ in [:4] do project := project.parent.getD "."
-      IO.Process.output { cmd := "lake", args := #["env", "lean"] ++ args, cwd := some project }
+/-- Compiler and project paths selected by the splitter's build. -/
+structure GeneratedProofToolchain where
+  lean : System.FilePath
+  sysroot : System.FilePath
+  importArts : Lean.NameMap Lean.ImportArtifacts := {}
+  projectLibrary : Option System.FilePath := none
+  projectSource : Option System.FilePath := none
+
+/-- Use the SDK's default runtime settings and only the build-selected search paths. -/
+private def checkLean (toolchain : GeneratedProofToolchain)
+    (work : System.FilePath) (args : Array String) : IO Unit := do
+  let paths := #[("LEAN_SYSROOT", some toolchain.sysroot.toString),
+    ("LEAN_PATH", toolchain.projectLibrary.map toString),
+    ("LEAN_SRC_PATH", toolchain.projectSource.map toString)]
+  let defaults := #["LEAN_IMPORT_WORKERS", "LEAN_NUM_THREADS", "LEAN_STACK_SIZE_KB",
+    "LEAN_MAIN_USE_THREAD", "LEAN_ABORT_ON_PANIC", "LEAN_ABORT_ON_NONLINEAR",
+    "LEAN_BACKTRACE", "LEAN_BACKTRACE_RAW", "LEAN_TRACE_TASK_GET_BLOCKED"].map (·, none)
+  let proc ← IO.Process.output {
+    cmd := toolchain.lean.toString
+    args := #["-DwarningAsError=true", s!"--root={work}"] ++ args
+    env := paths ++ defaults
+  }
   unless proc.exitCode == 0 do
     let detail := (proc.stdout ++ proc.stderr).trimAscii.take 1200
     let reason := s!"could not prove equivalent linked executions (Lean exited with status {proc.exitCode})"
     throw (IO.userError (if detail.isEmpty then reason else s!"{reason}: {detail}"))
 
-private def checkProofModule (work : System.FilePath) (setup : Lean.ModuleSetup)
+private def checkProofModule (toolchain : GeneratedProofToolchain)
+    (work : System.FilePath) (setup : Lean.ModuleSetup)
     (code : String) (args : Array String) : IO Unit := do
   let stem := setup.name.toString
   let file := work / (stem ++ ".lean")
   let config := work / (stem ++ ".setup.json")
   IO.FS.writeFile file code
   IO.FS.writeFile config (toJson setup).compress
-  checkLean work (#[s!"--setup={config}"] ++ args ++ #[file.toString])
+  checkLean toolchain work (#[s!"--setup={config}"] ++ args ++ #[file.toString])
 
-private def runProofRecipe (timings : Bool) (work : System.FilePath)
-    (dataArts : Lean.NameMap Lean.ImportArtifacts) (recipe : CoreJS.LinkedBehavior.ProofRecipe) : IO Unit := do
-  let mut importArts := dataArts
+private def runProofRecipe (toolchain : GeneratedProofToolchain)
+    (timings : Bool) (work : System.FilePath)
+    (initialImports : Lean.NameMap Lean.ImportArtifacts) (recipe : CoreJS.LinkedBehavior.ProofRecipe) : IO Unit := do
+  let mut importArts := initialImports
   for (module, index) in recipe.zipIdx do
     let intermediate := index + 1 < recipe.size
     let args := if intermediate then
         #["-o", (work / (module.name.toString ++ ".olean")).toString]
       else #[]
     timePhase timings module.timing fun _ =>
-      checkProofModule work { name := module.name, importArts } module.code args
+      checkProofModule toolchain work { name := module.name, importArts } module.code args
     if intermediate then
       let compiled := work / (module.name.toString ++ ".olean")
       importArts := importArts.insert module.name (.ofArrays #[#[compiled]])
 
-private def writeCertificateData (work : System.FilePath) (terms : CertificateData.Entries) :
-    IO (Lean.NameMap Lean.ImportArtifacts) := do
-  let dataName := CertificateData.moduleName
-  let dataFile := work / (dataName.toString ++ ".olean")
+private def writeCertificateData (work : System.FilePath)
+    (terms : CertificateData.Entries) : IO System.FilePath := do
+  let dataFile := work / (CertificateData.moduleName.toString ++ ".olean")
   CertificateData.write dataFile terms
-  return ({} : Lean.NameMap Lean.ImportArtifacts).insert dataName (.ofArrays #[#[dataFile]])
+  return dataFile
 
 /-- Publication waits for the kernel-checked executions and the exact AST gate. -/
-private def verifyExecution (timings : Bool) (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate)
-    (dataArts : Lean.NameMap Lean.ImportArtifacts) : IO CoreJS.HostPremises := do
+private def verifyExecution (loadToolchain : IO GeneratedProofToolchain)
+    (timings : Bool) (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate)
+    (dataFile : System.FilePath) : IO CoreJS.HostPremises := do
+  let toolchain ← loadToolchain
+  let importArts := toolchain.importArts.insert CertificateData.moduleName (.ofArrays #[#[dataFile]])
   let accepted ← match cert.checkpoint with
     | none => pure false
     | some recipe => try
-        runProofRecipe timings work dataArts recipe
+        runProofRecipe toolchain timings work importArts recipe
         pure true
       catch _ => pure false
-  unless accepted do runProofRecipe timings work dataArts cert.ordinary
+  unless accepted do runProofRecipe toolchain timings work importArts cert.ordinary
   return cert.premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
@@ -276,7 +290,8 @@ def prepareSliceEligibility (profile : CoreJS.HostProfile) (source providers fil
 
 /-- Preserve singleton declarations and executable linked certificates,
 with the original bundle at the virtual root for authored inputs. -/
-private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
+private def runSingleton (loadToolchain : IO GeneratedProofToolchain)
+    (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
   let request := options.request
   let profile := options.profile
@@ -371,7 +386,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
               pure (.ok (none, eligibility.probe.premises, "compiled-replay-premised", []))
             else
               let prepared : Except CertificationRefusal
-                  (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
+                  (CoreJS.LinkedBehavior.Certificate × System.FilePath) ←
                 timePhase timings "certificate_preparation" fun _ => do
                   let result ← IO.lazyPure fun _ =>
                     CoreJS.LinkedBehavior.certificateWithWitness profile program providers files P eligibility.probe
@@ -387,8 +402,8 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
                       } : CertificationRefusal))
               match prepared with
               | .error refusal => pure (.error refusal)
-              | .ok (cert, dataArts) => do
-                let used ← verifyExecution timings work cert dataArts
+              | .ok (cert, dataFile) => do
+                let used ← verifyExecution loadToolchain timings work cert dataFile
                 pure (.ok (none, used, "generated-proof", replayBlockers))
     match checked with
     | .ok (some kind, active, strategy, blockers) => do
@@ -459,7 +474,8 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
     | .error refusal => emitRefusal request.label refusal "linked-structural"
   catch e => emitVerdict request.label (.error e.toString) "linked-structural"
 
-def certified (args : List String) : IO UInt32 := do
+def certified (args : List String) (loadToolchain : IO GeneratedProofToolchain) :
+    IO UInt32 := do
   let (level?, args) := EsmSplit.takeFlag "--require" args
   let label := level?.getD Guarantee.normalCompletion.label
   try
@@ -468,7 +484,7 @@ def certified (args : List String) : IO UInt32 := do
     let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
     IO.FS.withTempDir fun work =>
       match manifest.chunks, options.deploymentOrigin with
-      | [chunk], none => runSingleton chunk out work options timings
+      | [chunk], none => runSingleton loadToolchain chunk out work options timings
       | _, _ => runDeployment manifest out work options timings
   catch e => emitVerdict label (.error e.toString)
 

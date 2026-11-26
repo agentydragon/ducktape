@@ -3,22 +3,26 @@ module(
     version = "0.1.0",
 )
 
-# Lean rules are not yet published to the Bazel Central Registry.
-bazel_dep(name = "rules_lean", version = "0.7.2")
+# TODO: Remove the archive override when a Bazel Central Registry release also covers the proof checks below.
+bazel_dep(name = "rules_lean", version = "0.1.2")
 archive_override(
     module_name = "rules_lean",
-    integrity = "sha256-WlWwUULPEqpQgwPCxWr/GRZ/qVu1IFUSaqqdeAMIPgc=",
+    integrity = "sha256-ROo3RoOjPsxZibjYGWNqAnWEQGilPNzEU91F7CLvslA=",
     patch_strip = 1,
-    patches = ["//patches:rules_lean_4_35.patch"],
-    strip_prefix = "rules_lean-97c226a720ebd23675b2825088c6b32a3fc61989",
-    urls = ["https://github.com/tomato-bazel/rules_lean/archive/97c226a720ebd23675b2825088c6b32a3fc61989.tar.gz"],
+    # TODO: Drop these hunks as upstream supports our compiler flags and named axiom checks.
+    # Removal criteria: devinfra/js/debundle/x/split_proof/TODO.md#lean-build-and-runtime-wiring
+    patches = ["//patches:martianoff_rules_lean_proof_gates.patch"],
+    strip_prefix = "rules_lean-44fc4e4b299a32fd278865a45df24e0d05eb96a8",
+    urls = ["https://github.com/martianoff/rules_lean/archive/44fc4e4b299a32fd278865a45df24e0d05eb96a8.tar.gz"],
 )
 
-lean = use_extension("//devinfra/js/debundle/x/split_proof/lean:toolchain.bzl", "lean")
-lean.toolchain(version_file = "//devinfra/js/debundle/x/split_proof/lean:lean-toolchain")
-use_repo(lean, "lean_dist")
+lean = use_extension("@rules_lean//lean:extensions.bzl", "lean")
 
-register_toolchains("@lean_dist//:lean_toolchain_def")
+# TODO: Read split_proof/lean/lean-toolchain here when the upstream extension accepts a version file.
+lean.toolchain(version = "4.35.0")
+use_repo(lean, "lean_toolchains")
+
+register_toolchains("@lean_toolchains//:all")
 
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")

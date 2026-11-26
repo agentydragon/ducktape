@@ -22,7 +22,16 @@ writeFileSync(host, JSON.stringify({ profile: "browser-page" }));
 function certify(checkOutput) {
   const args = [writeDeployment(source, spec, out), out, "--require", "normal-completion", "--host-contract", host];
   if (checkOutput) args.push("--check-output");
-  const run = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
+  // Generated proofs must use the build-selected SDK and imports.
+  const run = spawnSync(process.env.LOWERSPLIT, args, {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      LEAN_PATH: path.join(root, "untrusted-imports"),
+      LEAN_SRC_PATH: path.join(root, "untrusted-sources"),
+      LEAN_SYSROOT: path.join(root, "untrusted-sdk"),
+    },
+  });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const verdict = JSON.parse(run.stdout);
   assert.equal(verdict.status, "certified", run.stdout + run.stderr);

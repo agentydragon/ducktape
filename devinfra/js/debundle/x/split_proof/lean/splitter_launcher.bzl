@@ -12,7 +12,7 @@ def _splitter_launcher_impl(ctx):
         output = ctx.outputs.out,
         substitutions = {
             "{DIAGNOSTIC}": runfile(ctx.executable.diagnostic),
-            "{INTERPRETER}": runfile(ctx.executable.interpreter),
+            "{CORE}": runfile(ctx.executable.core),
             "{STRATEGY_CENSUS}": runfile(ctx.executable.strategy_census),
             "{MODULE_IO}": runfile(ctx.executable.module_io),
         },
@@ -23,7 +23,7 @@ splitter_launcher = rule(
     implementation = _splitter_launcher_impl,
     attrs = {
         "diagnostic": attr.label(cfg = "target", executable = True, mandatory = True),
-        "interpreter": attr.label(cfg = "target", executable = True, mandatory = True),
+        "core": attr.label(cfg = "target", executable = True, mandatory = True),
         "module_io": attr.label(cfg = "target", executable = True, mandatory = True),
         "strategy_census": attr.label(cfg = "target", executable = True, mandatory = True),
         "out": attr.output(mandatory = True),
