@@ -1,8 +1,7 @@
 //! Prepares source-backed synchronous-call evidence and annotates call effects.
 
-use super::super::execution_index::{
-    Call, CallKind, ExecutionIndex, native_call_identity_key, native_own_data_read_slots,
-};
+use super::super::execution_index::intrinsic_roots::native_own_data_read_slots;
+use super::super::execution_index::{Call, CallKind, ExecutionIndex, native_call_identity_key};
 use super::{
     CallbackFallbackSummary, ExecutionInputs, ExecutionState, ExportCallbackMemos, Outcome,
 };
@@ -34,7 +33,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::*;
-use value_flow::{ChunkValueFlow, Values as FlowValues};
+use value_flow::ChunkValueFlow;
+use value_flow::values::Values as FlowValues;
 use value_model::WorldScope;
 use value_model::{AbstractValue, CallSite, CaptureInterner, MemberKey, ValueExpr, Values};
 use world::World;

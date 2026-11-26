@@ -2,6 +2,7 @@
 //! and protocol lookups, opacity marks, retained callbacks, iterated sources
 //! and member writes.
 
+use super::patterns::iterated_defaults;
 use super::*;
 
 impl ExecutionIndex {

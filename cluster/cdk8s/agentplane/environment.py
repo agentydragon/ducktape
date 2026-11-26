@@ -69,6 +69,9 @@ class CentralSamplerProps:
     context_source_writes: bool = False
     event_block_writes: bool = False
     event_block_v2_writes: bool = False
+    history_export_page_entries: int | None = None
+    history_export_pages_per_turn: int | None = None
+    follow_events_page_entries: int | None = None
     event_block_profile: EventBlockProfile | None = None
 
 

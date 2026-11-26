@@ -151,7 +151,9 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	}
 	if settings.HistoryTarget != "" {
 		running.Go(func() error {
-			return historyexport.Run(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, sessionstore.OutboxChannel, hub, settings.HistoryTLS)
+			return historyexport.Run(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, sessionstore.OutboxChannel, hub, settings.HistoryTLS, historyexport.Paging{
+				PageEntries: settings.ExportPageEntries(), PagesPerTurn: settings.ExportPagesPerTurn(),
+			})
 		})
 	}
 	running.Go(func() error {

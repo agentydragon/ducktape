@@ -9,6 +9,7 @@
 //! operators, completion accounting) lives here.
 
 pub mod alternatives;
+mod bindings;
 pub(crate) mod branch;
 pub mod cells;
 pub mod closure;
@@ -16,4 +17,6 @@ pub mod construct;
 pub mod context;
 pub mod continuation;
 pub mod driver;
+mod field_access;
 pub mod frame;
+mod value_context;

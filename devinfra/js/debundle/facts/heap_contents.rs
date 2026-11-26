@@ -12,7 +12,7 @@ use super::*;
 use analysis_domain::allocation_roots::{ArrayOriginCollector, array_candidate_roots_from_origins};
 use analysis_vocabulary::value::{Kind, Value};
 use rustc_hash::{FxHashMap, FxHashSet};
-use value_flow::Values;
+use value_flow::values::Values;
 
 /// Native-read evidence the synchronous interpreter prepared for the chunk.
 pub trait NativeHeapReads {

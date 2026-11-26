@@ -17,10 +17,12 @@ pub mod synchronous_calls;
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
 use super::alternatives::execution_state::{ExecutionPath, JoinedPath};
+use super::execution_index::intrinsic_roots::native_own_data_read_slots;
+use super::execution_index::local_constructors::LocalConstructor;
+use super::execution_index::patterns::pattern_source;
 use super::execution_index::{
     Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
-    LocalConstructor, MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
-    native_own_data_read_slots, pattern_source,
+    MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
 };
 use super::native::operation::{
     self as native_operation, CheckedNativePlan, NativeOperationCommit, NativeOperationContext,
@@ -95,7 +97,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
-use value_flow::{ChunkValueFlow, Values as FlowValues};
+use value_flow::ChunkValueFlow;
+use value_flow::values::Values as FlowValues;
 use value_model::local_operations::{LocalBinding, LocalBody};
 use value_model::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use value_model::property_inference::{
