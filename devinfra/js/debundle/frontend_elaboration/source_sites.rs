@@ -217,7 +217,7 @@ fn resolve_imported_array_spread_inputs(
     graph_provenance: &GraphProvenance,
     prepared: &PreparedCensuses<'_>,
 ) -> Result<(
-    Vec<analysis_projection::AnalysisImportedPrimitiveArraySpreadInput>,
+    Vec<analysis_vocabulary::inputs::AnalysisImportedPrimitiveArraySpreadInput>,
     BTreeMap<String, String>,
 )> {
     let mut sites = Vec::with_capacity(contracts.len());
@@ -341,17 +341,19 @@ fn resolve_imported_array_spread_inputs(
                 operand.provider_chunk.clone(),
                 provider_source.sha256.clone(),
             );
-            operands.push(analysis_projection::AnalysisImportedPrimitiveArrayOperand {
-                selector_local: operand.selector_local.clone(),
-                consumer_binding,
-                provider_chunk: operand.provider_chunk.clone(),
-                provider_source_match: operand.provider_source_match.clone(),
-                provider_declaration,
-                audited_provider_source_sha256: operand.audited_provider_source_sha256.clone(),
-            });
+            operands.push(
+                analysis_vocabulary::inputs::AnalysisImportedPrimitiveArrayOperand {
+                    selector_local: operand.selector_local.clone(),
+                    consumer_binding,
+                    provider_chunk: operand.provider_chunk.clone(),
+                    provider_source_match: operand.provider_source_match.clone(),
+                    provider_declaration,
+                    audited_provider_source_sha256: operand.audited_provider_source_sha256.clone(),
+                },
+            );
         }
         sites.push(
-            analysis_projection::AnalysisImportedPrimitiveArraySpreadInput {
+            analysis_vocabulary::inputs::AnalysisImportedPrimitiveArraySpreadInput {
                 consumer_declaration,
                 source_match: contract.source_match.clone(),
                 audited_source_sha256: contract.audited_source_sha256.clone(),
