@@ -1841,3 +1841,20 @@ lean_proof_test(
     ],
     deps = [":corejs_interior_export_names"],
 )
+
+lean_library(
+    name = "corejs_indexed_plan_cells",
+    srcs = ["EsmSplit/CoreJS/IndexedPlanCells.lean"],
+    deps = [":corejs_indexed_export_cells"],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_plan_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedPlanCells"],
+    required_theorems = [
+        "CoreJS.IndexedPlanCells.import_cell",
+        "CoreJS.IndexedPlanCells.module_scope_cells",
+    ],
+    deps = [":corejs_indexed_plan_cells"],
+)
