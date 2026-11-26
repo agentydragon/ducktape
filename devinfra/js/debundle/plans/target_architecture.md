@@ -192,8 +192,7 @@ empty at the end.
 - <analysis_consolidation.md>: stage 2 analysis algorithm, bounds and migration.
 - <analysis_performance.md>: stage 2 cost and the CI budgets.
 - <native_receiver_identity.md> and <../TODO.md#purity-classifier>: stage 2
-  analysis precision. <../debug/runtime_transfers.md#open-supplemental-tana-parity>
-  tracks the remaining runtime comparison.
+  analysis precision.
 - <relational_selectors.md>, <automated_spec_workflows.md>,
   <explicit_import_order.md>: the spec surface and stage 6.
 
