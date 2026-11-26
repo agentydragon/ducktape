@@ -1,0 +1,208 @@
+diff --git a/src/bazel.rs b/src/bazel.rs
+index 07026a8..90cc8e9 100644
+--- a/src/bazel.rs
++++ b/src/bazel.rs
+@@ -3019,7 +3019,6 @@ fn compact_target(target: &mut Target) {
+             };
+             rule.location = None;
+             rule.rule_output.clear();
+-            rule.default_setting.clear();
+             rule.DEPRECATED_public_by_default = None;
+             rule.DEPRECATED_is_skylark = None;
+             rule.definition_stack.clear();
+@@ -3724,7 +3723,7 @@ mod tests {
+             }],
+             rule_input: vec!["//foo:dep".into()],
+             rule_output: vec!["//foo:out".into()],
+-            default_setting: vec!["unused".into()],
++            default_setting: vec!["package-feature".into()],
+             skylark_environment_hash_code: Some("environment".into()),
+             instantiation_stack: vec!["foo/defs.bzl:1:1: macro".into()],
+             definition_stack: vec!["unused".into()],
+@@ -3752,7 +3751,7 @@ mod tests {
+         assert_eq!(rule.configured_rule_input.len(), 1);
+         assert!(rule.location.is_none());
+         assert!(rule.rule_output.is_empty());
+-        assert!(rule.default_setting.is_empty());
++        assert_eq!(rule.default_setting, ["package-feature"]);
+         assert!(rule.definition_stack.is_empty());
+         assert!(rule.rule_class_key.is_none());
+     }
+diff --git a/src/cache.rs b/src/cache.rs
+index fd170ff..3919f02 100644
+--- a/src/cache.rs
++++ b/src/cache.rs
+@@ -74,6 +74,10 @@ pub fn configuration_fingerprint(
+             .collect::<Vec<_>>()
+             .join(","),
+         track_deps.to_string(),
++        // The package-default feature set is now part of each rule definition digest. Keep
++        // persisted entries from earlier hash semantics out of this cache namespace, even when
++        // the Cargo package version stays the same across source revisions.
++        String::from("rulePackageDefaultFeatures=1"),
+         // Full-content entries hash git blob ids rather than file bytes; keep them apart from
+         // entries a build without this seeding wrote under the same package version.
+         String::from("sourceContent=git-blob"),
+diff --git a/src/hash.rs b/src/hash.rs
+index cecc9b7..bd6967a 100644
+--- a/src/hash.rs
++++ b/src/hash.rs
+@@ -1677,6 +1677,20 @@ fn rule_definition_digest(rule: &Rule, ignored: &HashSet<String>) -> DigestBytes
+     if let Some(environment_hash) = &rule.skylark_environment_hash_code {
+         hasher.update(environment_hash.as_bytes());
+     }
++    if !rule.default_setting.is_empty() {
++        // Build.Rule.default_setting is the set of package-level features inherited by this
++        // rule. Canonicalize the set so query serialization order does not create false changes,
++        // and length-prefix each value so distinct feature boundaries cannot collide.
++        let mut features = rule.default_setting.iter().collect::<Vec<_>>();
++        features.sort_unstable();
++        features.dedup();
++        hasher.update(b"package-default-features\0");
++        hasher.update((features.len() as u64).to_le_bytes());
++        for feature in features {
++            hasher.update((feature.len() as u64).to_le_bytes());
++            hasher.update(feature.as_bytes());
++        }
++    }
+     let skip_urls = pins_download_content(rule);
+     let repository_attributes = rule
+         .name
+@@ -1717,6 +1731,8 @@ fn rule_definition_digest(rule: &Rule, ignored: &HashSet<String>) -> DigestBytes
+ 
+ fn prehash_rule(rule: &mut Rule, ignored: &HashSet<String>) -> DigestBytes {
+     let digest = rule_definition_digest(rule, ignored);
++    rule.default_setting.clear();
++    rule.default_setting.shrink_to_fit();
+     rule.attribute
+         .retain(|attribute| attribute.name == "tags" || attribute.name == "visibility");
+     // `retain` keeps the buffer it was decoded into. An `Attribute` is several hundred bytes and a
+@@ -2781,11 +2797,115 @@ esac
+         );
+     }
+ 
++    #[test]
++    fn rule_digest_hashes_package_default_features_as_a_set_with_boundaries() {
++        let rule = |features: &[&str]| Rule {
++            name: "//:x".into(),
++            rule_class: "genrule".into(),
++            default_setting: features.iter().map(|feature| (*feature).into()).collect(),
++            ..Default::default()
++        };
++        let first = rule(&["a", "bc"]);
++        let reordered_and_duplicated = rule(&["bc", "a", "a"]);
++
++        assert_eq!(
++            rule_definition_digest(&first, &HashSet::new()),
++            rule_definition_digest(&reordered_and_duplicated, &HashSet::new())
++        );
++        assert_ne!(
++            rule_definition_digest(&first, &HashSet::new()),
++            rule_definition_digest(&rule(&["ab", "c"]), &HashSet::new())
++        );
++        assert_ne!(
++            rule_definition_digest(&first, &HashSet::new()),
++            rule_definition_digest(&rule(&["a", "changed"]), &HashSet::new())
++        );
++        assert_ne!(
++            rule_definition_digest(&rule(&["foo"]), &HashSet::new()),
++            rule_definition_digest(&rule(&["-foo"]), &HashSet::new())
++        );
++        assert_ne!(
++            rule_definition_digest(&rule(&[]), &HashSet::new()),
++            rule_definition_digest(&rule(&["a"]), &HashSet::new())
++        );
++    }
++
++    #[test]
++    fn package_default_feature_changes_reach_reverse_dependencies_in_both_hash_paths() {
++        let workspace = tempfile::tempdir().unwrap();
++        let output_base = workspace.path().join("output");
++        let options = hash_options(workspace.path());
++        let hash_graph = |feature: &str, prehash: bool| {
++            let mut targets = vec![
++                rule_target(Rule {
++                    name: "//lib:target".into(),
++                    rule_class: "filegroup".into(),
++                    default_setting: vec![feature.into()],
++                    ..Default::default()
++                }),
++                rule_target(Rule {
++                    name: "//app:dependent".into(),
++                    rule_class: "filegroup".into(),
++                    rule_input: vec!["//lib:target".into()],
++                    ..Default::default()
++                }),
++            ];
++            let mut prepared = PreparedRules::default();
++            if prehash {
++                let mut digests = Vec::new();
++                for target in &mut targets {
++                    let rule = target.rule.as_option_mut().unwrap();
++                    digests.push((
++                        rule.name.clone(),
++                        PreparedRule {
++                            definition_digest: prehash_rule(rule, &options.ignored_attributes),
++                            shared_inputs: None,
++                            loading_inputs: Vec::new(),
++                        },
++                    ));
++                }
++                prepared.extend(digests);
++            }
++            hash_targets_with_environment(
++                &options,
++                targets,
++                prepared,
++                ExternalRepoResolver {
++                    workspace: options.bazel.workspace.clone(),
++                    bazel: options.bazel.bazel.clone(),
++                    output_base: output_base.clone(),
++                    ..Default::default()
++                },
++                Some(r#"{"name":"root"}"#.to_owned()),
++            )
++            .unwrap()
++        };
++
++        for prehash in [false, true] {
++            let before = hash_graph("feature-before", prehash);
++            let after = hash_graph("feature-after", prehash);
++            assert_ne!(
++                before.hashes["//lib:target"].direct_hash, after.hashes["//lib:target"].direct_hash,
++                "prehash={prehash}"
++            );
++            assert_eq!(
++                before.hashes["//app:dependent"].direct_hash,
++                after.hashes["//app:dependent"].direct_hash,
++                "prehash={prehash}"
++            );
++            assert_ne!(
++                before.hashes["//app:dependent"].hash, after.hashes["//app:dependent"].hash,
++                "prehash={prehash}"
++            );
++        }
++    }
++
+     #[test]
+     fn streamed_rule_preprocessing_preserves_definition_digest() {
+         let mut rule = Rule {
+             name: "//:x".into(),
+             rule_class: "genrule".into(),
++            default_setting: vec!["package-feature".into()],
+             attribute: vec![
+                 Attribute {
+                     name: "tags".into(),
+diff --git a/src/partial.rs b/src/partial.rs
+index 1c5c5a7..ab7cada 100644
+--- a/src/partial.rs
++++ b/src/partial.rs
+@@ -43,7 +43,7 @@ type DigestBytes = [u8; 32];
+ 
+ /// Bumped when the recipe format or the evaluation formula changes, so an entry an older
+ /// release wrote is regenerated rather than evaluated under a formula it was not recorded for.
+-pub const RECIPE_VERSION: u32 = 2;
++pub const RECIPE_VERSION: u32 = 3;
+ 
+ // ---------------------------------------------------------------------------------------------
+ // Git tree index
