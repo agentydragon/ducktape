@@ -334,7 +334,7 @@ lean_library(
     ],
 )
 
-# Generated certificates import the proof layer on its own.
+# Compiled replay and the linked proof examples share this proof layer.
 lean_library(
     name = "corejs_certificate_proof",
     srcs = [
@@ -366,23 +366,6 @@ lean_library(
         ":corejs_link_world",
         ":corejs_structural",
     ],
-)
-
-lean_library(
-    name = "corejs_certificate_generation_support",
-    srcs = [
-        "EsmSplit/CertificateData.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteJson.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteRecords.lean",
-        "EsmSplit/CoreJS/LinkedCertificate/QuoteWrites.lean",
-    ],
-    deps = [":corejs_certificate_probe"],
-)
-
-lean_library(
-    name = "corejs_certificates",
-    srcs = ["EsmSplit/CoreJS/LinkedCertificate.lean"],
-    deps = [":corejs_certificate_generation_support"],
 )
 
 lean_library(
@@ -1099,7 +1082,7 @@ lean_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
-        ":corejs_certificates",
+        ":corejs_certificate_probe",
         ":corejs_link_world",
         ":corejs_runtime",
         ":corejs_structural",
@@ -1191,8 +1174,6 @@ lean_proof_test(
         "CoreJS.LinkedBehavior.CheckedProbePair.sameExports",
         "CoreJS.LinkedBehavior.probeObservationMismatchRefutesEquivalent",
         "CoreJS.LinkedBehaviorExamples.literalRoundTrip",
-        "CoreJS.LinkedBehaviorExamples.jsonLiteralRoundTrip",
-        "CoreJS.LinkedBehaviorExamples.sharedJsonLiteralRoundTrip",
         "CoreJS.LinkedBehaviorExamples.movedClosure",
         "CoreJS.StaticProviderBoundary.liveCells",
         "CoreJS.StaticProviderBoundary.providerPrefix",
