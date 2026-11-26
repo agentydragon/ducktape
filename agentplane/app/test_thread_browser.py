@@ -812,8 +812,21 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         await expect(
             page.get_by_text("Projected browser prefix and streamed suffix after reconnect", exact=True)
         ).to_have_count(1)
-        # The delta arrives on the live log; the body is not read again.
-        assert len(body_reads) == reads_before_disconnect
+        # A restored complete revision needs no payload stream until it grows. Reconnecting
+        # may fetch the new revision of "first", but no other saved bodies.
+        reconnect_reads = body_reads[reads_before_disconnect:]
+        assert len(reconnect_reads) <= 1
+        if reconnect_reads:
+            owner, generation = json.loads(reconnect_reads[0])["params"].values()
+            assert owner == "first"
+            assert int(generation) > 0
+        # Once following this payload, subsequent deltas arrive without further subset requests.
+        following = len(body_reads)
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" again")))
+        await expect(
+            page.get_by_text("Projected browser prefix and streamed suffix after reconnect again", exact=True)
+        ).to_have_count(1)
+        assert len(body_reads) == following
         await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reconnected.png")
 
 
