@@ -21,8 +21,8 @@ def published (s : Json) : List (String × Option String) :=
   | "ExportDefaultDeclaration" => [("default", none)]
   | _ => []
 
-private def toStmt (src : String) (ast : Json) (f : Lower.Footprint) : Stmt :=
-  { src, defs := f.defs, writes := f.writes, assigns := f.assigns, deps := f.deps, eager := f.eager, lazy := f.lazy,
+private def toStmt (ast : Json) (f : Lower.Footprint) : Stmt :=
+  { src := "", defs := f.defs, writes := f.writes, assigns := f.assigns, deps := f.deps, eager := f.eager, lazy := f.lazy,
     exports := published ast, hoisted := f.hoisted, effect := f.effect }
 
 /-- `FootprintsOfSyntax`, decided once. Inlined into the verdict, a stack sample on the large bundle found it re-run
@@ -143,8 +143,8 @@ def analyzeFootprints (asts units : Array Json) (prem : Effects.Premises) (timin
   timePhase timings "footprints" fun _ =>
     IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf asts) prem exported.toArray
 
-def bundleOfFootprints (asts : Array Json) (fps : Array Lower.Footprint) (texts : Array String) : Bundle :=
-  (asts.zip fps).toList.zipIdx.map fun ((ast, f), i) => toStmt (texts.getD i "") ast f
+def bundleOfFootprints (asts : Array Json) (fps : Array Lower.Footprint) : Bundle :=
+  (asts.zip fps).toList.map fun (ast, f) => toStmt ast f
 
 /-- The linked execution theorem checks the schedules themselves. Its planner needs only the
 bindings each unit declares, mentions, assigns and exports. Promoting lazy reads to eager in

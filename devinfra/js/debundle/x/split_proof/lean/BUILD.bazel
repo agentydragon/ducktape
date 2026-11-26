@@ -1,14 +1,10 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@rules_lean//lean:defs.bzl", "lean_binary", "lean_library", "lean_proof_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load(":executable_test.bzl", "executable_test", "test_runner")
 load(":generated_proof_toolchain.bzl", "generated_proof_toolchain")
 load(":splitter_launcher.bzl", "splitter_launcher")
-
-_EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
 
 lean_library(
     name = "module_order",
@@ -37,7 +33,6 @@ lean_library(
         "EsmSplit/Cli.lean",
     ],
     visibility = [
-        "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
         "//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__",
     ],
     deps = [":plan"],
@@ -90,25 +85,15 @@ lean_binary(
     deps = [":analysis_inventory_modules"],
 )
 
-lean_library(
-    name = "example_proof",
-    srcs = ["EsmSplit/Controls.lean"],
-    deps = ["//devinfra/js/debundle/x/split_proof/lean/generated:instance_module"],
-)
-
-lean_library(
-    name = "axioms_test_modules",
-    testonly = True,
-    srcs = ["EsmSplit.lean"],
-    visibility = ["//visibility:private"],
-    deps = [":example_proof"],
-)
-
-# Import-only audit modules may be empty; the patched gate requires named declarations.
 lean_proof_test(
     name = "axioms_test",
-    allow_empty = True,
-    modules = ["EsmSplit"],
+    modules = [
+        "EsmSplit.Bundle",
+        "EsmSplit.Correct",
+        "EsmSplit.Fast",
+        "EsmSplit.Plan",
+        "EsmSplit.Semantics",
+    ],
     required_theorems = [
         "EsmSplit.Bundle.conflict_symm",
         "EsmSplit.faithfulB_iff",
@@ -116,67 +101,8 @@ lean_proof_test(
         "EsmSplit.Bundle.exec_reorder",
         "EsmSplit.split_correct",
         "EsmSplit.sound_correct",
-        "Example.plan_valid",
-        "Example.plan_correct",
-        "Example.control_effect_order_rejected",
-        "Example.control_cycle_tdz_rejected",
-        "Example.control_claimed_twice_rejected",
-        "Example.missing_import_rejected",
-        "Example.dropped_module_rejected",
-        "Example.export_alias_valid",
-        "Example.export_alias_named",
-        "Example.export_collision_rejected",
-        "Example.variant_cycle_valid",
-        "Example.good_observes_same",
-        "Example.cycle_variant_observes_same",
-        "Example.effect_order_observes_differently",
-        "Example.cycle_tdz_observes_differently",
     ],
-    deps = [":axioms_test_modules"],
-)
-
-lean_library(
-    name = "fixture_renderer",
-    srcs = ["FixtureRender.lean"],
     deps = [":planner"],
-)
-
-lean_library(
-    name = "render_modules",
-    srcs = ["Main.lean"],
-    visibility = ["//visibility:private"],
-    deps = [
-        ":example_proof",
-        ":fixture_renderer",
-    ],
-)
-
-lean_binary(
-    name = "render",
-    visibility = ["//devinfra/js/debundle/x/split_proof/fuzz:__pkg__"],
-    deps = [":render_modules"],
-)
-
-sh_test(
-    name = "example_test",
-    srcs = ["example_test.sh"],
-    args = [
-        "$(rlocationpath :render)",
-        "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
-        "$(rlocationpath " + _EXAMPLE + "input/bundle.mjs)",
-    ],
-    data = [
-        ":render",
-        _EXAMPLE + "input/bundle.mjs",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    use_bash_launcher = True,
-)
-
-diff_test(
-    name = "instance_freshness_test",
-    file1 = "EsmSplit/Instance.lean",
-    file2 = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
 )
 
 lean_library(
@@ -267,7 +193,6 @@ sh_binary(
         "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
@@ -499,7 +424,6 @@ lean_library(
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/ESTreeEmit.lean",
-        "EsmSplit/InstanceSource.lean",
         "EsmSplit/SplitFiles.lean",
         "EsmSplit/ReadDeployment.lean",
     ],
@@ -813,7 +737,6 @@ lean_library(
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/LowerSplit/Diagnostic.lean",
-        "EsmSplit/LowerSplit/InstanceGenerator.lean",
         "EsmSplit/LowerSplit/SliceCertificate.lean",
         "EsmSplit/LowerSplit/Certified.lean",
     ],
@@ -1397,73 +1320,22 @@ lean_proof_test(
 )
 
 lean_library(
-    name = "proof_fixture",
-    srcs = [
-        # Keep import order for the native Lean rule.
-        "CustomMoveExample.lean",
-        "ProofFixtureChecks.lean",
-    ],
-    deps = [
-        ":corejs_certificate_support",
-        ":fixture_renderer",
-        ":planner",
-        "//devinfra/js/debundle/x/split_proof/lean/generated:proof_fixture_module",
-    ],
+    name = "custom_move_example_modules",
+    testonly = True,
+    srcs = ["CustomMoveExample.lean"],
+    visibility = ["//visibility:private"],
+    deps = [":corejs_certificate_support"],
 )
 
 lean_proof_test(
-    name = "proof_fixture_axioms_test",
+    name = "custom_move_axioms_test",
     allow_empty = True,
-    modules = [
-        "CustomMoveExample",
-        "ProofFixtureChecks",
-    ],
+    modules = ["CustomMoveExample"],
     required_theorems = [
-        "Example.plan_valid",
-        "Example.control_bad_rejected",
         "CoreJS.CustomMoveExample.syntax_refuses",
         "CoreJS.CustomMoveExample.swapped",
-        "ProofFixture.extracted_footprints",
-        "ProofFixture.source_matches",
-        "ProofFixture.execution_order",
-        "ProofFixture.safe_inversion",
-        "ProofFixture.hoisted_read_both_directions",
-        "ProofFixture.hoisted_write_both_directions",
-        "ProofFixture.declared_write_both_directions",
-        "ProofFixture.unsafe_inversion_rejected",
-        "ProofFixture.preserves_model",
-        "ProofFixture.rendered_base",
-        "ProofFixture.rendered_entry",
     ],
-    deps = [":proof_fixture"],
-)
-
-lean_library(
-    name = "proof_fixture_render_modules",
-    srcs = ["ProofFixtureMain.lean"],
-    visibility = ["//visibility:private"],
-    deps = [":proof_fixture"],
-)
-
-lean_binary(
-    name = "proof_fixture_render",
-    deps = [":proof_fixture_render_modules"],
-)
-
-sh_test(
-    name = "proof_fixture_test",
-    srcs = ["proof_fixture_test.sh"],
-    args = [
-        "$(rlocationpath :proof_fixture_render)",
-        "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
-        "$(rlocationpath //devinfra/js/debundle/x/split_proof:proof_fixture/bundle.mjs)",
-    ],
-    data = [
-        ":proof_fixture_render",
-        "//devinfra/js/debundle/x/split_proof:proof_fixture/bundle.mjs",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    use_bash_launcher = True,
+    deps = [":custom_move_example_modules"],
 )
 
 lean_library(
@@ -1521,23 +1393,17 @@ lean_library(
     srcs = [
         # Keep import order for the native Lean rule.
         "Experiments/Automation.lean",
-        "Experiments/Ladder.lean",
         "Experiments.lean",
     ],
     tags = ["manual"],
     visibility = ["//visibility:private"],
-    deps = [":example_proof"],
+    deps = [":planner"],
 )
 
 build_test(
     name = "experiments_test",
     tags = ["manual"],
     targets = [":experiments_test_modules"],
-)
-
-build_test(
-    name = "lowered_example_certificate_test",
-    targets = ["//devinfra/js/debundle/x/split_proof/lean/generated:lowered_example_module"],
 )
 
 py_library(

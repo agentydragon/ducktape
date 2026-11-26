@@ -207,7 +207,7 @@ private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : Syst
   let units := Effects.footprintUnits asts
   let B ← if declarations.isSome then do
       let (fps, _) ← analyzeFootprints asts units {} timings
-      pure (bundleOfFootprints asts fps #[])
+      pure (bundleOfFootprints asts fps)
     else timePhase timings "layout_scan" fun _ => IO.lazyPure fun _ => linkedLayoutBundle asts units
   let S ← IO.ofExcept (chunk.spec asts.size)
   for name in S.entry :: S.modules.map Prod.fst do
