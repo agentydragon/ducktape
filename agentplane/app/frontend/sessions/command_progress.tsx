@@ -234,6 +234,10 @@ function CommandDetails({
     // Allow the pointer to cross the gap from the status to its popover.
     timer.current = window.setTimeout(() => setMode((open) => (open === "hover" ? null : open)), 250);
   };
+  const dismiss = () => {
+    window.clearTimeout(timer.current);
+    setMode(null);
+  };
   const activate = () => {
     window.clearTimeout(timer.current);
     setMode((open) => (open === "activated" ? null : "activated"));
@@ -245,10 +249,7 @@ function CommandDetails({
       shadow="md"
       width="min(22rem, calc(100vw - 2rem))"
       opened={mode !== null}
-      onDismiss={() => {
-        window.clearTimeout(timer.current);
-        setMode(null);
-      }}
+      onDismiss={dismiss}
       trapFocus={mode === "activated"}
       returnFocus={mode === "activated"}
     >
@@ -260,6 +261,9 @@ function CommandDetails({
           onPointerEnter={preview}
           onPointerLeave={leave}
           onClick={activate}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") dismiss();
+          }}
         >
           {summary}
         </button>

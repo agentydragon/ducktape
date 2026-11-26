@@ -1874,6 +1874,10 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     await page.reload()
     await open_retained_reason()
     await page.screenshot(path=undeclared_outputs_dir() / f"command-{outcome}-retained.png")
+    # Escape can reach the trigger before the popover takes focus.
+    await details_button.press("Escape")
+    await expect(details).to_have_count(0)
+    await expect(details_button).to_be_focused()
     assert source.runner.commands.empty()
 
 
