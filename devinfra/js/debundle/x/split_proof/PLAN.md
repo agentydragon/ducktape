@@ -4,6 +4,8 @@ The goal is to turn the production bundle in `gaffer-private` into runnable, rea
 
 ## Acceptance contract
 
+Build the splitter with a proof about its **constructor**: for every original program and authored spec that meet a supported rule's preconditions, applying the rule produces the requested placement and preserves the requested observations. Check the proof when building the splitter. A split run checks the preconditions on its particular input and applies the rule. Checking two finished programs for equivalence can validate that one split; it does not discharge this construction obligation.
+
 Given the original module graph and a proposed placement, Lean certifies the output module graph or refuses. A certification states the [target theorem](#target): each source unit sits where the placement puts it, the entry exports the same public names bound to the same live cells (including the effects of generated imports and exports), and in every world that satisfies the listed host premises, each successful final state of either program is a successful final state of the other. When the split keeps the original order, the verdict also reports that every modeled ending matches, including throws. Applying the result to JavaScript relies on the [trusted parts](#trusted-and-tested).
 
 The production acceptance run uses the private bundle, its dependencies and the reviewed placement. Record the certified guarantee for the complete split, which authored boundaries it realizes, and the result of running the emitted application through its browser smoke test. Until it certifies, record the first reproducible blocker on that input. Keep the bundle, selectors and run artifacts in the private repository.
@@ -167,7 +169,16 @@ split request X S = .ok (Y, A) →
 
 `X` is the lowering of the original module graph. The lowering of the printed output must match the constructed `Y`. [`NormalEquivalent`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) compares successful final states in both directions; the all-outcomes guarantee also compares abrupt endings. [`SameExports`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) states the linking guarantee. The [assembled deployment proof](lean/EsmSplit/CoreJS/JointStatic.lean) also carries [`Places`](lean/EsmSplit/CoreJS/DeploymentPlacement.lean) over the resolved assignment of executable units. The unified interface still needs to derive that assignment from `S`.
 
-The planner may use unproved heuristics to propose operations. The compiled splitter checks their preconditions and constructs `Y` by applying them. Prove once, at build time, that the accepted operations compose to give the theorem above. This needs no decision procedure for equivalence of arbitrary programs and no Lean compiler at split time. When writing JavaScript, stage and reparse the files and check that their lowering is the `Y` the theorem covers before publishing them.
+The planner may use unproved heuristics to propose operations. Write `Contract` for the conjunction above. The construction obligation is (schematically):
+
+```lean
+∀ request X S ops A, admit request X S = .ok (ops, A) →
+  Contract request X S (applyOps X ops) A
+```
+
+The compiled splitter checks the proposed operations' preconditions and applies them. Prove once, when **building the splitter**, that the accepted operations compose to give this result. For example, the proof for an order-preserving rule must derive preservation of the linked execution order from the rule and its preconditions. Assuming that a comparison of the two finished schedules succeeds would only prove the comparison sound.
+
+There is a separate check at the printer boundary. The proof above relates `X` to the constructed `Y`. The production CLI stages the printed files, reparses them, and checks that their lowering matches **that same `Y`** before publication. This detects, for example, a printer that emits the wrong export name. It does not establish semantic equivalence between `X` and an arbitrary reparsed program. With the current unverified printer this check belongs at split time; no Lean compiler or new equivalence proof is needed there. See [Trusted and tested](#trusted-and-tested) for the assumptions behind the JavaScript claim.
 
 For example, if the spec says to move function `F` to module `M`, check that its free references still resolve to the right live bindings. If a required check fails, the target CLI exits with status 1, identifies the requested move and the unproved condition, and leaves any existing output untouched. It must not silently omit the move or substitute a weaker guarantee. Refusal means the splitter could not certify this request; it need not prove that the requested move changes behavior.
 
