@@ -495,7 +495,7 @@ want it stated as a target yet. The shape:
 Reasons given: no apiserver load from Agentplane's traffic, indexing and queries over records, and
 no hard Kubernetes dependency. The operator's bar: move first where today's straddling ownership is
 "obviously wrong", suspecting Identity, WorkloadCredentials and Sandboxes; Identity they called "a
-pretty clear case" ([agent teardown](agent_teardown.md)). `docs/principles.md` ("Kubernetes is a
+pretty clear case" ([Identity ownership](identity_ownership.md)). `docs/principles.md` ("Kubernetes is a
 shared baseline") predates this and stays until a direction is chosen.
 
 ## Assumed by a lane and never confirmed

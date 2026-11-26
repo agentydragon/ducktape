@@ -1726,7 +1726,7 @@ store ([D4](architecture_overview.md#four-directions), O4).
 **Decision.** Which payoff warrants investment: cheaper tests, environments outside Kubernetes,
 or owning the Identity lifecycle through an Agentplane API? The operator named Identity again on
 Nov 22 as a candidate if the track is selected. On Nov 26, working through
-[agent teardown](#agent_teardown_design--a-teardown-sequence-for-an-agent), the operator called
+[Identity ownership](#identity_ownership_design--who-owns-an-identity-and-what-binds-to-it), the operator called
 Identity "a pretty clear case": its delete and Session-Sandbox invariants span Sessions, which
 must stay in a database. A proposed test for other kinds, not yet confirmed by the operator: move one when an invariant
 spans it and database-held state; keep it in Kubernetes when it is mainly desired state for
@@ -2233,8 +2233,8 @@ listed three Sessions as blockers even though all three were already archived:
 `d76abba7-10d1-4f77-9d40-3a828c2f75c7`.
 
 The operator's proposed behavior is to prevent a Session from continuing while archived and
-release its bindings, including its claim on the Identity. The Identity half is step 1 of
-[agent teardown](#agent_teardown_design--a-teardown-sequence-for-an-agent). Decide which bindings archive
+release its bindings, including its claim on the Identity. The Identity half is the teardown's first step in
+[Identity ownership](#identity_ownership_design--who-owns-an-identity-and-what-binds-to-it). Decide which bindings archive
 releases, how cleanup recognizes other Sessions that still use a shared Identity, and what Identity
 an explicit unarchive would require if the original has since been deleted. The design should
 preserve History and cover Sessions already archived under the current behavior.
@@ -3549,7 +3549,7 @@ Cross-Identity inbox target semantics and Identity `CreateSession` remain separa
 flowchart LR
     STANDING_WORKLOAD_IDENTITY[Standing workloads run as Identities; proxy observation remains]
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
-    AGENT_TEARDOWN_DESIGN[Decision: agent teardown sequence and reference rule]
+    IDENTITY_OWNERSHIP_DESIGN[Decision: Identity binding, store, delete rule and agent teardown]
     SESSION_SUBAGENT_DELEGATION[Design: a Session creates and messages a sub-Session]
     SESSION_ACCESS_GROUPING_DESIGN --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox target, grant and migration]
     SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
@@ -3570,17 +3570,20 @@ not a claim that rollout is blocked or that the source migration remains unfinis
 existing staging decision log records the expected Identity decision, or the operator records an
 explicit waiver.
 
-### `AGENT_TEARDOWN_DESIGN` — a teardown sequence for an agent
+### `IDENTITY_OWNERSHIP_DESIGN` — who owns an Identity and what binds to it
 
-**Decision; operator request, 2026-11-26.** The operator saw the app offer an Identity delete the
-Policy Controller refused, and asked for a sane teardown sequence instead of point fixes. [The
-plan](agent_teardown.md) inventories what an agent leaves, compares the three disagreeing reference
-checks, proposes Sessions → Sandbox → Identity, and compares a published refusal (B), an in-use
-finalizer (A) and an Agentplane-owned record (C). Operator direction, 2026-11-26: the Policy
-Controller should eventually refuse while a Sandbox or Session names the Identity. Shares the
-Session-release question with [`SESSION_ARCHIVE_CONTRACT`](#session_archive_contract--what-archiving-a-session-means)
-and the store question with [`KUBERNETES_DECOUPLING_DESIGN`](#kubernetes_decoupling_design--how-far-to-decouple-from-kubernetes).
-**Exit:** the operator decides the plan's four questions; follow-ups become nodes.
+**Decision; operator request, 2026-11-26.** Started from an Identity delete the app offered and the
+Policy Controller refused; the operator asked for a sane teardown sequence, which widened into Identity
+ownership. [The plan](identity_ownership.md) covers four linked questions: how Sessions and Sandboxes
+bind to an Identity (operator: a Session and every Sandbox attached to it share one Identity) and how
+a rebind moves it; where the Identity record lives (operator: an Agentplane-owned record is "a pretty
+clear case"); when an Identity may be deleted (operator: eventually the Policy Controller refuses while
+a Sandbox or Session names it) and a controller-published refusal now; and the agent teardown order.
+Shares the Session-release question with
+[`SESSION_ARCHIVE_CONTRACT`](#session_archive_contract--what-archiving-a-session-means) and the store
+question with
+[`KUBERNETES_DECOUPLING_DESIGN`](#kubernetes_decoupling_design--how-far-to-decouple-from-kubernetes).
+**Exit:** the operator decides the plan's five questions; follow-ups become nodes.
 
 ### `IDENTITY_SYSTEM_TESTS` — finish automated identity-boundary acceptance
 
