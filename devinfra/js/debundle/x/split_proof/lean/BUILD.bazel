@@ -2024,3 +2024,24 @@ lean_proof_test(
     ],
     deps = [":literal_reorder_construct"],
 )
+
+lean_library(
+    name = "lexical_function_source",
+    srcs = ["EsmSplit/CoreJS/LexicalFunctionSource.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "lexical_function_source_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.LexicalFunctionSource"],
+    required_theorems = [
+        "CoreJS.LexicalFunctionSource.execute_let_undefined",
+        "CoreJS.LexicalFunctionSource.Checked.link",
+        "CoreJS.LexicalFunctionSource.Checked.lexical_uninitialized",
+        "CoreJS.LexicalFunctionSource.check",
+        "CoreJS.LexicalFunctionSource.sourceLink",
+        "CoreJS.LexicalFunctionSource.lexical_uninitialized",
+    ],
+    deps = [":lexical_function_source"],
+)
