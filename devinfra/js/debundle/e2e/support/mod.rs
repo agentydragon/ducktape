@@ -42,8 +42,8 @@ pub use fixture_spec::{
     composed_global_access_fixture, declared_source_unit, import_priority_fixture, logical_module,
     logical_module_with_anon, logical_module_with_anon_alpha, logical_module_with_anon_comment,
     logical_module_with_binding_groups, logical_module_with_comment, member_source_unit,
-    mixed_selector_failure_fixture, opaque_trace_cycle_fixture, source_match_module_yaml,
-    source_match_selector, source_sha256, unassigned_mode_catchall_file,
+    mixed_selector_failure_fixture, native_operation_input, opaque_trace_cycle_fixture,
+    source_match_module_yaml, source_match_selector, source_sha256, unassigned_mode_catchall_file,
     unassigned_mode_coarse_atomic_groups, unassigned_mode_inline, unassigned_mode_per_atomic_group,
 };
 pub use fixture_spec::{
