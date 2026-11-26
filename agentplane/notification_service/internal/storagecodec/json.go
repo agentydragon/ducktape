@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 )
 
 func Decode(data []byte, value any) error {
@@ -13,7 +14,10 @@ func Decode(data []byte, value any) error {
 	if err := decoder.Decode(value); err != nil {
 		return err
 	}
-	if decoder.More() {
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		if err != nil {
+			return err
+		}
 		return errors.New("trailing data after the JSON value")
 	}
 	return nil
