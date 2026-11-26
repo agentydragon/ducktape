@@ -52,6 +52,7 @@ go_binary(
 go_test(
     name = "config_test",
     srcs = [
+        "compact_history_test.go",
         "config_test.go",
         "settle_history_test.go",
     ],

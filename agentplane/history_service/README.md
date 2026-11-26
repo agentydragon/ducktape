@@ -198,40 +198,109 @@ flag is disabled. Existing completion-based settlement applies independently to 
 `ingress.compact_execution_evidence: true` separately packs BoundaryRecord and ExecutionProgress
 events. It defaults to false so this reader support can roll out to every History replica first;
 older versions cannot read those block kinds. Keep the gate off during mixed-version deployment.
-Historical compaction includes them only with `--include-execution-evidence`, after all readers have
-been updated. Disabling the gate does not unpack existing blocks. The [read contract](api/history/README.md)
-defines pagination, replay, atomicity and rollout requirements.
+The online historical repack covers every concrete event kind using the configured per-kind block
+profile, so run it only after every reader has the new block support. Disabling the gate does not
+unpack existing blocks. The [read contract](api/history/README.md) defines pagination, replay,
+atomicity and rollout requirements.
 
 This packs retained events; it does not share bodies across raw history and projection tables or
 backfill old Sessions. Ordinary insertion/deletion still generates WAL.
 
-### Historical packing
+### Online historical repack and legacy inventory
 
-The same service image supports `history-service compact-history --session UUID --dry-run` and
-`--apply`, or `--all` instead of `--session`. Both scope and mode are required. It needs only
-`AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`; it does not run migrations or call harnesses/providers.
-The ingress flag independently controls new writes.
+Deploy reader support to every History replica before starting an apply run.
+The maintenance command loads the service YAML named by
+`AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` plus `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`. It uses
+the same `ingress.event_block_profile` and `ingress.event_block_target_bytes_by_kind` settings as
+the writer, including when live event-block writes are disabled. It does not invoke harnesses or
+providers.
 
-Each Session's opening watermark bounds its pass. Apply commits one block per transaction under
-the Session writer lock, with a 30-second deadline, a 1-second lock timeout and a 50 ms pause between
-blocks to pace WAL. If the Session writer lock times out, `--all --apply` logs the Session ID,
-continues with the next Session, and reports `skipped_busy_sessions` on completion. Rerun the
-pass or target the skipped Session later. A single-Session apply reports the timeout as an error. Each moved event is read through the production block reader and compared with
-its original protobuf before commit. Event identities, projection state and acknowledged watermarks
-stay unchanged, so there are no settlement/removal notifications or projection write leases.
+Preview one Session as a canary before applying it:
 
-Existing blocks remain intact and bound each candidate span, preserving the per-kind non-overlap
-invariant. By default the command packs native frames and streamed deltas; pass
-`--include-execution-evidence` to also pack BoundaryRecord and ExecutionProgress events after the
-reader rollout. Ordinary entries inside an existing block's span (possible after flag toggles) stay
-ordinary and are reported as `skipped_inside_blocks`. Oversized entries and small tails also stay ordinary.
-Dry runs are read-only and report logical protobuf bytes and encoded block bytes, excluding physical
-row/index costs. Rerunning is safe; cancellation preserves already committed blocks.
+```sh
+AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE=/etc/agentplane-history/config.yaml \
+AGENTPLANE_HISTORY_SERVICE_DATABASE_URL="$HISTORY_DATABASE_URL" \
+history-service compact-history --session "$SESSION_ID" --dry-run
+```
 
-Use [the manual Job template](ops/compact-history-job.yaml) with the deployed image containing this
-command. Preview one Session, apply it, then expand to all Sessions. Monitor PostgreSQL free space,
-WAL archiving and replication lag during the apply. Ordinary vacuum makes freed space reusable;
-packing does not itself shrink relation files. Disabling ingress packing keeps all blocks readable.
+The command requires exactly one scope (`--session UUID` or `--all`) and one mode (`--dry-run`
+or `--apply`). Dry-run uses a read-only repeatable-read snapshot and writes no journal or progress
+state. It simulates the configured packer over ordinary rows and decoded legacy and versioned
+blocks in cursor order. Its totals include source format counts, candidate block counts, logical
+event bytes and estimated packed bytes.
+
+Apply holds the opening `recorded_position`, each Session cursor watermark, and run cursors in
+memory only. It enumerates `session_history` directly, including inactive Sessions, in pages of 100. Candidate decoding and compression happen outside the append lock. A short transaction then
+acquires the Session row with a 250 ms lock timeout and
+a 5 second transaction budget (`--batch-transaction-budget`), revalidates the exact source and
+settlement/removal state, and atomically replaces one bounded candidate (at most 256 frames and
+8 MiB decoded). PostgreSQL `transaction_timeout` and the transaction context enforce the budget;
+an expired batch rolls back and retries the same candidate up to three times. Existing blocks are
+unpacked in bounded units before their frames are merged with ordinary rows and repacked, which
+handles sparse cursors, interleaved kinds, partial block boundaries and mixed formats without
+nested block spans. The unpack transaction compares raw block metadata and bytes to its prepared
+candidate and inserts already-validated raw frames without decoding the source payload under lock.
+
+Each batch logs `lock_wait`, `lock_wait_budget`, `lock_hold`, `budget` and `outcome` separately.
+Repacker database connections use `application_name=history-repack` for canary observation. A
+synthetic integration canary stalls one unpack transaction for 750 ms with a 2 second budget and
+verifies that a concurrent append waits only for that transaction. It records the measured wait,
+hold and append wait in the test output; this PR did not run a live apply canary.
+
+The database stores no repack run or per-Session progress records. Each bounded batch commits its
+event-row/block replacement atomically. If the process stops, the next invocation rescans Sessions
+from the beginning; previously committed blocks and ordinary rows remain valid inputs, so the scan
+can safely repeat work. A rescan may rewrite blocks committed by an earlier process and therefore
+generate additional WAL. Within one process, Session watermarks and cursors advance in memory.
+Busy Sessions and batches that exhaust their budget are deferred while the command scans the rest,
+then retried in three bounded sweeps. If contention remains, the command exits with a busy or budget
+error; a later invocation starts a fresh safe scan. Avoid overlapping all-session runs because they
+can increase lock contention and repeat work, even though each batch revalidates its source under
+the Session lock.
+
+The default processing limit is 1 MiB of source payload per second. Use
+`--bytes-per-second N` to tune it. `--pause-file PATH` pauses before the next batch while the file
+exists and resumes when it is removed. A live control file can also be set with `--guard-file PATH`:
+
+```json
+{ "updated_at": "2026-11-26T12:00:00Z", "replica_lag_bytes": 0, "free_bytes": 10737418240, "pause": false }
+```
+
+Missing, malformed or stale guard data pauses the job. Set
+`--max-replica-lag-bytes N` and `--min-free-bytes N` to pause at those thresholds; both require a
+guard file. Refresh `updated_at` from the operator's existing replica-lag and free-space monitoring.
+Keep a pause file or set `pause: true` when the source metrics are unavailable.
+
+After the canary apply, inspect aggregate inventory:
+
+```sh
+AGENTPLANE_HISTORY_SERVICE_DATABASE_URL="$HISTORY_DATABASE_URL" history-service inventory-history
+```
+
+The JSON reports ordinary row counts and bytes plus total, versioned, legacy and invalid block
+counts. Legacy cleanup is ready only when `legacy_blocks` and `invalid_blocks` are both zero.
+Invalid blocks are counted separately instead of being mistaken for legacy gzip.
+Run another all-session dry-run, then schedule `compact-history --all --apply` in bounded windows.
+Use [the manual Job template](ops/compact-history-job.yaml) and the
+[inventory Job template](ops/inventory-history-job.yaml) with the deployed image. Watch database
+free space, WAL archiving and replication lag throughout. Ordinary vacuum makes freed space
+reusable; repacking does not shrink relation files.
+
+For a one-Session canary on PostgreSQL 18.1, sample the repacker backends while the command keeps
+its connections open:
+
+```sql
+SELECT pid, (pg_stat_get_backend_wal(pid)).wal_bytes AS wal_bytes
+FROM pg_stat_activity
+WHERE application_name = 'history-repack'
+ORDER BY pid;
+```
+
+Record the initial and final `wal_bytes` for every repacker PID, allow backend statistics to flush,
+and capture the final sample before those connections close. Sum per-PID deltas for committed work.
+If a PID appears after the initial sample or disappears before the final sample, mark WAL attribution
+incomplete rather than substituting a cluster LSN delta. Cluster WAL and replica lag remain pressure
+signals. Agentplane does not need to be quiesced for this one-Session measurement.
 
 ### Live ingress packing probe
 

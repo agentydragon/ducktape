@@ -485,6 +485,22 @@ func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 func TestCompactHistoryAllContinuesPastLockedSession(t *testing.T) {
 	dsn := integrationDatabase.Clone(t)
 	t.Setenv(settingPrefix+"DATABASE_URL", dsn)
+	settings := filepath.Join(t.TempDir(), "history.yaml")
+	configText := strings.Join([]string{
+		"rpc:",
+		"  listen_address: 0.0.0.0:8080",
+		"  tls: {cert_file: /test/history.crt, key_file: /test/history.key}",
+		"  auth:",
+		"    - mode: spiffe",
+		"      ca_file: /test/workload-ca.crt",
+		"policy_namespace: test-policies",
+		"ingress:",
+		"  writer_namespaces: [test-agentplane]",
+	}, "\n")
+	if err := os.WriteFile(settings, []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(settingPrefix+"CONFIG_FILE", settings)
 	db := postgres.Open(t, dsn)
 	store := storage.NewStore(db, storage.Options{})
 	busy, available := uuid.New(), uuid.New()
@@ -510,23 +526,23 @@ func TestCompactHistoryAllContinuesPastLockedSession(t *testing.T) {
 	if _, err := tx.ExecContext(t.Context(), "SELECT id FROM session_history WHERE id=$1 FOR UPDATE", busy); err != nil {
 		t.Fatal(err)
 	}
-	if err := runCompactHistory(t.Context(), []string{"--all", "--apply"}); err != nil {
-		t.Fatal(err)
+	if err := runCompactHistory(t.Context(), []string{"--all", "--apply", "--bytes-per-second", "1073741824"}); !errors.Is(err, storage.ErrCompactionSessionBusy) {
+		t.Fatalf("all-session run should report the still-busy checkpoint after continuing: %v", err)
 	}
 	blocks := func(id uuid.UUID) int {
 		return postgres.Count(t, db, "SELECT count(*) FROM session_event_block WHERE session_id=$1", id)
 	}
-	if blocks(busy) != 0 || blocks(available) != 1 {
+	if blocks(busy) != 0 || blocks(available) == 0 {
 		t.Fatal("all-session pass should have packed only the unlocked Session")
 	}
-	one := []string{"--session", busy.String(), "--apply"}
+	one := []string{"--session", busy.String(), "--apply", "--bytes-per-second", "1073741824"}
 	if err := runCompactHistory(t.Context(), one); !errors.Is(err, storage.ErrCompactionSessionBusy) {
 		t.Fatalf("single-session lock timeout: %v", err)
 	}
 	if err := tx.Rollback(); err != nil {
 		t.Fatal(err)
 	}
-	if err := runCompactHistory(t.Context(), one); err != nil || blocks(busy) != 1 {
+	if err := runCompactHistory(t.Context(), one); err != nil || blocks(busy) == 0 {
 		t.Fatalf("retry after releasing Session lock: %v", err)
 	}
 }

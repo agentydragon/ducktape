@@ -32,6 +32,9 @@ type Packer struct {
 	encoder *zstd.Encoder
 }
 
+// Profile returns the immutable writer policy used for packing and checkpoint identity.
+func (p *Packer) Profile() Profile { return p.profile }
+
 func NewPacker(p Profile) (*Packer, error) {
 	if p.TargetBytes < 1 || p.TargetBytes > MaxBytes || p.TargetEntries < 1 || p.TargetEntries > MaxEntries || p.Level < 1 || p.Level > 4 {
 		return nil, fmt.Errorf("invalid event block profile: %+v", p)
