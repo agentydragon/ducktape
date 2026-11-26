@@ -16,8 +16,8 @@ const out = path.join(root, "out");
 writeFileSync(source, fixture.source);
 writeFileSync(spec, JSON.stringify(fixture.spec));
 
-function probe(placement) {
-  const request = [{ kind: "namedConstructor", input: { source: dump(fixture.source), spec: placement } }];
+function probe(kind, input) {
+  const request = [{ kind, input }];
   const result = spawnSync(process.env.LINKED_INPUT_CHECKER, [], {
     encoding: "utf8",
     input: JSON.stringify(request) + "\n",
@@ -27,6 +27,10 @@ function probe(placement) {
   if (result.error) throw result.error;
   assert.equal(result.status, 0, result.stderr);
   return JSON.parse(result.stdout)[0];
+}
+
+function namedProbe(placement, sourceText = fixture.source) {
+  return probe("namedConstructor", { source: dump(sourceText), spec: placement });
 }
 
 function run(placement, dest) {
@@ -45,7 +49,7 @@ function run(placement, dest) {
   }
 }
 
-const constructor = probe(fixture.spec);
+const constructor = namedProbe(fixture.spec);
 const production = run(fixture.spec, out);
 const exactStrategy = production.status === "certified" && production.strategy === "compiled-constructor";
 const outcome = exactStrategy ? "green" : production.status === "blocked" ? "blocked" : "refused";
@@ -76,7 +80,7 @@ if (exactStrategy) {
 const wrongOwner = structuredClone(fixture.spec);
 wrongOwner.modules["provider0.mjs"] = wrongOwner.modules["provider0.mjs"].filter((id) => id !== "#0");
 wrongOwner.modules["consumer0.mjs"].unshift("#0");
-const wrongProbe = probe(wrongOwner);
+const wrongProbe = namedProbe(wrongOwner);
 const wrongOutput = path.join(root, "wrong-owner");
 const wrongProduction = run(wrongOwner, wrongOutput);
 assert(wrongProbe.error, "constructor accepted the wrong owner");
@@ -93,5 +97,47 @@ console.log(
     outcome,
     wrongOwner: { constructor: wrongProbe, production: wrongProduction },
     wrongCell,
+  })
+);
+
+// Reuse the sparse_checked_artifact_test.mjs sample: the export is not terminal.
+// #2 is the actual result declaration; #1 does not execute or allocate a region.
+const sparseSource = "const seed = 42;\nexport { seed as exposed };\nconst result = seed;\n";
+const sparseSpec = {
+  entry: "entry.mjs",
+  modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
+  order: ["worker.mjs"],
+  sequential: true,
+};
+const shape = probe("singletonSourceShape", { source: dump(sparseSource), entry: sparseSpec.entry });
+assert.deepEqual(shape.output, {
+  entry: "entry.mjs",
+  modules: [
+    {
+      name: "entry.mjs",
+      body: [
+        [0, ["seed"]],
+        [2, ["result"]],
+      ],
+      exports: [["exposed", "seed"]],
+    },
+  ],
+});
+const sparseConstructor = namedProbe(sparseSpec, sparseSource);
+assert.match(sparseConstructor.error, /source position 1 has no executable unit/);
+const sparseSourceFile = path.join(root, "sparse-source.mjs");
+const sparseSpecFile = path.join(root, "sparse-spec.json");
+const sparseOut = path.join(root, "sparse-out");
+writeFileSync(sparseSourceFile, sparseSource);
+writeFileSync(sparseSpecFile, JSON.stringify(sparseSpec));
+const sparse = split({ source: sparseSourceFile, spec: sparseSpecFile, out: sparseOut, require: "all-outcomes" });
+assert.equal(sparse.status, "refused", sparse.log);
+assert(!existsSync(sparseOut), "a refused sparse split must not publish output");
+console.log(
+  JSON.stringify({
+    fixture: "sparse-interior-export",
+    shape: shape.output,
+    constructor: sparseConstructor,
+    production: { status: sparse.status, scope: sparse.scope, reason: sparse.reason },
   })
 );
