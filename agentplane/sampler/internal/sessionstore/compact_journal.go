@@ -614,6 +614,12 @@ func (s *Store) applyJournalRepack(ctx context.Context, sessionID string, previo
 	return hold, err
 }
 
+// Batch verification and replacement use the same inclusive cursor range.
+const (
+	repackEventRange = `session_id=$1 AND sequence BETWEEN $2 AND $3`
+	repackBlockRange = `session_id=$1 AND first_sequence<=$3 AND last_sequence>=$2`
+)
+
 func compareJournalSources(ctx context.Context, tx *sql.Tx, sessionID string, state journalRepackState, expected []repackStorage) error {
 	first, last := state.through+1, state.opening
 	if len(expected) > 0 {
@@ -621,10 +627,10 @@ func compareJournalSources(ctx context.Context, tx *sql.Tx, sessionID string, st
 	}
 	rows, err := tx.QueryContext(ctx, `
 		SELECT sequence,sequence,entry,FALSE FROM sampler_event
-		WHERE session_id=$1 AND sequence BETWEEN $2 AND $3
+		WHERE `+repackEventRange+`
 		UNION ALL
 		SELECT first_sequence,last_sequence,payload,TRUE FROM sampler_event_block
-		WHERE session_id=$1 AND first_sequence<=$3 AND last_sequence > $2
+		WHERE `+repackBlockRange+`
 		ORDER BY 1`, sessionID, first, last)
 	if err != nil {
 		return err
@@ -678,7 +684,7 @@ func replaceJournalStorage(ctx context.Context, tx *sql.Tx, sessionID string, so
 				rawCount++
 			}
 		}
-		deleted, err := tx.ExecContext(ctx, `DELETE FROM sampler_event WHERE session_id=$1 AND sequence BETWEEN $2 AND $3`, sessionID, first, last)
+		deleted, err := tx.ExecContext(ctx, `DELETE FROM sampler_event WHERE `+repackEventRange, sessionID, first, last)
 		if err != nil {
 			return err
 		}
@@ -689,7 +695,7 @@ func replaceJournalStorage(ctx context.Context, tx *sql.Tx, sessionID string, so
 		if count != rawCount {
 			return fmt.Errorf("deleted %d standalone source rows, expected %d", count, rawCount)
 		}
-		deleted, err = tx.ExecContext(ctx, `DELETE FROM sampler_event_block WHERE session_id=$1 AND first_sequence<=$3 AND last_sequence >= $2`, sessionID, first, last)
+		deleted, err = tx.ExecContext(ctx, `DELETE FROM sampler_event_block WHERE `+repackBlockRange, sessionID, first, last)
 		if err != nil {
 			return err
 		}
