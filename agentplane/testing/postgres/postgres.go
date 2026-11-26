@@ -175,7 +175,11 @@ func Open(t testing.TB, dsn string) *sql.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close PostgreSQL connection: %v", err)
+		}
+	})
 	return db
 }
 

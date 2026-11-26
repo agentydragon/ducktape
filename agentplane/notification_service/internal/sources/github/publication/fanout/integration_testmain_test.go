@@ -14,7 +14,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 )
 
 var fanoutIntegrationDatabase *postgres.Database

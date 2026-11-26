@@ -2,7 +2,6 @@ package runtimeproxy
 
 import (
 	"context"
-	"database/sql"
 	"net"
 	"testing"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -123,11 +123,7 @@ func (r *queueHarnessHost) SubmitInput(ctx context.Context, request *harnesshost
 func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := postgres.Open(t, integrationDatabase.URL)
 	const sessionID = "c31d2498-a1bf-40cd-8262-c54fcf3289ce"
 	const commandID = "queue-runner-command"
 	f := newSandboxFixture(t)

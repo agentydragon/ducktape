@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -291,11 +290,7 @@ func TestTheReadDatabaseRefusesWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("postgres", url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := postgres.Open(t, url)
 	// A write that would change no rows is refused all the same.
 	_, err = db.ExecContext(t.Context(), "DELETE FROM session_history WHERE false")
 	var failure *pq.Error

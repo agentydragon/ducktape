@@ -9,7 +9,6 @@ import (
 	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/identity/credentials/testing"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database

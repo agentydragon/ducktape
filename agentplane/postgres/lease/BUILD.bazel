@@ -24,6 +24,5 @@ go_test(
     deps = [
         "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",
-        "@com_github_lib_pq//:pq",
     ],
 )
