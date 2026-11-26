@@ -200,7 +200,7 @@ interface ConversationBodyProps {
   threadId: string;
   entities: ThreadEntity[];
   thread: ThreadView;
-  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder" | "connection">;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder" | "connection" | "caughtUp" | "error">;
   available: boolean;
   canQueueCommands: boolean;
   canResumeSandbox: boolean;
@@ -410,6 +410,11 @@ function ConversationBody({
         items={inline.filter((item) => !historyIds.has(item.commandId) && !localIds.has(item.commandId))}
         onOpenDeliveryHistory={onOpenDeliveryHistory}
       />
+      {!history.caughtUp && !history.error && (
+        <Text role="status" size="sm" c="dimmed" data-thread-catchup="true">
+          {entities.length > 0 ? "Showing saved messages. Checking for updates…" : "Catching up thread…"}
+        </Text>
+      )}
       <Stack className="agentplane-thread-tail-activity" gap={0}>
         <AutosuspendHint threadId={threadId} hint={sandboxAutosuspend} className="agentplane-thread-tail-autosuspend" />
         <ModelActivityHint
@@ -643,14 +648,9 @@ export function ThreadConversation({
           <button onClick={shown.retry}>Retry now</button>
         </p>
       )}
-      {!shown.error && !shown.caughtUp && (
-        <p role="status" data-thread-catchup="true">
-          Catching up thread…
-        </p>
-      )}
       <ConversationBody
         threadId={threadId}
-        entities={shown.caughtUp ? shown.rows : []}
+        entities={shown.rows}
         thread={thread}
         history={shown}
         available={available}

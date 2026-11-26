@@ -475,7 +475,7 @@ async function switchThread(threads: ThreadSync, threadId: string, children: Rea
 /** What a view shows of the thread: nothing until its window opens, and no rows until that has caught up. */
 function Shown({ children }: { children: (rows: ThreadEntity[], history: ThreadWindow) => JSX.Element }): JSX.Element {
   const { window: shown } = electricThreadSync.useThread();
-  return shown === null ? <></> : children(shown.caughtUp ? shown.rows : [], shown);
+  return shown === null ? <></> : children(shown.rows, shown);
 }
 
 function Rows({ rows, history }: { rows: ThreadEntity[]; history: ThreadWindow }): JSX.Element {
