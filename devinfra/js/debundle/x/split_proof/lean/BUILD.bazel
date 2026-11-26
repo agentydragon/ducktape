@@ -267,23 +267,36 @@ sh_binary(
     ],
 )
 
+# Location-dependent inputs do not depend on the movement and footprint proofs.
+lean_library(
+    name = "corejs_module_inputs",
+    srcs = [
+        # Keep import order for the native Lean rule.
+        "EsmSplit/CoreJS/ModuleInput.lean",
+        "EsmSplit/CoreJS/ModuleLocation.lean",
+        "EsmSplit/CoreJS/DynamicImports.lean",
+    ],
+    deps = [
+        ":corejs_runtime",
+        ":effects",
+        ":planner",
+    ],
+)
+
 # Keep independent model branches out of the shared certificate proof inputs.
 lean_library(
     name = "corejs_certificate_support_base",
     srcs = [
         # Keep import order for the native Lean rule.
         "EsmSplit/CoreJS/BindingCertificate.lean",
-        "EsmSplit/CoreJS/ModuleInput.lean",
         "EsmSplit/CoreJS/Declaration/Group.lean",
         "EsmSplit/CoreJS/EntryExports.lean",
         "EsmSplit/CoreJS/Frame.lean",
         "EsmSplit/CoreJS/Fuel.lean",
         "EsmSplit/CoreJS/StructuralRefusal.lean",
-        "EsmSplit/CoreJS/ModuleLocation.lean",
         "EsmSplit/CoreJS/Declaration/Input.lean",
         "EsmSplit/CoreJS/Scope.lean",
         "EsmSplit/CoreJS/OpaqueInput.lean",
-        "EsmSplit/CoreJS/DynamicImports.lean",
         "EsmSplit/CoreJS/ClassParents.lean",
         "EsmSplit/CoreJS/LinkedBehavior.lean",
         "EsmSplit/CoreJS/Split.lean",
@@ -322,7 +335,7 @@ lean_library(
     name = "corejs_linked_deployment",
     srcs = ["EsmSplit/CoreJS/LinkedDeployment.lean"],
     deps = [
-        ":corejs_certificate_support_base",
+        ":corejs_module_inputs",
         ":corejs_native_record",
     ],
 )
@@ -347,6 +360,7 @@ lean_library(
         ":corejs_certificate_support_base",
         ":corejs_dense_array",
         ":corejs_linked_deployment",
+        ":corejs_module_inputs",
         ":corejs_state_match",
     ],
 )
