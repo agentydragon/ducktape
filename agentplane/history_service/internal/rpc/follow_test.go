@@ -264,7 +264,7 @@ func TestFollowSessionStreamsSettlementAndLaterRemovalCorrections(t *testing.T) 
 	if _, err := tx.ExecContext(t.Context(), "INSERT INTO session_event_removed_range (session_id, first_cursor, last_cursor) VALUES ($1, 1, 1)", sessionID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tx.ExecContext(t.Context(), "SELECT pg_notify($1, '')", storage.ChannelHistory); err != nil {
+	if _, err := tx.ExecContext(t.Context(), "SELECT pg_notify($1, $2)", storage.ChannelHistory, sessionID.String()); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -277,6 +277,35 @@ func TestFollowSessionStreamsSettlementAndLaterRemovalCorrections(t *testing.T) 
 	if response := reconnected.wantCaughtUp(8); response.GetSettled() != nil {
 		t.Fatalf("cleanup refresh replayed a settlement below the resume cursor: %v", response)
 	}
+}
+
+func TestFollowSessionSendsOnlyItsOwnSessionsNewFrames(t *testing.T) {
+	server := newServer(t, time.Minute)
+	followed, _ := server.record(t)
+	other, _ := server.record(t)
+	appendFollowEntries(t, server, followed, testEntry(1), testEntry(2))
+	appendFollowEntries(t, server, other, testEntry(1))
+	if _, err := server.db.ExecContext(t.Context(), "DELETE FROM session_event WHERE session_id = $1 AND cursor = 1", followed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.db.ExecContext(t.Context(), "INSERT INTO session_event_removed_range (session_id, first_cursor, last_cursor) VALUES ($1, 1, 1)", followed); err != nil {
+		t.Fatal(err)
+	}
+	follow := server.follow(t, &historypb.FollowSessionRequest{
+		SessionId: followed.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 0}, Follow: true,
+	})
+	follow.wantEntries(2)
+	if removed := follow.receive().GetRemoved(); removed == nil || removed.GetFirst() != 1 || removed.GetLast() != 1 {
+		t.Fatalf("opening catch-up removal: %v", removed)
+	}
+	follow.wantCaughtUp(2)
+
+	// Another Session's commit sends nothing here; the followed Session's next commit sends only its
+	// new entry, not the removal this stream already reported.
+	appendFollowEntries(t, server, other, testEntry(2))
+	appendFollowEntries(t, server, followed, testEntry(3))
+	follow.wantEntries(3)
+	follow.wantCaughtUp(3)
 }
 
 func TestFollowSessionDoesNotReplaySettlementsAtOrBeforeItsStartCursor(t *testing.T) {
@@ -312,7 +341,7 @@ func TestFollowSessionDoesNotRepeatCaughtUpForAnIdleRefresh(t *testing.T) {
 	stream := &recordedFollowStream{ctx: t.Context()}
 	call := &followCall{
 		service: server.service, reader: server.service.reader, stream: stream, sessionID: sessionID,
-		request: &historypb.FollowSessionRequest{Follow: true},
+		request: &historypb.FollowSessionRequest{Follow: true}, sentRemoved: map[removedRange]struct{}{},
 	}
 	if err := call.catchUp(t.Context(), true); err != nil {
 		t.Fatal(err)

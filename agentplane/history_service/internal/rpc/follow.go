@@ -30,7 +30,7 @@ func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream 
 	defer endLease()
 	defer context.AfterFunc(s.draining, endLease)()
 	// Subscribe before the opening snapshot: every intervening commit leaves a pending re-read.
-	changed, unsubscribe, err := s.wakeups.Subscribe(storage.ChannelHistory)
+	changed, unsubscribe, err := s.wakeups.SubscribeKey(storage.ChannelHistory, sessionID.String())
 	if err != nil {
 		return failure(ctx, err)
 	}
@@ -44,7 +44,7 @@ func (s *Service) FollowSession(request *historypb.FollowSessionRequest, stream 
 	if err != nil {
 		return err
 	}
-	call := &followCall{service: s, reader: reader, stream: stream, sessionID: sessionID, request: request, through: after}
+	call := &followCall{service: s, reader: reader, stream: stream, sessionID: sessionID, request: request, through: after, sentRemoved: map[removedRange]struct{}{}}
 	initial := true
 	for {
 		if leased.Err() != nil {
@@ -79,7 +79,12 @@ type followCall struct {
 	sessionID uuid.UUID
 	request   *historypb.FollowSessionRequest
 	through   uint64
+	// sentRemoved holds the removals this stream already reported; corrections are idempotent,
+	// so a catch-up sends only ranges new since the previous one.
+	sentRemoved map[removedRange]struct{}
 }
+
+type removedRange struct{ first, last uint64 }
 
 type terminalWriteError struct{ err error }
 
@@ -151,6 +156,11 @@ func (c *followCall) catchUp(ctx context.Context, initial bool) error {
 		return err
 	}
 	for _, cursorRange := range removed {
+		key := removedRange{first: cursorRange.GetFirst(), last: cursorRange.GetLast()}
+		if _, sent := c.sentRemoved[key]; sent {
+			continue
+		}
+		c.sentRemoved[key] = struct{}{}
 		if err := c.send(ctx, &historypb.FollowSessionResponse{Frame: &historypb.FollowSessionResponse_Removed{Removed: cursorRange}}); err != nil {
 			return err
 		}

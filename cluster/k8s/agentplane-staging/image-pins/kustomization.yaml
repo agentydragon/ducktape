@@ -2,9 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
-    newTag: devel-20261126203144-994fbc9 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
+    newTag: devel-20261126231530-6ac1ef9 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
-    newTag: devel-20261126230749-e4b3737 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
+    newTag: devel-20261126231521-6ac1ef9 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environments
     newTag: devel-20261126224612-545ff9d # {"$imagepolicy": "flux-system:agentplane-environments:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
@@ -12,11 +12,11 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-proxy
     newTag: devel-20261126224601-545ff9d # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-central-sampler
-    newTag: devel-20261126221535-915db7e # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
+    newTag: devel-20261126231537-6ac1ef9 # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261126203212-994fbc9 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261126232339-7a40dc9 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sessions
-    newTag: devel-20261126224618-545ff9d # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
+    newTag: devel-20261126232331-7a40dc9 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
   - name: git.allegedly.works/ducktape-ci/environment-tools
     newTag: devel-20261124024213-3e4257c # {"$imagepolicy": "flux-system:environment-tools:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
