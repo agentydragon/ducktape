@@ -8,7 +8,7 @@ use selector_outcome::{
     Entity, EntityRef, InvalidSelectorError, MAX_CANDIDATES_PER_SELECTOR, Outcome, ProjectionError,
 };
 use source_match::{ParsedSourceMatchSelector, template_free_identifiers};
-use spec::AnonymousStatementSelector;
+use spec::annotations::AnonymousStatementSelector;
 
 use crate::projection::{Place, Resolve};
 use crate::{MemberSelector, Places, SpecModule};

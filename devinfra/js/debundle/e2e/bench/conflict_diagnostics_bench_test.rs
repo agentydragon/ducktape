@@ -1,7 +1,7 @@
 //! Independent atomic conflicts must not each scan every unrelated graph edge.
 
 use debundle_e2e_support::*;
-use spec::{BindingSelector, Member as SpecMember, RawMemberSelector};
+use spec::member_selectors::{BindingSelector, Member as SpecMember, RawMemberSelector};
 use std::fmt::Write as _;
 
 #[test]

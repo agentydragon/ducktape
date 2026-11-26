@@ -62,20 +62,24 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+pub use spec::annotations::SourceMatchClaim;
+pub use spec::input_contracts::{
+    ArgumentInputContract, CapturedValueContract, CommutingStatementsContract,
+    ImportedPrimitiveArrayLifetimeContract, ImportedPrimitiveArrayOperandContract,
+    ImportedPrimitiveArraySpreadInputContract, InitializerCallEffectInputContract,
+    NativeCallIdentityInputContract, NativeOperationInputContract,
+    NoAccessorInstallCallableContract, SourceUnitSelector, ValueInputContract,
+};
+pub use spec::vendor_marks::{VendorLevel, VendorMark};
 /// Re-exported so test files can reference the spec enums behind
 /// `Member::with_purity` / `Member::with_effect` without a direct `spec` dep.
 pub use spec::{
-    ArgumentInputContract, BunModule, CapturedValueContract, CapturedValueKind, ChunkExportPurity,
-    CommutingStatementsContract, EmbeddedLoader, HostBehavior,
-    ImportedPrimitiveArrayLifetimeContract, ImportedPrimitiveArrayOperandContract,
-    ImportedPrimitiveArraySpreadInputContract, InitializerCallEffectInputContract,
+    BunModule, CapturedValueKind, ChunkExportPurity, EmbeddedLoader, HostBehavior,
     InitializerPurity, LoaderResultForEvaluatingModule, MemberEffect, MemberPurity,
-    NativeCallIdentityInputContract, NativeCallIdentityKind, NativeOperationInputContract,
-    NativeOperationKind, NoAccessorInstallCallableContract, NodeBuiltinModule,
-    NonLiteralLoaderCalls, PredefinedGlobals, ProcessPrototypeChainAccessors, ProgramPremises,
-    ReentryFreeOperation, ResolvedMemberSelector, SourceMatchClaim, SourceUnitSelector,
-    SynchronousLoadDrainsMicrotasks, SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader,
-    ValueInputContract, VendorLevel, VendorMark,
+    NativeCallIdentityKind, NativeOperationKind, NodeBuiltinModule, NonLiteralLoaderCalls,
+    PredefinedGlobals, ProcessPrototypeChainAccessors, ProgramPremises, ReentryFreeOperation,
+    ResolvedMemberSelector, SynchronousLoadDrainsMicrotasks, SynchronousLoadRunsAppCallbacks,
+    SynchronousModuleLoader,
 };
 
 use artifact::paths::path_from_module_path;

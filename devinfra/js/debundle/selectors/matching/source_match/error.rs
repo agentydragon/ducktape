@@ -225,7 +225,7 @@ pub enum MatcherInvariant {
 impl SourceMatchError {
     pub fn binding(
         request: &str,
-        selector: &spec::AnonymousStatementSelector,
+        selector: &spec::annotations::AnonymousStatementSelector,
         target: &str,
         problem: BindingProblem,
     ) -> Self {
@@ -239,7 +239,7 @@ impl SourceMatchError {
 
     pub fn anonymous(
         request: &str,
-        selector: &spec::AnonymousStatementSelector,
+        selector: &spec::annotations::AnonymousStatementSelector,
         problem: AnonymousProblem,
     ) -> Self {
         Self::Anonymous {

@@ -13,7 +13,7 @@ use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_visit::{Visit, VisitWith};
 
-use spec::PartialSwapSymbol;
+use spec::vendor_marks::PartialSwapSymbol;
 
 #[cfg(test)]
 fn strip_one_chunk(
@@ -2407,7 +2407,8 @@ fn matches_global_intrinsic(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use spec::{PartialSwapKind, PartialSwapSymbol};
+    use spec::PartialSwapKind;
+    use spec::vendor_marks::PartialSwapSymbol;
     use swc_common::sync::Lrc;
     use swc_common::{DUMMY_SP, FileName, SourceMap};
     use swc_ecma_ast::EsVersion;

@@ -4,7 +4,13 @@ package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
 
 rust_library(
     name = "spec",
-    srcs = ["spec.rs"],
+    srcs = [
+        "annotations.rs",
+        "input_contracts.rs",
+        "member_selectors.rs",
+        "spec.rs",
+        "vendor_marks.rs",
+    ],
     crate_root = "spec.rs",
     edition = "2024",
     deps = [
