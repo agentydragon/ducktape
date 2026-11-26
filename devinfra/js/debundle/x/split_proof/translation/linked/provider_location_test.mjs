@@ -131,7 +131,11 @@ assert.equal(refused.reason_code, "no_constructed_rule");
 // The public construction-only CLI refuses this input before linking it.
 const linked = spawnSync(
   process.execPath,
-  ["--input-type=module", "--eval", `await import(${JSON.stringify(pathToFileURL(path.join(dir, lazy)).href)});`],
+  [
+    "--input-type=module",
+    "--eval",
+    `const api = await import(${JSON.stringify(pathToFileURL(path.join(dir, entry)).href)}); await api.load();`,
+  ],
   { encoding: "utf8" }
 );
 assert.equal(linked.status, 1, linked.error?.message ?? linked.stdout + linked.stderr);
