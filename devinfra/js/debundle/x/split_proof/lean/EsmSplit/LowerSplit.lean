@@ -28,9 +28,11 @@ It does not certify a split: the verdict still requires all frontend and plan pr
 
 namespace EsmSplit.LowerSplit
 
-def main : List String → IO UInt32
+def mainWithProofToolchain (loadToolchain : Option (IO GeneratedProofToolchain)) : List String → IO UInt32
   | "--diagnostic" :: args => diagnostic args
   | "--generate-instance" :: args => generateInstance args
-  | args => certified args
+  | args => certified args loadToolchain
+
+def main : List String → IO UInt32 := mainWithProofToolchain none
 
 end EsmSplit.LowerSplit
