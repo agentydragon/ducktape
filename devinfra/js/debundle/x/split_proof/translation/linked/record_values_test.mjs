@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { writeDeployment } from "../testing/deployment_manifest.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
 import {
-  assertCertified,
   arrow,
   binary,
   block,
@@ -10,7 +13,6 @@ import {
   exportNamed,
   id,
   literal,
-  lower,
   member,
   observe,
   prepare,
@@ -91,10 +93,25 @@ for (const [seed, operand] of [0, 1, "ready", null].entries()) {
     },
   });
   const out = path.join(dir, "out");
-  for (const options of seed === 0 ? [[], ["--check-output"]] : [[]]) {
-    const { verdict, log } = lower(files.sourceFile, files.specFile, out, options);
-    assertCertified(verdict, log);
-  }
-  for (const file of [files.sourceFile, path.join(out, entry)])
-    assert.deepEqual(observe(file, "result"), { result: seed });
+  const manifest = writeDeployment(files.sourceFile, files.specFile, out);
+  assertPublicEmissionRefused(manifest, out);
+  await withSplitPreview({ source: files.sourceFile, spec: files.specFile }, async ({ directory, entryFile }) => {
+    const model = probeLinkedModel({
+      source: files.sourceFile,
+      spec: files.specFile,
+      directory,
+      observe: [["result"]],
+    });
+    const bits = ["0", "4607182418800017408", "4611686018427387904", "4613937818241073152"][seed];
+    assert.equal(model.status, "matched");
+    assert(model.fuel > 0);
+    assert.deepEqual(model.assumptions, []);
+    assert.deepEqual(model.host_refs, []);
+    assert.deepEqual(model.observed, [{ path: ["result"], original: `#${bits}`, split: `#${bits}` }]);
+    if (seed === 0) {
+      assertPublicEmissionRefused(manifest, directory);
+      assertPublicRecheckRefused(manifest, directory);
+    }
+    for (const file of [files.sourceFile, entryFile]) assert.deepEqual(observe(file, "result"), { result: seed });
+  });
 }

@@ -1,16 +1,17 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { writeDeployment } from "../testing/deployment_manifest.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
 import { pathToFileURL } from "node:url";
 import {
-  assertCertified,
   array,
   arrow,
   caseShard,
   exportNamed,
-  forcePreview,
   id,
   literal,
-  lower,
   member,
   moduleEvaluationOrder,
   prepare,
@@ -102,36 +103,55 @@ const files = prepare(dir, { source: tableProgram(literal("ready")), provider: "
 const { sourceFile, specFile } = files;
 const out = path.join(dir, "out");
 const runCase = caseShard();
-if (runCase("certified emission and runtime")) {
-  const { verdict, log } = lower(sourceFile, specFile, out);
-  assertCertified(verdict, log);
-  assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
+if (runCase("public refusal and preview runtime")) {
+  const manifest = writeDeployment(sourceFile, specFile, out);
+  assertPublicEmissionRefused(manifest, out);
+  await withSplitPreview({ source: sourceFile, spec: specFile, expectedExit: 1 }, async ({ directory, entryFile }) => {
+    assert.deepEqual(moduleEvaluationOrder(directory, entry), [...order, entry]);
+    const model = probeLinkedModel({
+      source: sourceFile,
+      spec: specFile,
+      directory,
+      observe: [["table", fields[fieldCount - 1][0]], ["rows", "0", "2"], ["marker"]],
+    });
+    assert.equal(model.status, "matched");
+    assert.equal(model.fuel, 64 + fieldCount);
+    assert.deepEqual(model.assumptions, []);
+    assert.deepEqual(model.host_refs, []);
+    assert.deepEqual(model.observed, [
+      {
+        path: ["table", fields[fieldCount - 1][0]],
+        original: JSON.stringify(fields[fieldCount - 1][1]),
+        split: JSON.stringify(fields[fieldCount - 1][1]),
+      },
+      { path: ["rows", "0", "2"], original: JSON.stringify(value(0)), split: JSON.stringify(value(0)) },
+      { path: ["marker"], original: '"ready"', split: '"ready"' },
+    ]);
 
-  const expectedRows = Array.from({ length: rowCount }, (_, index) => [
-    `item-${index}`,
-    undefined,
-    value(index),
-    [],
-    offsets.map((offset) => value(index + offset)),
-  ]);
-  for (const file of [sourceFile, path.join(out, entry)]) {
-    const namespace = await import(pathToFileURL(file).href);
-    assert.deepEqual(Object.keys(namespace), [...exportNames].sort());
-    assert.deepEqual(Object.entries(namespace.table), fields);
-    assert.deepEqual(namespace.quick, [0, 1, 2].map(value));
-    assert.deepEqual(namespace.rows, expectedRows);
-    assert.equal(new Set(namespace.rows.map((row) => row[3])).size, rowCount);
-    for (const { name, fields } of options) assert.deepEqual(Object.entries(namespace[name]), fields);
-    assert.deepEqual(namespace.left, ["option-0-0"]);
-    assert.deepEqual(namespace.right, ["option-1-0", "option-1-1"]);
-    assert.equal(namespace.marker, "ready");
-    assert.equal(namespace.getMarker(), "ready");
-  }
+    const expectedRows = Array.from({ length: rowCount }, (_, index) => [
+      `item-${index}`,
+      undefined,
+      value(index),
+      [],
+      offsets.map((offset) => value(index + offset)),
+    ]);
+    for (const file of [sourceFile, entryFile]) {
+      const namespace = await import(pathToFileURL(file).href);
+      assert.deepEqual(Object.keys(namespace), [...exportNames].sort());
+      assert.deepEqual(Object.entries(namespace.table), fields);
+      assert.deepEqual(namespace.quick, [0, 1, 2].map(value));
+      assert.deepEqual(namespace.rows, expectedRows);
+      assert.equal(new Set(namespace.rows.map((row) => row[3])).size, rowCount);
+      for (const { name, fields } of options) assert.deepEqual(Object.entries(namespace[name]), fields);
+      assert.deepEqual(namespace.left, ["option-0-0"]);
+      assert.deepEqual(namespace.right, ["option-1-0", "option-1-1"]);
+      assert.equal(namespace.marker, "ready");
+      assert.equal(namespace.getMarker(), "ready");
+    }
 
-  // Reuse this shard's certified output for the independent disk check.
-  console.log("Case exact disk verification");
-  const disk = lower(sourceFile, specFile, out, ["--check-output"]);
-  assertCertified(disk.verdict, disk.log);
+    assertPublicEmissionRefused(manifest, directory);
+    assertPublicRecheckRefused(manifest, directory);
+  });
 }
 
 if (runCase("reject changed schedule")) {
@@ -144,18 +164,36 @@ if (runCase("reject changed schedule")) {
     ],
   };
   const control = prepare(path.join(dir, "control"), { source: tableProgram(changedMarker), provider: "", spec });
-  const preview = path.join(dir, "preview");
-  forcePreview(control, preview);
-  const before = await import(pathToFileURL(control.sourceFile).href);
-  const after = await import(pathToFileURL(path.join(preview, entry)).href);
-  assert.deepEqual(moduleEvaluationOrder(preview, entry), [...order, entry]);
-  assert.equal(before.rows[0][2], value(0));
-  assert.equal(after.rows[0][2], "changed");
-  for (const result of [
-    lower(control.sourceFile, control.specFile, path.join(dir, "refused")),
-    lower(control.sourceFile, control.specFile, preview, ["--check-output"]),
-  ]) {
-    assert.equal(result.verdict.status, "rejected", result.log);
-    assert.match(result.verdict.reason, /different final states/);
-  }
+  const refusedOut = path.join(dir, "refused");
+  const manifest = writeDeployment(control.sourceFile, control.specFile, refusedOut);
+  assertPublicEmissionRefused(manifest, refusedOut);
+  await withSplitPreview(
+    { source: control.sourceFile, spec: control.specFile, expectedExit: 1 },
+    async ({ directory, entryFile }) => {
+      const model = probeLinkedModel({
+        source: control.sourceFile,
+        spec: control.specFile,
+        directory,
+        observe: [["rows", "0", "2"]],
+        mismatchFuel: 64 + fieldCount,
+      });
+      assert.equal(model.status, "refused");
+      assert.equal(model.reason_code, "probe_mismatch");
+      assert.equal(model.fuel, 64 + fieldCount);
+      assert.deepEqual(model.observed, [
+        {
+          path: ["rows", "0", "2"],
+          original: JSON.stringify(value(0)),
+          split: '"changed"',
+        },
+      ]);
+      const before = await import(pathToFileURL(control.sourceFile).href);
+      const after = await import(pathToFileURL(entryFile).href);
+      assert.deepEqual(moduleEvaluationOrder(directory, entry), [...order, entry]);
+      assert.equal(before.rows[0][2], value(0));
+      assert.equal(after.rows[0][2], "changed");
+      assertPublicEmissionRefused(manifest, directory);
+      assertPublicRecheckRefused(manifest, directory);
+    }
+  );
 }

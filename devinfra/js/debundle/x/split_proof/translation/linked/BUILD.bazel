@@ -194,6 +194,23 @@ _UNSHARDED_TESTS = [
     "wide_records_test",
 ]
 
+_RECORD_DATA = [
+    "//devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:linked_model_probe",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:public_refusal",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:split_preview",
+]
+
+_RECORD_ENV = {"LINKED_MODEL_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_model_check_runner)"}
+
+_RECORD_TESTS = [
+    "literal_records_test",
+    "record_values_test",
+    "small_records_test",
+    "wide_records_test",
+    "wide_table_reversal_test",
+]
+
 _SHARD_COUNTS = {
     "browser_globals_test": 4,
     "classes_test": 5,
@@ -232,9 +249,9 @@ _SHARD_COUNTS = {
         name = name,
         size = "medium",
         timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
-        data = _TEST_DATA,
+        data = _TEST_DATA + (_RECORD_DATA if name in _RECORD_TESTS else []),
         entry_point = name + ".mjs",
-        env = _TEST_ENV,
+        env = _TEST_ENV | (_RECORD_ENV if name in _RECORD_TESTS else {}),
         shard_count = _SHARD_COUNTS.get(name),
     )
     for name in _UNSHARDED_TESTS + _SHARD_COUNTS.keys()
@@ -295,10 +312,10 @@ js_test(
 js_test(
     name = "record_fuel_test",
     size = "medium",
-    data = _TEST_DATA,
+    data = _TEST_DATA + _RECORD_DATA,
     entry_point = "wide_table_reversal_test.mjs",
     # Cross the old probe ceiling without repeating the 44-row scaling workload.
-    env = _TEST_ENV | {
+    env = _TEST_ENV | _RECORD_ENV | {
         "LINKED_TABLE_FIELDS": "1410",
         "LINKED_TABLE_ROWS": "3",
     },

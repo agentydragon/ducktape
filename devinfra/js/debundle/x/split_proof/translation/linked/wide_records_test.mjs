@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import { withSplitPreview } from "../testing/split_preview.mjs";
+import { writeDeployment } from "../testing/deployment_manifest.mjs";
+import { assertPublicEmissionRefused, assertPublicRecheckRefused } from "../testing/public_refusal.mjs";
+import { probeLinkedModel } from "../testing/linked_model_probe.mjs";
 import { pathToFileURL } from "node:url";
 import {
-  assertCertified,
-  assertRejectedOrOrderKeptSlice,
   exportNamed,
   id,
   literal,
-  lower,
   moduleEvaluationOrder,
   prepare,
   program,
@@ -51,22 +52,46 @@ const spec = {
 const dir = path.join(root, "wide-records");
 const { sourceFile, specFile } = prepare(dir, { source, provider: "", spec });
 const out = path.join(dir, "out");
-const { verdict, log } = lower(sourceFile, specFile, out);
-assertCertified(verdict, log);
-assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
-assert.deepEqual(lower(sourceFile, specFile, out, ["--check-output"]).verdict, verdict);
+const manifest = writeDeployment(sourceFile, specFile, out);
+assertPublicEmissionRefused(manifest, out);
+await withSplitPreview({ source: sourceFile, spec: specFile }, async ({ directory, entryFile }) => {
+  assert.deepEqual(moduleEvaluationOrder(directory, entry), [...order, entry]);
+  const model = probeLinkedModel({
+    source: sourceFile,
+    spec: specFile,
+    directory,
+    observe: [
+      ["left", "field704"],
+      ["right", "field1"],
+      ["result", "8"],
+      ["result", "9"],
+    ],
+  });
+  assert.equal(model.status, "matched");
+  assert.equal(model.fuel, 64 + fields.length);
+  assert.deepEqual(model.assumptions, []);
+  assert.deepEqual(model.host_refs, []);
+  assert.deepEqual(model.observed, [
+    { path: ["left", "field704"], original: '"value704"', split: '"value704"' },
+    { path: ["right", "field1"], original: '"value1"', split: '"value1"' },
+    { path: ["result", "8"], original: "undefined", split: "undefined" },
+    { path: ["result", "9"], original: '"value263"', split: '"value263"' },
+  ]);
+  assertPublicEmissionRefused(manifest, directory);
+  assertPublicRecheckRefused(manifest, directory);
 
-for (const file of [sourceFile, path.join(out, entry)]) {
-  const ns = await import(pathToFileURL(file).href);
-  assert.deepEqual(Object.keys(ns), ["left", "result", "right"]);
-  assert.deepEqual(ns.result, [...sampledFields.map((i) => `value${i}`), undefined, "value263"]);
-  assert.deepEqual(
-    Object.keys(ns.left),
-    fields.map(({ key }) => key.name)
-  );
-  assert.deepEqual(ns.left, ns.right);
-  assert.notEqual(ns.left, ns.right);
-}
+  for (const file of [sourceFile, entryFile]) {
+    const ns = await import(pathToFileURL(file).href);
+    assert.deepEqual(Object.keys(ns), ["left", "result", "right"]);
+    assert.deepEqual(ns.result, [...sampledFields.map((i) => `value${i}`), undefined, "value263"]);
+    assert.deepEqual(
+      Object.keys(ns.left),
+      fields.map(({ key }) => key.name)
+    );
+    assert.deepEqual(ns.left, ns.right);
+    assert.notEqual(ns.left, ns.right);
+  }
+});
 
 // A computed key does not get a per-key equation from the quoted syntax.
 // Duplicate static keys keep ordinary object-literal replacement semantics.
@@ -93,46 +118,43 @@ for (const kind of ["string", "object", "duplicate"]) {
     spec: { entry, modules: { "table.mjs": ["#0"], [entry]: ["#1", "#2", "#3"] }, order: ["table.mjs"] },
   });
   const out = path.join(dir, "out");
-  const { verdict, log } = lower(sourceFile, specFile, out);
-  if (kind === "duplicate") {
-    assertCertified(verdict, log);
-    for (const file of [sourceFile, path.join(out, entry)]) {
-      const { result } = await import(pathToFileURL(file).href);
-      assert.deepEqual(result, [
-        "value95",
-        "value0",
-        "value1",
-        "last",
-        "value3",
-        "value4",
-        "value5",
-        "value6",
-        "value7",
+  const manifest = writeDeployment(sourceFile, specFile, out);
+  assertPublicEmissionRefused(manifest, out);
+  await withSplitPreview({ source: sourceFile, spec: specFile }, async ({ directory, entryFile }) => {
+    const model = probeLinkedModel({
+      source: sourceFile,
+      spec: specFile,
+      directory,
+      observe: [
+        ["result", "0"],
+        ["result", "3"],
+      ],
+    });
+    if (objectKey) {
+      assert.equal(model.status, "refused");
+      assert.equal(model.reason_code, "probe_unknown");
+      assert.match(model.reason, /object is converted to a primitive/);
+    } else {
+      assert.equal(model.status, "matched");
+      assert.equal(model.fuel, 64 + (kind === "duplicate" ? 97 : 96));
+      assert.deepEqual(model.assumptions, []);
+      assert.deepEqual(model.host_refs, []);
+      assert.deepEqual(model.observed, [
+        { path: ["result", "0"], original: '"value95"', split: '"value95"' },
+        {
+          path: ["result", "3"],
+          original: kind === "duplicate" ? '"last"' : '"value2"',
+          split: kind === "duplicate" ? '"last"' : '"value2"',
+        },
       ]);
     }
-  } else if (objectKey) {
-    const orderKept = assertRejectedOrOrderKeptSlice({ verdict, log, out }, /object is converted to a primitive/);
-    if (orderKept) {
-      for (const file of [sourceFile, path.join(out, entry)]) {
-        const { result } = await import(pathToFileURL(file).href);
-        assert.deepEqual(result, [undefined, ...Array.from({ length: 8 }, (_, i) => `value${i}`)]);
-      }
-    }
-  } else {
-    assert.equal(verdict.status, "certified", log);
-    for (const file of [sourceFile, path.join(out, entry)]) {
+    const expected = [
+      objectKey ? undefined : "value95",
+      ...Array.from({ length: 8 }, (_, i) => (kind === "duplicate" && i === 2 ? "last" : `value${i}`)),
+    ];
+    for (const file of [sourceFile, entryFile]) {
       const { result } = await import(pathToFileURL(file).href);
-      assert.deepEqual(result, [
-        "value95",
-        "value0",
-        "value1",
-        "value2",
-        "value3",
-        "value4",
-        "value5",
-        "value6",
-        "value7",
-      ]);
+      assert.deepEqual(result, expected);
     }
-  }
+  });
 }
