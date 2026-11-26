@@ -64,83 +64,19 @@ const keepDir = option("keep", null) && path.resolve(option("keep", null));
 
 // ---------------------------------------------------------------- source analysis
 
-function boundNames(pattern, out) {
-  switch (pattern?.type) {
-    case "Identifier":
-      out.push(pattern.name);
-      break;
-    case "ObjectPattern":
-      for (const p of pattern.properties) boundNames(p.type === "RestElement" ? p.argument : p.value, out);
-      break;
-    case "ArrayPattern":
-      for (const e of pattern.elements) if (e) boundNames(e, out);
-      break;
-    case "AssignmentPattern":
-      boundNames(pattern.left, out);
-      break;
-    case "RestElement":
-      boundNames(pattern.argument, out);
-      break;
-  }
-}
-
-/** Names declared by `var` inside blocks, loops and `try` (they live in the module scope). */
-function varNames(node, out) {
-  if (!node || typeof node !== "object") return;
-  switch (node.type) {
-    case "VariableDeclaration":
-      if (node.kind === "var") for (const d of node.declarations) boundNames(d.id, out);
-      break;
-    case "BlockStatement":
-      for (const s of node.body) varNames(s, out);
-      break;
-    case "IfStatement":
-      varNames(node.consequent, out);
-      varNames(node.alternate, out);
-      break;
-    case "ForStatement":
-      varNames(node.init, out);
-      varNames(node.body, out);
-      break;
-    case "ForInStatement":
-    case "ForOfStatement":
-      varNames(node.left, out);
-      varNames(node.body, out);
-      break;
-    case "WhileStatement":
-    case "DoWhileStatement":
-    case "LabeledStatement":
-      varNames(node.body, out);
-      break;
-    case "TryStatement":
-      varNames(node.block, out);
-      varNames(node.handler?.body, out);
-      varNames(node.finalizer, out);
-      break;
-    case "SwitchStatement":
-      for (const c of node.cases) for (const s of c.consequent) varNames(s, out);
-      break;
-  }
-}
-
-/** Top-level names a statement declares (an exported declaration declares its names too). */
-function declaredNames(statement) {
-  const out = [];
-  const declaration = statement.type.startsWith("Export") ? statement.declaration : statement;
-  if (declaration?.type === "VariableDeclaration") for (const d of declaration.declarations) boundNames(d.id, out);
-  else if ((declaration?.type === "FunctionDeclaration" || declaration?.type === "ClassDeclaration") && declaration.id)
-    out.push(declaration.id.name);
-  else if (!statement.type.startsWith("Export")) varNames(statement, out);
-  return out;
-}
-
 function analyze(code) {
   const parsed = parseModule(code, acorn.parse, eslintScope);
-  // These ordinals propose a placement. The checker derives its units from the Program.
-  const statements = topLevelStatements(parsed.ast).map(({ node }) => ({
-    node,
-    declared: declaredNames(node),
-  }));
+  const moduleScope = parsed.scopes.acquire(parsed.ast, true);
+  const declarations = moduleScope.variables
+    .flatMap((binding) => binding.defs.filter((def) => def.type !== "ImportBinding").map((def) => def.name.start))
+    .sort((a, b) => a - b);
+  // The checker derives its own units from the Program. The declaration
+  // positions classify our proposed units, including split declarators.
+  let next = 0;
+  const statements = topLevelStatements(parsed.ast).map(({ node, start, end }) => {
+    while (next < declarations.length && declarations[next] < start) next++;
+    return { node, declares: next < declarations.length && declarations[next] < end };
+  });
   return { program: dumpParsed(parsed), statements };
 }
 
@@ -186,7 +122,7 @@ function translate(spec, chunk, statements, placement) {
   // the unclaimed anonymous statements that precede its last statement (their effects must stay ahead of it), and
   // everything when it is the only module. Later anonymous statements stay in the entry (design.md, "Spec explicitness").
   const surface = (i) => statements[i].node.type === "ExportNamedDeclaration" && !statements[i].node.declaration;
-  const swept = statements.flatMap((s, i) => (owner[i] === null && !surface(i) && s.declared.length > 0 ? [i] : []));
+  const swept = statements.flatMap((s, i) => (owner[i] === null && !surface(i) && s.declares ? [i] : []));
   let sinkFile = null;
   if (kind === "catchall_file") {
     // The resolver projects out owners with no claims. Only the catchall can
@@ -223,7 +159,7 @@ function translate(spec, chunk, statements, placement) {
     let home;
     if (owner[i] !== null) home = files.get(owner[i]);
     else if (surface(i) || sinkFile === null) home = entry;
-    else if (s.declared.length > 0) home = sinkFile;
+    else if (s.declares) home = sinkFile;
     else home = onlyModule || i < lastInSink ? sinkFile : entry;
     modules[home].push(`#${i}`);
   });
