@@ -480,6 +480,37 @@ lean_proof_test(
 )
 
 lean_library(
+    name = "ordered_region",
+    srcs = ["EsmSplit/CoreJS/OrderedRegion.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_single_module",
+        ":planner",
+    ],
+)
+
+executable_test(
+    name = "ordered_region_test",
+    src = "OrderedRegionTest.lean",
+    deps = [":ordered_region"],
+)
+
+lean_proof_test(
+    name = "ordered_region_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.OrderedRegion"],
+    required_theorems = [
+        "CoreJS.OrderedRegion.matching_link",
+        "CoreJS.OrderedRegion.planned_link",
+        "CoreJS.OrderedRegion.planned_runs",
+        "CoreJS.OrderedRegion.planned_runs_with_exports",
+        "CoreJS.OrderedRegion.planned_scopes",
+        "CoreJS.OrderedRegion.sameUnits_capture",
+    ],
+    deps = [":ordered_region"],
+)
+
+lean_library(
     name = "named_declaration_split",
     srcs = ["EsmSplit/CoreJS/NamedDeclarationSplit.lean"],
     deps = [
