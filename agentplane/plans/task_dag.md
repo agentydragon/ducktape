@@ -371,6 +371,13 @@ the `inboxes` rename that went with it, are in
 released one by one. **Exit:** a reviewed seam covering both sources, the resulting component names,
 and the moves it implies as their own nodes.
 
+When revisiting this seam, unify the entry content used by the CLI and the web app. The app's
+notification details are a debug view: showing the entry as JSON is sufficient. Today the
+`WatchInboxEntries` summary parses stored GitHub content to recover a check or workflow run's
+conclusion for display. Keep provider facts typed while the provider needs to interpret them;
+once it has a message for zero or more inboxes, the inbox should be able to deliver and show
+that message without parsing provider-specific fields.
+
 ### `COMMAND_WATCH_SUBSCRIPTION_DESIGN` — a subscription kind that runs an agent's command on a schedule
 
 **Unscheduled; operator, 2026-10-17 PDT.** Its scheduling/inbox seam is folded into
