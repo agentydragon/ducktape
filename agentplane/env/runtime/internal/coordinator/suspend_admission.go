@@ -22,7 +22,7 @@ func (r *Runtime) PrepareSuspend(ctx context.Context, request *environmentruntim
 	idleSinceMicros := request.IfIdleSince.AsTime().UnixMicro()
 	err := r.control.Admit(ctx, func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
-		if authorization.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failed || !r.startupComplete || !r.admissionOpen || r.desired.Mode != lifecycle.Running {
+		if authorization.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failureErr != nil || !r.startupComplete || !r.admissionOpen || r.desired.Mode != lifecycle.Running {
 			r.mu.Unlock()
 			return status.Error(codes.Unavailable, "environment Runtime is unavailable for suspension")
 		}
@@ -51,7 +51,7 @@ func (r *Runtime) PrepareSuspend(ctx context.Context, request *environmentruntim
 		}
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if authorization.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failed || !r.startupComplete || !r.admissionOpen || r.desired.Mode != lifecycle.Running {
+		if authorization.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failureErr != nil || !r.startupComplete || !r.admissionOpen || r.desired.Mode != lifecycle.Running {
 			return status.Error(codes.Unavailable, "environment Runtime is unavailable for suspension")
 		}
 		if request.Generation == r.suspendGeneration && r.suspendPrepared && idleSinceMicros == r.suspendIdleSinceMicros {
@@ -86,7 +86,7 @@ func (r *Runtime) ResumeAdmission(ctx context.Context, request *environmentrunti
 	err := r.control.Admit(ctx, func(authorization *runtimecontrol.Authorization) error {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		if authorization.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failed || !r.startupComplete {
+		if authorization.IncarnationUID() != r.desired.IncarnationUID || r.closing || r.failureErr != nil || !r.startupComplete {
 			return status.Error(codes.Unavailable, "environment Runtime is unavailable for admission resume")
 		}
 		if request.Generation < r.suspendGeneration {

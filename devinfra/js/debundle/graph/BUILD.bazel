@@ -1,0 +1,34 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "graph",
+    srcs = glob(["**/*.rs"]),
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:report_io",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:petgraph",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:strum",
+        "@crates//:swc_atoms",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "graph_test",
+    crate = ":graph",
+    edition = "2024",
+    deps = ["//devinfra/js/debundle:raw_js_test_support"],
+)

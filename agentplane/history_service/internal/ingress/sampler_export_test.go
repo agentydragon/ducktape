@@ -14,7 +14,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -202,7 +201,7 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	if err != nil {
 		t.Fatal(err)
 	}
-	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: samplerExportPolicyNamespace})
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, workloadauthtesting.IdentityUIDsFromConfig(t, kube.Config, samplerExportPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

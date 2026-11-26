@@ -8,14 +8,14 @@ import { cleanupMounted, renderWithMantine } from "../../../../util/frontend/tes
 import { IdentitySchema, PolicyBindingSchema, type Identity } from "../../../policy/v1/policy_service_pb";
 import { IdentityPage } from "./identity_page";
 
-const mocks = vi.hoisted(() => ({ identities: vi.fn(), resources: vi.fn(), remove: vi.fn() }));
+const mocks = vi.hoisted(() => ({ identities: vi.fn(), resources: vi.fn(), remove: vi.fn(), check: vi.fn() }));
 vi.mock("../sandboxes/live", () => ({
   useRequiredSandboxesLive: () => ({ snapshot: [] }),
   sandboxInventoryFresh: () => true,
 }));
 vi.mock("../policy/watch", () => ({ useIdentities: mocks.identities, usePolicyResources: mocks.resources }));
 vi.mock("../egress/credential_watch", () => ({ useCredentialMetadata: () => new Map() }));
-vi.mock("./client", () => ({ deleteIdentity: mocks.remove }));
+vi.mock("./client", () => ({ deleteIdentity: mocks.remove, checkIdentityDelete: mocks.check }));
 let container: HTMLDivElement;
 afterEach(async () => {
   await cleanupMounted();
@@ -54,8 +54,14 @@ function deleteButton(): HTMLButtonElement {
   if (!found) throw new Error("no Delete identity button");
   return found;
 }
+function confirmButton(): HTMLButtonElement {
+  const found = [...document.querySelectorAll("button")].find((item) => item.textContent === "Delete");
+  if (!found) throw new Error("no Delete confirm button");
+  return found;
+}
 function referencing(): string[] {
-  return [...container.querySelectorAll("[aria-label='References to this identity'] li")].map(
+  // The confirm modal renders its refusal in a portal outside the page container.
+  return [...document.querySelectorAll("[aria-label='References to this identity'] li")].map(
     (item) => item.textContent ?? ""
   );
 }
@@ -68,34 +74,38 @@ it("watches the bindings naming the identity, fenced by its UID", async () => {
   );
 });
 
-it("deletes an unreferenced identity after confirmation", async () => {
+it("deletes an identity the Policy Controller would accept, after confirmation", async () => {
+  mocks.check.mockResolvedValue({ case: "allowed" });
   mocks.remove.mockResolvedValue({ case: "deleted" });
   const subject = identity("unreferenced-identity");
   await render(subject);
-  expect(deleteButton().disabled).toBe(false);
   await act(async () => deleteButton().click());
-  const confirm = [...document.querySelectorAll("button")].find((item) => item.textContent === "Delete");
-  await act(async () => confirm!.click());
+  expect(mocks.check).toHaveBeenCalledWith(subject);
+  expect(mocks.remove).not.toHaveBeenCalled();
+  await act(async () => confirmButton().click());
   expect(mocks.remove).toHaveBeenCalledWith(subject);
   expect(onDeleted).toHaveBeenCalled();
 });
 
-it("refuses to delete a referenced identity and names what references it", async () => {
-  const subject = identity("referenced-identity");
-  await render(subject, [
-    binding("own-launch", "referenced-identity", "uid-referenced-identity"),
-    binding("standing-grant", "referenced-identity", null),
-  ]);
-  expect(deleteButton().disabled).toBe(true);
-  expect(referencing()).toEqual(["PolicyBinding standing-grant"]);
+it.each([
+  [
+    "a referenced identity, naming the references",
+    { case: "referenced", references: [{ kind: "WorkloadCredential", name: "fake-workloads/standing-agent" }] },
+    ["WorkloadCredential fake-workloads/standing-agent"],
+  ],
+  ["a git-origin identity", { case: "failed", error: "Identity is managed by Flux" }, []],
+])("withholds the confirm for %s when the dry run refuses", async (_, refusal, named) => {
+  mocks.check.mockResolvedValue(refusal);
+  await render(identity("refused-identity"));
+  expect(deleteButton().disabled).toBe(false);
+  await act(async () => deleteButton().click());
+  expect(confirmButton().disabled).toBe(true);
+  expect(referencing()).toEqual(named);
+  expect(mocks.remove).not.toHaveBeenCalled();
 });
 
-it("keeps a git-origin identity read-only", async () => {
-  await render(identity("git-origin-identity", { "kustomize.toolkit.fluxcd.io/name": "fake-kustomization" }));
-  expect(deleteButton().disabled).toBe(true);
-});
-
-it("names what the Policy Controller cites when it refuses a delete the view allowed", async () => {
+it("names what the Policy Controller cites when it refuses a delete the dry run allowed", async () => {
+  mocks.check.mockResolvedValue({ case: "allowed" });
   mocks.remove.mockResolvedValue({
     case: "referenced",
     references: [
@@ -105,8 +115,7 @@ it("names what the Policy Controller cites when it refuses a delete the view all
   });
   await render(identity("unreferenced-identity"));
   await act(async () => deleteButton().click());
-  const confirm = [...document.querySelectorAll("button")].find((item) => item.textContent === "Delete");
-  await act(async () => confirm!.click());
+  await act(async () => confirmButton().click());
   expect(onDeleted).not.toHaveBeenCalled();
   expect(referencing()).toEqual([
     "PolicyBinding created-meanwhile",

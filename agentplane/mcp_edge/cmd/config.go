@@ -27,16 +27,40 @@ type config struct {
 	DatabaseURL   string                     `mapstructure:"-" yaml:"-"`
 	ActionsTarget string                     `yaml:"actions_target"`
 	// PolicyNamespace holds live Identities; ActionsTokenFile is the rotating Action-audience token.
-	PolicyNamespace   string            `yaml:"policy_namespace"`
-	ActionsTokenFile  string            `yaml:"actions_token_file"`
-	Host              string            `yaml:"host"`
-	HTTPPort          int               `yaml:"http_port"`
-	OperatorOIDC      operator.Settings `yaml:"operator_oidc"`
-	OperatorServices  []string          `yaml:"operator_services,omitempty"`
-	OAuthFile         string            `yaml:"oauth_file,omitempty"`
-	OAuth             *oauthSettings    `yaml:"oauth,omitempty"`
-	MaxWaitSeconds    float64           `yaml:"max_wait_seconds"`
-	DirectWaitSeconds float64           `yaml:"direct_wait_seconds"`
+	PolicyNamespace string `yaml:"policy_namespace"`
+	// PolicyService, when set, supplies Identities through PolicyService.WatchIdentities instead of the informer in
+	// PolicyNamespace.
+	// CLEANUP(added 2026-11-26): require it and drop PolicyNamespace and the informer once the staging manifests set it
+	//   (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
+	PolicyService     *policyServicePeer `yaml:"policy_service,omitempty"`
+	ActionsTokenFile  string             `yaml:"actions_token_file"`
+	Host              string             `yaml:"host"`
+	HTTPPort          int                `yaml:"http_port"`
+	OperatorOIDC      operator.Settings  `yaml:"operator_oidc"`
+	OperatorServices  []string           `yaml:"operator_services,omitempty"`
+	OAuthFile         string             `yaml:"oauth_file,omitempty"`
+	OAuth             *oauthSettings     `yaml:"oauth,omitempty"`
+	MaxWaitSeconds    float64            `yaml:"max_wait_seconds"`
+	DirectWaitSeconds float64            `yaml:"direct_wait_seconds"`
+}
+
+// policyServicePeer reaches PolicyService over mutual TLS as the MCP edge.
+type policyServicePeer struct {
+	Target string            `yaml:"target"`
+	TLS    peertls.ClientTLS `yaml:"tls"`
+}
+
+func (p policyServicePeer) validate() error {
+	if strings.TrimSpace(p.Target) == "" {
+		return errors.New("policy_service.target is required")
+	}
+	if err := p.TLS.ValidateCaller("", peertls.MCPEdgeURI); err != nil {
+		return fmt.Errorf("policy_service.tls: %w", err)
+	}
+	if p.TLS.ServerURI != peertls.PolicyControllerURI {
+		return fmt.Errorf("policy_service.tls.server_uri must be %q", peertls.PolicyControllerURI)
+	}
+	return nil
 }
 
 type oauthSettings struct {
@@ -92,6 +116,11 @@ func (c config) validate() error {
 	}
 	if len(validation.IsDNS1123Label(c.PolicyNamespace)) > 0 {
 		return errors.New("policy_namespace must be a namespace name")
+	}
+	if c.PolicyService != nil {
+		if err := c.PolicyService.validate(); err != nil {
+			return err
+		}
 	}
 	if c.HTTPPort < 1 || c.HTTPPort > 65535 {
 		return errors.New("http_port must be between 1 and 65535")

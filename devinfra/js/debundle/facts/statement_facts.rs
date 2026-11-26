@@ -56,12 +56,12 @@ pub struct StatementFacts {
     /// re-exports additionally require their dependency's evaluation order.
     pub(crate) export_linkage: Option<ExportLinkage>,
     /// Exact protected iterable producers that must remain in this module.
-    pub(crate) stable_iterable_producers: BTreeSet<SourceUnitOrdinal>,
+    pub stable_iterable_producers: BTreeSet<SourceUnitOrdinal>,
     pub source_location: Option<SourceLocation>,
     /// Matched retained callback-factory contracts rejected by a visible
     /// namespace guard for a top-level call in this source unit. These facts
     /// explain conservative fallback; they never affect the analysis result.
-    pub(crate) callback_factory_barriers: Vec<CallbackFactoryBarrierFact>,
+    pub callback_factory_barriers: Vec<CallbackFactoryBarrierFact>,
     pub declared: BTreeSet<Id>,
     /// Bindings introduced inside this statement's lexical scopes (parameters,
     /// local declarations). Used to distinguish callback calls through local
@@ -98,11 +98,11 @@ pub struct StatementFacts {
     /// The subset of a class statement's lazy effects that `new` executes:
     /// constructor body, instance fields and superclass constructor. Method
     /// bodies remain lazy until invoked by that constructor or another call.
-    pub(crate) constructor: Option<ConstructorFacts>,
+    pub constructor: Option<ConstructorFacts>,
     /// Effects of function bodies that can run while this statement evaluates.
     /// Proven effects are retained even when some targets remain unresolved;
     /// `complete` decides whether the conservative fallback also runs.
-    pub(crate) synchronous_calls: Option<SynchronousCalls>,
+    pub synchronous_calls: Option<SynchronousCalls>,
     /// Every source-indexed callable this statement can publish contributes
     /// its synchronous prefix. `None` means coverage is incomplete, so the
     /// graph fallback must use the whole lazy read/rebind closure.
@@ -158,15 +158,15 @@ pub struct StatementFacts {
     /// distinct from binding effects: mutating an array changes its contents,
     /// not the binding that names it. Its calls' cells are
     /// `SynchronousCalls::heap_contents`.
-    pub(crate) heap_contents: HeapContentCells,
+    pub heap_contents: HeapContentCells,
     /// Array literals in the eager expression syntax of a simple top-level
     /// initializer, excluding deferred code, object setters and classes, plus
     /// proved fresh direct native Set constructions. Each occurrence allocates
     /// at most once at this statement;
     /// a site identifier alone does not establish this property.
-    pub(crate) heap_one_shot_allocations: BTreeSet<EffectCell>,
+    pub heap_one_shot_allocations: BTreeSet<EffectCell>,
     /// Allocation sites in this statement's deferred positions, at any depth.
-    pub(crate) deferred_heap_allocations: BTreeSet<EffectCell>,
+    pub deferred_heap_allocations: BTreeSet<EffectCell>,
     /// Native premises consumed by proved heap construction at this source unit.
     pub heap_native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
     pub purity: Purity,
@@ -216,7 +216,7 @@ pub struct CallbackFactoryWriteWitness {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct SynchronousCalls {
+pub struct SynchronousCalls {
     pub initializer_binding_effects:
         Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
     pub initializer_external_effects: Option<crate::reports::schema::InitializerExternalEffectsUse>,
@@ -268,11 +268,11 @@ pub(crate) struct SynchronousCalls {
     /// where it starts (`None` when execution did not settle them).
     pub(crate) global_object_aliases: Option<BTreeSet<Id>>,
     /// Heap-content cells of the callables this statement invoked.
-    pub(crate) heap_contents: HeapContentCells,
+    pub heap_contents: HeapContentCells,
     /// Heap reads and writes reached without an assumed callback or fallback
     /// path. This is a subset of `heap_contents` and is used only to check
     /// explicit commuting premises; the conservative heap order uses all cells.
-    pub(crate) non_assumed_heap_accesses: HeapContentAccesses,
+    pub non_assumed_heap_accesses: HeapContentAccesses,
     pub precision_losses: Vec<ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
@@ -295,7 +295,7 @@ pub(crate) struct SynchronousCalls {
 /// invocation's outcome the maps are relative to that invocation; the
 /// enclosing statement re-tags them when an assumed path merges them.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct FallbackOnlyEffects {
+pub struct FallbackOnlyEffects {
     pub reads: BTreeMap<Id, AssumedEffectReason>,
     pub rebinds: BTreeMap<Id, AssumedEffectReason>,
     pub uninitialized_reads: BTreeMap<Id, AssumedEffectReason>,
@@ -323,7 +323,7 @@ impl SynchronousCalls {
         }
     }
 
-    pub(crate) fn binding_effect_authority(&self) -> super::sync_effects::BindingEffectAuthority {
+    pub fn binding_effect_authority(&self) -> super::sync_effects::BindingEffectAuthority {
         let author_source_only = matches!(
             self.initializer_binding_effects.as_deref(),
             Some(crate::reports::schema::InitializerBindingEffectsUse::Applied { .. })
@@ -332,7 +332,7 @@ impl SynchronousCalls {
             .authority(self.complete, author_source_only)
     }
 
-    pub(crate) fn binding_effect_authority_report(
+    pub fn binding_effect_authority_report(
         &self,
     ) -> crate::reports::schema::BindingEffectAuthorityReport {
         let author_source_only = matches!(
@@ -345,18 +345,18 @@ impl SynchronousCalls {
 
     /// The assumed path when only a conservative path contributed the read
     /// of `binding`; `None` when it was observed.
-    pub(crate) fn fallback_read(&self, binding: &Id) -> Option<&AssumedEffectReason> {
+    pub fn fallback_read(&self, binding: &Id) -> Option<&AssumedEffectReason> {
         self.fallback_only.reads.get(binding)
     }
 
     /// As [`Self::fallback_read`], for a rebind of `binding`.
-    pub(crate) fn fallback_rebind(&self, binding: &Id) -> Option<&AssumedEffectReason> {
+    pub fn fallback_rebind(&self, binding: &Id) -> Option<&AssumedEffectReason> {
         self.fallback_only.rebinds.get(binding)
     }
 
     /// As [`Self::fallback_read`], for an observation of `binding` before
     /// its initializer ran.
-    pub(crate) fn fallback_uninitialized_read(&self, binding: &Id) -> Option<&AssumedEffectReason> {
+    pub fn fallback_uninitialized_read(&self, binding: &Id) -> Option<&AssumedEffectReason> {
         self.fallback_only.uninitialized_reads.get(binding)
     }
 }
@@ -368,7 +368,7 @@ impl SynchronousCalls {
 /// author assertion may supply otherwise-unproved prototype premises, but
 /// native/source evidence can establish them without an assertion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct LocalRecordFactoryPurityCertificate {
+pub struct LocalRecordFactoryPurityCertificate {
     pub call_span: swc_common::Span,
     pub checked_owners: BTreeSet<SourceUnitOrdinal>,
     pub dependencies: crate::analysis_inputs::ProofDependencies,
@@ -523,7 +523,7 @@ pub struct StatementEffectSummary {
 /// reads and writes, and whether an operation may touch contents the cells do
 /// not name (a heap-frontier barrier in the graph builder).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct HeapContentCells {
+pub struct HeapContentCells {
     /// Fresh allocations seed later observations without overwriting a prior
     /// content timeline: source-span identities can denote many runtime arrays.
     pub allocations: BTreeSet<EffectCell>,
@@ -544,7 +544,7 @@ impl HeapContentCells {
 /// Source-known heap may-accesses whose invocation path was not assumed.
 /// Allocations are excluded: a fresh birth is not a content write.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct HeapContentAccesses {
+pub struct HeapContentAccesses {
     pub reads: BTreeSet<EffectCell>,
     pub writes: BTreeSet<EffectCell>,
 }
@@ -871,13 +871,13 @@ pub struct StructuralStatementFacts {
     /// including nested lazy syntax. Retained to prove unique stable bindings
     /// without another AST census.
     pub(crate) var_declaration_counts: BTreeMap<Id, usize>,
-    pub(crate) var_initializer_counts: BTreeMap<Id, usize>,
+    pub var_initializer_counts: BTreeMap<Id, usize>,
     /// Direct top-level `var name = ...` candidates. Initializer type is
     /// checked later; this records only source shape and hygienic identity.
     pub(crate) top_level_var_initializer_candidates: BTreeSet<Id>,
     pub reads: PositionBucketed<BTreeSet<Id>>,
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
-    pub(crate) member_write_roots: BTreeSet<Id>,
+    pub member_write_roots: BTreeSet<Id>,
     pub(crate) argument_value_escapes: BTreeMap<Id, BTreeSet<usize>>,
     pub calls: PositionBucketed<BTreeSet<Id>>,
     pub(crate) constructor: Option<ConstructorFacts>,
@@ -989,7 +989,7 @@ impl StructuralStatementFacts {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ConstructorFacts {
+pub struct ConstructorFacts {
     pub reads: BTreeSet<Id>,
     pub rebinds: BTreeSet<Id>,
     pub calls: BTreeSet<Id>,
@@ -1008,22 +1008,21 @@ pub(crate) struct ConstructorFacts {
 pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub(crate) imported_bindings: BTreeSet<Id>,
-    pub(crate) value_flow: std::sync::Arc<super::ChunkValueFlow>,
+    pub value_flow: std::sync::Arc<super::ChunkValueFlow>,
     pub(crate) dynamic_scope: super::DynamicScopeFact,
-    pub(crate) set_iterable_shapes: super::SetIterableShapes,
-    pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,
-    pub(crate) local_class_shapes: super::LocalClassConstructionShapes,
-    pub(crate) plain_data_bindings: Vec<String>,
+    pub set_iterable_shapes: super::SetIterableShapes,
+    pub stable_array_spread_shapes: super::StableArraySpreadShapes,
+    pub local_class_shapes: super::LocalClassConstructionShapes,
+    pub plain_data_bindings: Vec<String>,
     /// Top-level `var` binding IDs that pass the structural stability gates.
     /// Value inference admits only candidates with a proven Number initializer;
     /// at arbitrary module positions the resulting value class is Number or
     /// pre-initialization `undefined`, never exact Number.
     pub(crate) stable_var_number_candidates: BTreeSet<Id>,
-    pub(crate) plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
-    pub(crate) plain_data_inference_uses:
+    pub plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
+    pub plain_data_inference_uses:
         BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
-    pub(crate) source_semantic_facts:
-        Option<std::sync::Arc<super::semantic_inference::SemanticFacts>>,
+    pub source_semantic_facts: Option<std::sync::Arc<super::semantic_inference::SemanticFacts>>,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,

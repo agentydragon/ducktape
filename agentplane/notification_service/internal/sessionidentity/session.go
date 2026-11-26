@@ -3,6 +3,7 @@ package sessionidentity
 import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/proto/sessionplacement"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 )
 
@@ -12,17 +13,7 @@ func Target(session *dispatcherpb.Session, sessionID string) *sessionpb.ExactEnv
 	if session.GetSessionId() != sessionID {
 		return nil
 	}
-	placement := session.GetPlacement()
-	if placement == nil {
-		return nil
-	}
-	var target *sessionpb.ExactEnvironment
-	switch placement.Kind.(type) {
-	case *sessionpb.SessionPlacement_EnvironmentHosted:
-		target = placement.GetEnvironmentHosted().GetEnvironment()
-	case *sessionpb.SessionPlacement_CentralSamplerV1:
-		target = placement.GetCentralSamplerV1().GetExecutorEnvironment()
-	}
+	target := sessionplacement.Target(session.GetPlacement())
 	if target == nil || target.GetName() == "" || target.GetUid() == "" {
 		return nil
 	}

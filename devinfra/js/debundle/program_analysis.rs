@@ -450,20 +450,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
                 ModuleItem::ModuleDecl(ModuleDecl::TsExportAssignment(_))
             )
         });
-    for (item_index, item) in parsed.module.body.iter().enumerate() {
-        let kind = match item {
-            ModuleItem::ModuleDecl(ModuleDecl::TsImportEquals(_)) => {
-                Some(InteropUseKind::TsImportEquals)
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::TsExportAssignment(_)) => {
-                Some(InteropUseKind::TsExportAssignment)
-            }
-            _ => None,
-        };
-        if let Some(kind) = kind {
-            interop_uses.push((item_index, item.span(), kind, None));
-        }
-    }
+    push_ts_interop_uses(&parsed.module.body, &mut interop_uses);
 
     let census_sites = interop_uses
         .iter()
@@ -681,35 +668,15 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         && !runtime_facts.has_own_cjs_export_surface
         && !dynamic_scope
     {
-        let stable_bindings = primitive_bindings
-            .into_iter()
-            .filter(|(id, _)| {
-                binding_declarations.get(id) == Some(&1) && !binding_writes.contains(id)
-            })
-            .collect::<BTreeMap<_, _>>();
-        let mut resolver = StableValueResolver {
-            bindings: &stable_bindings,
-            imported_bindings: &primitive_imported_bindings,
-            resolved: BTreeMap::new(),
-        };
-        for (name, sources) in primitive_exports {
-            let [Some(source)] = sources.as_slice() else {
-                continue;
-            };
-            let value = match source {
-                PrimitiveExportSource::Value(value) => {
-                    let Some((kinds, imports)) = resolver.resolve(value) else {
-                        continue;
-                    };
-                    StableExportValue::Local { kinds, imports }
-                }
-                PrimitiveExportSource::ReExport { source, export } => StableExportValue::ReExport {
-                    source: source.clone(),
-                    export: export.clone(),
-                },
-            };
-            runtime_facts.stable_export_values.insert(name, value);
-        }
+        runtime_facts
+            .stable_export_values
+            .extend(stable_export_values(
+                primitive_bindings,
+                &primitive_imported_bindings,
+                primitive_exports,
+                &binding_declarations,
+                &binding_writes,
+            ));
     }
 
     ProgramAnalysis {
@@ -722,6 +689,67 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         has_rewritable_specifier,
         runtime_facts,
     }
+}
+
+/// TypeScript `import =` / `export =` items as interop uses.
+fn push_ts_interop_uses(
+    body: &[ModuleItem],
+    interop_uses: &mut Vec<(usize, Span, InteropUseKind, Option<String>)>,
+) {
+    for (item_index, item) in body.iter().enumerate() {
+        let kind = match item {
+            ModuleItem::ModuleDecl(ModuleDecl::TsImportEquals(_)) => {
+                Some(InteropUseKind::TsImportEquals)
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::TsExportAssignment(_)) => {
+                Some(InteropUseKind::TsExportAssignment)
+            }
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            interop_uses.push((item_index, item.span(), kind, None));
+        }
+    }
+}
+
+/// Exported names whose value is a primitive stable for the whole program:
+/// a once-declared, never-written local or a single re-export.
+fn stable_export_values(
+    primitive_bindings: BTreeMap<Id, PrimitiveValue>,
+    primitive_imported_bindings: &BTreeMap<Id, String>,
+    primitive_exports: BTreeMap<String, Vec<Option<PrimitiveExportSource>>>,
+    binding_declarations: &BTreeMap<Id, usize>,
+    binding_writes: &BTreeSet<Id>,
+) -> BTreeMap<String, StableExportValue> {
+    let mut values = BTreeMap::new();
+    let stable_bindings = primitive_bindings
+        .into_iter()
+        .filter(|(id, _)| binding_declarations.get(id) == Some(&1) && !binding_writes.contains(id))
+        .collect::<BTreeMap<_, _>>();
+    let mut resolver = StableValueResolver {
+        bindings: &stable_bindings,
+        imported_bindings: primitive_imported_bindings,
+        resolved: BTreeMap::new(),
+    };
+    for (name, sources) in primitive_exports {
+        let [Some(source)] = sources.as_slice() else {
+            continue;
+        };
+        let value = match source {
+            PrimitiveExportSource::Value(value) => {
+                let Some((kinds, imports)) = resolver.resolve(value) else {
+                    continue;
+                };
+                StableExportValue::Local { kinds, imports }
+            }
+            PrimitiveExportSource::ReExport { source, export } => StableExportValue::ReExport {
+                source: source.clone(),
+                export: export.clone(),
+            },
+        };
+        values.insert(name, value);
+    }
+    values
 }
 
 pub fn build_chunk_manifest_from_analysis(

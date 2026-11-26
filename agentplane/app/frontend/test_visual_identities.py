@@ -58,32 +58,25 @@ async def test_identity_page(view: VisualPage, app: AgentplaneFixture, name: str
     await view.capture(target=view.page.locator("#app"))
 
 
-async def test_referenced_identity_cannot_be_deleted(view: VisualPage, app: AgentplaneFixture) -> None:
-    await _open_identity(view, app, "referenced-identity")
-    delete = view.page.get_by_role("region", name="Delete identity")
-    await expect(delete.get_by_role("button", name="Delete identity")).to_be_disabled()
-    await expect(delete.get_by_role("list", name="References to this identity")).to_have_text(
-        "PolicyBinding referenced-identity-operator-grant"
-    )
-    await view.check(context="referenced identity's delete is refused")
-    await view.capture(target=view.page.locator("#app"))
-
-
-async def test_credential_referenced_identity_delete_is_refused(view: VisualPage, app: AgentplaneFixture) -> None:
-    # The page sees no referencing binding; only the Policy Controller sees the WorkloadCredential.
-    await _open_identity(view, app, "credential-referenced-identity")
+@pytest.mark.parametrize(
+    ("name", "reference"),
+    [
+        ("referenced-identity", "PolicyBinding referenced-identity-operator-grant"),
+        # The page sees no referencing binding; only the Policy Controller sees the WorkloadCredential.
+        ("credential-referenced-identity", "WorkloadCredential agentplane-visual/standing-agent"),
+    ],
+)
+async def test_delete_dialog_shows_the_dry_run_refusal(
+    view: VisualPage, app: AgentplaneFixture, name: str, reference: str
+) -> None:
+    await _open_identity(view, app, name)
     await view.page.get_by_role("button", name="Delete identity").click()
-    await (
-        view.page.get_by_role("dialog", name="Delete credential-referenced-identity?")
-        .get_by_role("button", name="Delete", exact=True)
-        .click()
-    )
-    refusal = view.page.get_by_role("alert").filter(has_text="The Policy Controller refused the delete")
-    await expect(refusal.get_by_role("list", name="References to this identity")).to_have_text(
-        "WorkloadCredential agentplane-visual/standing-agent"
-    )
-    await view.check(context="the Policy Controller's credential refusal is shown")
-    await view.capture(target=view.page.locator("#app"))
+    dialog = view.page.get_by_role("dialog", name=f"Delete {name}?")
+    refusal = dialog.get_by_role("alert").filter(has_text="The Policy Controller refuses this delete")
+    await expect(refusal.get_by_role("list", name="References to this identity")).to_have_text(reference)
+    await expect(dialog.get_by_role("button", name="Delete", exact=True)).to_be_disabled()
+    await view.check(context="the Policy Controller's dry-run refusal is shown")
+    await view.capture(target=dialog)
 
 
 @DESKTOP_AND_MOBILE

@@ -12,7 +12,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
@@ -27,7 +26,7 @@ func TestWorkloadModelConfigGRPCUsesVerifiedTLSHTTPPeer(t *testing.T) {
 	ca := transporttesting.NewCA(t)
 	serverCredentials := ca.Issue(t, peertls.LLMIngressURI)
 	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
-	resolver, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	resolver, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +99,7 @@ func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBefore
 			serverCredentials := ca.Issue(t, peertls.LLMIngressURI)
 			trustedClientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
 			invalidClientCredentials := test.prepare(t, ca, workload)
-			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+			resolver, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, testPolicyNamespace))
 			if err != nil {
 				t.Fatal(err)
 			}

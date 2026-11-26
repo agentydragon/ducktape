@@ -11,12 +11,6 @@ import (
 	"github.com/google/go-github/v88/github"
 )
 
-// Repository is a repository's stable identity.
-type Repository struct {
-	ID       int64
-	FullName string
-}
-
 func splitRepository(repository string) (owner, name string, err error) {
 	if !githubmodel.IsRepositoryName(repository) {
 		return "", "", errors.New("repository must be owner/name")
@@ -25,11 +19,11 @@ func splitRepository(repository string) (owner, name string, err error) {
 	return owner, name, nil
 }
 
-func repositoryFrom(repository *github.Repository) (Repository, error) {
+func repositoryFrom(repository *github.Repository) (githubmodel.Repository, error) {
 	if repository.GetID() <= 0 || !githubmodel.IsRepositoryName(repository.GetFullName()) {
-		return Repository{}, &InvalidResponseError{Reason: "repository identity is missing or malformed"}
+		return githubmodel.Repository{}, &InvalidResponseError{Reason: "repository identity is missing or malformed"}
 	}
-	return Repository{ID: repository.GetID(), FullName: repository.GetFullName()}, nil
+	return githubmodel.Repository{ID: repository.GetID(), Name: repository.GetFullName()}, nil
 }
 
 // Installation returns the ID of the App's installation for a repository. It is a NotInstalledError if the App has
@@ -56,27 +50,27 @@ func (c *Client) Installation(ctx context.Context, repository string) (int64, er
 }
 
 // Repository reads a repository by name as an installation.
-func (c *Client) Repository(ctx context.Context, name string, installationID int64) (Repository, error) {
+func (c *Client) Repository(ctx context.Context, name string, installationID int64) (githubmodel.Repository, error) {
 	owner, repo, err := splitRepository(name)
 	if err != nil {
-		return Repository{}, err
+		return githubmodel.Repository{}, err
 	}
 	repository, err := callAsInstallation(ctx, c, installationID, false, func(ctx context.Context, client *github.Client) (*github.Repository, *github.Response, error) {
 		return client.Repositories.Get(ctx, owner, repo)
 	})
 	if err != nil {
-		return Repository{}, err
+		return githubmodel.Repository{}, err
 	}
 	return repositoryFrom(repository)
 }
 
 // RepositoryByID reads a repository by its numeric ID as an installation.
-func (c *Client) RepositoryByID(ctx context.Context, id, installationID int64) (Repository, error) {
+func (c *Client) RepositoryByID(ctx context.Context, id, installationID int64) (githubmodel.Repository, error) {
 	repository, err := callAsInstallation(ctx, c, installationID, false, func(ctx context.Context, client *github.Client) (*github.Repository, *github.Response, error) {
 		return client.Repositories.GetByID(ctx, id)
 	})
 	if err != nil {
-		return Repository{}, err
+		return githubmodel.Repository{}, err
 	}
 	return repositoryFrom(repository)
 }

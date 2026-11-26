@@ -89,7 +89,7 @@ func StoreRecord(writer content.ContentWriter, record json.RawMessage) (content.
 			stored.ContentMode = contentModeInline
 		}
 	}
-	return putContent(writer, ContentAnthropicMessage, stored)
+	return content.PutJSON(writer, ContentAnthropicMessage, stored)
 }
 
 // RestoreRecord resolves an Anthropic message/response content graph back to provider JSON.
@@ -146,17 +146,13 @@ func StoreRequest(writer content.ContentWriter, request Request) (content.Conten
 		Stream:       request.Stream,
 		Thinking:     request.Thinking,
 	}
-	systemID, err := putContent(writer, content.ContentText, request.System)
+	systemID, err := content.PutJSON(writer, content.ContentText, request.System)
 	if err != nil {
 		return "", nil, fmt.Errorf("store Anthropic system prompt: %w", err)
 	}
 	toolIDs := make([]content.ContentID, 0, len(request.Tools))
 	for index, tool := range request.Tools {
-		toolJSON, err := json.Marshal(tool)
-		if err != nil {
-			return "", nil, fmt.Errorf("encode Anthropic tool %d: %w", index, err)
-		}
-		id, err := writer.PutContent(ContentAnthropicTool, toolJSON)
+		id, err := content.PutJSON(writer, ContentAnthropicTool, tool)
 		if err != nil {
 			return "", nil, fmt.Errorf("store Anthropic tool %d: %w", index, err)
 		}
@@ -170,7 +166,7 @@ func StoreRequest(writer content.ContentWriter, request Request) (content.Conten
 		}
 		messageIDs = append(messageIDs, id)
 	}
-	profile, err := putContent(writer, ContentAnthropicRequest, requestContent{
+	profile, err := content.PutJSON(writer, ContentAnthropicRequest, requestContent{
 		Fields: metadata, SystemID: systemID, Tools: toolIDs,
 	})
 	if err != nil {
@@ -312,14 +308,6 @@ func blockStorageKind(blockType BlockType) content.ContentKind {
 	default:
 		return ""
 	}
-}
-
-func putContent(writer content.ContentWriter, kind content.ContentKind, value any) (content.ContentID, error) {
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return "", err
-	}
-	return writer.PutContent(kind, payload)
 }
 
 func loadContent(reader content.ContentReader, id content.ContentID, kind content.ContentKind) (content.StoredContent, error) {

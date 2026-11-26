@@ -75,7 +75,7 @@ func NewPolicy() *Policy {
 // on each binding, from Run on.
 func (p *Policy) Watch(base *rest.Config, namespace string) (*reader.Watches, error) {
 	watches := reader.NewWatches(base, p.Health)
-	return watches, reader.WatchRules(watches, p.Rules, namespace, Ready)
+	return watches, reader.WatchRules(watches, p.Rules, namespace, Ready, reader.KubernetesIdentities{})
 }
 
 // PermitsSend reports whether a binding of the sender, a ServiceAccount or an Identity incarnation, grants a rule

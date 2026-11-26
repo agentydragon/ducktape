@@ -1248,7 +1248,7 @@ fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
             execution.remove("callback_factory_uses");
         }
     }
-    let historical: analysis::DependencyGraphReport = serde_json::from_value(old_graph).unwrap();
+    let historical: graph::DependencyGraphReport = serde_json::from_value(old_graph).unwrap();
     assert!(historical.imported_callable_summaries.is_empty());
 }
 

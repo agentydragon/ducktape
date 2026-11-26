@@ -6,7 +6,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
@@ -17,7 +16,7 @@ import (
 
 func TestModelConfigServicePeerOverMTLS(t *testing.T) {
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-service-model-reader", testPolicyNamespace)
-	svid, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	svid, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

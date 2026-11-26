@@ -32,6 +32,7 @@ go_library(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
+        "//agentplane/proto/sessionplacement",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
         "//agentplane/session_dispatcher/dispatcher/wake",

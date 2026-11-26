@@ -19,6 +19,7 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.orchestration_v1.binding import LaunchPreset
 from agentplane.app.settings import Settings
 from agentplane.env.config import Executor, GuestResources
+from agentplane.eventblock.settings import EventBlockProfile
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.notification_service.settings import NoticeDebounceSettings
@@ -67,6 +68,8 @@ class CentralSamplerProps:
     actions: settings.ActionsConfig | None = None
     context_source_writes: bool = False
     event_block_writes: bool = False
+    event_block_v2_writes: bool = False
+    event_block_profile: EventBlockProfile | None = None
 
 
 @dataclass(frozen=True)

@@ -52,7 +52,11 @@ func New(namespace string, objects client.Client, actor Actor) (*Access, error) 
 	if err := auth.ValidateServiceCallers([]string{actor.ServiceSPIFFEID}); err != nil {
 		return nil, err
 	}
-	reader, err := sandboxreader.New(namespace, objects)
+	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := sandboxreader.New(namespace, objects, identities)
 	if err != nil {
 		return nil, err
 	}

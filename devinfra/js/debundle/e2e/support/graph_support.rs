@@ -5,11 +5,11 @@ mod graph_fixture;
 pub mod reflective_provider;
 pub use graph_fixture::GraphFixture;
 
-use analysis::reports::schema::{EdgeRoleReport, SourceUnitReport};
-use analysis::{DependencyGraphReport, ProgramGraphReport};
 use analysis_model::DepKind;
 use debundle_e2e_support::saved_analysis::StagedInvocation;
 use debundle_e2e_support::{Fixture, RejectedFixture, read_gzip_json, read_json};
+use graph::{DependencyGraphReport, ProgramGraphReport};
+use graph::{report::EdgeRoleReport, report::SourceUnitReport};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 pub fn commuting_statements_diagnostics(
     report_root: &Path,
     chunk_id: &str,
-) -> Vec<analysis::CommutingStatementsDiagnostic> {
+) -> Vec<graph::CommutingStatementsDiagnostic> {
     let path = report_root
         .join(chunk_id)
         .join("commuting_statements_diagnostics.json");

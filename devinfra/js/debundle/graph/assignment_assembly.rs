@@ -12,10 +12,10 @@
 use analysis_model::DepKind;
 use std::collections::{BTreeSet, HashMap};
 
+use crate::DependencyGraph;
 use crate::atomic_groups::AtomicGroup;
-use crate::graph::DependencyGraph;
-use crate::ids::{BindingKind, EntryDestination, LocalBindings, ModuleId, PlannedModule};
 use crate::module_assignment::ModuleAssignment;
+use analysis::ids::{BindingKind, EntryDestination, LocalBindings, ModuleId, PlannedModule};
 use serde::Serialize;
 use source_identity::SourceUnitId;
 use swc_atoms::Atom;
@@ -34,7 +34,7 @@ pub struct ConflictingClaim {
 ///
 /// Atom-level (binding members claimed across distinct destinations),
 /// not SCC-level — the atom-level sibling of the module-quotient-SCC
-/// shape [`crate::reports::SccCore`]. Both carry the "unrealizable,
+/// shape [`analysis::reports::SccCore`]. Both carry the "unrealizable,
 /// here's why" framing, but this one's domain is source units in an atomic
 /// group rather than modules in an SCC, so it does not reuse that core
 /// and stays a separate type.

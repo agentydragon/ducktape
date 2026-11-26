@@ -4,9 +4,6 @@
 //! that alias only in importers that are part of the materialization set.
 
 use super::super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
-use crate::rename_ledger::{
-    RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
-};
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::top_level_id;
 use anyhow::{Context, Result};
@@ -14,6 +11,9 @@ use artifact::reports::SelectedModuleLowering;
 use artifact::{ArtifactIndexes, ChunkBundle};
 use binding_targets::imported_export_name;
 use js_ast::is_binding_identifier;
+use rename_ledger::{
+    RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;

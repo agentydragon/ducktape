@@ -135,7 +135,6 @@ type Runtime struct {
 	execCallID             uint64
 	executionFence         *executionFence
 	closing                bool
-	failed                 bool
 	changes                chan struct{}
 	fatal                  chan error
 	failureErr             error
@@ -404,140 +403,6 @@ func (r *Runtime) startLifecycleEngineLocked() {
 	})
 }
 
-// Close stops Runtime-owned work, proves its fences, and releases the state store.
-// Canceling ctx only stops this caller's wait; shutdown and worker joining continue.
-func (r *Runtime) Close(ctx context.Context) error {
-	r.mu.Lock()
-	r.closing = true
-	r.admissionOpen = false
-	if r.activeTransitionCancel != nil {
-		r.activeTransitionCancel()
-	}
-	r.changedLocked()
-	r.mu.Unlock()
-	if r.executionLifecycle != nil {
-		r.executionLifecycle.cancelStart()
-	}
-	r.closeOnce.Do(func() {
-		go func() {
-			r.lifecycleStartMu.Lock()
-			if r.lifecycleInitErr != nil {
-				r.closeErr = fmt.Errorf("Session construction left lifecycle engine unsafe to run: %w", r.lifecycleInitErr)
-				r.lifecycleStartMu.Unlock()
-			} else {
-				r.startLifecycleEngineLocked()
-				r.lifecycleStartMu.Unlock()
-				r.closeErr = r.finishClose()
-			}
-			close(r.closeDone)
-		}()
-	})
-	select {
-	case <-r.closeDone:
-		return r.closeErr
-	default:
-	}
-	select {
-	case <-r.closeDone:
-		return r.closeErr
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (r *Runtime) finishClose() error {
-	// Settle the accepted transition and any quiescence fence before publishing a
-	// successor shutdown generation. A late old fence must never fail or overwrite
-	// the generation that Close is about to own.
-	r.transitionMu.Lock()
-	r.mu.Lock()
-	priorFence := r.executionFence
-	r.mu.Unlock()
-	if priorFence != nil {
-		select {
-		case <-priorFence.done:
-		case <-r.lifecycleContext.Done():
-			r.transitionMu.Unlock()
-			return r.coordinatorFailure("Close transition settlement")
-		}
-	}
-	if r.lifecycleContext.Err() != nil {
-		r.transitionMu.Unlock()
-		return r.coordinatorFailure("Close transition settlement")
-	}
-
-	r.mu.Lock()
-	desired := r.desired
-	desired.Mode, desired.Generation = lifecycle.Closing, desired.Generation+1
-	if sealedUID, sealed, err := r.state.SealedUID(); err != nil {
-		r.mu.Unlock()
-		r.transitionMu.Unlock()
-		return err
-	} else if sealed {
-		desired.SealUID = sealedUID
-		desired.IncarnationUID = sealedUID
-	}
-	if err := lifecycle.PublishEnvironmentDesired(context.Background(), r.lifecycleState, desired); err != nil {
-		r.mu.Unlock()
-		r.transitionMu.Unlock()
-		return fmt.Errorf("publish Runtime closing state: %w", err)
-	}
-	r.desired = desired
-	r.changedLocked()
-	r.mu.Unlock()
-	r.transitionMu.Unlock()
-
-	sessionLossErr, err := r.closeComponents(desired)
-	if r.lifecycleContext.Err() != nil {
-		return r.coordinatorFailure("Close completion")
-	}
-	if err != nil {
-		return err
-	}
-	return r.joinClose(sessionLossErr)
-}
-
-func (r *Runtime) joinClose(sessionLossErr error) error {
-	// The aggregate has stopped every component that can need the engine. Its
-	// completion means only that it is now safe to join that engine.
-	r.lifecycleCancel()
-	<-r.lifecycleDone
-	r.mu.Lock()
-	lifecycleRunErr := r.lifecycleRunErr
-	lifecycleControllerErr := r.lifecycleControllerErr
-	r.mu.Unlock()
-	if lifecycleRunErr != nil || lifecycleControllerErr != nil {
-		return errors.Join(lifecycleRunErr, lifecycleControllerErr)
-	}
-	if sessionLossErr != nil {
-		r.mu.Lock()
-		sessionLossErr = errors.Join(sessionLossErr, r.failureLocked())
-		r.mu.Unlock()
-	}
-	if r.sessions != nil {
-		<-r.sessionWorkerDone
-		// Recovery completion does not prove native cleanup. Retain Runtime's
-		// owner if the Session component cannot finish its joined work.
-		if cleanupErr := r.closeSessions(context.Background()); cleanupErr != nil {
-			return errors.Join(sessionLossErr, r.sessionWorkerErr, fmt.Errorf("Session cleanup unproved: %w", cleanupErr))
-		}
-		sessionLossErr = errors.Join(sessionLossErr, r.sessionWorkerErr)
-	}
-	r.lifecycleWorkers.Wait()
-	if r.config.Supervision == "pid1" {
-		if err := r.supervisor.FenceNamespace(context.Background()); err != nil {
-			return fmt.Errorf("fence Pod PID namespace: %w", err)
-		}
-	}
-	if r.security != nil {
-		sessionLossErr = errors.Join(sessionLossErr, r.security.Close())
-	}
-	if r.lifecycleStore != nil {
-		sessionLossErr = errors.Join(sessionLossErr, r.lifecycleStore.Close())
-	}
-	return sessionLossErr
-}
-
 func (r *Runtime) changed() {
 	r.mu.Lock()
 	r.changedLocked()
@@ -592,7 +457,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	activeAdmissions := r.activeAdmissions
 	activeExecution := len(r.execCalls)
 	executionRecovering := r.executionOwner.recovering()
-	ready := r.startupComplete && !r.failed
+	ready := r.startupComplete && r.failureErr == nil
 	r.mu.Unlock()
 	if facts == nil {
 		facts = &environmentruntimestatepb.EnvironmentRuntimeFacts{}
@@ -696,23 +561,12 @@ func (r *Runtime) failLocked(err error) {
 	if r.failureErr == nil {
 		r.failureErr = err
 	}
-	r.failed = true
 	r.admissionOpen = false
 	r.changedLocked()
 	select {
 	case r.fatal <- err:
 	default:
 	}
-}
-
-func (r *Runtime) failureLocked() error {
-	if r.failureErr != nil {
-		return r.failureErr
-	}
-	if r.failed {
-		return errors.New("environment Runtime failed")
-	}
-	return nil
 }
 
 var _ environmentruntimepb.EnvironmentRuntimeServer = (*Runtime)(nil)

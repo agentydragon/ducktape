@@ -47,7 +47,7 @@ py_test(
 
 analysis_identity(
     name = "analysis_identity_source",
-    engine = ":staged_analysis",
+    engine = "//devinfra/js/debundle/staged_analysis:staged_analysis",
 )
 
 rust_library(
@@ -198,248 +198,25 @@ rust_library(
 )
 
 rust_library(
-    name = "source_match_holes",
-    srcs = ["selectors/matching/source_match_holes.rs"],
-    crate_root = "selectors/matching/source_match_holes.rs",
-    edition = "2024",
-)
-
-rust_test(
-    name = "source_match_holes_test",
-    crate = ":source_match_holes",
-    edition = "2024",
-)
-
-rust_library(
-    name = "source_mismatch",
-    srcs = ["selectors/diagnostics/source_mismatch.rs"],
-    crate_root = "selectors/diagnostics/source_mismatch.rs",
-    edition = "2024",
-    deps = [
-        ":source_match_holes",
-        "@crates//:serde",
-    ],
-)
-
-rust_library(
-    name = "source_match",
-    srcs = glob(["selectors/matching/source_match/*.rs"]),
-    crate_root = "selectors/matching/source_match/mod.rs",
-    edition = "2024",
-    deps = [
-        ":binding_targets",
-        ":chunk_facts",
-        ":js_ast",
-        ":selector_match",
-        ":source_match_holes",
-        ":source_mismatch",
-        ":spec",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:strum",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_test(
-    name = "source_match_test",
-    crate = ":source_match",
-    edition = "2024",
-)
-
-rust_library(
-    name = "selector_candidate_index",
-    srcs = ["selectors/authoring/selector_candidate_index.rs"],
-    crate_root = "selectors/authoring/selector_candidate_index.rs",
-    edition = "2024",
-    deps = [
-        ":source_match_holes",
-        "@crates//:roaring",
-        "@crates//:serde",
-        "@crates//:strum",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
-    ],
-)
-
-rust_test(
-    name = "selector_candidate_index_test",
-    crate = ":selector_candidate_index",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-    ],
-)
-
-# AST-shape index + read-off API for selector synthesis.
-rust_library(
-    name = "shape_index",
-    srcs = ["selectors/authoring/shape_index.rs"],
-    crate_root = "selectors/authoring/shape_index.rs",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-        ":selector_candidate_index",
-        "@crates//:rustc-hash",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
-rust_test(
-    name = "shape_index_test",
-    crate = ":shape_index",
-    edition = "2024",
-)
-
-# Read-off selector renderer (W2): maps a read-off AnchorSet to the kept-span
-# set the existing selector_codemod prune machinery consumes. No second
-# serializer — rendering reuses the per-form render_with closure.
-rust_library(
-    name = "readoff_render",
-    srcs = ["selectors/authoring/readoff_render.rs"],
-    crate_root = "selectors/authoring/readoff_render.rs",
-    edition = "2024",
-    deps = [
-        ":selector_candidate_index",
-        ":shape_index",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
-    ],
-)
-
-rust_test(
-    name = "readoff_render_test",
-    crate = ":readoff_render",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-    ],
-)
-
-rust_library(
-    name = "anonymous_resolution",
-    srcs = ["selectors/resolution/anonymous_resolution.rs"],
-    crate_root = "selectors/resolution/anonymous_resolution.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":graph_provenance",
-        ":js_ast",
-        ":selector_outcome",
-        ":selector_resolve",
-        ":source_identity",
-        ":source_match",
-        ":spec",
-        ":spec_modules",
-        ":spec_resolution",
-        "@crates//:anyhow",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
-rust_test(
-    name = "anonymous_resolution_test",
-    crate = ":anonymous_resolution",
-    edition = "2024",
-)
-
-rust_library(
-    name = "output_layout",
-    srcs = ["artifacts/output_layout.rs"],
-    crate_root = "artifacts/output_layout.rs",
-    edition = "2024",
-    deps = [
-        "@crates//:anyhow",
-        "@crates//:relative-path",
-    ],
-)
-
-rust_library(
-    name = "selector_outcome",
-    srcs = [
-        "selectors/resolution/selector_invalid.rs",
-        "selectors/resolution/selector_outcome.rs",
-    ],
-    crate_root = "selectors/resolution/selector_outcome.rs",
-    edition = "2024",
-    deps = [
-        ":selector_candidate_index",
-        ":selector_ir",
-        ":source_match",
-        ":source_mismatch",
-        ":spec",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:strum",
-        "@crates//:swc_common",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_library(
-    name = "artifact",
-    srcs = [
-        "artifacts/artifact.rs",
-        "artifacts/emission_files.rs",
-        "artifacts/export_policies.rs",
-        "artifacts/indexed_files.rs",
-        "artifacts/metrics.rs",
-        "artifacts/paths.rs",
-        "artifacts/reports.rs",
-        "artifacts/runtime_resources.rs",
-        "artifacts/source_program.rs",
-    ],
-    crate_root = "artifacts/artifact.rs",
-    edition = "2024",
-    deps = [
-        ":analysis_model",
-        ":graph_provenance",
-        ":js_ast",
-        ":output_layout",
-        ":report_io",
-        ":source_identity",
-        ":spec",
-        "@crates//:anyhow",
-        "@crates//:rayon",
-        "@crates//:relative-path",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:strum",
-        "@crates//:swc_common",
-        "@crates//:url",
-    ],
-)
-
-rust_test(
-    name = "artifact_test",
-    crate = ":artifact",
-    edition = "2024",
-)
-
-rust_library(
     name = "reconstruction",
     srcs = [
-        "artifacts/browser_harness_plan.rs",
         "reconstruction.rs",
+        "//devinfra/js/debundle/artifacts:browser_harness_plan.rs",
     ],
-    compile_data = ["artifacts/harness_monitor.html"],
+    compile_data = ["//devinfra/js/debundle/artifacts:harness_monitor.html"],
     crate_root = "reconstruction.rs",
     edition = "2024",
     deps = [
-        ":artifact",
         ":final_global_resolution",
         ":gate",
-        ":lowering",
-        ":output_layout",
         ":report_io",
         ":source_identity",
-        ":spec",
         ":validate_emitted_exports",
-        ":vendor",
+        "//devinfra/js/debundle/artifacts:artifact",
+        "//devinfra/js/debundle/artifacts:output_layout",
+        "//devinfra/js/debundle/lowering",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/vendor",
         "@crates//:anyhow",
         "@crates//:lol_html",
         "@crates//:serde",
@@ -449,108 +226,15 @@ rust_library(
 )
 
 rust_library(
-    name = "write_tree",
-    srcs = [
-        "artifacts/script_output.rs",
-        "artifacts/write_tree.rs",
-    ],
-    crate_root = "artifacts/write_tree.rs",
-    edition = "2024",
-    deps = [
-        ":artifact",
-        ":identifier_rename_queue",
-        ":output_layout",
-        ":reconstruction",
-        ":report_io",
-        ":source_identity",
-        "@crates//:anyhow",
-        "@crates//:rayon",
-        "@crates//:swc_common",
-    ],
-)
-
-rust_library(
-    name = "spec",
-    srcs = ["spec/spec.rs"],
-    crate_root = "spec/spec.rs",
-    edition = "2024",
-    deps = [
-        ":spec_wire_rust_proto",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:serde_yaml",
-        "@crates//:strum",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_test(
-    name = "spec_test",
-    crate = ":spec",
-    edition = "2024",
-)
-
-rust_library(
-    name = "vendor",
-    srcs = [
-        "vendor/emission.rs",
-        "vendor/export_surface.rs",
-        "vendor/import_rewrites.rs",
-        "vendor/manifests.rs",
-        "vendor/mod.rs",
-        "vendor/output_imports.rs",
-        "vendor/packages.rs",
-        "vendor/passthrough.rs",
-        "vendor/plan.rs",
-        "vendor/strip.rs",
-        "vendor/validate.rs",
-        "vendor/wrappers.rs",
-    ],
-    crate_root = "vendor/mod.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":artifact",
-        ":binding_targets",
-        ":graph_provenance",
-        ":js_ast",
-        ":program_analysis",
-        ":source_identity",
-        ":spec",
-        "@crates//:anyhow",
-        "@crates//:rayon",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_codegen",
-        "@crates//:swc_ecma_visit",
-    ],
-)
-
-rust_test(
-    name = "vendor_test",
-    crate = ":vendor",
-    edition = "2024",
-    deps = [
-        ":binding_targets",
-        "@crates//:rayon",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_codegen",
-        "@crates//:swc_ecma_parser",
-    ],
-)
-
-rust_library(
     name = "validate_emitted_exports",
     srcs = ["validate_emitted_exports.rs"],
     crate_root = "validate_emitted_exports.rs",
     edition = "2024",
     deps = [
-        ":artifact",
         ":binding_targets",
         ":js_ast",
         ":source_identity",
+        "//devinfra/js/debundle/artifacts:artifact",
         "@crates//:anyhow",
         "@crates//:strum",
         "@crates//:swc_common",
@@ -571,8 +255,8 @@ rust_library(
     crate_root = "prune_module_exports.rs",
     edition = "2024",
     deps = [
-        ":artifact",
         ":binding_targets",
+        "//devinfra/js/debundle/artifacts:artifact",
         "@crates//:swc_ecma_ast",
     ],
 )
@@ -590,8 +274,8 @@ rust_library(
     crate_root = "prune_dead_imports.rs",
     edition = "2024",
     deps = [
-        ":artifact",
         ":binding_targets",
+        "//devinfra/js/debundle/artifacts:artifact",
         "@crates//:swc_atoms",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
@@ -603,31 +287,6 @@ rust_test(
     crate = ":prune_dead_imports",
     edition = "2024",
     deps = [":js_ast"],
-)
-
-rust_library(
-    name = "emit_harness",
-    srcs = ["artifacts/emit_harness.rs"],
-    crate_root = "artifacts/emit_harness.rs",
-    edition = "2024",
-    deps = [
-        ":artifact",
-        ":output_layout",
-        ":reconstruction",
-        ":report_io",
-        ":source_identity",
-        ":write_tree",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:serde_json",
-    ],
-)
-
-rust_test(
-    name = "emit_harness_test",
-    crate = ":emit_harness",
-    edition = "2024",
-    deps = ["@crates//:tempfile"],
 )
 
 rust_library(
@@ -670,10 +329,10 @@ rust_library(
     crate_root = "final_global_resolution.rs",
     edition = "2024",
     deps = [
-        ":artifact",
         ":graph_provenance",
         ":js_ast",
         ":source_identity",
+        "//devinfra/js/debundle/artifacts:artifact",
         "@crates//:serde",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
@@ -719,9 +378,6 @@ rust_library(
         "analysis_inputs/saved.rs",
         "analysis_provenance.rs",
         "analysis_test_support.rs",
-        "assignment_assembly.rs",
-        "atomic_groups.rs",
-        "cross_module_purity.rs",
         "diagnostics.rs",
         "diagnostics/progress.rs",
         "execution_evidence.rs",
@@ -838,20 +494,6 @@ rust_library(
         "facts/value_flow/scalar_sequence.rs",
         "facts/value_flow_tests.rs",
         "facts/value_set_tests.rs",
-        "graph/analysis_tests.rs",
-        "graph/build.rs",
-        "graph/build/at_init.rs",
-        "graph/build/cell_order.rs",
-        "graph/build/commuting.rs",
-        "graph/build/diagnostics.rs",
-        "graph/commutation_order.rs",
-        "graph/dependency_graph.rs",
-        "graph/edge.rs",
-        "graph/input.rs",
-        "graph/linker_order.rs",
-        "graph/mod.rs",
-        "graph/quotient.rs",
-        "graph/tests.rs",
         "ids.rs",
         "inference.rs",
         "inference/iterative.rs",
@@ -860,8 +502,6 @@ rust_library(
         "inference/iterative/tests.rs",
         "lib.rs",
         "loader_closure.rs",
-        "module_assignment.rs",
-        "placement_projection.rs",
         "program_bindings.rs",
         "purity/classifier.rs",
         "purity/classifier_tests.rs",
@@ -884,7 +524,6 @@ rust_library(
         "reports/saved.rs",
         "reports/schema.rs",
         "reports/spec_lint.rs",
-        "swc_parallel.rs",
     ],
     compile_data = [":standard_globals_json"],
     crate_root = "lib.rs",
@@ -899,10 +538,10 @@ rust_library(
         ":js_ast",
         ":report_io",
         ":saved_purity_rust_proto",
-        ":selector_outcome",
         ":source_identity",
-        ":spec",
         ":work_metrics",
+        "//devinfra/js/debundle/selectors/resolution:selector_outcome",
+        "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
         "@crates//:imbl",
         "@crates//:petgraph",
@@ -935,6 +574,37 @@ rust_test(
 )
 
 rust_library(
+    name = "cross_module_purity",
+    srcs = [
+        "cross_module_purity.rs",
+        "swc_parallel.rs",
+    ],
+    crate_root = "cross_module_purity.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":analysis_model",
+        ":binding_targets",
+        ":js_ast",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "cross_module_purity_test",
+    crate = ":cross_module_purity",
+    edition = "2024",
+    deps = [
+        "@crates//:swc_ecma_parser",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_library(
     name = "gate",
     srcs = [
         "assignment_analysis.rs",
@@ -962,7 +632,8 @@ rust_library(
         ":analysis",
         ":analysis_model",
         ":source_identity",
-        ":spec",
+        "//devinfra/js/debundle/graph",
+        "//devinfra/js/debundle/spec",
         "@crates//:petgraph",
         "@crates//:rayon",
         "@crates//:rustc-hash",
@@ -988,34 +659,6 @@ rust_test(
     ],
 )
 
-rust_library(
-    name = "chunk_analysis",
-    srcs = [
-        "chunk_analysis/chunk_admission.rs",
-        "chunk_analysis/mod.rs",
-    ],
-    crate_root = "chunk_analysis/mod.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":binding_targets",
-        ":spec",
-        "@crates//:anyhow",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
-    ],
-)
-
-rust_test(
-    name = "chunk_analysis_test",
-    crate = ":chunk_analysis",
-    edition = "2024",
-    deps = [
-        ":raw_js_test_support",
-    ],
-)
-
 # Test-only helpers for building dependency graph wire fixtures (the module
 # table + interned ModuleKey references) for the gate crate's tests.
 rust_library(
@@ -1028,283 +671,9 @@ rust_library(
         ":analysis",
         ":analysis_model",
         ":source_identity",
-        ":spec",
+        "//devinfra/js/debundle/graph",
+        "//devinfra/js/debundle/spec",
     ],
-)
-
-rust_library(
-    name = "spec_modules",
-    srcs = ["spec/spec_modules.rs"],
-    crate_root = "spec/spec_modules.rs",
-    edition = "2024",
-    deps = [
-        ":graph_provenance",
-        ":selector_outcome",
-        ":spec",
-        "@crates//:anyhow",
-        "@crates//:serde_yaml",
-    ],
-)
-
-rust_test(
-    name = "spec_modules_test",
-    crate = ":spec_modules",
-    edition = "2024",
-    deps = ["@crates//:tempfile"],
-)
-
-rust_library(
-    name = "spec_stats",
-    srcs = ["spec/spec_stats.rs"],
-    crate_root = "spec/spec_stats.rs",
-    edition = "2024",
-    deps = [
-        ":spec",
-        ":spec_modules",
-        "@crates//:anyhow",
-        "@crates//:serde",
-    ],
-)
-
-rust_test(
-    name = "spec_stats_test",
-    crate = ":spec_stats",
-    edition = "2024",
-    deps = ["@crates//:tempfile"],
-)
-
-rust_library(
-    name = "selector_debt",
-    srcs = ["selectors/diagnostics/selector_debt.rs"],
-    crate_root = "selectors/diagnostics/selector_debt.rs",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-        ":source_match",
-        ":spec",
-        ":spec_modules",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
-rust_test(
-    name = "selector_debt_test",
-    crate = ":selector_debt",
-    edition = "2024",
-    deps = [
-        "@crates//:serde_json",
-        "@crates//:tempfile",
-    ],
-)
-
-rust_library(
-    name = "yaml_edit",
-    srcs = ["spec/yaml_edit.rs"],
-    crate_root = "spec/yaml_edit.rs",
-    edition = "2024",
-    deps = [
-        "@crates//:anyhow",
-        "@crates//:serde_yaml",
-        "@crates//:tempfile",
-    ],
-)
-
-rust_test(
-    name = "yaml_edit_test",
-    crate = ":yaml_edit",
-    edition = "2024",
-    deps = [
-        "@crates//:tempfile",
-    ],
-)
-
-rust_library(
-    name = "source_input",
-    srcs = ["selectors/authoring/source_input.rs"],
-    crate_root = "selectors/authoring/source_input.rs",
-    edition = "2024",
-    deps = ["@crates//:anyhow"],
-)
-
-rust_library(
-    name = "synthesis_failure",
-    srcs = ["selectors/authoring/synthesis_failure.rs"],
-    crate_root = "selectors/authoring/synthesis_failure.rs",
-    edition = "2024",
-    deps = [
-        ":selector_outcome",
-        "@crates//:anyhow",
-        "@crates//:serde",
-    ],
-)
-
-rust_library(
-    name = "selector_render",
-    srcs = ["selectors/authoring/render.rs"],
-    crate_root = "selectors/authoring/render.rs",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-        ":source_match_holes",
-        "@crates//:anyhow",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
-    ],
-)
-
-rust_test(
-    name = "selector_render_test",
-    crate = ":selector_render",
-    edition = "2024",
-)
-
-# Read-only agent-facing selector query primitives (`debundle spec
-# match-selector`): resolve a candidate selector and report its holing slack.
-rust_library(
-    name = "match_selector",
-    srcs = ["selectors/authoring/match_selector.rs"],
-    crate_root = "selectors/authoring/match_selector.rs",
-    edition = "2024",
-    deps = [
-        ":binding_targets",
-        ":js_ast",
-        ":selector_outcome",
-        ":selector_render",
-        ":selector_resolve",
-        ":source_input",
-        ":source_match",
-        ":source_match_holes",
-        ":spec",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
-    ],
-)
-
-rust_library(
-    name = "selector_codemod",
-    srcs = [
-        "selectors/authoring/chunk_index.rs",
-        "selectors/authoring/driver.rs",
-        "selectors/authoring/group_synthesis.rs",
-        "selectors/authoring/minimize/class.rs",
-        "selectors/authoring/minimize/function.rs",
-        "selectors/authoring/minimize/group.rs",
-        "selectors/authoring/minimize/mod.rs",
-        "selectors/authoring/minimize/object.rs",
-        "selectors/authoring/minimize/use_site.rs",
-        "selectors/authoring/minimize/var.rs",
-        "selectors/authoring/module_yaml.rs",
-        "selectors/authoring/name_binding_rewrite.rs",
-        "selectors/authoring/proof.rs",
-        "selectors/authoring/regex_anchor.rs",
-        "selectors/authoring/report.rs",
-        "selectors/authoring/selector_codemod.rs",
-        "selectors/authoring/selector_minimizer_proptest.rs",
-        "selectors/authoring/shape_runs.rs",
-        "selectors/authoring/source_unit.rs",
-    ],
-    crate_root = "selectors/authoring/selector_codemod.rs",
-    edition = "2024",
-    deps = [
-        ":binding_targets",
-        ":js_ast",
-        ":match_selector",
-        ":readoff_render",
-        ":selector_outcome",
-        ":selector_render",
-        ":selector_resolve",
-        ":shape_index",
-        ":source_identity",
-        ":source_input",
-        ":source_match",
-        ":source_match_holes",
-        ":spec",
-        ":spec_modules",
-        ":synthesis_failure",
-        ":yaml_edit",
-        "@crates//:anyhow",
-        "@crates//:regex",
-        "@crates//:serde",
-        "@crates//:serde_yaml",
-        "@crates//:strum",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
-    ],
-)
-
-rust_test(
-    name = "selector_codemod_test",
-    crate = ":selector_codemod",
-    edition = "2024",
-    deps = ["@crates//:proptest"],
-)
-
-rust_library(
-    name = "peel",
-    srcs = [
-        "peel/assignment.rs",
-        "peel/baseline_insertion.rs",
-        "peel/mod.rs",
-        "peel/placement.rs",
-        "peel/plan.rs",
-        "peel/search.rs",
-    ],
-    crate_root = "peel/mod.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":analysis_model",
-        ":anonymous_resolution",
-        ":gate",
-        ":graph_provenance",
-        ":report_io",
-        ":source_identity",
-        ":spec",
-        ":spec_modules",
-        ":spec_tree",
-        "@crates//:anyhow",
-        "@crates//:clap",
-        "@crates//:petgraph",
-        "@crates//:serde",
-        "@crates//:strum",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_test(
-    name = "peel_test",
-    crate = ":peel",
-    edition = "2024",
-    deps = ["@crates//:proptest"],
-)
-
-rust_library(
-    name = "spec_tree",
-    srcs = ["spec/spec_tree.rs"],
-    crate_root = "spec/spec_tree.rs",
-    edition = "2024",
-    deps = [
-        ":graph_provenance",
-        ":output_layout",
-        ":spec",
-        ":spec_modules",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:serde_yaml",
-    ],
-)
-
-rust_test(
-    name = "spec_tree_test",
-    crate = ":spec_tree",
-    edition = "2024",
-    deps = ["@crates//:tempfile"],
 )
 
 rust_library(
@@ -1319,42 +688,13 @@ rust_library(
     deps = [
         ":analysis",
         ":analysis_projection_wire_rust_proto",
-        ":spec",
         ":spec_wire",
         ":spec_wire_rust_proto",
+        "//devinfra/js/debundle/graph",
+        "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
         "@crates//:serde",
         "@rules_rust_prost//private/3rdparty/crates:prost",
-    ],
-)
-
-rust_library(
-    name = "staged_analysis",
-    srcs = glob(["staged_analysis/*.rs"]),
-    crate_root = "staged_analysis/mod.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":analysis_codec",
-        ":analysis_model",
-        ":analysis_projection",
-        ":artifact",
-        ":chunk_analysis",
-        ":graph_provenance",
-        ":js_ast",
-        ":prepare_chunks",
-        ":program_analysis",
-        ":source_identity",
-        ":spec",
-        ":vendor",
-        "@crates//:anyhow",
-        "@crates//:rayon",
-        "@crates//:rmp-serde",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
     ],
 )
 
@@ -1372,111 +712,22 @@ rust_library(
     deps = [
         ":analysis",
         ":analysis_projection",
-        ":artifact",
         ":binding_targets",
         ":graph_provenance",
         ":js_ast",
-        ":selector_outcome",
-        ":selector_resolve",
         ":source_identity",
-        ":source_match",
-        ":spec",
         ":spec_resolution",
+        "//devinfra/js/debundle/artifacts:artifact",
+        "//devinfra/js/debundle/graph",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/resolution:selector_outcome",
+        "//devinfra/js/debundle/selectors/resolution/selector_resolve",
+        "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
     ],
-)
-
-rust_test(
-    name = "staged_analysis_unit_test",
-    crate = ":staged_analysis",
-    edition = "2024",
-)
-
-rust_library(
-    name = "lowering",
-    srcs = [
-        "lowering/anonymous.rs",
-        "lowering/body_facts.rs",
-        "lowering/candidate_emission.rs",
-        "lowering/chunk_renames.rs",
-        "lowering/commuting_statements.rs",
-        "lowering/exports.rs",
-        "lowering/imports/cross_chunk_imports.rs",
-        "lowering/imports/import_emit.rs",
-        "lowering/imports/imports_cross.rs",
-        "lowering/imports/imports_runtime.rs",
-        "lowering/imports/mod.rs",
-        "lowering/imports/plan_references.rs",
-        "lowering/imports/runtime_imports.rs",
-        "lowering/imports/vendor_imports.rs",
-        "lowering/io.rs",
-        "lowering/lower.rs",
-        "lowering/materialize/apply.rs",
-        "lowering/materialize/mod.rs",
-        "lowering/materialize/outcome_sink.rs",
-        "lowering/materialize/plan_builder.rs",
-        "lowering/materialize/residual_atomic_report.rs",
-        "lowering/mod.rs",
-        "lowering/module_output.rs",
-        "lowering/naturalize.rs",
-        "lowering/placement.rs",
-        "lowering/plans.rs",
-        "lowering/reentry_report.rs",
-        "lowering/rename_ledger.rs",
-        "lowering/rename_ledger_proptest.rs",
-        "lowering/rewrite_runtime.rs",
-        "lowering/scope_names.rs",
-        "lowering/util.rs",
-        "lowering/visitors.rs",
-    ],
-    crate_root = "lowering/mod.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":analysis_model",
-        ":analysis_projection",
-        ":artifact",
-        ":binding_targets",
-        ":chunk_analysis",
-        ":frontend_elaboration",
-        ":gate",
-        ":graph_provenance",
-        ":js_ast",
-        ":output_layout",
-        ":ownership_subset",
-        ":prune_dead_imports",
-        ":prune_module_exports",
-        ":report_io",
-        ":selector_outcome",
-        ":selector_resolve",
-        ":source_identity",
-        ":source_match",
-        ":spec",
-        ":spec_resolution",
-        ":staged_analysis",
-        ":vendor",
-        "@crates//:anyhow",
-        "@crates//:rayon",
-        "@crates//:rustc-hash",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:strum",
-        "@crates//:swc_atoms",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_test(
-    name = "lowering_test",
-    crate = ":lowering",
-    edition = "2024",
-    deps = ["@crates//:proptest"],
 )
 
 rust_library(
@@ -1491,10 +742,10 @@ rust_library(
     deps = [
         ":analysis",
         ":analysis_model",
-        ":artifact",
         ":binding_targets",
         ":js_ast",
-        ":spec",
+        "//devinfra/js/debundle/artifacts:artifact",
+        "//devinfra/js/debundle/spec",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
@@ -1514,11 +765,11 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":artifact",
         ":js_ast",
         ":program_analysis",
         ":source_identity",
-        ":spec",
+        "//devinfra/js/debundle/artifacts:artifact",
+        "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:swc_common",
@@ -1541,10 +792,10 @@ rust_library(
     crate_root = "identifier_rename_queue.rs",
     edition = "2024",
     deps = [
-        ":artifact",
         ":binding_targets",
         ":js_ast",
         ":source_identity",
+        "//devinfra/js/debundle/artifacts:artifact",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:swc_ecma_ast",
@@ -1587,7 +838,7 @@ rust_library(
     deps = [
         ":command_diagnostics",
         ":package_args",
-        ":staged_analysis",
+        "//devinfra/js/debundle/staged_analysis",
         "@crates//:anyhow",
         "@crates//:clap",
     ],
@@ -1612,8 +863,8 @@ rust_library(
     edition = "2024",
     deps = [
         ":graph_provenance",
-        ":spec",
         ":spec_resolution",
+        "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -1626,9 +877,9 @@ rust_library(
     edition = "2024",
     deps = [
         ":package_args",
-        ":spec",
-        ":spec_modules",
-        ":spec_tree",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
+        "//devinfra/js/debundle/spec:spec_tree",
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:serde",
@@ -1641,14 +892,14 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":artifact",
         ":command_diagnostics",
         ":frontend_elaboration",
         ":graph_provenance",
         ":ownership_subset",
         ":prepare_chunks",
-        ":spec",
         ":transform_inputs",
+        "//devinfra/js/debundle/artifacts:artifact",
+        "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:serde",
@@ -1687,28 +938,28 @@ rust_library(
         ":analysis",
         ":analysis_projection",
         ":apply_projection_wire_rust_proto",
-        ":artifact",
-        ":emit_harness",
         ":final_global_resolution",
         ":frontend_elaboration",
         ":gate",
         ":graph_provenance",
         ":js_ast",
-        ":lowering",
-        ":output_layout",
         ":ownership_subset",
         ":prepare_chunks",
         ":reconstruction",
         ":report_io",
         ":source_identity",
-        ":spec",
-        ":spec_modules",
-        ":spec_tree",
         ":spec_wire",
         ":spec_wire_rust_proto",
         ":transform_inputs",
-        ":vendor",
-        ":write_tree",
+        "//devinfra/js/debundle/artifacts:artifact",
+        "//devinfra/js/debundle/artifacts:emit_harness",
+        "//devinfra/js/debundle/artifacts:output_layout",
+        "//devinfra/js/debundle/artifacts:write_tree",
+        "//devinfra/js/debundle/lowering",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
+        "//devinfra/js/debundle/spec:spec_tree",
+        "//devinfra/js/debundle/vendor",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -1727,208 +978,10 @@ rust_test(
     ],
 )
 
-rust_library(
-    name = "cli",
-    srcs = [
-        "cli/binding.rs",
-        "cli/bindings_commands.rs",
-        "cli/candidate_assessment.rs",
-        "cli/comment.rs",
-        "cli/contract_audit.rs",
-        "cli/edit_gate.rs",
-        "cli/gate.rs",
-        "cli/inspection_commands.rs",
-        "cli/integrity_explanation.rs",
-        "cli/invocation.rs",
-        "cli/mod.rs",
-        "cli/module.rs",
-        "cli/module_apply.rs",
-        "cli/module_proposals.rs",
-        "cli/modules_commands.rs",
-        "cli/outcome.rs",
-        "cli/propose_commutations.rs",
-        "cli/scc_cluster.rs",
-        "cli/selected_view_apply.rs",
-        "cli/selector_explanation.rs",
-        "cli/selector_input.rs",
-        "cli/snapshot.rs",
-        "cli/source_unit_apply.rs",
-        "cli/spec_commands.rs",
-        "cli/spec_lint.rs",
-        "cli/static_imports.rs",
-        "cli/validate.rs",
-    ],
-    crate_name = "debundle_cli",
-    crate_root = "cli/mod.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":analysis_model",
-        ":analyze_command",
-        ":anonymous_resolution",
-        ":artifact",
-        ":command_diagnostics",
-        ":command_output",
-        ":gate",
-        ":graph_provenance",
-        ":js_ast",
-        ":lowering",
-        ":match_selector",
-        ":output_layout",
-        ":ownership_subset",
-        ":package_args",
-        ":peel",
-        ":pipeline",
-        ":prepare_chunks",
-        ":report_io",
-        ":resolved_placement",
-        ":selector_codemod",
-        ":selector_debt",
-        ":selector_outcome",
-        ":selector_resolve",
-        ":source_identity",
-        ":source_input",
-        ":source_inspection",
-        ":source_match",
-        ":spec",
-        ":spec_modules",
-        ":spec_resolution",
-        ":spec_stats",
-        ":spec_tree",
-        ":synthesis_failure",
-        ":transform_command",
-        ":transform_inputs",
-        ":yaml_edit",
-        "@crates//:anyhow",
-        "@crates//:clap",
-        "@crates//:nix",
-        "@crates//:petgraph",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:serde_yaml",
-        "@crates//:shlex",
-        "@crates//:strum",
-        "@crates//:swc_atoms",
-        "@crates//:tempfile",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_test(
-    name = "cli_test",
-    crate = ":cli",
-    edition = "2024",
-)
-
 rust_test(
     name = "command_output_test",
     crate = ":command_output",
     edition = "2024",
-)
-
-# Shared selector-program IR: the data boundary between selector lowering and
-# the constraint-solver backends.
-rust_library(
-    name = "selector_ir",
-    srcs = ["selectors/resolution/selector_ir.rs"],
-    crate_root = "selectors/resolution/selector_ir.rs",
-    edition = "2024",
-    deps = [
-        ":source_identity",
-        "@crates//:serde",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_test(
-    name = "selector_ir_test",
-    crate = ":selector_ir",
-    edition = "2024",
-)
-
-rust_library(
-    name = "selector_constraint_backend",
-    srcs = ["selectors/resolution/selector_constraint_backend.rs"],
-    crate_root = "selectors/resolution/selector_constraint_backend.rs",
-    edition = "2024",
-    deps = [
-        ":selector_ir",
-        ":selector_outcome",
-        ":source_identity",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_test(
-    name = "selector_constraint_backend_test",
-    size = "small",
-    crate = ":selector_constraint_backend",
-    edition = "2024",
-)
-
-rust_library(
-    name = "selector_constraint_model_builder",
-    srcs = glob(["selectors/resolution/selector_constraint_model_builder/*.rs"]),
-    crate_root = "selectors/resolution/selector_constraint_model_builder/mod.rs",
-    edition = "2024",
-    deps = [
-        ":selector_constraint_backend",
-        ":selector_ir",
-        ":source_identity",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_library(
-    name = "selector_test_fixtures",
-    testonly = True,
-    srcs = ["selectors/resolution/selector_test_fixtures.rs"],
-    crate_root = "selectors/resolution/selector_test_fixtures.rs",
-    edition = "2024",
-    deps = [
-        ":selector_ir",
-        ":source_identity",
-    ],
-)
-
-rust_test(
-    name = "selector_constraint_model_builder_test",
-    size = "small",
-    crate = ":selector_constraint_model_builder",
-    edition = "2024",
-    deps = [
-        ":selector_constraint_backend",
-        ":selector_ir",
-        ":selector_test_fixtures",
-        ":source_identity",
-    ],
-)
-
-rust_library(
-    name = "selector_backend_solver",
-    srcs = ["selectors/resolution/selector_backend_solver.rs"],
-    crate_root = "selectors/resolution/selector_backend_solver.rs",
-    edition = "2024",
-    deps = [
-        ":selector_constraint_backend",
-        ":selector_constraint_model_builder",
-        ":selector_ir",
-        ":source_identity",
-    ],
-)
-
-rust_test(
-    name = "selector_backend_solver_test",
-    size = "small",
-    crate = ":selector_backend_solver",
-    edition = "2024",
-    deps = [
-        ":selector_constraint_backend",
-        ":selector_constraint_model_builder",
-        ":selector_ir",
-        ":selector_test_fixtures",
-        ":source_identity",
-    ],
 )
 
 rust_prost_library(
@@ -1978,134 +1031,17 @@ rust_test(
 )
 
 rust_library(
-    name = "selector_ortools_cpsat_model",
-    srcs = ["selectors/resolution/selector_ortools_cpsat_model.rs"],
-    crate_root = "selectors/resolution/selector_ortools_cpsat_model.rs",
-    edition = "2024",
-    deps = [
-        ":cp_model_rust_proto",
-        ":selector_constraint_backend",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_library(
-    name = "selector_ortools_cpsat_backend",
-    srcs = ["selectors/resolution/selector_ortools_cpsat_backend.rs"],
-    crate_root = "selectors/resolution/selector_ortools_cpsat_backend.rs",
-    edition = "2024",
-    deps = [
-        ":cp_model_rust_proto",
-        ":ortools_cpsat_ffi",
-        ":sat_parameters_rust_proto",
-        ":selector_constraint_backend",
-        ":selector_ir",
-        ":selector_ortools_cpsat_model",
-        ":source_identity",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_test(
-    name = "selector_ortools_cpsat_backend_test",
-    size = "small",
-    crate = ":selector_ortools_cpsat_backend",
-    edition = "2024",
-    deps = [
-        ":selector_backend_solver",
-        ":selector_ir",
-        ":selector_test_fixtures",
-        ":source_identity",
-    ],
-)
-
-# The one selector resolve every command calls: spec entities and a parsed
-# chunk in, one outcome per entity out.
-rust_library(
-    name = "selector_resolve",
-    srcs = glob(["selectors/resolution/selector_resolve/*.rs"]),
-    crate_root = "selectors/resolution/selector_resolve/lib.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":chunk_facts",
-        ":js_ast",
-        ":selector_backend_solver",
-        ":selector_ir",
-        ":selector_ir_lowering",
-        ":selector_ortools_cpsat_backend",
-        ":selector_outcome",
-        ":shape_index",
-        ":source_identity",
-        ":source_match",
-        ":spec",
-        "@crates//:anyhow",
-        "@crates//:rayon",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
-rust_test(
-    name = "selector_placement_scope_test",
-    size = "small",
-    srcs = ["selectors/resolution/selector_placement_scope_test.rs"],
-    crate_root = "selectors/resolution/selector_placement_scope_test.rs",
-    edition = "2024",
-    deps = [
-        ":js_ast",
-        ":selector_outcome",
-        ":selector_resolve",
-        ":source_identity",
-        ":source_match",
-        ":spec",
-    ],
-)
-
-rust_library(
     name = "spec_resolution",
     srcs = ["spec_resolution.rs"],
     crate_root = "spec_resolution.rs",
     edition = "2024",
     deps = [
         ":analysis",
-        ":selector_outcome",
-        ":selector_resolve",
-        ":source_match",
-        ":spec",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/resolution:selector_outcome",
+        "//devinfra/js/debundle/selectors/resolution/selector_resolve",
+        "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
-    ],
-)
-
-rust_test(
-    name = "selector_conflict_test",
-    size = "small",
-    srcs = ["selectors/resolution/selector_resolve/selector_conflict.rs"],
-    crate_root = "selectors/resolution/selector_resolve/selector_conflict.rs",
-    edition = "2024",
-)
-
-rust_library(
-    name = "selector_ir_lowering",
-    srcs = ["selectors/resolution/selector_ir_lowering.rs"],
-    crate_root = "selectors/resolution/selector_ir_lowering.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":selector_ir",
-        ":source_identity",
-        ":spec",
-        "@crates//:thiserror",
-    ],
-)
-
-rust_test(
-    name = "selector_ir_lowering_test",
-    size = "small",
-    crate = ":selector_ir_lowering",
-    edition = "2024",
-    deps = [
-        ":selector_ir",
-        ":spec",
     ],
 )
 
@@ -2180,7 +1116,7 @@ rust_binary(
     deps = [
         ":analysis_identity",
         ":analysis_thread",
-        ":cli",
+        "//devinfra/js/debundle/cli",
     ],
 )
 
@@ -2201,77 +1137,7 @@ rust_binary(
     deps = [
         ":analysis_identity",
         ":analysis_thread",
-        ":cli",
-    ],
-)
-
-# A faithful, fail-closed projection of a
-# parsed chunk into AST facts (kind/child/str_lit/prop_name/ident_name + the
-# source-unit-ordinal join). The extractor errors loudly on any construct it has not
-# modeled rather than emitting a silently-incomplete fact set. Seed slice; grows
-# construct-by-construct.
-rust_library(
-    name = "chunk_facts",
-    srcs = ["selectors/matching/chunk_facts.rs"],
-    crate_root = "selectors/matching/chunk_facts.rs",
-    edition = "2024",
-    deps = [
-        ":binding_targets",
-        ":js_ast",
-        ":source_identity",
-        "@crates//:strum",
-        "@crates//:swc_ecma_ast",
-    ],
-)
-
-rust_test(
-    name = "chunk_facts_test",
-    crate = ":chunk_facts",
-    edition = "2024",
-)
-
-# The shape matcher's kernel: a structural homomorphism from a selector needle's
-# chunk_facts onto a candidate's, fail-closed outside the faithful subset.
-# Operates over the AST-facts EDB, not by re-walking ASTs.
-rust_library(
-    name = "selector_match",
-    srcs = glob(["selectors/matching/selector_match/*.rs"]),
-    crate_root = "selectors/matching/selector_match/mod.rs",
-    edition = "2024",
-    deps = [
-        ":chunk_facts",
-        ":source_match_holes",
-        "@crates//:regex",
-    ],
-)
-
-# Golden semantics of the fact-based matcher (`selector_match::matches`): match
-# verdicts across identifier modes, holes, and declarator alignment, plus
-# fail-closed `Unsupported` outside the faithful subset.
-rust_test(
-    name = "selector_match_test",
-    srcs = ["selectors/matching/selector_match_test.rs"],
-    crate_root = "selectors/matching/selector_match_test.rs",
-    edition = "2024",
-    deps = [
-        ":chunk_facts",
-        ":js_ast",
-        ":selector_match",
-        ":source_match",
-    ],
-)
-
-# Coverage instrument: run over a real chunk to see how many top-level
-# statements fully extract vs. hit a fail-closed Unsupported, with the
-# first-blocker histogram, to grow extraction by real-corpus frequency.
-rust_binary(
-    name = "chunk_facts_coverage",
-    srcs = ["selectors/matching/chunk_facts_coverage.rs"],
-    crate_root = "selectors/matching/chunk_facts_coverage.rs",
-    edition = "2024",
-    deps = [
-        ":chunk_facts",
-        ":js_ast",
+        "//devinfra/js/debundle/cli",
     ],
 )
 
@@ -2304,7 +1170,7 @@ rust_library(
     srcs = ["command_output.rs"],
     edition = "2024",
     deps = [
-        ":peel",
+        "//devinfra/js/debundle/peel",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -2405,8 +1271,8 @@ rust_library(
     srcs = ["spec_wire.rs"],
     edition = "2024",
     deps = [
-        ":spec",
         ":spec_wire_rust_proto",
+        "//devinfra/js/debundle/spec",
         "@crates//:anyhow",
     ],
 )

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use swc_common::Span;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
-pub(crate) enum PurityMode {
+pub enum PurityMode {
     /// Per-chunk analysis, where chunk-local authored purity hints apply.
     Local,
     /// Export inference, which deliberately excludes chunk-local hints.
@@ -25,7 +25,7 @@ pub(crate) enum PurityMode {
 
 /// Stable identity for a function body across modules and policy contexts.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
-pub(crate) struct PurityFunctionKey {
+pub struct PurityFunctionKey {
     pub(crate) module: String,
     pub(crate) binding: String,
     pub(crate) source_key: u32,
@@ -33,13 +33,13 @@ pub(crate) struct PurityFunctionKey {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
-pub(crate) enum PurityKey {
+pub enum PurityKey {
     Body(PurityFunctionKey),
     Effects(PurityFunctionKey),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PurityBodyTransfer {
+pub struct PurityBodyTransfer {
     pub(crate) events: BTreeMap<EffectEventKey, PurityEffectEvent>,
     pub(crate) dependencies: ProofDependencies,
 }
@@ -133,7 +133,7 @@ pub(crate) struct PurityEffectReason {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
-pub(crate) enum PurityRuleKey {
+pub enum PurityRuleKey {
     Body(PurityFunctionKey),
     Effects(PurityFunctionKey),
 }
@@ -165,13 +165,13 @@ where
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PurityFact {
+pub enum PurityFact {
     Body(Arc<PurityBodyTransfer>),
     Effects(bool),
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct PurityEffectRules {
+pub struct PurityEffectRules {
     bodies: BTreeMap<PurityFunctionKey, Arc<PurityBodyTransfer>>,
     callees_by_caller: BTreeMap<PurityFunctionKey, BTreeSet<PurityFunctionKey>>,
     direct_effectful: BTreeSet<PurityFunctionKey>,
@@ -202,9 +202,7 @@ impl PurityEffectWorkCounts {
 }
 
 impl PurityEffectRules {
-    pub(crate) fn new(
-        bodies: impl IntoIterator<Item = (PurityFunctionKey, PurityBodyTransfer)>,
-    ) -> Self {
+    pub fn new(bodies: impl IntoIterator<Item = (PurityFunctionKey, PurityBodyTransfer)>) -> Self {
         let bodies: BTreeMap<_, _> = bodies
             .into_iter()
             .map(|(key, body)| (key, Arc::new(body)))
@@ -342,7 +340,7 @@ impl PurityEffectRules {
 
     /// Compatibility path for one module. The same typed rules are used by
     /// callers that register them in a larger shared inference universe.
-    pub(crate) fn solve_to_purities(self) -> BTreeMap<PurityFunctionKey, Arc<Purity>> {
+    pub fn solve_to_purities(self) -> BTreeMap<PurityFunctionKey, Arc<Purity>> {
         let producers = self.producers();
         let keys = self.bodies.keys().cloned().collect::<Vec<_>>();
         let bodies = self.bodies.clone();

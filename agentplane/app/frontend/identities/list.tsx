@@ -1,5 +1,5 @@
-import { Alert, Button, Group, Stack, Switch, Table, Text, Title } from "@mantine/core";
-import type { JSX } from "react";
+import { ActionIcon, Alert, Button, Group, Stack, Switch, Table, Text, Title, Tooltip } from "@mantine/core";
+import { type JSX, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import type { Credential } from "../../../egress/api/rules/egress_rules_pb";
@@ -7,7 +7,9 @@ import type { Identity, PolicyBinding, PolicySet } from "../../../policy/v1/poli
 import { useCredentialMetadata } from "../egress/credential_watch";
 import { useIdentities, usePolicyResources } from "../policy/watch";
 import { TopbarTitle } from "../shell/topbar";
+import { IconTrash } from "../ui/icons";
 import { kubernetesAccounts } from "./accounts";
+import { ConfirmIdentityDelete } from "./delete";
 import { identityOrigin } from "./origin";
 import { identityBindings } from "./references";
 import { AccountsReached, BindingExpiries, OriginBadge } from "./summary";
@@ -29,6 +31,7 @@ function IdentityRow({
   const split = identityBindings(identity, bindings);
   const naming = [...split.own, ...split.referencing];
   const reached = kubernetesAccounts(naming, sets, credentials);
+  const [confirming, setConfirming] = useState(false);
   const references =
     split.referencing.length === 0 ? (
       <Text size="sm" c="dimmed">
@@ -82,6 +85,20 @@ function IdentityRow({
         <AccountsReached reached={reached} />
       </Table.Td>
       <Table.Td visibleFrom="sm">{references}</Table.Td>
+      <Table.Td>
+        <Tooltip label={`Delete ${name}`} withArrow>
+          <ActionIcon color="red" variant="subtle" aria-label={`Delete ${name}`} onClick={() => setConfirming(true)}>
+            <IconTrash size={16} />
+          </ActionIcon>
+        </Tooltip>
+        {/* The identity watch drops the row once the delete lands. */}
+        <ConfirmIdentityDelete
+          identity={identity}
+          opened={confirming}
+          onClose={() => setConfirming(false)}
+          onDeleted={() => {}}
+        />
+      </Table.Td>
     </Table.Tr>
   );
 }
@@ -142,12 +159,13 @@ export function IdentityList({ onOpen }: { onOpen: (name: string) => void }): JS
               <Table.Th visibleFrom="sm">Bindings</Table.Th>
               <Table.Th visibleFrom="sm">Kubernetes accounts</Table.Th>
               <Table.Th visibleFrom="sm">Referenced by</Table.Th>
+              <Table.Th aria-label="Actions" />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {rows.length === 0 && (
               <Table.Tr>
-                <Table.Td colSpan={4}>
+                <Table.Td colSpan={5}>
                   <Text size="sm" c="dimmed">
                     {onlyUnreferenced ? "Every identity has a referring binding." : "No identities."}
                   </Text>

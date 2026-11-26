@@ -4,7 +4,7 @@ pub(crate) fn is_anything_expr_hole(expr: &Expr) -> bool {
     matches!(expr, Expr::Ident(ident) if ident_is_anything(ident))
 }
 
-pub(crate) fn string_literal_regex_pattern(expr: &Expr) -> Option<String> {
+pub fn string_literal_regex_pattern(expr: &Expr) -> Option<String> {
     let Expr::Call(call) = expr else {
         return None;
     };
@@ -52,7 +52,7 @@ pub(crate) fn statement_list_hole_name(stmt: &Stmt) -> Option<&str> {
 /// The name of a top-level statement-list hole (`STMT_LIST` /
 /// `STMT_LIST_*;`) if `item` is one. Module declarations cannot be
 /// holes because the selector syntax is an expression statement.
-pub(crate) fn module_item_list_hole_name(item: &ModuleItem) -> Option<&str> {
+pub fn module_item_list_hole_name(item: &ModuleItem) -> Option<&str> {
     let ModuleItem::Stmt(stmt) = item else {
         return None;
     };
@@ -63,7 +63,7 @@ pub(crate) fn module_item_list_hole_name(item: &ModuleItem) -> Option<&str> {
 /// `DECLARATORS_*`) if `declarator` is one. The initializer is ignored:
 /// `const` syntax requires one, so selectors usually write
 /// `DECLARATORS_BEFORE = null`.
-pub(crate) fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
+pub fn declarator_list_hole_name(declarator: &VarDeclarator) -> Option<&str> {
     let Pat::Ident(ident) = &declarator.name else {
         return None;
     };

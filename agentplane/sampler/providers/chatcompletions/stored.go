@@ -47,32 +47,20 @@ func PrepareRequest(store content.ContentWriter, model, effort string, instructi
 	if instructions != nil && *instructions != "" {
 		system += "\n\n" + *instructions
 	}
-	systemRecord, err := json.Marshal(message{Role: "system", Content: system})
-	if err != nil {
-		return "", "", err
-	}
-	profile, err := json.Marshal(requestProfile{
+	profileID, err := content.PutJSON(store, profileKind, requestProfile{
 		Model: model, ReasoningEffort: effort, Stream: true, StreamOptions: &streamOptions{IncludeUsage: true},
 		Tools: []tool{{Type: "function", Function: toolDefinition{Name: "exec", Description: surface.Description, Parameters: surface.Parameters}}},
 	})
 	if err != nil {
 		return "", "", err
 	}
-	profileID, err := store.PutContent(profileKind, profile)
-	if err != nil {
-		return "", "", err
-	}
-	systemID, err := StoreRecord(store, systemRecord)
+	systemID, err := content.PutJSON(store, messageKind, message{Role: "system", Content: system})
 	return profileID, systemID, err
 }
 
 // PrepareNextProfile updates the retained profile for new requests. Already
 // committed attempts still render their original profile on retry or inspection.
-func PrepareNextProfile(store interface {
-	content.ContentReader
-	content.ContentWriter
-}, id content.ContentID, model, effort string,
-) (content.ContentID, error) {
+func PrepareNextProfile(store content.ReadWriter, id content.ContentID, model, effort string) (content.ContentID, error) {
 	raw, err := load(store, id, profileKind)
 	if err != nil {
 		return "", err
@@ -87,20 +75,12 @@ func PrepareNextProfile(store interface {
 	profile.StreamOptions = &streamOptions{IncludeUsage: true}
 	profile.ReasoningEffort = effort
 	profile.Model = model
-	raw, err = json.Marshal(profile)
-	if err != nil {
-		return "", err
-	}
-	return store.PutContent(profileKind, raw)
+	return content.PutJSON(store, profileKind, profile)
 }
 
 // PrepareCompactionRequest keeps the sampling tool definitions in the prompt and
 // disables their selection for the appended summary request.
-func PrepareCompactionRequest(store interface {
-	content.ContentReader
-	content.ContentWriter
-}, profileID content.ContentID, config CompactionConfig,
-) (content.ContentID, content.ContentID, error) {
+func PrepareCompactionRequest(store content.ReadWriter, profileID content.ContentID, config CompactionConfig) (content.ContentID, content.ContentID, error) {
 	raw, err := load(store, profileID, profileKind)
 	if err != nil {
 		return "", "", err
@@ -111,11 +91,7 @@ func PrepareCompactionRequest(store interface {
 	}
 	profile.ToolChoice = "none"
 	profile.MaxTokens = config.MaxTokens
-	raw, err = json.Marshal(profile)
-	if err != nil {
-		return "", "", err
-	}
-	profileID, err = store.PutContent(profileKind, raw)
+	profileID, err = content.PutJSON(store, profileKind, profile)
 	if err != nil {
 		return "", "", err
 	}
@@ -123,11 +99,7 @@ func PrepareCompactionRequest(store interface {
 	if err != nil {
 		return "", "", err
 	}
-	raw, err = json.Marshal(message{Role: "user", Content: instruction})
-	if err != nil {
-		return "", "", err
-	}
-	instructionID, err := StoreRecord(store, raw)
+	instructionID, err := content.PutJSON(store, messageKind, message{Role: "user", Content: instruction})
 	return profileID, instructionID, err
 }
 

@@ -3,7 +3,7 @@
 //! first-blocker histogram. The instrument that prioritizes fact-extraction
 //! coverage work by real-corpus frequency.
 //!
-//! Run locally against a chunk: `bb run //devinfra/js/debundle:chunk_facts_coverage -- <chunk.js>`.
+//! Run locally against a chunk: `bb run //devinfra/js/debundle/selectors/matching:chunk_facts_coverage -- <chunk.js>`.
 
 use std::fs;
 

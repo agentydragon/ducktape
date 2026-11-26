@@ -408,7 +408,7 @@ parity tests green.
 
   Premise attribution is a deliverable of the flip. The legacy graph carries
   no attribution (edges come from purity and effect summaries; proof
-  dependencies never reach `graph/`, `atomic_groups.rs` or `gate.rs`), so
+  dependencies never reach `graph/` or `gate.rs`), so
   "was this annotation needed for this acceptance" has no answer today beyond
   recorded uses (<../docs/premise_provenance.md>). The effect verdict already
   records `covered_owner_dependencies` and `relocation_dependencies`; once it

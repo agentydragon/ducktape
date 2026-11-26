@@ -32,7 +32,9 @@ go_library(
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/client:clientset",
         "//agentplane/policy/client:informer_version",
+        "//agentplane/policy/identitycache",
         "//agentplane/policy/reader",
+        "//agentplane/policy/v1:policy_service_go_proto",
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/probes",
@@ -60,6 +62,7 @@ go_test(
     deps = [
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
         "//agentplane/mcp_edge/internal/admission",
+        "//agentplane/net/peertls",
         "//agentplane/testing/configtest",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//health/grpc_health_v1",

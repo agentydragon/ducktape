@@ -136,7 +136,7 @@ mod set_iterables;
 mod source_unit_read_closure;
 pub mod standard_globals;
 mod statement_facts;
-pub(crate) mod sync_effects;
+pub mod sync_effects;
 mod value_flow;
 #[cfg(test)]
 mod value_flow_tests;
@@ -148,43 +148,41 @@ mod value_set_tests;
 pub(crate) use array_spreads::StableArraySpreadShapes;
 pub(crate) use at_init_fallback::*;
 pub use cell_overlap::{CellOverlap, CellOverlapIndex, CellOverlapLaw};
-pub(crate) use cell_overlap::{first_overlapping, may_conflict, may_overlap};
+pub use cell_overlap::{first_overlapping, may_conflict, may_overlap};
 pub(crate) use collector::*;
 pub(crate) use dynamic_scope::DynamicScopeFact;
 pub(crate) use global_object::*;
 pub(crate) use item_views::*;
 pub(crate) use lazy_boundary::*;
-pub(crate) use local_class_construction::{
-    LocalClassConstructionProof, LocalClassConstructionShapes, LocalClassHeapProof,
-};
+pub use local_class_construction::LocalClassConstructionProof;
+pub(crate) use local_class_construction::{LocalClassConstructionShapes, LocalClassHeapProof};
 pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
 pub(crate) use semantic_inference::ArgumentNoEscapeFacts;
+pub use set_iterables::SetIterableProof;
 pub(crate) use set_iterables::{
-    NativeIterableOperandOrigin, SetIterableProof, SetIterableShapes,
-    TopLevelNativeIterableOperandProjection, TopLevelNativeIterableOperandSite,
-    primitive_literal_property_keys,
+    NativeIterableOperandOrigin, SetIterableShapes, TopLevelNativeIterableOperandProjection,
+    TopLevelNativeIterableOperandSite, primitive_literal_property_keys,
 };
-pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
+pub use source_unit_read_closure::SourceUnitReadClosure;
+pub use statement_facts::HeapContentCells;
 pub use statement_facts::{
     CallbackFactoryBarrierFact, CallbackFactoryBarrierRejection,
     CallbackFactoryCallArgumentWitness, CallbackFactoryUseFact, CallbackFactoryWriteWitness,
     ReturnedRecordUseFact,
 };
 pub(crate) use statement_facts::{
-    ConstructorFacts, ExportLinkage, HeapContentCells, LocalRecordFactoryPurityCertificate,
+    ConstructorFacts, ExportLinkage, LocalRecordFactoryPurityCertificate,
 };
-pub use value_flow::ProgramValueFlows;
-pub(crate) use value_flow::{
-    CandidateObjectIndex, ChunkValueFlow, ProgramFlowModule, own_data_keys, program_value_flows,
-};
+pub(crate) use value_flow::{CandidateObjectIndex, own_data_keys};
+pub use value_flow::{ChunkValueFlow, ProgramFlowModule, ProgramValueFlows, program_value_flows};
 
 // Public API: importable at `facts::<item>` exactly as before the split.
-pub(crate) use analyze::complete_chunk_structural_with_flow;
 pub use analyze::{
     ExportReentryPolicy, analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy,
     analyze_vendor_prune_chunk, collect_chunk_source_facts, collect_chunk_source_facts_from_items,
-    complete_chunk_structural, complete_chunk_structural_with_inputs, module_has_top_level_await,
+    complete_chunk_structural, complete_chunk_structural_with_flow,
+    complete_chunk_structural_with_inputs, module_has_top_level_await,
 };
 pub use evaluation_effects::{
     GlobalAccessEvidence, GlobalAccessKind, GlobalAccessSite, GlobalMayAccess,

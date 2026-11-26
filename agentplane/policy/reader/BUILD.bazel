@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "reader",
     srcs = [
+        "identities.go",
         "index.go",
         "readiness.go",
         "rules.go",
@@ -11,12 +12,14 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/policy/reader",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/identity/auth",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/client:clientset",
         "//agentplane/policy/client:informer_version",
         "//agentplane/policy/client:listers",
         "//agentplane/policy/client:typed",
         "//agentplane/policy/client/apply",
+        "//agentplane/policy/identitycache",
         "//agentplane/watchhealth",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -34,6 +37,7 @@ go_test(
     name = "reader_test",
     srcs = [
         "fixture_test.go",
+        "identities_test.go",
         "index_test.go",
         "readiness_test.go",
         "rules_test.go",
@@ -41,7 +45,10 @@ go_test(
     embed = [":reader"],
     deps = [
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/policy/identitycache",
+        "//agentplane/policy/v1:policy_service_go_proto",
         "//agentplane/testing/eventually",
+        "//agentplane/testing/grpcserver",
         "//agentplane/testing/httptransport",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/watchhealth",
@@ -52,5 +59,9 @@ go_test(
         "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_client_go//rest",
         "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )

@@ -1,0 +1,30 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+# Body-debt / near-miss scoring and single-range explanation over the
+# `source_match` resolver; nothing in `source_match` depends on it.
+rust_library(
+    name = "source_match_diagnostics",
+    srcs = glob(["*.rs"]),
+    crate_root = "lib.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle/selectors/diagnostics:source_mismatch",
+        "//devinfra/js/debundle/selectors/matching:chunk_facts",
+        "//devinfra/js/debundle/selectors/matching/selector_match",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "source_match_diagnostics_test",
+    crate = ":source_match_diagnostics",
+    edition = "2024",
+)

@@ -50,7 +50,11 @@ func New(
 	if err := auth.ValidateServiceCallers(writerServices); err != nil {
 		return nil, errors.New("invalid PolicyService writer service allowlist")
 	}
-	sandboxes, err := sandboxreader.New(namespace, objects)
+	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+	if err != nil {
+		return nil, err
+	}
+	sandboxes, err := sandboxreader.New(namespace, objects, identities)
 	if err != nil {
 		return nil, err
 	}

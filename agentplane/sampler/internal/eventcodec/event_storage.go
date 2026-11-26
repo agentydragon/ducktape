@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"io"
 
+	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"google.golang.org/protobuf/proto"
 )
@@ -49,6 +50,12 @@ func Uncompress(wire []byte) ([]byte, error) {
 // An entry too large to fit in a block returns a nil frame.
 func UnpackBlockEntry(wire []byte) ([]byte, error) {
 	return unpack(wire, MaxBlockBytes-FrameHeaderBytes)
+}
+
+// UnpackPackableEntry bounds standalone decompression to the shared event block format.
+// A nil frame means the original row is valid standalone storage but too large to pack.
+func UnpackPackableEntry(wire []byte) ([]byte, error) {
+	return unpack(wire, eventblock.MaxBytes-FrameHeaderBytes)
 }
 
 func unpack(wire []byte, limit int) ([]byte, error) {

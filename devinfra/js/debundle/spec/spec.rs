@@ -1285,7 +1285,7 @@ pub enum VendorLevel {
 
 /// What [`TransformSpec::unassigned_mode`] means for a chunk's top-level
 /// statements that the YAML doesn't explicitly claim for any logical module.
-/// The atomic-group primitive in `analysis::atomic_groups` partitions the
+/// The atomic-group primitive in `graph::atomic_groups` partitions the
 /// chunk's source units into minimal co-location groups; this enum decides how
 /// unclaimed source units are routed, with an explicit named-owner completion
 /// opt-in available under [`CoarseAtomicGroups`](Self::CoarseAtomicGroups).

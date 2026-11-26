@@ -87,7 +87,7 @@ type Informer struct{ watches *reader.Watches }
 // New returns an Informer of the Index that is idle until Run. policyNamespace holds the PolicySets and PolicyBindings.
 func New(base *rest.Config, index *Index, policyNamespace string) (*Informer, error) {
 	watches := reader.NewWatches(base, index.Health)
-	if err := reader.WatchRules(watches, index.Rules, policyNamespace, ActionsReady); err != nil {
+	if err := reader.WatchRules(watches, index.Rules, policyNamespace, ActionsReady, reader.KubernetesIdentities{}); err != nil {
 		return nil, err
 	}
 	return &Informer{watches: watches}, nil

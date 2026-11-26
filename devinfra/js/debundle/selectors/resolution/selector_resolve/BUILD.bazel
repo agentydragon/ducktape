@@ -1,0 +1,38 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+# The one selector resolve every command calls: spec entities and a parsed
+# chunk in, one outcome per entity out.
+rust_library(
+    name = "selector_resolve",
+    srcs = glob(["*.rs"]),
+    crate_root = "lib.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/selectors/authoring:shape_index",
+        "//devinfra/js/debundle/selectors/matching:chunk_facts",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/matching/source_match_diagnostics",
+        "//devinfra/js/debundle/selectors/resolution:selector_backend_solver",
+        "//devinfra/js/debundle/selectors/resolution:selector_ir",
+        "//devinfra/js/debundle/selectors/resolution:selector_ir_lowering",
+        "//devinfra/js/debundle/selectors/resolution:selector_ortools_cpsat_backend",
+        "//devinfra/js/debundle/selectors/resolution:selector_outcome",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "selector_conflict_test",
+    size = "small",
+    srcs = ["selector_conflict.rs"],
+    crate_root = "selector_conflict.rs",
+    edition = "2024",
+)

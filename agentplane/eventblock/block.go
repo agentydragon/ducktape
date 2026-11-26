@@ -21,10 +21,16 @@ const (
 	MaxEntries = 256
 )
 
+// Profile configures APB encoding in both History YAML and Sampler JSON.
 type Profile struct {
-	TargetBytes   int
-	TargetEntries int
-	Level         int // stock zstd levels 1 through 4
+	TargetBytes   int    `json:"target_bytes,omitempty" mapstructure:"target_bytes"`
+	TargetEntries int    `json:"target_entries,omitempty" mapstructure:"target_entries"`
+	Codec         string `json:"codec,omitempty" mapstructure:"codec"`
+	Level         int    `json:"level,omitempty" mapstructure:"level"`
+}
+
+func DefaultProfile(entries int) Profile {
+	return Profile{TargetBytes: 64 << 10, TargetEntries: entries, Codec: "zstd", Level: 3}
 }
 
 type Packer struct {
@@ -32,12 +38,22 @@ type Packer struct {
 	encoder *zstd.Encoder
 }
 
-// Profile returns the immutable writer policy used for packing and checkpoint identity.
+// Profile returns the immutable writer policy used for packing.
 func (p *Packer) Profile() Profile { return p.profile }
 
-func NewPacker(p Profile) (*Packer, error) {
+func (p Profile) Validate() error {
 	if p.TargetBytes < 1 || p.TargetBytes > MaxBytes || p.TargetEntries < 1 || p.TargetEntries > MaxEntries || p.Level < 1 || p.Level > 4 {
-		return nil, fmt.Errorf("invalid event block profile: %+v", p)
+		return fmt.Errorf("invalid event block profile: %+v", p)
+	}
+	if p.Codec != "" && p.Codec != "zstd" {
+		return fmt.Errorf("unsupported event block codec %q", p.Codec)
+	}
+	return nil
+}
+
+func NewPacker(p Profile) (*Packer, error) {
+	if err := p.Validate(); err != nil {
+		return nil, err
 	}
 	w, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(p.Level)), zstd.WithEncoderConcurrency(1))
 	if err != nil {

@@ -88,106 +88,14 @@ pub(super) fn source_unit_location(
         .and_then(|node| node.source_location.clone())
 }
 
-/// Why a `commuting_statements` entry inerts nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum UnusedPremiseReason {
-    /// No `sequenced` edge joins the two source units.
-    NoSequencedEdge,
-    /// Every `sequenced` edge between them orders two summarized effects on
-    /// disjoint cells (the strict S-chain's adjacency): the analysis already
-    /// knows the pair commutes and `dataflow_aware_s_chain` drops the edge
-    /// without any premise.
-    SummarizedEndpoints,
-}
-
-impl UnusedPremiseReason {
-    /// Clause completing the diagnostic's endpoint sentence.
-    pub fn explanation(self) -> &'static str {
-        match self {
-            Self::NoSequencedEdge => "are already unordered",
-            Self::SummarizedEndpoints => {
-                "have summarized effects on disjoint cells, which `dataflow_aware_s_chain` already leaves unordered"
-            }
-        }
-    }
-}
-
-/// A `commuting_statements` entry whose endpoints resolve but which inerts
-/// no edge: the premise buys nothing. A warning, never a failure — an engine
-/// improvement that makes a premise unnecessary must not reject a spec that
-/// passed (SPEC.md § Commuting statements). Identifies the entry by what the
-/// author wrote, not by analysis ordinals or input binding spellings.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
-#[error(
-    "{spec_location} inerts no sequenced edge: endpoints {} and {} {}; the entry is \
-     removable — delete it in a reviewed spec edit and revalidate",
-    .a,
-    .b,
-    .reason.explanation()
-)]
-pub struct CommutingStatementsUnused {
-    /// `<spec path>:chunk_analysis_options.<chunk>.commuting_statements[<i>]`.
-    pub spec_location: String,
-    pub a: UnusedCommutingEndpoint,
-    pub b: UnusedCommutingEndpoint,
-    pub reason: UnusedPremiseReason,
-}
-
-/// One endpoint of an unused `commuting_statements` entry, by authored
-/// identity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UnusedCommutingEndpoint {
-    /// The endpoint selector exactly as authored.
-    pub selector: spec::SourceUnitSelector,
-    /// Authored module/member assignments that resolve to this endpoint.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub logical_members: Vec<spec::ResolvedMemberSelector>,
-    /// Source location of the endpoint in this run's input snapshot.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_location: Option<SourceLocation>,
-}
-
-impl UnusedCommutingEndpoint {
-    pub(super) fn new(nodes: &[SourceUnit], endpoint: &CommutingEndpoint) -> Self {
-        Self {
-            selector: endpoint.selector.clone(),
-            logical_members: endpoint.logical_members.clone(),
-            source_location: source_unit_location(nodes, endpoint.source_unit),
-        }
-    }
-}
-
-impl fmt::Display for UnusedCommutingEndpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let members = self
-            .logical_members
-            .iter()
-            .map(|member| format!("module `{}` member `{}`", member.module, member.name))
-            .collect::<Vec<_>>();
-        match (members.as_slice(), &self.selector) {
-            ([member], _) => f.write_str(member)?,
-            ([], spec::SourceUnitSelector::ResolvedMember(member)) => {
-                write!(f, "module `{}` member `{}`", member.module, member.name)?;
-            }
-            ([], spec::SourceUnitSelector::SourceMatch(claim)) => {
-                let source = claim.match_source.split_whitespace().collect::<Vec<_>>();
-                let mut preview = source.join(" ");
-                if preview.chars().count() > 60 {
-                    preview = preview.chars().take(57).collect::<String>() + "...";
-                }
-                write!(f, "source_match `{preview}`")?;
-            }
-            (members, _) => write!(f, "members [{}]", members.join(", "))?,
-        }
-        if let Some(location) = &self.source_location {
-            write!(f, " at {}:{}", location.source_path, location.start_line)?;
-            if let Some(column) = location.start_column {
-                write!(f, ":{column}")?;
-            }
-        }
-        Ok(())
+pub(super) fn unused_commuting_endpoint(
+    nodes: &[SourceUnit],
+    endpoint: &CommutingEndpoint,
+) -> UnusedCommutingEndpoint {
+    UnusedCommutingEndpoint {
+        selector: endpoint.selector.clone(),
+        logical_members: endpoint.logical_members.clone(),
+        source_location: source_unit_location(nodes, endpoint.source_unit),
     }
 }
 

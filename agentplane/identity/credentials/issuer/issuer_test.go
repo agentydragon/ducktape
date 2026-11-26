@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
@@ -439,7 +440,7 @@ func leaf(t *testing.T, ca *transporttesting.CA, name string) *x509.Certificate 
 
 func newResolver(t *testing.T) *resolver.Resolver {
 	t.Helper()
-	resolves, err := resolver.New(objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testNamespace})
+	resolves, err := resolver.New(objects, []string{testNamespace}, workloadauthtesting.IdentityUIDs(t, objects, testNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

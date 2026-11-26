@@ -12,7 +12,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/google/uuid"
@@ -53,7 +52,7 @@ func TestServiceSamplerDelegationOverMTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	callers, err := auth.NewSVIDResolver(named.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	callers, err := auth.NewSVIDResolver(named.Objects, []string{testNamespace}, workloadauthtesting.IdentityUIDs(t, named.Objects, policyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

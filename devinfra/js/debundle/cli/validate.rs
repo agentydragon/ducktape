@@ -21,10 +21,10 @@ use std::path::Path;
 use transform_command::TransformArgs;
 
 use crate::write_section;
-use analysis::CommutingStatementsDiagnostic;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use command_output::write_report;
+use graph::CommutingStatementsDiagnostic;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
 use peel::OutputFormat;
 use pipeline::{RunOutput, TransformRunOptions, run_transform};

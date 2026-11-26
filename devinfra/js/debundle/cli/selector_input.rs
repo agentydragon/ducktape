@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
-use source_match::{ExplainRangeKind, ParsedSourceMatchSelector, SelectorField};
+use source_match::{ParsedSourceMatchSelector, SelectorField};
+use source_match_diagnostics::ExplainRangeKind;
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use spec_modules::{read_flat_transform_spec, read_module_file};
 

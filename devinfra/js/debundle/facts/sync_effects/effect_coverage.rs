@@ -110,7 +110,7 @@ pub(crate) enum BindingEffectCoverage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BindingEffectAuthority {
+pub enum BindingEffectAuthority {
     Unclassified,
     LegacyExecution { complete: bool },
     AuthorSourceOnly,

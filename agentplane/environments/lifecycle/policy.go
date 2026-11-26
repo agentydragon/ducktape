@@ -73,7 +73,11 @@ func NewPolicy(options Options) (*Policy, error) {
 	if err := auth.ValidateServiceCallers(options.OperatorServiceCallers); err != nil {
 		return nil, fmt.Errorf("operator service callers: %w", err)
 	}
-	sandboxes, err := sandboxreader.New(options.Namespace, options.Objects)
+	identities, err := auth.KubernetesIdentityUIDs(options.Objects, options.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	sandboxes, err := sandboxreader.New(options.Namespace, options.Objects, identities)
 	if err != nil {
 		return nil, err
 	}

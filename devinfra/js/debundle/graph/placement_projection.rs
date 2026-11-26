@@ -10,9 +10,9 @@ use serde::Serialize;
 use source_identity::{SourceUnitId, SourceUnitOrdinal, StatementId};
 use swc_ecma_ast::{Id, ModuleItem};
 
-use crate::{
-    BindingKind, DependencyGraph, LocalBindings, ModuleAssignment, ModuleId, SourceUnitClass,
-};
+use analysis::{BindingKind, LocalBindings, ModuleId};
+
+use crate::{DependencyGraph, ModuleAssignment, SourceUnitClass};
 
 /// One post-split source unit's location in the retained raw module body.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -619,6 +619,51 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
         }
     }
 
+    check_destructuring_groups(
+        &input,
+        &binding_destinations,
+        &mut violations,
+        &mut unresolved_checks,
+    );
+
+    check_nested_var_statements(&input, &binding_destinations, entry, &mut violations);
+
+    let statement_destinations =
+        project_statement_destinations(&input, &statement_sources, entry, &mut violations);
+
+    let statement_map =
+        whole_statement_map(&input, &statement_destinations, entry, &mut violations);
+
+    let complete = unresolved_checks.is_empty();
+    let outcome = if violations.is_empty() && complete {
+        PlacementProjectionOutcome::Mappable(PlacementEmissionMaps {
+            bindings: binding_destinations
+                .into_iter()
+                .filter(|(_, destination)| *destination != entry)
+                .map(|(binding, destination)| (binding, destination.0))
+                .collect(),
+            statements: statement_map,
+        })
+    } else {
+        PlacementProjectionOutcome::Unmappable
+    };
+    PlacementProjection {
+        assignment: input.assignment,
+        outcome,
+        assessment: PlacementProjectionAssessment {
+            unresolved_checks,
+            violations,
+        },
+    }
+}
+
+/// Each destructuring declarator group must project to one owner.
+fn check_destructuring_groups(
+    input: &PlacementProjectionInput<'_>,
+    binding_destinations: &HashMap<Id, ModuleId>,
+    violations: &mut Vec<PlacementProjectionViolation>,
+    unresolved_checks: &mut BTreeSet<StructuralPlacementCheck>,
+) {
     for group in input.destructuring_groups {
         let Some(location) = input.layout.by_ordinal(group.ordinal) else {
             unresolved_checks.insert(StructuralPlacementCheck::DestructuringDeclaratorGrouping);
@@ -696,7 +741,16 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
             DestructuringGroupOwnerClassification::OneOwner { .. } => {}
         }
     }
+}
 
+/// Nested `var` statements keep every binding with one owner, claimed as a
+/// whole statement when it leaves entry.
+fn check_nested_var_statements(
+    input: &PlacementProjectionInput<'_>,
+    binding_destinations: &HashMap<Id, ModuleId>,
+    entry: ModuleId,
+    violations: &mut Vec<PlacementProjectionViolation>,
+) {
     for nested in input.nested_var_statements {
         for binding in &nested.bindings {
             if !binding_destinations.contains_key(binding) {
@@ -765,9 +819,18 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
             });
         }
     }
+}
 
+/// Destination of each whole-statement claim's source units; anonymous
+/// statements leaving entry need such a claim.
+fn project_statement_destinations(
+    input: &PlacementProjectionInput<'_>,
+    statement_sources: &BTreeMap<StatementId, Vec<(SourceUnitId, ModuleId, bool)>>,
+    entry: ModuleId,
+    violations: &mut Vec<PlacementProjectionViolation>,
+) -> BTreeMap<StatementId, ModuleId> {
     let mut statement_destinations = BTreeMap::<StatementId, ModuleId>::new();
-    for (statement, sources) in &statement_sources {
+    for (statement, sources) in statement_sources {
         let destinations: BTreeSet<_> = sources
             .iter()
             .map(|(_, destination, _)| *destination)
@@ -797,7 +860,16 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
             }
         }
     }
+    statement_destinations
+}
 
+/// Requested whole-statement destinations checked against the source projection.
+fn whole_statement_map(
+    input: &PlacementProjectionInput<'_>,
+    statement_destinations: &BTreeMap<StatementId, ModuleId>,
+    entry: ModuleId,
+    violations: &mut Vec<PlacementProjectionViolation>,
+) -> BTreeMap<StatementId, usize> {
     let mut statement_map = BTreeMap::new();
     for (&statement, &requested_destination) in input.whole_statements {
         let Some(source_destination) = statement_destinations.get(&statement).copied() else {
@@ -821,26 +893,5 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
         }
         statement_map.insert(statement, source_destination.0);
     }
-
-    let complete = unresolved_checks.is_empty();
-    let outcome = if violations.is_empty() && complete {
-        PlacementProjectionOutcome::Mappable(PlacementEmissionMaps {
-            bindings: binding_destinations
-                .into_iter()
-                .filter(|(_, destination)| *destination != entry)
-                .map(|(binding, destination)| (binding, destination.0))
-                .collect(),
-            statements: statement_map,
-        })
-    } else {
-        PlacementProjectionOutcome::Unmappable
-    };
-    PlacementProjection {
-        assignment: input.assignment,
-        outcome,
-        assessment: PlacementProjectionAssessment {
-            unresolved_checks,
-            violations,
-        },
-    }
+    statement_map
 }

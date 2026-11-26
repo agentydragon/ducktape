@@ -15,7 +15,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -54,8 +53,11 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	callers, err := auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces,
-		&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
+	callerIdentities, err := auth.NewKubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace)
+	if err != nil {
+		return err
+	}
+	callers, err := auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces, callerIdentities)
 	if err != nil {
 		return err
 	}

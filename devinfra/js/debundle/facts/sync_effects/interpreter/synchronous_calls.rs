@@ -222,7 +222,7 @@ pub(crate) struct SynchronousCallProofs<'a> {
     pub(crate) index: PreparedSynchronousCallIndex,
 }
 
-pub(crate) struct PreparedSynchronousCallIndex {
+pub struct PreparedSynchronousCallIndex {
     index: ExecutionIndex,
     set_iterable_proof: SetIterableProof,
     native_own_data_read_candidates: BTreeMap<SourceUnitOrdinal, Vec<NativeOwnDataReadCandidate>>,
@@ -411,11 +411,11 @@ impl PreparedSynchronousCallIndex {
         self.index.locate_native_integrity_witnesses(locate);
     }
 
-    pub(crate) fn set_iterable_proof(&self) -> &SetIterableProof {
+    pub fn set_iterable_proof(&self) -> &SetIterableProof {
         &self.set_iterable_proof
     }
 
-    pub(crate) fn local_class_construction_proof(&self) -> &LocalClassConstructionProof {
+    pub fn local_class_construction_proof(&self) -> &LocalClassConstructionProof {
         &self.index.local_class_construction_proof
     }
 
@@ -493,15 +493,15 @@ pub(crate) fn prepare_synchronous_call_index(
     )
 }
 
-pub(crate) struct PreparedSyncShapeInputs<'a> {
-    pub(crate) local_class_construction: &'a LocalClassConstructionShapes,
-    pub(crate) set_iterable_shapes: SetIterableShapes,
-    pub(crate) stable_array_spread_shapes: StableArraySpreadShapes,
-    pub(crate) shadowed: &'a BTreeSet<&'static str>,
-    pub(crate) source_facts: Option<&'a Arc<SemanticFacts>>,
+pub struct PreparedSyncShapeInputs<'a> {
+    pub local_class_construction: &'a LocalClassConstructionShapes,
+    pub set_iterable_shapes: SetIterableShapes,
+    pub stable_array_spread_shapes: StableArraySpreadShapes,
+    pub shadowed: &'a BTreeSet<&'static str>,
+    pub source_facts: Option<&'a Arc<SemanticFacts>>,
 }
 
-pub(crate) fn prepare_synchronous_call_index_with_source_facts(
+pub fn prepare_synchronous_call_index_with_source_facts(
     body: &[TopLevelItemView<'_>],
     flow: &ChunkValueFlow,
     hints: &AnalysisInputs,

@@ -6,8 +6,8 @@ use debundle_e2e_graph_support::FixtureGraphExt;
 use std::fs;
 use std::path::Path;
 
-use analysis::BindingReport;
 use debundle_e2e_support::*;
+use graph::BindingReport;
 
 #[test]
 fn disposal_symbol_method_keys_do_not_block_class_split() {

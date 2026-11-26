@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -65,11 +66,20 @@ func (f fixture) create(object client.Object) {
 
 func (f fixture) reader() *Reader {
 	f.t.Helper()
-	reader, err := New(f.namespace, apiClient)
+	reader, err := New(f.namespace, apiClient, f.identities())
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	return reader
+}
+
+func (f fixture) identities() auth.IdentityUIDReader {
+	f.t.Helper()
+	identities, err := auth.KubernetesIdentityUIDs(apiClient, f.namespace)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return identities
 }
 
 func (f fixture) sandbox(name string) *sandboxapi.Sandbox {
@@ -230,7 +240,7 @@ func TestExecutionAccountPropagatesKubernetesReadErrorsWithoutIdentity(t *testin
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.fail.Reader = apiClient
-			reader, err := New(f.namespace, tc.fail)
+			reader, err := New(f.namespace, tc.fail, f.identities())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -272,7 +282,7 @@ func (r uidlessReader) Get(ctx context.Context, key types.NamespacedName, object
 func TestGetRefusesWhatHasNoSandboxOrNoUsableIdentity(t *testing.T) {
 	f := newFixture(t)
 	f.sandbox("no-uid")
-	reader, err := New(f.namespace, uidlessReader{apiClient})
+	reader, err := New(f.namespace, uidlessReader{apiClient}, f.identities())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,12 +327,16 @@ func TestIncarnationHoldsARequestToTheSandboxItNames(t *testing.T) {
 	}
 }
 
-func TestNewRequiresANamespaceAndAClient(t *testing.T) {
-	if _, err := New("", apiClient); err == nil {
+func TestNewRequiresANamespaceAClientAndAnIdentityReader(t *testing.T) {
+	identities := newFixture(t).identities()
+	if _, err := New("", apiClient, identities); err == nil {
 		t.Error("an empty namespace was accepted")
 	}
-	if _, err := New("test-namespace", nil); err == nil {
+	if _, err := New("test-namespace", nil, identities); err == nil {
 		t.Error("a missing client was accepted")
+	}
+	if _, err := New("test-namespace", apiClient, nil); err == nil {
+		t.Error("a missing Identity reader was accepted")
 	}
 }
 

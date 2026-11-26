@@ -115,7 +115,7 @@ pub(super) fn emit_heap_content_order(
             events.push((
                 SourceUnitId(stmt.ordinal.0),
                 stmt.ordinal,
-                crate::StatementEffectSummary {
+                analysis::StatementEffectSummary {
                     reads: BTreeSet::new(),
                     writes: allocations,
                 },
@@ -155,8 +155,8 @@ pub(super) fn emit_heap_content_order(
 pub(super) fn heap_content_cells(
     reads: &BTreeSet<EffectCell>,
     writes: &BTreeSet<EffectCell>,
-) -> crate::StatementEffectSummary {
-    crate::StatementEffectSummary {
+) -> analysis::StatementEffectSummary {
+    analysis::StatementEffectSummary {
         reads: reads
             .iter()
             .filter(|cell| {
@@ -236,8 +236,8 @@ pub(super) fn resolve_direct_function_source_unit(
 }
 
 pub(super) fn union_effects(
-    into: &mut crate::StatementEffectSummary,
-    from: &crate::StatementEffectSummary,
+    into: &mut analysis::StatementEffectSummary,
+    from: &analysis::StatementEffectSummary,
 ) -> bool {
     let old_reads = into.reads.len();
     let old_writes = into.writes.len();
@@ -385,7 +385,7 @@ pub(super) fn emit_cell_order_events(
         Item = (
             SourceUnitId,
             SourceUnitOrdinal,
-            crate::StatementEffectSummary,
+            analysis::StatementEffectSummary,
             CellOrderBarrier,
         ),
     >,
@@ -592,13 +592,13 @@ mod array_heap_frontier_tests {
     ) -> (
         SourceUnitId,
         SourceUnitOrdinal,
-        crate::StatementEffectSummary,
+        analysis::StatementEffectSummary,
         CellOrderBarrier,
     ) {
         (
             SourceUnitId(ordinal),
             SourceUnitOrdinal(ordinal),
-            crate::StatementEffectSummary {
+            analysis::StatementEffectSummary {
                 reads: reads
                     .iter()
                     .copied()
@@ -621,13 +621,13 @@ mod array_heap_frontier_tests {
     ) -> (
         SourceUnitId,
         SourceUnitOrdinal,
-        crate::StatementEffectSummary,
+        analysis::StatementEffectSummary,
         CellOrderBarrier,
     ) {
         (
             SourceUnitId(ordinal),
             SourceUnitOrdinal(ordinal),
-            crate::StatementEffectSummary {
+            analysis::StatementEffectSummary {
                 reads: reads.iter().cloned().collect(),
                 writes: writes.iter().cloned().collect(),
             },
@@ -730,7 +730,7 @@ mod array_heap_frontier_tests {
 
         let mut events = Vec::new();
         for array in 0..ARRAY_COUNT {
-            let mut effects = crate::StatementEffectSummary::default();
+            let mut effects = analysis::StatementEffectSummary::default();
             effects
                 .reads
                 .insert(EffectCell::ArrayContents(array as u32));
@@ -746,14 +746,14 @@ mod array_heap_frontier_tests {
             events.push((
                 SourceUnitId(source_unit),
                 SourceUnitOrdinal(source_unit),
-                crate::StatementEffectSummary::default(),
+                analysis::StatementEffectSummary::default(),
                 heap_frontier(),
             ));
         }
         let last_barrier = ARRAY_COUNT + BARRIER_COUNT - 1;
         for array in 0..ARRAY_COUNT {
             let source_unit = ARRAY_COUNT + BARRIER_COUNT + array;
-            let mut effects = crate::StatementEffectSummary::default();
+            let mut effects = analysis::StatementEffectSummary::default();
             effects
                 .reads
                 .insert(EffectCell::ArrayContents(array as u32));

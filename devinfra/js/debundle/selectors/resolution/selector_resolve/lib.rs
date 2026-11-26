@@ -55,7 +55,7 @@ pub struct Chunk<'m> {
     structural: Cow<'m, StructuralChunkSourceFacts<'m>>,
     matcher: OnceCell<ChunkResolver<'m>>,
     places: OnceCell<Places>,
-    near_miss_indices: OnceCell<source_match::ItemMatchIndices>,
+    near_miss_indices: OnceCell<source_match_diagnostics::ItemMatchIndices>,
 }
 
 /// Top-level statements by source body index: the source unit of each statement,

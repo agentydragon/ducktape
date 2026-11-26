@@ -28,12 +28,12 @@ func (p *Provider) access(ctx context.Context, repository string) (githubstate.A
 // forkAccess is the App's access to the repository a pull request's head is in, or nil while the App is not
 // installed there: an installation on the base repository does not extend to a fork, so a fork the App cannot see
 // is left out, not an error. A suspended installation is an error.
-func (p *Provider) forkAccess(ctx context.Context, fork client.Repository) (*githubstate.AccessKey, error) {
-	access, err := p.access(ctx, fork.FullName)
+func (p *Provider) forkAccess(ctx context.Context, fork githubmodel.Repository) (*githubstate.AccessKey, error) {
+	access, err := p.access(ctx, fork.Name)
 	var notInstalled *client.NotInstalledError
 	switch {
 	case errors.As(err, &notInstalled):
-		slog.WarnContext(ctx, "pull request fork is not covered", "fork", fork.FullName)
+		slog.WarnContext(ctx, "pull request fork is not covered", "fork", fork.Name)
 		return nil, nil
 	case err != nil:
 		return nil, err
@@ -56,8 +56,8 @@ func (p *Provider) Authorize(ctx context.Context, source githubmodel.Source) (gi
 		if err != nil {
 			return githubstate.AccessKey{}, err
 		}
-		if pullRequest.Head.Repository != nil && pullRequest.Head.Repository.ID != access.RepositoryID {
-			if _, err := p.forkAccess(ctx, *pullRequest.Head.Repository); err != nil {
+		if pullRequest.HeadRepository != nil && pullRequest.HeadRepository.ID != access.RepositoryID {
+			if _, err := p.forkAccess(ctx, *pullRequest.HeadRepository); err != nil {
 				return githubstate.AccessKey{}, err
 			}
 		}
@@ -101,12 +101,12 @@ func (p *Provider) readAccess(ctx context.Context, key githubstate.AccessKey) (s
 	if err != nil {
 		return "", err
 	}
-	installation, err := p.client.Installation(ctx, repository.FullName)
+	installation, err := p.client.Installation(ctx, repository.Name)
 	if err != nil {
 		return "", err
 	}
 	if repository.ID != key.RepositoryID || installation != key.InstallationID {
 		return "", &client.SourceChangedError{Reason: "GitHub repository/installation identity changed"}
 	}
-	return repository.FullName, nil
+	return repository.Name, nil
 }

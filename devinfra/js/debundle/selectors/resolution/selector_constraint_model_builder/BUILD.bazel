@@ -1,0 +1,29 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "selector_constraint_model_builder",
+    srcs = glob(["*.rs"]),
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/selectors/resolution:selector_constraint_backend",
+        "//devinfra/js/debundle/selectors/resolution:selector_ir",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "selector_constraint_model_builder_test",
+    size = "small",
+    crate = ":selector_constraint_model_builder",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/selectors/resolution:selector_constraint_backend",
+        "//devinfra/js/debundle/selectors/resolution:selector_ir",
+        "//devinfra/js/debundle/selectors/resolution:selector_test_fixtures",
+    ],
+)

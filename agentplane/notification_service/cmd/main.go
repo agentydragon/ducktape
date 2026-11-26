@@ -24,7 +24,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -144,11 +143,15 @@ func newRoutes(webhookHandler http.Handler) http.Handler {
 // serve answers until ctx ends or a worker or a listener fails: the gRPC servicers and signed webhook.
 func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
 	// The namespace holds the workload credentials and their live Identity subjects.
-	callers, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, &resolver.Identities{PolicyNamespace: c.Namespace})
+	identities, err := auth.KubernetesIdentityUIDs(deps.Sandboxes, c.Namespace)
 	if err != nil {
 		return err
 	}
-	sandboxes, err := sandboxreader.New(c.Namespace, deps.Sandboxes)
+	callers, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, identities)
+	if err != nil {
+		return err
+	}
+	sandboxes, err := sandboxreader.New(c.Namespace, deps.Sandboxes, identities)
 	if err != nil {
 		return err
 	}

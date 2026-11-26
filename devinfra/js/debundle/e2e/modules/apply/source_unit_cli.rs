@@ -1,7 +1,6 @@
 //! Reviewed source_unit-to-module batches preserve existing selector metadata.
 
 use super::support::apply_args;
-use analysis::DependencyGraphReport;
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::process;
 use debundle_e2e_support::{
@@ -9,6 +8,7 @@ use debundle_e2e_support::{
     assert_module_variable_declarators, assert_node_output, debundler_path, read_gzip_json,
     run_tree_graph_fixture,
 };
+use graph::DependencyGraphReport;
 use serde_json::json;
 use std::fs;
 use std::path::Path;

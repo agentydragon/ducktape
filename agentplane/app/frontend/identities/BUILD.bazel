@@ -123,11 +123,25 @@ ts_library(
 )
 
 ts_library(
+    name = "delete",
+    srcs = ["delete.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/policy/v1:policy_service_pb",
+    ],
+)
+
+ts_library(
     name = "list",
     srcs = ["list.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":accounts",
+        ":delete",
         ":origin",
         ":references",
         ":summary",
@@ -138,6 +152,7 @@ ts_library(
         "//agentplane/app/frontend/egress:credential_watch",
         "//agentplane/app/frontend/policy:watch",
         "//agentplane/app/frontend/shell:topbar",
+        "//agentplane/app/frontend/ui:icons",
         "//agentplane/egress/api/rules:egress_rules_pb",
         "//agentplane/policy/v1:policy_service_pb",
     ],
@@ -147,6 +162,7 @@ agentplane_vitest_test(
     name = "list_test",
     srcs = ["list.test.tsx"],
     deps = [
+        ":client",
         ":list",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
@@ -166,7 +182,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":accounts",
-        ":client",
+        ":delete",
         ":origin",
         ":references",
         ":summary",

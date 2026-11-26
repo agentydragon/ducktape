@@ -16,7 +16,6 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -58,14 +57,18 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	if err != nil {
 		return nil, err
 	}
-	svids, err := auth.NewKubernetesSVIDResolver(apiConfig, []string{namespace}, &resolver.Identities{PolicyNamespace: c.PolicyNamespace})
+	identities, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
+	if err != nil {
+		return nil, err
+	}
+	svids, err := auth.NewKubernetesSVIDResolver(apiConfig, []string{namespace}, identities)
 	if err != nil {
 		return nil, err
 	}
 	policyHealth := watchhealth.New()
 	watches := reader.NewWatches(apiConfig, policyHealth)
 	rules := access.NewIndex()
-	if err := reader.WatchRules(watches, rules, c.PolicyNamespace, access.Ready); err != nil {
+	if err := reader.WatchRules(watches, rules, c.PolicyNamespace, access.Ready, reader.KubernetesIdentities{}); err != nil {
 		return nil, err
 	}
 	manager, err := resume.NewManager(lifecycle.Options{
@@ -101,10 +104,6 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 		return nil, err
 	}
 	methods, err := environmentservice.WithServiceCallers(environmentservice.Methods(svids), c.ServiceReaders, c.ServiceManagers, c.ServiceLaunchers, c.ServiceOperators)
-	if err != nil {
-		return nil, err
-	}
-	identities, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
 	if err != nil {
 		return nil, err
 	}

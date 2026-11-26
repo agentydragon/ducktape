@@ -2,36 +2,16 @@ package providerrequest
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture"
 )
-
-type memoryContent map[content.ContentID]content.StoredContent
-
-func (m memoryContent) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
-	stored, err := content.CanonicalContent(kind, payload)
-	if err != nil {
-		return "", err
-	}
-	m[stored.ID] = stored
-	return stored.ID, nil
-}
-
-func (m memoryContent) GetContent(id content.ContentID) (content.StoredContent, error) {
-	stored, ok := m[id]
-	if !ok {
-		return content.StoredContent{}, fmt.Errorf("missing fixture content %s", id)
-	}
-	return stored, content.VerifyContent(stored)
-}
 
 func TestPreparationFreezesAuthoredPrefixAcrossRequests(t *testing.T) {
 	configs := []samplersettings.ModelConfig{
@@ -42,7 +22,7 @@ func TestPreparationFreezesAuthoredPrefixAcrossRequests(t *testing.T) {
 	}
 	for _, config := range configs {
 		t.Run(string(config.API)+"/"+string(config.Responses.Dialect), func(t *testing.T) {
-			memory := memoryContent{}
+			memory := providerfixture.MemoryContent{}
 			firstInstructions := "fixture original authored prefix"
 			snapshot := Snapshot{API: config.API, Instructions: &firstInstructions}
 			preparation := Preparation{ModelConfig: config}
@@ -107,7 +87,7 @@ func TestPreparationFreezesAuthoredPrefixAcrossRequests(t *testing.T) {
 }
 
 func TestAnthropicCompactionCarriesCompleteNativeContext(t *testing.T) {
-	memory := memoryContent{}
+	memory := providerfixture.MemoryContent{}
 	native := json.RawMessage(`{"role":"user","content":[{"type":"text","text":"fixture compacted context"}]}`)
 	body := &anthropic.Request{Model: "fixture-model", MaxTokens: 1024, System: "fixture system", Messages: []json.RawMessage{native}}
 	recipe, err := Prepare(memory, Snapshot{API: protocol.APIStyleAnthropicMessages}, Preparation{
@@ -137,7 +117,7 @@ func TestAnthropicCompactionCarriesCompleteNativeContext(t *testing.T) {
 }
 
 func TestChatCompactionUpgradesLegacySamplingProfileForNewRequests(t *testing.T) {
-	memory := memoryContent{}
+	memory := providerfixture.MemoryContent{}
 	config := samplersettings.ModelConfig{
 		API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON,
 	}
@@ -183,7 +163,7 @@ func TestChatCompactionUpgradesLegacySamplingProfileForNewRequests(t *testing.T)
 }
 
 func TestChatEffortUpdatesNewRequestsWithoutChangingRetainedRequests(t *testing.T) {
-	memory := memoryContent{}
+	memory := providerfixture.MemoryContent{}
 	config := samplersettings.ModelConfig{
 		API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON,
 		ChatCompaction: &chatcompletions.CompactionConfig{
@@ -243,7 +223,7 @@ func TestChatEffortUpdatesNewRequestsWithoutChangingRetainedRequests(t *testing.
 }
 
 func TestChatModelSwitchUpdatesNewRequestWithoutChangingRetainedRequest(t *testing.T) {
-	memory := memoryContent{}
+	memory := providerfixture.MemoryContent{}
 	config := samplersettings.ModelConfig{API: protocol.APIStyleChatCompletions, ProviderModel: "old-model", ExecEncoding: protocol.ExecEncodingJSON}
 	preparation := Preparation{ModelConfig: config, SessionEffort: "low"}
 	snapshot := Snapshot{API: config.API}

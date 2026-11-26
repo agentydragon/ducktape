@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use analysis::DependencyGraphInput;
 use anyhow::{Context, Result, bail, ensure};
+use graph::DependencyGraphInput;
 use graph_provenance::VerifiedGraphSourceContext;
 use ownership_subset::OwnershipSubset;
 use peel::assignment::{AssignmentProblem, accepted};

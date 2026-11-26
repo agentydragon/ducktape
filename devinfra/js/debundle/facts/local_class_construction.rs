@@ -13,7 +13,7 @@ use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct LocalClassConstructionShapes {
+pub struct LocalClassConstructionShapes {
     pub(super) classes: BTreeMap<u32, BTreeSet<(Id, u32)>>,
     pub(super) constructions: BTreeMap<u32, u32>,
 }
@@ -98,7 +98,7 @@ impl LocalClassConstructionShapes {
 /// Validated class judgments shared by purity, execution and heap ordering.
 /// Structural shapes alone never construct this type.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct LocalClassConstructionProof {
+pub struct LocalClassConstructionProof {
     facts: Arc<SemanticFacts>,
 }
 

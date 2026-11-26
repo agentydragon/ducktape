@@ -14,8 +14,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -145,7 +145,7 @@ func (s *served) configureCertificates(t *testing.T) (credentials.TransportCrede
 			t.Fatal(err)
 		}
 	}
-	svid, err := auth.NewSVIDResolver(objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: s.policy})
+	svid, err := auth.NewSVIDResolver(objects, []string{testNamespace}, workloadauthtesting.IdentityUIDs(t, objects, s.policy))
 	if err != nil {
 		t.Fatal(err)
 	}

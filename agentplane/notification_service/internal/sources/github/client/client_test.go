@@ -53,17 +53,17 @@ func TestReadsReturnTheirResources(t *testing.T) {
 	if err != nil || id != installationID {
 		t.Errorf("Installation = %d, %v", id, err)
 	}
-	for name, read := range map[string]func() (Repository, error){
-		"by name": func() (Repository, error) { return client.Repository(ctx, "owner/repo", installationID) },
-		"by ID":   func() (Repository, error) { return client.RepositoryByID(ctx, 100, installationID) },
+	for name, read := range map[string]func() (githubmodel.Repository, error){
+		"by name": func() (githubmodel.Repository, error) { return client.Repository(ctx, "owner/repo", installationID) },
+		"by ID":   func() (githubmodel.Repository, error) { return client.RepositoryByID(ctx, 100, installationID) },
 	} {
-		if repository, err := read(); err != nil || repository != (Repository{ID: 100, FullName: "owner/repo"}) {
+		if repository, err := read(); err != nil || repository != (githubmodel.Repository{ID: 100, Name: "owner/repo"}) {
 			t.Errorf("repository %s = %+v, %v", name, repository, err)
 		}
 	}
 	pullRequest, err := client.PullRequest(ctx, "owner/repo", 7, installationID)
-	if err != nil || pullRequest.Head.SHA != fixture.SHA || pullRequest.Head.Repository == nil ||
-		*pullRequest.Head.Repository != (Repository{ID: 200, FullName: "fork/repo"}) || pullRequest.BaseRef != "main" ||
+	if err != nil || pullRequest.HeadSHA != fixture.SHA || pullRequest.HeadRepository == nil ||
+		*pullRequest.HeadRepository != (githubmodel.Repository{ID: 200, Name: "fork/repo"}) || pullRequest.BaseRef != "main" ||
 		pullRequest.BaseSHA != fixture.BaseSHA || pullRequest.State != githubmodel.PullRequestOpen ||
 		pullRequest.Mergeability != githubmodel.Mergeable || pullRequest.MergeCommit == nil ||
 		*pullRequest.MergeCommit != (githubmodel.MergeCommit{SHA: fixture.MergeCommitSHA, BaseSHA: fixture.BaseSHA, HeadSHA: fixture.SHA}) {
@@ -123,7 +123,7 @@ func TestPullRequestReportsLifecycleAndMergeabilityStates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if observation.Head != (Revision{SHA: fixture.SHA}) || observation.BaseRef != "main" ||
+			if observation.HeadSHA != fixture.SHA || observation.HeadRepository != nil || observation.BaseRef != "main" ||
 				observation.State != test.wantState || observation.Mergeability != test.wantMergeable {
 				t.Errorf("PullRequest = %+v", observation)
 			}

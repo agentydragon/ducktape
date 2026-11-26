@@ -14,7 +14,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -1904,7 +1903,7 @@ func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
 	api := kubeapiserver.StartForTest(t)
 	const policyNamespace = "interrupt-recheck-policies"
 	workload := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "interrupt-recheck", policyNamespace)
-	svids, err := auth.NewSVIDResolver(workload.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{caller.Namespace}, workloadauthtesting.IdentityUIDs(t, workload.Objects, policyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

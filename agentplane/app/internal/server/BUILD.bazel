@@ -5,6 +5,7 @@ package(default_visibility = ["//agentplane/app:__subpackages__"])
 go_library(
     name = "server",
     srcs = [
+        "facades.go",
         "routes.go",
         "runtime.go",
         "server.go",
@@ -82,12 +83,17 @@ go_test(
 
 go_test(
     name = "action_facade_test",
-    srcs = ["action_facade_test.go"],
+    srcs = [
+        "action_facade_test.go",
+        "facades_test.go",
+    ],
     embed = [":server"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
         "//agentplane/action_service/api/web_push:web_push_service_go_proto",
+        "//agentplane/app/internal/httpapi/streams",
+        "//agentplane/app/internal/settings",
         "//agentplane/app/internal/upstream",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/facade",
@@ -112,14 +118,16 @@ go_test(
 
 go_test(
     name = "policy_facade_test",
-    srcs = ["policy_facade_test.go"],
+    srcs = [
+        "facades_test.go",
+        "policy_facade_test.go",
+    ],
     embed = [":server"],
     deps = [
         "//agentplane/app/internal/httpapi/streams",
-        "//agentplane/app/internal/upstream",
+        "//agentplane/app/internal/settings",
         "//agentplane/egress/api/admin:egress_admin_go_proto",
         "//agentplane/egress/api/rules:egress_rules_go_proto",
-        "//agentplane/grpc/facade",
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",

@@ -1,0 +1,32 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "chunk_analysis",
+    srcs = [
+        "chunk_admission.rs",
+        "mod.rs",
+    ],
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle/graph",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "chunk_analysis_test",
+    crate = ":chunk_analysis",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:raw_js_test_support",
+    ],
+)

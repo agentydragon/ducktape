@@ -13,10 +13,9 @@ import (
 	"time"
 
 	streamhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/streams"
-	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	egresspb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
 	rulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
-	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
@@ -67,13 +66,9 @@ func policyUpstream(t *testing.T, service policypb.PolicyServiceServer) streamht
 	policypb.RegisterPolicyServiceServer(server, service)
 	address := grpcserver.Serve(t, server)
 	appSVID := ca.Issue(t, peertls.AppURI)
-	handler, err := facade.NewHandlerWithOptions(t.Context(), address, time.Second, facade.HandlerOptions{
-		TLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.PolicyControllerURI, CertFile: appSVID.CertFile, KeyFile: appSVID.KeyFile, ClientURI: peertls.AppURI},
-	}, policypb.RegisterPolicyServiceHandlerFromEndpoint)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return upstreamproxy.NewHandlerUpstream(handler, "")
+	return appFacadesForTest(t, address, settings.Config{
+		PolicyServiceTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.PolicyControllerURI, CertFile: appSVID.CertFile, KeyFile: appSVID.KeyFile, ClientURI: peertls.AppURI},
+	}).PolicyHTTP
 }
 
 func TestGeneratedPolicyFacadeUsesAppSVIDAndSubject(t *testing.T) {
@@ -186,15 +181,11 @@ func TestGeneratedEgressFacadeUsesAppToken(t *testing.T) {
 	service := &egressFacadeService{}
 	egresspb.RegisterEgressAdminServer(server, service)
 	address := grpcserver.Serve(t, server)
-	handler, err := facade.NewHandler(t.Context(), address, time.Second, egresspb.RegisterEgressAdminHandlerFromEndpoint)
-	if err != nil {
-		t.Fatal(err)
-	}
 	token := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(token, []byte("egress-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	upstream := upstreamproxy.NewHandlerUpstream(handler, token)
+	upstream := appFacadesForTest(t, address, settings.Config{EgressAdminTokenFile: token, EgressAdminTimeoutSeconds: 1}).EgressHTTP
 	request := httptest.NewRequest(http.MethodGet, "/upstream/egress/v1/credentials:watch", nil)
 	response := httptest.NewRecorder()
 	if err := upstream.ForwardHTTP(response, request, context.Background(), "v1/credentials:watch", ""); err != nil {

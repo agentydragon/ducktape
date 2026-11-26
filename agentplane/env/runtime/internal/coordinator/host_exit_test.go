@@ -132,7 +132,6 @@ func TestInitialSessionWaitWakesOnRuntimeFailureOrClose(t *testing.T) {
 				t.Fatal("initial Session wait did not observe Runtime state")
 			}
 			r.mu.Lock()
-			r.failed = !closing
 			r.closing = closing
 			if !closing {
 				r.failureErr = failure

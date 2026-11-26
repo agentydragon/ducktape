@@ -29,15 +29,16 @@ use swc_ecma_ast::Module;
 
 use analysis::AnalysisInputs;
 use analysis::analysis_inputs::ResolvedCommutingStatements;
-use analysis::atomic_groups::{
-    DependencyGraphAndAtomicGroups, compute_dependency_graph_and_atomic_groups_with,
-};
 use analysis::diagnostics::{ChunkDiagnostic, Diagnostics};
 use analysis::execution_evidence::SourceLocator;
 use analysis::facts::{
     ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
 };
-use analysis::graph::GraphOptions;
+use graph::GraphOptions;
+use graph::{
+    atomic_groups::DependencyGraphAndAtomicGroups,
+    atomic_groups::compute_dependency_graph_and_atomic_groups_with,
+};
 use spec::{AdmissionCheck, AdmissionOverrides};
 
 /// Analyze a chunk from its precomputed structural layer: compute its facts,

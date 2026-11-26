@@ -765,6 +765,7 @@ py_library(
         "//agentplane/action_service/orchestration_v1:binding",
         "//agentplane/app:settings",
         "//agentplane/env:config",
+        "//agentplane/eventblock:settings",
         "//agentplane/identity/operator:settings",
         "//agentplane/llm_ingress:models",
         "//agentplane/notification_service:settings",

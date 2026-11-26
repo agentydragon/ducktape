@@ -45,15 +45,7 @@ func (r *Runtime) changeAdmissionsLocked(delta int) error {
 		return nil
 	}, state.WithUpdateOwner(lifecycle.EnvironmentOwner))
 	if err != nil {
-		r.admissionOpen = false
-		r.failed = true
-		if r.failureErr == nil {
-			r.failureErr = err
-		}
-		select {
-		case r.fatal <- err:
-		default:
-		}
+		r.failLocked(err)
 		return err
 	}
 	r.activeAdmissions = next

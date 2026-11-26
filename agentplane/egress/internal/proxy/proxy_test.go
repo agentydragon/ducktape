@@ -182,7 +182,7 @@ func newLabWithIdentityReader(t *testing.T, wrap func(client.Reader) client.Read
 	if wrap != nil {
 		reader = wrap(reader)
 	}
-	svids, err := resolver.New(reader, []string{runner.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	svids, err := resolver.New(reader, []string{runner.Namespace}, workloadauthtesting.IdentityUIDs(t, reader, policyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

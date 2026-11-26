@@ -31,7 +31,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
@@ -168,7 +167,7 @@ func newConfiguredIngressTestHandler(t *testing.T, c config) *ingressHandler {
 	if len(c.Attribution.JSONHeaders) == 0 && len(c.Attribution.Baggage) == 0 {
 		c.Attribution = defaultAttribution()
 	}
-	callers, err := auth.NewKubernetesSVIDResolver(api.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	callers, err := auth.NewKubernetesSVIDResolver(api.Config, []string{testNamespace}, workloadauthtesting.IdentityUIDsFromConfig(t, api.Config, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1188,7 +1187,8 @@ func TestCredentialReadOutageIsSanitizedBeforeBackend(t *testing.T) {
 	caller := identityWorkload(t)
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
-	callers, err := auth.NewKubernetesSVIDResolver(&rest.Config{Host: "http://127.0.0.1:1"}, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
+	unreachable := &rest.Config{Host: "http://127.0.0.1:1"}
+	callers, err := auth.NewKubernetesSVIDResolver(unreachable, []string{testNamespace}, workloadauthtesting.IdentityUIDsFromConfig(t, unreachable, testPolicyNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

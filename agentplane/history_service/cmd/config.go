@@ -48,9 +48,9 @@ type config struct {
 
 // ingressConfig is the Session journal ingress's authorization and storage policy. Its RPC shares the service listener.
 type ingressConfig struct {
-	EventBlockWrites            bool           `mapstructure:"event_block_writes"`
-	EventBlockProfile           blockProfile   `mapstructure:"event_block_profile"`
-	EventBlockTargetBytesByKind map[string]int `mapstructure:"event_block_target_bytes_by_kind"`
+	EventBlockWrites            bool               `mapstructure:"event_block_writes"`
+	EventBlockProfile           eventblock.Profile `mapstructure:"event_block_profile"`
+	EventBlockTargetBytesByKind map[string]int     `mapstructure:"event_block_target_bytes_by_kind"`
 
 	// WriterNamespaces scopes the live workload Identity credential records resolved for journal writers.
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
@@ -64,13 +64,6 @@ type ingressConfig struct {
 	// CompactExecutionEvidence packs BoundaryRecord and ExecutionProgress events after every reader
 	// replica supports those block kinds. Keep this disabled during a mixed-version rollout.
 	CompactExecutionEvidence bool `mapstructure:"compact_execution_evidence"`
-}
-
-type blockProfile struct {
-	TargetBytes   int    `mapstructure:"target_bytes"`
-	TargetEntries int    `mapstructure:"target_entries"`
-	Codec         string `mapstructure:"codec"`
-	Level         int    `mapstructure:"level"`
 }
 
 func (c ingressConfig) packers() (map[historypb.EventKind]*eventblock.Packer, error) {
@@ -87,7 +80,9 @@ func (c ingressConfig) packers() (map[historypb.EventKind]*eventblock.Packer, er
 		byKind[historypb.EventKind(n)] = size
 	}
 	build := func(size int) (*eventblock.Packer, error) {
-		return eventblock.NewPacker(eventblock.Profile{TargetBytes: size, TargetEntries: profile.TargetEntries, Level: profile.Level})
+		perKind := profile
+		perKind.TargetBytes = size
+		return eventblock.NewPacker(perKind)
 	}
 	base, err := build(profile.TargetBytes)
 	if err != nil {
@@ -113,7 +108,7 @@ func defaultConfig() config {
 	return config{
 		RequestTimeoutSeconds: 15, MigrationTimeoutSeconds: defaultMigrationTimeoutSeconds,
 		RPC:             listener.Config{ListenAddress: "0.0.0.0:8080"},
-		Ingress:         ingressConfig{SettleDeltas: true, EventBlockProfile: blockProfile{65536, 32, "zstd", 3}, EventBlockTargetBytesByKind: map[string]int{"BOUNDARY_RECORD": 2 << 20}},
+		Ingress:         ingressConfig{SettleDeltas: true, EventBlockProfile: eventblock.DefaultProfile(32), EventBlockTargetBytesByKind: map[string]int{"BOUNDARY_RECORD": 2 << 20}},
 		FoldConcurrency: 4, FoldPageSize: 1000, FoldIntervalSeconds: 2,
 		NativeFrameReadBatchSize: 200, WatchLeaseSeconds: 300,
 	}

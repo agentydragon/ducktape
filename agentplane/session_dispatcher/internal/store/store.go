@@ -18,6 +18,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/proto/sessionplacement"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
 	"github.com/lib/pq"
@@ -1033,7 +1034,7 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	if o.Placement == "" {
 		return nil, errors.New("stored Session has no placement")
 	}
-	target := placement.RequestTarget(&dispatcherpb.CreateSessionRequest{Spec: o.Spec})
+	target := sessionplacement.Target(o.Spec.GetPlacement())
 	if target.GetName() != o.SandboxName || target.GetUid() != o.SandboxUID {
 		return nil, errors.New("stored Session placement disagrees with executor projection")
 	}
@@ -1136,7 +1137,7 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 	if !sessionPlacement.MatchesSpec(spec) {
 		return nil, errors.New("Session placement does not match spec")
 	}
-	target := placement.RequestTarget(&dispatcherpb.CreateSessionRequest{Spec: spec})
+	target := sessionplacement.Target(spec.GetPlacement())
 	if target.GetName() != sandboxName || target.GetUid() != sandboxUID {
 		return nil, errors.New("Session placement does not match executor projection")
 	}

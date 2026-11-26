@@ -1,0 +1,31 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "source_match",
+    srcs = glob(["*.rs"]),
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle/selectors/diagnostics:source_mismatch",
+        "//devinfra/js/debundle/selectors/matching:chunk_facts",
+        "//devinfra/js/debundle/selectors/matching:source_match_holes",
+        "//devinfra/js/debundle/selectors/matching/selector_match",
+        "//devinfra/js/debundle/spec",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:strum",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "source_match_test",
+    crate = ":source_match",
+    edition = "2024",
+)

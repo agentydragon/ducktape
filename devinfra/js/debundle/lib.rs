@@ -1,53 +1,32 @@
 //! Module analysis core for `materialize_logical_modules`.
 //!
-//! Background: see <docs/design.md>. This crate carries the shared
-//! analysis substrate of the dependency-graph quotient model:
+//! Background: see <docs/design.md>. This crate analyzes each source chunk
+//! into top-level source-unit facts: declarations, at-init reads/writes, lazy
+//! reads/writes, side effects, imports, source locations, and top-level await
+//! (`facts`, `purity`), plus the fact-level evidence reports (`reports`).
 //!
-//! 1. Analyze each source chunk into top-level source-unit facts: declarations,
-//!    at-init reads/writes, lazy reads/writes, side effects, imports, source
-//!    locations, and top-level await (`facts`, `purity`).
-//! 2. Build a fine-grained dependency graph over those facts (`graph`,
-//!    `atomic_groups`).
-//! 3. Map source units to destination modules from the spec (`module_assignment`,
-//!    `assignment_assembly`).
-//! 4. Emit stable graph reports from that same graph model (`reports`).
-//!
-//! Realizability checking and assignment validation live in the
-//! `gate` crate; the spec-independent per-chunk chunk-analysis
-//! composer lives in the `chunk_analysis` crate. Both build on this core.
+//! The `graph` crate builds the dependency graph, atomic groups and module
+//! assignment over these facts; realizability checking and assignment
+//! validation live in the `gate` crate; the spec-independent per-chunk
+//! composer lives in the `chunk_analysis` crate.
 
 pub mod analysis_inputs;
 pub mod analysis_provenance;
 #[cfg(test)]
 mod analysis_test_support;
-pub mod assignment_assembly;
-pub mod atomic_groups;
-pub mod cross_module_purity;
 pub mod diagnostics;
 pub mod execution_evidence;
 pub mod facts;
-pub mod graph;
 pub mod ids;
-mod inference;
+pub mod inference;
 pub mod loader_closure;
-pub mod module_assignment;
-pub mod placement_projection;
 pub mod program_bindings;
 pub mod purity;
 pub mod reports;
-mod swc_parallel;
 
 pub use analysis_inputs::{
     AnalysisAssumptions, AnalysisInputs, CallableSummary, CallbackFactoryEvidence,
     DeferredRecordMember, KnownEffect, LocalEffectPolicy, ReturnedRecordSummary,
-};
-pub use assignment_assembly::{
-    AssemblyOutcome, AtomicGroupConflict, ConflictingClaim, assemble_assignment,
-};
-pub use atomic_groups::{
-    AtomicGroup, AtomicGroupPathOrientation, AtomicGroupPathProjection,
-    DependencyGraphAndAtomicGroups, compute_atomic_groups,
-    compute_dependency_graph_and_atomic_groups_with,
 };
 pub use execution_evidence::SourceLocation;
 pub use facts::{
@@ -57,40 +36,11 @@ pub use facts::{
     StructuralChunkAnalysis, StructuralStatementFacts, analyze_chunk, analyze_chunk_structural,
     analyze_chunk_with_policy, analyze_vendor_prune_chunk, local_namespace_iife_target,
 };
-pub use graph::{
-    BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport,
-    ChunkConstrainingEdgeSet, CommutingStatementsDiagnostic, CommutingStatementsUnused,
-    DependencyEdge, DependencyEdgeId, DependencyGraph, DependencyGraphBuildError,
-    DependencyGraphInput, DuplicateTopLevelDeclaration, EdgeReason, EdgeRole, EffectCellReport,
-    GraphOptions, GraphReportIdError, HeapBarrierCause, KnownConflict, PremiseVerdict,
-    SequencedCause, SourceUnit, SourceUnitClass, build_dependency_graph_with,
-    chunk_constraining_module_edges, position_lookup,
-};
 pub use ids::{
     BindingCatalogue, BindingId, BindingKind, BindingScopeError, EntryDestination,
     ImportedSourceTarget, LocalBindings, ModuleId, ModuleRole, PlannedModule, top_level_id,
 };
-pub use module_assignment::ModuleAssignment;
-pub use placement_projection::{
-    DestructuringDeclaratorGroup, DestructuringGroupDestinationCheck,
-    DestructuringGroupOwnerClassification, NestedVarDestinationClassification,
-    NestedVarPlacementCheck, NestedVarStatement, PlacementEmissionMaps, PlacementProjection,
-    PlacementProjectionAssessment, PlacementProjectionInput, PlacementProjectionOutcome,
-    PlacementProjectionViolation, SourceUnitLayout, SourceUnitLayoutIssue, SourceUnitLocation,
-    SourceUnitSyntaxLocation, StructuralPlacementCheck, classify_destructuring_group_owners,
-    classify_nested_var_placement, project_placement,
-};
 pub use purity::{
     Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPureMemberReason,
     RedundantPurityHint, RedundantPurityReason,
-};
-pub use reports::schema::{
-    AtomicGraphReport, AtomicGroupConflictReport, AtomicGroupConflictWitness,
-    AtomicGroupEdgeReport, AtomicGroupReport, AtomicGroupWitnessClaim, AtomicGroupWitnessPath,
-    AtomicGroupWitnessStep, BindingReport, CallbackFactoryBarrierReport,
-    CallbackFactoryCallArgumentWitnessReport, CallbackFactoryContractReport,
-    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, ConflictingClaimReport,
-    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
-    ModuleEntry, ModuleKey, ModuleQuotientReport, ProgramGraphReport, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport, SequencedSourceUnitCause, SourceUnitReport,
 };

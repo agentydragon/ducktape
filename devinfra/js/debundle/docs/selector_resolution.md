@@ -262,7 +262,7 @@ own.
 
 Once a chunk's outcomes are recorded, each `no_match` template entity gets the
 top-level statements no entity of the chunk resolved to that its template comes
-closest to (`add_nearest_unclaimed`, scored by `source_match::fact_near_misses`,
+closest to (`add_nearest_unclaimed`, scored by `source_match_diagnostics::fact_near_misses`,
 bounded by `NEAREST_UNCLAIMED_MIN_SCORE` and `NEAREST_UNCLAIMED_LIMIT`). It
 runs after the solve because "unclaimed" needs every entity's result; only a
 one-statement template that is not all holes is scored.

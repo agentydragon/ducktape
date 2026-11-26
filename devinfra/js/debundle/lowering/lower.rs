@@ -34,10 +34,6 @@ use crate::imports::{
 use crate::naturalize::NaturalizedModuleBody;
 use crate::placement::EmissionPlacement;
 use crate::plans::ModulePlan;
-use crate::rename_ledger::{
-    RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
-    SealedRenames,
-};
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
@@ -45,8 +41,13 @@ use artifact::reports::SelectedModuleLowering;
 use artifact::{ArtifactIndexes, ChunkBundle, FileMetadata, FileRole, JsFile, JsFileBody};
 use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_ids};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
+use gate::AssignmentAnalysis;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
+use rename_ledger::{
+    RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy, SealValidation,
+    SealedRenames,
+};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
@@ -256,7 +257,6 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
     // the import-collision contract while satisfying Lemma 2's
     // emit-side constraint. See docs/design.md "Module dep graphs"
     // and "Lemma 2".
-    let mut entry_imports: Vec<(ModuleId, ModuleItem)> = Vec::new();
     // Entry-side renames flow through ONE per-chunk ledger sealed once:
     // the chunk_renames entries staying in entry (Explicit, Chunk scope),
     // the entry import-local mints (ImportInduced, Chunk scope), and the
@@ -277,144 +277,37 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
     let entry_nested_names = collect_nested_binding_names(&entry_body);
     let mut entry_ledger = RenameLedger::default();
     entry_ledger.seed_taken(RenameScope::Chunk, entry_root_names.iter().cloned());
-    // Submit `chunk_renames` intents for bindings staying in entry's
-    // body (not claimed by any logical module). Bindings owned by a
-    // logical module take their rename from the module plan via the
-    // disambiguate-imports pass below; chunk_renames entries for those
-    // bindings are silently dropped here (the logical-module rename
-    // wins).
-    //
-    // Each target name is claimed before the import-disambiguation pass
-    // runs, so a later cross-module import doesn't mint a fresh local
-    // that collides with one of the chunk_renames' targets. Iterate
-    // `chunk_renames` (a `HashMap`) in sorted order so the ledger's
-    // intent order is stable.
-    let mut sorted_renames: Vec<(&String, &String)> = chunk_renames.iter().collect();
-    sorted_renames.sort_by(|a, b| a.0.cmp(b.0));
-    for (binding, export_name) in sorted_renames {
-        if is_module_owned(binding) {
-            continue;
-        }
-        entry_ledger.claim(RenameScope::Chunk, export_name);
-        entry_ledger.submit(RenameIntent {
-            scope: RenameScope::Chunk,
-            from: top_level_id(binding, chunk_top_level_mark),
-            to: export_name.as_str().into(),
-            origin: RenameOrigin::Explicit {
-                contributor: CHUNK_RENAMES_CONTRIBUTOR,
-            },
-        });
-    }
+    submit_entry_chunk_renames(
+        &mut entry_ledger,
+        chunk_renames,
+        &is_module_owned,
+        chunk_top_level_mark,
+    );
     // Mints must additionally avoid every nested binding name, or the
     // follow-up body rewrite could capture references meant to resolve
     // to the import.
     entry_ledger.seed_taken(RenameScope::Chunk, collect_local_binding_names(&entry_body));
-    for (module_index, plan) in module_plans.iter().enumerate() {
-        // Drop bindings that don't exist anywhere (no entry in
-        // `binding_assignment`). Bindings owned by another plan stay
-        // in the import — they're a separate "two plans claim the
-        // same binding" disambiguation case handled by
-        // `disambiguate_import_locals`.
-        let live_bindings: BTreeMap<String, String> = plan
-            .bindings
-            .iter()
-            .filter(|(name, _)| is_module_owned(name))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        if live_bindings.is_empty() {
-            // A plan with no importable bindings can still carry
-            // emitted content (anonymous claimed statements). The
-            // entry must still load it — a module nothing imports
-            // never evaluates, silently dropping its side effects.
-            // Empty authored owners also persist in the emitted universe;
-            // import them to match the schedule's universal entry fanout.
-            entry_imports.push((
-                ModuleId(module_index),
-                import_decl_module_item(
-                    Vec::new(),
-                    &relative_source(entry_file, &plan.target_file),
-                ),
-            ));
-            continue;
-        }
-        let mut emit_renames = BTreeMap::<String, String>::new();
-        let resolved = disambiguate_import_locals(
-            &live_bindings,
-            &mut entry_ledger,
-            RenameScope::Chunk,
-            &mut emit_renames,
-        );
-        // A rename only propagates to consumer-body references when the
-        // moved decl actually belongs to this plan. Plans that listed a
-        // binding without owning the decl emit a dangling import; the
-        // body refs continue to resolve to whichever binding owned the
-        // original local name.
-        for (local, fresh) in emit_renames {
-            let local_id = top_level_id(&local, chunk_top_level_mark);
-            if binding_assignment.get(&local_id).copied() == Some(module_index) {
-                entry_ledger.submit(RenameIntent {
-                    scope: RenameScope::Chunk,
-                    from: local_id,
-                    to: fresh.as_str().into(),
-                    origin: RenameOrigin::ImportInduced {
-                        contributor: ENTRY_IMPORT_LOCAL_CONTRIBUTOR,
-                    },
-                });
-            }
-        }
-        entry_imports.push((
-            ModuleId(module_index),
-            import_decl_for_plan(
-                entry_file,
-                &plan.target_file,
-                &resolved,
-                chunk_top_level_mark,
-            ),
-        ));
-    }
-    // Render exactly the schedule retained by validation, including entry's
-    // complete fanout. A missing/extra target is an internal emission error.
-    assignment_analysis.sort_candidate_imports(
-        assignment_analysis
-            .assignment()
-            .entry_destination()
-            .module_id(),
-        &mut entry_imports,
+    let entry_imports = plan_entry_imports(
+        module_plans,
+        &is_module_owned,
+        binding_assignment,
+        assignment_analysis,
+        entry_file,
+        chunk_top_level_mark,
+        &mut entry_ledger,
     )?;
-    let entry_imports: Vec<ModuleItem> = entry_imports.into_iter().map(|(_, it)| it).collect();
-    // Capture probe: a read-only walk of the un-renamed entry body with
-    // the pending Chunk-scope map, reporting the reference-resolution
-    // conflicts seal validates. It uses parser-owned unresolved identity
-    // for reverse capture and scope tracking for target-shadow capture. The
-    // probe replaces the pre-seal trial application; the body is mutated
-    // only by the post-seal executor below.
     let entry_candidate_renames = entry_ledger.pending_renames(&RenameScope::Chunk);
-    let mut entry_captured = BTreeSet::new();
-    if !entry_candidate_renames.is_empty() {
-        let mut probe = RenameCaptureProbe::new(&entry_candidate_renames, unresolved_context);
-        for item in entry_body.iter() {
-            item.visit_with(&mut probe);
-        }
-        entry_captured = probe.captured;
-    }
+    let entry_captured =
+        probe_entry_captures(&entry_body, &entry_candidate_renames, unresolved_context);
     // Naturalize before collecting facts: both entry export growth and module
     // emission must see the same post-rename references and their rename maps.
-    let naturalized_modules = selected_by_module
-        .into_iter()
-        .zip(module_plans)
-        .enumerate()
-        .map(|(index, (body, plan))| {
-            let module = ModuleId(index);
-            NaturalizedModuleBody::prepare(
-                body,
-                plan,
-                module,
-                sealed_renames.module_renames_by_name(module),
-                chunk_top_level_mark,
-                unresolved_context,
-            )
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let naturalized_modules = naturalize_module_bodies(
+        selected_by_module,
+        module_plans,
+        sealed_renames,
+        chunk_top_level_mark,
+        unresolved_context,
+    )?;
     // Auto-grow entry's export list for any residual binding a
     // moved module body references. Without this, the per-module
     // emit path below would surface a "moved module references
@@ -452,38 +345,14 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
         chunk_top_level_mark,
         &mut entry_ledger,
     );
-    // Seal the chunk ledger: the single validation point for every
-    // entry-side rename. Chunk scope: conflicting targets (target name
-    // already taken by a body local that isn't being renamed away, or
-    // chosen by another chunk_renames entry, invalid as an identifier,
-    // or would change reference resolution per the probe above) bail here
-    // with every violation listed, rather than producing invalid JS
-    // silently. EntryPublicExports scope: a single contributor over a
-    // set-deduped source set cannot conflict; the occupancy check
-    // asserts the mints stayed clear of pre-existing public names.
-    let sealed_entry_renames = entry_ledger.seal(&SealValidation {
-        occupancy: BTreeMap::from([
-            (
-                RenameScope::Chunk,
-                ScopeOccupancy::Body {
-                    label: chunk_id.to_string(),
-                    root: entry_root_names,
-                    nested: entry_nested_names,
-                    captured: entry_captured,
-                },
-            ),
-            (
-                RenameScope::EntryPublicExports,
-                ScopeOccupancy::Body {
-                    label: chunk_id.to_string(),
-                    root: pre_existing_public_export_names.iter().cloned().collect(),
-                    nested: BTreeSet::new(),
-                    captured: BTreeSet::new(),
-                },
-            ),
-        ]),
-        reserved: BTreeSet::new(),
-    })?;
+    let sealed_entry_renames = seal_entry_ledger(
+        entry_ledger,
+        chunk_id,
+        entry_root_names,
+        entry_nested_names,
+        entry_captured,
+        pre_existing_public_export_names,
+    )?;
     let entry_binding_renames_by_id = sealed_entry_renames
         .scope_renames(&RenameScope::Chunk)
         .unwrap_or_default();
@@ -499,54 +368,20 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
     // rewrite them to `export { fresh as local }` before the generic
     // renamer visits the rest. The probe above already fed seal the walk's
     // capture verdict, so a capture here means probe and executor diverged.
-    if !entry_binding_renames_by_id.is_empty() {
-        for item in entry_body.iter_mut() {
-            preserve_export_specifier_names(item, &entry_binding_renames_by_id);
-        }
-        let mut renamer = IdentifierRenamer::new(&entry_binding_renames_by_id, unresolved_context);
-        for item in entry_body.iter_mut() {
-            item.visit_mut_with(&mut renamer);
-        }
-        debug_assert!(
-            renamer.captured.is_empty(),
-            "entry rename executor captured despite seal validation: {:?}",
-            renamer.captured,
-        );
-    }
-    if !entry_imports.is_empty() {
-        let import_insert_index = entry_body
-            .iter()
-            .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
-            .count();
-        let tail = entry_body.split_off(import_insert_index);
-        entry_body.extend(entry_imports);
-        entry_body.extend(tail);
-    }
-    for export in entry_exports_for_moved_bindings(
+    apply_entry_renames(
+        &mut entry_body,
+        &entry_binding_renames_by_id,
+        unresolved_context,
+    );
+    splice_entry_imports_and_moved_exports(
+        &mut entry_body,
+        entry_imports,
         declarations,
         binding_assignment,
         &entry_binding_renames,
         chunk_top_level_mark,
-    ) {
-        entry_body.push(export);
-    }
-    // The sealed EntryPublicExports map is keyed by the residual
-    // binding's original name; the emitted export clause is keyed by
-    // entry's post-rename local, so remap through
-    // `entry_binding_renames` at application.
-    let auto_grow: BTreeMap<String, String> = sealed_entry_renames
-        .scope_renames_by_name(&RenameScope::EntryPublicExports)
-        .into_iter()
-        .map(|(original, public_name)| {
-            (
-                entry_binding_renames
-                    .get(&original)
-                    .cloned()
-                    .unwrap_or(original),
-                public_name,
-            )
-        })
-        .collect();
+    );
+    let auto_grow = auto_grown_exports_by_local(&sealed_entry_renames, &entry_binding_renames);
     if !auto_grow.is_empty() {
         entry_body.push(export_named_for_bindings(&auto_grow, chunk_top_level_mark));
     }
@@ -556,64 +391,15 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
     // expose the same live binding under its readable name as well.
     // Candidates are ordered by name then source binding so collisions are
     // deterministic; a collision simply leaves that alias unavailable.
-    let mut readable_export_candidates = Vec::<(String, String)>::new();
-    for plan in module_plans {
-        for (binding, readable) in &plan.bindings {
-            if plan.spec_named_bindings.contains(binding)
-                && pre_existing_entry_exports.contains(&top_level_id(binding, chunk_top_level_mark))
-            {
-                readable_export_candidates.push((readable.clone(), binding.clone()));
-            }
-        }
-    }
-    readable_export_candidates.sort();
-    let mut taken_public_names = pre_existing_public_export_names.clone();
-    taken_public_names.extend(auto_grow.values().cloned());
-    let mut readable_exports = BTreeMap::new();
-    for (readable, binding) in readable_export_candidates {
-        if !taken_public_names.insert(readable.clone()) {
-            continue;
-        }
-        let local = entry_binding_renames
-            .get(&binding)
-            .cloned()
-            .unwrap_or(binding);
-        readable_exports.insert(local, readable);
-    }
-    let mut cross_chunk_import_aliases = Vec::<(String, String)>::new();
-    if !readable_exports.is_empty() {
-        // Record only aliases that were actually emitted, associated with
-        // the pre-existing public names of the same local binding. A name
-        // that merely happens to equal another binding's spec name is not
-        // enough to authorize rewriting its imports.
-        for item in &entry_body {
-            let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = item else {
-                continue;
-            };
-            if export.src.is_some() {
-                continue;
-            }
-            for specifier in &export.specifiers {
-                let ExportSpecifier::Named(named) = specifier else {
-                    continue;
-                };
-                let ModuleExportName::Ident(local) = &named.orig else {
-                    continue;
-                };
-                let Some(readable) = readable_exports.get(local.sym.as_ref()) else {
-                    continue;
-                };
-                let public = binding_targets::public_export_name(named);
-                cross_chunk_import_aliases.push((public, readable.clone()));
-            }
-        }
-        cross_chunk_import_aliases.sort();
-        cross_chunk_import_aliases.dedup();
-        entry_body.push(export_named_for_bindings(
-            &readable_exports,
-            chunk_top_level_mark,
-        ));
-    }
+    let cross_chunk_import_aliases = push_readable_entry_exports(
+        &mut entry_body,
+        module_plans,
+        pre_existing_entry_exports,
+        pre_existing_public_export_names,
+        &auto_grow,
+        &entry_binding_renames,
+        chunk_top_level_mark,
+    );
     let local_bindings = assignment_analysis
         .inputs()
         .local_bindings(chunk_id_interned)?;
@@ -633,42 +419,16 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
         artifact_indexes,
     ));
 
-    let entry = JsFile {
-        path: entry_file.to_string(),
-        body: JsFileBody::Ast(ParsedJsModule {
-            cm: runtime_ast.cm.clone(),
-            module: Module {
-                span: DUMMY_SP,
-                body: entry_body,
-                shebang: None,
-            },
-            unresolved_mark: runtime_ast.unresolved_mark,
-            top_level_mark: runtime_ast.top_level_mark,
-        }),
-        header_lines: header_lines.to_vec(),
-        binding_comments: BTreeMap::new(),
-        leading_item_comments: BTreeMap::new(),
-        metadata: FileMetadata {
-            chunk_id: chunk_id.to_string(),
-            chunk_file: entry_file.to_string(),
-            role: FileRole::Entry,
-            source_path: source_path.to_string(),
-        },
-    };
+    let entry = entry_js_file(
+        entry_body,
+        runtime_ast,
+        header_lines,
+        chunk_id,
+        entry_file,
+        source_path,
+    );
 
-    // Filter chunk_renames down to entries the per-module emit path
-    // should apply: bindings *not* claimed by any logical module.
-    // Claimed bindings get their rename from the module plan
-    // (handled via `disambiguate_import_locals` for cross-module
-    // imports of the binding); the chunk_renames entry is dropped
-    // for those. Mirrors the residual-side rule on body_renames
-    // seeding above. The map is empty for chunks with no
-    // chunk_renames; the per-module renamer is then a no-op.
-    let cross_module_chunk_renames: BTreeMap<String, String> = chunk_renames
-        .iter()
-        .filter(|(binding, _)| !is_module_owned(binding))
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
+    let cross_module_chunk_renames = chunk_renames_outside_modules(chunk_renames, &is_module_owned);
 
     // Per-plan preparation is independent — the only shared mutable state
     // the loop body touches is `source_import_cache` (memoization for
@@ -718,6 +478,413 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
         modules,
         cross_chunk_import_aliases,
     })
+}
+
+/// Submit `chunk_renames` intents for bindings staying in entry's
+/// body (not claimed by any logical module). Bindings owned by a
+/// logical module take their rename from the module plan via the
+/// disambiguate-imports pass below; chunk_renames entries for those
+/// bindings are silently dropped here (the logical-module rename
+/// wins).
+///
+/// Each target name is claimed before the import-disambiguation pass
+/// runs, so a later cross-module import doesn't mint a fresh local
+/// that collides with one of the chunk_renames' targets. Iterate
+/// `chunk_renames` (a `HashMap`) in sorted order so the ledger's
+/// intent order is stable.
+fn submit_entry_chunk_renames(
+    entry_ledger: &mut RenameLedger,
+    chunk_renames: &HashMap<String, String>,
+    is_module_owned: &impl Fn(&str) -> bool,
+    chunk_top_level_mark: swc_common::Mark,
+) {
+    let mut sorted_renames: Vec<(&String, &String)> = chunk_renames.iter().collect();
+    sorted_renames.sort_by(|a, b| a.0.cmp(b.0));
+    for (binding, export_name) in sorted_renames {
+        if is_module_owned(binding) {
+            continue;
+        }
+        entry_ledger.claim(RenameScope::Chunk, export_name);
+        entry_ledger.submit(RenameIntent {
+            scope: RenameScope::Chunk,
+            from: top_level_id(binding, chunk_top_level_mark),
+            to: export_name.as_str().into(),
+            origin: RenameOrigin::Explicit {
+                contributor: CHUNK_RENAMES_CONTRIBUTOR,
+            },
+        });
+    }
+}
+
+/// Entry's imports of every module plan, minting import locals in plan
+/// order and rendered in the verified import schedule's order.
+fn plan_entry_imports(
+    module_plans: &[ModulePlan],
+    is_module_owned: &impl Fn(&str) -> bool,
+    binding_assignment: &HashMap<Id, usize>,
+    assignment_analysis: &AssignmentAnalysis,
+    entry_file: &str,
+    chunk_top_level_mark: swc_common::Mark,
+    entry_ledger: &mut RenameLedger,
+) -> Result<Vec<ModuleItem>> {
+    let mut entry_imports: Vec<(ModuleId, ModuleItem)> = Vec::new();
+    for (module_index, plan) in module_plans.iter().enumerate() {
+        // Drop bindings that don't exist anywhere (no entry in
+        // `binding_assignment`). Bindings owned by another plan stay
+        // in the import — they're a separate "two plans claim the
+        // same binding" disambiguation case handled by
+        // `disambiguate_import_locals`.
+        let live_bindings: BTreeMap<String, String> = plan
+            .bindings
+            .iter()
+            .filter(|(name, _)| is_module_owned(name))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if live_bindings.is_empty() {
+            // A plan with no importable bindings can still carry
+            // emitted content (anonymous claimed statements). The
+            // entry must still load it — a module nothing imports
+            // never evaluates, silently dropping its side effects.
+            // Empty authored owners also persist in the emitted universe;
+            // import them to match the schedule's universal entry fanout.
+            entry_imports.push((
+                ModuleId(module_index),
+                import_decl_module_item(
+                    Vec::new(),
+                    &relative_source(entry_file, &plan.target_file),
+                ),
+            ));
+            continue;
+        }
+        let mut emit_renames = BTreeMap::<String, String>::new();
+        let resolved = disambiguate_import_locals(
+            &live_bindings,
+            entry_ledger,
+            RenameScope::Chunk,
+            &mut emit_renames,
+        );
+        // A rename only propagates to consumer-body references when the
+        // moved decl actually belongs to this plan. Plans that listed a
+        // binding without owning the decl emit a dangling import; the
+        // body refs continue to resolve to whichever binding owned the
+        // original local name.
+        for (local, fresh) in emit_renames {
+            let local_id = top_level_id(&local, chunk_top_level_mark);
+            if binding_assignment.get(&local_id).copied() == Some(module_index) {
+                entry_ledger.submit(RenameIntent {
+                    scope: RenameScope::Chunk,
+                    from: local_id,
+                    to: fresh.as_str().into(),
+                    origin: RenameOrigin::ImportInduced {
+                        contributor: ENTRY_IMPORT_LOCAL_CONTRIBUTOR,
+                    },
+                });
+            }
+        }
+        entry_imports.push((
+            ModuleId(module_index),
+            import_decl_for_plan(
+                entry_file,
+                &plan.target_file,
+                &resolved,
+                chunk_top_level_mark,
+            ),
+        ));
+    }
+    // Render exactly the schedule retained by validation, including entry's
+    // complete fanout. A missing/extra target is an internal emission error.
+    assignment_analysis.sort_candidate_imports(
+        assignment_analysis
+            .assignment()
+            .entry_destination()
+            .module_id(),
+        &mut entry_imports,
+    )?;
+    Ok(entry_imports.into_iter().map(|(_, it)| it).collect())
+}
+
+/// Seal the chunk ledger: the single validation point for every
+/// entry-side rename. Chunk scope: conflicting targets (target name
+/// already taken by a body local that isn't being renamed away, or
+/// chosen by another chunk_renames entry, invalid as an identifier,
+/// or would change reference resolution per the probe above) bail here
+/// with every violation listed, rather than producing invalid JS
+/// silently. EntryPublicExports scope: a single contributor over a
+/// set-deduped source set cannot conflict; the occupancy check
+/// asserts the mints stayed clear of pre-existing public names.
+fn seal_entry_ledger(
+    entry_ledger: RenameLedger,
+    chunk_id: &str,
+    entry_root_names: BTreeSet<String>,
+    entry_nested_names: BTreeSet<String>,
+    entry_captured: BTreeSet<(String, String)>,
+    pre_existing_public_export_names: &HashSet<String>,
+) -> Result<SealedRenames> {
+    Ok(entry_ledger.seal(&SealValidation {
+        occupancy: BTreeMap::from([
+            (
+                RenameScope::Chunk,
+                ScopeOccupancy::Body {
+                    label: chunk_id.to_string(),
+                    root: entry_root_names,
+                    nested: entry_nested_names,
+                    captured: entry_captured,
+                },
+            ),
+            (
+                RenameScope::EntryPublicExports,
+                ScopeOccupancy::Body {
+                    label: chunk_id.to_string(),
+                    root: pre_existing_public_export_names.iter().cloned().collect(),
+                    nested: BTreeSet::new(),
+                    captured: BTreeSet::new(),
+                },
+            ),
+        ]),
+        reserved: BTreeSet::new(),
+    })?)
+}
+
+/// Appends entry's readable-name aliases of chunk-exported bindings; returns
+/// the `(public, readable)` pairs actually emitted.
+fn push_readable_entry_exports(
+    entry_body: &mut Vec<ModuleItem>,
+    module_plans: &[ModulePlan],
+    pre_existing_entry_exports: &HashSet<Id>,
+    pre_existing_public_export_names: &HashSet<String>,
+    auto_grow: &BTreeMap<String, String>,
+    entry_binding_renames: &BTreeMap<String, String>,
+    chunk_top_level_mark: swc_common::Mark,
+) -> Vec<(String, String)> {
+    let mut readable_export_candidates = Vec::<(String, String)>::new();
+    for plan in module_plans {
+        for (binding, readable) in &plan.bindings {
+            if plan.spec_named_bindings.contains(binding)
+                && pre_existing_entry_exports.contains(&top_level_id(binding, chunk_top_level_mark))
+            {
+                readable_export_candidates.push((readable.clone(), binding.clone()));
+            }
+        }
+    }
+    readable_export_candidates.sort();
+    let mut taken_public_names = pre_existing_public_export_names.clone();
+    taken_public_names.extend(auto_grow.values().cloned());
+    let mut readable_exports = BTreeMap::new();
+    for (readable, binding) in readable_export_candidates {
+        if !taken_public_names.insert(readable.clone()) {
+            continue;
+        }
+        let local = entry_binding_renames
+            .get(&binding)
+            .cloned()
+            .unwrap_or(binding);
+        readable_exports.insert(local, readable);
+    }
+    let mut cross_chunk_import_aliases = Vec::<(String, String)>::new();
+    if !readable_exports.is_empty() {
+        // Record only aliases that were actually emitted, associated with
+        // the pre-existing public names of the same local binding. A name
+        // that merely happens to equal another binding's spec name is not
+        // enough to authorize rewriting its imports.
+        for item in entry_body.iter() {
+            let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) = item else {
+                continue;
+            };
+            if export.src.is_some() {
+                continue;
+            }
+            for specifier in &export.specifiers {
+                let ExportSpecifier::Named(named) = specifier else {
+                    continue;
+                };
+                let ModuleExportName::Ident(local) = &named.orig else {
+                    continue;
+                };
+                let Some(readable) = readable_exports.get(local.sym.as_ref()) else {
+                    continue;
+                };
+                let public = binding_targets::public_export_name(named);
+                cross_chunk_import_aliases.push((public, readable.clone()));
+            }
+        }
+        cross_chunk_import_aliases.sort();
+        cross_chunk_import_aliases.dedup();
+        entry_body.push(export_named_for_bindings(
+            &readable_exports,
+            chunk_top_level_mark,
+        ));
+    }
+    cross_chunk_import_aliases
+}
+
+fn entry_js_file(
+    entry_body: Vec<ModuleItem>,
+    runtime_ast: &ParsedJsModule,
+    header_lines: &[String],
+    chunk_id: &str,
+    entry_file: &str,
+    source_path: &str,
+) -> JsFile {
+    JsFile {
+        path: entry_file.to_string(),
+        body: JsFileBody::Ast(ParsedJsModule {
+            cm: runtime_ast.cm.clone(),
+            module: Module {
+                span: DUMMY_SP,
+                body: entry_body,
+                shebang: None,
+            },
+            unresolved_mark: runtime_ast.unresolved_mark,
+            top_level_mark: runtime_ast.top_level_mark,
+        }),
+        header_lines: header_lines.to_vec(),
+        binding_comments: BTreeMap::new(),
+        leading_item_comments: BTreeMap::new(),
+        metadata: FileMetadata {
+            chunk_id: chunk_id.to_string(),
+            chunk_file: entry_file.to_string(),
+            role: FileRole::Entry,
+            source_path: source_path.to_string(),
+        },
+    }
+}
+
+/// Capture probe: a read-only walk of the un-renamed entry body with
+/// the pending Chunk-scope map, reporting the reference-resolution
+/// conflicts seal validates. It uses parser-owned unresolved identity
+/// for reverse capture and scope tracking for target-shadow capture. The
+/// probe replaces the pre-seal trial application; the body is mutated
+/// only by the post-seal executor below.
+fn probe_entry_captures(
+    entry_body: &[ModuleItem],
+    entry_candidate_renames: &BTreeMap<Id, swc_atoms::Atom>,
+    unresolved_context: SyntaxContext,
+) -> BTreeSet<(String, String)> {
+    let mut entry_captured = BTreeSet::new();
+    if !entry_candidate_renames.is_empty() {
+        let mut probe = RenameCaptureProbe::new(entry_candidate_renames, unresolved_context);
+        for item in entry_body.iter() {
+            item.visit_with(&mut probe);
+        }
+        entry_captured = probe.captured;
+    }
+    entry_captured
+}
+
+fn apply_entry_renames(
+    entry_body: &mut [ModuleItem],
+    entry_binding_renames_by_id: &BTreeMap<Id, swc_atoms::Atom>,
+    unresolved_context: SyntaxContext,
+) {
+    if !entry_binding_renames_by_id.is_empty() {
+        for item in entry_body.iter_mut() {
+            preserve_export_specifier_names(item, entry_binding_renames_by_id);
+        }
+        let mut renamer = IdentifierRenamer::new(entry_binding_renames_by_id, unresolved_context);
+        for item in entry_body.iter_mut() {
+            item.visit_mut_with(&mut renamer);
+        }
+        debug_assert!(
+            renamer.captured.is_empty(),
+            "entry rename executor captured despite seal validation: {:?}",
+            renamer.captured,
+        );
+    }
+}
+
+fn naturalize_module_bodies(
+    selected_by_module: Vec<Vec<ModuleItem>>,
+    module_plans: &[ModulePlan],
+    sealed_renames: &SealedRenames,
+    chunk_top_level_mark: swc_common::Mark,
+    unresolved_context: SyntaxContext,
+) -> Result<Vec<NaturalizedModuleBody>> {
+    selected_by_module
+        .into_iter()
+        .zip(module_plans)
+        .enumerate()
+        .map(|(index, (body, plan))| {
+            let module = ModuleId(index);
+            NaturalizedModuleBody::prepare(
+                body,
+                plan,
+                module,
+                sealed_renames.module_renames_by_name(module),
+                chunk_top_level_mark,
+                unresolved_context,
+            )
+        })
+        .collect()
+}
+
+/// Inserts entry's module imports after its own leading imports and exports
+/// the bindings moved out of entry under their post-rename locals.
+fn splice_entry_imports_and_moved_exports(
+    entry_body: &mut Vec<ModuleItem>,
+    entry_imports: Vec<ModuleItem>,
+    declarations: &[TopLevelDecl],
+    binding_assignment: &HashMap<Id, usize>,
+    entry_binding_renames: &BTreeMap<String, String>,
+    chunk_top_level_mark: swc_common::Mark,
+) {
+    if !entry_imports.is_empty() {
+        let import_insert_index = entry_body
+            .iter()
+            .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
+            .count();
+        let tail = entry_body.split_off(import_insert_index);
+        entry_body.extend(entry_imports);
+        entry_body.extend(tail);
+    }
+    for export in entry_exports_for_moved_bindings(
+        declarations,
+        binding_assignment,
+        entry_binding_renames,
+        chunk_top_level_mark,
+    ) {
+        entry_body.push(export);
+    }
+}
+
+/// The sealed `EntryPublicExports` map is keyed by the residual binding's
+/// original name; the emitted export clause is keyed by entry's post-rename
+/// local, so remap through `entry_binding_renames`.
+fn auto_grown_exports_by_local(
+    sealed_entry_renames: &SealedRenames,
+    entry_binding_renames: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    sealed_entry_renames
+        .scope_renames_by_name(&RenameScope::EntryPublicExports)
+        .into_iter()
+        .map(|(original, public_name)| {
+            (
+                entry_binding_renames
+                    .get(&original)
+                    .cloned()
+                    .unwrap_or(original),
+                public_name,
+            )
+        })
+        .collect()
+}
+
+/// Filter chunk_renames down to entries the per-module emit path
+/// should apply: bindings *not* claimed by any logical module.
+/// Claimed bindings get their rename from the module plan
+/// (handled via `disambiguate_import_locals` for cross-module
+/// imports of the binding); the chunk_renames entry is dropped
+/// for those. Mirrors the residual-side rule on body_renames
+/// seeding above. The map is empty for chunks with no
+/// chunk_renames; the per-module renamer is then a no-op.
+fn chunk_renames_outside_modules(
+    chunk_renames: &HashMap<String, String>,
+    is_module_owned: &impl Fn(&str) -> bool,
+) -> BTreeMap<String, String> {
+    chunk_renames
+        .iter()
+        .filter(|(binding, _)| !is_module_owned(binding))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
 }
 
 fn compute_selected_statements(

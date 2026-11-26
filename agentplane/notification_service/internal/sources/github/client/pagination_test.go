@@ -28,7 +28,7 @@ func TestPaginatedReadsReturnTypedFailureFromLaterPage(t *testing.T) {
 			query:     "filter=latest&per_page=100",
 			firstPage: `{"total_count":1,"check_runs":[]}`,
 			read: func(ctx context.Context, c *Client) (any, error) {
-				return c.CheckRuns(ctx, "owner/repo", fixture.SHA, installationID)
+				return c.CheckRuns(ctx, testRevision(fixture.SHA), installationID)
 			},
 		},
 		"commit statuses": {
@@ -36,7 +36,7 @@ func TestPaginatedReadsReturnTypedFailureFromLaterPage(t *testing.T) {
 			query:     "per_page=100",
 			firstPage: fmt.Sprintf(`{"state":"pending","sha":%q,"total_count":1,"statuses":[]}`, fixture.SHA),
 			read: func(ctx context.Context, c *Client) (any, error) {
-				return c.CommitStatuses(ctx, "owner/repo", fixture.SHA, installationID)
+				return c.CommitStatuses(ctx, testRevision(fixture.SHA), installationID)
 			},
 		},
 		"pull request reviews": {

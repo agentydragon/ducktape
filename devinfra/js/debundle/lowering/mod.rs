@@ -44,9 +44,6 @@ mod naturalize;
 mod placement;
 mod plans;
 mod reentry_report;
-pub mod rename_ledger;
-#[cfg(test)]
-mod rename_ledger_proptest;
 mod rewrite_runtime;
 mod scope_names;
 mod util;
@@ -345,7 +342,7 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
         chunk_id: &str,
         ownership_subset: &OwnershipSubset,
         final_priority: &[spec::ModulePath],
-        graph: analysis::DependencyGraphInput,
+        graph: graph::DependencyGraphInput,
     ) -> Result<SelectedOwnershipPreflight> {
         ensure!(
             self.selected_chunk_id_set.contains(chunk_id),
@@ -426,18 +423,17 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
         let local_bindings = assignment_analysis
             .inputs()
             .local_bindings(finalized.chunk_id_interned)?;
-        let placement_projection =
-            analysis::project_placement(analysis::PlacementProjectionInput {
-                graph: graph_ir,
-                assignment: assignment_analysis.assignment(),
-                local_bindings,
-                body: &finalized.runtime_ast.module.body,
-                layout: &finalized.source_unit_layout,
-                whole_statements: &finalized.whole_statement_assignment,
-                module_count: finalized.module_count,
-                destructuring_groups: &finalized.ast_analysis.destructuring_groups,
-                nested_var_statements: &finalized.ast_analysis.nested_var_statements,
-            });
+        let placement_projection = graph::project_placement(graph::PlacementProjectionInput {
+            graph: graph_ir,
+            assignment: assignment_analysis.assignment(),
+            local_bindings,
+            body: &finalized.runtime_ast.module.body,
+            layout: &finalized.source_unit_layout,
+            whole_statements: &finalized.whole_statement_assignment,
+            module_count: finalized.module_count,
+            destructuring_groups: &finalized.ast_analysis.destructuring_groups,
+            nested_var_statements: &finalized.ast_analysis.nested_var_statements,
+        });
         let candidate = CandidatePreflight::prepare(assignment_analysis, &placement_projection);
         ensure!(
             !candidate.is_rejected(),
@@ -629,16 +625,7 @@ pub fn materialize_logical_modules(
     }
     let seen: BTreeSet<&str> = selected_chunk_ids.iter().map(String::as_str).collect();
 
-    // A chunk's `commuting_statements` are resolved only when its dependency
-    // graph is built, so an entry for a chunk this run does not materialize
-    // would never be checked.
-    for (chunk, chunk_options) in chunk_analysis_options {
-        ensure!(
-            chunk_options.commuting_statements.is_empty()
-                || seen.contains(normalize_module_path(chunk)?.as_str()),
-            "chunk_analysis_options.{chunk}.commuting_statements names a chunk this run does not materialize"
-        );
-    }
+    ensure_commuting_statements_materialize(chunk_analysis_options, &seen)?;
 
     if let Some(dir) = options.report_emission.full_dir() {
         prepare_output_dir(dir)?;
@@ -851,23 +838,7 @@ pub fn materialize_logical_modules(
             None,
         ),
     };
-    let claimed = claimed
-        .into_iter()
-        .map(|chunk| {
-            let facts = loaded_chunks
-                .as_mut()
-                .map(|chunks| {
-                    chunks.remove(chunk.chunk_id()).with_context(|| {
-                        format!(
-                            "analysis artifact has no facts for chunk {}",
-                            chunk.chunk_id()
-                        )
-                    })
-                })
-                .transpose()?;
-            Ok((chunk, facts))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let claimed = attach_loaded_facts(claimed, loaded_chunks.as_mut())?;
     let program_graph = ProgramGraphOutput::new(
         options.graph_provenance.as_ref(),
         program_summary.native_integrity.as_ref(),
@@ -899,21 +870,86 @@ pub fn materialize_logical_modules(
         .collect::<Result<Vec<_>>>()?;
 
     if options.assessment_only {
-        let assessments = chunk_results
-            .into_iter()
-            .map(|result| match result {
-                FinishedLogicalChunk::Assessed {
-                    chunk_id,
-                    assessment,
-                } => Ok((chunk_id, *assessment)),
-                FinishedLogicalChunk::Lowered(_) => {
-                    bail!("assessment-only materialization unexpectedly lowered a chunk")
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
-        return Ok(Materialized::Assessed(assessments));
+        return assessed_chunks(chunk_results);
     }
-    let mut chunk_results = chunk_results
+    let chunk_results = lowered_chunks(chunk_results)?;
+
+    collect_lowered_outputs(
+        artifact,
+        &target_dir,
+        chunk_results,
+        vendor_plan,
+        &options.chunk_ids,
+        &options.report_emission,
+    )
+}
+
+/// A chunk's `commuting_statements` are resolved only when its dependency
+/// graph is built, so an entry for a chunk this run does not materialize
+/// would never be checked.
+fn ensure_commuting_statements_materialize(
+    chunk_analysis_options: &BTreeMap<String, DependencyGraphOptions>,
+    seen: &BTreeSet<&str>,
+) -> Result<()> {
+    for (chunk, chunk_options) in chunk_analysis_options {
+        ensure!(
+            chunk_options.commuting_statements.is_empty()
+                || seen.contains(normalize_module_path(chunk)?.as_str()),
+            "chunk_analysis_options.{chunk}.commuting_statements names a chunk this run does not materialize"
+        );
+    }
+    Ok(())
+}
+
+/// Pairs each claimed chunk with its loaded analysis facts, if analysis was loaded.
+fn attach_loaded_facts<'a>(
+    claimed: Vec<materialize::LogicalChunkPlan<'a>>,
+    mut loaded_chunks: Option<&mut BTreeMap<String, analysis::facts::ChunkFactAnalysis>>,
+) -> Result<
+    Vec<(
+        materialize::LogicalChunkPlan<'a>,
+        Option<analysis::facts::ChunkFactAnalysis>,
+    )>,
+> {
+    claimed
+        .into_iter()
+        .map(|chunk| {
+            let facts = loaded_chunks
+                .as_mut()
+                .map(|chunks| {
+                    chunks.remove(chunk.chunk_id()).with_context(|| {
+                        format!(
+                            "analysis artifact has no facts for chunk {}",
+                            chunk.chunk_id()
+                        )
+                    })
+                })
+                .transpose()?;
+            Ok((chunk, facts))
+        })
+        .collect()
+}
+
+fn assessed_chunks(chunk_results: Vec<FinishedLogicalChunk>) -> Result<Materialized> {
+    let assessments = chunk_results
+        .into_iter()
+        .map(|result| match result {
+            FinishedLogicalChunk::Assessed {
+                chunk_id,
+                assessment,
+            } => Ok((chunk_id, *assessment)),
+            FinishedLogicalChunk::Lowered(_) => {
+                bail!("assessment-only materialization unexpectedly lowered a chunk")
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Materialized::Assessed(assessments))
+}
+
+fn lowered_chunks(
+    chunk_results: Vec<FinishedLogicalChunk>,
+) -> Result<Vec<materialize::MaterializedLogicalChunk>> {
+    chunk_results
         .into_iter()
         .map(|result| match result {
             FinishedLogicalChunk::Lowered(chunk) => Ok(*chunk),
@@ -921,14 +957,23 @@ pub fn materialize_logical_modules(
                 bail!("normal materialization unexpectedly returned an assessment")
             }
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect()
+}
 
+fn collect_lowered_outputs(
+    artifact: ChunkBundle,
+    target_dir: &str,
+    mut chunk_results: Vec<materialize::MaterializedLogicalChunk>,
+    vendor_plan: &Arc<vendor::VendorResolutionPlan>,
+    chunk_ids: &[String],
+    report_emission: &ReportEmission,
+) -> Result<Materialized> {
     let mut applied = Vec::<SelectedModuleLowering>::new();
     let mut unmatched_spec_claims = Vec::<UnmatchedSpecClaim>::new();
     let mut gate_rejections = Vec::<ChunkGateRejection>::new();
     let mut vendor_reference_rewrites = BTreeMap::<(ChunkId, String), usize>::new();
     for chunk_result in &mut chunk_results {
-        if let Some(report_out_dir) = options.report_emission.full_dir() {
+        if let Some(report_out_dir) = report_emission.full_dir() {
             write_chunk_report_json(
                 report_out_dir,
                 artifact.chunk_table.name(chunk_result.chunk_id),
@@ -946,12 +991,12 @@ pub fn materialize_logical_modules(
     let EmissionChunkOutputs {
         files,
         decomposition_by_chunk,
-    } = collect_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
+    } = collect_materialized_logical_chunks(artifact, target_dir, chunk_results)?;
     let output = CandidateEmissionDraft::materialized(
         files,
         Arc::clone(vendor_plan),
         applied,
-        options.chunk_ids.iter().cloned().collect(),
+        chunk_ids.iter().cloned().collect(),
         vendor_reference_rewrites,
     );
 

@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -197,4 +198,25 @@ func identitySubject(workload Workload, identity *policyapi.Identity) auth.Ident
 		}},
 		PodName: workload.Principal.PodName, PodUID: workload.Principal.PodUID,
 	}
+}
+
+// IdentityUIDs reads policyNamespace's Identities through objects, as a service's Kubernetes-backed
+// Identity source does.
+func IdentityUIDs(t testing.TB, objects client.Reader, policyNamespace string) auth.IdentityUIDReader {
+	t.Helper()
+	identities, err := auth.KubernetesIdentityUIDs(objects, policyNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identities
+}
+
+// IdentityUIDsFromConfig is IdentityUIDs over an uncached client of config.
+func IdentityUIDsFromConfig(t testing.TB, config *rest.Config, policyNamespace string) auth.IdentityUIDReader {
+	t.Helper()
+	identities, err := auth.NewKubernetesIdentityUIDs(config, policyNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identities
 }

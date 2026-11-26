@@ -66,6 +66,14 @@ Target granularity, dependency declarations, generated inputs, lint and tests co
       The [deployed private-cache path](nix/docs/private_flake_inputs.md) no longer uses it.
 - [ ] Revisit Bazel repository-content caching after the Bazel upgrade: evaluate BuildBuddy or another backend for the experimental remote repository-content cache; measure wyrm2 local-cache hits after deployment and test the known output-base symlink cases on Bazel 9; then decide whether to explicitly configure it on my other developer machines. Account for wyrm2's 100G repository-cache mount and age-only garbage collection.
 - [ ] Package `hetzner-vnc-screenshot` with its skill as an independently released tool.
+- [ ] Pick and adopt one naming convention for first-party Rust crates. Today a `rust_library`
+      for `foo/bar/baz/quux.rs` is just `quux::Whatever` unless the BUILD sets `crate_name`. Crate
+      names are single identifiers, so `foo::bar::baz::quux` paths are impossible. Candidates:
+      derive `crate_name` from the package path in a small macro (precedent: `debundle_cli`,
+      `debundle_e2e_support`, `claude_hook_config`), or enable
+      `@rules_rust//rust/settings:rename_first_party_crates` workspace-wide. Per-dependent `aliases`
+      and facade re-export crates conflict with STYLE.md's aliasing rule (a facade also defeats
+      incremental compilation). Pressing since debundle's 2026-11-26 crate split minted many small crates.
 
 ## Dependency patch retirement
 

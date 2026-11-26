@@ -243,7 +243,7 @@ func rpcError(err error) error {
 }
 
 func (r *Runtime) acceptingLocked() bool {
-	return r.admissionOpen && !r.suspendPrepared && !r.closing && !r.failed && r.startupComplete && r.desired.Mode == lifecycle.Running
+	return r.admissionOpen && !r.suspendPrepared && !r.closing && r.failureErr == nil && r.startupComplete && r.desired.Mode == lifecycle.Running
 }
 
 func (r *Runtime) authorizeSession(ctx context.Context, running bool) (lifecycle.EnvironmentDesired, error) {
@@ -269,7 +269,7 @@ func (r *Runtime) withSessionAdmission(ctx context.Context, running bool, expect
 }
 
 func (r *Runtime) authorizeSessionIdentityLocked(authorization *runtimecontrol.Authorization, running bool) error {
-	if r.closing || r.failed || !r.startupComplete {
+	if r.closing || r.failureErr != nil || !r.startupComplete {
 		return status.Error(codes.Unavailable, "environment Runtime is unavailable")
 	}
 	if r.suspendPrepared {

@@ -220,7 +220,7 @@ func (r *Runtime) waitForInitialSessions(ctx context.Context) error {
 	startupDone := r.sessionWorkerDone
 	for {
 		r.mu.Lock()
-		if failure := r.failureLocked(); failure != nil {
+		if failure := r.failureErr; failure != nil {
 			r.mu.Unlock()
 			return failure
 		}
@@ -254,7 +254,7 @@ func (r *Runtime) waitForInitialSessions(ctx context.Context) error {
 			}
 			if startupDone == nil && progress.NativeStopped {
 				r.mu.Lock()
-				failure, closing, current := r.failureLocked(), r.closing, r.desired
+				failure, closing, current := r.failureErr, r.closing, r.desired
 				r.mu.Unlock()
 				if failure != nil {
 					return failure

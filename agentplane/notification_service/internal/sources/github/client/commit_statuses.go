@@ -11,18 +11,18 @@ import (
 )
 
 // CommitStatuses reads all status contexts for an immutable commit SHA.
-func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, installationID int64) ([]githubmodel.CommitStatus, error) {
-	owner, name, err := splitRepository(repository)
+func (c *Client) CommitStatuses(ctx context.Context, revision githubmodel.HeadRevision, installationID int64) ([]githubmodel.CommitStatus, error) {
+	owner, name, err := splitRepository(revision.Repository.Name)
 	if err != nil {
 		return nil, err
 	}
-	if !githubmodel.IsCommitSHA(sha) {
+	if !githubmodel.IsCommitSHA(revision.SHA) {
 		return nil, errors.New("commit SHA must be a full lowercase Git SHA")
 	}
 
 	statuses := make([]githubmodel.CommitStatus, 0)
 	pages := installationPages(ctx, c, installationID, commitStatusesRead, "combined status", func(ctx context.Context, client *github.Client, opts github.ListOptions) (*github.CombinedStatus, *github.Response, error) {
-		return client.Repositories.GetCombinedStatus(ctx, owner, name, sha, &opts)
+		return client.Repositories.GetCombinedStatus(ctx, owner, name, revision.SHA, &opts)
 	})
 	for combined, err := range pages {
 		if err != nil {
@@ -34,14 +34,14 @@ func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, ins
 		if combined.GetSHA() == "" {
 			return nil, &InvalidResponseError{Reason: "combined status SHA is missing"}
 		}
-		if combined.GetSHA() != sha {
+		if combined.GetSHA() != revision.SHA {
 			return nil, &SourceChangedError{Reason: "GitHub combined status refers to a different commit"}
 		}
 		if !validCombinedStatus(combined.GetState()) {
 			return nil, &InvalidResponseError{Reason: "combined status state is invalid"}
 		}
 		for _, status := range combined.Statuses {
-			observation, err := CommitStatusObservation(status, sha)
+			observation, err := CommitStatusObservation(status, revision)
 			if err != nil {
 				return nil, err
 			}
@@ -52,7 +52,7 @@ func (c *Client) CommitStatuses(ctx context.Context, repository, sha string, ins
 	return statuses, nil
 }
 
-func CommitStatusObservation(status *github.RepoStatus, sha string) (githubmodel.CommitStatus, error) {
+func CommitStatusObservation(status *github.RepoStatus, revision githubmodel.HeadRevision) (githubmodel.CommitStatus, error) {
 	if status == nil || status.GetID() <= 0 {
 		return githubmodel.CommitStatus{}, &InvalidResponseError{Reason: "commit status id is missing or invalid"}
 	}
@@ -64,12 +64,13 @@ func CommitStatusObservation(status *github.RepoStatus, sha string) (githubmodel
 		return githubmodel.CommitStatus{}, &InvalidResponseError{Reason: "commit status state is invalid"}
 	}
 	return githubmodel.CommitStatus{
-		SHA:       sha,
-		ID:        status.GetID(),
-		Context:   status.GetContext(),
-		State:     state,
-		TargetURL: status.GetTargetURL(),
-		UpdatedAt: timestampTime(status.UpdatedAt),
+		RepositoryID: revision.Repository.ID,
+		SHA:          revision.SHA,
+		ID:           status.GetID(),
+		Context:      status.GetContext(),
+		State:        state,
+		TargetURL:    status.GetTargetURL(),
+		UpdatedAt:    timestampTime(status.UpdatedAt),
 	}, nil
 }
 

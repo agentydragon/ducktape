@@ -11,7 +11,6 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	workloadresolver "github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
@@ -382,7 +381,11 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	otherWorkload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, otherSandboxName, testNamespace)
 	testOtherWorkload = &otherWorkload
 	sandboxUID, otherSandboxUID, successorUID = string(identityWorkload.Sandbox.UID), string(otherWorkload.Sandbox.UID), ""
-	sandboxes, err := sandboxreader.New(testNamespace, kubeClient)
+	identities, err := auth.KubernetesIdentityUIDs(kubeClient, testNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sandboxes, err := sandboxreader.New(testNamespace, kubeClient, identities)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +421,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		options.GitHub = server.github
 	}
 	server.notifications = NewNotifications(options)
-	svidResolver, err := auth.NewSVIDResolver(identityWorkload.Objects, []string{testNamespace}, &workloadresolver.Identities{PolicyNamespace: testNamespace})
+	svidResolver, err := auth.NewSVIDResolver(identityWorkload.Objects, []string{testNamespace}, workloadauthtesting.IdentityUIDs(t, identityWorkload.Objects, testNamespace))
 	if err != nil {
 		t.Fatal(err)
 	}

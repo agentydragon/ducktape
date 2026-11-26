@@ -86,7 +86,7 @@ pub fn run_modules_apply(
         args.assignments.as_deref(),
         args.import_order.as_deref(),
     )?;
-    let input = analysis::DependencyGraphInput::read(&args.graph)?;
+    let input = graph::DependencyGraphInput::read(&args.graph)?;
     let readable_names = args
         .readable_names
         .as_ref()

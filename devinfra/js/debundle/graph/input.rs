@@ -53,7 +53,7 @@ impl DependencyGraphInput {
     /// provenance or semantic facts.
     pub fn with_source_declarations(
         mut self,
-        facts: &[crate::facts::StructuralStatementFacts],
+        facts: &[analysis::facts::StructuralStatementFacts],
     ) -> Result<Self> {
         let mut facts_by_ordinal = HashMap::with_capacity(facts.len());
         for fact in facts {

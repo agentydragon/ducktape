@@ -21,7 +21,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
-	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/actionclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/admission"
@@ -38,14 +37,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"k8s.io/client-go/rest"
 )
 
 const shutdownGrace = 5 * time.Second
 
 type readiness struct {
 	*probes.Probes
-	identities *identityIndex
+	identities identitySource
 }
 
 func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
@@ -67,11 +65,6 @@ func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
 		return err
 	}
-	kubeConfig, err := kubeclient.Config("")
-	if err != nil {
-		return err
-	}
-	kubeConfig.QPS = -1
 	rpcTLSListener, err := net.Listen("tcp", c.RPCTLS.Listen)
 	if err != nil {
 		return fmt.Errorf("TLS gRPC listener: %w", err)
@@ -82,12 +75,12 @@ func run(ctx context.Context, c config) error {
 		return fmt.Errorf("HTTP listener: %w", err)
 	}
 	defer httpListener.Close()
-	return serve(ctx, c, kubeConfig, rpcTLSListener, httpListener)
+	return serve(ctx, c, rpcTLSListener, httpListener)
 }
 
 // serve answers mTLS gRPC on rpcTLSListener and HTTP (the facade, /mcp, OAuth, health and metrics) on httpListener
 // until ctx ends or a listener fails.
-func serve(ctx context.Context, c config, kubeConfig *rest.Config, rpcTLSListener, httpListener net.Listener) error {
+func serve(ctx context.Context, c config, rpcTLSListener, httpListener net.Listener) error {
 	db, err := openDatabase(ctx, c.DatabaseURL)
 	if err != nil {
 		return err
@@ -98,13 +91,11 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, rpcTLSListene
 		return fmt.Errorf("MCP edge PostgreSQL listener unavailable: %w", err)
 	}
 	defer hub.Close()
-	identities, watches, err := identityWatches(kubeConfig, c.PolicyNamespace)
+	identities, stopIdentities, err := startIdentities(ctx, c)
 	if err != nil {
 		return err
 	}
-	watchContext, stopWatching := context.WithCancel(ctx)
-	watching := runIdentities(watchContext, watches)
-	defer func() { stopWatching(); <-watching }()
+	defer stopIdentities()
 	operators, err := operator.NewVerifier(c.OperatorOIDC)
 	if err != nil {
 		return err
@@ -149,7 +140,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, rpcTLSListene
 	defer metadataConnection.Close()
 	routes.Handle("GET "+actionclient.ClientMetadataPath, actionclient.MetadataHandler(linkage_servicepb.NewLinkageServiceClient(metadataConnection)))
 	if c.OAuth != nil {
-		connection, err := mountOAuth(ctx, routes, c, db, connectionStore, identities)
+		connection, err := mountOAuth(ctx, routes, c, db, connectionStore)
 		if err != nil {
 			return err
 		}
@@ -177,7 +168,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, rpcTLSListene
 	return result
 }
 
-func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB, connectionStore *connections.Store, identities *identityIndex) (*grpc.ClientConn, error) {
+func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB, connectionStore *connections.Store) (*grpc.ClientConn, error) {
 	o := c.OAuth
 	secret, err := os.ReadFile(o.UpstreamClientSecretFile)
 	if err != nil {

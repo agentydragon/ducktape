@@ -25,7 +25,7 @@ debundle_e2e_test(
         "manual",
     ],
     deps = [
-        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/spec",
         "@crates//:serde_json",
     ],
 )
@@ -55,7 +55,7 @@ debundle_e2e_test(
         "bench",
         "manual",
     ],
-    deps = ["//devinfra/js/debundle:spec"],
+    deps = ["//devinfra/js/debundle/spec"],
 )
 
 debundle_e2e_test(

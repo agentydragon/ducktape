@@ -13,7 +13,7 @@ func (r *Runtime) runAdoption(ctx, engineCtx context.Context, uid string) error 
 		return err
 	}
 	r.mu.Lock()
-	if r.closing || r.failed || !r.startupComplete {
+	if r.closing || r.failureErr != nil || !r.startupComplete {
 		r.mu.Unlock()
 		return status.Error(codes.Unavailable, "environment Runtime is unavailable")
 	}

@@ -24,8 +24,7 @@ use candidate_reachability::CandidateReachabilityClosure;
 pub(crate) use initialization::CallableDeclaration;
 use initialization::{InitializationCensus, InitializationSites};
 use member_read_certificates::MemberReadCertificates;
-pub use program::ProgramValueFlows;
-pub(crate) use program::{ProgramFlowModule, program_value_flows};
+pub use program::{ProgramFlowModule, ProgramValueFlows, program_value_flows};
 use read_only_callbacks::ReadOnlyCallback;
 use return_summary::ReturnSummary;
 
@@ -786,7 +785,7 @@ impl CandidateObjectIndex<'_> {
 
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
-pub(crate) struct ChunkValueFlow {
+pub struct ChunkValueFlow {
     origin_table: Arc<OriginTable>,
     /// Source-site numeric key certificates survive later expression queries.
     member_read_certificates: Arc<MemberReadCertificates>,

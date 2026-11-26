@@ -152,7 +152,7 @@ impl Index {
 }
 
 /// Read surface over a built [`Index`] for the fact-based near-miss diagnostics
-/// (`source_match::fact_near_miss`), which instruments this matcher's own
+/// (`source_match_diagnostics::fact_near_miss`), which instruments this matcher's own
 /// first-divergence descent. These expose the same EDB relations `homo` consults
 /// — node kind, ordered children, identifier/property/operator labels, the
 /// superclass edge, and the top-level root — so the diagnostic walk reads exactly

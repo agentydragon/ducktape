@@ -230,6 +230,9 @@ use swc_ecma_ast::Id;
 
 use js_ast::is_binding_identifier;
 
+#[cfg(test)]
+mod rename_ledger_proptest;
+
 /// Identity of one function-like deriving scope (function / arrow /
 /// constructor): the node's source span in the chunk AST. The per-scope
 /// heuristic machinery (#2057's `ScopedHeuristicNaturalizer`) identifies a

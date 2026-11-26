@@ -1,8 +1,8 @@
 //! Effect translation validation fixtures and receipt assertions.
 
 use crate::{FixtureGraphExt, node_declaring};
-use analysis::reports::schema::SourceUnitReport;
 use debundle_e2e_support::*;
+use graph::report::SourceUnitReport;
 use serde_json::Value;
 
 /// Serialize a graph node's execution evidence for assertions on report JSON.

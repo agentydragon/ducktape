@@ -17,11 +17,11 @@ use analysis_model::DepKind;
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::{
+use analysis::{Purity, SourceLocation, StatementKind};
+use graph::{
     AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
     DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
-    ModuleEntry, ModuleKey, ModuleQuotientReport, Purity, SourceLocation, SourceUnitReport,
-    StatementKind,
+    ModuleEntry, ModuleKey, ModuleQuotientReport, SourceUnitReport,
 };
 use spec::ModulePath;
 

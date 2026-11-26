@@ -1,0 +1,41 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "source_mismatch",
+    srcs = ["source_mismatch.rs"],
+    crate_root = "source_mismatch.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle/selectors/matching:source_match_holes",
+        "@crates//:serde",
+    ],
+)
+
+rust_library(
+    name = "selector_debt",
+    srcs = ["selector_debt.rs"],
+    crate_root = "selector_debt.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/matching/source_match_diagnostics",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/spec:spec_modules",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "selector_debt_test",
+    crate = ":selector_debt",
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)

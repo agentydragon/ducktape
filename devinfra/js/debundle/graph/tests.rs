@@ -6,15 +6,17 @@ mod chunk_constraining_module_edges_tests {
     //! cross-module at-init promoted edges.
     use std::collections::BTreeSet;
 
-    use crate::graph::*;
-    use crate::ids::ModuleId;
     use crate::module_assignment::ModuleAssignment;
+    use crate::*;
+    use analysis::ids::ModuleId;
     use analysis_model::DepKind;
     use source_identity::SourceUnitId;
 
-    use crate::{AnalysisInputs, DependencyGraph, facts::analyze_chunk};
+    use analysis::{AnalysisInputs, facts::analyze_chunk};
 
-    fn parse_facts(source: &str) -> Vec<crate::StatementFacts> {
+    use crate::DependencyGraph;
+
+    fn parse_facts(source: &str) -> Vec<analysis::StatementFacts> {
         let module = raw_js_test_support::parse(source);
         analyze_chunk(&module, &AnalysisInputs::default(), None).facts
     }
@@ -53,7 +55,7 @@ mod chunk_constraining_module_edges_tests {
         let dependency_graph = parse_and_build(source);
         let mut assignment = ModuleAssignment::new(
             &dependency_graph,
-            crate::EntryDestination::from_module_id(ModuleId(0)),
+            analysis::EntryDestination::from_module_id(ModuleId(0)),
         );
         assignment.set(SourceUnitId(1), ModuleId(1));
         let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
@@ -74,7 +76,7 @@ mod chunk_constraining_module_edges_tests {
         // Both source units in module 0 → no cross-module edges.
         let assignment = ModuleAssignment::new(
             &dependency_graph,
-            crate::EntryDestination::from_module_id(ModuleId(0)),
+            analysis::EntryDestination::from_module_id(ModuleId(0)),
         );
         let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
         assert!(canonical.edges.is_empty());
@@ -86,7 +88,7 @@ mod chunk_constraining_module_edges_tests {
         let dependency_graph = parse_and_build(source);
         let mut assignment = ModuleAssignment::new(
             &dependency_graph,
-            crate::EntryDestination::from_module_id(ModuleId(0)),
+            analysis::EntryDestination::from_module_id(ModuleId(0)),
         );
         assignment.set(SourceUnitId(1), ModuleId(1));
         assignment.set(SourceUnitId(2), ModuleId(2));
@@ -113,15 +115,18 @@ mod from_report_tests {
 
     use source_identity::SourceUnitOrdinal;
 
-    use crate::analysis_inputs::ValueInputRef;
-    use crate::purity::Purity;
-    use crate::reports::schema::{
+    use crate::report::{
         AtomicGraphReport, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
-        ModuleQuotientReport, NativeIntegrityGuard, NativeIntegrityUse, SourceUnitReport,
+        ModuleQuotientReport, SourceUnitReport,
     };
+    use analysis::analysis_inputs::ValueInputRef;
+    use analysis::purity::Purity;
+    use analysis::reports::schema::{NativeIntegrityGuard, NativeIntegrityUse};
     use source_identity::SourceUnitId;
 
-    use crate::{DependencyEdgeId, DependencyGraphInput, EdgeRole, StatementKind};
+    use analysis::StatementKind;
+
+    use crate::{DependencyEdgeId, DependencyGraphInput, EdgeRole};
     use analysis_model::DepKind;
 
     fn node(id: &str, ordinal: usize) -> SourceUnitReport {

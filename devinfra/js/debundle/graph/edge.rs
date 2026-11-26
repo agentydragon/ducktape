@@ -7,10 +7,11 @@ use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
-use crate::ModuleId;
-use crate::analysis_inputs::CommutingStatementsRef;
-use crate::execution_evidence::AssumedEffectReason;
-use crate::facts::{CellOverlap, CellOverlapLaw, DataflowOpacityCause, EffectCell};
+use analysis::ModuleId;
+use analysis::analysis_inputs::CommutingStatementsRef;
+use analysis::execution_evidence::AssumedEffectReason;
+use analysis::facts::{CellOverlap, CellOverlapLaw, DataflowOpacityCause};
+use analysis::reports::schema::EffectCellReport;
 
 use super::build::PremiseVerdict;
 
@@ -332,26 +333,6 @@ pub enum CellConflict {
     FrontierAfterCell { cell: EffectCellReport },
 }
 
-/// Serializable projection of [`EffectCell`]: binding cells carry the
-/// name only (the hygiene context is dropped, as everywhere on the
-/// wire; see docs/wire_format.md).
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum EffectCellReport {
-    #[strum(to_string = "binding `{binding}`")]
-    Binding { binding: Atom },
-    #[strum(to_string = "global property `{key}`")]
-    GlobalProp { key: String },
-    #[strum(to_string = "array contents #{origin}")]
-    ArrayContents { origin: u32 },
-    #[strum(to_string = "Set contents #{origin}")]
-    SetContents { origin: u32 },
-    #[strum(to_string = "object shape #{origin}")]
-    ObjectShape { origin: u32 },
-    #[strum(to_string = "own property `{property}` of allocation #{origin}")]
-    OwnProperty { origin: u32, property: String },
-}
-
 /// The two access footprints and the address law that joined them.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct CellOverlapReport {
@@ -366,24 +347,6 @@ impl From<&CellOverlap> for CellOverlapReport {
             left: EffectCellReport::from(overlap.left()),
             right: EffectCellReport::from(overlap.right()),
             law: overlap.law(),
-        }
-    }
-}
-
-impl From<&EffectCell> for EffectCellReport {
-    fn from(cell: &EffectCell) -> Self {
-        match cell {
-            EffectCell::Binding(id) => Self::Binding {
-                binding: id.0.clone(),
-            },
-            EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
-            EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
-            EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
-            EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
-            EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
-                origin: *origin,
-                property: property.clone(),
-            },
         }
     }
 }

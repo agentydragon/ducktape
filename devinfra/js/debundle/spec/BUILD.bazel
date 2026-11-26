@@ -1,0 +1,109 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "spec",
+    srcs = ["spec.rs"],
+    crate_root = "spec.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:spec_wire_rust_proto",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:strum",
+        "@crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "spec_test",
+    crate = ":spec",
+    edition = "2024",
+)
+
+rust_library(
+    name = "spec_modules",
+    srcs = ["spec_modules.rs"],
+    crate_root = "spec_modules.rs",
+    edition = "2024",
+    deps = [
+        ":spec",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle/selectors/resolution:selector_outcome",
+        "@crates//:anyhow",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_test(
+    name = "spec_modules_test",
+    crate = ":spec_modules",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_library(
+    name = "spec_stats",
+    srcs = ["spec_stats.rs"],
+    crate_root = "spec_stats.rs",
+    edition = "2024",
+    deps = [
+        ":spec",
+        ":spec_modules",
+        "@crates//:anyhow",
+        "@crates//:serde",
+    ],
+)
+
+rust_test(
+    name = "spec_stats_test",
+    crate = ":spec_stats",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_library(
+    name = "yaml_edit",
+    srcs = ["yaml_edit.rs"],
+    crate_root = "yaml_edit.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_test(
+    name = "yaml_edit_test",
+    crate = ":yaml_edit",
+    edition = "2024",
+    deps = [
+        "@crates//:tempfile",
+    ],
+)
+
+rust_library(
+    name = "spec_tree",
+    srcs = ["spec_tree.rs"],
+    crate_root = "spec_tree.rs",
+    edition = "2024",
+    deps = [
+        ":spec",
+        ":spec_modules",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle/artifacts:output_layout",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_test(
+    name = "spec_tree_test",
+    crate = ":spec_tree",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)

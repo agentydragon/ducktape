@@ -11,7 +11,7 @@
 //! occupancy facts; the drop property supplies `ScopeOccupancy::Body`
 //! facts explicitly. Case counts are bounded for CI (see
 //! [`ci_config`]); override locally via
-//! `bbr test //devinfra/js/debundle:lowering_test
+//! `bbr test //devinfra/js/debundle/lowering:rename_ledger_test
 //! --test_env=PROPTEST_CASES=2000`.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,7 +24,7 @@ use swc_atoms::Atom;
 use swc_common::SyntaxContext;
 use swc_ecma_ast::Id;
 
-use super::rename_ledger::{
+use crate::{
     FunctionScopeId, RenameIntent, RenameLedger, RenameOrigin, RenameScope, ScopeOccupancy,
     SealError, SealValidation, SealedRenames,
 };

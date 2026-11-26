@@ -12,20 +12,23 @@ use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
 use analysis::reports::author_inputs::AuthorInputLocations;
-use analysis::reports::schema::{
-    CallbackFactoryCallbackSourceReport, CallbackFactoryUseReport, CommutingStatementsReport,
-    ImportedCallableSummaryReport, LineRange, ReturnedRecordUseReport,
-};
-use analysis::reports::{atomic_group_key, module_key, source_unit_key};
+use analysis::{BindingId, CallbackFactoryBarrierRejection, ModuleId, ModuleRole, Purity};
 use analysis::{
-    AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
-    BindingReport, CallbackFactoryBarrierRejection, CallbackFactoryBarrierReport,
-    CallbackFactoryCallArgumentWitnessReport, CallbackFactoryContractReport,
-    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, DependencyEdgeReport,
-    DependencyGraphReport, ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey,
-    ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport, QuotientEdgeReport,
-    QuotientSccReport, SourceUnitClass, SourceUnitReport,
+    reports::schema::CallbackFactoryUseReport, reports::schema::ReturnedRecordUseReport,
 };
+use graph::{
+    AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
+    CallbackFactoryBarrierReport, CallbackFactoryCallArgumentWitnessReport,
+    CallbackFactoryContractReport, CallbackFactoryRejectionReport,
+    CallbackFactoryWriteWitnessReport, DependencyEdgeReport, DependencyGraphReport,
+    ModuleDestinationKind, ModuleEntry, ModuleKey, ModuleQuotientReport, PurityCauseReport,
+    QuotientEdgeReport, QuotientSccReport, SourceUnitClass, SourceUnitReport,
+};
+use graph::{
+    report::CallbackFactoryCallbackSourceReport, report::CommutingStatementsReport,
+    report::ImportedCallableSummaryReport, report::LineRange,
+};
+use graph::{report::atomic_group_key, report::module_key, report::source_unit_key};
 use source_identity::SourceUnitOrdinal;
 use swc_atoms::Atom;
 
@@ -306,7 +309,7 @@ fn build_source_unit_nodes_and_edges(
 }
 
 fn build_commuting_statements_reports(
-    dependency_graph: &analysis::DependencyGraph,
+    dependency_graph: &graph::DependencyGraph,
 ) -> Vec<CommutingStatementsReport> {
     dependency_graph
         .commuting_premises()
@@ -375,11 +378,9 @@ fn build_quotient_report(assignment_analysis: &AssignmentAnalysis) -> ModuleQuot
     let mut accum: HashMap<(ModuleId, ModuleId), QuotientEdgeAccumulator> =
         HashMap::with_capacity(dependency_graph.num_edges());
     for edge in dependency_graph.iter_edges() {
-        let Some((from, to)) = analysis::graph::assignment_endpoints(
-            edge,
-            assignment,
-            analysis::graph::EndpointView::Lenient,
-        ) else {
+        let Some((from, to)) =
+            graph::assignment_endpoints(edge, assignment, graph::EndpointView::Lenient)
+        else {
             continue;
         };
         let entry = accum.entry((from, to)).or_insert_with(|| {

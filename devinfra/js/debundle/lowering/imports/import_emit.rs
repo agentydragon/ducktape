@@ -1,7 +1,7 @@
 use crate::imports::EntryExport;
-use crate::rename_ledger::{RenameLedger, RenameScope};
 use artifact::paths::relative_module_specifier;
 use js_ast::import_decl_module_item;
+use rename_ledger::{RenameLedger, RenameScope};
 use std::collections::BTreeMap;
 use swc_atoms::Atom;
 use swc_common::{DUMMY_SP, Mark, SyntaxContext};
