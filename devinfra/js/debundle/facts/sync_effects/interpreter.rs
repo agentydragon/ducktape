@@ -95,7 +95,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use swc_common::{DUMMY_SP, Span, SyntaxContext};
 use swc_ecma_ast::*;
-use value_flow::{ChunkValueFlow, Values as FlowValues};
+use value_flow::ChunkValueFlow;
+use value_flow::values::Values as FlowValues;
 use value_model::local_operations::{LocalBinding, LocalBody};
 use value_model::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use value_model::property_inference::{
