@@ -542,75 +542,13 @@ pub fn analyze_indexed(
     options: &Options,
     index: &mut crate::derive::ProgramIndex<'_>,
 ) -> Tier0 {
-    let mut sources = Vec::new();
-    for item in &module.body {
-        match js_ast::split_var_declarators(item) {
-            Some(declarators) => sources.extend(declarators.iter().map(Source::Declarator)),
-            None => sources.push(Source::Item(item)),
-        }
-    }
-    let mut bindings: FxHashMap<Id, Binding> = FxHashMap::default();
-    let mut imports = FxHashSet::default();
-    let mut exported = FxHashSet::default();
-    let mut declared_by_unit = Vec::new();
-    let intern = |id: Id, bindings: &mut FxHashMap<Id, Binding>| -> Binding {
-        let next = bindings.len() as Binding;
-        *bindings.entry(id).or_insert(next)
-    };
-    for source in &sources {
-        let mut ids = Vec::new();
-        let mut is_export = false;
-        match source {
-            Source::Declarator(declarator) => pattern_ids(&declarator.name, &mut ids),
-            Source::Item(ModuleItem::Stmt(Stmt::Decl(decl))) => declared_ids(decl, &mut ids),
-            Source::Item(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export))) => {
-                declared_ids(&export.decl, &mut ids);
-                is_export = true;
-            }
-            Source::Item(ModuleItem::ModuleDecl(ModuleDecl::Import(import))) => {
-                for specifier in &import.specifiers {
-                    let local = match specifier {
-                        ImportSpecifier::Named(named) => &named.local,
-                        ImportSpecifier::Default(default) => &default.local,
-                        ImportSpecifier::Namespace(namespace) => &namespace.local,
-                    };
-                    let binding = intern(local.to_id(), &mut bindings);
-                    imports.insert(binding);
-                }
-            }
-            Source::Item(_) => {}
-        }
-        let declared: Vec<Binding> = ids
-            .into_iter()
-            .map(|id| intern(id, &mut bindings))
-            .collect();
-        if is_export {
-            exported.extend(declared.iter().copied());
-        }
-        declared_by_unit.push(declared);
-    }
-    // A declarator split out of `export var a = …, b = …` is exported too.
-    for item in &module.body {
-        match item {
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
-                let mut ids = Vec::new();
-                declared_ids(&export.decl, &mut ids);
-                exported.extend(ids.iter().filter_map(|id| bindings.get(id)));
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none() => {
-                for specifier in &named.specifiers {
-                    if let ExportSpecifier::Named(ExportNamedSpecifier {
-                        orig: ModuleExportName::Ident(ident),
-                        ..
-                    }) = specifier
-                    {
-                        exported.extend(bindings.get(&ident.to_id()));
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    let ModuleBindings {
+        sources,
+        bindings,
+        imports,
+        mut exported,
+        declared_by_unit,
+    } = module_bindings(module);
 
     let mut assigned_anywhere: FxHashSet<Binding> = FxHashSet::default();
     for source in &sources {
@@ -624,180 +562,28 @@ pub fn analyze_indexed(
     for binding in declared_by_unit.iter().flatten() {
         declarations[*binding as usize] += 1;
     }
-    // Bindings declared once and never assigned, by a class or by a plain
-    // object literal.
-    // Bindings declared once without a value and assigned only as the
-    // argument of enum-shaped statements.
-    let mut enum_statements: FxHashMap<Binding, usize> = FxHashMap::default();
-    let mut valueless: FxHashSet<Binding> = FxHashSet::default();
-    for (source, declared) in sources.iter().zip(&declared_by_unit) {
-        match source {
-            Source::Item(ModuleItem::Stmt(Stmt::Expr(statement))) => {
-                if let Some(binding) = enum_definition(&statement.expr)
-                    .and_then(|target| bindings.get(&target.to_id()))
-                {
-                    *enum_statements.entry(*binding).or_default() += 1;
-                }
-            }
-            Source::Declarator(VarDeclarator { init: None, .. }) => {
-                valueless.extend(declared.iter().copied());
-            }
-            Source::Item(
-                ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
-                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                    decl: Decl::Var(var),
-                    ..
-                })),
-            ) if var.decls.iter().all(|declarator| declarator.init.is_none()) => {
-                valueless.extend(declared.iter().copied());
-            }
-            _ => {}
-        }
-    }
-    let mut assignments = AssignmentCounts::default();
-    module.visit_with(&mut assignments);
-    let enums: FxHashSet<Binding> = if options.upgrades.contains(&Upgrade::EnumDefinitions) {
-        bindings
-            .iter()
-            .filter(|(id, binding)| {
-                valueless.contains(*binding)
-                    && declarations[**binding as usize] == 1
-                    && !assignments.other.contains(*id)
-                    && enum_statements.get(*binding).copied().unwrap_or(0) > 0
-                    && assignments.plain.get(*id) == enum_statements.get(*binding)
-            })
-            .map(|(_, binding)| *binding)
-            .collect()
-    } else {
-        FxHashSet::default()
-    };
-    // `var E = (e => (…, e))(E || {})`: a `var` declared once and assigned
-    // nowhere reads as `undefined` in its own initializer.
-    let mut enum_declarations: FxHashSet<Binding> = FxHashSet::default();
-    if options.upgrades.contains(&Upgrade::EnumDefinitions) {
-        for item in &module.body {
-            let (ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
-            | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                decl: Decl::Var(var),
-                ..
-            }))) = item
-            else {
-                continue;
-            };
-            if var.kind != VarDeclKind::Var {
-                continue;
-            }
-            for declarator in &var.decls {
-                let Pat::Ident(name) = &declarator.name else {
-                    continue;
-                };
-                let id = name.id.to_id();
-                let Some(binding) = bindings.get(&id) else {
-                    continue;
-                };
-                let own = declarator
-                    .init
-                    .as_deref()
-                    .and_then(enum_call)
-                    .is_some_and(|call| !call.assigns && call.returns && call.target.to_id() == id);
-                if own
-                    && declarations[*binding as usize] == 1
-                    && !assignments.plain.contains_key(&id)
-                    && !assignments.other.contains(&id)
-                {
-                    enum_declarations.insert(*binding);
-                }
-            }
-        }
-    }
-    let mut classes: FxHashSet<Binding> = FxHashSet::default();
-    let mut literals: FxHashMap<Binding, FxHashMap<String, bool>> = FxHashMap::default();
-    let mut nested_literals: FxHashMap<(Binding, String), FxHashMap<String, bool>> =
-        FxHashMap::default();
-    let mut symbols: FxHashSet<Binding> = FxHashSet::default();
-    let mut arrays: FxHashSet<Binding> = FxHashSet::default();
-    for (source, declared) in sources.iter().zip(&declared_by_unit) {
-        let [binding] = declared.as_slice() else {
-            continue;
-        };
-        if declarations[*binding as usize] != 1 || assigned_anywhere.contains(binding) {
-            continue;
-        }
-        let declarator = match source {
-            Source::Declarator(declarator) => *declarator,
-            Source::Item(
-                ModuleItem::Stmt(Stmt::Decl(Decl::Class(_)))
-                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                    decl: Decl::Class(_),
-                    ..
-                })),
-            ) => {
-                classes.insert(*binding);
-                continue;
-            }
-            Source::Item(
-                ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
-                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                    decl: Decl::Var(var),
-                    ..
-                })),
-            ) => match var.decls.as_slice() {
-                [declarator] => declarator,
-                _ => continue,
-            },
-            Source::Item(_) => continue,
-        };
-        if !matches!(declarator.name, Pat::Ident(_)) {
-            continue;
-        }
-        let init = declarator.init.as_deref();
-        match init {
-            Some(Expr::Class(_)) => {
-                classes.insert(*binding);
-            }
-            Some(Expr::Array(_)) => {
-                arrays.insert(*binding);
-            }
-            // `Symbol('tag')`, `Symbol.for('tag')`.
-            Some(Expr::Call(CallExpr {
-                callee: Callee::Expr(callee),
-                ..
-            })) if options.upgrades.contains(&Upgrade::NativeAllocators) => {
-                let symbol = |expr: &Expr| {
-                    matches!(expr, Expr::Ident(ident)
-                        if ident.ctxt == unresolved && &*ident.sym == "Symbol")
-                };
-                let makes_symbol = symbol(callee)
-                    || matches!(&**callee, Expr::Member(MemberExpr {
-                        obj,
-                        prop: MemberProp::Ident(method),
-                        ..
-                    }) if &*method.sym == "for" && symbol(obj));
-                if makes_symbol {
-                    symbols.insert(*binding);
-                }
-            }
-            Some(Expr::Object(object))
-                if crate::derive::plain_literal(init.expect("an object")) =>
-            {
-                let keys = literal_keys(object);
-                for (member, _, value) in &keys {
-                    if let Some(value) = value
-                        && let Expr::Object(inner) = unparen(value)
-                        && crate::derive::plain_literal(unparen(value))
-                    {
-                        let inner_keys = literal_keys(inner)
-                            .into_iter()
-                            .map(|(key, primitive, _)| (key, primitive));
-                        nested_literals.insert((*binding, member.clone()), inner_keys.collect());
-                    }
-                }
-                let keys = keys.into_iter().map(|(key, primitive, _)| (key, primitive));
-                literals.insert(*binding, keys.collect());
-            }
-            _ => {}
-        }
-    }
+    let (enums, enum_declarations) = enum_bindings(
+        module,
+        options,
+        &sources,
+        &declared_by_unit,
+        &bindings,
+        &declarations,
+    );
+    let ObjectShapes {
+        classes,
+        literals,
+        nested_literals,
+        symbols,
+        arrays,
+    } = object_shapes(
+        options,
+        unresolved,
+        &sources,
+        &declared_by_unit,
+        &declarations,
+        &assigned_anywhere,
+    );
     let mut derived_primitive_imports = 0;
     let found = options
         .derive
@@ -1653,5 +1439,305 @@ impl Tier0 {
                 (leaked(a, second) || leaked(b, first)).then_some(Conflict::ReachEscaped)
             }
         }
+    }
+}
+
+/// Top-level source units (with `var` declarators split out) and the
+/// bindings each declares, imports or exports.
+struct ModuleBindings<'m> {
+    sources: Vec<Source<'m>>,
+    bindings: FxHashMap<Id, Binding>,
+    imports: FxHashSet<Binding>,
+    exported: FxHashSet<Binding>,
+    declared_by_unit: Vec<Vec<Binding>>,
+}
+
+fn module_bindings(module: &Module) -> ModuleBindings<'_> {
+    let mut sources = Vec::new();
+    for item in &module.body {
+        match js_ast::split_var_declarators(item) {
+            Some(declarators) => sources.extend(declarators.iter().map(Source::Declarator)),
+            None => sources.push(Source::Item(item)),
+        }
+    }
+    let mut bindings: FxHashMap<Id, Binding> = FxHashMap::default();
+    let mut imports = FxHashSet::default();
+    let mut exported = FxHashSet::default();
+    let mut declared_by_unit = Vec::new();
+    let intern = |id: Id, bindings: &mut FxHashMap<Id, Binding>| -> Binding {
+        let next = bindings.len() as Binding;
+        *bindings.entry(id).or_insert(next)
+    };
+    for source in &sources {
+        let mut ids = Vec::new();
+        let mut is_export = false;
+        match source {
+            Source::Declarator(declarator) => pattern_ids(&declarator.name, &mut ids),
+            Source::Item(ModuleItem::Stmt(Stmt::Decl(decl))) => declared_ids(decl, &mut ids),
+            Source::Item(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export))) => {
+                declared_ids(&export.decl, &mut ids);
+                is_export = true;
+            }
+            Source::Item(ModuleItem::ModuleDecl(ModuleDecl::Import(import))) => {
+                for specifier in &import.specifiers {
+                    let local = match specifier {
+                        ImportSpecifier::Named(named) => &named.local,
+                        ImportSpecifier::Default(default) => &default.local,
+                        ImportSpecifier::Namespace(namespace) => &namespace.local,
+                    };
+                    let binding = intern(local.to_id(), &mut bindings);
+                    imports.insert(binding);
+                }
+            }
+            Source::Item(_) => {}
+        }
+        let declared: Vec<Binding> = ids
+            .into_iter()
+            .map(|id| intern(id, &mut bindings))
+            .collect();
+        if is_export {
+            exported.extend(declared.iter().copied());
+        }
+        declared_by_unit.push(declared);
+    }
+    // A declarator split out of `export var a = …, b = …` is exported too.
+    for item in &module.body {
+        match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                let mut ids = Vec::new();
+                declared_ids(&export.decl, &mut ids);
+                exported.extend(ids.iter().filter_map(|id| bindings.get(id)));
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none() => {
+                for specifier in &named.specifiers {
+                    if let ExportSpecifier::Named(ExportNamedSpecifier {
+                        orig: ModuleExportName::Ident(ident),
+                        ..
+                    }) = specifier
+                    {
+                        exported.extend(bindings.get(&ident.to_id()));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    ModuleBindings {
+        sources,
+        bindings,
+        imports,
+        exported,
+        declared_by_unit,
+    }
+}
+
+/// Returns `(enums, enum_declarations)`.
+fn enum_bindings(
+    module: &Module,
+    options: &Options,
+    sources: &[Source<'_>],
+    declared_by_unit: &[Vec<Binding>],
+    bindings: &FxHashMap<Id, Binding>,
+    declarations: &[u32],
+) -> (FxHashSet<Binding>, FxHashSet<Binding>) {
+    // Bindings declared once without a value and assigned only as the
+    // argument of enum-shaped statements.
+    let mut enum_statements: FxHashMap<Binding, usize> = FxHashMap::default();
+    let mut valueless: FxHashSet<Binding> = FxHashSet::default();
+    for (source, declared) in sources.iter().zip(declared_by_unit) {
+        match source {
+            Source::Item(ModuleItem::Stmt(Stmt::Expr(statement))) => {
+                if let Some(binding) = enum_definition(&statement.expr)
+                    .and_then(|target| bindings.get(&target.to_id()))
+                {
+                    *enum_statements.entry(*binding).or_default() += 1;
+                }
+            }
+            Source::Declarator(VarDeclarator { init: None, .. }) => {
+                valueless.extend(declared.iter().copied());
+            }
+            Source::Item(
+                ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                    decl: Decl::Var(var),
+                    ..
+                })),
+            ) if var.decls.iter().all(|declarator| declarator.init.is_none()) => {
+                valueless.extend(declared.iter().copied());
+            }
+            _ => {}
+        }
+    }
+    let mut assignments = AssignmentCounts::default();
+    module.visit_with(&mut assignments);
+    let enums: FxHashSet<Binding> = if options.upgrades.contains(&Upgrade::EnumDefinitions) {
+        bindings
+            .iter()
+            .filter(|(id, binding)| {
+                valueless.contains(*binding)
+                    && declarations[**binding as usize] == 1
+                    && !assignments.other.contains(*id)
+                    && enum_statements.get(*binding).copied().unwrap_or(0) > 0
+                    && assignments.plain.get(*id) == enum_statements.get(*binding)
+            })
+            .map(|(_, binding)| *binding)
+            .collect()
+    } else {
+        FxHashSet::default()
+    };
+    // `var E = (e => (…, e))(E || {})`: a `var` declared once and assigned
+    // nowhere reads as `undefined` in its own initializer.
+    let mut enum_declarations: FxHashSet<Binding> = FxHashSet::default();
+    if options.upgrades.contains(&Upgrade::EnumDefinitions) {
+        for item in &module.body {
+            let (ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+            | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                decl: Decl::Var(var),
+                ..
+            }))) = item
+            else {
+                continue;
+            };
+            if var.kind != VarDeclKind::Var {
+                continue;
+            }
+            for declarator in &var.decls {
+                let Pat::Ident(name) = &declarator.name else {
+                    continue;
+                };
+                let id = name.id.to_id();
+                let Some(binding) = bindings.get(&id) else {
+                    continue;
+                };
+                let own = declarator
+                    .init
+                    .as_deref()
+                    .and_then(enum_call)
+                    .is_some_and(|call| !call.assigns && call.returns && call.target.to_id() == id);
+                if own
+                    && declarations[*binding as usize] == 1
+                    && !assignments.plain.contains_key(&id)
+                    && !assignments.other.contains(&id)
+                {
+                    enum_declarations.insert(*binding);
+                }
+            }
+        }
+    }
+    (enums, enum_declarations)
+}
+
+/// Bindings declared once and never assigned, by a class or by a plain
+/// object literal.
+struct ObjectShapes {
+    classes: FxHashSet<Binding>,
+    literals: FxHashMap<Binding, FxHashMap<String, bool>>,
+    nested_literals: FxHashMap<(Binding, String), FxHashMap<String, bool>>,
+    symbols: FxHashSet<Binding>,
+    arrays: FxHashSet<Binding>,
+}
+
+fn object_shapes(
+    options: &Options,
+    unresolved: SyntaxContext,
+    sources: &[Source<'_>],
+    declared_by_unit: &[Vec<Binding>],
+    declarations: &[u32],
+    assigned_anywhere: &FxHashSet<Binding>,
+) -> ObjectShapes {
+    let mut classes: FxHashSet<Binding> = FxHashSet::default();
+    let mut literals: FxHashMap<Binding, FxHashMap<String, bool>> = FxHashMap::default();
+    let mut nested_literals: FxHashMap<(Binding, String), FxHashMap<String, bool>> =
+        FxHashMap::default();
+    let mut symbols: FxHashSet<Binding> = FxHashSet::default();
+    let mut arrays: FxHashSet<Binding> = FxHashSet::default();
+    for (source, declared) in sources.iter().zip(declared_by_unit) {
+        let [binding] = declared.as_slice() else {
+            continue;
+        };
+        if declarations[*binding as usize] != 1 || assigned_anywhere.contains(binding) {
+            continue;
+        }
+        let declarator = match source {
+            Source::Declarator(declarator) => *declarator,
+            Source::Item(
+                ModuleItem::Stmt(Stmt::Decl(Decl::Class(_)))
+                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                    decl: Decl::Class(_),
+                    ..
+                })),
+            ) => {
+                classes.insert(*binding);
+                continue;
+            }
+            Source::Item(
+                ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                    decl: Decl::Var(var),
+                    ..
+                })),
+            ) => match var.decls.as_slice() {
+                [declarator] => declarator,
+                _ => continue,
+            },
+            Source::Item(_) => continue,
+        };
+        if !matches!(declarator.name, Pat::Ident(_)) {
+            continue;
+        }
+        let init = declarator.init.as_deref();
+        match init {
+            Some(Expr::Class(_)) => {
+                classes.insert(*binding);
+            }
+            Some(Expr::Array(_)) => {
+                arrays.insert(*binding);
+            }
+            // `Symbol('tag')`, `Symbol.for('tag')`.
+            Some(Expr::Call(CallExpr {
+                callee: Callee::Expr(callee),
+                ..
+            })) if options.upgrades.contains(&Upgrade::NativeAllocators) => {
+                let symbol = |expr: &Expr| {
+                    matches!(expr, Expr::Ident(ident)
+                        if ident.ctxt == unresolved && &*ident.sym == "Symbol")
+                };
+                let makes_symbol = symbol(callee)
+                    || matches!(&**callee, Expr::Member(MemberExpr {
+                        obj,
+                        prop: MemberProp::Ident(method),
+                        ..
+                    }) if &*method.sym == "for" && symbol(obj));
+                if makes_symbol {
+                    symbols.insert(*binding);
+                }
+            }
+            Some(Expr::Object(object))
+                if crate::derive::plain_literal(init.expect("an object")) =>
+            {
+                let keys = literal_keys(object);
+                for (member, _, value) in &keys {
+                    if let Some(value) = value
+                        && let Expr::Object(inner) = unparen(value)
+                        && crate::derive::plain_literal(unparen(value))
+                    {
+                        let inner_keys = literal_keys(inner)
+                            .into_iter()
+                            .map(|(key, primitive, _)| (key, primitive));
+                        nested_literals.insert((*binding, member.clone()), inner_keys.collect());
+                    }
+                }
+                let keys = keys.into_iter().map(|(key, primitive, _)| (key, primitive));
+                literals.insert(*binding, keys.collect());
+            }
+            _ => {}
+        }
+    }
+    ObjectShapes {
+        classes,
+        literals,
+        nested_literals,
+        symbols,
+        arrays,
     }
 }
