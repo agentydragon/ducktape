@@ -157,6 +157,28 @@ and durable repack checkpoint. The shared package needs neither a database handl
 event-kind enum. A common byte-exact round-trip suite covers both callers; service integration
 tests cover seeks and page boundaries during a concurrent repack.
 
+### When to cache decoded blocks
+
+Start with one fetch and decode per distinct block within a read page, and release the buffer
+when that page finishes. History already groups requested cursors by block before loading their
+entries; Sampler walks blocks once per ordered range. PostgreSQL and the OS cache the stored
+pages, but on a second request the service still transfers and decompresses the payload.
+
+History point reads are the first candidate for a cache shared by requests on the same service
+replica: the large-boundary sample would decode about 2.2 MiB per point lookup. That measures
+the cost of a miss, not how often the same replica sees the same block again. Measure repeat
+access on each replica and decode CPU by read shape; replay the trace against a byte budget
+that fits the pod alongside concurrent decoders. Enable a cache only if a canary improves
+read latency or CPU enough to justify its resident memory. Keep scans, exports and repacks
+from populating it; one-pass traffic can evict the blocks point readers actually revisit.
+
+If enabled, cache immutable decoded frame bytes and offsets, charging decoded size. Resolve
+the authorized cursor through the current database snapshot first, then look up the resulting
+immutable block identity. A session and first cursor alone are insufficient: a repack can put
+different bytes at the same location. A replacement must get a new identity and a deleted
+block must be unreachable from new snapshots. Test both cases with a warm cache. Keep this
+policy at the service reader, outside the shared codec.
+
 ## What to let PostgreSQL do
 
 TOAST can compress a single large datum and store it out of line. It knows neither the session
