@@ -2,6 +2,7 @@ import { Badge, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import type { JSX, ReactNode } from "react";
 import { z } from "zod";
 
+import { Line } from "../../../ui/line";
 import { Disclosure, DisclosureBody } from "../../../../../../util/frontend/disclosure";
 import { JsonBlock, TextBlock } from "../../../ui/text_block";
 import { definePreview } from "../entry";
@@ -50,18 +51,6 @@ function printable(value: unknown): string | undefined {
   return undefined;
 }
 
-export function HaField({ name, children }: { name: string; children: ReactNode }): JSX.Element {
-  return (
-    <Text size="sm" style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
-      <Text span fw={600} size="sm">
-        {name}
-      </Text>
-      {" · "}
-      {children}
-    </Text>
-  );
-}
-
 const codeFields = new Set(["python_transform", "template", "content", "config"]);
 const pagination = new Set(["offset", "config_hash", "diagnostics_data_offset", "message_offset"]);
 
@@ -74,7 +63,7 @@ function Argument({ field, value }: { field: string; value: unknown }): ReactNod
         show_in_sidebar: "Show in sidebar",
       } as Record<string, string>
     )[field] ?? humanField(field);
-  if (value === null) return <HaField name={name}>Null</HaField>;
+  if (value === null) return <Line label={name}>Null</Line>;
   if (field === "config_hash" && typeof value === "string") {
     return <Text size="sm">Require the saved configuration version to match.</Text>;
   }
@@ -103,7 +92,7 @@ function Argument({ field, value }: { field: string; value: unknown }): ReactNod
     const summary = [printable(config.alias) ?? printable(config.title), ...sections].filter(Boolean);
     return summary.length ? (
       <Stack gap={4}>
-        <HaField name="Configuration">{summary.join(" · ")}</HaField>
+        <Line label="Configuration">{summary.join(" · ")}</Line>
         <Disclosure summary={<Text size="sm">Show configuration</Text>}>
           <DisclosureBody>{exact}</DisclosureBody>
         </Disclosure>
@@ -114,12 +103,10 @@ function Argument({ field, value }: { field: string; value: unknown }): ReactNod
   }
   const plain = printable(value);
   if (plain !== undefined) {
-    return (
-      <HaField name={name}>{plain === "" ? "Empty value" : field === "action" ? humanField(plain) : plain}</HaField>
-    );
+    return <Line label={name}>{plain === "" ? "Empty value" : field === "action" ? humanField(plain) : plain}</Line>;
   }
   if (Array.isArray(value) && value.every((item) => printable(item) !== undefined)) {
-    return <HaField name={name}>{value.length === 0 ? "Empty list" : value.map(printable).join(", ")}</HaField>;
+    return <Line label={name}>{value.length === 0 ? "Empty list" : value.map(printable).join(", ")}</Line>;
   }
   return <JsonBlock heading={name} value={value} />;
 }
@@ -228,15 +215,15 @@ function simpleFields(entry: HaRecord, keys: readonly string[]): JSX.Element[] {
         : printable(value));
     if (printableValue !== undefined && printableValue !== "")
       return [
-        <HaField key={key} name={humanField(key)}>
+        <Line key={key} label={humanField(key)}>
           {printableValue}
-        </HaField>,
+        </Line>,
       ];
     if (Array.isArray(value) && value.length > 0 && value.every((item) => printable(item) !== undefined)) {
       return [
-        <HaField key={key} name={humanField(key)}>
+        <Line key={key} label={humanField(key)}>
           {value.map(printable).join(", ")}
-        </HaField>,
+        </Line>,
       ];
     }
     return [];
@@ -385,7 +372,7 @@ export function haResult(spec: HaResultSpec): ResultPreview {
           </Text>
         )}
         {printed}
-        {typeof result.error === "string" && <HaField name="Error">{result.error}</HaField>}
+        {typeof result.error === "string" && <Line label="Error">{result.error}</Line>}
         {error && simpleFields(error, ["message", "code"])}
         {(spec.text ?? []).map(
           (key) =>

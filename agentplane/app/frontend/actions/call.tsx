@@ -8,7 +8,8 @@ import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../util/f
 import { JsonBlock } from "../ui/text_block";
 import { RawSwitch } from "../ui/raw_switch";
 import { ActionState, type ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
-import { actionArguments, actionCaller, actionIdentity, timestampText, type ActionCaller } from "./presentation";
+import { timestampText } from "../transport/response_fields";
+import { actionArguments, actionCaller, actionIdentity, type ActionCaller } from "./presentation";
 import { useActionRendering, type RenderedActionCall } from "./rendering/dispatch";
 
 /** Who asked and when, on one summary line ("claude-ai · 2 min ago"), over the request's own

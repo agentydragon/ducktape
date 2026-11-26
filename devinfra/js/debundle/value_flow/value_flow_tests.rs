@@ -1,5 +1,5 @@
 use super::*;
-use crate::Values;
+use crate::values::Values;
 use analysis_domain::item_views::top_level_item_views;
 use analysis_vocabulary::value::{Kind, Value};
 use swc_common::SyntaxContext;
@@ -1555,10 +1555,9 @@ fn work_bounds_property_rhs_preserves_shared_full_result() {
                             let values = flow
                                 .values_of_property(object, &format!("field{consumer}"))
                                 .unwrap();
-                            if !unique
-                                .iter()
-                                .any(|previous: &&crate::Values| values.shares_bitmap(previous))
-                            {
+                            if !unique.iter().any(|previous: &&crate::values::Values| {
+                                values.shares_bitmap(previous)
+                            }) {
                                 unique.push(values);
                             }
                         }

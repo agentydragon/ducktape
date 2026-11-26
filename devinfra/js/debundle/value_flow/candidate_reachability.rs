@@ -518,7 +518,7 @@ mod tests {
         }
 
         fn merge(key: &FlowKey, current: &mut FlowFact, contribution: FlowFact) -> bool {
-            super::super::merge_flow_fact(key, current, contribution)
+            super::super::flow_rules::merge_flow_fact(key, current, contribution)
         }
     }
 

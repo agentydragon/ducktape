@@ -19,7 +19,10 @@ from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.e2e.testing.runtime_with_history import run_runtime_with_history
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.env.runtime.execution.testing.executor_companion import ExecutorCompanion
-from agentplane.environments.testing.process import EnvironmentServiceProcess, run_environment_service
+from agentplane.environments.testing.environment_service_process import (
+    EnvironmentServiceProcess,
+    run_environment_service,
+)
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
 from agentplane.net.peertls.config import APP_URI, CENTRAL_SAMPLER_URI, GATEWAY_RUNTIME_PROXY_URI

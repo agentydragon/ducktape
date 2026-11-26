@@ -14,7 +14,8 @@ use swc_ecma_ast::{CallExpr, Expr, Id, Lit};
 
 use crate::execution_evidence::SourceLocation;
 use crate::purity::Purity;
-use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceMatchClaim};
+use spec::annotations::SourceMatchClaim;
+use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector};
 
 pub mod saved;
 
@@ -469,7 +470,7 @@ pub struct ImportedPrimitiveArrayOperandEvidence {
     pub provider_export: String,
     pub provider_local: String,
     pub source_specifier: String,
-    pub provider_source_match: spec::SourceMatchClaim,
+    pub provider_source_match: spec::annotations::SourceMatchClaim,
     pub provider_source_sha256: String,
     pub primitive_slots: Vec<analysis_model::PrimKinds>,
     pub provider_source_location: Option<SourceLocation>,
@@ -481,12 +482,12 @@ pub struct ImportedPrimitiveArrayOperandEvidence {
 pub struct ImportedPrimitiveArraySpreadInputEvidence {
     pub reference: ImportedPrimitiveArraySpreadInputRef,
     pub spec_location: String,
-    pub consumer_source_match: spec::SourceMatchClaim,
+    pub consumer_source_match: spec::annotations::SourceMatchClaim,
     pub consumer_source_sha256: String,
     pub selected_consumer_binding: String,
     pub consumer_source_location: Option<SourceLocation>,
     pub operands: Vec<ImportedPrimitiveArrayOperandEvidence>,
-    pub lifetime: spec::ImportedPrimitiveArrayLifetimeContract,
+    pub lifetime: spec::input_contracts::ImportedPrimitiveArrayLifetimeContract,
     pub note: Option<String>,
 }
 
@@ -757,7 +758,7 @@ pub struct AnalysisImportedPrimitiveArraySpreadInput {
     pub source_match: SourceMatchClaim,
     pub audited_source_sha256: String,
     pub operands: Vec<AnalysisImportedPrimitiveArrayOperand>,
-    pub lifetime: spec::ImportedPrimitiveArrayLifetimeContract,
+    pub lifetime: spec::input_contracts::ImportedPrimitiveArrayLifetimeContract,
     pub note: Option<String>,
 }
 
@@ -865,7 +866,7 @@ impl std::fmt::Display for CommutingStatementsRef {
 /// and the single post-split source unit it selected.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommutingEndpoint {
-    pub selector: spec::SourceUnitSelector,
+    pub selector: spec::input_contracts::SourceUnitSelector,
     pub source_unit: SourceUnitOrdinal,
     /// Declared binding that identified the source unit; `None` for an
     /// anonymous statement.

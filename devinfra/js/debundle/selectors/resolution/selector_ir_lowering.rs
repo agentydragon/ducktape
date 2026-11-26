@@ -11,7 +11,8 @@ use selector_ir::{
     ClaimKind, SelectorAtom, SelectorProgram, SelectorProjectedValue, SelectorTargetId,
     SelectorVariableId, SourceUnitTerm, StringTerm, VariableDomain,
 };
-use spec::{BindingSelector, BindingSourceKind, MemberSelectorSpec};
+use spec::BindingSourceKind;
+use spec::member_selectors::{BindingSelector, MemberSelectorSpec};
 
 /// A projected `source_match` candidate: its place and, per reference column,
 /// the chunk identifier its template bound there.
@@ -654,7 +655,7 @@ impl From<selector_ir::SelectorProgramError> for SelectorIrLoweringError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spec::CrossRefSelector;
+    use spec::member_selectors::CrossRefSelector;
 
     const MODULE: &str = "runtime/widgets";
 

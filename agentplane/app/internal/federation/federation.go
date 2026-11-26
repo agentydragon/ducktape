@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
@@ -54,8 +55,8 @@ type ProviderConfig struct {
 // SessionLoginRow is implemented by *auth.SessionRow. WithLockedLogin must serialize callback
 // execution with refresh-token rotation and logout for that browser session.
 type SessionLoginRow interface {
-	Login(context.Context) (*auth.OperatorSession, error)
-	WithLockedLogin(context.Context, func(*auth.OperatorSession) (*auth.OperatorSession, error)) error
+	Login(context.Context) (*session.Login, error)
+	WithLockedLogin(context.Context, func(*session.Login) (*session.Login, error)) error
 }
 
 var _ SessionLoginRow = (*auth.SessionRow)(nil)
@@ -139,22 +140,22 @@ func (c *Client) Exchange(ctx context.Context, row SessionLoginRow) (string, err
 	if row == nil {
 		return "", federationError("operator_reauthentication_required", http.StatusUnauthorized)
 	}
-	session, err := c.currentLogin(ctx, row)
+	login, err := c.currentLogin(ctx, row)
 	if err != nil {
 		return "", err
 	}
-	if session.Issuer != c.loginIssuer || session.Tokens == nil {
+	if login.Issuer != c.loginIssuer || login.Tokens == nil {
 		return "", federationError("operator_reauthentication_required", http.StatusForbidden)
 	}
-	if !session.Tokens.ExpiresAt.After(c.now()) {
+	if !login.Tokens.ExpiresAt.After(c.now()) {
 		return "", federationError("operator_reauthentication_required", http.StatusUnauthorized)
 	}
-	loginToken := session.Tokens.AccessToken
+	loginToken := login.Tokens.AccessToken
 	loginPrincipal, err := c.login.verify(ctx, loginToken, c.now())
 	if err != nil {
 		return "", err
 	}
-	if loginPrincipal.Issuer != session.Issuer || loginPrincipal.Subject != session.Subject {
+	if loginPrincipal.Issuer != login.Issuer || loginPrincipal.Subject != login.Subject {
 		return "", federationError("operator_federation_identity_mismatch", http.StatusForbidden)
 	}
 
@@ -175,23 +176,23 @@ func (c *Client) Exchange(ctx context.Context, row SessionLoginRow) (string, err
 	return accessToken, nil
 }
 
-func (c *Client) currentLogin(ctx context.Context, row SessionLoginRow) (*auth.OperatorSession, error) {
-	session, err := row.Login(ctx)
+func (c *Client) currentLogin(ctx context.Context, row SessionLoginRow) (*session.Login, error) {
+	login, err := row.Login(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read operator login: %w", err)
 	}
-	if session == nil {
+	if login == nil {
 		return nil, federationError("operator_reauthentication_required", http.StatusUnauthorized)
 	}
-	if session.Issuer != c.loginIssuer || session.Tokens == nil || session.Tokens.RefreshToken == "" {
-		return session, nil
+	if login.Issuer != c.loginIssuer || login.Tokens == nil || login.Tokens.RefreshToken == "" {
+		return login, nil
 	}
-	if session.Tokens.ExpiresAt.Sub(c.now()) > c.renewBefore {
-		return session, nil
+	if login.Tokens.ExpiresAt.Sub(c.now()) > c.renewBefore {
+		return login, nil
 	}
-	var held *auth.OperatorSession
+	var held *session.Login
 	var refreshErr error
-	err = row.WithLockedLogin(ctx, func(current *auth.OperatorSession) (*auth.OperatorSession, error) {
+	err = row.WithLockedLogin(ctx, func(current *session.Login) (*session.Login, error) {
 		if current == nil {
 			held = nil
 			return nil, nil
@@ -210,7 +211,7 @@ func (c *Client) currentLogin(ctx context.Context, row SessionLoginRow) (*auth.O
 			held = nil
 			return nil, nil
 		}
-		held = &auth.OperatorSession{
+		held = &session.Login{
 			Issuer: current.Issuer, Subject: current.Subject, Username: current.Username, Tokens: updated,
 		}
 		return held, nil
@@ -227,7 +228,7 @@ func (c *Client) currentLogin(ctx context.Context, row SessionLoginRow) (*auth.O
 	return held, nil
 }
 
-func (c *Client) refresh(ctx context.Context, refreshToken string) (*auth.LoginTokens, bool, error) {
+func (c *Client) refresh(ctx context.Context, refreshToken string) (*session.Tokens, bool, error) {
 	tokenURL, err := c.loginTokenURL(ctx)
 	if err != nil {
 		return nil, false, err
@@ -337,7 +338,7 @@ type tokenResponse struct {
 	RefreshToken string          `json:"refresh_token"`
 }
 
-func parseTokenResponse(body []byte, now time.Time) (*auth.LoginTokens, error) {
+func parseTokenResponse(body []byte, now time.Time) (*session.Tokens, error) {
 	var token tokenResponse
 	if err := json.Unmarshal(body, &token); err != nil || strings.TrimSpace(token.AccessToken) == "" {
 		return nil, errors.New("invalid token response")
@@ -346,7 +347,7 @@ func parseTokenResponse(body []byte, now time.Time) (*auth.LoginTokens, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &auth.LoginTokens{
+	return &session.Tokens{
 		AccessToken: token.AccessToken, ExpiresAt: expiresAt,
 		RefreshToken: token.RefreshToken,
 	}, nil

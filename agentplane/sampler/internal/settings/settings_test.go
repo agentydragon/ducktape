@@ -3,9 +3,14 @@ package settings
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +19,40 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
+
+func TestJournalPagingSettings(t *testing.T) {
+	for _, tc := range []struct {
+		overrides string
+		want      [3]int
+	}{
+		{`{}`, [3]int{16, 16, 256}},
+		{`{"history_export_page_entries":64,"history_export_pages_per_turn":4,"follow_events_page_entries":4096}`, [3]int{64, 4, 4096}},
+	} {
+		s := fixtureSettings()
+		if err := json.Unmarshal([]byte(tc.overrides), &s); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if got := [3]int{s.ExportPageEntries(), s.ExportPagesPerTurn(), s.FollowPageEntries()}; got != tc.want {
+			t.Errorf("%s: paging=%v, want %v", tc.overrides, got, tc.want)
+		}
+	}
+	for _, overrides := range []string{
+		`{"history_export_page_entries":0}`, `{"history_export_page_entries":4097}`,
+		`{"follow_events_page_entries":-1}`, `{"follow_events_page_entries":4097}`,
+		`{"history_export_pages_per_turn":0}`,
+	} {
+		s := fixtureSettings()
+		if err := json.Unmarshal([]byte(overrides), &s); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Validate(); err == nil {
+			t.Errorf("accepted %s", overrides)
+		}
+	}
+}
 
 func TestEventBlockProfileDefaultsAndBounds(t *testing.T) {
 	settings := fixtureSettings()
@@ -1082,5 +1121,38 @@ func TestEnvironmentNamespaceIsRequired(t *testing.T) {
 	settings.EnvironmentNamespace = ""
 	if err := settings.Validate(); err == nil {
 		t.Fatal("missing environment namespace accepted")
+	}
+}
+
+func TestProviderClientsReuseConnectionsAcrossRequests(t *testing.T) {
+	var opened atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			opened.Add(1)
+		}
+	}
+	server.Start()
+	defer server.Close()
+	clients := NewProviderClients(map[string]ConnectionConfig{"provider": {BaseURL: server.URL}})
+	for range 3 {
+		client, err := clients.Client("provider")
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := client.Get(server.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.Copy(io.Discard, response.Body); err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+	}
+	if opened.Load() != 1 {
+		t.Fatalf("opened %d connections for three sequential requests, want 1", opened.Load())
+	}
+	if _, err := clients.Client("unconfigured"); err == nil {
+		t.Fatal("returned a client for an unconfigured connection")
 	}
 }

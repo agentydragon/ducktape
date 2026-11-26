@@ -36,7 +36,8 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use source_input::resolve_chunk_source_file;
 use source_match::source_match_claim_member_selectors;
-use spec::{AnonymousStatementSelector, MemberSelectorSpec};
+use spec::annotations::AnonymousStatementSelector;
+use spec::member_selectors::MemberSelectorSpec;
 use spec_modules::read_flat_transform_spec;
 use spec_resolution::{
     anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,

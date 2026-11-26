@@ -140,6 +140,8 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 	if _, fromFlux := binding.Labels[policyapi.FluxKustomizationNameLabel]; fromFlux {
 		return nil, status.Error(codes.Aborted, "PolicyBinding is managed by Flux")
 	}
+	// Only the grant Grant wrote for this Sandbox incarnation: its one non-controller Sandbox owner reference.
+	ownedBySandbox := false
 	for _, owner := range binding.OwnerReferences {
 		if owner.Kind != sandboxapi.SandboxKind {
 			continue
@@ -150,6 +152,10 @@ func (s *Service) RevokeSandboxPolicyBinding(ctx context.Context, request *polic
 		if owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Name != target.Name || string(owner.UID) != target.Uid {
 			return nil, status.Error(codes.Aborted, "PolicyBinding belongs to another Sandbox incarnation")
 		}
+		ownedBySandbox = true
+	}
+	if !ownedBySandbox {
+		return nil, status.Error(codes.Aborted, "PolicyBinding is not this Sandbox's grant")
 	}
 	if binding.Spec.Subject.Identity == nil || binding.Spec.Subject.Identity.Name != identity.Name {
 		return nil, status.Error(codes.Aborted, "PolicyBinding belongs to another Identity")
@@ -205,13 +211,9 @@ func (s *Service) sandboxIdentity(ctx context.Context, target *identitypb.Enviro
 	if view.Resource.Spec.Identity == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Sandbox acts as no Identity")
 	}
-	identity := &policyapi.Identity{}
-	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: view.Resource.Spec.Identity.Name}, identity); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, status.Error(codes.FailedPrecondition, "the Sandbox's Identity does not exist")
-		}
-		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
+	identity, err := s.getIdentity(ctx, view.Resource.Spec.Identity.Name, status.Error(codes.FailedPrecondition, "the Sandbox's Identity does not exist"))
+	if err != nil {
+		return nil, err
 	}
 	if !identity.DeletionTimestamp.IsZero() {
 		return nil, status.Error(codes.FailedPrecondition, "the Sandbox's Identity is being deleted")

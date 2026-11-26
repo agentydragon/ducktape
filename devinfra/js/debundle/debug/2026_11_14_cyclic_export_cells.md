@@ -62,7 +62,7 @@ The frozen spec, host premises, budgets and gate were not changed.
 ## Partial source-derived repair
 
 The current `ForeignCallSummary` is a positive no-reentry/allocation capability,
-not an incomplete may-read summary. `adapters/provider.rs::seal_callable` admits
+not an incomplete may-read summary. `execution_index/provider.rs::seal_callable` admits
 only allocation or closure bodies and requires all captures to be source-private
 `var` bindings. The observer's console call fails body admission; its imported
 `callback` also fails capture admission. Widening that admission would incorrectly

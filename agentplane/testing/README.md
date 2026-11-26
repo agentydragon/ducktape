@@ -7,6 +7,13 @@ browser): [`//testing`](../../testing/README.md).
 Check this index before writing a new fake or launcher; add a line when you add a shared helper. Shared helpers live
 here or in the owning service's `testing/`.
 
+## Naming
+
+- **Python launcher of a built binary:** `<binary>_process.py` defining `<Binary>Process` (`gateway_process.py` → `GatewayProcess`). Shared base: `go_process.py`.
+- **Python pytest fixture module:** `fixtures.py` when it holds the package's fixtures, `<topic>_fixtures.py` beside other topics.
+- **Go helper library:** `<pkg>test` for helpers serving one package's consumers, as `net/http` → `httptest` (`servicetest`, `configtest`); otherwise a plain noun for what it provides (`postgres`, `grpcserver`). Never a `fixture` suffix: `testing/` already says test.
+- **Go helper binary** (`package main`): snake_case directory named for its role (`serving_fixture`, `runtime_probe`).
+
 ## Python (`agentplane/testing/*.py`)
 
 - [`go_process.py`](go_process.py): run a built Go service as a child; `go_process` waits for gRPC health SERVING,
@@ -79,9 +86,9 @@ Only `testing/` packages with importers outside the owning service (checked by i
     [`protojson.py`](../history_service/testing/protojson.py): correction-aware event paging, unstored ranges,
     ThreadEntity ProtoJSON.
 - `environments/testing/` ([README](../environments/testing/README.md))
-  - [`process.py`](../environments/testing/process.py): production EnvironmentService (+ optional Runtime proxy) in a
+  - [`environment_service_process.py`](../environments/testing/environment_service_process.py): production EnvironmentService (+ optional Runtime proxy) in a
     child process.
-  - [`servicefixture`](../environments/testing/servicefixture/): production EnvironmentService handlers for Go
+  - [`servicetest`](../environments/testing/servicetest/): production EnvironmentService handlers for Go
     consumer tests (Actions orchestration).
 - `session_dispatcher/testing/`
   - [`gateway_process.py`](../session_dispatcher/testing/gateway_process.py): Sessions + its Environments peer against
@@ -122,5 +129,5 @@ Only `testing/` packages with importers outside the owning service (checked by i
   - [`identity/auth/testing`](../identity/auth/testing/): live Sandbox workload credentials on an envtest API server.
   - [`identity/credentials/testing`](../identity/credentials/testing/): plays the workload-identity issuer and
     cert-manager for requesters' tests.
-  - [`sampler/testing/exportfixture`](../sampler/testing/exportfixture/): TESTONLY view of the sampler sessionstore
+  - [`sampler/testing/exporttest`](../sampler/testing/exporttest/): TESTONLY view of the sampler sessionstore
     outbox for History integration tests.

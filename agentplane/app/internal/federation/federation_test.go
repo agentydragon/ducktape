@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
@@ -159,13 +160,13 @@ func (p *testProvider) loginOIDC(renewBefore int) auth.OIDCConfig {
 
 type memoryRow struct {
 	mu            sync.Mutex
-	login         *auth.OperatorSession
+	login         *session.Login
 	loginBarrier  chan struct{}
 	loginCalls    int
 	lockedUpdates int
 }
 
-func (r *memoryRow) Login(ctx context.Context) (*auth.OperatorSession, error) {
+func (r *memoryRow) Login(ctx context.Context) (*session.Login, error) {
 	r.mu.Lock()
 	r.loginCalls++
 	snapshot := cloneSession(r.login)
@@ -184,7 +185,7 @@ func (r *memoryRow) Login(ctx context.Context) (*auth.OperatorSession, error) {
 	return snapshot, nil
 }
 
-func (r *memoryRow) WithLockedLogin(ctx context.Context, update func(*auth.OperatorSession) (*auth.OperatorSession, error)) error {
+func (r *memoryRow) WithLockedLogin(ctx context.Context, update func(*session.Login) (*session.Login, error)) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -198,22 +199,22 @@ func (r *memoryRow) WithLockedLogin(ctx context.Context, update func(*auth.Opera
 	return err
 }
 
-func cloneSession(session *auth.OperatorSession) *auth.OperatorSession {
-	if session == nil {
+func cloneSession(login *session.Login) *session.Login {
+	if login == nil {
 		return nil
 	}
-	copy := *session
-	if session.Tokens != nil {
-		tokens := *session.Tokens
+	copy := *login
+	if login.Tokens != nil {
+		tokens := *login.Tokens
 		copy.Tokens = &tokens
 	}
 	return &copy
 }
 
 func loginRow(issuer, token string, expiry time.Time, refresh string) *memoryRow {
-	return &memoryRow{login: &auth.OperatorSession{
+	return &memoryRow{login: &session.Login{
 		Issuer: issuer, Subject: testSubject, Username: "operator",
-		Tokens: &auth.LoginTokens{AccessToken: token, ExpiresAt: expiry, RefreshToken: refresh},
+		Tokens: &session.Tokens{AccessToken: token, ExpiresAt: expiry, RefreshToken: refresh},
 	}}
 }
 

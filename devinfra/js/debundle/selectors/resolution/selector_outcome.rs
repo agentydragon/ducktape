@@ -22,7 +22,7 @@ use std::fmt::Write;
 
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
-use spec::MemberSelectorSpec;
+use spec::member_selectors::MemberSelectorSpec;
 
 /// A selector the shape matcher places at more than this many places is
 /// [`Outcome::TooBroad`], rejected without a solve: a selector that loose names

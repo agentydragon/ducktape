@@ -7,11 +7,11 @@ use debundle_e2e_support::{
     run_debundler_with_args, write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
-use spec::{
-    BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, PartialSwapKind,
-    PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel, VendorMark,
-    WrapperShape,
+use spec::vendor_marks::{
+    BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, PartialSwapMark,
+    PartialSwapPackage, PartialSwapSymbol, SwapMark, VendorLevel, VendorMark,
 };
+use spec::{PartialSwapKind, WrapperShape};
 use std::fs;
 use std::path::{Path, PathBuf};
 

@@ -30,7 +30,7 @@ use swc_ecma_visit::VisitMutWith;
 
 use artifact::{ArtifactIndexes, ChunkBundle, FileRole, JsFile, JsFileAstParts};
 use js_ast::{GlobalUseElisions, ParsedGlobalUses, ParsedJsModule};
-use spec::PartialSwapSymbol;
+use spec::vendor_marks::PartialSwapSymbol;
 
 use crate::passthrough::{PassthroughContext, rewrite_passthrough_module};
 use crate::plan::{ChunkBundledPartialSwapPlan, VendorResolutionPlan};

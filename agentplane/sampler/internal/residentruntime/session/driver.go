@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
 	"os"
 	"time"
 
@@ -22,6 +21,7 @@ import (
 type Driver struct {
 	store           *sessionstore.Store
 	settings        samplersettings.Settings
+	providerClients *samplersettings.ProviderClients
 	claimLease      func(context.Context, string, time.Duration) (sessionstore.Owner, error)
 	releaseLease    func(context.Context, sessionstore.Owner) error
 	newExecutor     func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*executor.Executor, func() error, error)
@@ -34,6 +34,7 @@ type Driver struct {
 type Dependencies struct {
 	Store           *sessionstore.Store
 	Settings        samplersettings.Settings
+	ProviderClients *samplersettings.ProviderClients
 	ClaimLease      func(context.Context, string, time.Duration) (sessionstore.Owner, error)
 	ReleaseLease    func(context.Context, sessionstore.Owner) error
 	NewExecutor     func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*executor.Executor, func() error, error)
@@ -43,7 +44,7 @@ type Dependencies struct {
 
 func New(deps Dependencies, slot Slot) *Driver {
 	return &Driver{
-		store: deps.Store, settings: deps.Settings,
+		store: deps.Store, settings: deps.Settings, providerClients: deps.ProviderClients,
 		claimLease: deps.ClaimLease, releaseLease: deps.ReleaseLease,
 		newExecutor: deps.NewExecutor, openCodeSession: deps.OpenCodeSession,
 		codeHost: deps.CodeHost, slot: slot,
@@ -316,7 +317,6 @@ func (r *Driver) execute(ctx context.Context, sessionID string, owner sessionsto
 	var turnDeadline time.Time
 	var reconciled <-chan struct{}
 	drainContinued := false
-	client := &http.Client{}
 	for {
 		if ctx.Err() != nil {
 			return activeCommand, ctx.Err()
@@ -544,7 +544,7 @@ func (r *Driver) execute(ctx context.Context, sessionID string, owner sessionsto
 						}
 					}
 				}
-				result, err = r.controlledAdvance(turnCtx, sessionID, owner, live, client, session)
+				result, err = r.controlledAdvance(turnCtx, sessionID, owner, live, session)
 				if err != nil || result.EndsTurn() {
 					break
 				}

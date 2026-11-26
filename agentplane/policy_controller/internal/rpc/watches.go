@@ -28,52 +28,31 @@ import (
 )
 
 func (s *Service) WatchPolicyBindings(request *policypb.WatchPolicyBindingsRequest, stream grpc.ServerStreamingServer[policypb.WatchPolicyBindingsResponse]) error {
-	ctx := stream.Context()
-	if err := s.requireReader(ctx); err != nil {
+	if err := s.requireReader(stream.Context()); err != nil {
 		return err
 	}
 	selected, err := selectBindings(request)
 	if err != nil {
 		return err
 	}
-	bindingWatch, err := s.watch(ctx, &policyapi.PolicyBindingList{})
-	if err != nil {
-		return err
-	}
-	defer bindingWatch.Stop()
-	read := func() (map[string]*policypb.PolicyBinding, error) {
-		var list policyapi.PolicyBindingList
-		if err := s.objects.List(ctx, &list, client.InNamespace(s.namespace)); err != nil {
-			return nil, unavailable(ctx, err)
-		}
-		out := make(map[string]*policypb.PolicyBinding)
-		for i := range list.Items {
-			binding := &list.Items[i]
-			if !selected(binding.Spec.Subject) {
-				continue
-			}
-			converted, err := bindingMessage(binding)
-			if err != nil {
-				return nil, status.Error(codes.Internal, "invalid policy binding")
-			}
-			out[binding.Name] = converted
-		}
-		return out, nil
-	}
-	return follow(ctx, bindingWatch, read,
-		func(items []*policypb.PolicyBinding) error {
-			return send(ctx, stream, &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_Snapshot{Snapshot: &policypb.PolicyBindingChunk{Bindings: items}}})
+	return serveWatch(s, stream, func() *policyapi.PolicyBindingList { return &policyapi.PolicyBindingList{} },
+		func(list *policyapi.PolicyBindingList) (map[string]*policypb.PolicyBinding, error) {
+			return messages(list.Items, func(binding *policyapi.PolicyBinding) bool { return selected(binding.Spec.Subject) }, bindingMessage, "invalid policy binding")
 		},
-		func() error {
-			return send(ctx, stream, &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}})
-		},
-		func(item *policypb.PolicyBinding) error {
-			return send(ctx, stream, &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_Upsert{Upsert: item}})
-		},
-		func(id *policypb.PolicyResourceIdentity) error {
-			return send(ctx, stream, &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_Removed{Removed: id}})
-		},
-		func(item *policypb.PolicyBinding) *policypb.PolicyResourceIdentity { return item.GetIdentity() })
+		watchFrames[*policypb.PolicyBinding, policypb.WatchPolicyBindingsResponse]{
+			snapshot: func(items []*policypb.PolicyBinding) *policypb.WatchPolicyBindingsResponse {
+				return &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_Snapshot{Snapshot: &policypb.PolicyBindingChunk{Bindings: items}}}
+			},
+			complete: func() *policypb.WatchPolicyBindingsResponse {
+				return &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}}
+			},
+			upsert: func(item *policypb.PolicyBinding) *policypb.WatchPolicyBindingsResponse {
+				return &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_Upsert{Upsert: item}}
+			},
+			removed: func(id *policypb.PolicyResourceIdentity) *policypb.WatchPolicyBindingsResponse {
+				return &policypb.WatchPolicyBindingsResponse{Frame: &policypb.WatchPolicyBindingsResponse_Removed{Removed: id}}
+			},
+		})
 }
 
 // selectBindings requires an explicit subject: a service caller has no account identity.
@@ -105,87 +84,110 @@ func selectBindings(request *policypb.WatchPolicyBindingsRequest) (func(policyap
 }
 
 func (s *Service) WatchIdentities(_ *policypb.WatchIdentitiesRequest, stream grpc.ServerStreamingServer[policypb.WatchIdentitiesResponse]) error {
-	ctx := stream.Context()
-	if err := s.requireReader(ctx); err != nil {
+	if err := s.requireReader(stream.Context()); err != nil {
 		return err
 	}
-	identities, err := s.watch(ctx, &policyapi.IdentityList{})
-	if err != nil {
-		return err
-	}
-	defer identities.Stop()
-	read := func() (map[string]*policypb.Identity, error) {
-		var list policyapi.IdentityList
-		if err := s.objects.List(ctx, &list, client.InNamespace(s.namespace)); err != nil {
-			return nil, unavailable(ctx, err)
-		}
-		out := make(map[string]*policypb.Identity, len(list.Items))
-		for i := range list.Items {
-			converted, err := identityMessage(&list.Items[i])
-			if err != nil {
-				return nil, status.Error(codes.Internal, "invalid identity")
-			}
-			out[list.Items[i].Name] = converted
-		}
-		return out, nil
-	}
-	return follow(ctx, identities, read,
-		func(items []*policypb.Identity) error {
-			return send(ctx, stream, &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Snapshot{Snapshot: &policypb.IdentityChunk{Identities: items}}})
+	return serveWatch(s, stream, func() *policyapi.IdentityList { return &policyapi.IdentityList{} },
+		func(list *policyapi.IdentityList) (map[string]*policypb.Identity, error) {
+			return messages(list.Items, every, identityMessage, "invalid identity")
 		},
-		func() error {
-			return send(ctx, stream, &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}})
-		},
-		func(item *policypb.Identity) error {
-			return send(ctx, stream, &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Upsert{Upsert: item}})
-		},
-		func(id *policypb.PolicyResourceIdentity) error {
-			return send(ctx, stream, &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Removed{Removed: id}})
-		},
-		func(item *policypb.Identity) *policypb.PolicyResourceIdentity { return item.GetIdentity() })
+		watchFrames[*policypb.Identity, policypb.WatchIdentitiesResponse]{
+			snapshot: func(items []*policypb.Identity) *policypb.WatchIdentitiesResponse {
+				return &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Snapshot{Snapshot: &policypb.IdentityChunk{Identities: items}}}
+			},
+			complete: func() *policypb.WatchIdentitiesResponse {
+				return &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}}
+			},
+			upsert: func(item *policypb.Identity) *policypb.WatchIdentitiesResponse {
+				return &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Upsert{Upsert: item}}
+			},
+			removed: func(id *policypb.PolicyResourceIdentity) *policypb.WatchIdentitiesResponse {
+				return &policypb.WatchIdentitiesResponse{Frame: &policypb.WatchIdentitiesResponse_Removed{Removed: id}}
+			},
+		})
 }
 
 func (s *Service) WatchPolicySets(_ *policypb.WatchPolicySetsRequest, stream grpc.ServerStreamingServer[policypb.WatchPolicySetsResponse]) error {
-	ctx := stream.Context()
-	if err := s.requireReader(ctx); err != nil {
+	if err := s.requireReader(stream.Context()); err != nil {
 		return err
 	}
-	sets, err := s.watch(ctx, &policyapi.PolicySetList{})
+	return serveWatch(s, stream, func() *policyapi.PolicySetList { return &policyapi.PolicySetList{} },
+		func(list *policyapi.PolicySetList) (map[string]*policypb.PolicySet, error) {
+			return messages(list.Items, every, policySetMessage, "invalid policy set")
+		},
+		watchFrames[*policypb.PolicySet, policypb.WatchPolicySetsResponse]{
+			snapshot: func(items []*policypb.PolicySet) *policypb.WatchPolicySetsResponse {
+				return &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_Snapshot{Snapshot: &policypb.PolicySetChunk{PolicySets: items}}}
+			},
+			complete: func() *policypb.WatchPolicySetsResponse {
+				return &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}}
+			},
+			upsert: func(item *policypb.PolicySet) *policypb.WatchPolicySetsResponse {
+				return &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_Upsert{Upsert: item}}
+			},
+			removed: func(id *policypb.PolicyResourceIdentity) *policypb.WatchPolicySetsResponse {
+				return &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_Removed{Removed: id}}
+			},
+		})
+}
+
+// watchFrames builds one Watch RPC's response frames.
+type watchFrames[T, F any] struct {
+	snapshot func([]T) *F
+	complete func() *F
+	upsert   func(T) *F
+	removed  func(*policypb.PolicyResourceIdentity) *F
+}
+
+// policyResource is a policy object's wire message.
+type policyResource interface {
+	proto.Message
+	GetIdentity() *policypb.PolicyResourceIdentity
+}
+
+// serveWatch streams the policy namespace's objects of one kind: a snapshot, then upserts and removals as they change.
+// read converts one fresh List.
+func serveWatch[L client.ObjectList, T policyResource, F any](s *Service, stream grpc.ServerStreamingServer[F], newList func() L, read func(L) (map[string]T, error), frames watchFrames[T, F]) error {
+	ctx := stream.Context()
+	changes, err := s.watch(ctx, newList())
 	if err != nil {
 		return err
 	}
-	defer sets.Stop()
-	read := func() (map[string]*policypb.PolicySet, error) {
-		var list policyapi.PolicySetList
-		if err := s.objects.List(ctx, &list, client.InNamespace(s.namespace)); err != nil {
-			return nil, unavailable(ctx, err)
-		}
-		out := make(map[string]*policypb.PolicySet)
-		for i := range list.Items {
-			set := &list.Items[i]
-			converted, err := policySetMessage(set)
-			if err != nil {
-				return nil, status.Error(codes.Internal, "invalid policy set")
+	defer changes.Stop()
+	return follow(ctx, changes,
+		func() (map[string]T, error) {
+			list := newList()
+			if err := s.objects.List(ctx, list, client.InNamespace(s.namespace)); err != nil {
+				return nil, unavailable(ctx, err)
 			}
-			out[set.Name] = converted
-		}
-		return out, nil
-	}
-	return follow(ctx, sets, read,
-		func(items []*policypb.PolicySet) error {
-			return send(ctx, stream, &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_Snapshot{Snapshot: &policypb.PolicySetChunk{PolicySets: items}}})
+			return read(list)
 		},
-		func() error {
-			return send(ctx, stream, &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_SnapshotComplete{SnapshotComplete: &emptypb.Empty{}}})
-		},
-		func(item *policypb.PolicySet) error {
-			return send(ctx, stream, &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_Upsert{Upsert: item}})
-		},
-		func(id *policypb.PolicyResourceIdentity) error {
-			return send(ctx, stream, &policypb.WatchPolicySetsResponse{Frame: &policypb.WatchPolicySetsResponse_Removed{Removed: id}})
-		},
-		func(item *policypb.PolicySet) *policypb.PolicyResourceIdentity { return item.GetIdentity() })
+		func(frame *F) error { return send(ctx, stream, frame) },
+		frames)
 }
+
+// messages converts the listed objects keep admits, keyed by name; invalid names the Internal error for one that
+// does not convert.
+func messages[O any, PO interface {
+	*O
+	GetName() string
+}, T any](items []O, keep func(PO) bool, convert func(PO) (T, error), invalid string) (map[string]T, error) {
+	out := make(map[string]T)
+	for i := range items {
+		item := PO(&items[i])
+		if !keep(item) {
+			continue
+		}
+		converted, err := convert(item)
+		if err != nil {
+			return nil, status.Error(codes.Internal, invalid)
+		}
+		out[item.GetName()] = converted
+	}
+	return out, nil
+}
+
+func every[O any](O) bool { return true }
 
 // ListPolicySetNames returns one sorted snapshot of the PolicySets visible to the caller.
 func (s *Service) ListPolicySetNames(ctx context.Context, _ *policypb.ListPolicySetNamesRequest) (*policypb.ListPolicySetNamesResponse, error) {
@@ -290,7 +292,7 @@ func send[T any](ctx context.Context, stream grpc.ServerStreamingServer[T], fram
 	return nil
 }
 
-func follow[T proto.Message](ctx context.Context, changes watch.Interface, read func() (map[string]T, error), snapshot func([]T) error, complete func() error, upsert func(T) error, remove func(*policypb.PolicyResourceIdentity) error, ident func(T) *policypb.PolicyResourceIdentity) error {
+func follow[T policyResource, F any](ctx context.Context, changes watch.Interface, read func() (map[string]T, error), emit func(*F) error, frames watchFrames[T, F]) error {
 	current, err := read()
 	if err != nil {
 		return err
@@ -306,12 +308,12 @@ func follow[T proto.Message](ctx context.Context, changes watch.Interface, read 
 		for _, key := range keys[:n] {
 			items = append(items, current[key])
 		}
-		if err := snapshot(items); err != nil {
+		if err := emit(frames.snapshot(items)); err != nil {
 			return err
 		}
 		keys = keys[n:]
 	}
-	if err := complete(); err != nil {
+	if err := emit(frames.complete()); err != nil {
 		return err
 	}
 	ticker := time.NewTicker(recheckInterval)
@@ -341,13 +343,13 @@ func follow[T proto.Message](ctx context.Context, changes watch.Interface, read 
 		}
 		removed := make([]string, 0)
 		for key, old := range current {
-			if item, ok := next[key]; !ok || ident(item).GetUid() != ident(old).GetUid() {
+			if item, ok := next[key]; !ok || item.GetIdentity().GetUid() != old.GetIdentity().GetUid() {
 				removed = append(removed, key)
 			}
 		}
 		slices.Sort(removed)
 		for _, key := range removed {
-			if err := remove(ident(current[key])); err != nil {
+			if err := emit(frames.removed(current[key].GetIdentity())); err != nil {
 				return err
 			}
 		}
@@ -359,7 +361,7 @@ func follow[T proto.Message](ctx context.Context, changes watch.Interface, read 
 		for _, key := range keys {
 			item := next[key]
 			if old, ok := current[key]; !ok || !proto.Equal(old, item) {
-				if err := upsert(item); err != nil {
+				if err := emit(frames.upsert(item)); err != nil {
 					return err
 				}
 			}

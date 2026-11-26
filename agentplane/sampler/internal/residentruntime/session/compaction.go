@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"errors"
-	"net/http"
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
@@ -69,7 +68,7 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, live *li
 	if err != nil {
 		return &deferredProviderError{cause: err}
 	}
-	result, err := r.sampleProvider(ctx, owner, session, intentID, adapter, &http.Client{}, wire, true)
+	result, err := r.sampleProvider(ctx, owner, session, intentID, adapter, wire, true)
 	if err != nil {
 		return err
 	}

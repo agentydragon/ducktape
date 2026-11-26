@@ -2,18 +2,21 @@
 //! a call yields after its callee and operands have run, and the driver
 //! resumes the same stack with the adapter's result.
 
+use super::bindings::{
+    bind_parameter, prepare_body_bindings, store_binding, update_binding_expression,
+};
 use super::branch;
 use super::cells;
 use super::closure;
 use super::construct;
 use super::context::{Disposition, KernelContext, Unproved};
+use super::field_access::{read_field, read_field_expression, store_field};
 use super::frame::{
     EvaluatedCallee, Invocation, LocalCallRequest, LocalExecutionAttempt, LocalFrame,
     LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
 };
-use analysis::facts::EffectCell;
+use super::value_context::LocalValueContext;
 use analysis_model::PrimKinds;
-use analysis_vocabulary::execution_evidence::OrderedFieldReadRefusal;
 use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -23,16 +26,10 @@ use value_model::local_operations::{
     DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCallee,
     LocalExpression, LocalOperation, LogicalOperator,
 };
-use value_model::own_data_transfer::{self, OwnDataOwnership, OwnDataSlot};
-use value_model::{
-    AbstractValue, CallSite, CallableSelection, HeapAddress, LiteralPropertyKind,
-    PropertyDefinition, ValueExpr, Values,
-};
-use world::allocation_transfer::NativeIterableReceipt;
-use world::allocation_transfer::NativeIterableUse;
+use value_model::{AbstractValue, CallableSelection, PropertyDefinition, ValueExpr, Values};
 use world::allocation_transfer::{
-    self, AllocationContext, AllocationJudgment, AllocationValue, ArrayTransfer, LiteralHeap,
-    LiteralLayout, RecordTransfer, SequenceTransfer,
+    self, AllocationJudgment, AllocationValue, ArrayTransfer, LiteralLayout, RecordTransfer,
+    SequenceTransfer,
 };
 use world::effect_coverage::EffectCoverageFragment;
 
@@ -1224,125 +1221,6 @@ impl LocalContinuation {
     }
 }
 
-/// The kernel's view of `allocation_transfer` for a frame: binding reads go to
-/// the adapter and effects into the ledger. An adapter refusal met while
-/// transferring is kept so the caller reports the right remainder.
-// CLEANUP(added 2026-11-09): dissolve with `AllocationContext` when L4e
-//   deletes `legacy/evaluator.rs` and its `ApplicationAllocationContext`.
-struct LocalValueContext<'a, C> {
-    context: &'a mut C,
-    frame: &'a mut LocalFrame,
-    refusal: Option<RemainderDisposition>,
-}
-
-impl<C: KernelContext> AllocationContext for LocalValueContext<'_, C> {
-    fn source_covered(&self) -> bool {
-        true
-    }
-    fn array_created(&mut self, allocation: u32, tainted: bool) {
-        if tainted {
-            // A hole has no own property, so later index reads see the
-            // prototype; an unproved spread has unknown slots. Either way the
-            // object is no longer a settled literal.
-            self.context
-                .world_mut()
-                .surface
-                .tainted_objects
-                .insert(allocation);
-        }
-    }
-    /// The one `IterateSpread` rule: the adapter's receipt covers the
-    /// protocol and its source reads go into this frame's ledger; without a
-    /// receipt the body's remainder is the adapter's to summarize.
-    fn array_spread(&mut self, span: Span, operand: &Values) -> Option<NativeIterableReceipt> {
-        match self
-            .context
-            .native_iterable(NativeIterableUse::ArraySpread(span), operand)
-        {
-            Some(receipt) => {
-                self.frame
-                    .ledger
-                    .heap_accesses
-                    .reads
-                    .extend(receipt.external_heap_contents().reads);
-                self.frame.ledger.effects.compose(&receipt.coverage);
-                Some(receipt)
-            }
-            None => {
-                self.frame
-                    .ledger
-                    .effects
-                    .compose(&EffectCoverageFragment::default());
-                self.refusal = Some(
-                    match self
-                        .context
-                        .unproved(self.frame, Unproved::IterateSpread { operand, span })
-                    {
-                        Disposition::Summarized => RemainderDisposition::AlreadySummarized,
-                        Disposition::Resolved(_) | Disposition::Refused => {
-                            RemainderDisposition::NeedsSummary
-                        }
-                    },
-                );
-                None
-            }
-        }
-    }
-    fn binding(&mut self, binding: &Id) -> Option<AllocationValue> {
-        match self.context.read_binding(binding, self.frame) {
-            Ok(result) => {
-                self.frame.ledger.effects.compose(&result.effects);
-                Some(result.allocation)
-            }
-            Err(remainder) => {
-                self.refusal = Some(remainder);
-                None
-            }
-        }
-    }
-    fn unmodeled_effect_operation(&mut self) {
-        self.frame
-            .ledger
-            .effects
-            .compose(&EffectCoverageFragment::default());
-    }
-    fn noninvoking_operation(&mut self) {
-        self.frame
-            .ledger
-            .effects
-            .compose(&EffectCoverageFragment::no_effects());
-    }
-    fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue> {
-        match value_of(self.context, self.frame, expression) {
-            Ok(value) => Some(value),
-            Err(remainder) => {
-                self.refusal = Some(remainder);
-                None
-            }
-        }
-    }
-    fn literal_layout(&self, allocation: u32) -> LiteralLayout {
-        self.context.index().allocation_layout(allocation)
-    }
-    fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind {
-        self.context
-            .index()
-            .literal_property_kind(allocation, position)
-    }
-    fn heap(&mut self) -> LiteralHeap<'_> {
-        self.context.world_mut().literal_heap()
-    }
-    fn keyed_collection_new(
-        &mut self,
-        callee: &ValueExpr,
-        arguments: &[ValueExpr],
-        site: CallSite,
-    ) -> Option<AllocationValue> {
-        self.context
-            .keyed_collection_new(self.frame, callee, arguments, site)
-    }
-}
-
 /// Transfer one closed value expression in this frame. Scalar consumers
 /// (the strict provider's direct allocation return) enter the kernel here.
 pub fn value_of(
@@ -1398,14 +1276,17 @@ fn mark_fresh_record(
 /// operand; the normal path continues with the other values. An operand
 /// left with no value stops the operation that consumes it: an empty target
 /// set is legitimate for a selected native method.
-fn completing(mut values: Values, frame: &mut LocalFrame) -> Values {
+pub(super) fn completing(mut values: Values, frame: &mut LocalFrame) -> Values {
     if values.remove(&AbstractValue::Value(Value::Unavailable)) {
         frame.record_unknown_abrupt();
     }
     values
 }
 
-fn completing_selected(mut selected: SelectedValue, frame: &mut LocalFrame) -> SelectedValue {
+pub(super) fn completing_selected(
+    mut selected: SelectedValue,
+    frame: &mut LocalFrame,
+) -> SelectedValue {
     selected.values = completing(selected.values, frame);
     if selected
         .selection
@@ -1418,7 +1299,7 @@ fn completing_selected(mut selected: SelectedValue, frame: &mut LocalFrame) -> S
 }
 
 /// Compose an adapter value into the frame and project the kernel value.
-fn absorb(frame: &mut LocalFrame, result: LocalValueResult) -> SelectedValue {
+pub(super) fn absorb(frame: &mut LocalFrame, result: LocalValueResult) -> SelectedValue {
     frame.ledger.effects.compose(&result.effects);
     frame.ledger.allocation.compose(&result.allocation.judgment);
     let selection = result
@@ -1435,7 +1316,7 @@ fn absorb(frame: &mut LocalFrame, result: LocalValueResult) -> SelectedValue {
 
 /// A primitive operation that may throw after both operands ran leaves the
 /// effect and completion domains unknown; allocation opacity alone does not.
-fn absorb_primitive_transfer(frame: &mut LocalFrame, transfer: &AllocationValue) {
+pub(super) fn absorb_primitive_transfer(frame: &mut LocalFrame, transfer: &AllocationValue) {
     frame.ledger.allocation.compose(&transfer.judgment);
     let effects = if transfer
         .values
@@ -1448,7 +1329,7 @@ fn absorb_primitive_transfer(frame: &mut LocalFrame, transfer: &AllocationValue)
     frame.ledger.effects.compose(&effects);
 }
 
-fn unproved_operator(
+pub(super) fn unproved_operator(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     operands: &Values,
@@ -1478,169 +1359,6 @@ fn value_expression(
     ))
 }
 
-fn own_data_field(
-    context: &impl KernelContext,
-    receivers: &Values,
-    property: &str,
-    frame: &LocalFrame,
-) -> Result<OwnDataSlot, OrderedFieldReadRefusal> {
-    own_data_transfer::resolve_slot(
-        context,
-        receivers,
-        property,
-        OwnDataOwnership::FreshLocal {
-            borrowed: &frame.borrowed_records,
-            fresh: &frame.fresh_records,
-        },
-    )
-}
-
-fn read_field(
-    context: &mut impl KernelContext,
-    frame: &mut LocalFrame,
-    receiver: &Id,
-    receivers: &Values,
-    property: &str,
-    span: Span,
-) -> Result<LocalValueResult, RemainderDisposition> {
-    let prefix_tracked = context.prefix_tracked_receiver(receiver, receivers);
-    let slot = if prefix_tracked {
-        own_data_transfer::resolve_slot(
-            context,
-            receivers,
-            property,
-            OwnDataOwnership::CurrentPrefix,
-        )
-    } else {
-        own_data_field(context, receivers, property, frame)
-    };
-    match slot {
-        Ok(slot) => {
-            let selection_dependencies = context.current_prerequisites();
-            let read = slot.read(context);
-            let selection =
-                CallableSelection::observed(&read.values, selection_dependencies.clone());
-            frame.ledger.heap_accesses.reads.insert(read.cell);
-            // [[Get]] of a present own data property runs no getter,
-            // prototype lookup, global or host operation; its one heap
-            // effect is the slot cell recorded above.
-            let mut effects = EffectCoverageFragment::no_effects();
-            if prefix_tracked {
-                effects.depend_on(selection_dependencies.as_ref());
-            }
-            Ok(LocalValueResult {
-                allocation: AllocationValue {
-                    values: read.values,
-                    judgment: AllocationJudgment::CoveredAllocationOnly(Box::default()),
-                },
-                effects,
-                selection,
-            })
-        }
-        Err(refusal) => match context.unproved(
-            frame,
-            Unproved::FieldRead {
-                receiver,
-                receivers,
-                property,
-                span,
-                refusal,
-            },
-        ) {
-            Disposition::Resolved(allocation) => Ok(LocalValueResult {
-                allocation,
-                effects: EffectCoverageFragment::default(),
-                selection: None,
-            }),
-            Disposition::Summarized => Err(RemainderDisposition::AlreadySummarized),
-            Disposition::Refused => Err(RemainderDisposition::NeedsSummary),
-        },
-    }
-}
-
-fn read_field_expression(
-    context: &mut impl KernelContext,
-    frame: &mut LocalFrame,
-    receiver: &Id,
-    property: &str,
-    span: Span,
-) -> Result<SelectedValue, RemainderDisposition> {
-    if let Some(result) = context.native_field_read(frame, receiver, property, span) {
-        return Ok(absorb(frame, result));
-    }
-    let receivers = value_of(context, frame, &ValueExpr::Binding(receiver.clone()))?;
-    frame.ledger.allocation.compose(&receivers.judgment);
-    let receivers = completing(receivers.values, frame);
-    if receivers.is_empty() {
-        return Ok(SelectedValue::raw(Values::new()));
-    }
-    let result = read_field(context, frame, receiver, &receivers, property, span)?;
-    Ok(absorb(frame, result))
-}
-
-fn store_field(
-    context: &mut impl KernelContext,
-    frame: &mut LocalFrame,
-    receivers: &Values,
-    prefix_tracked: bool,
-    property: &str,
-    values: &Values,
-    span: Span,
-) -> Result<(), RemainderDisposition> {
-    let slot = if prefix_tracked {
-        own_data_transfer::resolve_writable_slot(context, receivers, property)
-    } else {
-        own_data_field(context, receivers, property, frame).ok()
-    };
-    let Some(slot) = slot else {
-        return Err(
-            match context.unproved(
-                frame,
-                Unproved::FieldWrite {
-                    receivers,
-                    values,
-                    span,
-                },
-            ) {
-                Disposition::Summarized => RemainderDisposition::AlreadySummarized,
-                Disposition::Resolved(_) | Disposition::Refused => {
-                    RemainderDisposition::NeedsSummary
-                }
-            },
-        );
-    };
-    let write_dependencies = context
-        .property_is_writable(slot.object, property)
-        .then(|| context.current_prerequisites());
-    frame.ledger.heap_accesses.writes.insert(slot.cell());
-    // Writability is an attribute of the object's shape: a later
-    // redefinition or integrity change must stay ordered after this store.
-    frame
-        .ledger
-        .heap_accesses
-        .reads
-        .insert(EffectCell::ObjectShape(slot.object));
-    context.world_mut().literal_heap().write_property(
-        slot.object,
-        Some(property.to_owned()),
-        values,
-    );
-    // [[Set]] on an existing writable own data property of an ordinary
-    // object with settled accessors replaces its value: no setter, prototype
-    // lookup, global or host operation runs. The one heap effect is the
-    // slot cell recorded above.
-    let effects = match write_dependencies {
-        Some(dependencies) => {
-            let mut effects = EffectCoverageFragment::no_effects();
-            effects.depend_on(dependencies.as_ref());
-            effects
-        }
-        None => EffectCoverageFragment::default(),
-    };
-    frame.ledger.effects.compose(&effects);
-    Ok(())
-}
-
 fn closure_expression(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
@@ -1648,127 +1366,6 @@ fn closure_expression(
 ) -> Result<SelectedValue, RemainderDisposition> {
     let result = closure::create(context, frame, callable)?;
     Ok(absorb(frame, result))
-}
-
-fn store_binding(
-    context: &mut impl KernelContext,
-    body: &LocalBody,
-    frame: &mut LocalFrame,
-    binding: &Id,
-    selected: SelectedValue,
-    span: Span,
-) -> Result<SelectedValue, RemainderDisposition> {
-    let values = selected.values;
-    if values.is_empty() {
-        // No store happens, but the ledger stays open for a binding outside
-        // the body exactly as if the store had been attempted: a join over
-        // this leaf must not see a closed fragment for it.
-        if !body.bindings.contains_key(binding) {
-            frame
-                .ledger
-                .effects
-                .compose(&EffectCoverageFragment::default());
-        }
-        frame.stop_normal_path();
-        return Ok(SelectedValue::raw(values));
-    }
-    let Some(kind) = body.bindings.get(binding) else {
-        frame.binding_selections.remove(binding);
-        if !context.world().active_cells.contains_key(binding)
-            && let Some(effects) = context.store_module_binding(binding, &values)
-        {
-            frame.ledger.effects.compose(&effects);
-            return Ok(completing_selected(SelectedValue::raw(values), frame));
-        }
-        frame
-            .ledger
-            .effects
-            .compose(&EffectCoverageFragment::default());
-        let result = cells::store_captured(context, frame, binding, &values, span)?;
-        frame.ledger.allocation.compose(&result.judgment);
-        return Ok(completing_selected(
-            SelectedValue::raw(result.values),
-            frame,
-        ));
-    };
-    let uninitialized_let = match kind {
-        LocalBinding::Let => {
-            let Some(current) = frame.environment.get(binding) else {
-                return Err(RemainderDisposition::NeedsSummary);
-            };
-            current.contains(&AbstractValue::Value(Value::Unavailable))
-        }
-        _ => false,
-    };
-    if matches!(kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
-        || (*kind == LocalBinding::Parameter
-            && frame.parameter_inputs.is_some()
-            && !frame.initialized_bindings.contains(binding))
-        || uninitialized_let
-    {
-        // Assignment to a const, a named self binding or a cell still in TDZ
-        // throws before storing anything.
-        frame
-            .ledger
-            .effects
-            .compose(&EffectCoverageFragment::default());
-        frame.record_unknown_abrupt();
-        frame.stop_normal_path();
-        return Ok(SelectedValue::raw(Values::new()));
-    }
-    if matches!(kind, LocalBinding::Parameter | LocalBinding::Let)
-        && frame.initialized_bindings.contains(binding)
-    {
-        // Only an initialized activation-local mutable binding can carry
-        // this receipt. The shared cell policy rejects live captured cells;
-        // composing the store never closes an unknown RHS effect.
-        let effects = cells::declarative_binding_operation(context, body, binding);
-        frame.ledger.effects.compose(&effects);
-    } else {
-        frame
-            .ledger
-            .effects
-            .compose(&EffectCoverageFragment::default());
-    }
-    frame.environment.insert(binding.clone(), values.clone());
-    if let Some(selection) = selected
-        .selection
-        .filter(|selection| selection.matches(&values))
-    {
-        frame.binding_selections.insert(binding.clone(), selection);
-    } else {
-        frame.binding_selections.remove(binding);
-    }
-    cells::declared_binding_stored(context, body, binding, frame);
-    Ok(SelectedValue {
-        values,
-        selection: frame.binding_selections.get(binding).cloned(),
-    })
-}
-
-fn update_binding_expression(
-    context: &mut impl KernelContext,
-    body: &LocalBody,
-    frame: &mut LocalFrame,
-    binding: &Id,
-    span: Span,
-) -> Result<SelectedValue, RemainderDisposition> {
-    let result = context.read_binding(binding, frame)?;
-    let operand = absorb(frame, result);
-    if operand.values.is_empty() {
-        return Ok(operand);
-    }
-    let Some(result) = allocation_transfer::update_result(&operand.values) else {
-        frame.ledger.allocation.compose(&AllocationJudgment::Opaque);
-        frame
-            .ledger
-            .effects
-            .compose(&EffectCoverageFragment::default());
-        return Err(unproved_operator(context, frame, &operand.values, span));
-    };
-    absorb_primitive_transfer(frame, &result);
-    let selected = completing_selected(SelectedValue::raw(result.values), frame);
-    store_binding(context, body, frame, binding, selected, span)
 }
 
 fn evaluated_callee(
@@ -1840,99 +1437,6 @@ fn evaluated_callee(
                 array_method,
             })
         }
-    }
-}
-
-fn bind_parameter(
-    context: &mut impl KernelContext,
-    body: &LocalBody,
-    frame: &mut LocalFrame,
-    binding: &Id,
-    selected: SelectedValue,
-) {
-    if selected.values.is_empty() {
-        frame.stop_normal_path();
-        return;
-    }
-    let selection = selected
-        .selection
-        .filter(|selection| selection.matches(&selected.values));
-    frame.inputs.extend(selected.values.iter().cloned());
-    frame.environment.insert(binding.clone(), selected.values);
-    match selection {
-        Some(selection) => {
-            frame.binding_selections.insert(binding.clone(), selection);
-        }
-        None => {
-            frame.binding_selections.remove(binding);
-        }
-    }
-    cells::declared_binding_stored(context, body, binding, frame);
-    frame.initialized_bindings.insert(binding.clone());
-    let effects = cells::declarative_binding_operation(context, body, binding);
-    frame.ledger.effects.compose(&effects);
-}
-
-fn prepare_body_bindings(
-    context: &mut impl KernelContext,
-    body: &LocalBody,
-    frame: &mut LocalFrame,
-) {
-    for (binding, kind) in &body.bindings {
-        match kind {
-            LocalBinding::Parameter => {}
-            LocalBinding::NamedSelf(function) | LocalBinding::HoistedFunction(function) => {
-                // A pre-prologue parameter/var value is not the hoisted
-                // function. Preserve only an already-established exact value;
-                // an unsupported activation value remains absent until use.
-                if frame.environment.get(binding).is_some_and(|values| {
-                    values.is_empty()
-                        || values.iter().any(|value| {
-                            !matches!(value,
-                                AbstractValue::Closure(HeapAddress { callable: key, .. }, _)
-                                | AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                                    if key == function)
-                        })
-                }) {
-                    frame.environment.remove(binding);
-                    frame.binding_selections.remove(binding);
-                }
-            }
-            LocalBinding::Var => {
-                let initialized = frame
-                    .environment
-                    .entry(binding.clone())
-                    .or_insert_with(|| Values::from([AbstractValue::UNDEFINED]));
-                if frame
-                    .binding_selections
-                    .get(binding)
-                    .is_some_and(|selection| !selection.matches(initialized))
-                {
-                    frame.binding_selections.remove(binding);
-                }
-            }
-            LocalBinding::Let | LocalBinding::Const => {
-                frame.environment.insert(
-                    binding.clone(),
-                    Values::from([AbstractValue::Value(Value::Unavailable)]),
-                );
-                frame.binding_selections.remove(binding);
-            }
-        }
-    }
-    cells::instantiate_body_cells(context, body, frame);
-    for (binding, kind) in &body.bindings {
-        if *kind == LocalBinding::Parameter && frame.initialized_bindings.contains(binding) {
-            continue;
-        }
-        // Let/const cells have actually been created in TDZ above. Hoisted
-        // values and compatibility parameters retain their separate boundary.
-        let effects = if matches!(kind, LocalBinding::Let | LocalBinding::Const) {
-            cells::declarative_binding_operation(context, body, binding)
-        } else {
-            EffectCoverageFragment::default()
-        };
-        frame.ledger.effects.compose(&effects);
     }
 }
 

@@ -190,15 +190,13 @@ func (s *Service) authorizeIdentityPlacement(
 		return nil, status.Error(codes.NotFound, "sandbox not found")
 	}
 	policyCaller := reader.Identity{Name: caller.Identity.GetName(), UID: types.UID(caller.Identity.GetUid())}
-	granted := access.Allowed(s.EnvironmentRules, policyCaller, "bind_session", environment)
-	if !granted {
+	if access.Evaluate(s.EnvironmentRules, policyCaller, "bind_session", environment) == access.Denied {
 		if store.SameIdentity(identity, caller.Identity) {
 			return nil, status.Error(codes.PermissionDenied, "caller may not bind a Session to this sandbox")
 		}
 		return nil, status.Error(codes.NotFound, "sandbox not found")
 	}
-	if environment.DeletionTimestamp != nil || !environment.Spec.Running ||
-		(environment.Status.SuspendedBy != nil && *environment.Status.SuspendedBy == sandboxapi.SuspendedByRequested) {
+	if environment.DeletionTimestamp != nil || environment.StopRequested() {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox cannot accept a new Session")
 	}
 	return identity, nil

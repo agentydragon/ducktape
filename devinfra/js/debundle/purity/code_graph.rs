@@ -1,6 +1,6 @@
 use super::*;
-use crate::facts::abstract_domain::heap;
-use crate::facts::{
+use crate::heap;
+use crate::{
     LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof, SetIterableShapes,
 };
 use analysis_domain::dynamic_scope::DynamicScopeFact;
@@ -132,7 +132,7 @@ pub(crate) enum ChunkBinding {
     /// — `const X = <plain literal>`, or `let`/`var` whose every
     /// re-bind is also a plain literal, or the TS-enum-IIFE shape
     /// (see `is_ts_enum_iife_init_for_binding`) — whose allocations stay
-    /// private and unwritten (`facts/abstract_domain/heap.rs`), so
+    /// private and unwritten (`purity/heap.rs`), so
     /// property reads `X.k` / `X[k]` are pure.
     /// Full soundness write-up: <docs/purity_soundness.md> §
     /// "ChunkBinding::PlainData".
@@ -147,7 +147,7 @@ pub trait ShapeProofRefinement {
     fn refine(
         &self,
         body: &[TopLevelItemView<'_>],
-        value_flow: &crate::facts::ChunkValueFlow,
+        value_flow: &value_flow::ChunkValueFlow,
         plain_array_bindings: &BTreeSet<String>,
         local_class_construction: &LocalClassConstructionShapes,
         set_iterable_shapes: SetIterableShapes,
@@ -213,7 +213,7 @@ impl ChunkCodeGraph {
         // No program summary reaches this path: every import stays an
         // order-dependent cell.
         let stable_imports = BTreeSet::new();
-        let value_flow = crate::facts::ChunkValueFlow::analyze_with_candidates(
+        let value_flow = value_flow::ChunkValueFlow::analyze_with_candidates(
             body,
             &analysis_domain::allocation_roots::tracked_allocation_roots(body),
         );
@@ -481,10 +481,7 @@ impl ChunkCodeGraph {
     }
 
     /// The effect of the first order-dependent read `visit` reaches, if any.
-    pub(crate) fn order_dependent_read_effects(
-        &self,
-        visit: impl FnOnce(&mut dyn Visit),
-    ) -> Effects {
+    pub fn order_dependent_read_effects(&self, visit: impl FnOnce(&mut dyn Visit)) -> Effects {
         match self.order_dependent_cells.first_read(visit) {
             Some(read) => Effects::of_detail(
                 Effect::ObservesForeignCell,
@@ -559,7 +556,7 @@ impl ChunkCodeGraph {
     }
 
     /// Whether `name` is a plain array whose elements are all primitives.
-    pub(crate) fn is_primitive_element_array(&self, name: &str) -> bool {
+    pub fn is_primitive_element_array(&self, name: &str) -> bool {
         self.primitive_element_arrays.contains(name)
     }
 
@@ -567,11 +564,11 @@ impl ChunkCodeGraph {
         self.set_iterable_proof.dependencies_for_constructor(span)
     }
 
-    pub(crate) fn native_iterable_operand(
+    pub fn native_iterable_operand(
         &self,
         span: Span,
     ) -> Option<(
-        &crate::facts::TopLevelNativeIterableOperandProjection,
+        &crate::TopLevelNativeIterableOperandProjection,
         &ProofDependencies,
     )> {
         self.set_iterable_proof.native_iterable_operand(span)
@@ -581,10 +578,7 @@ impl ChunkCodeGraph {
         self.set_iterable_proof.stable_spread_dependencies(span)
     }
 
-    pub(crate) fn stable_array_spread_dependencies(
-        &self,
-        operand: Span,
-    ) -> Option<&ProofDependencies> {
+    pub fn stable_array_spread_dependencies(&self, operand: Span) -> Option<&ProofDependencies> {
         self.set_iterable_proof
             .stable_array_spread_dependencies(operand)
     }

@@ -12,6 +12,7 @@ service SamplerAdmin {
   rpc GetCommand(GetCommandRequest) returns (GetCommandResponse);
   rpc ReadProviderRequest(ReadProviderRequestRequest) returns (stream ReadProviderRequestResponse);
   // Replays durable evidence; follow waits for newly committed entries. No History dependency.
+  // TODO: Check external usage and retire this RPC if History can serve the remaining callers.
   rpc FollowEvents(FollowEventsRequest) returns (stream FollowEventsResponse);
   rpc Compact(CompactRequest) returns (CompactResponse);
 }

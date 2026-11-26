@@ -18,7 +18,9 @@ use selector_resolve::{
     DirectBindingSourceEvidence, EntityIndex, SourceMatchReferenceOrigin, SpecModule,
 };
 use source_identity::SourceUnitId;
-use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, MemberSelectorSpec};
+use spec::BindingSourceKind;
+use spec::annotations::AnonymousStatementSelector;
+use spec::member_selectors::{BindingSelector, MemberSelectorSpec};
 use spec_resolution::{
     anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,
     resolve_chunks, spec_module as build_spec_module,

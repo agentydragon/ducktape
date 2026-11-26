@@ -34,7 +34,8 @@ use selector_resolve::{Member, MemberSelector, SpecModule};
 use serde::Serialize;
 use source_match::ParsedSourceMatchSelector;
 use source_match_holes::{ARRAY_ELEMENTS_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, is_hole_keyword};
-use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
+use spec::SourceMatchIdentifierMode;
+use spec::annotations::AnonymousStatementSelector;
 use swc_ecma_ast::{
     ArrayLit, ArrowExpr, ArrowFunctionBody, BlockStmt, CallExpr, Class, ClassMember, Constructor,
     Expr, ExprOrSpread, Function, Module, ModuleItem, NewExpr, ObjectLit, ObjectPat, ObjectPatProp,

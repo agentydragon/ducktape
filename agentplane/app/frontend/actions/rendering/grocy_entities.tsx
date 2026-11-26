@@ -2,9 +2,10 @@ import { Anchor, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
+import { Line } from "../../ui/line";
 import { JsonBlock } from "../../ui/text_block";
 import { defineCallPreview, type PreviewProps } from "./entry";
-import { batchError, batchOutcome, displayRef, GROCY_BASE, grocyRequest, Line, objectLink } from "./grocy_shared";
+import { batchError, batchOutcome, displayRef, GROCY_BASE, grocyRequest, objectLink } from "./grocy_shared";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 

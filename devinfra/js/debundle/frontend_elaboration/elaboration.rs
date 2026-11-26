@@ -27,9 +27,12 @@ use selector_resolve::{Chunk as SelectorChunk, EntityIndex, MemberSelector};
 use source_identity::ChunkId;
 use source_identity::StatementId;
 use source_match::source_match_claim_member_selectors;
+use spec::annotations::SourceMatchClaim;
+use spec::input_contracts::SourceUnitSelector;
+use spec::member_selectors::MemberSelectorSpec;
 use spec::{
     ChunkExportPurity, ChunkRenames, DependencyGraphOptions, HostBehavior, IntrinsicsNeverWritten,
-    LogicalModule, MemberSelectorSpec, SourceMatchClaim, SourceUnitSelector, UnassignedMode,
+    LogicalModule, UnassignedMode,
 };
 use spec_resolution::{
     LogicalRequest, ProjectedChunk, ResolvedChunk, logical_requests_for_chunk, project_chunk,
@@ -466,7 +469,7 @@ fn resolve_imported_array_spread_inputs(
     provider_closure: &BTreeSet<ChunkId>,
     source: &ChunkSource,
     consumer_selector: &SelectorChunk<'_>,
-    contracts: &[spec::ImportedPrimitiveArraySpreadInputContract],
+    contracts: &[spec::input_contracts::ImportedPrimitiveArraySpreadInputContract],
     graph_provenance: &GraphProvenance,
     prepared: &PreparedCensuses<'_>,
 ) -> Result<(
@@ -800,7 +803,7 @@ pub fn select_one_declared_binding(
         claim.bindings.len() == 1,
         "{request_id}.source_match must select exactly one declared binding"
     );
-    let spec::SourceMatchBinding::Local(local) = &claim.bindings[0] else {
+    let spec::annotations::SourceMatchBinding::Local(local) = &claim.bindings[0] else {
         bail!("{request_id}.source_match does not accept detailed name/rename payloads");
     };
     let mut selectors = source_match_claim_member_selectors(request_id, claim)?;
@@ -1428,7 +1431,7 @@ fn collect_binding_contracts(
 fn collect_no_reentry_contract(
     module: &Module,
     statement: StatementId,
-    assertion: &spec::NoReentryCall,
+    assertion: &spec::annotations::NoReentryCall,
     assumptions: &mut AnalysisAssumptions,
 ) -> Result<()> {
     let Some(ModuleItem::Stmt(swc_ecma_ast::Stmt::Expr(expression_statement))) =
@@ -1517,7 +1520,7 @@ fn collect_binding_annotation_contracts(
     source_only_initializer_bindings: &mut BTreeSet<String>,
     external_initializer_contracts: &mut BTreeMap<String, spec::InitializerExternalEffects>,
     binding: &str,
-    annotation: &spec::BindingAnnotation,
+    annotation: &spec::annotations::BindingAnnotation,
     initializer_targets: &mut InitializerTargets<'_>,
 ) -> Result<()> {
     if annotation.retained_record_factory {
