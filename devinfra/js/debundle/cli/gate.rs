@@ -38,8 +38,7 @@ use ::gate::{
 };
 use analysis::{
     CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DependencyEdgeId,
-    DependencyGraphInput, EdgeRole, EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
-    SourceUnitReport,
+    DependencyGraphInput, EdgeRole, EdgeRoleReport, ModuleKey, Purity,
 };
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
@@ -1222,7 +1221,7 @@ fn recompute_evidence(
                     .clone()
                     .map(|cause| CutEdgeExplanation::Sequenced {
                         cause,
-                        target_source_unit: impure_source_unit_cause(target).map(Box::new),
+                        target_source_unit: target.sequenced_endpoint_cause().map(Box::new),
                     })
             }
             _ => None,
@@ -1237,7 +1236,7 @@ fn recompute_evidence(
             from_binding,
             kind: edge_kind,
             sequenced_source_unit: (edge_kind == DepKind::Sequenced)
-                .then(|| impure_source_unit_cause(source))
+                .then(|| source.sequenced_endpoint_cause())
                 .flatten(),
             explanation,
             commuting_premise: edge.commuting_premise.clone(),
@@ -1245,32 +1244,4 @@ fn recompute_evidence(
     }
     CycleEdge::sort_for_report(&mut out);
     Ok(out)
-}
-
-/// Report-side twin of `analysis::reports::schema::impure_source_unit_cause`
-/// over a `dependency_graph.json.gz` node. Pure nodes are included when their
-/// report carries non-empty heap evidence.
-fn impure_source_unit_cause(node: &SourceUnitReport) -> Option<SequencedSourceUnitCause> {
-    let heap_frontier = node
-        .synchronous_execution
-        .as_ref()
-        .and_then(|execution| execution.heap_frontier.clone());
-    if matches!(&node.purity, Purity::Pure { .. }) && heap_frontier.is_none() {
-        return None;
-    }
-    Some(SequencedSourceUnitCause {
-        source_unit_id: node.id.clone(),
-        binding_names: node
-            .declared_bindings
-            .iter()
-            .map(|binding| binding.binding.clone())
-            .collect(),
-        source_location: node.source_location.clone(),
-        purity: node.purity.clone(),
-        synchronous_execution_complete: node
-            .synchronous_execution
-            .as_ref()
-            .map(|execution| execution.complete),
-        heap_frontier,
-    })
 }
