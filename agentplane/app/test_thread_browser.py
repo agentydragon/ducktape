@@ -344,7 +344,10 @@ def _bodies_read(requests: list[Request]) -> int:
     )
 
 
-async def test_disk_cache_resumes_rows_and_reads_only_the_missing_body(page: Page, navigation: Navigation) -> None:
+async def test_disk_cache_resumes_rows_and_reads_only_the_missing_body(
+    review_view: VisualPage, navigation: Navigation
+) -> None:
+    page = review_view.page
     threads, _, ingress = navigation
     thread = threads[0]
     await page.goto(f"{ingress.url}/#/threads/{thread}")
@@ -366,6 +369,12 @@ async def test_disk_cache_resumes_rows_and_reads_only_the_missing_body(page: Pag
       db.close();
       return ids.length >= 91 && ids.some(id => id.endsWith("window"));
     }""")
+    await page.get_by_role("button", name="Settings", exact=True).click()
+    await page.get_by_role("tab", name="Storage", exact=True).click()
+    storage = page.get_by_role("tabpanel", name="Storage", exact=True)
+    await expect(storage.get_by_text("1 thread window · 90 message bodies", exact=True)).to_be_visible()
+    await review_view.capture(name="settings-thread-cache", target=page.get_by_role("dialog"))
+    await page.keyboard.press("Escape")
     # Drop one complete revision while leaving its row in the saved window.
     await page.evaluate("""async () => {
       const {indexedDB} = await navigator.storageBuckets.open("agentplane-history");

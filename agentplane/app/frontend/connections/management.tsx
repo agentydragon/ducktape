@@ -175,12 +175,6 @@ export function Connections(): JSX.Element {
 
   return (
     <Stack>
-      <Text c="dimmed" size="sm">
-        Named external clients and the Identity they currently act as. A legacy ServiceAccount binding is paused until
-        you explicitly choose a live Identity. Rebinding changes future requests made with existing client tokens;
-        already-submitted Actions retain their original authority. Unlink revokes access without stopping already
-        claimed work.
-      </Text>
       {connection.phase === "reconnecting" && (
         <Text role="status">Connection lost; showing last OAuth clients. Reconnecting…</Text>
       )}
@@ -330,9 +324,7 @@ export function Connections(): JSX.Element {
                       {unlinking?.id === row.id ? (
                         <Alert color="orange" title={`Unlink ${row.displayName}?`}>
                           <Text size="sm">
-                            Revoke this Connection’s active and pending grants. Its name, immutable IDs, and grant
-                            history remain. Already claimed executions are not stopped. Fresh authorization is required
-                            to regain access.
+                            Revokes access until the client is authorized again. Work already claimed will continue.
                           </Text>
                           <Group mt="xs" justify="flex-end">
                             <Button variant="subtle" size="xs" disabled={busy} onClick={() => setUnlinking(null)}>
