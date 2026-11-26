@@ -146,6 +146,28 @@ func TestRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 	}
 }
 
+// The glob sees the request target as the client sent it, escapes included, so a dot segment or an
+// escaped separator is refused before an upstream can resolve it outside the glob.
+func TestAPathAnUpstreamCouldResolveOutsideTheGlobIsRefused(t *testing.T) {
+	l := newLab(t)
+	l.allow(rule("/allowed/**", ""))
+	reached := &seen{}
+	upstream := plainUpstream(t, func(_ http.ResponseWriter, r *http.Request) { reached.set(r.RequestURI) })
+	for _, target := range []string{"/allowed/../secret", "/allowed/%2e%2e/secret", "/allowed/x%2F..%2F..%2Fsecret"} {
+		response := l.send(t, "GET", portOf(upstream), target, nil, nil)
+		if response.StatusCode != 403 || response.Header.Get("x-agentplane-egress") != "denied; reason=path-not-canonical" {
+			t.Errorf("%s: response %d %q", target, response.StatusCode, response.Header.Get("x-agentplane-egress"))
+		}
+		if got := reached.take(); got != "" {
+			t.Errorf("%s reached upstream as %q", target, got)
+		}
+	}
+	if response := l.send(t, "GET", portOf(upstream), "/allowed/x", nil, nil); response.StatusCode != 200 ||
+		reached.take() != "/allowed/x" {
+		t.Errorf("canonical path: response %d", response.StatusCode)
+	}
+}
+
 func TestProxyAuthorizationCannotAuthenticateWithoutAnSVID(t *testing.T) {
 	l := newLab(t)
 	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) { t.Error("request without an SVID reached upstream") })

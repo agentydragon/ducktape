@@ -364,6 +364,30 @@ func TestABlanketDoesNotSendAKnownCredentialToAnotherHostOrPath(t *testing.T) {
 	}
 }
 
+// An upstream that resolves dot segments or decodes an escaped separator would serve a path the glob
+// never saw, so a path-scoped rule refuses them rather than admitting what it matched as sent.
+func TestAPathScopedRuleRefusesAPathAnUpstreamCouldResolveElsewhere(t *testing.T) {
+	index := standardIndex([]*policyapi.PolicySet{policySet("github", githubRule)}, binding("b", "github"))
+	for _, target := range []string{
+		"/repos/o/r/../../other/secret",
+		"/repos/o/r/%2e%2e/%2E%2E/other",
+		"/repos/o/r%2F..%2F..%2Fother",
+		"/repos/o/r/..;/x",
+		"/repos/o/r/./x",
+		"/repos//r",
+		"/repos/o\\..\\x",
+		"/repos/o/r%5cx",
+	} {
+		assertDecision(t, index.Evaluate(caller, outbound(path(target))), Denied{decision.PathNotCanonical})
+	}
+	for _, target := range []string{"/repos/o/r/", "/repos/o/r?next=../x", "/repos/o/r.json", "/repos/o/r%20x"} {
+		assertDecision(t, index.Evaluate(caller, outbound(path(target))), Allowed{Binding: "b", Policy: "github"})
+	}
+	// With no path scope there is nothing for a resolved path to escape.
+	open := standardIndex([]*policyapi.PolicySet{policySet("open", openRule)}, binding("b", "open"))
+	assertDecision(t, open.Evaluate(caller, outbound(path("/a/../b"))), Allowed{Binding: "b", Policy: "open"})
+}
+
 var matrixCredential = secretCredential("matrix-login", "token", resources.JSONField{Field: "password"})
 
 const matrixPath = "/_matrix/client/v3/login"

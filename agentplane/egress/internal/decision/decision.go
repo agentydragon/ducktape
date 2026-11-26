@@ -25,9 +25,12 @@ const (
 	// ImpersonationForbidden is a request decided by a kubernetesServiceAccount credential that
 	// carried impersonation headers of its own.
 	ImpersonationForbidden Reason = "impersonation-forbidden"
-	AddressForbidden       Reason = "address-forbidden"
-	HostUnresolved         Reason = "host-unresolved"
-	Unavailable            Reason = "unavailable"
+	// PathNotCanonical is a request a path-scoped rule matched whose path an upstream could resolve
+	// to another: dot or empty segments, or an escaped separator or dot.
+	PathNotCanonical Reason = "path-not-canonical"
+	AddressForbidden Reason = "address-forbidden"
+	HostUnresolved   Reason = "host-unresolved"
+	Unavailable      Reason = "unavailable"
 )
 
 type Outcome string

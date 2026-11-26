@@ -149,6 +149,11 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   is forwarded, and shows only in the decision log.
 - Hosts match exactly (case-insensitive) or by `*.` suffix, which never matches the apex. Path
   globs match the path without its query: `*` stays within one segment, `**` crosses segments.
+- A glob matches the path as sent, escapes included, and the proxy forwards that path unchanged.
+  So when a path-scoped rule matches, a path an upstream could resolve to another is refused with
+  `path-not-canonical`: one not starting with `/`, or with an empty (`//`), `.` or `..` segment
+  (also before a `;` parameter), a `\`, or an escaped `/`, `\` or `.` (`%2F`, `%5C`, `%2E`). A
+  trailing `/` is allowed. Such a path is admitted only when no matching rule has `paths`.
 - Substitution rebuilds each presented value around the real credential, through the same parse
   that found it, at every target the request presents it in and no others — so a placeholder the
   proxy recognised is never one it forwards. A value of that header the request sent alongside and
@@ -163,7 +168,7 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   `x-agentplane-egress: denied; reason=<reason>`, where reason is one of `token-missing`,
   `token-rejected`, `pod-mismatch`, `no-binding`, `no-rule`,
   `placeholder-unresolved`, `credential-unavailable`, `impersonation-forbidden`, `invalid-body`,
-  `address-forbidden`, `host-unresolved`, `unavailable`.
+  `path-not-canonical`, `address-forbidden`, `host-unresolved`, `unavailable`.
 
 ## Upstream address
 

@@ -341,6 +341,8 @@ func reasonOf(reason decision.Reason) egressadminpb.Decision_Reason {
 		return egressadminpb.Decision_REASON_CREDENTIAL_UNAVAILABLE
 	case decision.ImpersonationForbidden:
 		return egressadminpb.Decision_REASON_IMPERSONATION_FORBIDDEN
+	case decision.PathNotCanonical:
+		return egressadminpb.Decision_REASON_PATH_NOT_CANONICAL
 	case decision.AddressForbidden:
 		return egressadminpb.Decision_REASON_ADDRESS_FORBIDDEN
 	case decision.HostUnresolved:

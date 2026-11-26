@@ -82,6 +82,11 @@ func (i *Index) Evaluate(caller reader.Subject, request Request) Decision {
 	if len(matches) == 0 {
 		return Denied{decision.NoRule}
 	}
+	// A glob checked the path as sent; an upstream that resolves it could serve one outside the glob.
+	if !request.isConnect() && !canonicalPath(request.Path) &&
+		slices.ContainsFunc(matches, func(m match) bool { return m.rule.Paths != nil }) {
+		return Denied{decision.PathNotCanonical}
+	}
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	// A CONNECT is decided on host alone: its headers belong to the tunnel, and the requests
@@ -297,6 +302,28 @@ func ruleMatches(rule resources.Rule, request Request) bool {
 		}
 	}
 	return false
+}
+
+// canonicalPath reports whether the escaped path, without its query, leaves an upstream nothing to
+// resolve: it starts with `/`, has no empty, `.` or `..` segment (also before a `;` parameter), no
+// `\`, and no escaped `/`, `\` or `.`. A trailing `/` is not an empty segment.
+func canonicalPath(target string) bool {
+	path, _, _ := strings.Cut(target, "?")
+	if !strings.HasPrefix(path, "/") || strings.Contains(path, "\\") {
+		return false
+	}
+	lower := strings.ToLower(path)
+	if strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") || strings.Contains(lower, "%2e") {
+		return false
+	}
+	segments := strings.Split(path[1:], "/")
+	for i, segment := range segments {
+		segment, _, _ = strings.Cut(segment, ";")
+		if segment == "." || segment == ".." || (segment == "" && i != len(segments)-1) {
+			return false
+		}
+	}
+	return true
 }
 
 // hostMatches: `*` admits any host; suffix wildcards match subdomains, not the apex;

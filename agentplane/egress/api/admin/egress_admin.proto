@@ -68,6 +68,7 @@ message Decision {
     REASON_UNAVAILABLE = 12;
     // The proxy recorded a reason this schema does not name.
     REASON_UNKNOWN = 13;
+    REASON_PATH_NOT_CANONICAL = 14;
   }
 
   google.protobuf.Timestamp at = 1;
