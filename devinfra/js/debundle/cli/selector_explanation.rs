@@ -7,7 +7,8 @@ use std::path::PathBuf;
 use anyhow::{Result, bail};
 use serde::Serialize;
 use source_inspection::{PreparedSource, StatementRange, StatementRow};
-use source_match::{RangeExplanation, explain_range, template_free_identifiers};
+use source_match::template_free_identifiers;
+use source_match_diagnostics::{RangeExplanation, explain_range};
 
 use crate::selector_input::{SelectedSelector, inline_selector, load_selectors};
 use source_input::resolve_chunk_source_file;

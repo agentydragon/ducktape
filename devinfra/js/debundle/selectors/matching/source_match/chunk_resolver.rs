@@ -18,7 +18,7 @@ type Result<T> = std::result::Result<T, MatcherError>;
 /// Facts for a single top-level statement. Extracts from the borrowed item (one
 /// item being one root) — no per-call clone into a one-item `Module`, which on the
 /// per-selector hot path was the resolver's main overhead over production.
-pub(crate) fn item_facts(item: &ModuleItem) -> Option<chunk_facts::ChunkFacts> {
+pub fn item_facts(item: &ModuleItem) -> Option<chunk_facts::ChunkFacts> {
     chunk_facts::extract_facts_items(std::slice::from_ref(item)).ok()
 }
 
@@ -294,7 +294,7 @@ fn matching_body_indices(
 /// the single-declarator needle against this *is* the per-declarator match: a
 /// needle that matches one declarator of a multi-declarator source_unit is a real match
 /// a whole-statement match would miss.
-pub(super) fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarator) -> ModuleItem {
+pub fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarator) -> ModuleItem {
     let mut cloned = item.clone();
     match &mut cloned {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var.decls = vec![declarator.clone()],

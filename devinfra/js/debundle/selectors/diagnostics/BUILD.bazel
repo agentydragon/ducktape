@@ -21,6 +21,7 @@ rust_library(
     deps = [
         "//devinfra/js/debundle:js_ast",
         "//devinfra/js/debundle/selectors/matching/source_match",
+        "//devinfra/js/debundle/selectors/matching/source_match_diagnostics",
         "//devinfra/js/debundle/spec",
         "//devinfra/js/debundle/spec:spec_modules",
         "@crates//:anyhow",

@@ -14,15 +14,12 @@
 //! - `binding_resolution` — canonical source-match claim expansion.
 //! - `declared_bindings` — declared-binding extraction from AST items.
 //! - `chunk_resolver` — the shape matcher's per-chunk candidate resolver.
-//! - `fact_near_miss` — fact-based `source_match` debt / near-miss diagnostics.
 //! - `free_identifiers` — a template's free (referenced, undeclared) names.
 //! - `anonymous_statement` — anonymous source-match statement validation.
 //! - `holes` — local hole-keyword dispatch over AST nodes.
-//! - `explain` — one explicit source range against one parsed selector.
 
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
-pub(crate) use anyhow::Result;
 pub(crate) use js_ast::item_var_decl;
 pub(crate) use serde::Serialize;
 pub(crate) use spec::{AnonymousStatementSelector, SourceMatchClaim, SourceMatchIdentifierMode};
@@ -39,10 +36,10 @@ pub(crate) use source_match_holes::{
 
 /// The fact matcher's identifier mode for a selector — the single
 /// `SourceMatchIdentifierMode` → `selector_match::Mode` mapping shared by the
-/// resolver (`chunk_resolver`) and the near-miss diagnostics (`fact_near_miss`).
+/// resolver (`chunk_resolver`) and the `source_match_diagnostics` crate.
 /// The two enums mirror each other 1:1 but stay distinct so `selector_match`
 /// (the matcher) needs no dependency on the `spec` authoring schema.
-pub(crate) fn selector_mode(selector: &AnonymousStatementSelector) -> selector_match::Mode {
+pub fn selector_mode(selector: &AnonymousStatementSelector) -> selector_match::Mode {
     match selector.identifiers {
         SourceMatchIdentifierMode::Exact => selector_match::Mode::Exact,
         SourceMatchIdentifierMode::AlphaAll => selector_match::Mode::AlphaAll,
@@ -50,7 +47,7 @@ pub(crate) fn selector_mode(selector: &AnonymousStatementSelector) -> selector_m
 }
 
 /// Keep the matcher's native unsupported cause intact.
-pub(crate) fn unsupported_error(source: selector_match::Unsupported) -> SourceMatchError {
+pub fn unsupported_error(source: selector_match::Unsupported) -> SourceMatchError {
     SourceMatchError::Unsupported { source }
 }
 
@@ -65,11 +62,9 @@ pub(crate) type MatchResult<T> = std::result::Result<T, SourceMatchError>;
 mod anonymous_statement;
 mod binding_resolution;
 pub mod chunk_resolver;
-mod declared_bindings;
-mod explain;
-mod fact_near_miss;
+pub mod declared_bindings;
 mod free_identifiers;
-mod holes;
+pub mod holes;
 mod parse_validate;
 mod preview;
 mod types;
@@ -79,15 +74,8 @@ mod types;
 pub(crate) use anonymous_statement::*;
 pub(crate) use declared_bindings::*;
 pub(crate) use holes::*;
-// Public API for selector parsing, normalization, and diagnostics.
+// Public API for selector parsing and normalization.
 pub use binding_resolution::source_match_claim_member_selectors;
-pub use explain::{
-    ExplainRangeKind, RangeExplanation, RangeExplanationStatus, RangeFailure, RangeFailureCategory,
-    explain_range,
-};
-pub use fact_near_miss::{
-    ItemMatchIndices, SourceMatchDebtRuntime, fact_near_misses, fact_source_match_body_debt,
-};
 pub use free_identifiers::{free_identifiers, template_free_identifiers};
 pub use parse_validate::parse_selector_module;
 pub use preview::source_match_preview;

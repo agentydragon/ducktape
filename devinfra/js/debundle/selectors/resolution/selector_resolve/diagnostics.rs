@@ -50,11 +50,11 @@ pub(crate) fn add_nearest_unclaimed(
         let Some(template) = template else {
             continue;
         };
-        *nearest_unclaimed = source_match::fact_near_misses(
+        *nearest_unclaimed = source_match_diagnostics::fact_near_misses(
             chunk.module,
             chunk
                 .near_miss_indices
-                .get_or_init(|| source_match::ItemMatchIndices::new(chunk.module)),
+                .get_or_init(|| source_match_diagnostics::ItemMatchIndices::new(chunk.module)),
             template,
             unclaimed.iter().copied(),
             NEAREST_UNCLAIMED_MIN_SCORE,

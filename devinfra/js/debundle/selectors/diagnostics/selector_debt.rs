@@ -354,7 +354,7 @@ fn parse_runtime_module(
 struct DebtTally<'a> {
     source_aware: Option<&'a SourceAwareSelectorDebtConfig<'a>>,
     runtime_module: Option<&'a SwcModule>,
-    runtime_debt: std::cell::OnceCell<source_match::SourceMatchDebtRuntime<'a>>,
+    runtime_debt: std::cell::OnceCell<source_match_diagnostics::SourceMatchDebtRuntime<'a>>,
     name_only: Vec<NameOnlySelector>,
     // normalized body -> every occurrence of it.
     by_normalized: BTreeMap<String, Vec<SourceMatchOccurrence>>,
@@ -400,7 +400,7 @@ impl<'a> DebtTally<'a> {
             self.source_aware,
             self.runtime_module.map(|module| {
                 self.runtime_debt
-                    .get_or_init(|| source_match::SourceMatchDebtRuntime::new(module))
+                    .get_or_init(|| source_match_diagnostics::SourceMatchDebtRuntime::new(module))
             }),
             module_path,
             site,
@@ -875,7 +875,7 @@ fn collect_source_aware_debt(
     unique: &mut usize,
     rows: &mut Vec<SourceAwareStructuralSelector>,
     config: Option<&SourceAwareSelectorDebtConfig<'_>>,
-    runtime_debt: Option<&source_match::SourceMatchDebtRuntime<'_>>,
+    runtime_debt: Option<&source_match_diagnostics::SourceMatchDebtRuntime<'_>>,
     module_path: &str,
     site: SelectorSite,
     export_name: Option<String>,
@@ -885,7 +885,7 @@ fn collect_source_aware_debt(
         return Ok(None);
     };
     *checked += 1;
-    let debt = source_match::fact_source_match_body_debt(
+    let debt = source_match_diagnostics::fact_source_match_body_debt(
         runtime_debt,
         module_path,
         selector,
