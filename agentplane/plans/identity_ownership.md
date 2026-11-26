@@ -167,6 +167,13 @@ a PolicyService RPC per authenticated request, which makes the Policy Controller
 all authentication and adds a hop. Consequence: while its view is stale past the grace, a service's
 `policy/reader` reports unavailable, as it does today on an API-server watch failure.
 
+Read-your-writes: a watch view misses an Identity created moments ago, so a launcher's `CreateIdentity`
+then `CreateEnvironment` was refused (#20273 system tests). Interim fix (#20298, operator-approved
+2026-11-26): on a miss in a current view, the cache reads through a reader-only `GetIdentity` that reads
+the API server. Hits stay local; a stale view still refuses. If the record moves into Agentplane's
+database, `CreateIdentity` instead returns only once its transaction has committed and readers' views
+reflect it, and the read-through and `GetIdentity` go (`TODO` in `policy/identitycache/cache.go`).
+
 **State, 2026-11-26.** Landed: the cache (`policy/identitycache`, with `Peer`, `Start` and
 `StandardGrace`); injectable Identity sources in the resolver, `sandboxreader`, `policy/reader` and
 `environments/lifecycle`; an optional `policy_service` settings block (expand) in the MCP edge, History,
@@ -175,7 +182,8 @@ on it in staging (#20240); the operator confirmed the Connection Identity picker
 
 Remaining, in order:
 
-1. Manifests enable `policy_service` for the other seven services once their images are on staging:
+1. Manifests enable `policy_service` for the other seven services (#20273) once their images, with the
+   read-through (#20298), are on staging:
    reader allowlist entries (the Session Dispatcher calls as `spiffe://agentplane/sessions`, its only
    client certificate) and egress where restricted.
 2. Session Dispatcher wake path (`wake` -> `lifecycle.NewPolicy`) takes the cache too.
