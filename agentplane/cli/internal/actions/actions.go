@@ -428,7 +428,7 @@ unlimited). To continue, pass the last item's id as --after.`,
 				}
 				parsedStates = append(parsedStates, state)
 			}
-			items, err := invocation.Collect(limit, after, func(after string, size int) ([]*action_servicepb.ActionRequest, error) {
+			fetch := func(after string, size int) ([]*action_servicepb.ActionRequest, error) {
 				request := &action_servicepb.ListActionRequestsRequest{State: parsedStates}
 				limit := int32(size)
 				request.Limit = &limit
@@ -440,11 +440,8 @@ unlimited). To continue, pass the last item's id as --after.`,
 					return nil, invocation.GRPCFailure(ctx, err)
 				}
 				return response.GetActionRequests(), nil
-			}, requestID)
-			if err != nil {
-				return err
 			}
-			return invocation.ShowProtoPage(a.Invocation, items, limit, requestID, receiptLine, protojson.MarshalOptions{})
+			return invocation.ShowProtoPages(a.Invocation, limit, after, fetch, (*action_servicepb.ActionRequest).GetId, receiptLine, protojson.MarshalOptions{})
 		}),
 	}
 	command.Flags().StringArrayVar(&states, "state", nil, "only requests in this state; repeatable")
@@ -465,8 +462,8 @@ func (a *commands) eventsCommand() *cobra.Command {
 			if after < 0 || after > int(1<<31-1) {
 				return invocation.UsageFailure("--after must be between 0 and 2147483647")
 			}
-			items, err := invocation.Collect(limit, after, func(after, size int) ([]*action_servicepb.ActionEvent, error) {
-				request := &action_servicepb.ListActionRequestEventsRequest{RequestId: args[0], AfterSequence: int32(after)}
+			fetch := func(after int32, size int) ([]*action_servicepb.ActionEvent, error) {
+				request := &action_servicepb.ListActionRequestEventsRequest{RequestId: args[0], AfterSequence: after}
 				limit := int32(size)
 				request.Limit = &limit
 				response, err := client.ListActionRequestEvents(ctx, request)
@@ -474,11 +471,8 @@ func (a *commands) eventsCommand() *cobra.Command {
 					return nil, invocation.GRPCFailure(ctx, err)
 				}
 				return response.GetEvents(), nil
-			}, eventSequence)
-			if err != nil {
-				return err
 			}
-			return invocation.ShowProtoPage(a.Invocation, items, limit, eventSequence, eventLine, protojson.MarshalOptions{})
+			return invocation.ShowProtoPages(a.Invocation, limit, int32(after), fetch, (*action_servicepb.ActionEvent).GetSequence, eventLine, protojson.MarshalOptions{})
 		}),
 	}
 	command.Flags().IntVar(&limit, "limit", invocation.DefaultLimit, "stop after this many items; 0 is unlimited")
@@ -523,12 +517,4 @@ type commands struct{ *invocation.Invocation }
 
 func Command(in *invocation.Invocation) *cobra.Command {
 	return (&commands{Invocation: in}).actionsCommand()
-}
-
-func requestID(request *action_servicepb.ActionRequest) (string, error) {
-	return request.GetId(), nil
-}
-
-func eventSequence(event *action_servicepb.ActionEvent) (int, error) {
-	return int(event.GetSequence()), nil
 }

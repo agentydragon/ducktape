@@ -478,7 +478,7 @@ func (a *commands) subscriptionsCommand() *cobra.Command {
 To continue, pass the last item's id as --after.`,
 		Args: cobra.NoArgs,
 		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, _ []string) error {
-			items, err := invocation.Collect(limit, after, func(after string, _ int) ([]*notificationspb.Subscription, error) {
+			fetch := func(after string, _ int) ([]*notificationspb.Subscription, error) {
 				request := &notificationspb.ListSubscriptionsRequest{}
 				if after != "" {
 					request.AfterId = proto.String(after)
@@ -488,11 +488,8 @@ To continue, pass the last item's id as --after.`,
 					return nil, invocation.GRPCFailure(ctx, err)
 				}
 				return response.GetSubscriptions(), nil
-			}, subscriptionID)
-			if err != nil {
-				return err
 			}
-			return invocation.ShowProtoPage(a.Invocation, items, limit, subscriptionID, subscriptionLine, notificationJSONOptions)
+			return invocation.ShowProtoPages(a.Invocation, limit, after, fetch, (*notificationspb.Subscription).GetId, subscriptionLine, notificationJSONOptions)
 		}),
 	}
 	command.Flags().IntVar(&limit, "limit", invocation.DefaultLimit, "stop after this many items; 0 is unlimited")
@@ -708,10 +705,6 @@ func subscriptionLine(subscription *notificationspb.Subscription) (string, error
 	}
 
 	return line, nil
-}
-
-func subscriptionID(subscription *notificationspb.Subscription) (string, error) {
-	return subscription.GetId(), nil
 }
 
 func sourceLabel(source *notificationspb.Source) string {
