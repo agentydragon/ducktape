@@ -1102,6 +1102,7 @@ lean_proof_test(
         "EsmSplit.CoreJS.JointStatic",
         "EsmSplit.CoreJS.LinkWorld",
         "EsmSplit.CoreJS.LinkedBehaviorExamples",
+        "EsmSplit.CoreJS.LinkedCertificate.Probe",
         "EsmSplit.CoreJS.LinkedCells",
         "EsmSplit.CoreJS.LinkedPivot",
         "EsmSplit.CoreJS.LinkedPivotCertificate",
