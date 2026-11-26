@@ -13,17 +13,12 @@ from cdk8s_plus_34 import (
     ImagePullPolicy,
     MemoryResources,
     PathMapping,
-    Role,
-    RoleBinding,
-    RolePolicyRule,
     Secret,
-    ServiceAccount,
     Volume,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from agentplane.crd_group import GROUP
 from agentplane.mcp_edge.settings import Settings
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
@@ -38,11 +33,10 @@ from cluster.cdk8s.agentplane import actions, app as app_component, database, po
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.mcp_routes import add_public_route
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
-from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
@@ -130,7 +124,6 @@ class McpEdge(Construct):
             operator_services=[APP_URI],
             actions_tls=serving_tls.client_tls(ACTIONS_URI, client_uri=MCP_EDGE_URI),
             actions_target=actions.service(env.namespace).authority,
-            policy_namespace=env.namespace,
             policy_service=PolicyServicePeer(
                 target=policy_controller.tls_service(env.namespace).authority,
                 tls=serving_tls.client_tls(POLICY_CONTROLLER_URI, client_uri=MCP_EDGE_URI),
@@ -149,23 +142,6 @@ class McpEdge(Construct):
             path="/etc/agentplane-mcp-edge/settings.yaml",
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)
-        self._add_rbac(workload.account)
-
-    def _add_rbac(self, account: ServiceAccount) -> None:
-        # ConnectionService is registered even without OAuth, and its Identity informer is a
-        # readiness dependency in every deployment. Keep this read-only role unconditional;
-        # OAuth-specific secrets remain conditional above.
-        namespace = self.env.namespace
-        role = Role(
-            self,
-            "identity-reader-role",
-            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            rules=[RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get", "list", "watch"])],
-        )
-        binding = RoleBinding(
-            self, "identity-reader-rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role
-        )
-        binding.add_subjects(account)
 
     def add_platform_resources(self) -> None:
         namespace = self.env.namespace
@@ -208,7 +184,6 @@ class McpEdge(Construct):
             ],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
-                EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 actions.service(namespace).egress(),
                 policy_controller.tls_service(namespace).egress(),

@@ -136,8 +136,6 @@ class LlmIngress(Construct):
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
                 # A caller's SVID names its WorkloadCredential, read live on every request.
                 RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
-                # An Identity caller's SVID names its Identity, read live in the policy namespace.
-                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get"]),
             ],
         )
         RoleBinding(
@@ -157,7 +155,6 @@ class LlmIngress(Construct):
         )
         static_settings = Settings(
             allowed_service_account_namespaces=frozenset({env.namespace}),
-            policy_namespace=env.namespace,
             policy_service=PolicyServicePeer(
                 target=policy_controller.tls_service(env.namespace).authority,
                 tls=serving_tls.client_tls(POLICY_CONTROLLER_URI, client_uri=LLM_INGRESS_URI),

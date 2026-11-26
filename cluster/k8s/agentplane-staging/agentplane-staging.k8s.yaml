@@ -1687,12 +1687,6 @@ rules:
       - workloadcredentials
     verbs:
       - get
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - identities
-    verbs:
-      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -1741,7 +1735,6 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
-    policy_namespace: agentplane-staging
     policy_service:
       target: policy-controller.agentplane-staging.svc.cluster.local:8083
       tls:
@@ -2198,14 +2191,6 @@ rules:
       - agentplane.allegedly.works
     resources:
       - policybindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - identities
     verbs:
       - get
       - list
@@ -2922,12 +2907,6 @@ rules:
       - workloadcredentials
     verbs:
       - get
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - identities
-    verbs:
-      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -3203,7 +3182,6 @@ data:
       auth:
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-    policy_namespace: agentplane-staging
     policy_service:
       target: policy-controller.agentplane-staging.svc.cluster.local:8083
       tls:
@@ -9319,7 +9297,6 @@ data:
     operator_services:
       - spiffe://agentplane/app
     actions_target: actions.agentplane-staging.svc.cluster.local:8080
-    policy_namespace: agentplane-staging
     policy_service:
       target: policy-controller.agentplane-staging.svc.cluster.local:8083
       tls:
@@ -9339,36 +9316,6 @@ data:
     max_wait_seconds: 30
     direct_wait_seconds: 30
 immutable: false
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: mcp-edge
-  namespace: agentplane-staging
-rules:
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - identities
-    verbs:
-      - get
-      - list
-      - watch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: mcp-edge
-  namespace: agentplane-staging
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: mcp-edge
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: mcp-edge
-    namespace: agentplane-staging
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -9471,8 +9418,6 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
-    - toEntities:
-        - kube-apiserver
     - toEndpoints:
         - matchLabels:
             k8s:cnpg.io/cluster: postgres
@@ -9910,14 +9855,6 @@ rules:
       - agentplane.allegedly.works
     resources:
       - policybindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - identities
     verbs:
       - get
       - list

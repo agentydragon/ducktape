@@ -137,8 +137,6 @@ def test_pod_profile_omits_mcp_edge_database_and_keeps_app_and_action_flows(runf
     assert ("ConfigMap", "mcp-edge-settings") in removed
     assert ("ServiceAccount", "mcp-edge") in removed
     assert ("Service", "mcp-edge") in removed
-    assert ("Role", "mcp-edge") in removed
-    assert ("RoleBinding", "mcp-edge") in removed
     assert ("Secret", "postgres-mcp-edge") in removed
     assert all(name.startswith("mcp-edge") or name == "postgres-mcp-edge" for _, name in removed)
     _resource(pod.objects, "Deployment", "app")
@@ -169,8 +167,6 @@ def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfile
         "agentplane-mcp-edge:" in container["image"] for container in edge["spec"]["template"]["spec"]["containers"]
     )
     _resource(fixture.objects, "ConfigMap", "mcp-edge-settings")
-    _resource(fixture.objects, "Role", "mcp-edge")
-    _resource(fixture.objects, "RoleBinding", "mcp-edge")
 
 
 def test_native_vm_fixture_runs_both_guest_templates_without_app(runfiles: Runfiles) -> None:
@@ -547,7 +543,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(mcp_fixture: rende
     clients = {client["id"]: client for client in operator_config["staticClients"]}
     assert clients[edge_oauth.upstream_client_id]["redirectURIs"] == [f"{_MCP.mcp_edge_origin}/auth/callback"]
     assert clients["test-mcp-linkage"]["redirectURIs"] == [f"{_MCP.app_origin}/mcp-linkage/callback"]
-    assert edge_config["policy_namespace"] == fixture.namespace
     caller = _resource(docs, "Identity", "mcp-edge-test-caller")
     assert caller["metadata"]["namespace"] == fixture.namespace
     binding = _resource(docs, "PolicyBinding", "mcp-edge-test-caller")
@@ -561,10 +556,6 @@ def test_direct_fixture_uses_sessions_and_embedded_migrations(mcp_fixture: rende
             "type": "action_auto_approve",
             "policy": {"type": "exact_actions", "actions": {"environments": ["list", "get"], "sessions": ["create"]}},
         }
-    ]
-
-    assert _resource(docs, "Role", "mcp-edge")["rules"] == [
-        {"apiGroups": ["agentplane.allegedly.works"], "resources": ["identities"], "verbs": ["get", "list", "watch"]}
     ]
 
 
@@ -805,7 +796,6 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert llm_env[LlmIngressSettings.litellm_key_env]["valueFrom"]["secretKeyRef"]["key"] == "api-key"
     llm_config = yaml.safe_load(_resource(docs, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
     assert llm_config["allowed_service_account_namespaces"] == [NAMESPACE]
-    assert llm_config["policy_namespace"] == NAMESPACE
     assert llm_config["central_sampler_identity_callers"] is True
     assert llm_config["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
     assert {mode["mode"] for mode in llm_config["rpc"]["auth"]} == {"spiffe"}
