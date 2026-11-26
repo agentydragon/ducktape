@@ -21,7 +21,7 @@ unit. In particular an export-only row has no declaration of its own. -/
 def DefinitionsPresent (body : List (Nat × Stmt)) (B : EsmSplit.Bundle) : Prop :=
   ∀ id, id < B.length → ∀ name ∈ (B.stmt id).defs, ∃ stmt, body.lookup id = some stmt
 
-/-- Each actual generated import resolves to the source's live cell and the
+/-- Each generated import resolves to the source scope address and the
 original declaration owner, retaining its original source ID. -/
 theorem import_cell {body : List (Nat × Stmt)} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
     {P : EsmSplit.Plan} {program : Program} {emit : EsmSplit.Module → Module}
