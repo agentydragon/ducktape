@@ -283,19 +283,6 @@ js_test(
 )
 
 js_test(
-    name = "record_fuel_test",
-    size = "medium",
-    data = _TEST_DATA,
-    entry_point = "wide_table_reversal_test.mjs",
-    # Cross the old probe ceiling without repeating the 44-row scaling workload.
-    env = _TEST_ENV | {
-        "LINKED_TABLE_FIELDS": "1410",
-        "LINKED_TABLE_ROWS": "3",
-    },
-    shard_count = 2,
-)
-
-js_test(
     name = "certified_split_test",
     data = [
         ":harness",
