@@ -337,11 +337,6 @@ bbr test "$p/translation/linked:wide_table_reversal_test" "$p/translation/linked
 
 Compare the same fixture, proof mode and runner across revisions. Record peak memory separately from the phase times.
 
-### Historical diagnostic preview
-
-The former `--diagnostic` emitter has been removed. The model theorems and
-proof inventory remain available for build-time checks.
-
 ## What is proved
 
 The abstract theorem below applies to a plan and its stated footprints. No verdict states it
