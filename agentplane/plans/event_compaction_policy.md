@@ -88,11 +88,20 @@ stored version also declares a hard entry-count limit. T and N are writer settin
    leaving the entries ordinary. Keep the cheaper admissible representation. Incompressible data
    must neither cause a retry loop nor fragment an otherwise packable suffix.
 
-Seed the experiment as follows; these are controls and comparison points, **not measured optima**:
+The [ordered-window sweep](../debug/2026_11_25_postgres_event_compaction.md#grouping-and-sealing-on-ordered-journal-windows)
+gives concrete starting profiles: **64 KiB / 128 entries, session order, for Sampler** and
+**64 KiB / 32 entries, per kind, for History**. The Sampler profile cut block count from 128
+to 56 compared with the 2 MiB / 32 control while keeping mean point decode within 2 KiB.
+The History profile trades a 4.0% encoded size premium over the smallest same-kind arm for
+about one ninth of its mean point decode. Test 64 KiB / 256 if the extra index rows or scans
+dominate real History read costs. Treat these as recommendations for the physical storage trial;
+a block-size floor was not established, and the tool-catalog change can move the optimum.
+
+Carry these controls and challengers into the remaining trials:
 
 | Service | Control to retain for now                                                  | Candidate targets (KiB decoded) | Count and codec comparisons                                                                |
 | ------- | -------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
-| Sampler | Current 2 MiB hard bound, 32 frames, best-speed gzip                       | 128, 256, 512, 1024, 2048       | 32 vs 128; current layout at level 6 as the measured size control; zstd 1 and 3            |
+| Sampler | Current 2 MiB hard bound, 32 frames, best-speed gzip                       | 64, 128, 256, 512, 1024, 2048   | 32 vs 128; current layout at level 6 as the measured size control; zstd 1 and 3            |
 | History | Current 128 KiB hard bound, 256 entries, default gzip; keep existing reads | 64, 128, 256, 512, 1024         | 32 vs 256; include crossing singleton, with and without catalog reuse; same codec controls |
 
 Do not derive H from the winning target. Set H from the reader's peak memory budget divided by
