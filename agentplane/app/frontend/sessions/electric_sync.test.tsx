@@ -1080,6 +1080,7 @@ it("reads only what changed when the reader comes back to a thread, keeping the 
   const sync = stubSync();
   const threads = createElectricThreadSync();
   const { container, reading } = await pagedThread(sync, threads);
+  const retainedItems = itemsShown(container);
   await switchThread(threads, "other", itemsView);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
   const left = sync.requests.length;
@@ -1088,8 +1089,8 @@ it("reads only what changed when the reader comes back to a thread, keeping the 
   sync.through = "71";
   await switchThread(threads, "thread", itemsView);
   await vi.waitFor(() => expect(since(sync, left, "thread").some((request) => request.path === "entities")).toBe(true));
-  // The rows held stop short of the thread, so they are not shown as the thread.
-  expect(itemsShown(container)).toEqual([]);
+  // The saved pages stay visible until the live log delivers the new item.
+  expect(itemsShown(container)).toEqual(retainedItems);
 
   await sync.send("entities", (relation) => [
     change(relation, "update", viewState("71")),
