@@ -1,7 +1,5 @@
 //! Prepares source-backed synchronous-call evidence and annotates call effects.
 
-use super::super::execution_index::intrinsic_roots::native_own_data_read_slots;
-use super::super::execution_index::{Call, CallKind, ExecutionIndex, native_call_identity_key};
 use super::{
     CallbackFallbackSummary, ExecutionInputs, ExecutionState, ExportCallbackMemos, Outcome,
 };
@@ -19,6 +17,8 @@ use analysis_vocabulary::inputs::{
 };
 use analysis_vocabulary::purity::Effects;
 use analysis_vocabulary::value::{Kind, Value};
+use execution_index::intrinsic_roots::native_own_data_read_slots;
+use execution_index::{Call, CallKind, ExecutionIndex, native_call_identity_key};
 use imbl::OrdMap;
 use inference::{FactContext, IterativeInference, IterativeRules};
 use purity::ChunkCodeGraph;
@@ -575,7 +575,7 @@ pub fn prepare_synchronous_call_index_with_source_facts(
     let facts = index.prepare_semantic_facts(
         flow,
         shadowed,
-        super::super::execution_index::SemanticShapeInputs {
+        execution_index::SemanticShapeInputs {
             classes,
             sets: set_iterable_shapes,
             array_spreads: &stable_array_spread_shapes,

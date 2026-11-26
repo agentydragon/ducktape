@@ -17,7 +17,7 @@ use world::descriptor_heap::{DescriptorApplication, DescriptorHeap, DynamicKeyDe
 
 /// One heap mutation of an admitted row, fully materialized by `plan`.
 #[derive(Debug, Clone)]
-pub(crate) enum NativeOperationCommit {
+pub enum NativeOperationCommit {
     /// `SetIntegrityLevel(frozen)`: the literal writability witness of every
     /// object operand is gone. Values are unchanged.
     Integrity {
@@ -47,14 +47,14 @@ pub(crate) enum NativeOperationCommit {
 }
 
 /// The fresh array an iteration row creates, after every callback ran.
-pub(crate) enum IterationResultArray {
+pub enum IterationResultArray {
     Slots(Vec<Values>),
     Contents(Values),
 }
 
 /// Materialize an iteration row's fresh result at `allocation`, the
 /// result-array identity the execution index assigned to the call site.
-pub(crate) fn plan_iteration_result(
+pub fn plan_iteration_result(
     allocation: u32,
     result: IterationResultArray,
     revision: u64,
@@ -81,7 +81,7 @@ pub(crate) fn plan_iteration_result(
 /// A complete native operation after its callee, operands and current-prefix
 /// preconditions have been checked, but before any mutation.
 #[derive(Debug, Clone)]
-pub(crate) struct CheckedNativePlan {
+pub struct CheckedNativePlan {
     expected_revision: u64,
     commits: Vec<NativeOperationCommit>,
     /// The fresh allocation the commits create, when the row returns one.
@@ -89,11 +89,11 @@ pub(crate) struct CheckedNativePlan {
 }
 
 /// The prefix changed between planning and execution; nothing was committed.
-pub(crate) struct StalePlan;
+pub struct StalePlan;
 
 /// Adapter-owned prefix state. Implementations apply a checked commit exactly
 /// once and cannot turn it into a post-entry refusal.
-pub(crate) trait NativeOperationContext {
+pub trait NativeOperationContext {
     fn native_operation_revision(&self) -> u64;
     fn descriptor_heap(&mut self) -> DescriptorHeap<'_>;
 }
@@ -102,7 +102,7 @@ pub(crate) trait NativeOperationContext {
 /// `projection` is the admitted own-property proof of the inspected operand,
 /// `application` and `definition` the admitted definitions onto their
 /// targets; a row that needs one without having it was not admitted.
-pub(crate) fn plan(
+pub fn plan(
     row: &Row,
     site: CallSite,
     arguments: &[Values],
@@ -178,7 +178,7 @@ pub(crate) fn plan(
 
 /// The one commit implementation for every adapter: apply each materialized
 /// mutation to the borrowed prefix heap.
-pub(crate) fn commit(heap: &mut DescriptorHeap<'_>, commit: NativeOperationCommit) {
+pub fn commit(heap: &mut DescriptorHeap<'_>, commit: NativeOperationCommit) {
     match commit {
         NativeOperationCommit::Integrity { targets } => {
             for target in targets {
@@ -209,7 +209,7 @@ pub(crate) fn commit(heap: &mut DescriptorHeap<'_>, commit: NativeOperationCommi
 
 /// Reject a stale plan before touching the prefix; otherwise commit every
 /// mutation once and return the fresh allocation's values, if the row has one.
-pub(crate) fn execute(
+pub fn execute(
     context: &mut impl NativeOperationContext,
     plan: CheckedNativePlan,
 ) -> Result<Option<Values>, StalePlan> {

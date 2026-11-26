@@ -9,7 +9,7 @@ use super::receiver_flow::{
 use super::*;
 
 impl ExecutionIndex {
-    pub(crate) fn validated_native_operation_inputs(&self) -> Vec<ResolvedNativeOperationInput> {
+    pub fn validated_native_operation_inputs(&self) -> Vec<ResolvedNativeOperationInput> {
         self.resolved_native_operation_inputs.clone()
     }
 
@@ -208,7 +208,7 @@ impl ExecutionIndex {
     }
 
     /// The author and host premises the completed census consumed.
-    pub(crate) fn native_integrity_dependencies(&self) -> ProofDependencies {
+    pub fn native_integrity_dependencies(&self) -> ProofDependencies {
         let bundle_globals = self
             .native_integrity_host_behavior
             .contains(&HostBehaviorKey::PredefinedGlobals);
@@ -234,7 +234,7 @@ impl ExecutionIndex {
 
     /// The completed census as slot flags, with the `IntrinsicIntact` axioms
     /// of every validated native input.
-    pub(crate) fn integrity_flags(&self) -> IntegrityFlags {
+    pub fn integrity_flags(&self) -> IntegrityFlags {
         IntegrityFlags::new(
             self.dynamic_scope_owners.is_empty(),
             self.mutated_intrinsic_roots.clone(),
@@ -311,7 +311,7 @@ impl ExecutionIndex {
             .collect()
     }
 
-    pub(crate) fn prepare_semantic_facts(
+    pub fn prepare_semantic_facts(
         &self,
         flow: &ChunkValueFlow,
         shadowed: &BTreeSet<&'static str>,
@@ -1242,11 +1242,7 @@ impl ExecutionIndex {
             })
     }
 
-    pub(crate) fn direct_freeze_return_call(
-        &self,
-        binding: &Id,
-        selected_span: Span,
-    ) -> Option<Call> {
+    pub fn direct_freeze_return_call(&self, binding: &Id, selected_span: Span) -> Option<Call> {
         if !self.direct_top_level_functions.contains(binding) {
             return None;
         }

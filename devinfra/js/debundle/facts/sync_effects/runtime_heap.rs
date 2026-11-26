@@ -1,7 +1,7 @@
 //! Heap and native-operation transfers over one settled execution snapshot.
 
-use super::execution_index::{CallKind, MemberValueWrite};
 use super::interpreter::{Executor, NativeCallResolution};
+use execution_index::{CallKind, MemberValueWrite};
 use std::collections::BTreeSet;
 use value_model::{CallSite, Context, ValueExpr, Values};
 use world::allocation_transfer::{NativeIterableReceipt, NativeIterableUse};
