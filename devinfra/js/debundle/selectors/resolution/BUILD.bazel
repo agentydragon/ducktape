@@ -74,8 +74,8 @@ rust_test(
 
 rust_library(
     name = "selector_constraint_backend",
-    srcs = ["selector_constraint_backend.rs"],
-    crate_root = "selector_constraint_backend.rs",
+    srcs = glob(["selector_constraint_backend/**/*.rs"]),
+    crate_root = "selector_constraint_backend/lib.rs",
     edition = "2024",
     deps = [
         ":selector_ir",
