@@ -186,9 +186,6 @@ pub use analyze::{
     complete_chunk_structural_with_flow, complete_chunk_structural_with_inputs,
     module_has_top_level_await,
 };
-pub use evaluation_effects::{
-    GlobalAccessEvidence, GlobalAccessKind, GlobalAccessSite, GlobalMayAccess,
-};
 pub use initialization_effects::{
     InitializationEffectEvidence, InitializationEffects, OwnerInitializationCoverageRefusal,
     OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptCounts, RootAttemptRewind,

@@ -4,7 +4,6 @@
 //! operation in those terms.
 
 pub mod builtins;
-pub mod foreign_call;
 pub mod heap;
 pub mod integrity;
 pub mod primitive;

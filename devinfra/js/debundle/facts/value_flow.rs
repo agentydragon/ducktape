@@ -92,10 +92,10 @@ pub(crate) fn native_set_allocation_roots(
 }
 
 pub(crate) struct CallTargets {
-    pub bindings: BTreeSet<Id>,
+    pub(crate) bindings: BTreeSet<Id>,
     /// Every possible value has a canonical callable binding. Otherwise a
     /// direct identifier's syntactic target must retain its opaque fallback.
-    pub complete: bool,
+    pub(crate) complete: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

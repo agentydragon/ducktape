@@ -22,18 +22,18 @@ pub enum GlobalAccessKind {
 /// A physical source operation, independent of graph IDs and runtime replay.
 /// The containing chunk supplies the source-file scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct GlobalAccessSite {
-    pub lexical_owner: SourceUnitOrdinal,
-    pub start: u32,
-    pub end: u32,
-    pub access: GlobalAccessKind,
-    pub property: String,
+pub(crate) struct GlobalAccessSite {
+    pub(crate) lexical_owner: SourceUnitOrdinal,
+    pub(crate) start: u32,
+    pub(crate) end: u32,
+    pub(crate) access: GlobalAccessKind,
+    pub(crate) property: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct GlobalAccessEvidence {
-    pub dependencies: ProofDependencies,
-    pub assumptions: Vec<AssumedEffectReason>,
+pub(crate) struct GlobalAccessEvidence {
+    pub(crate) dependencies: ProofDependencies,
+    pub(crate) assumptions: Vec<AssumedEffectReason>,
 }
 
 impl GlobalAccessEvidence {
@@ -53,9 +53,9 @@ impl GlobalAccessEvidence {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct GlobalMayAccess {
-    pub site: GlobalAccessSite,
-    pub evidence: GlobalAccessEvidence,
+pub(crate) struct GlobalMayAccess {
+    pub(crate) site: GlobalAccessSite,
+    pub(crate) evidence: GlobalAccessEvidence,
 }
 
 impl GlobalAccessEvidence {
@@ -69,7 +69,7 @@ impl GlobalAccessEvidence {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EvaluationEffects {
-    pub global_accesses: BTreeMap<GlobalAccessSite, GlobalAccessEvidence>,
+    pub(crate) global_accesses: BTreeMap<GlobalAccessSite, GlobalAccessEvidence>,
 }
 
 impl EvaluationEffects {
