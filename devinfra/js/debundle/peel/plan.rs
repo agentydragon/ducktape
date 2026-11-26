@@ -1183,22 +1183,15 @@ fn patch_plan_rows(
                 .map(str::to_owned)
                 .chain(resolved.bindings)
                 .collect();
-            let requested_binding_ids: Vec<String> = claimed_bindings.iter().cloned().collect();
-
-            let mut requested_source_unit_ids = BTreeSet::<String>::new();
-            let mut unknown_binding_ids = Vec::<String>::new();
-            for binding in &requested_binding_ids {
-                if let Some(source_unit_ids) = binding_to_source_units.get(binding) {
-                    requested_source_unit_ids.extend(source_unit_ids.iter().cloned());
-                } else {
-                    unknown_binding_ids.push(binding.clone());
-                }
-            }
-            for source_unit in &resolved.anonymous_source_units {
-                if let Some(node) = graph.nodes.get(source_unit.0) {
-                    requested_source_unit_ids.insert(node.id.clone());
-                }
-            }
+            let ResolvedSelection {
+                source_unit_ids: requested_source_unit_ids,
+                unknown_binding_ids,
+            } = resolve_claimed_units(
+                graph,
+                &binding_to_source_units,
+                claimed_bindings.iter().map(String::as_str),
+                &resolved.anonymous_source_units,
+            );
 
             let mut atomic_group_ids: BTreeSet<String> = BTreeSet::new();
             for source_unit_id in &requested_source_unit_ids {
@@ -1263,7 +1256,7 @@ fn patch_plan_rows(
                 path: patch_set.path,
                 file: patch_set.file.display().to_string(),
                 status,
-                requested_binding_ids,
+                requested_binding_ids: claimed_bindings.into_iter().collect(),
                 unknown_binding_ids,
                 atomic_group_ids: atomic_group_ids.into_iter().collect(),
                 complete_atomic_group_ids,
@@ -1422,17 +1415,10 @@ fn resolve_source_unit_ids(
             }
         }
         SelectionKind::ModulePath(module_path) => {
-            let (resolved, unknown) = resolve_module_path_source_unit_ids(
-                graph,
-                context.common,
-                context.source_root,
-                context.source_context,
-                module_path,
-                context.module_files,
-                diagnostics,
-            )?;
-            unknown_binding_ids = unknown;
-            resolved
+            let resolved =
+                resolve_module_path_source_unit_ids(graph, context, module_path, diagnostics)?;
+            unknown_binding_ids = resolved.unknown_binding_ids;
+            resolved.source_unit_ids
         }
         SelectionKind::Module(module_id) => {
             let source_unit_ids: BTreeSet<String> = graph
@@ -1474,19 +1460,16 @@ fn resolve_source_unit_ids(
     })
 }
 
-/// Resolve a module-path selection to `(source_unit_ids, unknown_binding_ids)`.
-/// Bindings the YAML claims but the dependency graph does not declare are
-/// returned (not swallowed) so callers can surface partial misses;
-/// only the all-unknown case is a hard error.
+/// Preserve partial misses for the report. A module with only unknown binding IDs
+/// gets a diagnostic that names them.
 fn resolve_module_path_source_unit_ids(
     graph: &DependencyGraphReport,
-    common: &CommonArgs,
-    source_root: Option<&Path>,
-    source_context: Option<&VerifiedGraphSourceContext>,
+    context: &ResolveSourceUnitContext<'_>,
     module_path: &str,
-    module_files: &[PathBuf],
     diagnostics: &analysis::diagnostics::Diagnostics,
-) -> Result<(BTreeSet<String>, Vec<String>)> {
+) -> Result<ResolvedSelection> {
+    let common = context.common;
+    let module_files = context.module_files;
     // The module's claims resolve jointly with every other module's, as in
     // `run`.
     let all_claims = module_files
@@ -1507,8 +1490,8 @@ fn resolve_module_path_source_unit_ids(
             graph,
             dependency_graph_path: &common.dependency_graph_path,
             modules_root: &common.modules_root,
-            source_root,
-            source_context,
+            source_root: context.source_root,
+            source_context: context.source_context,
             diagnostics,
         },
         &module_files
@@ -1521,33 +1504,47 @@ fn resolve_module_path_source_unit_ids(
             .collect::<Vec<_>>(),
         index,
     )?;
-    let binding_to_source_units = binding_to_source_units(graph);
-    let mut source_unit_ids = BTreeSet::<String>::new();
-    let mut unknown_binding_ids = Vec::<String>::new();
     let pins = claims.binding_pins().collect::<BTreeSet<_>>();
-    for binding in pins
-        .into_iter()
-        .chain(resolved.bindings.iter().map(String::as_str))
-    {
-        if let Some(binding_source_unit_ids) = binding_to_source_units.get(binding) {
-            source_unit_ids.extend(binding_source_unit_ids.iter().cloned());
+    let selection = resolve_claimed_units(
+        graph,
+        &binding_to_source_units(graph),
+        pins.into_iter()
+            .chain(resolved.bindings.iter().map(String::as_str)),
+        &resolved.anonymous_source_units,
+    );
+    if selection.source_unit_ids.is_empty() && !selection.unknown_binding_ids.is_empty() {
+        bail!(
+            "module {module_path:?} declares bindings that do not appear in the dependency graph: {}",
+            selection.unknown_binding_ids.join(", ")
+        );
+    }
+    Ok(selection)
+}
+
+fn resolve_claimed_units<'a>(
+    graph: &DependencyGraphReport,
+    binding_to_source_units: &BTreeMap<String, Vec<String>>,
+    bindings: impl IntoIterator<Item = &'a str>,
+    anonymous_source_units: &BTreeSet<source_identity::SourceUnitId>,
+) -> ResolvedSelection {
+    let mut source_unit_ids = BTreeSet::new();
+    let mut unknown_binding_ids = Vec::new();
+    for binding in bindings {
+        if let Some(ids) = binding_to_source_units.get(binding) {
+            source_unit_ids.extend(ids.iter().cloned());
         } else {
             unknown_binding_ids.push(binding.to_owned());
         }
     }
-    for source_unit in &resolved.anonymous_source_units {
-        if let Some(node) = graph.nodes.get(source_unit.0) {
+    for unit in anonymous_source_units {
+        if let Some(node) = graph.nodes.get(unit.0) {
             source_unit_ids.insert(node.id.clone());
         }
     }
-
-    if source_unit_ids.is_empty() && !unknown_binding_ids.is_empty() {
-        bail!(
-            "module {module_path:?} declares bindings that do not appear in the dependency graph: {}",
-            unknown_binding_ids.join(", ")
-        );
+    ResolvedSelection {
+        source_unit_ids,
+        unknown_binding_ids,
     }
-    Ok((source_unit_ids, unknown_binding_ids))
 }
 
 fn binding_homes(modules_root: &Path, module_files: &[PathBuf]) -> Result<Vec<BindingHomeReport>> {
