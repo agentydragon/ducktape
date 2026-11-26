@@ -143,15 +143,11 @@ func newRoutes(webhookHandler http.Handler) http.Handler {
 // serve answers until ctx ends or a worker or a listener fails: the gRPC servicers and signed webhook.
 func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
 	// The namespace holds the workload credentials and their live Identity subjects.
-	identities, err := auth.NewKubernetesIdentityUIDs(deps.Policies, c.Namespace)
+	identities, err := auth.KubernetesIdentityUIDs(deps.Sandboxes, c.Namespace)
 	if err != nil {
 		return err
 	}
 	callers, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, identities)
-	if err != nil {
-		return err
-	}
-	identities, err := auth.KubernetesIdentityUIDs(deps.Sandboxes, c.Namespace)
 	if err != nil {
 		return err
 	}
