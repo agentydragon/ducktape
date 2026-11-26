@@ -1569,11 +1569,11 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     Ok((
                         candidate
                             .bindings
-                            .iter()
+                            .into_iter()
                             .map(|(local, matched)| {
                                 Ok((
-                                    local.clone(),
-                                    member_place(places, matched.body_idx, &matched.binding)?,
+                                    local,
+                                    member_place(places, matched.body_idx, matched.binding)?,
                                 ))
                             })
                             .collect::<Result<BTreeMap<_, _>, ProjectionError>>()?,
@@ -1667,7 +1667,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .into_iter()
             .map(|matched| {
                 Ok(CollectedRow {
-                    places: vec![member_place(places, matched.body_idx, &matched.binding)?],
+                    places: vec![member_place(places, matched.body_idx, matched.binding)?],
                     free_bindings: matched.free_bindings,
                 })
             })
@@ -2763,9 +2763,8 @@ fn bound(place: &Place) -> (SourceUnitId, String) {
 fn member_place(
     places: &Places,
     body_idx: usize,
-    matched: &source_match::ResolvedMemberBinding,
+    binding: String,
 ) -> Result<Place, ProjectionError> {
-    let binding = matched.binding_name.clone();
     let matched_source_unit = places
         .source_unit_by_body_and_binding
         .get(&(body_idx, binding.clone()))

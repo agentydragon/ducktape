@@ -82,9 +82,9 @@ fn cover_object_slot(
                 return Ok((true, usize::MAX));
             };
             // Object ranking distinguishes the declaration as well as the binding.
-            let target_unresolved = !matches.iter().any(|m| {
-                m.body_idx == decl.body_idx && m.binding.binding_name == target.runtime_binding
-            });
+            let target_unresolved = !matches
+                .iter()
+                .any(|m| m.body_idx == decl.body_idx && m.binding == target.runtime_binding);
             Ok((target_unresolved, matches.len()))
         },
     )?;

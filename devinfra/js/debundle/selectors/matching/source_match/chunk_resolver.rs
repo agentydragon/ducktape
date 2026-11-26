@@ -92,7 +92,7 @@ struct VarDeclaratorSubject {
 
 struct DeclaratorMatch {
     body_idx: usize,
-    declared: Vec<ResolvedMemberBinding>,
+    declared: Vec<String>,
     free_bindings: BTreeMap<String, String>,
 }
 
@@ -306,28 +306,6 @@ pub(super) fn single_declarator_item(item: &ModuleItem, declarator: &VarDeclarat
         _ => {}
     }
     cloned
-}
-
-fn declared_target_index(
-    declared: &[ResolvedMemberBinding],
-    request_id: &str,
-    selector: &AnonymousStatementSelector,
-    target: &str,
-) -> Result<usize> {
-    let indices: Vec<_> = declared
-        .iter()
-        .enumerate()
-        .filter_map(|(index, binding)| (binding.binding_name == target).then_some(index))
-        .collect();
-    let problem = match indices.as_slice() {
-        [index] => return Ok(*index),
-        [] => BindingProblem::NotDeclared,
-        _ => BindingProblem::Ambiguous {
-            index_kind: ProjectionIndexKind::StatementBinding,
-            indices: indices.into_iter().map(|index| (0, index)).collect(),
-        },
-    };
-    Err(SourceMatchError::binding(request_id, selector, target, problem).into())
 }
 
 /// Collect every single-declarator var-decl member match: the needle's
@@ -574,7 +552,7 @@ fn member_matches_multi(
         selector_binding_location(needles, request_id, selector, target_binding)?;
     // A single-declarator var-decl target is matched per-declarator within the
     // contiguous window (so a target inside a multi-declarator source_unit is found).
-    if selector_single_var_declarator(&needles[target_item_idx]).is_some() {
+    if selector_has_single_var_declarator(&needles[target_item_idx]) {
         return member_matches_single_declarator_target_window(
             chunk,
             needles,
@@ -733,7 +711,7 @@ fn group_matches_single_declarator(
             declared_target_index(&declared, request_id, selector, target)
                 .map(|index| (target, index))
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<MatchResult<Vec<_>>>()?;
     let needle_facts = needle_item_facts(needle)?;
     let needle_index = selector_match::Index::build(&needle_facts);
     let free = free_identifiers([&needle_index]);
@@ -786,7 +764,7 @@ fn candidate_target_binding(
     selector: &AnonymousStatementSelector,
     target: &str,
     target_binding_idx: usize,
-) -> Result<ResolvedMemberBinding> {
+) -> Result<String> {
     let item = &chunk.module.body[body_idx];
     let (Some(needle_var), Some(candidate_var)) = (item_var_decl(needle), item_var_decl(item))
     else {
@@ -981,7 +959,7 @@ impl ChunkResolver<'_> {
         parsed: &ParsedSourceMatchSelector,
     ) -> Result<Vec<BTreeMap<String, String>>> {
         if let [needle] = parsed.body()
-            && selector_single_var_declarator(needle).is_some()
+            && selector_has_single_var_declarator(needle)
         {
             let declared = parsed.declared_binding_names();
             if !declared.is_empty() {
@@ -1029,7 +1007,7 @@ impl ChunkResolver<'_> {
         if selector_var_decl_has_declarator_holes(needle) {
             return member_matches_declarator_hole(self, needle, request_id, selector);
         }
-        if selector_single_var_declarator(needle).is_some() {
+        if selector_has_single_var_declarator(needle) {
             return member_matches_var_declarator(self, needle, request_id, selector);
         }
         member_matches_single_statement(self, needle, request_id, selector)
@@ -1082,7 +1060,7 @@ impl ChunkResolver<'_> {
                 })
                 .collect());
         }
-        if needles.len() == 1 && selector_single_var_declarator(first).is_some() {
+        if needles.len() == 1 && selector_has_single_var_declarator(first) {
             return group_matches_single_declarator(
                 self,
                 first,
@@ -1194,7 +1172,7 @@ mod tests {
             .member_candidates("test", &parse(selector))
             .expect("member candidates")
             .into_iter()
-            .map(|matched| matched.binding.binding_name)
+            .map(|matched| matched.binding)
             .collect()
     }
 
@@ -1234,8 +1212,8 @@ mod tests {
                 &exports(&[("a", "ExportA"), ("b", "ExportB")]),
             );
             assert_eq!(candidates.len(), 1);
-            assert_eq!(candidates[0].bindings["a"].binding.binding_name, "aClass");
-            assert_eq!(candidates[0].bindings["b"].binding.binding_name, "bClass");
+            assert_eq!(candidates[0].bindings["a"].binding, "aClass");
+            assert_eq!(candidates[0].bindings["b"].binding, "bClass");
         });
     }
 
@@ -1253,8 +1231,8 @@ mod tests {
                 &exports(&[("wrap", "Wrap"), ("readable", "Readable")]),
             );
             assert_eq!(candidates.len(), 1);
-            assert_eq!(candidates[0].bindings["wrap"].binding.binding_name, "w");
-            assert_eq!(candidates[0].bindings["readable"].binding.binding_name, "q");
+            assert_eq!(candidates[0].bindings["wrap"].binding, "w");
+            assert_eq!(candidates[0].bindings["readable"].binding, "q");
             assert_eq!(
                 candidates[0].free_bindings,
                 BTreeMap::from([
@@ -1278,8 +1256,8 @@ mod tests {
                 &exports(&[("a", "ExportA"), ("b", "ExportB")]),
             );
             assert_eq!(candidates.len(), 1);
-            assert_eq!(candidates[0].bindings["a"].binding.binding_name, "alpha");
-            assert_eq!(candidates[0].bindings["b"].binding.binding_name, "beta");
+            assert_eq!(candidates[0].bindings["a"].binding, "alpha");
+            assert_eq!(candidates[0].bindings["b"].binding, "beta");
         });
     }
 
