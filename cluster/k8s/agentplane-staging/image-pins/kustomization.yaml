@@ -4,9 +4,9 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
     newTag: devel-20261126231530-6ac1ef9 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
-    newTag: devel-20261126231521-6ac1ef9 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
+    newTag: devel-20261126234746-197b6f4 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environments
-    newTag: devel-20261126224612-545ff9d # {"$imagepolicy": "flux-system:agentplane-environments:tag"}
+    newTag: devel-20261126234750-197b6f4 # {"$imagepolicy": "flux-system:agentplane-environments:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
     newTag: devel-20261126224613-545ff9d # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-proxy
@@ -14,9 +14,9 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-central-sampler
     newTag: devel-20261126231537-6ac1ef9 # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261126232339-7a40dc9 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261126234803-197b6f4 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sessions
-    newTag: devel-20261126232331-7a40dc9 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
+    newTag: devel-20261126234753-197b6f4 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
   - name: git.allegedly.works/ducktape-ci/environment-tools
     newTag: devel-20261124024213-3e4257c # {"$imagepolicy": "flux-system:environment-tools:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
@@ -28,11 +28,11 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
     newTag: devel-20261126224617-545ff9d # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261126224617-545ff9d # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20261126234803-197b6f4 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261126224600-545ff9d # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261126234753-197b6f4 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261126224618-545ff9d # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261126234752-197b6f4 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker
     newTag: devel-20261124024526-3e4257c # {"$imagepolicy": "flux-system:agentplane-environment-firecracker:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher
