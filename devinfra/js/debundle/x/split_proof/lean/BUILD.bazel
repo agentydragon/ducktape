@@ -1711,7 +1711,9 @@ lean_proof_test(
     modules = ["EsmSplit.LocalExportUnit"],
     required_theorems = [
         "EsmSplit.LocalExportUnit.exact_footprint",
+        "EsmSplit.LocalExportUnit.footprint_matches",
         "EsmSplit.LocalExportUnit.local_use_and_public",
+        "EsmSplit.LocalExportUnit.matched_local_use_and_public",
     ],
     deps = [":local_export_unit"],
 )
