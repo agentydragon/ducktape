@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
@@ -224,7 +225,11 @@ func identityMessage(obj *policyapi.Identity) (*policypb.Identity, error) {
 	if err := convert(obj.Spec, spec); err != nil {
 		return nil, err
 	}
-	return &policypb.Identity{Identity: identity(obj.ObjectMeta), Generation: obj.Generation, Labels: obj.Labels, Spec: spec}, nil
+	message := &policypb.Identity{Identity: identity(obj.ObjectMeta), Generation: obj.Generation, Labels: obj.Labels, Spec: spec}
+	if obj.DeletionTimestamp != nil {
+		message.DeletionTimestamp = timestamppb.New(obj.DeletionTimestamp.Time)
+	}
+	return message, nil
 }
 
 func policySetMessage(obj *policyapi.PolicySet) (*policypb.PolicySet, error) {
