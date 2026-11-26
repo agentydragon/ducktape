@@ -302,7 +302,7 @@ The retry isolates the selected original unit, keeps its imports and ordinal, an
 
 The linked statement implies `NormalEquivalent` over the worlds that satisfy its host premises ([`ASTEquivalent.normal`](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean)), so a linked or structural `normal-completion` verdict states the same guarantee.
 
-**Strategy census.** The historical strategy census ran on 2026-11-25 against base `ae5db989` in BuildBuddy invocation `9f492e5f-8380-4701-8db7-62144ab6a704`. All 98 requested test targets passed. It collected 181 JSONL test outputs: 2,495 timed checker attempts over 1,078 content-identified inputs. The full table records each verdict, scope, reason code or refusal text, and elapsed time.
+**Historical strategy census.** The retired strategy census ran on 2026-11-25 against base `ae5db989` in BuildBuddy invocation `9f492e5f-8380-4701-8db7-62144ab6a704`. All 98 requested test targets passed. It collected 181 JSONL test outputs: 2,495 timed checker attempts over 1,078 content-identified inputs. The full table records each verdict, scope, reason code or refusal text, and elapsed time.
 
 | Only strategy to certify | Inputs | Why the other strategies refused                                                                                                                                                                                                                                                                                                                             |
 | ------------------------ | -----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -320,7 +320,7 @@ Median and 90th-percentile time per attempt were 765 ms and 958 ms for closed de
 
 During the replay rollout, `linked-programs` reported `strategy` as `compiled-replay-premised` or `generated-proof`; this historical census compares those paths before the generated path was removed.
 
-**Linked replay regression gate.** The census found 48 inputs certified only by `linked-programs`: 20 with non-local allocating declarations, 17 with moved-region accesses, and 11 opaque units that need context. Per-run proof generation is now removed, so cases outside the compiled rules are refused. The earlier counts describe the archived strategy comparison.
+**Historical linked-only census.** The census found 48 inputs certified only by `linked-programs`: 20 with non-local allocating declarations, 17 with moved-region accesses, and 11 opaque units that need context. The alternate-strategy census driver and these publishing paths are retired. These counts describe the earlier checks, not current acceptance.
 
 **Replay census (2026-11-25, historical).** BuildBuddy invocation [`7d51ade6-1cf8-4454-81de-8bc408309a7c`](https://app.buildbuddy.io/invocation/7d51ade6-1cf8-4454-81de-8bc408309a7c) passed all 98 requested test targets and collected 181 JSONL outputs: 2,495 checker attempts over the same 1,078 distinct inputs. Overall strategy coverage is unchanged: 819 inputs certify and 259 refuse. The compiled replay certified 49 distinct linked inputs, including 1 of the 48 linked-only cases; the other 47 linked-only cases then used generated proofs.
 
@@ -328,7 +328,7 @@ During the replay rollout, `linked-programs` reported `strategy` as `compiled-re
 
 **Primitive logical replay census (2026-11-25).** BuildBuddy invocation [`30deb3b2-4a1a-4d91-a40a-1b6c73a1910e`](https://app.buildbuddy.io/invocation/30deb3b2-4a1a-4d91-a40a-1b6c73a1910e), based on `devel` plus the build repair in #20027, passed all 98 targets and collected 181 JSONL outputs. Four of the 43 linked-only inputs moved from generated proofs to compiled replay; 39 remain. The rule applies only to a single import-free source module whose linked schedules contain primitive expressions, binding reads and plain data records. Functions, calls and other syntax then retained the fallback. No matching certified identity lost certification. The earlier census predates intervening `devel` changes and this run lacks 20 of its certified identities, including origin-dependent browser cases; the aggregate comparison is not a final no-loss gate.
 
-For singletons, the planned order is the compiled slice strategy, then the compiled structural schedule with automatically chosen pivots, then linked fallback. The slice applies to one source module with no imports, providers, or template objects; it certifies all outcomes when order is kept and normal completion otherwise. Its `SliceKind` and checked premises are reported as evidence under the same guarantee as the other strategies. The census predates this strategy and should be rerun after it lands.
+For singletons, the earlier plan ordered the compiled slice strategy, then the compiled structural schedule with automatically chosen pivots, then linked fallback. The slice applies to one source module with no imports, providers, or template objects; it certifies all outcomes when order is kept and normal completion otherwise. Its `SliceKind` and checked premises are reported as evidence under the same guarantee as the other strategies. The census predates this strategy.
 
 **How.**
 
@@ -380,7 +380,7 @@ This is too broad to land safely as one proof change. Stage it so each increment
 2. Add writes, logical and conditional control flow, blocks, and loops. The census has 11 logical-expression, 11 assignment, 8 property-write, and 2 loop inputs; the per-input table identifies the cases that contain only one of these categories and those that also need calls or classes.
 3. Prove ordinary function calls, direct and method calls, return flow, parameter binding, and construction together. The evaluator's mutual recursion crosses `callFn`, `constructTarget`, `execStmts`, and `bindPattern`; the census counts 20 call, 9 method-call, 8 direct-call, 8 construction, and 8 return inputs.
 4. Add classes, derived constructors, fields, accessors, static blocks, computed keys, and super operations. These depend on property and call simulation; the census counts 10 class, 9 derived-class, 3 class-accessor, 3 class-static-block, and 2 super-call inputs.
-5. Extend the probe wrapper to produce `ProbeTrace` and replace `ReplayableSchedule` with `ProbeTrace.onlyPremised` only after the evaluator simulation covers every operation on the successful run. Rerun the linked strategy census after each step and require at least one newly compiled case for each partial increment, then measure how many of the 48 historical linked-only inputs regain certification.
+5. Extend the probe wrapper to produce `ProbeTrace` and replace `ReplayableSchedule` with `ProbeTrace.onlyPremised` only after the evaluator simulation covers every operation on the successful run. The earlier plan measured each partial increment against the linked-only corpus; the retired strategy census no longer provides a current acceptance gate.
 
 The counts are category presence, not disjoint buckets: the proof increments need not cover the full count for a category to add useful cases. Finish by rerunning all linked corpus targets, comparing case identities and verdicts to the generated-proof baseline, and reporting theorem axioms. If a successful probe trace includes `step` or `talk`, this concrete transport theorem refuses it; symbolic relational replay remains a separate future requirement only if the measured corpus needs such cases.
 
@@ -390,7 +390,7 @@ The counts are category presence, not disjoint buckets: the proof increments nee
 2. Carry `Places` through the proof paths for singleton inputs as they converge on the assembled deployment checker.
 3. Use the replayable-schedule witness for the first compiled replay increment; unsupported executions are refused. Replace this syntactic guard with `ProbeTrace.onlyPremised` when the general evaluator simulation is proved.
 4. Keep evaluator instrumentation outside `Eval.lean`; do not add symbolic world answers unless a measured currently-certified case requires a successful `step` or `talk` request.
-5. Rerun the linked strategy census, compare compiled-replay coverage with the generated-proof baseline, and measure which previously certified inputs regain certification under compiled rules.
+5. The earlier plan compared compiled-replay coverage with the generated-proof baseline; those historical results do not establish current public acceptance.
 
 **Done when.** The certified CLI calls only `split`, `split`'s type states the target theorem, and no split run starts Lean.
 
