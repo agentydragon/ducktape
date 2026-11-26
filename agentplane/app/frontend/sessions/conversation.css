@@ -124,6 +124,7 @@
 }
 
 .transcript-user-message-aside .agentplane-command-progress-inline {
+  flex-direction: column;
   gap: 0.25rem;
   flex: 0 1 auto;
   align-items: center;
