@@ -7,7 +7,7 @@ use crate::ts_enum_iife::is_ts_enum_iife_init_for_binding;
 use analysis_vocabulary::value::{Kind, Value};
 
 /// Chunk-top initializers per binding name. `var` may repeat.
-pub type InitGroups<'a> = BTreeMap<String, Vec<(&'a Expr, VarDeclKind)>>;
+pub(crate) type InitGroups<'a> = BTreeMap<String, Vec<(&'a Expr, VarDeclKind)>>;
 
 pub fn init_groups<'a>(body: &'a [TopLevelItemView<'_>]) -> InitGroups<'a> {
     let mut inits_by_name = BTreeMap::new();
