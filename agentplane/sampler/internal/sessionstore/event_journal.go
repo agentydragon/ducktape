@@ -1,12 +1,10 @@
 package sessionstore
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
 	"math"
-	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/eventblock"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -65,17 +63,24 @@ func readJournalRange(ctx context.Context, q journalQueryer, sessionID string, f
 	return entries, nil
 }
 
+// Both replay and the legacy writer must find any stored block intersecting
+// [first, last], including APB blocks longer than a legacy writer window.
+// The lower bound on first_sequence keeps the lookup on the primary key.
+const overlappingJournalBlocks = `session_id=$1 AND first_sequence BETWEEN $4 AND $3 AND last_sequence >= $2`
+
+func earliestJournalBlockStart(first uint64) uint64 {
+	return max(first, eventblock.MaxEntries) - eventblock.MaxEntries + 1
+}
+
 func journalFrames(ctx context.Context, q journalQueryer, sessionID string, first, last uint64) ([]journalFrame, error) {
 	// One MVCC snapshot sees either a sealed block or all its former standalone rows.
-	// The maximum span lets both parts of the union use their session/sequence index.
-	oldestBlock := max(first, eventblock.MaxEntries) - eventblock.MaxEntries + 1
 	rows, err := q.QueryContext(ctx, `
 		SELECT sequence,sequence,entry FROM sampler_event
 		WHERE session_id=$1 AND sequence BETWEEN $2 AND $3
 		UNION ALL
 		SELECT first_sequence,last_sequence,payload FROM sampler_event_block
-		WHERE session_id=$1 AND first_sequence BETWEEN $4 AND $3 AND last_sequence >= $2
-		ORDER BY 1`, sessionID, first, last, oldestBlock)
+		WHERE `+overlappingJournalBlocks+`
+		ORDER BY 1`, sessionID, first, last, earliestJournalBlockStart(first))
 	if err != nil {
 		return nil, err
 	}
@@ -118,86 +123,4 @@ func journalFrames(ctx context.Context, q journalQueryer, sessionID string, firs
 		}
 	}
 	return frames, rows.Err()
-}
-
-type sealedJournalBlock struct {
-	first, last uint64
-	payload     []byte
-	storedBytes int
-	versions    []string
-}
-
-const insertJournalBlock = `INSERT INTO sampler_event_block(session_id,first_sequence,last_sequence,payload) VALUES($1,$2,$3,$4)`
-
-func prepareJournalBlocks(ctx context.Context, q journalQueryer, sessionID string, first, last uint64) ([]sealedJournalBlock, error) {
-	rows, err := q.QueryContext(ctx, `
-		SELECT sequence, xmin::text, CASE WHEN octet_length(entry) <= $4 THEN entry END FROM sampler_event
-		WHERE session_id=$1 AND sequence BETWEEN $2 AND $3 ORDER BY sequence`, sessionID, first, last, eventcodec.MaxBlockBytes)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var blocks []sealedJournalBlock
-	var frames [][]byte
-	var versions []string
-	var start uint64
-	var rawSize, storedSize int
-	flush := func() error {
-		if len(frames) > 1 {
-			payload, err := eventcodec.PackBlock(frames)
-			if err != nil {
-				return err
-			}
-			if len(payload) < storedSize {
-				verified, err := eventcodec.UnpackBlock(payload, len(frames))
-				if err != nil {
-					return err
-				}
-				if !slices.EqualFunc(frames, verified, bytes.Equal) {
-					return fmt.Errorf("packed frames differ from originals at cursor %d", start)
-				}
-				blocks = append(blocks, sealedJournalBlock{
-					first: start, last: start + uint64(len(frames)) - 1,
-					payload: payload, storedBytes: storedSize, versions: versions,
-				})
-			}
-		}
-		frames, versions, rawSize, storedSize = nil, nil, 0, 0
-		return nil
-	}
-	for rows.Next() {
-		var sequence uint64
-		var version string
-		var stored []byte
-		if err := rows.Scan(&sequence, &version, &stored); err != nil {
-			return nil, err
-		}
-		frame, err := eventcodec.UnpackBlockEntry(stored)
-		if err != nil {
-			return nil, fmt.Errorf("prepare event at cursor %d: %w", sequence, err)
-		}
-		size := len(frame) + eventcodec.FrameHeaderBytes
-		if len(frame) == 0 || rawSize+size > eventcodec.MaxBlockBytes || sequence != start+uint64(len(frames)) {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-		}
-		if len(frame) == 0 {
-			continue
-		}
-		if len(frames) == 0 {
-			start = sequence
-		}
-		frames = append(frames, frame)
-		versions = append(versions, version)
-		rawSize += size
-		storedSize += len(stored)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if err := flush(); err != nil {
-		return nil, err
-	}
-	return blocks, nil
 }
