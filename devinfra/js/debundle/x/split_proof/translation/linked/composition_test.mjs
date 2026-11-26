@@ -3,6 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   assertCertified,
+  assertNoCompiledRule,
   array,
   block,
   exportNamed,
@@ -108,8 +109,8 @@ for (const [width, reversedKeys, readPosition] of [
   }
 }
 
-// An eager getter can mutate bindings. Until calls are replayed, keep the
-// generated proof for this read and preserve its observable result.
+// The compiled checker refuses this eager getter. Run the diagnostic preview
+// under Node to check the getter’s mutation.
 {
   const dir = path.join(root, "getter-fallback");
   const source = `let count = 0;
@@ -126,13 +127,9 @@ for (const [width, reversedKeys, readPosition] of [
       sequential: true,
     },
   });
-  const out = path.join(dir, "out");
-  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assertCertified(verdict, log);
-  assert.equal(verdict.strategy, "generated-proof", log);
-  assert(verdict.replay_blockers.includes("property-read"), log);
-  assert(verdict.replay_blockers.includes("object-accessor"), log);
-  for (const file of [files.sourceFile, path.join(out, entry)]) {
+  const preview = path.join(dir, "preview");
+  assertNoCompiledRule(files, preview);
+  for (const file of [files.sourceFile, path.join(preview, entry)]) {
     const result = await import(pathToFileURL(file).href);
     assert.deepEqual(Object.keys(result), ["chosen", "count"]);
     assert.equal(result.chosen, 1);

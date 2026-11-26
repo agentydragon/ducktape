@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertified,
+  assertNoCompiledRule,
   root,
   id,
   literal,
@@ -145,8 +146,8 @@ for (const [observed, leftArg, rightArg] of [
 }
 
 // These distinct world calls both return undefined in World.probe, so the concrete
-// final states match. Other worlds can return or throw differently; the all-world
-// kernel proof must still reject this reversed schedule.
+// final states match. Other worlds can distinguish the order of these calls.
+// The compiled checker must refuse the reversed schedule.
 {
   const localeCompare = (left, right) =>
     call(
@@ -175,13 +176,7 @@ for (const [observed, leftArg, rightArg] of [
   };
   const dir = path.join(root, "reordered-probe-equivalent-host-calls");
   const files = prepare(dir, { source, provider: "", spec });
-  const out = path.join(dir, "out");
-  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(
-    verdict.reason,
-    /could not prove equivalent linked executions \(Lean exited with status [1-9]\d*\)/,
-    log
-  );
-  assert(!existsSync(out));
+  const preview = path.join(dir, "preview");
+  assertNoCompiledRule(files, preview);
+  assert.deepEqual(moduleEvaluationOrder(preview, spec.entry), [...spec.order, spec.entry]);
 }

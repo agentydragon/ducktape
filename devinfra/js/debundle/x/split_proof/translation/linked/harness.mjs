@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -272,6 +281,35 @@ export function forcePreview(files, directory) {
   assert([0, 1].includes(preview.status), preview.error?.message ?? preview.stdout + preview.stderr);
   assert.match(preview.stdout, /model diagnostic: /, preview.stdout + preview.stderr);
   return certification;
+}
+
+// Exercise the public command against both a fresh path and the exact modules
+// produced by the separate diagnostic command. split enforces exit 1 on refusal.
+export function assertNoCompiledRule(files, out) {
+  const assertRefusal = ({ verdict, log }) => {
+    assert.equal(verdict.status, "rejected", log);
+    assert.equal(verdict.reason_code, "no_compiled_rule", log);
+    assert.equal(verdict.guarantee, null, log);
+  };
+
+  assertRefusal(lower(files.sourceFile, files.specFile, out));
+  assert(!existsSync(out), "refusal created a fresh destination");
+
+  forcePreview(files, out);
+  const snapshot = () =>
+    readdirSync(out)
+      .sort()
+      .map((name) => {
+        const file = path.join(out, name);
+        const { ino, mtimeNs } = statSync(file, { bigint: true });
+        return [name, ino, mtimeNs, readFileSync(file)];
+      });
+  const before = snapshot();
+  const options = { source: files.sourceFile, spec: files.specFile, out, allowExistingOut: true };
+  assertRefusal(split(options));
+  assert.deepEqual(snapshot(), before, "refusal changed the existing output");
+  assertRefusal(split({ ...options, checkOutput: true }));
+  assert.deepEqual(snapshot(), before, "check-output changed the existing output");
 }
 
 export function runSplit(name, fixture) {
