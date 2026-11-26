@@ -36,7 +36,7 @@ func (s *Store) begin(ctx context.Context, owner Owner, request IntentPayload, p
 		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	var wire []byte
+	var prepared *ProviderRequest
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -49,13 +49,13 @@ func (s *Store) begin(ctx context.Context, owner Owner, request IntentPayload, p
 		if err != nil {
 			return err
 		}
-		wire, err = s.beginIntent(ctx, tx, owner, conversation, session, id, request, prepare, policy)
+		prepared, err = s.beginIntent(ctx, tx, owner, conversation, session, id, request, prepare, policy)
 		return err
 	})
 	if err != nil {
 		return "", nil, err
 	}
-	return id, wire, nil
+	return s.renderStartedProviderRequest(ctx, owner, id, prepared)
 }
 
 func checkIntentStart(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation) error {
@@ -70,13 +70,12 @@ func checkIntentStart(ctx context.Context, tx *sql.Tx, owner Owner, conversation
 
 func (s *Store) beginIntent(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
 	id string, request IntentPayload, prepare requestPreparation, policy *ProviderAttemptPolicy,
-) ([]byte, error) {
-	var wire []byte
+) (*ProviderRequest, error) {
 	if request.ProviderRequest != nil {
 		if prepare == nil || request.API != conversation.API {
 			return nil, protocol.ErrInvalid
 		}
-		prepared, rendered, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
+		prepared, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
 		if err != nil {
 			return nil, err
 		}
@@ -87,7 +86,7 @@ func (s *Store) beginIntent(ctx context.Context, tx *sql.Tx, owner Owner, conver
 				return nil, err
 			}
 		}
-		request.ProviderRequest, wire = &prepared, rendered
+		request.ProviderRequest = &prepared
 	}
 	requestWire, err := marshal(request)
 	if err != nil {
@@ -101,7 +100,7 @@ func (s *Store) beginIntent(ctx context.Context, tx *sql.Tx, owner Owner, conver
 		id, owner.ConversationID, owner.Generation, requestWire); err != nil {
 		return nil, err
 	}
-	return wire, s.publishIntent(ctx, tx, conversation, session, id, request)
+	return request.ProviderRequest, s.publishIntent(ctx, tx, conversation, session, id, request)
 }
 
 // publishIntent follows the caller's admission checks and intent insertion in the same transaction.
@@ -286,7 +285,6 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
-	var wire []byte
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -318,12 +316,11 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 			if prepare == nil || request.API != conversation.API {
 				return protocol.ErrInvalid
 			}
-			prepared, rendered, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
+			prepared, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
 			if err != nil {
 				return err
 			}
 			request.ProviderRequest = &prepared
-			wire = rendered
 		}
 		if request.ProviderRequest != nil {
 			request.ProviderRequest.SourceNativeContextID = conversation.nativeContextID()
@@ -348,7 +345,7 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 	if err != nil {
 		return "", nil, err
 	}
-	return id, wire, nil
+	return s.renderStartedProviderRequest(ctx, owner, id, request.ProviderRequest)
 }
 
 func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit any, original, replacement protocol.Context, validateReplacement func(protocol.Context) error) error {

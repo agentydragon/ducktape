@@ -12,15 +12,68 @@ import (
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerrequest"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore/internal/contentdb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
+
+func TestRenderCommittedProviderRequestDuringConversationLock(t *testing.T) {
+	store := newTestStore(t)
+	session, err := openStoreSession(t, store, &sessionconfig.Configuration{
+		SessionId: "91000000-0000-4000-8000-000000000001",
+		Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
+	}, "fixture-account", protocol.APIStyleResponses)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := claim(t, store, session)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	var recipe ProviderRequest
+	id, wire, err := store.begin(t.Context(), owner, request,
+		func(ctx context.Context, tx *sql.Tx, objects *contentdb.Store, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, error) {
+			var err error
+			recipe, err = prepare(ctx, tx, objects, conversation, metadata)
+			return recipe, err
+		}, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := store.DB().BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := lockOwnerHeader(t.Context(), tx, owner); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	_, rendered, err := store.renderStartedProviderRequest(ctx, owner, id, &recipe)
+	if err != nil || len(rendered) == 0 || !bytes.Equal(rendered, wire) {
+		t.Fatalf("render under concurrent conversation lock: %d bytes, %v", len(rendered), err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.RequestInterrupt(t.Context(), owner.ConversationID, owner.Generation); err != nil {
+		t.Fatal(err)
+	}
+	_, rendered, err = store.renderStartedProviderRequest(t.Context(), owner, id, &recipe)
+	var pending InterruptPendingError
+	if !errors.As(err, &pending) || len(rendered) != 0 {
+		t.Fatalf("render after interrupt: %d bytes, %v", len(rendered), err)
+	}
+}
 
 func providerAttemptTestPolicy() ProviderAttemptPolicy {
 	return ProviderAttemptPolicy{Budget: 3, Lease: time.Minute}

@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore/internal/contentdb"
@@ -16,7 +18,7 @@ import (
 
 // requestPreparation is private transaction-local plumbing. Public Store methods accept the
 // typed providerrequest.Preparation recipe and build this operation inside the transaction.
-type requestPreparation func(context.Context, *sql.Tx, *contentdb.Store, *Conversation, ProviderRequest) (ProviderRequest, []byte, error)
+type requestPreparation func(context.Context, *sql.Tx, *contentdb.Store, *Conversation, ProviderRequest) (ProviderRequest, error)
 
 func renderProviderRequest(store *contentdb.Store, request ProviderRequest) ([]byte, error) {
 	ids, err := store.LoadContext(request.ContextID)
@@ -31,15 +33,53 @@ func renderProviderRequest(store *contentdb.Store, request ProviderRequest) ([]b
 	return providerrequest.Render(store, request.API, request.ProfileID, ids)
 }
 
-func finishStoredRequest(store *contentdb.Store, request ProviderRequest, profile content.ContentID, ids []content.ContentID) (ProviderRequest, []byte, error) {
+// renderStartedProviderRequest uses the recipe committed by the begin transaction. On failure the
+// intent remains durable for normal provider recovery. The caller has not sent a request yet.
+func (s *Store) renderStartedProviderRequest(ctx context.Context, owner Owner, id string, request *ProviderRequest) (string, []byte, error) {
+	if request == nil {
+		return id, nil, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
+	var body []byte
+	err := postgres.ReadTransaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+		var err error
+		body, err = renderProviderRequest(newContentDB(ctx, tx), *request)
+		if err != nil {
+			return err
+		}
+		// Rendering can take time for long contexts. Check the attempt and owner again from
+		// the current committed state before returning the bytes for dispatch.
+		var ready bool
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS(
+			SELECT 1 FROM sampler_conversation c
+			JOIN sampler_intent i ON i.conversation_id=c.id AND i.generation=c.generation
+			WHERE c.id=$1 AND c.owner=$2 AND c.generation=$3 AND c.lease_until>clock_timestamp()
+				AND c.pending->>'id'=i.id::text AND c.pending->>'kind'=i.request->>'kind'
+				AND i.id=$4 AND i.result IS NULL AND i.provider_attempt_lease_until>clock_timestamp()
+		)`, owner.ConversationID, owner.Token, owner.Generation, id).Scan(&ready)
+		if err != nil {
+			return err
+		}
+		if !ready {
+			return protocol.ErrPrecondition
+		}
+		return checkInterrupt(ctx, tx, owner)
+	})
+	if err != nil {
+		return id, nil, fmt.Errorf("render committed provider request %s: %w", id, err)
+	}
+	return id, body, nil
+}
+
+func finishStoredRequest(store *contentdb.Store, request ProviderRequest, profile content.ContentID, ids []content.ContentID) (ProviderRequest, error) {
 	contextID, err := store.StoreContext(request.API, ids)
 	if err != nil {
-		return ProviderRequest{}, nil, err
+		return ProviderRequest{}, err
 	}
 	request.ContextID = contextID
 	request.ProfileID = profile
-	wire, err := renderProviderRequest(store, request)
-	return request, wire, err
+	return request, nil
 }
 
 func saveProviderRequest(ctx context.Context, tx *sql.Tx, id, conversationID string, request *ProviderRequest) error {
