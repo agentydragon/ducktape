@@ -15,8 +15,9 @@ subscribe, read and acknowledge before its host starts.
 `:service_image` contains `notification-service`, which applies
 [Goose migrations](../postgres/migrate/README.md) before opening listeners or starting workers.
 The startup probe waits for initialization. For migration-only startup, pass `--migrate-only` with `AGENTPLANE_NOTIFICATIONS_DATABASE_URL`.
-Serving needs a PostgreSQL database, Actions, History and Dispatcher endpoints with client TLS,
-Kubernetes reads for WorkloadCredentials, Identities, Sandboxes, PolicySets and PolicyBindings,
+Serving needs a PostgreSQL database, Actions, History, Dispatcher and PolicyService endpoints with client TLS
+(live Identities come from PolicyService, not the API server),
+Kubernetes reads for WorkloadCredentials, Sandboxes, PolicySets and PolicyBindings,
 and `patch` on PolicyBinding status. Verify an Action subscription through a newly opened harness
 after rollout.
 

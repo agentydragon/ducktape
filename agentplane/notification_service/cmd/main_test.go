@@ -32,6 +32,7 @@ import (
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/testing/policyservice"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -214,6 +215,7 @@ func restart(t *testing.T, tune func(*config)) running {
 	c.Actions = actionPeer{URL: "http://" + actionAddress, TokenFile: tokenFile("actions"), RequestTimeoutSeconds: 5}
 	c.HistoryService = peer{Target: historyAddress, TokenFile: tokenFile("history"), RequestTimeoutSeconds: 5}
 	c.SessionDispatcher = peer{Target: dispatcherAddress, TokenFile: tokenFile("dispatcher"), RequestTimeoutSeconds: 5}
+	c.PolicyService = policyservice.Serve(t, apiConfig, testNamespace)
 	if tune != nil {
 		tune(&c)
 	}

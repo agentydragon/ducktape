@@ -128,7 +128,7 @@ Workers use the Notifications service SVID for Actions, Dispatcher and History S
 Dispatcher owns Session lookup for notification subscriptions.
 Actions service-reader access does not confer operator or execution rights. The receiver verifies workload
 SVIDs against live WorkloadCredentials and Identities and admits exact service SVID diagnostic grants.
-It performs no TokenReview. Kubernetes reads cover those records, the Sandboxes used for existing message
+It performs no TokenReview. Identities come from PolicyService; Kubernetes reads cover WorkloadCredentials, the Sandboxes used for existing message
 authorization, and the watched PolicySets/PolicyBindings used for send authorization. The listener
 schema has no bearer mode, so a settings file naming one fails startup. This Deployment projects only its
 workload certificate and the workload CA bundle, sets no peer `token_file`, and its Role grants no
