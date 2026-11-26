@@ -90,6 +90,12 @@ struct VarDeclaratorSubject {
     init_kind: Option<&'static str>,
 }
 
+struct DeclaratorMatch {
+    body_idx: usize,
+    declared: Vec<ResolvedMemberBinding>,
+    free_bindings: BTreeMap<String, String>,
+}
+
 impl<'m> ChunkResolver<'m> {
     pub fn new(module: &'m Module) -> Self {
         let body_facts: Vec<_> = module
@@ -148,22 +154,37 @@ impl<'m> ChunkResolver<'m> {
         }
     }
 
-    /// Indices into `var_declarator_subjects` a single-declarator needle could
-    /// match — the intersection of every required token posting, or all
-    /// declarators when the needle pins no candidate constraint. Mirrors
-    /// [`Self::candidate_bodies`] for the declarator scan, which never has a
-    /// prebind: an exact-mode needle (`mode`) requires its identifier spellings
-    /// (see [`selector_match::needle_required_tokens`]).
-    fn candidate_declarators(
+    /// Match a supported needle against individual declarators in source order.
+    /// There is no prebind on this path, so exact mode can filter on identifier
+    /// spellings before the full match.
+    fn matching_declarators(
         &self,
-        needle_index: &selector_match::Index,
+        needle: &selector_match::Index,
         mode: selector_match::Mode,
-    ) -> Vec<usize> {
-        intersect_candidate_postings(
+        free: &BTreeSet<String>,
+        init_kind: Option<&'static str>,
+    ) -> impl Iterator<Item = DeclaratorMatch> {
+        let candidates = intersect_candidate_postings(
             &self.declarator_tokens,
-            &selector_match::needle_required_tokens(needle_index, mode, true),
+            &selector_match::needle_required_tokens(needle, mode, true),
             self.var_declarator_subjects.len(),
-        )
+        );
+        candidates.into_iter().filter_map(move |index| {
+            let subject = &self.var_declarator_subjects[index];
+            if init_kind.is_some() && subject.init_kind != init_kind {
+                return None;
+            }
+            let free_bindings =
+                selector_match::matches_prepared(needle, &subject.index, mode, free)?;
+            let declarator = &item_var_decl(&self.module.body[subject.body_idx])
+                .expect("cached var-declarator subject source_unit is a var-decl")
+                .decls[subject.declarator_idx];
+            Some(DeclaratorMatch {
+                body_idx: subject.body_idx,
+                declared: declared_bindings_for_var_declarator(declarator),
+                free_bindings,
+            })
+        })
     }
 
     /// Body indices a needle could match: the **intersection** of every required
@@ -332,39 +353,18 @@ fn member_matches_var_declarator(
         }
         None => 0,
     };
-    // Match the needle against each candidate var-decl declarator via the cached
-    // synthetic single-declarator indices (built once for the chunk), so this
-    // scan is index-build-free. The token index narrows to declarators carrying
-    // the needle's required tokens; this path matches without a prebind, so an
-    // exact-mode needle also requires its identifier spellings (the binding name
-    // plus any referenced names) — for `const NAME = …;` selectors that alone
-    // shrinks the scan from every declarator to the few sharing those names. A
-    // sound init-kind prefilter then skips declarators whose initializer kind
-    // cannot match, before the full match.
     let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
-    for subject_idx in chunk.candidate_declarators(&needle_index, mode) {
-        let subject = &chunk.var_declarator_subjects[subject_idx];
-        if let Some(kind) = init_prefilter
-            && subject.init_kind != Some(kind)
-        {
-            continue;
-        }
-        // Needle probed-supported above; skip the per-candidate needle re-check.
-        let Some(free_bindings) =
-            selector_match::matches_prepared(&needle_index, &subject.index, mode, &free)
-        else {
-            continue;
-        };
-        let item = &chunk.module.body[subject.body_idx];
-        let declarator = &item_var_decl(item)
-            .expect("cached var-declarator subject source_unit is a var-decl")
-            .decls[subject.declarator_idx];
-        let declared = declared_bindings_for_var_declarator(declarator);
+    for DeclaratorMatch {
+        body_idx,
+        declared,
+        free_bindings,
+    } in chunk.matching_declarators(&needle_index, mode, &free, init_prefilter)
+    {
         if selector.target_binding.is_none() && declared.len() != 1 {
             return Err(SourceMatchError::MultipleBindings {
                 logical_module: request_id.to_string(),
-                body_index: subject.body_idx,
+                body_index: body_idx,
                 count: declared.len(),
             }
             .into());
@@ -374,7 +374,7 @@ fn member_matches_var_declarator(
             return Err(MatcherError::invariant(MatcherInvariant::MissingBinding));
         };
         matches.push(MemberBindingMatch {
-            body_idx: subject.body_idx,
+            body_idx,
             binding,
             free_bindings,
         });
@@ -742,35 +742,21 @@ fn group_matches_single_declarator(
     selector_match::matches_indexed(&needle_index, &needle_index, mode, &free)
         .map_err(unsupported_error)?;
     let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
-    // No prebind (the declarator match is un-prebound); an exact-mode needle may
-    // require its identifier spellings.
-    for subject_idx in chunk.candidate_declarators(&needle_index, mode) {
-        let subject = &chunk.var_declarator_subjects[subject_idx];
-        if let Some(kind) = init_prefilter
-            && subject.init_kind != Some(kind)
-        {
-            continue;
-        }
-        // Needle probed-supported above; skip the per-candidate needle re-check.
-        let Some(free_bindings) =
-            selector_match::matches_prepared(&needle_index, &subject.index, mode, &free)
-        else {
-            continue;
-        };
-        let item = &chunk.module.body[subject.body_idx];
-        let declarator = &item_var_decl(item)
-            .expect("cached var-declarator subject source_unit is a var-decl")
-            .decls[subject.declarator_idx];
-        let declarator_bindings = declared_bindings_for_var_declarator(declarator);
+    for DeclaratorMatch {
+        body_idx,
+        declared,
+        free_bindings,
+    } in chunk.matching_declarators(&needle_index, mode, &free, init_prefilter)
+    {
         let mut resolved = BTreeMap::new();
         for (target, target_binding_idx) in &target_binding_indices {
-            let Some(binding) = declarator_bindings.get(*target_binding_idx) else {
+            let Some(binding) = declared.get(*target_binding_idx) else {
                 return Err(MatcherError::invariant(MatcherInvariant::MissingBinding));
             };
             resolved.insert(
                 (*target).clone(),
                 MatchedBinding {
-                    body_idx: subject.body_idx,
+                    body_idx,
                     binding: binding.clone(),
                 },
             );
