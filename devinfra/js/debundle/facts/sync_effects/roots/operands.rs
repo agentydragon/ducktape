@@ -2,9 +2,8 @@
 //! selected ordered initializer an owner executes with. Preparatory
 //! classifier proofs that read the prefix run here, before the body.
 
-use super::super::execution_index::{
-    Call, CallKind, ExecutionIndex, object_own_data_read_property,
-};
+use super::super::execution_index::intrinsic_roots::object_own_data_read_property;
+use super::super::execution_index::{Call, CallKind, ExecutionIndex};
 use super::super::interpreter::{
     CheckedLocalConstructorFactory, Executor, Outcome, ValidatedMetadataDecoration, unknown,
 };

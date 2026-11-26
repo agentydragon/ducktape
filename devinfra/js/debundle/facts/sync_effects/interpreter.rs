@@ -17,10 +17,12 @@ pub mod synchronous_calls;
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
 use super::alternatives::execution_state::{ExecutionPath, JoinedPath};
+use super::execution_index::intrinsic_roots::native_own_data_read_slots;
+use super::execution_index::local_constructors::LocalConstructor;
+use super::execution_index::patterns::pattern_source;
 use super::execution_index::{
     Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
-    LocalConstructor, MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
-    native_own_data_read_slots, pattern_source,
+    MemberValueWrite, NativePointEffects, Parameter, RetainedCallbackCall,
 };
 use super::native::operation::{
     self as native_operation, CheckedNativePlan, NativeOperationCommit, NativeOperationContext,

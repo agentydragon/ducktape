@@ -2,6 +2,10 @@
 //! integrity, `Set` constructions, semantic facts, selected value and
 //! native-operation inputs, and the source mutations that would void them.
 
+use super::intrinsic_roots::{NativeReceiverRoot, NativeReceiverRoots, intrinsic_roots};
+use super::receiver_flow::{
+    CallableReturnInputs, CallableReturnOutcome, ReceiverFlowKey, close_receiver_flow,
+};
 use super::*;
 
 impl ExecutionIndex {

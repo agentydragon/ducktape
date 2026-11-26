@@ -59,7 +59,9 @@ use analysis_domain::item_views::{TopLevelItemView, top_level_item_views};
 use analysis_vocabulary::purity::Purity;
 use analysis_vocabulary::value::Value;
 use inference::{FactContext, IterativeInference, IterativeRules};
-use sync_effects::execution_index::{InferredCallableCapabilities, PreparedCallableCapabilities};
+use sync_effects::execution_index::callable_capabilities::{
+    InferredCallableCapabilities, PreparedCallableCapabilities,
+};
 use value_flow::ChunkValueFlow;
 use value_flow::program_bindings::{
     BindingId, ExportId, ModuleBindings, ProgramBindings, ResolvedImport, SourceModuleKey,
@@ -1283,24 +1285,25 @@ pub fn resolve_imported_callable_summaries(
                 .map(|(_, local)| local.clone())
                 .collect();
             let views = top_level_item_views(facts.body);
-            let mut prepared_module = sync_effects::execution_index::prepare_callable_capabilities(
-                &views,
-                locals,
-                selected_value_inputs
-                    .get(module)
-                    .cloned()
-                    .unwrap_or_default(),
-                selected_native_operation_inputs
-                    .get(module)
-                    .cloned()
-                    .unwrap_or_default(),
-                predefined_globals,
-                bundle_globals.clone(),
-                namespace_privacy_members
-                    .get(module)
-                    .cloned()
-                    .unwrap_or_default(),
-            );
+            let mut prepared_module =
+                sync_effects::execution_index::callable_capabilities::prepare_callable_capabilities(
+                    &views,
+                    locals,
+                    selected_value_inputs
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
+                    selected_native_operation_inputs
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
+                    predefined_globals,
+                    bundle_globals.clone(),
+                    namespace_privacy_members
+                        .get(module)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
             if !prepared_module.value_input_errors().is_empty() {
                 bail!(
                     "invalid captured value input for provider {module}: {}",
@@ -1532,7 +1535,7 @@ pub fn resolve_imported_callable_summaries(
                 .collect();
             (
                 module,
-                sync_effects::execution_index::infer_callable_capabilities(
+                sync_effects::execution_index::callable_capabilities::infer_callable_capabilities(
                     views,
                     prepared,
                     &native_integrity,
