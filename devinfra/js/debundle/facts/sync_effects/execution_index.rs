@@ -963,15 +963,6 @@ impl IterativeRules for MutationReceiverAliasRules<'_> {
     }
 }
 
-fn has_definite_primitive_result(expression: &Expr) -> bool {
-    match expression.unwrap_parens() {
-        Expr::Lit(Lit::Regex(_)) => false,
-        Expr::Lit(_) | Expr::Tpl(_) | Expr::Unary(_) | Expr::Update(_) => true,
-        Expr::Bin(binary) => !binary.op.may_short_circuit(),
-        _ => false,
-    }
-}
-
 /// Admit only arguments whose evaluation cannot itself trigger caller code.
 /// The provider must separately be audited for every admitted argument shape.
 /// The call result stays opaque and the ordinary visitor records the effects.
@@ -8703,7 +8694,8 @@ impl ExecutionIndex {
     }
 
     fn record_implicit_coercion(&mut self, expression: &Expr, span: Span) {
-        if (self.current.is_some() && self.past_await) || has_definite_primitive_result(expression)
+        if (self.current.is_some() && self.past_await)
+            || js_ast::has_definite_primitive_result(expression)
         {
             return;
         }
