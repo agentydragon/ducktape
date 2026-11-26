@@ -166,7 +166,7 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
     ("sandbox", "pending", "reason"),
     [
         ("suspended-sandbox", False, "Resume it or enable wake on send"),
-        ("pending-sandbox", False, "ImagePullBackOff"),
+        ("pending-sandbox", False, "Waiting for the runner image"),
         ("ready-sandbox", True, "Check its status"),
     ],
     ids=["suspended", "not-ready", "unconfirmed-create"],
@@ -188,6 +188,13 @@ async def test_create_thread_disabled_tooltip(
         await expect(
             page.get_by_role("button", name="Forget attempt; Session creation may still complete")
         ).to_be_visible()
+    inline_reason = page.get_by_role("group", name="New thread").get_by_role("status").filter(has_text=reason)
+    if page.viewport_size and page.viewport_size["width"] < 768:
+        await expect(inline_reason).to_be_visible()
+        await button.scroll_into_view_if_needed()
+        await expect(inline_reason).to_be_in_viewport()
+        await view.capture(target=page.locator("#app"))
+        return
     wrapper = button.locator("..")
     await wrapper.hover()
     tooltip = page.get_by_role("tooltip")
