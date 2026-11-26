@@ -435,6 +435,48 @@ lean_library(
 )
 
 lean_library(
+    name = "corejs_projected_order",
+    srcs = ["EsmSplit/CoreJS/ProjectedOrder.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":planner",
+    ],
+)
+
+executable_test(
+    name = "corejs_projected_order_test",
+    src = "ProjectedOrderTest.lean",
+    deps = [
+        ":corejs_projected_order",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_projected_order_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.ProjectedOrder"],
+    required_theorems = [
+        "CoreJS.ProjectedOrder.authored_executable_owner",
+        "CoreJS.ProjectedOrder.checkTerminalOnly",
+        "CoreJS.ProjectedOrder.full_order_incompatible",
+        "CoreJS.ProjectedOrder.linked_ids",
+        "CoreJS.ProjectedOrder.loaded_ids",
+        "CoreJS.ProjectedOrder.numbered_ids",
+        "CoreJS.ProjectedOrder.scopes_modules",
+        "CoreJS.ProjectedOrder.terminal_body",
+        "CoreJS.ProjectedOrder.terminal_linked_ids",
+        "CoreJS.ProjectedOrder.terminal_loaded_ids",
+        "CoreJS.ProjectedOrder.holds_statements",
+        "CoreJS.ProjectedOrder.numbered_filter",
+        "CoreJS.ProjectedOrder.run_same",
+        "CoreJS.ProjectedOrder.split_regions",
+        "CoreJS.ProjectedOrder.split_tops",
+    ],
+    deps = [":corejs_projected_order"],
+)
+
+lean_library(
     name = "corejs_single_module",
     srcs = ["EsmSplit/CoreJS/SingleModule.lean"],
     deps = [":corejs_certificate_support"],
@@ -1677,43 +1719,43 @@ lean_proof_test(
 )
 
 lean_library(
-    name = "corejs_projected_order",
-    srcs = ["EsmSplit/CoreJS/ProjectedOrder.lean"],
-    deps = [
-        ":corejs_certificate_support_base",
-        ":planner",
-    ],
+    name = "corejs_declaring_owner",
+    srcs = ["EsmSplit/CoreJS/DeclaringOwner.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "corejs_declaring_owner_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.DeclaringOwner"],
+    required_theorems = ["CoreJS.DeclaringOwner.declared_in_original_owner"],
+    deps = [":corejs_declaring_owner"],
+)
+
+lean_library(
+    name = "local_export_unit",
+    srcs = ["EsmSplit/LocalExportUnit.lean"],
+    deps = [":planner"],
 )
 
 executable_test(
-    name = "corejs_projected_order_test",
-    src = "ProjectedOrderTest.lean",
+    name = "local_export_unit_test",
+    src = "LocalExportUnitTest.lean",
     deps = [
-        ":corejs_projected_order",
+        ":local_export_unit",
         ":planner",
     ],
 )
 
 lean_proof_test(
-    name = "corejs_projected_order_axioms_test",
+    name = "local_export_unit_axioms_test",
     allow_empty = True,
-    modules = ["EsmSplit.CoreJS.ProjectedOrder"],
+    modules = ["EsmSplit.LocalExportUnit"],
     required_theorems = [
-        "CoreJS.ProjectedOrder.authored_executable_owner",
-        "CoreJS.ProjectedOrder.checkTerminalOnly",
-        "CoreJS.ProjectedOrder.full_order_incompatible",
-        "CoreJS.ProjectedOrder.linked_ids",
-        "CoreJS.ProjectedOrder.loaded_ids",
-        "CoreJS.ProjectedOrder.numbered_ids",
-        "CoreJS.ProjectedOrder.scopes_modules",
-        "CoreJS.ProjectedOrder.terminal_body",
-        "CoreJS.ProjectedOrder.terminal_linked_ids",
-        "CoreJS.ProjectedOrder.terminal_loaded_ids",
-        "CoreJS.ProjectedOrder.holds_statements",
-        "CoreJS.ProjectedOrder.numbered_filter",
-        "CoreJS.ProjectedOrder.run_same",
-        "CoreJS.ProjectedOrder.split_regions",
-        "CoreJS.ProjectedOrder.split_tops",
+        "EsmSplit.LocalExportUnit.exact_footprint",
+        "EsmSplit.LocalExportUnit.footprint_matches",
+        "EsmSplit.LocalExportUnit.local_use_and_public",
+        "EsmSplit.LocalExportUnit.matched_local_use_and_public",
     ],
-    deps = [":corejs_projected_order"],
+    deps = [":local_export_unit"],
 )
