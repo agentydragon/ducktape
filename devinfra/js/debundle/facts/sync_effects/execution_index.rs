@@ -1301,27 +1301,6 @@ fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
     }
 }
 
-fn native_operation_mutation_name(operation: NativeInputKind) -> &'static str {
-    match operation {
-        NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
-            "global Symbol replacement or accessor installation"
-        }
-        NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) => {
-            "global TextEncoder replacement or accessor installation"
-        }
-        NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) => {
-            "global Map replacement or accessor installation"
-        }
-        NativeInputKind::Operation(spec::NativeOperationKind::WeakMapEmpty) => {
-            "global WeakMap replacement or accessor installation"
-        }
-        NativeInputKind::Operation(spec::NativeOperationKind::SetEmpty) => {
-            "global Set replacement or accessor installation"
-        }
-        _ => "native operation mutation",
-    }
-}
-
 fn shallow_data_pattern(pattern: &Pat) -> bool {
     fn leaf(pattern: &Pat) -> bool {
         matches!(pattern, Pat::Ident(_))
@@ -2028,6 +2007,21 @@ fn native_operation_initializers(
         }
         _ => None,
     }
+}
+
+fn matches_resolved_native_initializer(
+    input: &ResolvedNativeOperationInput,
+    declaration: &BindingDeclarationWrite,
+    call_site: CallSite,
+) -> bool {
+    declaration.direct_top_level
+        && declaration.simple_identifier
+        && span_contains(input.selected_statement_span, declaration.binding_span)
+        && declaration.binding_span == input.declaration_span
+        && declaration.initializer_span == Some(input.initializer_span)
+        && declaration.owner == input.initializer_ordinal
+        && input.binding.0.as_ref() == input.evidence.selected_binding
+        && call_site == CallSite::from(input.call_span)
 }
 
 fn set_from_primitive_array_aliases(expression: &Expr) -> Option<Vec<Id>> {
@@ -5795,32 +5789,27 @@ impl ExecutionIndex {
             return;
         }
         if !self.dynamic_scope_owners.is_empty() {
-            for input in selected {
+            for evidence in selected
+                .iter()
+                .map(|input| &input.evidence)
+                .chain(resolved.iter().map(|input| &input.evidence))
+            {
                 self.native_operation_input_errors.push(format!(
                     "{} cannot assert native operation identity because provider analysis contains dynamic-scope contamination",
-                    input.evidence.spec_location
-                ));
-            }
-            for input in resolved {
-                self.native_operation_input_errors.push(format!(
-                    "{} cannot assert native operation identity because provider analysis contains dynamic-scope contamination",
-                    input.evidence.spec_location
+                    evidence.spec_location
                 ));
             }
             return;
         }
         for input in selected {
             let request = &input.evidence.spec_location;
+            if let Some(error) = self.native_operation_mutation_error(&input.evidence) {
+                self.native_operation_input_errors.push(error);
+                continue;
+            }
             if input.evidence.operation
                 == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
             {
-                if let Some(owner) = self.known_object_freeze_mutation() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} is contradicted by a positively identified required Object.freeze slot write in source unit {}",
-                        owner.0
-                    ));
-                    continue;
-                }
                 let candidates: Vec<_> = self
                     .hoisted_bindings
                     .keys()
@@ -5862,38 +5851,31 @@ impl ExecutionIndex {
                     });
                 continue;
             }
+            let candidates: Vec<_> = self
+                .binding_declaration_writes
+                .iter()
+                .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
+                .flat_map(|(binding, writes)| {
+                    writes.iter().filter_map(move |write| {
+                        (write.simple_identifier
+                            && write.direct_top_level
+                            && span_contains(input.selected_statement_span, write.binding_span))
+                        .then_some((binding.clone(), write.clone()))
+                    })
+                })
+                .collect();
+            let [(binding, declaration)] = candidates.as_slice() else {
+                self.native_operation_input_errors.push(format!(
+                    "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
+                    input.selected_binding,
+                    candidates.len()
+                ));
+                continue;
+            };
             if matches!(
                 input.evidence.operation,
                 NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
             ) {
-                if let Some(owner) = self.known_set_protocol_mutation() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} is contradicted by a positively identified required native slot write in source unit {}",
-                        owner.0
-                    ));
-                    continue;
-                }
-                let candidates: Vec<_> = self
-                    .binding_declaration_writes
-                    .iter()
-                    .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
-                    .flat_map(|(binding, writes)| {
-                        writes.iter().filter_map(move |write| {
-                            (write.simple_identifier
-                                && write.direct_top_level
-                                && span_contains(input.selected_statement_span, write.binding_span))
-                            .then_some((binding.clone(), write.clone()))
-                        })
-                    })
-                    .collect();
-                let [(binding, declaration)] = candidates.as_slice() else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
-                        input.selected_binding,
-                        candidates.len()
-                    ));
-                    continue;
-                };
                 let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
                 else {
                     self.native_operation_input_errors.push(format!(
@@ -5907,11 +5889,7 @@ impl ExecutionIndex {
                     ));
                     continue;
                 };
-                if !self.has_stable_primitive_set_array(declaration)
-                    || constructor.0.as_ref() != "Set"
-                    || self.property_key_declarations.contains(constructor)
-                    || self.imported_bindings.contains(constructor)
-                {
+                if !self.is_unshadowed_primitive_set_initializer(declaration, constructor) {
                     self.native_operation_input_errors
                         .push(format!(
                             "{request} requires a direct unshadowed new Set([primitive literals or earlier stable primitive bindings]) operation with one dense nonspread array literal"
@@ -5949,37 +5927,6 @@ impl ExecutionIndex {
                     });
                 continue;
             }
-            if let Some(owner) =
-                self.known_global_native_operation_mutation(input.evidence.operation)
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified {} (source unit {})",
-                    native_operation_mutation_name(input.evidence.operation),
-                    owner.0
-                ));
-                continue;
-            }
-            let candidates: Vec<_> = self
-                .binding_declaration_writes
-                .iter()
-                .filter(|(binding, _)| binding.0.as_ref() == input.selected_binding)
-                .flat_map(|(binding, writes)| {
-                    writes.iter().filter_map(move |write| {
-                        (write.simple_identifier
-                            && write.direct_top_level
-                            && span_contains(input.selected_statement_span, write.binding_span))
-                        .then_some((binding.clone(), write.clone()))
-                    })
-                })
-                .collect();
-            let [(binding, declaration)] = candidates.as_slice() else {
-                self.native_operation_input_errors.push(format!(
-                    "{request}.source_match selected `{}`, but the canonical execution index found {} direct simple top-level declarations in that source item; exactly one is required",
-                    input.selected_binding,
-                    candidates.len()
-                ));
-                continue;
-            };
             let binding = (*binding).clone();
             let declaration = (*declaration).clone();
             if declaration.initializer.is_none() {
@@ -6014,22 +5961,18 @@ impl ExecutionIndex {
                 continue;
             }
             for (callee, args, call_site) in initializers {
-                let Some(call) = self.top_calls[declaration.owner.0]
-                    .iter()
-                    .find(|call| CallSite::from(call.span) == call_site)
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer resolves to a direct top-level call site"
-                    ));
-                    continue;
+                let call = match self.direct_native_initializer_call(
+                    input.evidence.operation,
+                    &declaration,
+                    call_site,
+                ) {
+                    Ok(call) => call,
+                    Err(reason) => {
+                        self.native_operation_input_errors
+                            .push(format!("{request} {reason}"));
+                        continue;
+                    }
                 };
-                if input.evidence.operation.empty_constructor_name().is_some()
-                    && declaration.empty_map_object_sites.is_none()
-                    && declaration.initializer_span != Some(call.span)
-                {
-                    self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
-                    continue;
-                }
                 if let Some(reason) = self.native_operation_call_shape_error(
                     input.evidence.operation,
                     callee,
@@ -6041,6 +5984,7 @@ impl ExecutionIndex {
                         .push(format!("{request} {reason}"));
                     continue;
                 }
+                let call_span = call.span;
                 let mut evidence = input.evidence.clone();
                 evidence.selected_binding = input.selected_binding.clone();
                 self.native_operation_input_evidence
@@ -6051,8 +5995,8 @@ impl ExecutionIndex {
                         binding: binding.clone(),
                         selected_statement_span: input.selected_statement_span,
                         declaration_span: declaration.binding_span,
-                        initializer_span: declaration.initializer_span.unwrap_or(call.span),
-                        call_span: call.span,
+                        initializer_span: declaration.initializer_span.unwrap_or(call_span),
+                        call_span,
                         initializer_ordinal: declaration.owner,
                     });
             }
@@ -6060,16 +6004,13 @@ impl ExecutionIndex {
 
         for input in resolved {
             let request = &input.evidence.spec_location;
+            if let Some(error) = self.native_operation_mutation_error(&input.evidence) {
+                self.native_operation_input_errors.push(error);
+                continue;
+            }
             if input.evidence.operation
                 == NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
             {
-                if let Some(owner) = self.known_object_freeze_mutation() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} is contradicted by a positively identified required Object.freeze slot write in source unit {}",
-                        owner.0
-                    ));
-                    continue;
-                }
                 let is_same = self
                     .direct_freeze_return_call(&input.binding, input.selected_statement_span)
                     .is_some_and(|call| {
@@ -6091,27 +6032,20 @@ impl ExecutionIndex {
                 self.resolved_native_operation_inputs.push(input.clone());
                 continue;
             }
+            let Some([declaration]) = self
+                .binding_declaration_writes
+                .get(&input.binding)
+                .map(Vec::as_slice)
+            else {
+                self.native_operation_input_errors.push(format!(
+                    "{request} no longer resolves to one canonical binding declaration"
+                ));
+                continue;
+            };
             if matches!(
                 input.evidence.operation,
                 NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray)
             ) {
-                if let Some(owner) = self.known_set_protocol_mutation() {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} is contradicted by a positively identified required native slot write in source unit {}",
-                        owner.0
-                    ));
-                    continue;
-                }
-                let Some([declaration]) = self
-                    .binding_declaration_writes
-                    .get(&input.binding)
-                    .map(Vec::as_slice)
-                else {
-                    self.native_operation_input_errors.push(format!(
-                        "{request} no longer resolves to one canonical binding declaration"
-                    ));
-                    continue;
-                };
                 let Some(ValueExpr::New(callee, _, call_site)) = declaration.initializer.as_ref()
                 else {
                     self.native_operation_input_errors.push(format!(
@@ -6119,19 +6053,9 @@ impl ExecutionIndex {
                     ));
                     continue;
                 };
-                let is_same = declaration.direct_top_level
-                    && declaration.simple_identifier
-                    && self.has_stable_primitive_set_array(declaration)
-                    && span_contains(input.selected_statement_span, declaration.binding_span)
-                    && declaration.binding_span == input.declaration_span
-                    && declaration.initializer_span == Some(input.initializer_span)
-                    && declaration.owner == input.initializer_ordinal
-                    && input.binding.0.as_ref() == input.evidence.selected_binding
-                    && *call_site == CallSite::from(input.call_span)
+                let is_same = matches_resolved_native_initializer(input, declaration, *call_site)
                     && matches!(callee.as_ref(), ValueExpr::Binding(constructor)
-                        if constructor.0.as_ref() == "Set"
-                            && !self.property_key_declarations.contains(constructor)
-                            && !self.imported_bindings.contains(constructor));
+                        if self.is_unshadowed_primitive_set_initializer(declaration, constructor));
                 if !is_same {
                     self.native_operation_input_errors.push(format!(
                         "{request} no longer identifies the same direct unshadowed Set initializer"
@@ -6143,26 +6067,6 @@ impl ExecutionIndex {
                 self.resolved_native_operation_inputs.push(input.clone());
                 continue;
             }
-            if let Some(owner) =
-                self.known_global_native_operation_mutation(input.evidence.operation)
-            {
-                self.native_operation_input_errors.push(format!(
-                    "{request} is contradicted by a positively identified {} (source unit {})",
-                    native_operation_mutation_name(input.evidence.operation),
-                    owner.0
-                ));
-                continue;
-            }
-            let Some([declaration]) = self
-                .binding_declaration_writes
-                .get(&input.binding)
-                .map(Vec::as_slice)
-            else {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer resolves to one canonical binding declaration"
-                ));
-                continue;
-            };
             let Some((callee, args, call_site)) =
                 native_operation_initializers(declaration, input.evidence.operation).and_then(
                     |initializers| {
@@ -6177,22 +6081,18 @@ impl ExecutionIndex {
                 ));
                 continue;
             };
-            let Some(call) = self.top_calls[declaration.owner.0]
-                .iter()
-                .find(|call| CallSite::from(call.span) == call_site)
-            else {
-                self.native_operation_input_errors.push(format!(
-                    "{request} no longer resolves to a direct top-level call site"
-                ));
-                continue;
+            let call = match self.direct_native_initializer_call(
+                input.evidence.operation,
+                declaration,
+                call_site,
+            ) {
+                Ok(call) => call,
+                Err(reason) => {
+                    self.native_operation_input_errors
+                        .push(format!("{request} {reason}"));
+                    continue;
+                }
             };
-            if input.evidence.operation.empty_constructor_name().is_some()
-                && declaration.empty_map_object_sites.is_none()
-                && declaration.initializer_span != Some(call.span)
-            {
-                self.native_operation_input_errors.push(format!("{request} must select the direct constructor initializer without a sequence or assignment wrapper"));
-                continue;
-            }
             if let Some(reason) = self.native_operation_call_shape_error(
                 input.evidence.operation,
                 callee,
@@ -6205,14 +6105,7 @@ impl ExecutionIndex {
                 ));
                 continue;
             }
-            let is_same = declaration.direct_top_level
-                && declaration.simple_identifier
-                && span_contains(input.selected_statement_span, declaration.binding_span)
-                && declaration.binding_span == input.declaration_span
-                && declaration.initializer_span == Some(input.initializer_span)
-                && declaration.owner == input.initializer_ordinal
-                && input.binding.0.as_ref() == input.evidence.selected_binding
-                && call_site == CallSite::from(input.call_span);
+            let is_same = matches_resolved_native_initializer(input, declaration, call_site);
             if !is_same {
                 self.native_operation_input_errors.push(format!(
                     "{request} no longer identifies the same direct unshadowed native initializer"
@@ -6253,6 +6146,69 @@ impl ExecutionIndex {
                     .to_owned(),
             );
         }
+    }
+
+    fn native_operation_mutation_error(
+        &self,
+        evidence: &NativeOperationInputEvidence,
+    ) -> Option<String> {
+        let request = &evidence.spec_location;
+        let operation = evidence.operation;
+        match operation {
+            NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze) => {
+                let owner = self.known_object_freeze_mutation()?;
+                Some(format!(
+                    "{request} is contradicted by a positively identified required Object.freeze slot write in source unit {}",
+                    owner.0
+                ))
+            }
+            NativeInputKind::Operation(spec::NativeOperationKind::SetFromPrimitiveArray) => {
+                let owner = self.known_set_protocol_mutation()?;
+                Some(format!(
+                    "{request} is contradicted by a positively identified required native slot write in source unit {}",
+                    owner.0
+                ))
+            }
+            _ => {
+                let (name, owner) = self.known_global_native_operation_mutation(operation)?;
+                Some(format!(
+                    "{request} is contradicted by a positively identified global {name} replacement or accessor installation (source unit {})",
+                    owner.0
+                ))
+            }
+        }
+    }
+
+    fn is_unshadowed_primitive_set_initializer(
+        &self,
+        declaration: &BindingDeclarationWrite,
+        constructor: &Id,
+    ) -> bool {
+        self.has_stable_primitive_set_array(declaration)
+            && constructor.0.as_ref() == "Set"
+            && !self.property_key_declarations.contains(constructor)
+            && !self.imported_bindings.contains(constructor)
+    }
+
+    fn direct_native_initializer_call(
+        &self,
+        operation: NativeInputKind,
+        declaration: &BindingDeclarationWrite,
+        site: CallSite,
+    ) -> Result<&Call, &'static str> {
+        let call = self.top_calls[declaration.owner.0]
+            .iter()
+            .find(|call| CallSite::from(call.span) == site)
+            .ok_or("no longer resolves to a direct top-level call site")?;
+        if operation.empty_constructor_name().is_some()
+            && declaration.empty_map_object_sites.is_none()
+            && declaration.initializer_span != Some(call.span)
+        {
+            return Err(
+                "must select the direct constructor initializer without a sequence or assignment wrapper",
+            );
+        }
+        Ok(call)
     }
 
     fn source_slot_overlap(&self, slot: &NativeWriteSlot) -> NativeSlotOverlap {
@@ -6342,31 +6298,16 @@ impl ExecutionIndex {
     fn known_global_native_operation_mutation(
         &self,
         operation: NativeInputKind,
-    ) -> Option<SourceUnitOrdinal> {
-        if let Some(constructor) = operation.empty_constructor_name() {
-            return match self.source_slot_overlap(&NativeWriteSlot {
-                receiver: NativeReceiverPath::GlobalObject,
-                key: NativePropertyKey::String(constructor.to_owned()),
-            }) {
-                NativeSlotOverlap::Known(owner) => Some(owner),
-                NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
-            };
-        }
-        match operation {
-            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
-                self.known_global_symbol_mutation()
-            }
-            _ => None,
-        }
-    }
-
-    fn known_global_symbol_mutation(&self) -> Option<SourceUnitOrdinal> {
-        let overlap = self.source_slot_overlap(&NativeWriteSlot {
+    ) -> Option<(&'static str, SourceUnitOrdinal)> {
+        let name = match operation {
+            NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => "Symbol",
+            _ => operation.empty_constructor_name()?,
+        };
+        match self.source_slot_overlap(&NativeWriteSlot {
             receiver: NativeReceiverPath::GlobalObject,
-            key: NativePropertyKey::String("Symbol".to_owned()),
-        });
-        match overlap {
-            NativeSlotOverlap::Known(owner) => Some(owner),
+            key: NativePropertyKey::String(name.to_owned()),
+        }) {
+            NativeSlotOverlap::Known(owner) => Some((name, owner)),
             NativeSlotOverlap::Opaque | NativeSlotOverlap::Absent => None,
         }
     }
@@ -11992,7 +11933,9 @@ impl PreparedCallableCapabilities {
         &self,
         operation: NativeInputKind,
     ) -> Option<SourceUnitOrdinal> {
-        self.index.known_global_native_operation_mutation(operation)
+        self.index
+            .known_global_native_operation_mutation(operation)
+            .map(|(_, owner)| owner)
     }
 
     pub(crate) fn known_object_freeze_mutation_owner(&self) -> Option<SourceUnitOrdinal> {

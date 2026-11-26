@@ -104,24 +104,8 @@ pub(super) fn resolve_present_read(
     property: &str,
     ownership: OwnDataOwnership<'_>,
 ) -> Result<PresentOwnDataSlot, OrderedFieldReadRefusal> {
-    if receivers.len() != 1 {
-        return Err(OrderedFieldReadRefusal::ReceiverNotSingleton);
-    }
-    let Some(AbstractValue::Value(Value::Alloc(kind, object))) = receivers.first() else {
-        return Err(OrderedFieldReadRefusal::ReceiverNotObject);
-    };
-    if !kind.supports_ordinary_own_data_read_proof() {
-        return Err(OrderedFieldReadRefusal::ReceiverNotObject);
-    }
-    if let OwnDataOwnership::FreshLocal { borrowed, .. } = &ownership
-        && borrowed.contains(object)
-    {
-        return Err(OrderedFieldReadRefusal::BorrowedReceiver);
-    }
-    if !context.object_properties_are_settled(*object) {
-        return Err(OrderedFieldReadRefusal::UnsettledReceiver);
-    }
-    if let Some(length) = context.first_generation_dense_array_length(*object)
+    let object = resolve_receiver(context, receivers, &ownership)?;
+    if let Some(length) = context.first_generation_dense_array_length(object)
         && (property == "length" || canonical_array_index(property).is_some())
     {
         if property != "length"
@@ -130,27 +114,19 @@ pub(super) fn resolve_present_read(
             return Err(OrderedFieldReadRefusal::MissingField);
         }
         if let OwnDataOwnership::FreshLocal { fresh, .. } = &ownership
-            && !fresh.contains(object)
+            && !fresh.contains(&object)
         {
             return Err(OrderedFieldReadRefusal::AllocationNotFresh);
         }
-        if context.property_is_accessor(*object, property) {
-            return Err(OrderedFieldReadRefusal::NonDataField);
-        }
-        if context.property_values(*object, property).is_none() {
-            return Err(OrderedFieldReadRefusal::MissingHeapValue);
-        }
-        let slot = OwnDataSlot {
-            object: *object,
-            property: property.to_owned(),
-        };
+        let slot = present_data_slot(context, object, property)?;
         return Ok(if property == "length" {
             PresentOwnDataSlot::ArrayLength(slot)
         } else {
             PresentOwnDataSlot::ArrayIndex(slot)
         });
     }
-    resolve_slot(context, receivers, property, ownership).map(PresentOwnDataSlot::OrdinaryRecord)
+    resolve_record_slot(context, object, property, &ownership)
+        .map(PresentOwnDataSlot::OrdinaryRecord)
 }
 
 pub(super) fn resolve_slot(
@@ -159,6 +135,15 @@ pub(super) fn resolve_slot(
     property: &str,
     ownership: OwnDataOwnership<'_>,
 ) -> Result<OwnDataSlot, OrderedFieldReadRefusal> {
+    let object = resolve_receiver(context, receivers, &ownership)?;
+    resolve_record_slot(context, object, property, &ownership)
+}
+
+fn resolve_receiver(
+    context: &impl OwnDataContext,
+    receivers: &Values,
+    ownership: &OwnDataOwnership<'_>,
+) -> Result<u32, OrderedFieldReadRefusal> {
     if receivers.len() != 1 {
         return Err(OrderedFieldReadRefusal::ReceiverNotSingleton);
     }
@@ -168,7 +153,7 @@ pub(super) fn resolve_slot(
     if !kind.supports_ordinary_own_data_read_proof() {
         return Err(OrderedFieldReadRefusal::ReceiverNotObject);
     }
-    if let OwnDataOwnership::FreshLocal { borrowed, .. } = &ownership
+    if let OwnDataOwnership::FreshLocal { borrowed, .. } = ownership
         && borrowed.contains(object)
     {
         return Err(OrderedFieldReadRefusal::BorrowedReceiver);
@@ -176,11 +161,20 @@ pub(super) fn resolve_slot(
     if !context.object_properties_are_settled(*object) {
         return Err(OrderedFieldReadRefusal::UnsettledReceiver);
     }
-    let Some(shape) = context.ordinary_record_shape(*object) else {
+    Ok(*object)
+}
+
+fn resolve_record_slot(
+    context: &impl OwnDataContext,
+    object: u32,
+    property: &str,
+    ownership: &OwnDataOwnership<'_>,
+) -> Result<OwnDataSlot, OrderedFieldReadRefusal> {
+    let Some(shape) = context.ordinary_record_shape(object) else {
         return Err(OrderedFieldReadRefusal::UnsupportedRecordShape);
     };
-    if let OwnDataOwnership::FreshLocal { fresh, .. } = &ownership
-        && !fresh.contains(object)
+    if let OwnDataOwnership::FreshLocal { fresh, .. } = ownership
+        && !fresh.contains(&object)
     {
         return Err(OrderedFieldReadRefusal::AllocationNotFresh);
     }
@@ -190,14 +184,22 @@ pub(super) fn resolve_slot(
     if !matches!(descriptor, OwnPropertyDescriptorSyntax::Data) {
         return Err(OrderedFieldReadRefusal::NonDataField);
     }
-    if context.property_is_accessor(*object, property) {
+    present_data_slot(context, object, property)
+}
+
+fn present_data_slot(
+    context: &impl OwnDataContext,
+    object: u32,
+    property: &str,
+) -> Result<OwnDataSlot, OrderedFieldReadRefusal> {
+    if context.property_is_accessor(object, property) {
         return Err(OrderedFieldReadRefusal::NonDataField);
     }
-    if context.property_values(*object, property).is_none() {
+    if context.property_values(object, property).is_none() {
         return Err(OrderedFieldReadRefusal::MissingHeapValue);
     }
     Ok(OwnDataSlot {
-        object: *object,
+        object,
         property: property.to_owned(),
     })
 }
