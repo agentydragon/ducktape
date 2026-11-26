@@ -1728,7 +1728,7 @@ or owning the Identity lifecycle through an Agentplane API? The operator named I
 Nov 22 as a candidate if the track is selected. On Nov 26, working through
 [agent teardown](#agent_teardown_design--a-teardown-sequence-for-an-agent), the operator called
 Identity "a pretty clear case": its delete and Session-Sandbox invariants span Sessions, which
-must stay in a database. The operator's suggested test for other kinds: move one when an invariant
+must stay in a database. A proposed test for other kinds, not yet confirmed by the operator: move one when an invariant
 spans it and database-held state; keep it in Kubernetes when it is mainly desired state for
 something Kubernetes runs. Sandboxes are unproven under that test; the trace should check whether
 a Sandbox's Identity binding can move while the rest of the CR stays. `docs/principles.md`'s
