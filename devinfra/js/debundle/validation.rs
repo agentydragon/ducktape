@@ -16,7 +16,7 @@ use swc_atoms::Atom;
 
 use analysis::analysis_inputs::CommutingStatementsRef;
 use analysis::{
-    DependencyEdge, DependencyGraph, EdgeRole, ModuleId, Purity, SequencedCause,
+    DependencyEdge, DependencyGraph, EdgeRole, ModuleId, Purity, PurityReason, SequencedCause,
     SequencedSourceUnitCause,
 };
 
@@ -382,6 +382,30 @@ fn explain_edge(
 }
 
 impl CycleEdge {
+    pub fn sequenced_causes(&self) -> impl Iterator<Item = &SequencedSourceUnitCause> {
+        let target = match &self.explanation {
+            Some(CutEdgeExplanation::Sequenced {
+                target_source_unit, ..
+            }) => target_source_unit.as_deref(),
+            _ => None,
+        };
+        self.sequenced_source_unit.iter().chain(target)
+    }
+
+    /// Render the endpoints, dependency kind and statement ordinal on one line.
+    pub fn render_header(&self, out: &mut String) {
+        let key = BindingPairKey::of(self);
+        out.push_str(&format!(
+            "    {from_b} ({from_m})  --{kind}-->  {to_b} ({to_m})  [stmt #{ord}]\n",
+            from_b = key.from_label,
+            from_m = key.from,
+            kind = self.kind.diagnostic_label(),
+            to_b = key.to_label,
+            to_m = key.to,
+            ord = self.statement_ordinal.0,
+        ));
+    }
+
     /// Stable diagnostic ordering shared by stored cuts and reconstructed evidence.
     pub fn sort_for_report(edges: &mut [Self]) {
         edges.sort_by(|a, b| {
@@ -417,8 +441,8 @@ const CYCLE_WITNESS_PREVIEW_STEPS: usize = 8;
 /// binding-pair blame rows.
 ///
 /// Each binding-pair row groups cut entries by
-/// `(from_binding_label, from_module, to_module, to_binding_label, kind)`
-/// and counts the underlying R/S reasons. Anonymous source/target
+/// `(from_binding_label, from_module, to_module, to_binding_label)`
+/// and counts the underlying R/S reasons. Anonymous source
 /// bindings render as `<anon stmt #ord>` so every row has a stable
 /// human-readable label even when the source statement declares no
 /// binding (top-level `console.log`, side-effecting expressions).
@@ -480,48 +504,19 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
             out.push_str("  Pass-1 closed-walk witness unsupported for this rejection kind.\n");
         }
 
-        // Group cut edges by binding-pair blame key. Each group is
-        // one (reader, target) atom split the spec author can fix.
-        let mut groups: HashMap<BindingPairKey<'_>, Vec<&CycleEdge>> = HashMap::new();
-        for edge in &cycle.cut {
-            groups
-                .entry(BindingPairKey::of(edge))
-                .or_default()
-                .push(edge);
-        }
-        let mut ranked: Vec<(BindingPairKey<'_>, Vec<&CycleEdge>)> = groups.into_iter().collect();
-        ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
-
         // Every blocking SCC carries a non-empty cut by construction:
         // Pass-1 runs FAS over a strongly connected constraining
         // subgraph; Pass-2 reports only SCCs with a non-empty
         // simulator-violated TDZ set.
         debug_assert!(
-            !ranked.is_empty(),
+            !cycle.cut.is_empty(),
             "blocking SCC #{i} rendered with an empty cut: {cycle:?}",
         );
 
         out.push_str(
             "  Binding pairs forcing the cycle (count: source binding (module) → kind → target binding (module), then why each edge constrains):\n",
         );
-        for (key, edges) in ranked.iter().take(TOP_K) {
-            out.push_str(&format!(
-                "    {n:>4}x  {from_b} ({from_m})  --{kind}-->  {to_b} ({to_m})\n",
-                n = edges.len(),
-                from_b = key.from_label,
-                from_m = key.from,
-                kind = edges[0].kind.diagnostic_label(),
-                to_b = key.to_label,
-                to_m = key.to,
-            ));
-            render_explanations(edges, &mut out);
-        }
-        if ranked.len() > TOP_K {
-            out.push_str(&format!(
-                "    … +{} more binding pair(s)\n",
-                ranked.len() - TOP_K,
-            ));
-        }
+        render_binding_pairs(&cycle.cut, Some(TOP_K), &mut out);
 
         if !cycle.lazy_closure.is_empty() {
             out.push_str(
@@ -594,9 +589,42 @@ impl<'a> BindingPairKey<'a> {
     }
 }
 
+/// Rank binding pairs by edge count, then by their displayed endpoints.
+pub fn render_binding_pairs(edges: &[CycleEdge], limit: Option<usize>, out: &mut String) {
+    let mut groups: HashMap<BindingPairKey<'_>, Vec<&CycleEdge>> = HashMap::new();
+    for edge in edges {
+        groups
+            .entry(BindingPairKey::of(edge))
+            .or_default()
+            .push(edge);
+    }
+    let mut ranked: Vec<(BindingPairKey<'_>, Vec<&CycleEdge>)> = groups.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
+
+    let limit = limit.unwrap_or(ranked.len());
+    for (key, edges) in ranked.iter().take(limit) {
+        out.push_str(&format!(
+            "    {n:>4}x  {from_b} ({from_m})  --{kind}-->  {to_b} ({to_m})\n",
+            n = edges.len(),
+            from_b = key.from_label,
+            from_m = key.from,
+            kind = edges[0].kind.diagnostic_label(),
+            to_b = key.to_label,
+            to_m = key.to,
+        ));
+        render_explanations(edges, out);
+    }
+    if ranked.len() > limit {
+        out.push_str(&format!(
+            "    … +{} more binding pair(s)\n",
+            ranked.len() - limit,
+        ));
+    }
+}
+
 /// Distinct explanations behind one binding-pair row, indented under
 /// it. Shared by the bail summary and `gate describe`'s evidence block.
-pub fn render_explanations(edges: &[&CycleEdge], out: &mut String) {
+fn render_explanations(edges: &[&CycleEdge], out: &mut String) {
     const WHY_K: usize = 3;
     let distinct: BTreeSet<String> = edges
         .iter()
@@ -632,16 +660,7 @@ pub fn render_inert_commuting_edges(
         edges.len(),
     ));
     for edge in edges.iter().take(INERT_K) {
-        let key = BindingPairKey::of(edge);
-        out.push_str(&format!(
-            "    {from_b} ({from_m})  --{kind}-->  {to_b} ({to_m})  [stmt #{ord}]\n",
-            from_b = key.from_label,
-            from_m = key.from,
-            kind = edge.kind.diagnostic_label(),
-            to_b = key.to_label,
-            to_m = key.to,
-            ord = edge.statement_ordinal.0,
-        ));
+        edge.render_header(out);
         if let Some(premise) = &edge.commuting_premise {
             let location = premise_locations
                 .get(premise)
@@ -1247,16 +1266,51 @@ fn render_string_preview(values: &[String], limit: usize) -> String {
     preview.join(", ")
 }
 
+/// Describe the initializer at the reason's span, falling back to its source unit.
+pub fn initializer_reason(cause: &SequencedSourceUnitCause, reason: &PurityReason) -> String {
+    let names = if cause.binding_names.is_empty() {
+        cause.source_unit_id.clone()
+    } else {
+        cause
+            .binding_names
+            .iter()
+            .map(Atom::as_ref)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let location = reason
+        .source_location
+        .as_ref()
+        .or(cause.source_location.as_ref())
+        .map(|loc| {
+            format!(
+                "{}:{}:{}",
+                loc.source_path,
+                loc.start_line,
+                loc.start_column
+                    .map_or_else(|| "?".to_string(), |col| col.to_string()),
+            )
+        })
+        .unwrap_or_else(|| "<location unavailable>".to_string());
+    let rule = reason.rule;
+    let detail = reason
+        .detail
+        .as_deref()
+        .map(|detail| format!(" ({detail})"))
+        .unwrap_or_default();
+    // A statement whose synchronous execution is incomplete
+    // chains conservatively; say so next to its purity reason.
+    let incomplete = match cause.synchronous_execution_complete {
+        Some(false) => "; synchronous execution incomplete",
+        _ => "",
+    };
+    format!("`{names}` at {location}: {rule}{detail}{incomplete}")
+}
+
 fn sequenced_causes_from_cycle(cycle: &CycleReport) -> Vec<SequencedSourceUnitCause> {
     let mut causes = BTreeMap::new();
     for edge in &cycle.cut {
-        let target = match &edge.explanation {
-            Some(CutEdgeExplanation::Sequenced {
-                target_source_unit, ..
-            }) => target_source_unit.as_deref(),
-            _ => None,
-        };
-        for cause in edge.sequenced_source_unit.iter().chain(target) {
+        for cause in edge.sequenced_causes() {
             causes.insert(cause.source_unit_id.clone(), cause.clone());
         }
     }
@@ -1304,16 +1358,6 @@ fn render_sequenced_source_unit_causes_with_limit(
     out.push_str(":\n");
     let mut rendered = 0;
     'causes: for cause in causes {
-        let names = if cause.binding_names.is_empty() {
-            cause.source_unit_id.clone()
-        } else {
-            cause
-                .binding_names
-                .iter()
-                .map(Atom::as_ref)
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
         let Purity::NotPure { reasons } = &cause.purity else {
             continue;
         };
@@ -1321,35 +1365,7 @@ fn render_sequenced_source_unit_causes_with_limit(
             if rendered == rendered_limit {
                 break 'causes;
             }
-            let location = reason
-                .source_location
-                .as_ref()
-                .or(cause.source_location.as_ref())
-                .map(|loc| {
-                    format!(
-                        "{}:{}:{}",
-                        loc.source_path,
-                        loc.start_line,
-                        loc.start_column
-                            .map_or_else(|| "?".to_string(), |col| col.to_string()),
-                    )
-                })
-                .unwrap_or_else(|| "<location unavailable>".to_string());
-            let rule = reason.rule;
-            let detail = reason
-                .detail
-                .as_deref()
-                .map(|detail| format!(" ({detail})"))
-                .unwrap_or_default();
-            // A statement whose synchronous execution is incomplete
-            // chains conservatively; say so next to its purity reason.
-            let incomplete = match cause.synchronous_execution_complete {
-                Some(false) => "; synchronous execution incomplete",
-                _ => "",
-            };
-            out.push_str(&format!(
-                "    `{names}` at {location}: {rule}{detail}{incomplete}\n"
-            ));
+            out.push_str(&format!("    {}\n", initializer_reason(cause, reason)));
             if let Some(guidance) = &reason.author_guidance {
                 out.push_str(&format!("      {guidance}\n"));
             }

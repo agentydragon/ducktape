@@ -1086,6 +1086,18 @@ pub struct SourceUnitReport {
 }
 
 impl SourceUnitReport {
+    pub fn sequenced_endpoint_cause(&self) -> Option<SequencedSourceUnitCause> {
+        SequencedSourceUnitCause::from_evidence(
+            &self.purity,
+            self.synchronous_execution.as_ref(),
+            self.source_location.as_ref(),
+            || self.id.clone(),
+            self.declared_bindings
+                .iter()
+                .map(|binding| binding.binding.clone()),
+        )
+    }
+
     pub fn class(&self) -> SourceUnitClass {
         SourceUnitClass::from_declared_bindings(&self.declared_bindings)
     }
@@ -1523,24 +1535,36 @@ pub fn impure_source_unit_cause(
     source_unit: SourceUnitId,
 ) -> Option<SequencedSourceUnitCause> {
     let node = dependency_graph.node(source_unit)?;
-    let heap_frontier = node
-        .synchronous_execution
-        .as_ref()
-        .and_then(|execution| execution.heap_frontier.clone());
-    if matches!(&node.purity, Purity::Pure { .. }) && heap_frontier.is_none() {
-        return None;
+    SequencedSourceUnitCause::from_evidence(
+        &node.purity,
+        node.synchronous_execution.as_ref(),
+        node.source_location.as_ref(),
+        || crate::reports::source_unit_key(source_unit),
+        node.declared.iter().map(|id| id.0.clone()),
+    )
+}
+
+impl SequencedSourceUnitCause {
+    fn from_evidence(
+        purity: &Purity,
+        execution: Option<&SynchronousExecutionReport>,
+        source_location: Option<&SourceLocation>,
+        source_unit_id: impl FnOnce() -> String,
+        binding_names: impl Iterator<Item = Atom>,
+    ) -> Option<Self> {
+        let heap_frontier = execution.and_then(|execution| execution.heap_frontier.clone());
+        if matches!(purity, Purity::Pure { .. }) && heap_frontier.is_none() {
+            return None;
+        }
+        Some(Self {
+            source_unit_id: source_unit_id(),
+            binding_names: binding_names.collect(),
+            source_location: source_location.cloned(),
+            purity: purity.clone(),
+            synchronous_execution_complete: execution.map(|execution| execution.complete),
+            heap_frontier,
+        })
     }
-    Some(SequencedSourceUnitCause {
-        source_unit_id: crate::reports::source_unit_key(source_unit),
-        binding_names: node.declared.iter().map(|id| id.0.clone()).collect(),
-        source_location: node.source_location.clone(),
-        purity: node.purity.clone(),
-        synchronous_execution_complete: node
-            .synchronous_execution
-            .as_ref()
-            .map(|execution| execution.complete),
-        heap_frontier,
-    })
 }
 
 impl AtomicGroupConflictReport {
