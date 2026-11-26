@@ -37,9 +37,11 @@ p=//devinfra/js/debundle/x/split_proof
 bbr test --jobs=4 "$p/integration/excalidraw:class_field_census_tmp"
 bbr test --jobs=4 "$p/debundle_cases:class_field_certificates_tmp" \
   "$p/debundle_cases:class_field_other_certificates_tmp" \
-  "$p/integration/library_splits:library_certificate_test" \
   "$p/integration/excalidraw:excalidraw_scroll_certificate"
 ```
+
+The historical library certificate target has since been retired; the current
+`library_smoke_test` runs only the original Acorn and semver runtime probes.
 
 The census writes `class-blockers.json` to undeclared test outputs. The archived
 [blockers.json.gz](blockers.json.gz) is the after-#20001 output; it records each

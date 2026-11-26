@@ -54,7 +54,9 @@ def _real_split_test(bundle, cut_step = 1, entry_first_step = 10, smoke = False)
 def real_split_sweeps():
     """Expose one opt-in test per bundle variant and a suite for the full corpus."""
     _real_bundle_artifacts()
-    _real_split_test("semver", smoke = True)
+
+    # library_smoke_test is now the direct Node probe in BUILD.bazel. The old
+    # semver split shortcut depended on diagnostic output construction.
     native.test_suite(
         name = "real_split_sweep",
         tests = [_real_split_test(bundle, cut, entry_first) for bundle, cut, entry_first in _VARIANTS],

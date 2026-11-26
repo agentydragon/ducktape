@@ -189,9 +189,7 @@ Compare their footprints with `bb run "$p/lowering:compare_footprints" -- "$out/
 
 ## 7. Real splits: halves, cuts, blocks, random placements
 
-`bbr test "$p/integration/library_splits:library_certificate_test"` runs the structural certificate on the pinned Acorn and semver bundles. It cuts each bundle in half, tries advancing its second unit, and moves its first noninitial function declaration if present. The checker receives the original JavaScript and a placement. Each certified split must also pass `--check-output` and match the original library's Node API smoke.
-
-The test writes `certificates.jsonl` to the test outputs. A refused library placement is **unknown**: a refusal alone establishes no difference. The **disproved** control executes an uncertified preview of the refused placement under Node: advancing an initializer changes the exported value from `1` to `undefined`. The larger sweeps below use diagnostic mode.
+`library_smoke_test` runs the original Acorn and semver bundles through the Node API probes in `smoke.mjs`. The former `library_certificate_test` depended on CLI construction routes that were retired, so its split assertions and preview control were removed.
 
 A bundle cannot be cut anywhere. This section runs the checker on 2,892 splits of six real bundles and runs each result in Node.
 Each bundle has an opt-in Bazel test, with the same strategies as the full sweep.

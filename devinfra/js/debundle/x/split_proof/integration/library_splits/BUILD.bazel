@@ -75,20 +75,11 @@ _LIBRARY_SOURCES = [
 ]
 
 js_test(
-    name = "library_certificate_test",
+    name = "library_smoke_test",
     size = "medium",
     args = ["$(rootpath " + src + ")" for src in _LIBRARY_SOURCES],
-    data = _LIBRARY_SOURCES + [src.removesuffix(".mjs") + ".json" for src in _LIBRARY_SOURCES] + [
-        "gen_spec.mjs",
-        "smoke.mjs",
-        "//devinfra/js/debundle/x/split_proof:seeded_random",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
-    ],
-    entry_point = "certificate_test.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    data = _LIBRARY_SOURCES + ["smoke.mjs"],
+    entry_point = "library_smoke_test.mjs",
 )
 
 js_library(

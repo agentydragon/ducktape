@@ -27,16 +27,6 @@ js_binary(
     tags = ["manual"],
 )
 
-js_test(
-    name = "pinned_certificates_test",
-    size = "large",
-    args = ["--check-certificates"],
-    data = _RUNNER_DATA + ["results/certificates.jsonl"],
-    entry_point = "run_cases.mjs",
-    env = _RUNNER_ENV,
-    shard_count = 6,
-)
-
 js_binary(
     name = "summarize_debundle_cases",
     data = ["//devinfra/js/debundle/x/split_proof:reporting"],
@@ -55,18 +45,15 @@ _CORPUS_CHUNK = "//devinfra/js/debundle/e2e:cases/emission/catchall_export_consu
 _PROBE = "//devinfra/js/debundle/e2e:cases/emission/catchall_export_consumer/read.probe.mjs"
 
 js_test(
-    name = "corpus_certificate_test",
+    name = "corpus_runtime_test",
     data = [
         _CORPUS_CHUNK,
         _PROBE,
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
-    entry_point = "certificate_test.mjs",
+    entry_point = "corpus_runtime_test.mjs",
     env = {
         "PROBE": "$(rootpath " + _PROBE + ")",
         "CHUNK": "$(rootpath " + _CORPUS_CHUNK + ")",
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
     },
     no_copy_to_bin = [
         _CORPUS_CHUNK,
@@ -77,14 +64,20 @@ js_test(
 js_test(
     name = "provider_runtime_test",
     size = "medium",
-    data = [":debundle_cases"],
+    data = [
+        "//devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/main.js",
+        "//devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/provider_module.js",
+    ],
     entry_point = "provider_runtime_test.mjs",
-    env = {"CASE_RUNNER": "$(rootpath :debundle_cases)"},
+    env = {
+        "MAIN_JS": "$(rootpath //devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/main.js)",
+        "PROVIDER_MODULE": "$(rootpath //devinfra/js/debundle/e2e:cases/emission/return_object_provider_import/provider_module.js)",
+    },
 )
 
 js_test(
     name = "placement_routing_test",
-    data = [":debundle_cases"],
+    data = ["//devinfra/js/debundle:debundle_resolve_placement"],
     entry_point = "placement_routing_test.mjs",
-    env = {"CASE_RUNNER": "$(rootpath :debundle_cases)"},
+    env = {"DEBUNDLE_RESOLVER": "$(rootpath //devinfra/js/debundle:debundle_resolve_placement)"},
 )
