@@ -378,7 +378,6 @@ rust_library(
         "diagnostics/progress.rs",
         "facts/abstract_domain.rs",
         "facts/abstract_domain/builtins.rs",
-        "facts/abstract_domain/foreign_call.rs",
         "facts/abstract_domain/heap.rs",
         "facts/abstract_domain/integrity.rs",
         "facts/abstract_domain/primitive.rs",

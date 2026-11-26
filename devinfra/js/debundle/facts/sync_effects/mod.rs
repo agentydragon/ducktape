@@ -8,6 +8,7 @@ mod callable_body_facts;
 mod completion;
 mod effect_coverage;
 pub mod execution_index;
+mod foreign_call;
 pub mod interpreter;
 mod kernel;
 mod legacy;
