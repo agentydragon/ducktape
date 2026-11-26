@@ -1796,3 +1796,48 @@ lean_proof_test(
     required_theorems = ["EsmSplit.MetadataImports.external_use_imported"],
     deps = [":metadata_imports"],
 )
+
+lean_library(
+    name = "corejs_indexed_export_cells",
+    srcs = ["EsmSplit/CoreJS/IndexedExportCells.lean"],
+    deps = [":corejs_certificate_support_base"],
+)
+
+lean_proof_test(
+    name = "corejs_indexed_export_cells_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.IndexedExportCells"],
+    required_theorems = [
+        "CoreJS.IndexedExportCells.body_lookup",
+        "CoreJS.IndexedExportCells.distinct_source_cells",
+        "CoreJS.IndexedExportCells.frame_keys",
+        "CoreJS.IndexedExportCells.scope_lookup_decl",
+        "CoreJS.IndexedExportCells.scope_lookup_none",
+        "CoreJS.IndexedExportCells.source_and_module_cell",
+        "CoreJS.IndexedExportCells.source_and_import_cell",
+    ],
+    deps = [":corejs_indexed_export_cells"],
+)
+
+lean_library(
+    name = "corejs_interior_export_names",
+    srcs = ["EsmSplit/CoreJS/InteriorExportNames.lean"],
+    deps = [
+        ":corejs_declaring_owner",
+        ":local_export_unit",
+        ":metadata_imports",
+    ],
+)
+
+lean_proof_test(
+    name = "corejs_interior_export_names_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.InteriorExportNames"],
+    required_theorems = [
+        "CoreJS.InteriorExportNames.exact_public_table",
+        "CoreJS.InteriorExportNames.row_owner",
+        "CoreJS.InteriorExportNames.row_pair_binding",
+        "CoreJS.InteriorExportNames.row_pair_published",
+    ],
+    deps = [":corejs_interior_export_names"],
+)
