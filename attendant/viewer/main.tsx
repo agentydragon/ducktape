@@ -26,6 +26,7 @@ async function api(path: string, options?: RequestInit): Promise<Response> {
   const response = await fetch(path, { cache: "no-store", ...options });
   if (!response.ok) {
     const { detail } = await response.json();
+    if (detail === "oidc_login_required") window.location.assign("/auth/login");
     throw new Error(detail);
   }
   return response;
@@ -148,7 +149,10 @@ function App() {
       const path = `/owner/providers/${encodeURIComponent(provider)}`;
       switch (action) {
         case "logout":
-          await post("/owner/logout");
+          if ((await post("/owner/logout")).headers.get("Location") === "/auth/signed-out") {
+            window.location.assign("/auth/signed-out");
+            break;
+          }
           signedOut("");
           break;
         case "verify": {

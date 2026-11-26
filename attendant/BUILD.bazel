@@ -33,7 +33,9 @@ py_library(
     deps = [
         ":host",
         ":runtime",
+        "//util:oidc_login",
         "@pypi//fastapi",
+        "@pypi//pydantic",
         "@pypi//starlette",
         "@rules_python//python/runfiles",
     ],

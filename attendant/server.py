@@ -9,7 +9,7 @@ import logging
 import re
 import secrets
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,13 +17,15 @@ from typing import cast
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, WebSocket
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
+from pydantic import SecretStr
 from python.runfiles import Runfiles
 from starlette.requests import ClientDisconnect, HTTPConnection
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from attendant.host import Host
 from attendant.runtime import Operation, Reply, SessionError, valid_target
+from util.oidc_login import LoginConfig, LoginSession, install_login_routes
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +126,29 @@ def _viewer_asset(filename: str, media_type: str) -> FileResponse:
     return FileResponse(Path(path), media_type=media_type)
 
 
+def owner_oidc_config(public_origin: str, env: Mapping[str, str]) -> LoginConfig:
+    return LoginConfig(
+        issuer=env["ATTENDANT_ISSUER"],
+        client_id=env["ATTENDANT_CLIENT_ID"],
+        client_secret=SecretStr(env["ATTENDANT_CLIENT_SECRET"]),
+        session_secret=SecretStr(env["ATTENDANT_SESSION_SECRET"]),
+        session_seconds=_SESSION_TTL_SECONDS,
+        public_base_url=public_origin,
+        cookie_name="attendant_oidc",
+        public_paths=frozenset(),
+        signed_out_text="You are signed out of Attendant.",
+        session_created_log=None,
+        allowed_subject=env["ATTENDANT_ALLOWED_SUBJECT"],
+    )
+
+
 def create_app(
-    host: Host, owner_token: str, route_tokens: dict[str, str], *, public_origin: str | None = None
+    host: Host,
+    owner_token: str,
+    route_tokens: dict[str, str],
+    *,
+    public_origin: str | None = None,
+    oidc: LoginConfig | None = None,
 ) -> FastAPI:
     """Create the owner UI and caller API. Configure public_origin for a TLS terminator."""
     route_tokens = dict(route_tokens)
@@ -136,6 +159,20 @@ def create_app(
         or any(not token or any(not 33 <= ord(char) <= 126 for char in token) for token in tokens)
     ):
         raise ValueError("each provider and owner needs a distinct nonempty ASCII token")
+    if oidc is not None and (
+        not all(
+            (
+                oidc.allowed_subject,
+                oidc.issuer,
+                oidc.client_id,
+                oidc.client_secret.get_secret_value(),
+                oidc.session_secret.get_secret_value(),
+            )
+        )
+        or not oidc.https
+        or oidc.public_base_url != public_origin
+    ):
+        raise ValueError("owner OIDC requires a bound subject and the configured public HTTPS origin")
     if public_origin is not None:
         scheme, _, authority = public_origin.partition("://")
         if not public_origin or _normalize_origin(scheme, authority) != public_origin:
@@ -190,7 +227,7 @@ def create_app(
 
     async def require_owner(request: Request) -> None:
         if signed_in(request) is None:
-            raise HTTPException(status_code=401, detail="owner_sign_in_required")
+            raise HTTPException(status_code=401, detail="oidc_login_required" if oidc else "owner_sign_in_required")
         if request.method != "GET":
             await require_origin(request)
 
@@ -215,7 +252,9 @@ def create_app(
         return response
 
     @app.get("/")
-    async def index(request: Request) -> FileResponse:
+    async def index(request: Request) -> Response:
+        if oidc is not None and signed_in(request) is None:
+            return RedirectResponse("/auth/login", status_code=303)
         response = _viewer_asset("index.html", "text/html")
         expected = origin(request)
         websocket_origin = "" if expected is None else " ws" + expected.removeprefix("http")
@@ -226,43 +265,68 @@ def create_app(
         return response
 
     @app.get("/main.js")
-    async def javascript() -> FileResponse:
+    async def javascript(request: Request) -> FileResponse:
+        if oidc is not None:
+            await require_owner(request)
         return _viewer_asset("main.js", "application/javascript")
 
     @app.get("/main.css")
-    async def stylesheet() -> FileResponse:
+    async def stylesheet(request: Request) -> FileResponse:
+        if oidc is not None:
+            await require_owner(request)
         return _viewer_asset("main.css", "text/css")
 
     @app.get("/healthz")
     async def health() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.post("/owner/login", dependencies=[Depends(require_origin)])
-    async def login(request: Request) -> Response:
+    def start_session(request: Request, response: Response, seconds: int) -> None:
         nonlocal session
-        payload = await _read_json(request, _MAX_OWNER_BYTES)
-        token = payload.get("token")
-        if set(payload) != {"token"} or not isinstance(token, str) or not _equal(token, owner_token):
-            raise HTTPException(status_code=401, detail="invalid_token")
         if session is not None:
             session.revoked.set()
-        session = OwnerSession()
-        response = Response(status_code=204)
+        session = OwnerSession(expires_at=time.monotonic() + seconds)
         cookie, secure = owner_cookie(request)
         response.set_cookie(
-            cookie, session.key, max_age=_SESSION_TTL_SECONDS, secure=secure, httponly=True, samesite="strict"
+            cookie,
+            session.key,
+            max_age=seconds,
+            secure=secure,
+            httponly=True,
+            samesite="strict" if oidc is None else "lax",
         )
-        return response
+
+    def end_session(request: Request, response: Response) -> None:
+        nonlocal session
+        if signed_in(request) is not None and session is not None:
+            session.revoked.set()
+            session = None
+        cookie, secure = owner_cookie(request)
+        response.delete_cookie(cookie, secure=secure, httponly=True, samesite="strict" if oidc is None else "lax")
+
+    if oidc is None:
+
+        @app.post("/owner/login", dependencies=[Depends(require_origin)])
+        async def login(request: Request) -> Response:
+            payload = await _read_json(request, _MAX_OWNER_BYTES)
+            token = payload.get("token")
+            if set(payload) != {"token"} or not isinstance(token, str) or not _equal(token, owner_token):
+                raise HTTPException(status_code=401, detail="invalid_token")
+            response = Response(status_code=204)
+            start_session(request, response, _SESSION_TTL_SECONDS)
+            return response
+    else:
+
+        def oidc_login(request: Request, response: Response, identity: LoginSession) -> None:
+            start_session(request, response, max(0, int(identity.expires_at - time.time())))
+
+        install_login_routes(app, oidc, on_login=oidc_login, on_logout=end_session)
 
     @owner.post("/logout")
     async def logout(request: Request) -> Response:
-        nonlocal session
-        if session is not None:
-            session.revoked.set()
-            session = None
         response = Response(status_code=204)
-        cookie, secure = owner_cookie(request)
-        response.delete_cookie(cookie, secure=secure, httponly=True, samesite="strict")
+        end_session(request, response)
+        if oidc is not None:
+            response.headers["Location"] = "/auth/signed-out"
         return response
 
     @owner.get("/providers")

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterator
 from typing import cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_bazel
@@ -13,7 +15,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from attendant.host import Host
 from attendant.runtime import Operation, Reply, SessionError
-from attendant.server import create_app
+from attendant.server import create_app, owner_oidc_config
 
 _ORIGIN = "https://attendant.example.test"
 _OWNER = "example-owner-token"
@@ -132,6 +134,49 @@ def test_owner_controls_require_cookie_and_exact_origin(client: TestClient, host
     denied = client.post(verify, headers={**_ORIGIN_HEADERS, "Cookie": f"__Host-attendant_owner={previous_cookie}"})
     assert denied.status_code == 401
     assert host.verified == ["one"]
+
+
+def test_oidc_owner_session(host: FakeHost) -> None:
+    config = owner_oidc_config(
+        _ORIGIN,
+        {
+            "ATTENDANT_ISSUER": "https://idp.test/",
+            "ATTENDANT_CLIENT_ID": "attendant",
+            "ATTENDANT_CLIENT_SECRET": "test-client-secret",
+            "ATTENDANT_SESSION_SECRET": "test-session-secret",
+            "ATTENDANT_ALLOWED_SUBJECT": "17",
+        },
+    )
+    app = create_app(cast(Host, host), _OWNER, _ROUTES, public_origin=_ORIGIN, oidc=config)
+    claims = {
+        "iss": config.issuer,
+        "aud": config.client_id,
+        "exp": time.time() + 300,
+        "sub": "18",
+        "preferred_username": "agentydragon",
+    }
+    oauth = Mock()
+    oauth.authorize_access_token = AsyncMock(return_value={"userinfo": claims})
+    app.state.oauth = Mock()
+    app.state.oauth.create_client.return_value = oauth
+    with TestClient(app, base_url=_ORIGIN, follow_redirects=False) as client:
+        assert client.get("/").headers["location"] == "/auth/login"
+        assert client.get("/main.js").status_code == 401
+        assert client.get("/owner/providers").status_code == 401
+        assert client.post("/owner/login", headers=_ORIGIN_HEADERS, json={"token": _OWNER}).status_code == 404
+        assert client.get("/auth/callback").status_code == 401
+        assert client.get("/owner/providers").status_code == 401
+        claims["sub"] = "17"
+        assert client.get("/auth/callback").headers["location"] == "/"
+        assert client.get("/").status_code == 200
+        assert client.get("/owner/providers").status_code == 200
+        assert client.post(_ONE_PATH, json={}).status_code == 401
+        with client.websocket_connect("wss://attendant.example.test/owner/viewer", headers=_ORIGIN_HEADERS) as desktop:
+            assert desktop.receive_bytes() == b"RFB 003.008\n"
+            assert client.post("/owner/logout", headers=_ORIGIN_HEADERS).headers["location"] == "/auth/signed-out"
+            assert desktop.receive()["type"] == "websocket.close"
+        assert client.get("/owner/providers").status_code == 401
+        assert client.get("/auth/signed-out").status_code == 200
 
 
 def test_viewer_admission_and_revocation(client: TestClient, host: FakeHost) -> None:
