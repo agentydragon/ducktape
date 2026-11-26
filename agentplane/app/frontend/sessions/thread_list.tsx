@@ -178,9 +178,6 @@ function ThreadGroupSection({
       <span className="agentplane-thread-list-group-name" style={groupNameStyle}>
         {group.sandboxName}
       </span>
-      <span className="agentplane-thread-list-group-count">
-        {group.threads.length} thread{group.threads.length === 1 ? "" : "s"}
-      </span>
     </>
   );
   return (
