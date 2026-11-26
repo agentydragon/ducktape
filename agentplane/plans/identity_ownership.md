@@ -154,6 +154,31 @@ The Agentplane record pays off fully only if Sandbox-to-Identity bindings (`spec
 the database and the Sandbox Controller reads them there; otherwise a group rebind is a database write
 plus CR patches. The Identity trace in `KUBERNETES_DECOUPLING_DESIGN` answers that first.
 
+### Readers behind PolicyService
+
+Approved by the operator, 2026-11-26, as the step that pays off on either store: only PolicyService
+reads or writes Identity CRs, so a later store change is internal to it. DAG node
+[`IDENTITY_READERS_BEHIND_POLICY_SERVICE`](task_dag.md#identity_readers_behind_policy_service--only-policyservice-touches-identity-crs).
+
+Direct readers today: the `policy/reader` index (Action Service, egress, Environments, MCP edge,
+Notifications, Dispatcher); the WorkloadCredential resolver's per-request uncached GET (Action Service,
+egress, Environments, History, LLM ingress, Notifications, Dispatcher); delegation's UID lookup
+(`kubernetesIdentityUIDs`); `sandboxes/sandboxreader`; the MCP edge's own informer; the Sandbox
+Controller. Writer: `orchestration_v1` launch creates and deletes Identity CRs.
+
+Operator choice, 2026-11-26: a shared client keeps one `WatchIdentities` stream per process and answers
+lookups locally (name to UID, deleting counts as gone), refusing when its stream is not current.
+Revocation then follows watch propagation instead of the resolver's per-request uncached GET; the
+[verifier contract](../docs/workload_authentication.md) changes with the resolver port. Rejected: a
+PolicyService RPC per authenticated request, which makes the Policy Controller a hard dependency of all
+authentication and adds a hop.
+
+Sequence, each a small revertable PR: shared client and `WatchIdentities` deletion signal, plus reader
+allowlist entries; port MCP edge, `policy/reader`, delegation, `sandboxreader`, then the resolver; the
+Sandbox Controller; `orchestration_v1` through `CreateIdentity`/`DeleteIdentity`; then drop `identities`
+RBAC from every service but the Policy Controller. Auth-path and RBAC steps follow
+[changes that can break staging](../AGENTS.md#changes-that-can-break-staging).
+
 ## 3. Deleting an Identity
 
 ### Live references (draft rule)
@@ -168,14 +193,14 @@ Every enforcement must cover: already referenced, a reference created concurrent
 reference removed, same-name replacement, failure and recovery. A UID/resourceVersion precondition on
 the Identity alone does not serialize references held in Kubernetes and Dispatcher.
 
-### Published refusal, now
+### Dry-run check, now
 
-The controller computes the refusal once: `DeleteIdentity` returns it as `PreconditionFailure`, and
-`WatchIdentities` carries it on each Identity, re-evaluated on binding and WorkloadCredential changes.
-Every UI shows the controller's reasons and drops its own checks. Fixes the visible bug on today's
-store and carries over to either store above. Needs `watch` on WorkloadCredentials for the controller
-(RBAC unverified). The concurrent-reference race stays advisory until the draining contract of
-section 2 lands, as the [operator UI plan](identity_and_kubernetes_accounts.md#operator-ui) accepts.
+Operator, 2026-11-26: `DeleteIdentityRequest.validate_only` runs every check and returns the same
+refusal without deleting (#20222). The app keeps its delete controls enabled and dry-runs when the
+confirm dialog opens, offering Delete only if the controller would accept (#20195); the browser's own
+copy of the rules goes. A refusal is not a field on `Identity`: it describes the operation, not the
+resource. The concurrent-reference race stays advisory until the draining contract of section 2
+lands, as the [operator UI plan](identity_and_kubernetes_accounts.md#operator-ui) accepts.
 
 ## 4. Agent teardown
 
@@ -221,7 +246,9 @@ Who runs it:
 
 ## Follow-ups
 
-- Published refusal (section 3): independent of decisions 1, 2, 4 and 5.
+- Dry-run check (section 3): #20222, #20195. The Sandbox dialog's "delete identity too" still keeps its
+  own checks.
+- Readers behind PolicyService (section 2): approved; see its DAG node.
 - Identity trace under `KUBERNETES_DECOUPLING_DESIGN`, starting with whether Sandbox bindings can move.
 - Retire the app's name-matched Session check once Sessions carry a finished state.
 - Trace Connections and launch origins as references.
