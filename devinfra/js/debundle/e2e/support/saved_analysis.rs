@@ -366,16 +366,10 @@ pub fn staged_tree_with_module_roots(
     let artifact = root.join("analysis.dba");
     let mut project_args = vec!["spec".to_string(), "project-analysis".to_string()];
     project_args.extend(
-        tree_spec_args(&root)
-            .into_iter()
+        tree_spec_args(&root, &root.join("project-out"))
             .map(|arg| arg.into_string().expect("UTF-8 fixture path")),
     );
-    project_args.extend([
-        "--out-root".to_string(),
-        path(&root.join("project-out")).to_string(),
-        "--out".to_string(),
-        path(&projection).to_string(),
-    ]);
+    project_args.extend(["--out".to_owned(), path(&projection).to_owned()]);
     assert_ok(
         &command(&project_args.iter().map(String::as_str).collect::<Vec<_>>()),
         "tree spec project-analysis",

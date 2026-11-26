@@ -34,9 +34,8 @@ impl TreeRun {
     }
 }
 
-/// The `--tree-{config,modules,vendor-marks,source-root}` arguments for the
-/// tree-fixture layout [`run_tree_fixture`] writes under `root`.
-pub fn tree_spec_args(root: &Path) -> [OsString; 8] {
+/// The CLI input and output flags for the layout [`write_tree_fixture`] writes under `root`.
+pub fn tree_spec_args(root: &Path, out_root: &Path) -> [OsString; 10] {
     [
         "--tree-config".into(),
         root.join("spec_config.yaml").into(),
@@ -46,6 +45,8 @@ pub fn tree_spec_args(root: &Path) -> [OsString; 8] {
         root.join("vendor_marks.yaml").into(),
         "--tree-source-root".into(),
         root.into(),
+        "--out-root".into(),
+        out_root.into(),
     ]
 }
 
@@ -82,9 +83,7 @@ impl TreeWorkspace {
         let mut command = Command::new(&bin);
         command
             .arg("run")
-            .args(tree_spec_args(self.root()))
-            .arg("--out-root")
-            .arg(&out_root)
+            .args(tree_spec_args(self.root(), &out_root))
             .args(extra_args);
         let output = case_commands::debundle_fixture_output(&mut command, self.root())
             .unwrap_or_else(|e| panic!("{e}"));
