@@ -427,11 +427,14 @@ parity tests green.
   `CallableSummary` to a DTO; graduate contracts into `SPEC.md` and
   `docs/design.md`; delete this plan and the burned-down parts of the others.
 
-**Interpreter split (parallel to Waves 3 and 4).** `interpreter.rs` is 12.5k
-lines against the exit gate's 3k and grows with each slice that adds a rule
-beside a legacy path. Mechanical moves only, one owner per PR, into the
-§ Target code shape modules; no behavior change, so no canonical-spec check.
-A slice never adds a new rule to `interpreter.rs`: it goes in `kernel/`,
+**Interpreter split (parallel to Waves 3 and 4).** `interpreter.rs` is 8.7k
+lines against the exit gate's 3k. Legacy `Executor` method groups that read
+interpreter-private state live in `interpreter/` child modules
+(`native_calls`, `dense_arrays`, `factory_results`, `local_construction`,
+`callback_promotion`); moving one into a § Target code shape module first needs
+an explicit interface instead of `use super::*`. Mechanical moves only, one
+owner per PR; no behavior change, so no canonical-spec check. A slice never adds
+a new rule to `interpreter.rs` or `interpreter/`: it goes in `kernel/`,
 `native/`, `roots/` or `alternatives/`.
 
 **Wave 5.** Crate split if the dependency direction warrants it; real-profiler

@@ -183,7 +183,7 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   and current-prefix primitive-return checks without replay
   (<docs/inference.md>). Remaining families include writers, source calls,
   foreign callbacks, captured environments and heap operations.
-  `invoke_callback_pool_once` in <facts/sync_effects/interpreter.rs> supplies
+  `invoke_callback_pool_once` in <facts/sync_effects/interpreter/callback_promotion.rs> supplies
   other callbacks as possible arguments, evaluates against evolving state, and
   falls back at depth, expansion and pool limits. Reduce repeated cross-product
   exploration with proved callee/reach summaries and shared effect composition;
