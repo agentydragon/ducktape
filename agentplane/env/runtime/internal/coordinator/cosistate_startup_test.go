@@ -14,7 +14,7 @@ import (
 
 func TestRuntimeOpensDatabaseBeforePreparingSupervision(t *testing.T) {
 	t.Setenv("INVOCATION_ID", "0123456789abcdef0123456789abcdef")
-	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.Supervision = "systemd"
 	limits := supervision.ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 1024, PidsMax: 10, ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1}
 	config.SystemdLauncher = &supervision.SystemdLauncher{
@@ -62,7 +62,7 @@ func TestRuntimeOpensDatabaseBeforePreparingSupervision(t *testing.T) {
 }
 
 func TestRuntimeReleasesDatabaseWhenSupervisionPreparationFails(t *testing.T) {
-	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	want := errors.New("supervision preparation failed")
 	deps := runtimeDeps{prepareSupervisor: func(Config) (*supervision.Supervisor, error) {
 		return nil, want

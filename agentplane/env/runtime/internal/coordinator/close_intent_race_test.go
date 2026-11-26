@@ -116,9 +116,8 @@ func (s *heldSuccessorDemand) Modify(ctx context.Context, value resource.Resourc
 
 func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	store := &heldSuccessorDemand{State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{})}
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config := lifecycleConfig(t, workspace, nil, "/bin/false")
 	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	successor := &heldCloseExecution{started: make(chan struct{}), release: make(chan struct{})}
@@ -196,7 +195,7 @@ func startBlockedSuccessorClose(t *testing.T, failWatch <-chan struct{}) *blocke
 		failWatch: failWatch, holdAfterCancel: true,
 	}
 	workspace := t.TempDir()
-	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
+	config := lifecycleConfig(t, workspace, nil, "/bin/false")
 	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
 	config.expectCloseError = true

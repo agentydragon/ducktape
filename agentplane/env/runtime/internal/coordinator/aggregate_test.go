@@ -51,7 +51,7 @@ func (p *nativeStopReadProbe) Get(ctx context.Context, ptr resource.Pointer, opt
 }
 
 func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing.T) {
-	config := lifecycleConfig(t, modelConfigServer(t).URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	r := newLifecycleRuntime(t, config)
 	ctx := t.Context()
 	waitRuntime(t, r, func() bool {
@@ -150,8 +150,7 @@ func (e *uncertainCloseExecution) StopAndFence(context.Context) error {
 }
 
 func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	execution := &uncertainCloseExecution{}
 	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
@@ -188,8 +187,7 @@ func TestRuntimeCloseRetainsOwnerAfterRejectedLiveExecutionStart(t *testing.T) {
 			name = "close-started-before-rejection"
 		}
 		t.Run(name, func(t *testing.T) {
-			proxy := modelConfigServer(t)
-			config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+			config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 			config.expectCloseError = true
 			first := newControllerExecutionHandle(nil)
 			config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
@@ -274,8 +272,7 @@ func (e *heldCloseExecution) StopAndFence(ctx context.Context) error {
 }
 
 func TestRuntimeCloseJoinsInFlightAutomaticExecutionFence(t *testing.T) {
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	execution := &heldCloseExecution{started: make(chan struct{}), release: make(chan struct{})}
 	config.ExecutionBackend = &backend.Config{URL: "ws://unused"}
 	config.HarnessEnvironment = map[string]string{}
@@ -326,8 +323,7 @@ func TestRuntimeCloseJoinsInFlightAutomaticExecutionFence(t *testing.T) {
 }
 
 func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetrySessionStop(t *testing.T) {
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	r := newLifecycleRuntime(t, config)
 	var stops atomic.Int32
@@ -360,7 +356,7 @@ func (s *failedRuntimeWatchState) WatchKindAggregated(context.Context, resource.
 }
 
 func TestRuntimeRetainsOwnerAfterLifecycleEngineFailure(t *testing.T) {
-	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	failure := errors.New("injected shared lifecycle watch failure")
 	store := &failedRuntimeWatchState{State: state.WrapCore(namespaced.NewState(inmem.Build)), err: failure}
 	r, err := newTestRuntime(t, config.Config, store, runtimeDeps{})
@@ -386,7 +382,7 @@ func TestRuntimeRetainsOwnerAfterLifecycleEngineFailure(t *testing.T) {
 }
 
 func TestRuntimeCloseBeforeRunStartsAndJoinsLifecycleEngine(t *testing.T) {
-	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	r, err := newRuntime(config.Config, nil, runtimeDeps{})
 	if err != nil {
 		t.Fatal(err)
@@ -416,8 +412,7 @@ func TestRuntimeCloseBeforeRunStartsAndJoinsLifecycleEngine(t *testing.T) {
 }
 
 func TestRuntimeUsesOneEnvironmentDesiredResource(t *testing.T) {
-	proxy := modelConfigServer(t)
-	r := newLifecycleRuntime(t, lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false"))
+	r := newLifecycleRuntime(t, lifecycleConfig(t, t.TempDir(), nil, "/bin/false"))
 	runtimeDesired, runtimeFound, err := lifecycle.ReadEnvironmentDesired(context.Background(), r.lifecycleState)
 	if err != nil || !runtimeFound {
 		t.Fatalf("Runtime desired resource: found=%t err=%v", runtimeFound, err)
@@ -432,8 +427,7 @@ func TestRuntimeUsesOneEnvironmentDesiredResource(t *testing.T) {
 }
 
 func TestCanceledRuntimeCloseWaiterDoesNotStopNativeCleanup(t *testing.T) {
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	r := newLifecycleRuntime(t, config)
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -487,8 +481,7 @@ func TestCanceledRuntimeCloseWaiterDoesNotStopNativeCleanup(t *testing.T) {
 }
 
 func TestRuntimeRetainsOwnerWhenSessionCleanupFails(t *testing.T) {
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	r := newLifecycleRuntime(t, config)
 	cleanupFailure := errors.New("injected environment owner release failure")
@@ -506,7 +499,7 @@ func TestRuntimeRetainsOwnerWhenSessionCleanupFails(t *testing.T) {
 }
 
 func TestCloseCannotStartEngineDuringFailedSessionConstruction(t *testing.T) {
-	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.Config.HarnessEnvironment = map[string]string{"CODEX_EXEC_SERVER_URL": "invalid-host-config"}
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -573,8 +566,7 @@ func TestCloseCannotStartEngineDuringFailedSessionConstruction(t *testing.T) {
 }
 
 func TestCloseDuringSuccessfulSessionConstructionJoinsSharedEngine(t *testing.T) {
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.Config.HistoryIngress.Target = startAcknowledgingHistory(t)
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -733,9 +725,8 @@ func TestEngineExitDuringCanceledExecutionStartJoinsTransitionAndRetainsOwner(t 
 }
 
 func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newLifecycleRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newLifecycleRuntime(t, lifecycleConfig(t, workspace, nil, "/bin/false"))
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
 	before, err := r.facts()
 	if err != nil || before.GetIdleSince() == nil {
@@ -789,8 +780,7 @@ func TestSessionComponentFailureStillFencesExecution(t *testing.T) {
 }
 
 func TestRuntimeCloseRetainsOwnerWhenSessionCleanupUnproved(t *testing.T) {
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.expectCloseError = true
 	r := newLifecycleRuntime(t, config)
 	var stops atomic.Int32
@@ -816,9 +806,8 @@ func TestRuntimeCloseRetainsOwnerWhenSessionCleanupUnproved(t *testing.T) {
 }
 
 func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newLifecycleRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newLifecycleRuntime(t, lifecycleConfig(t, workspace, nil, "/bin/false"))
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
 	facts, err := r.facts()
 	if err != nil || facts.GetIdleSince() == nil {
@@ -860,8 +849,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	setupCount := filepath.Join(root, "setup-count")
 	bootstrapScript := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done\nprintf b >> %s", shellQuote(bootstrapStarted), shellQuote(bootstrapRelease), shellQuote(bootstrapCount))
 	setup := fmt.Sprintf(": > %s\nwhile [ ! -f %s ]; do sleep 0.01; done\nprintf s >> %s", shellQuote(setupStarted), shellQuote(setupRelease), shellQuote(setupCount))
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, workspace, &bootstrapScript, "/bin/false")
+	config := lifecycleConfig(t, workspace, &bootstrapScript, "/bin/false")
 	config.StateDir = root
 	r := newLifecycleRuntime(t, config)
 	t.Cleanup(func() { _ = os.WriteFile(bootstrapRelease, nil, 0600); _ = os.WriteFile(setupRelease, nil, 0600) })

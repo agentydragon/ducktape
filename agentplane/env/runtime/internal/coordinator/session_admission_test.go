@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,13 +43,13 @@ func closeRuntimeForTest(t *testing.T, r *Runtime) error {
 
 func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 	var lookups atomic.Int32
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		lookups.Add(1)
-		_, _ = fmt.Fprintf(w, `{"model":%q,"total_context_budget_tokens":32768}`, r.URL.Query().Get("model"))
-	}))
-	defer proxy.Close()
 	workspace := t.TempDir()
-	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	config := lifecycleConfig(t, workspace, nil, "/bin/false")
+	config.ModelConfigClient = fixtureModelConfig{beforeLookup: func(context.Context) error {
+		lookups.Add(1)
+		return nil
+	}}
+	r := newSessionTestRuntime(t, config)
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
 	opened, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), request)
 	if err != nil {
@@ -84,9 +82,8 @@ func TestOpenSessionReservesLazilyAndIsIdempotent(t *testing.T) {
 }
 
 func TestOpenSessionRetainsItsExecutionIdentity(t *testing.T) {
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newSessionTestRuntime(t, lifecycleConfig(t, workspace, nil, "/bin/false"))
 	ctx := sessionCallContext(r, t.Context())
 	request := openLifecycleSession("identity", filepath.Join(workspace, "project"))
 	request.ExecutionIdentity = &identitypb.Identity{Name: "sandbox-identity", Uid: "identity-uid"}
@@ -119,9 +116,8 @@ func TestOpenSessionRetainsItsExecutionIdentity(t *testing.T) {
 }
 
 func TestLegacySessionCannotBeAssignedAnIdentityOnRetry(t *testing.T) {
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newSessionTestRuntime(t, lifecycleConfig(t, workspace, nil, "/bin/false"))
 	record, err := retained.NewRecord(openLifecycleSession("legacy", filepath.Join(workspace, "project")).GetSpec(), "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -140,9 +136,8 @@ func TestLegacySessionCannotBeAssignedAnIdentityOnRetry(t *testing.T) {
 }
 
 func TestOpenSessionComparesConfirmedConfiguration(t *testing.T) {
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newSessionTestRuntime(t, lifecycleConfig(t, workspace, nil, "/bin/false"))
 	request := openLifecycleSession("configuration", filepath.Join(workspace, "project"))
 	ctx := sessionCallContext(r, t.Context())
 	if _, err := (&harnessHost{runtime: r}).CreateSession(ctx, request); err != nil {
@@ -170,7 +165,6 @@ func TestOpenSessionComparesConfirmedConfiguration(t *testing.T) {
 }
 
 func TestOpenSessionRetryUsesPersistedSetupAfterAcknowledgementReadFailure(t *testing.T) {
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	failure := errors.New("injected acknowledgement read failure")
 	resources := &failAcknowledgementReadOnce{
@@ -178,7 +172,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterAcknowledgementReadFailure(t *te
 		failure: failure,
 	}
 	resources.fail.Store(true)
-	r := newSessionTestRuntimeWithState(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), resources)
+	r := newSessionTestRuntimeWithState(t, lifecycleConfig(t, workspace, nil, "/bin/false"), resources)
 
 	marker := filepath.Join(t.TempDir(), "setup-runs")
 	script := fmt.Sprintf("printf setup >> %s", shellQuote(marker))
@@ -252,9 +246,8 @@ func TestOpenSessionRetryUsesPersistedSetupAfterAcknowledgementReadFailure(t *te
 }
 
 func TestRuntimeRestartDoesNotReplayRetainedSetup(t *testing.T) {
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+	config := lifecycleConfig(t, workspace, nil, "/bin/false")
 	config.StateDir = filepath.Join(t.TempDir(), "state")
 	const sessionID = "setup-restart"
 	marker := filepath.Join(t.TempDir(), "setup-ran")
@@ -349,9 +342,8 @@ func TestRuntimeRestartDoesNotReplayRetainedSetup(t *testing.T) {
 }
 
 func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	r := newSessionTestRuntime(t, lifecycleConfig(t, workspace, nil, "/bin/false"))
 	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("bad/session", workspace)); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("invalid session ID error = %v, want InvalidArgument", err)
 	}
@@ -374,9 +366,8 @@ func TestInvalidInputAndStaleTurnNeverAdmitCommands(t *testing.T) {
 }
 
 func TestStartupFailureSettlesAdmissionAndReturnsToIdle(t *testing.T) {
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, filepath.Join(t.TempDir(), "missing-harness")))
+	r := newSessionTestRuntime(t, lifecycleConfig(t, workspace, nil, filepath.Join(t.TempDir(), "missing-harness")))
 	if _, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
@@ -461,11 +452,10 @@ func (s *failSessionOwnerPublication) Modify(ctx context.Context, value resource
 func TestOpenSessionFailsWhenOwnerPublicationFails(t *testing.T) {
 	for _, resourceType := range []string{session.ReconcileSnapshotType} {
 		t.Run(resourceType, func(t *testing.T) {
-			proxy := modelConfigServer(t)
 			workspace := t.TempDir()
 			failure := errors.New("injected Session publication failure")
 			resources := &failSessionOwnerPublication{State: state.WrapCore(namespaced.NewState(inmem.Build)), typ: resourceType, failure: failure}
-			config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
+			config := lifecycleConfig(t, workspace, nil, "/bin/false")
 			config.expectCloseError = true
 			r := newSessionTestRuntimeWithState(t, config, resources)
 			resources.armed.Store(true)
@@ -532,7 +522,6 @@ func (s *initialOperationFailureState) Modify(ctx context.Context, value resourc
 
 func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Runtime, *initialOperationFailureState, string) {
 	t.Helper()
-	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	marker := filepath.Join(t.TempDir(), "harness-launched")
 	binary := filepath.Join(t.TempDir(), "harness")
@@ -551,7 +540,7 @@ func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Runtime, *ini
 	}
 	store.failInitial.Store(true)
 	store.failTeardown.Store(failTeardown)
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, binary)
+	config := lifecycleConfig(t, workspace, nil, binary)
 	config.expectCloseError = true
 	r := newLifecycleRuntimeWithState(t, config, store)
 	startDirectExecutionTestClient(t, r, "test-incarnation")
@@ -638,15 +627,12 @@ func TestCloseReportsTeardownOperationPublicationFailure(t *testing.T) {
 }
 
 func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
-	started := make(chan struct{})
-	release := make(chan struct{})
-	var releaseOnce sync.Once
-	releaseProxy := func() { releaseOnce.Do(func() { close(release) }) }
+	modelConfig, started, releaseLookup := blockModelConfig()
 	openFinished := false
 	openStarted := false
 	openDone := make(chan error, 1)
 	defer func() {
-		releaseProxy()
+		releaseLookup()
 		if openStarted && !openFinished {
 			select {
 			case <-openDone:
@@ -655,14 +641,10 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 			}
 		}
 	}()
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		close(started)
-		<-release
-		_, _ = fmt.Fprintf(w, `{"model":%q,"total_context_budget_tokens":32768}`, r.URL.Query().Get("model"))
-	}))
-	t.Cleanup(proxy.Close)
 	workspace := t.TempDir()
-	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	config := lifecycleConfig(t, workspace, nil, "/bin/false")
+	config.ModelConfigClient = modelConfig
+	r := newSessionTestRuntime(t, config)
 	openStarted = true
 	go func() {
 		_, err := (&harnessHost{runtime: r}).CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("late-session", filepath.Join(workspace, "project")))
@@ -688,7 +670,7 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 	case <-quiesceCtx.Done():
 		t.Fatal("quiesce waited for an in-flight model-config lookup")
 	}
-	releaseProxy()
+	releaseLookup()
 	openErr := <-openDone
 	openFinished = true
 	// The accepted lifecycle revision changed while model lookup was outstanding.
@@ -701,18 +683,11 @@ func TestQuiesceDoesNotWaitForModelLookupOrCreateLateSession(t *testing.T) {
 }
 
 func TestOpenSessionRevokedAdmissionDoesNotWriteAfterModelLookup(t *testing.T) {
-	started := make(chan struct{})
-	release := make(chan struct{})
-	var releaseOnce sync.Once
-	releaseProxy := func() { releaseOnce.Do(func() { close(release) }) }
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		close(started)
-		<-release
-		_, _ = fmt.Fprintf(w, `{"model":%q,"total_context_budget_tokens":32768}`, r.URL.Query().Get("model"))
-	}))
-	t.Cleanup(proxy.Close)
+	modelConfig, started, releaseLookup := blockModelConfig()
 	workspace := t.TempDir()
-	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
+	config := lifecycleConfig(t, workspace, nil, "/bin/false")
+	config.ModelConfigClient = modelConfig
+	r := newSessionTestRuntime(t, config)
 	if !sessionAdmissionOpen(r) {
 		t.Fatal("fixture did not establish Runtime admission")
 	}
@@ -724,7 +699,7 @@ func TestOpenSessionRevokedAdmissionDoesNotWriteAfterModelLookup(t *testing.T) {
 		openDone <- err
 	}()
 	defer func() {
-		releaseProxy()
+		releaseLookup()
 		if !openFinished {
 			select {
 			case <-openDone:
@@ -746,12 +721,12 @@ func TestOpenSessionRevokedAdmissionDoesNotWriteAfterModelLookup(t *testing.T) {
 	if sessionAdmissionOpen(r) {
 		t.Fatal("Runtime connection gate remained open after revocation")
 	}
-	releaseProxy()
+	releaseLookup()
 	select {
 	case err := <-openDone:
 		openFinished = true
 		if status.Code(err) != codes.Aborted {
-			t.Fatalf("OpenSession after admission revocation = %v, want Unavailable", err)
+			t.Fatalf("OpenSession after admission revocation = %v, want Aborted", err)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("OpenSession did not finish after model lookup was released")
@@ -778,7 +753,7 @@ func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
 func TestScriptRunPreservesEnvironmentStreamsAndExitStatus(t *testing.T) {
 	t.Setenv("SCRIPT_RUNNER_INHERITED", "before")
 	t.Setenv("SCRIPT_RUNNER_CONFIG", "ambient")
-	config := lifecycleConfig(t, "http://unused", t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.HarnessEnvironment = map[string]string{"SCRIPT_RUNNER_CONFIG": "configured"}
 	r := newSessionTestRuntime(t, config)
 	t.Setenv("SCRIPT_RUNNER_INHERITED", "after")

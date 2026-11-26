@@ -68,8 +68,7 @@ func (s *pausedRecoveryState) List(ctx context.Context, kind resource.Kind, opts
 
 func ingressTestRuntime(t *testing.T, store state.State, deps runtimeDeps) *Runtime {
 	t.Helper()
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.Config.HistoryIngress.Target = "history.test:8081"
 	r, err := newTestRuntime(t, config.Config, store, deps)
 	if err != nil {
@@ -317,8 +316,7 @@ func sealedHistoryConfig(t *testing.T) (runtimeTestConfig, heldHistorySeal) {
 	history := &acknowledgingHistory{
 		acks: map[string]*ingresspb.Acknowledgement{}, sealSeen: sealSeen, releaseSeal: releaseSeal,
 	}
-	proxy := modelConfigServer(t)
-	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
+	config := lifecycleConfig(t, t.TempDir(), nil, "/bin/false")
 	config.Config.HistoryIngress.Target = startHistoryService(t, history)
 	return config, heldHistorySeal{received: sealSeen, release: sync.OnceFunc(func() { close(releaseSeal) })}
 }
