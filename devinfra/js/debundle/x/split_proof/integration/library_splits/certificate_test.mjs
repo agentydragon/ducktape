@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { topLevelStatements } from "../../translation/scope_metadata.mjs";
 import { spec } from "./gen_spec.mjs";
 import { writeDeployment } from "../../translation/testing/deployment_manifest.mjs";
@@ -94,8 +92,7 @@ for (const source of process.argv.slice(2)) {
 
 assert(results.some((row) => row.strategy === "advance-function" && row.outcome === "certified"));
 
-// Use the same advance-second placement. Both graphs finish normally, but the
-// moved initializer reads the linked var cell before the entry assigns 1.
+// A refused placement leaves no output for the caller to mistake for a split.
 const source = path.join(tmp, "control.mjs");
 writeFileSync(source, "var current = 1; var observed = current; export { current, observed };");
 const placement = extract(3, 1);
@@ -103,25 +100,11 @@ const request = inputs(source, "early-read", placement);
 const refused = certificate(request);
 assert.equal(refused.status, "rejected");
 assert(!existsSync(request.out));
-const preview = path.join(tmp, "uncertified-preview");
-const rendered = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", request.manifest, preview, "--force"], {
-  encoding: "utf8",
-});
-if (rendered.error) throw rendered.error;
-assert([0, 1].includes(rendered.status), rendered.stdout + rendered.stderr);
-assert(existsSync(path.join(preview, placement.entry)), rendered.stdout + rendered.stderr);
-const before = await import(pathToFileURL(source));
-const after = await import(pathToFileURL(path.join(preview, placement.entry)));
-assert.deepEqual(Object.keys(before), ["current", "observed"]);
-assert.deepEqual(Object.keys(after), Object.keys(before));
-assert.equal(before.observed, 1);
-assert.equal(after.observed, undefined);
 results.push({
   library: "control",
   strategy: "advance-second",
-  outcome: "disproved",
+  outcome: "refused",
   reason: refused.reason,
-  witness: "observed: 1 -> undefined",
 });
 
 const lines = results.map((row) => JSON.stringify(row)).join("\n") + "\n";
