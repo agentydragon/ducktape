@@ -1537,3 +1537,26 @@ lean_proof_test(
     ],
     deps = [":two_const_boundary"],
 )
+
+lean_library(
+    name = "terminal_reader_construction",
+    srcs = ["EsmSplit/CoreJS/TerminalReaderConstruction.lean"],
+    deps = [
+        ":corejs_certificate_support_base",
+        ":corejs_linked_input",
+        ":planner",
+    ],
+)
+
+lean_proof_test(
+    name = "terminal_reader_construction_axioms_test",
+    allow_empty = True,
+    modules = ["EsmSplit.CoreJS.TerminalReaderConstruction"],
+    required_theorems = [
+        "CoreJS.TerminalReaderConstruction.authored_order",
+        "CoreJS.TerminalReaderConstruction.exact_cell",
+        "CoreJS.TerminalReaderConstruction.placement",
+        "CoreJS.TerminalReaderConstruction.same_exports",
+    ],
+    deps = [":terminal_reader_construction"],
+)
