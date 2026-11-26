@@ -602,6 +602,7 @@ def environment(*, identity_catalog: bool) -> Environment:
         settle_deltas=True,
         compact_deltas=True,
         compact_execution_evidence=True,
+        history_event_block_writes=True,
         notifications_debounce=NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120),
         notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
         kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),

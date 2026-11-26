@@ -119,6 +119,7 @@ class HistoryService(Construct):
             settle_deltas=env.settle_deltas,
             compact_deltas=env.compact_deltas,
             compact_execution_evidence=env.compact_execution_evidence,
+            event_block_writes=env.history_event_block_writes,
         )
         service_delegation = (
             ServiceDelegationSettings(actors=(ServiceDelegator(spiffe_id=ACTIONS_URI),), methods=_HISTORY_READ_METHODS)
