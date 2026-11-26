@@ -1,20 +1,63 @@
+load("@aspect_bazel_lib//lib:copy_file.bzl", "copy_file")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = ["//attendant:__pkg__"])
 
-js_library(
-    name = "viewer",
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+copy_file(
+    name = "rfb_types",
+    src = "//platform_sessions/frontend:rfb.d.ts",
+    out = "rfb.d.ts",
+)
+
+ts_library(
+    name = "desktop",
     srcs = [
-        "main.js",
-        "viewer.css",
+        "Desktop.tsx",
+        "rfb.d.ts",
     ],
-    deps = ["//:node_modules/@novnc/novnc"],
+    tsconfig = ":tsconfig",
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@novnc/novnc",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "main",
+    srcs = ["main.tsx"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":desktop",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+js_library(
+    name = "css",
+    srcs = ["viewer.css"],
 )
 
 spa_bundle(
     name = "bundle",
     entry_point = "main.js",
+    jsx = "automatic",
     sourcemap = False,
-    deps = [":viewer"],
+    deps = [
+        ":css",
+        ":main",
+    ],
 )

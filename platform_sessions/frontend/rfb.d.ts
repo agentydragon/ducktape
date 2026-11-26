@@ -3,8 +3,10 @@ declare module "@novnc/novnc" {
     constructor(target: HTMLElement, url: string);
     scaleViewport: boolean;
     resizeSession: boolean;
-    addEventListener(event: "connect" | "disconnect", listener: () => void): void;
-    removeEventListener(event: "connect" | "disconnect", listener: () => void): void;
+    addEventListener(event: "connect", listener: () => void): void;
+    addEventListener(event: "disconnect", listener: (event: CustomEvent<{ clean: boolean }>) => void): void;
+    removeEventListener(event: "connect", listener: () => void): void;
+    removeEventListener(event: "disconnect", listener: (event: CustomEvent<{ clean: boolean }>) => void): void;
     disconnect(): void;
   }
 }

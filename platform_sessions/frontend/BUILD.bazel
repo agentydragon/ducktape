@@ -6,6 +6,11 @@ load("//devinfra/python:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(
+    ["rfb.d.ts"],
+    visibility = ["//attendant/viewer:__pkg__"],
+)
+
 ts_config(
     name = "tsconfig",
     src = "tsconfig.json",

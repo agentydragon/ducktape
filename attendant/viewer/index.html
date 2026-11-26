@@ -9,46 +9,6 @@
     <script type="module" src="/main.js"></script>
   </head>
   <body>
-    <header class="masthead">
-      <h1>Attendant</h1>
-      <button id="logout" type="button" class="secondary" hidden>Sign out</button>
-    </header>
-    <main>
-      <section id="login" class="login" aria-labelledby="login-title" hidden>
-        <h2 id="login-title">Owner sign-in</h2>
-        <form id="login-form">
-          <label for="token">Owner token</label>
-          <input id="token" type="password" autocomplete="current-password" required />
-          <button type="submit">Sign in</button>
-          <p id="login-status" class="status" role="status"></p>
-        </form>
-      </section>
-
-      <section id="workspace" class="workspace" aria-label="Operator workspace" hidden>
-        <div class="controls">
-          <div class="provider-field">
-            <label for="provider">Provider</label>
-            <select id="provider"></select>
-          </div>
-          <div class="actions">
-            <button id="open" type="button">Open sign-in</button>
-            <button id="verify" type="button" class="secondary">Verify session</button>
-            <button id="bind" type="button" class="secondary" hidden>Bind current account</button>
-          </div>
-        </div>
-        <p id="provider-status" class="status" role="status"></p>
-        <section class="viewer" aria-label="Remote browser">
-          <div class="viewer-header">
-            <p id="viewer-status" class="status" role="status">Desktop disconnected</p>
-            <button id="reconnect" type="button" class="secondary" hidden>Reconnect desktop</button>
-            <button id="disconnect" type="button" class="secondary" hidden>Disconnect</button>
-          </div>
-          <div class="screen">
-            <p id="screen-message">Open a provider sign-in to use the remote browser.</p>
-            <div id="display" aria-label="Remote display" hidden></div>
-          </div>
-        </section>
-      </section>
-    </main>
+    <div id="root"></div>
   </body>
 </html>

@@ -30,6 +30,7 @@ const reactProjects = [
   "agentplane/app/frontend/**",
   "aiquota/frontend/**",
   "airlock/frontend/**",
+  "attendant/viewer/**",
   "devinfra/claude/session_export/frontend/**",
   "finance/augur/frontend/**",
   "finance/plaid/spend/ui/**",
@@ -95,11 +96,6 @@ export default [
   },
 
   js.configs.recommended,
-
-  {
-    files: ["attendant/viewer/*.js"],
-    languageOptions: { globals: browserGlobals },
-  },
 
   // These scripts execute in browser pages or service workers.
   {
