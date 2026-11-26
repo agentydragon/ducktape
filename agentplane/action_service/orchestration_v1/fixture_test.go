@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/testing/servicetest"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy_controller/testing/policyfixture"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
@@ -67,8 +69,8 @@ func TestMain(m *testing.M) {
 	}))
 }
 
-// fixture is a namespace holding the default and an extra PolicySet, an Executor launching there, and the Session
-// Dispatcher and History Service it calls.
+// fixture is a namespace holding the default and an extra PolicySet, an Executor launching there, and the
+// PolicyService, Session Dispatcher and History Service it calls.
 type fixture struct {
 	namespace  string
 	caller     store.ServiceAccount
@@ -105,7 +107,7 @@ func newFixture(t *testing.T) fixture {
 	executor, err := NewExecutor(testGroup, catalog.OrchestrationBinding{
 		Description: "test orchestration", Namespace: namespace,
 		Presets: json.RawMessage(testPresets),
-	}, kube, environment,
+	}, kube, policyfixture.PolicyService(t, namespace, objects), environment,
 		dispatcherpb.NewSessionDispatcherClient(serve(t, func(s *grpc.Server) { dispatcherpb.RegisterSessionDispatcherServer(s, dispatcher) })),
 		historypb.NewHistoryServiceClient(serve(t, func(s *grpc.Server) { historypb.RegisterHistoryServiceServer(s, history) })), 30*time.Second)
 	if err != nil {
@@ -162,6 +164,22 @@ func (f fixture) launch(t *testing.T, name string, grants ...string) contract.Sa
 		t.Fatal(err)
 	}
 	return resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, string(arguments))).Sandbox
+}
+
+// identityGrant is the one PolicyBinding identity owns: the grant of a launch's PolicySets.
+func (f fixture) identityGrant(t *testing.T, identity *policyapi.Identity) policyapi.PolicyBinding {
+	t.Helper()
+	var bindings policyapi.PolicyBindingList
+	if err := kube.List(t.Context(), &bindings, client.InNamespace(f.namespace)); err != nil {
+		t.Fatal(err)
+	}
+	owned := slices.DeleteFunc(bindings.Items, func(binding policyapi.PolicyBinding) bool {
+		return !slices.ContainsFunc(binding.OwnerReferences, func(owner metav1.OwnerReference) bool { return owner.UID == identity.UID })
+	})
+	if len(owned) != 1 {
+		t.Fatalf("Identity %s owns %d PolicyBindings, want one", identity.Name, len(owned))
+	}
+	return owned[0]
 }
 
 // resultOf is the result of an attempt that succeeded.

@@ -46,6 +46,17 @@ const requiredFile = requiredRPC + requiredPolicyService + `policy_namespace: te
 caller_service_account_namespaces: [test-agentplane]
 `
 
+// testPolicyService is a complete policy_service block, which an orchestration_v1 group needs.
+const testPolicyService = `policy_service:
+  target: test-policy-controller:8443
+  tls:
+    ca_file: /test/workload-ca.crt
+    server_uri: spiffe://agentplane/policy-controller
+    cert_file: /test/actions.crt
+    key_file: /test/actions.key
+    client_uri: spiffe://agentplane/actions
+`
+
 func loadTestConfig(t *testing.T, file string, environ ...string) (config, error) {
 	t.Helper()
 	return configtest.Load(t, settingPrefix, loadConfig, append([]string{
@@ -356,7 +367,7 @@ func TestTheOrchestrationPeersAreSetExactlyWhenAnOrchestrationGroupCallsThem(t *
   token_file: /test/history-token
   request_timeout_s: 10
 `
-	c, err := loadTestConfig(t, requiredFile+orchestration+dispatcher+history)
+	c, err := loadTestConfig(t, requiredFile+orchestration+dispatcher+history+testPolicyService)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,11 +378,12 @@ func TestTheOrchestrationPeersAreSetExactlyWhenAnOrchestrationGroupCallsThem(t *
 		t.Errorf("history_service = %+v, want %+v", c.HistoryService, want)
 	}
 	for name, file := range map[string]string{
-		"an orchestration group without the Dispatcher": orchestration + history,
-		"an orchestration group without History":        orchestration + dispatcher,
+		"an orchestration group without the Dispatcher": orchestration + history + testPolicyService,
+		"an orchestration group without History":        orchestration + dispatcher + testPolicyService,
+		"an orchestration group without PolicyService":  orchestration + dispatcher + history,
 		"the peers without an orchestration group":      dispatcher + history,
-		"a peer without a timeout":                      orchestration + dispatcher + strings.Replace(history, "  request_timeout_s: 10\n", "", 1),
-		"a group launching in another namespace":        strings.Replace(orchestration, "namespace: test-agentplane", "namespace: test-other", 1) + dispatcher + history,
+		"a peer without a timeout":                      orchestration + dispatcher + strings.Replace(history, "  request_timeout_s: 10\n", "", 1) + testPolicyService,
+		"a group launching in another namespace":        strings.Replace(orchestration, "namespace: test-agentplane", "namespace: test-other", 1) + dispatcher + history + testPolicyService,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadTestConfig(t, requiredFile+file); err == nil {
@@ -542,7 +554,7 @@ func TestActionsPeersAcceptOwnSVIDInsteadOfToken(t *testing.T) {
 	// Orchestration peers share the same validation and service role.
 	source = strings.ReplaceAll(source, "session_delegation_dispatcher:", "session_dispatcher:")
 	source = strings.ReplaceAll(source, "session_delegation_history:", "history_service:")
-	source = strings.Replace(source, "kind: session_delegation, description: forwards the caller", "kind: orchestration_v1, description: test executor, namespace: test-agentplane", 1)
+	source = strings.Replace(source, "kind: session_delegation, description: forwards the caller", "kind: orchestration_v1, description: test executor, namespace: test-agentplane", 1) + testPolicyService
 	if _, err := loadTestConfig(t, source); err != nil {
 		t.Fatal(err)
 	}

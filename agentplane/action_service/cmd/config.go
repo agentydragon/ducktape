@@ -242,7 +242,8 @@ func (c *config) validateSessionDelegation() error {
 }
 
 // validateOrchestration requires the Session Dispatcher and the History Service exactly when an orchestration_v1 group
-// calls them, and each such group to launch where the policy index reads its launcher grants.
+// calls them, PolicyService with such a group, and each such group to launch where the policy index reads its launcher
+// grants.
 func (c *config) validateOrchestration() error {
 	var orchestration bool
 	for key, group := range c.ActionGroups.Groups() {
@@ -252,6 +253,10 @@ func (c *config) validateOrchestration() error {
 				return fmt.Errorf("ActionGroup %s must launch in policy_namespace, where its launcher grants are read", key)
 			}
 		}
+	}
+	// A launch creates and deletes the Identity its Sandbox acts as through PolicyService.
+	if orchestration && c.PolicyService == nil {
+		return errors.New("policy_service is required by the orchestration_v1 groups")
 	}
 	for _, called := range []struct {
 		key  string

@@ -2,6 +2,8 @@ package orchestrationv1
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -64,12 +67,12 @@ func (e *Executor) launch(ctx context.Context, caller store.Caller, args contrac
 	origin.ActionGroup, origin.LauncherGrants = e.group, args.LauncherGrants
 	// A launch is three operations: the Identity the Sandbox acts as, its PolicySets bound to that
 	// Identity, then the Sandbox naming it. No environment operation creates an Identity.
-	identity, created, err := e.launchIdentity(ctx, launcher, args)
+	identity, err := e.launchIdentity(ctx, launcher, args)
 	if err != nil {
 		return Launched{}, err
 	}
 	request := &environmentpb.CreateEnvironmentRequest{
-		Name: args.Name, Template: args.Template, Identity: identity.Name, InboxTags: args.InboxTags,
+		Name: args.Name, Template: args.Template, Identity: identity.GetIdentity().GetName(), InboxTags: args.InboxTags,
 		Bootstrap: args.Bootstrap, WakeOnSend: args.WakeOnSend,
 		LaunchOrigin: origin,
 	}
@@ -80,9 +83,10 @@ func (e *Executor) launch(ctx context.Context, caller store.Caller, args contrac
 	if err != nil {
 		failure := launchError(err)
 		var refused *refusal
-		if created && errors.As(failure, &refused) {
-			// Roll back only an Identity this attempt created after a definite refusal.
-			e.deleteLaunchIdentity(ctx, identity)
+		if errors.As(failure, &refused) {
+			// Roll back this launch's Identity after a definite refusal. Its key is this launch's, so it is this
+			// attempt's or an earlier attempt's of the same launch, never another launch's.
+			e.deleteLaunchIdentity(ctx, identity.GetIdentity())
 		}
 		return Launched{}, failure
 	}
@@ -114,70 +118,61 @@ func (e *Executor) launchCaller(ctx context.Context, caller store.Caller) (*envi
 			return &environmentpb.EnvironmentLaunchOrigin{Caller: &identitypb.ServiceAccount{Namespace: caller.Account.Namespace, Name: caller.Account.Name}}, "serviceaccount:" + caller.Account.Namespace + "/" + caller.Account.Name, nil
 		}
 	case store.IdentityCaller:
-		var identity policyapi.Identity
-		if err := e.kube.Get(ctx, client.ObjectKey{Namespace: e.binding.Namespace, Name: caller.Identity.Name}, &identity); err != nil {
-			return nil, "", kubeError("reading launcher Identity", err)
+		// GetIdentity reads the API server, so a launcher deleted or replaced since admission is refused here.
+		response, err := e.policy.GetIdentity(ctx, &policypb.GetIdentityRequest{Name: caller.Identity.Name})
+		if err != nil && status.Code(err) != codes.NotFound {
+			return nil, "", policyError("reading launcher Identity", err, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_BACKEND_REFUSED)
 		}
-		if caller.Identity.UID != "" && string(identity.UID) == caller.Identity.UID && identity.DeletionTimestamp == nil {
+		if identity := response.GetIdentity(); err == nil && caller.Identity.UID != "" && identity.GetIdentity().GetUid() == caller.Identity.UID && identity.GetDeletionTimestamp() == nil {
 			return &environmentpb.EnvironmentLaunchOrigin{CallerIdentity: &identitypb.Identity{Name: caller.Identity.Name, Uid: caller.Identity.UID}}, "identity:" + caller.Identity.Name + "/" + caller.Identity.UID, nil
 		}
 	}
 	return nil, "", refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ENVIRONMENT_REFUSED, "launch caller is unknown or its Identity was replaced")
 }
 
-// launchIdentityAnnotation and launchSetsAnnotation record which caller's launch created an Identity
-// and what it granted, so a retry of the same launch adopts it while another caller's launch, another
-// launch of the name or a foreign Identity of the name is refused.
-const (
-	launchIdentityAnnotation = "agentplane.allegedly.works/launched-by"
-	launchSetsAnnotation     = "agentplane.allegedly.works/launch-policy-sets"
-)
+// launchKeys are the PolicyService idempotency keys of a launch's Identity and of its grant: digests of the launcher,
+// the Sandbox name and the sorted PolicySets. A retry of the same launch meets the Identity and grant it created,
+// while another caller's launch, another launch of the name or a foreign Identity of the name is refused.
+func launchKeys(launcher, name string, sets []string) (identity, grant string, err error) {
+	intent, err := json.Marshal([]any{launcher, name, sets})
+	if err != nil {
+		return "", "", err
+	}
+	digest := sha256.Sum256(intent)
+	return "launch-identity-" + hex.EncodeToString(digest[:]), "launch-grant-" + hex.EncodeToString(digest[:]), nil
+}
 
 // launchIdentity creates, or on a retry adopts, the Identity a launched Sandbox acts as, named after
-// it, and binds the request's PolicySets to it in one binding the Identity owns.
-func (e *Executor) launchIdentity(ctx context.Context, launcher string, args contract.LaunchArgs) (*policyapi.Identity, bool, error) {
+// it, and binds the request's PolicySets to it in one binding the Identity owns, both through PolicyService.
+func (e *Executor) launchIdentity(ctx context.Context, launcher string, args contract.LaunchArgs) (*policypb.Identity, error) {
 	sets := slices.Compact(slices.Sorted(slices.Values(args.PolicySets)))
 	if err := e.requireBindablePolicySets(ctx, sets); err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	intent := strings.Join(sets, ",")
-	identity := &policyapi.Identity{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: args.Name, Namespace: e.binding.Namespace,
-			Annotations: map[string]string{launchIdentityAnnotation: launcher, launchSetsAnnotation: intent},
-		},
-		Spec: policyapi.IdentitySpec{Description: fmt.Sprintf("Agent of Sandbox %s, launched by %s through %s.", args.Name, launcher, e.group)},
+	identityKey, grantKey, err := launchKeys(launcher, args.Name, sets)
+	if err != nil {
+		return nil, err
 	}
-	created := true
-	if err := e.kube.Create(ctx, identity); apierrors.IsAlreadyExists(err) {
-		created = false
-		if err := e.kube.Get(ctx, client.ObjectKeyFromObject(identity), identity); err != nil {
-			return nil, false, kubeError("reading Identity "+args.Name, err)
-		}
-		if identity.Annotations[launchIdentityAnnotation] != launcher || identity.Annotations[launchSetsAnnotation] != intent || identity.DeletionTimestamp != nil {
-			return nil, false, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS, "Identity %s exists and is not this launch's", args.Name)
-		}
-	} else if err != nil {
-		return nil, false, kubeError("creating Identity "+args.Name, err)
+	created, err := e.policy.CreateIdentity(ctx, &policypb.CreateIdentityRequest{
+		Name: args.Name, IdempotencyKey: identityKey,
+		Description: fmt.Sprintf("Agent of Sandbox %s, launched by %s through %s.", args.Name, launcher, e.group),
+	})
+	if status.Code(err) == codes.AlreadyExists {
+		return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS, "Identity %s exists and is not this launch's", args.Name)
 	}
+	if err != nil {
+		return nil, policyError("creating Identity "+args.Name, err, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_BACKEND_REFUSED)
+	}
+	identity := created.GetIdentity()
 	if len(sets) == 0 {
-		return identity, created, nil
+		return identity, nil
 	}
-	controller, blockOwnerDeletion := false, false
-	binding := &policyapi.PolicyBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: args.Name + ".identity", Namespace: e.binding.Namespace,
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Identity", Name: identity.Name, UID: identity.UID,
-				Controller: &controller, BlockOwnerDeletion: &blockOwnerDeletion,
-			}},
-		},
-		Spec: policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity.Name}}, PolicySets: sets},
+	if _, err := e.policy.GrantIdentityPolicyBinding(ctx, &policypb.GrantIdentityPolicyBindingRequest{
+		IdentityName: identity.GetIdentity().GetName(), IdentityUid: identity.GetIdentity().GetUid(), PolicySets: sets, IdempotencyKey: grantKey,
+	}); err != nil {
+		return nil, policyError("granting Identity "+args.Name+" its PolicySets", err, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LAUNCHER_GRANT_EXISTS)
 	}
-	if err := e.createOwned(ctx, binding, identity.UID); err != nil {
-		return nil, false, err
-	}
-	return identity, created, nil
+	return identity, nil
 }
 
 // requireBindablePolicySets refuses a launch naming a PolicySet that does not exist, or another
@@ -210,25 +205,26 @@ func (e *Executor) requireBindablePolicySets(ctx context.Context, names []string
 	return nil
 }
 
-// deleteLaunchIdentity deletes exactly the Identity this launch created, and by garbage collection
-// its binding, after the Sandbox was refused. A failure only leaves an unreferenced Identity behind.
-func (e *Executor) deleteLaunchIdentity(ctx context.Context, identity *policyapi.Identity) {
+// deleteLaunchIdentity deletes exactly this launch's Identity incarnation through PolicyService, and by garbage
+// collection its binding, after the Sandbox was refused. A failure only leaves an unreferenced Identity behind.
+func (e *Executor) deleteLaunchIdentity(ctx context.Context, identity *policypb.PolicyResourceIdentity) {
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.readBudget)
 	defer cancel()
 	var sandboxes sandboxapi.SandboxList
-	if err := e.kube.List(cleanup, &sandboxes, client.InNamespace(identity.Namespace)); err != nil {
-		slog.WarnContext(ctx, "orchestration_v1 could not check a refused launch's Identity references", "identity", identity.Name, "error", err)
+	if err := e.kube.List(cleanup, &sandboxes, client.InNamespace(identity.GetNamespace())); err != nil {
+		slog.WarnContext(ctx, "orchestration_v1 could not check a refused launch's Identity references", "identity", identity.GetName(), "error", err)
 		return
 	}
-	// Another launch can adopt this attempt's Identity and win creation before this refusal.
+	// Another attempt at this launch can adopt this Identity and win creation before this refusal.
 	if slices.ContainsFunc(sandboxes.Items, func(sandbox sandboxapi.Sandbox) bool {
-		return sandbox.Spec.Identity != nil && sandbox.Spec.Identity.Name == identity.Name
+		return sandbox.Spec.Identity != nil && sandbox.Spec.Identity.Name == identity.GetName()
 	}) {
 		return
 	}
-	uid, resourceVersion := identity.UID, identity.ResourceVersion
-	if err := e.kube.Delete(cleanup, identity, client.Preconditions{UID: &uid, ResourceVersion: &resourceVersion}); err != nil && !apierrors.IsNotFound(err) {
-		slog.WarnContext(ctx, "orchestration_v1 could not delete a refused launch's Identity", "identity", identity.Name, "error", err)
+	if _, err := e.policy.DeleteIdentity(cleanup, &policypb.DeleteIdentityRequest{
+		Namespace: identity.GetNamespace(), Name: identity.GetName(), Uid: identity.GetUid(),
+	}); err != nil && status.Code(err) != codes.NotFound {
+		slog.WarnContext(ctx, "orchestration_v1 could not delete a refused launch's Identity", "identity", identity.GetName(), "error", err)
 	}
 }
 
@@ -342,6 +338,17 @@ func kubeError(doing string, err error) error {
 		if code := failed.Status().Code; code >= 400 && code < 500 && code != http.StatusRequestTimeout && code != http.StatusTooManyRequests {
 			return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_KUBERNETES_REFUSED, "%s: %s", doing, failed.Status().Message)
 		}
+	}
+	return fmt.Errorf("%w: %s: %w", worker.ErrOutcomeUnknown, doing, err)
+}
+
+// policyError is err from PolicyService as the attempt's outcome. A refusal PolicyService answers before any effect is
+// one of kind; any other failure, Unavailable and Aborted among them, leaves the attempt's outcome unknown.
+func policyError(doing string, err error, kind action_servicepb.ExecutionErrorKind) error {
+	result := status.Convert(err)
+	switch result.Code() {
+	case codes.InvalidArgument, codes.NotFound, codes.AlreadyExists, codes.FailedPrecondition, codes.PermissionDenied, codes.Unauthenticated:
+		return refuse(kind, "%s: %s", doing, result.Message())
 	}
 	return fmt.Errorf("%w: %s: %w", worker.ErrOutcomeUnknown, doing, err)
 }
