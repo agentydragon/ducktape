@@ -10,12 +10,12 @@ use super::import_emit::{
     disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
 };
 use crate::imports::EntryExport;
-use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{ModuleId, top_level_id};
 use anyhow::{Result, bail};
 use binding_targets::declaration_name_strings;
 use gate::AssignmentAnalysis;
 use js_ast::import_decl_module_item;
+use rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
