@@ -3169,6 +3169,7 @@ data:
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
     policy_namespace: agentplane-staging
     ingress:
+      event_block_writes: true
       writer_namespaces:
         - agentplane-staging
       sampler_service_actor: spiffe://agentplane/central-sampler

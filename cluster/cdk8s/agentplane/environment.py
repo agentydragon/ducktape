@@ -222,6 +222,7 @@ class Environment:
     # Whether History packs BoundaryRecord and ExecutionProgress entries. Enable only after all reader
     # replicas support those block kinds.
     compact_execution_evidence: bool = False
+    history_event_block_writes: bool = False
     # Deployment-published runtime facts shared with the co-hosted discovery service.
     runtime_catalog: Catalog | None = None
     # Static services that should retain replicas across hosts.
