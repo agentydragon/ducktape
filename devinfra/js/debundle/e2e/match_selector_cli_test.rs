@@ -683,8 +683,7 @@ fn solver_stop_and_operational_settings_failure_remain_distinct() {
 
 #[test]
 fn ambiguous_target_reports_each_position_in_the_selectors_coordinate_system() {
-    let workspace = debundle_e2e_support::CaseWorkspace::default();
-    let source = workspace.write_text("app.js", "var a = 1; var b = 2;");
+    let (_workspace, source) = fixture("var a = 1; var b = 2;");
     for (pattern, kind, positions) in [
         (
             "var x = 1; var x = 2;",
