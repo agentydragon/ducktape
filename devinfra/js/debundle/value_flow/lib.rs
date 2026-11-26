@@ -53,7 +53,7 @@ use inference::{FactContext, IterativeInference, IterativeRules};
 
 use analysis_domain::item_views::TopLevelItemView;
 
-pub fn native_set_allocation_roots(
+pub(crate) fn native_set_allocation_roots(
     inputs: &[analysis_vocabulary::inputs::ResolvedNativeOperationInput],
     inferred: &BTreeMap<u32, analysis_vocabulary::inputs::InferredSetConstruction>,
 ) -> BTreeMap<u32, analysis_vocabulary::inputs::ProvenSetAllocation> {
@@ -100,14 +100,14 @@ struct OriginId(u32);
 /// Per-chunk, deterministic mapping between semantic origins and dense bitmap
 /// positions. The vector order preserves `Value::Ord` when decoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OriginTable {
+pub(crate) struct OriginTable {
     origins: Vec<Value>,
     ids: HashMap<Value, OriginId>,
     function_class_ids: RoaringBitmap,
 }
 
 impl OriginTable {
-    pub fn from_origins(origins: impl IntoIterator<Item = Value>) -> Self {
+    pub(crate) fn from_origins(origins: impl IntoIterator<Item = Value>) -> Self {
         let mut origins: Vec<_> = origins.into_iter().chain([Value::Top]).collect();
         origins.sort_unstable();
         origins.dedup();
@@ -147,7 +147,7 @@ impl OriginTable {
     }
 
     #[cfg(test)]
-    pub fn for_expr(expr: &Expr) -> Arc<Self> {
+    pub(crate) fn for_expr(expr: &Expr) -> Arc<Self> {
         let mut collector = AllocationCollector::default();
         expr.visit_with(&mut collector);
         Arc::new(Self::from_origins(collector.origins))
@@ -225,7 +225,7 @@ impl std::fmt::Debug for Values {
 }
 
 impl Values {
-    pub fn empty(origins: Arc<OriginTable>) -> Self {
+    pub(crate) fn empty(origins: Arc<OriginTable>) -> Self {
         Self {
             bitmap: Arc::new(RoaringBitmap::new()),
             unknown: false,
@@ -233,7 +233,7 @@ impl Values {
         }
     }
 
-    pub fn singleton(origins: Arc<OriginTable>, value: Value) -> Self {
+    pub(crate) fn singleton(origins: Arc<OriginTable>, value: Value) -> Self {
         let mut values = Self::empty(origins);
         values.insert(value);
         values
@@ -249,7 +249,7 @@ impl Values {
     }
 
     #[cfg(test)]
-    pub fn bitmap_payload_bytes(&self) -> u64 {
+    pub(crate) fn bitmap_payload_bytes(&self) -> u64 {
         let statistics = self.bitmap.statistics();
         statistics.n_bytes_array_containers
             + statistics.n_bytes_bitset_containers
@@ -257,12 +257,12 @@ impl Values {
     }
 
     #[cfg(test)]
-    pub fn shares_bitmap(&self, other: &Self) -> bool {
+    pub(crate) fn shares_bitmap(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.bitmap, &other.bitmap)
     }
 
     #[cfg(test)]
-    pub fn contains(&self, value: &Value) -> bool {
+    pub(crate) fn contains(&self, value: &Value) -> bool {
         if *value == Value::Top {
             return self.unknown;
         }
@@ -272,7 +272,7 @@ impl Values {
         self.bitmap.contains(id.0)
     }
 
-    pub fn insert(&mut self, value: Value) -> bool {
+    pub(crate) fn insert(&mut self, value: Value) -> bool {
         if value == Value::Top {
             return !std::mem::replace(&mut self.unknown, true);
         }
@@ -290,7 +290,7 @@ impl Values {
     }
 
     /// Merge another value set, returning whether it contributed new origins.
-    pub fn union_with(&mut self, other: &Self) -> bool {
+    pub(crate) fn union_with(&mut self, other: &Self) -> bool {
         assert!(Arc::ptr_eq(&self.origins, &other.origins));
         let mut changed = union_bitmap(&mut self.bitmap, &other.bitmap);
         if other.unknown && !self.unknown {
@@ -774,7 +774,7 @@ impl CandidateObjectIndex<'_> {
     }
 
     #[cfg(test)]
-    pub fn summary_intersections_for_test(&self) -> usize {
+    pub(crate) fn summary_intersections_for_test(&self) -> usize {
         self.summary_intersections.get()
     }
 }
@@ -836,7 +836,7 @@ impl ChunkValueFlow {
     }
 
     #[cfg(test)]
-    pub fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
+    pub(crate) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
         let mut symbols = FlowSymbols {
             member_read_certificates: self.member_read_certificates.clone(),
             ..FlowSymbols::default()
@@ -944,7 +944,7 @@ impl ChunkValueFlow {
     }
 
     #[cfg(test)]
-    pub fn candidate_summaries_share_for_test(&self, left: Value, right: Value) -> bool {
+    pub(crate) fn candidate_summaries_share_for_test(&self, left: Value, right: Value) -> bool {
         match (
             self.candidate_reachability.get(&left),
             self.candidate_reachability.get(&right),
@@ -958,7 +958,7 @@ impl ChunkValueFlow {
     /// tests. This deliberately remains separate from the indexed production
     /// implementation so the test can catch mistakes in its ID layout.
     #[cfg(test)]
-    pub fn candidate_object_index_reference_for_test(
+    pub(crate) fn candidate_object_index_reference_for_test(
         &self,
         candidates: &BTreeSet<Value>,
     ) -> (
@@ -1025,7 +1025,7 @@ impl ChunkValueFlow {
     }
 
     #[cfg(test)]
-    pub fn candidate_object_index_maps_for_test(
+    pub(crate) fn candidate_object_index_maps_for_test(
         &self,
         candidates: &BTreeSet<Value>,
     ) -> (
@@ -1059,7 +1059,7 @@ impl ChunkValueFlow {
     }
 
     #[cfg(test)]
-    pub fn candidate_reachability_storage_for_test(&self) -> (usize, u64, u64) {
+    pub(crate) fn candidate_reachability_storage_for_test(&self) -> (usize, u64, u64) {
         let mut cardinality = 0;
         let mut payload_bytes = 0;
         for bitmap in self.candidate_reachability.values() {
@@ -1102,12 +1102,12 @@ impl ChunkValueFlow {
     }
 
     #[cfg(test)]
-    pub fn analyze_with_stats(body: &[TopLevelItemView<'_>]) -> (Self, FlowWorkStats) {
+    pub(crate) fn analyze_with_stats(body: &[TopLevelItemView<'_>]) -> (Self, FlowWorkStats) {
         Self::analyze_with_candidates_and_stats(body, &BTreeSet::new())
     }
 
     #[cfg(test)]
-    pub fn analyze_with_candidates_and_stats(
+    pub(crate) fn analyze_with_candidates_and_stats(
         body: &[TopLevelItemView<'_>],
         candidates: &BTreeSet<Value>,
     ) -> (Self, FlowWorkStats) {
@@ -1115,7 +1115,7 @@ impl ChunkValueFlow {
     }
 
     #[cfg(test)]
-    pub fn analyze_reference(body: &[TopLevelItemView<'_>]) -> Self {
+    pub(crate) fn analyze_reference(body: &[TopLevelItemView<'_>]) -> Self {
         let program = FlowProgram::collect(body, &BTreeSet::new());
         let property_names_by_slot = Arc::new(program.symbols.properties.clone());
         let initializations = program
@@ -1433,7 +1433,7 @@ impl ChunkValueFlow {
         }
     }
 
-    pub fn canonical_callable(&self, origin: Value) -> Option<&Id> {
+    pub(crate) fn canonical_callable(&self, origin: Value) -> Option<&Id> {
         self.canonical.get(&origin)
     }
 
@@ -3158,43 +3158,43 @@ pub fn own_data_keys(object: &ObjectLit) -> Option<BTreeSet<String>> {
 
 #[cfg(test)]
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
-pub struct FlowWorkStats {
-    pub event_executions: usize,
-    pub argument_evaluations: usize,
-    pub expression_dependency_read_occurrences: usize,
-    pub expression_dependency_unique_keys: usize,
-    pub callee_evaluations: usize,
-    pub target_discoveries: usize,
-    pub activated_edges: usize,
-    pub edge_visits: usize,
-    pub origin_deliveries: usize,
+pub(crate) struct FlowWorkStats {
+    pub(crate) event_executions: usize,
+    pub(crate) argument_evaluations: usize,
+    pub(crate) expression_dependency_read_occurrences: usize,
+    pub(crate) expression_dependency_unique_keys: usize,
+    pub(crate) callee_evaluations: usize,
+    pub(crate) target_discoveries: usize,
+    pub(crate) activated_edges: usize,
+    pub(crate) edge_visits: usize,
+    pub(crate) origin_deliveries: usize,
     /// Size of exact sets submitted to subtraction, including recurring origins.
-    pub difference_inputs: usize,
-    pub property_rhs_evaluations: usize,
-    pub property_receiver_evaluations: usize,
-    pub property_comparison_inputs: usize,
-    pub property_subtractions: usize,
-    pub property_subset_checks: usize,
-    pub property_direct_evaluations: usize,
-    pub property_receiver_scans: usize,
-    pub property_receiver_activations: usize,
-    pub property_receiver_visits: usize,
-    pub property_proposals: usize,
-    pub numeric_property_proposals: usize,
-    pub numeric_property_reads: usize,
-    pub property_join_inputs: usize,
-    pub property_retained_receivers: usize,
-    pub property_retained_origins: usize,
-    pub property_retained_reads: usize,
-    pub property_dynamic_records: usize,
-    pub property_fixed_records: usize,
-    pub property_state_capacity: usize,
-    pub property_impossible_reads_skipped: usize,
-    pub property_possible_reads_tracked: usize,
-    pub bitmap_join_memo_hits: usize,
-    pub bitmap_join_memo_misses: usize,
-    pub bitmap_subset_checks: usize,
-    pub bitmap_copy_on_write_unions: usize,
+    pub(crate) difference_inputs: usize,
+    pub(crate) property_rhs_evaluations: usize,
+    pub(crate) property_receiver_evaluations: usize,
+    pub(crate) property_comparison_inputs: usize,
+    pub(crate) property_subtractions: usize,
+    pub(crate) property_subset_checks: usize,
+    pub(crate) property_direct_evaluations: usize,
+    pub(crate) property_receiver_scans: usize,
+    pub(crate) property_receiver_activations: usize,
+    pub(crate) property_receiver_visits: usize,
+    pub(crate) property_proposals: usize,
+    pub(crate) numeric_property_proposals: usize,
+    pub(crate) numeric_property_reads: usize,
+    pub(crate) property_join_inputs: usize,
+    pub(crate) property_retained_receivers: usize,
+    pub(crate) property_retained_origins: usize,
+    pub(crate) property_retained_reads: usize,
+    pub(crate) property_dynamic_records: usize,
+    pub(crate) property_fixed_records: usize,
+    pub(crate) property_state_capacity: usize,
+    pub(crate) property_impossible_reads_skipped: usize,
+    pub(crate) property_possible_reads_tracked: usize,
+    pub(crate) bitmap_join_memo_hits: usize,
+    pub(crate) bitmap_join_memo_misses: usize,
+    pub(crate) bitmap_subset_checks: usize,
+    pub(crate) bitmap_copy_on_write_unions: usize,
 }
 
 #[cfg(not(test))]
@@ -4135,7 +4135,7 @@ fn computed_numeric_property(prop: &MemberProp) -> bool {
 
 /// A conservative superset of strings a Number or BigInt can produce through ToPropertyKey.
 /// Prefix checks avoid scanning names on reads; NaN and Infinity are the named Number cases.
-pub fn may_be_numeric_property_key(name: &str) -> bool {
+pub(crate) fn may_be_numeric_property_key(name: &str) -> bool {
     matches!(
         name.as_bytes().first(),
         Some(b'0'..=b'9' | b'+' | b'-' | b'.')

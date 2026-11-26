@@ -167,7 +167,7 @@ impl ProgramBindings {
     }
 
     /// Identity only: this is no initialization, stability or value proof.
-    pub fn source_cell(&self, binding: BindingId) -> Option<BindingId> {
+    pub(crate) fn source_cell(&self, binding: BindingId) -> Option<BindingId> {
         self.source_cells[binding.0]
     }
 
