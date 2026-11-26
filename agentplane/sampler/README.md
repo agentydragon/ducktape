@@ -84,9 +84,9 @@ Readers and the exporter understand both standalone rows and legacy blocks.
 Migration 23 only changes the event-block range constraint to permit spans of up to 256 entries.
 The new `event_block_v2_writes` setting is a separate, default-off gate for live APB v1 writes; its
 profile defaults to 64 KiB, 128 entries and zstd level 3. Enabling
-`event_block_writes` does not enable APB writes. Staging currently has the legacy setting enabled,
-so its background worker continues to write legacy gzip blocks until the separate APB gate is
-deliberately enabled. Keep readers that understand both encodings throughout the transition.
+`event_block_writes` does not enable APB writes. Staging enables both settings. To stop creating APB blocks, disable
+`event_block_v2_writes` and roll the sampler. Keep readers that understand both encodings
+so previously written blocks remain readable.
 
 `context_source_writes` enables sourced context entries. Deploy the reader to every sampler
 replica before enabling writes. With the setting omitted, the sampler reads both formats and
