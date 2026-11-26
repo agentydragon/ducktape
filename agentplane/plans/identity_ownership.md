@@ -150,6 +150,10 @@ deletion under the same reference rule.
 | CR plus in-use finalizer | Terminating, no new references, gone once unreferenced; **cannot be cancelled**       | `policy/reader` must treat Terminating as gone; Dispatcher `CreateSession` must refuse it; the controller must read Session references from Dispatcher. The cross-store check stays non-transactional                               |
 | Agentplane-owned record  | Same draining contract, **cancellable**; reference checks transactional with Sessions | A watch API replacing the `policy/reader` informers; a Flux reconciler; owned bindings lose Kubernetes GC unless they move too; no `kubectl`. A database owner: PolicyService has none; Dispatcher's would co-locate Session claims |
 
+Readers behind PolicyService (below) keep that move internal to PolicyService: no caller reads the
+CRs. Moving the record would change `CreateIdentity` to return once its transaction commits and
+readers' views reflect it, and drop the read-through on a cache miss and `GetIdentity`.
+
 The Agentplane record pays off fully only if Sandbox-to-Identity bindings (`spec.identity`) move into
 the database and the Sandbox Controller reads them there; otherwise a group rebind is a database write
 plus CR patches. The Identity trace in `KUBERNETES_DECOUPLING_DESIGN` answers that first.
@@ -174,29 +178,25 @@ the API server. Hits stay local; a stale view still refuses. If the record moves
 database, `CreateIdentity` instead returns only once its transaction has committed and readers' views
 reflect it, and the read-through and `GetIdentity` go (`TODO` in `policy/identitycache/cache.go`).
 
-**State, 2026-11-26.** Landed: the cache (`policy/identitycache`, with `Peer`, `Start` and
-`StandardGrace`); injectable Identity sources in the resolver, `sandboxreader`, `policy/reader` and
-`environments/lifecycle`; an optional `policy_service` settings block (expand) in the MCP edge, History,
-LLM ingress, Notifications, egress, Action Service, Session Dispatcher and Environments. The MCP edge runs
-on it in staging (#20240); the operator confirmed the Connection Identity picker works.
+**State, 2026-11-26.** Every Identity reader except the Sandbox Controller reconciler runs on the
+cache in staging: the MCP edge (#20240), then History, LLM ingress, Notifications, egress, Action
+Service, Session Dispatcher (wake path included, #20272) and Environments (#20273), with the
+read-through (#20298). Each still holds its Kubernetes fallback, `policy_namespace` and `identities`
+RBAC. Rollout gotcha: services that restart before the Policy Controller's new allowlist is applied are
+refused (`PermissionDenied`, stale view) until it is; on staging that lasted about 30 seconds.
 
-Remaining, in order:
+Remaining:
 
-1. Manifests enable `policy_service` for the other seven services (#20273) once their images, with the
-   read-through (#20298), are on staging:
-   reader allowlist entries (the Session Dispatcher calls as `spiffe://agentplane/sessions`, its only
-   client certificate) and egress where restricted.
-2. Session Dispatcher wake path (`wake` -> `lifecycle.NewPolicy`) takes the cache too.
-3. Per service, contract: require the block and drop the Kubernetes Identity reads; drop
+1. Per service, contract: require the block and drop the Kubernetes Identity reads; drop
    `policy_namespace`, the `identities` RBAC and API-server egress from the manifests; then drop the
    field. Settings reject unknown keys, so a field leaves the manifests before the code.
-4. [Verifier contract](../docs/workload_authentication.md) step 5 wording: Identity revocation follows the
+2. [Verifier contract](../docs/workload_authentication.md) step 5 wording: Identity revocation follows the
    watch, with the grace bound while it is down. Lands with the first contract PR that removes a
    resolver's Kubernetes read.
-5. Sandbox Controller reconciler (Identity watch, `readIdentity`, runtime credentials): needs whole
+3. Sandbox Controller reconciler (Identity watch, `readIdentity`, runtime credentials): needs whole
    objects and a change feed, which `identitycache` does not serve.
-6. `orchestration_v1` creates and deletes Identities through `CreateIdentity`/`DeleteIdentity`.
-7. Only the Policy Controller keeps `identities` RBAC.
+4. `orchestration_v1` creates and deletes Identities through `CreateIdentity`/`DeleteIdentity`.
+5. Only the Policy Controller keeps `identities` RBAC.
 
 Auth-path and RBAC steps follow [changes that can break staging](../AGENTS.md#changes-that-can-break-staging).
 `sandboxreader` reads a Sandbox's Identity from the policy namespace; staging uses one namespace for
