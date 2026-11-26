@@ -378,16 +378,10 @@ func load(path, launchPath string) (Resolved, Endpoint, map[string]string, error
 	return config, file.Ingress, environment, err
 }
 
-func validateEnvironmentRuntimeControl(control EnvironmentRuntimeControlConfiguration) error {
-	if err := control.Security.Validate(); err != nil {
-		return fmt.Errorf("control.security: %w", err)
-	}
-	host, port, err := net.SplitHostPort(control.ListenAddress)
-	number, numberErr := strconv.Atoi(port)
-	if err != nil || host == "" || numberErr != nil || number < 1 || number > 65535 {
-		return errors.New("control.listen_address must be a valid host:port")
-	}
-	return nil
+func validHostPort(address string) bool {
+	host, port, err := net.SplitHostPort(address)
+	number, portErr := strconv.Atoi(port)
+	return err == nil && host != "" && portErr == nil && number >= 1 && number <= 65535
 }
 
 func (f Configuration) compose(launchPath string) (Resolved, map[string]string, error) {
@@ -412,19 +406,20 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 	if !filepath.IsAbs(f.StateDir) || !filepath.IsAbs(f.InitializationCwd) || (f.WorkspaceRoot != nil && !filepath.IsAbs(*f.WorkspaceRoot)) {
 		return Resolved{}, nil, errors.New("state, initialization and configured workspace paths must be absolute")
 	}
-	if err := validateEnvironmentRuntimeControl(f.Control); err != nil {
-		return Resolved{}, nil, err
+	if err := f.Control.Security.Validate(); err != nil {
+		return Resolved{}, nil, fmt.Errorf("control.security: %w", err)
+	}
+	if !validHostPort(f.Control.ListenAddress) {
+		return Resolved{}, nil, errors.New("control.listen_address must be a valid host:port")
 	}
 	if f.Ingress.Target == "" || (f.Ingress.SVID == nil && f.Ingress.Bearer == "") {
 		return Resolved{}, nil, errors.New("invalid ingress endpoint")
 	}
 	if secured := f.Ingress.SVID; secured != nil {
-		if f.Ingress.Bearer != "" || secured.ServerURI != "spiffe://agentplane/history-ingress" {
+		if f.Ingress.Bearer != "" || secured.ServerURI != environmentruntimetransport.HistoryIngressURI {
 			return Resolved{}, nil, errors.New("SVID ingress requires the History ingress URI and no bearer")
 		}
-		host, port, err := net.SplitHostPort(secured.ProxyAddress)
-		portNumber, portErr := strconv.Atoi(port)
-		if err != nil || host == "" || portErr != nil || portNumber < 1 || portNumber > 65535 {
+		if !validHostPort(secured.ProxyAddress) {
 			return Resolved{}, nil, errors.New("SVID ingress proxy_address must be host:port")
 		}
 		if f.Control.Security.Mode != environmentruntimetransport.MutualTLS {
@@ -436,13 +431,12 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		endpoints["model_config_target"] = *f.ModelConfigTarget
 	}
 	for name, target := range endpoints {
-		host, port, err := net.SplitHostPort(target)
-		number, numberErr := strconv.Atoi(port)
-		if err != nil || host == "" || numberErr != nil || number < 1 || number > 65535 {
+		if !validHostPort(target) {
 			return Resolved{}, nil, fmt.Errorf("invalid %s endpoint", name)
 		}
 	}
-	if strings.TrimSpace(f.PlatformInstructions) == "" {
+	platformInstructions := strings.TrimSpace(f.PlatformInstructions)
+	if platformInstructions == "" {
 		return Resolved{}, nil, errors.New("platform instructions must be nonempty")
 	}
 	environ := map[string]string{}
@@ -500,7 +494,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 	if launch.Sandbox.Namespace == "" || launch.Sandbox.Name == "" || launch.Sandbox.UID == "" || (launch.Bootstrap != nil && *launch.Bootstrap == "") {
 		return Resolved{}, nil, errors.New("Sandbox namespace, name, UID and nonempty optional bootstrap are required")
 	}
-	launch.PlatformInstructions = strings.TrimSpace(f.PlatformInstructions)
+	launch.PlatformInstructions = platformInstructions
 	config := Resolved{
 		LogLevel:                    logLevel,
 		Control:                     f.Control,
