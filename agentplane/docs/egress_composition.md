@@ -23,8 +23,7 @@ expiry even while the Policy Controller is down. [Expiry](../policy_controller/S
 
 ## Worked examples
 
-Several sandboxes run agents; some need GitHub with a token placeholder, some need more on top.
-Each gets one binding:
+These three Sandboxes each use a different Identity. Each Identity has one binding here.
 
 ```text
 docs-writer-h2n4q   subject: docs-writer   policySets: [pypi-readonly]
@@ -48,19 +47,6 @@ spec:
 
 The credentialed set can appear in either position. A presented credential placeholder selects
 which matching rules can authorize its use.
-
-## Rules are alternatives, and there is no exclusion
-
-A rule carries hosts, methods, paths and an optional credential reference. There is no deny form and no way
-to subtract a host from a broader pattern, which is what a `PolicySet` means by "Rules
-are alternatives; a request matching any one of them is allowed."
-
-So among the rules that match a request, **every one of them would allow it**. Walking bindings,
-sets and rules in order and taking the first match does not decide allow versus deny; it
-decides only which rule is named in the decision log and which credential, if any, is substituted.
-
-The constraint that follows: where a broad set overlaps a credentialed one, the overlap cannot
-be narrowed away, only ordered around.
 
 ## Opt-in public Internet access
 
@@ -113,13 +99,8 @@ destination. [Egress decisions](../egress/SPEC.md#decision)
 Adding `PolicyBinding.spec.priority` and sorting bindings by it would remove the cross-binding
 alphabet accident, and is the obvious reach once that accident is visible.
 
-The constraint that killed it: ordering is not load-bearing for authorization. Ranking the inputs
-enshrines a workaround for a semantic that can be fixed instead — once allow is a union over
-matching rules there is no order left to rank. A priority also has to be set correctly at every
-grant, including by the app's create form, which has no basis for choosing a number; an operator
-picking policies is not choosing a precedence.
-
-The field remains available later if a real case needs one. Nothing here depends on its absence.
+Naming the credential in each authorized rule resolves the overlap without assigning priorities
+at grant time. An operator selecting PolicySets only has to choose which credentials to grant.
 
 ### Rejected: a profile label selecting Sandboxes
 
@@ -169,11 +150,9 @@ until a rule needs one.
 
 The `inference-experiments` set in staging grants direct Ollama
 inference and LiteLLM's existing `cheap-experiments` key. It is separate from
-`basic-identity`, which contains Agentplane platform operations. New sandbox launches
-receive both through the deployment's default policies; standing caller bindings
-and static OpenClaw explicitly include `inference-experiments`. Existing per-sandbox
-bindings need an explicit grant update or a new sandbox; changing defaults does not
-rewrite those grants. Run `agentplane egress rules` for the active
+`basic-identity`, which contains Agentplane platform operations. The default selection for a newly created Identity
+includes both sets. Launches reusing an Identity keep its existing grants. Standing caller bindings
+and static OpenClaw explicitly include `inference-experiments`. Changing the defaults does not rewrite existing grants. Run `agentplane egress rules` for the active
 hosts, methods, paths, and credential placeholders; send the returned placeholder
 as `Authorization: Bearer ...` through the configured proxy. Override any matching
 `NO_PROXY` entry for these experiment calls (`curl --noproxy ''`), particularly

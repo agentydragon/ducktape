@@ -2312,14 +2312,16 @@ resolved environment UID or placement-generation fence is part of `DELIVERY_DEST
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
-**Decision; the [credential audit](../debug/resume_credentials_valid.md) is published in merged #10573.** Are app-created runtime
-`PolicyBinding`s optional additive capabilities, or prerequisites for useful resume? The current
-app adds independent expiring grants; Sandbox resume does not renew them. Recommend preserving
-that additive model: expiry and revocation remain authoritative, with no automatic re-grant.
-If required grants are desired, first define their durable identity, missing/expired status and
-explicit operator re-grant flow. The audit distinguishes controller-driven expiry from exact
-post-deadline denial, and projected-token renewal from grant renewal. Add implementation work only
-for a reviewed contract that the code does not already satisfy; do not add an implicit Ready gate.
+**Operator decision.** Should missing runtime grants block resume? The current recommendation is
+to keep grants optional. Resume neither renews expired bindings nor re-creates revoked ones.
+If a grant must be a prerequisite, define how to identify it durably, report it missing and let
+the operator re-grant it.
+
+The [live Pod resume](../docs/sandbox_identity_cutover_2026_11_12/README.md#live-checks)
+preserved the Sandbox and Identity UIDs, issued a new workload credential and completed another
+tool turn. Secret-backed upstream credentials still depend on their writer for rotation.
+The [policy reader enforces binding expiry](../policy_controller/SPEC.md#expiry) on its clock.
+[Native Kubernetes RBAC](../policy_controller/SPEC.md#revocation-timing) changes on reconciliation.
 
 ## 8. Ownership and naming cleanup
 
