@@ -2,13 +2,19 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "identitycache",
-    srcs = ["cache.go"],
+    srcs = [
+        "cache.go",
+        "peer.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/policy/identitycache",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/identity/auth",
+        "//agentplane/net/peertls",
+        "//agentplane/observability",
         "//agentplane/policy/v1:policy_service_go_proto",
         "@com_github_sethvargo_go_retry//:go-retry",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
 

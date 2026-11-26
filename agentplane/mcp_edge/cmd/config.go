@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -32,35 +33,16 @@ type config struct {
 	// PolicyNamespace.
 	// CLEANUP(added 2026-11-26): require it and drop PolicyNamespace and the informer once the staging manifests set it
 	//   (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
-	PolicyService     *policyServicePeer `yaml:"policy_service,omitempty"`
-	ActionsTokenFile  string             `yaml:"actions_token_file"`
-	Host              string             `yaml:"host"`
-	HTTPPort          int                `yaml:"http_port"`
-	OperatorOIDC      operator.Settings  `yaml:"operator_oidc"`
-	OperatorServices  []string           `yaml:"operator_services,omitempty"`
-	OAuthFile         string             `yaml:"oauth_file,omitempty"`
-	OAuth             *oauthSettings     `yaml:"oauth,omitempty"`
-	MaxWaitSeconds    float64            `yaml:"max_wait_seconds"`
-	DirectWaitSeconds float64            `yaml:"direct_wait_seconds"`
-}
-
-// policyServicePeer reaches PolicyService over mutual TLS as the MCP edge.
-type policyServicePeer struct {
-	Target string            `yaml:"target"`
-	TLS    peertls.ClientTLS `yaml:"tls"`
-}
-
-func (p policyServicePeer) validate() error {
-	if strings.TrimSpace(p.Target) == "" {
-		return errors.New("policy_service.target is required")
-	}
-	if err := p.TLS.ValidateCaller("", peertls.MCPEdgeURI); err != nil {
-		return fmt.Errorf("policy_service.tls: %w", err)
-	}
-	if p.TLS.ServerURI != peertls.PolicyControllerURI {
-		return fmt.Errorf("policy_service.tls.server_uri must be %q", peertls.PolicyControllerURI)
-	}
-	return nil
+	PolicyService     *identitycache.Peer `yaml:"policy_service,omitempty"`
+	ActionsTokenFile  string              `yaml:"actions_token_file"`
+	Host              string              `yaml:"host"`
+	HTTPPort          int                 `yaml:"http_port"`
+	OperatorOIDC      operator.Settings   `yaml:"operator_oidc"`
+	OperatorServices  []string            `yaml:"operator_services,omitempty"`
+	OAuthFile         string              `yaml:"oauth_file,omitempty"`
+	OAuth             *oauthSettings      `yaml:"oauth,omitempty"`
+	MaxWaitSeconds    float64             `yaml:"max_wait_seconds"`
+	DirectWaitSeconds float64             `yaml:"direct_wait_seconds"`
 }
 
 type oauthSettings struct {
@@ -118,7 +100,7 @@ func (c config) validate() error {
 		return errors.New("policy_namespace must be a namespace name")
 	}
 	if c.PolicyService != nil {
-		if err := c.PolicyService.validate(); err != nil {
+		if err := c.PolicyService.Validate(peertls.MCPEdgeURI); err != nil {
 			return err
 		}
 	}
