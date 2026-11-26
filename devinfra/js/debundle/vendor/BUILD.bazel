@@ -1,0 +1,54 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "vendor",
+    srcs = [
+        "emission.rs",
+        "export_surface.rs",
+        "import_rewrites.rs",
+        "manifests.rs",
+        "mod.rs",
+        "output_imports.rs",
+        "packages.rs",
+        "passthrough.rs",
+        "plan.rs",
+        "strip.rs",
+        "validate.rs",
+        "wrappers.rs",
+    ],
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:program_analysis",
+        "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/artifacts:artifact",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_codegen",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "vendor_test",
+    crate = ":vendor",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:binding_targets",
+        "@crates//:rayon",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_codegen",
+        "@crates//:swc_ecma_parser",
+    ],
+)

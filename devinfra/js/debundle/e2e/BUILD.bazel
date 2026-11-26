@@ -202,7 +202,7 @@ debundle_graph_e2e_test(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:analysis_projection",
-        "//devinfra/js/debundle:staged_analysis",
+        "//devinfra/js/debundle/staged_analysis",
         "@crates//:rmp-serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
@@ -240,7 +240,7 @@ debundle_e2e_test(
     name = "bindings_candidate_assessment_test",
     saved_analysis_tools = True,
     deps = [
-        "//devinfra/js/debundle:staged_analysis",
+        "//devinfra/js/debundle/staged_analysis",
         "@crates//:rmp-serde",
         "@crates//:serde_json",
     ],
@@ -448,12 +448,12 @@ rust_library(
         "//devinfra/js/debundle/excalidraw:__pkg__",
     ],
     deps = [
-        "//devinfra/js/debundle:artifact",
         "//devinfra/js/debundle:binding_targets",
         "//devinfra/js/debundle:graph_provenance",
-        "//devinfra/js/debundle:output_layout",
         "//devinfra/js/debundle:report_io",
         "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/artifacts:artifact",
+        "//devinfra/js/debundle/artifacts:output_layout",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
@@ -490,8 +490,8 @@ rust_library(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:graph_provenance",
-        "//devinfra/js/debundle:peel",
         "//devinfra/js/debundle:spec",
+        "//devinfra/js/debundle/peel",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
@@ -877,7 +877,7 @@ debundle_e2e_test(
     ),
     source = "emission/mod.rs",
     deps = [
-        "//devinfra/js/debundle:artifact",
+        "//devinfra/js/debundle/artifacts:artifact",
         "@crates//:serde_json",
         "@crates//:swc_ecma_ast",
     ],
@@ -1146,7 +1146,7 @@ debundle_graph_e2e_test(
 debundle_graph_e2e_test(
     name = "binding_name_resolution_cli_test",
     deps = [
-        "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle/peel",
         "@crates//:serde_json",
     ],
 )

@@ -11,7 +11,7 @@
 //! occupancy facts; the drop property supplies `ScopeOccupancy::Body`
 //! facts explicitly. Case counts are bounded for CI (see
 //! [`ci_config`]); override locally via
-//! `bbr test //devinfra/js/debundle:lowering_test
+//! `bbr test //devinfra/js/debundle/lowering:lowering_test
 //! --test_env=PROPTEST_CASES=2000`.
 
 use std::collections::{BTreeMap, BTreeSet};
