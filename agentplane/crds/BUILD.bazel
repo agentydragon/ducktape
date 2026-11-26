@@ -79,10 +79,7 @@ py_test(
         ":generate",
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//jsonschema",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//referencing",
         "@rules_python//python/runfiles",
     ],
 )
