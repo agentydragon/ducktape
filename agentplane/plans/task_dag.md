@@ -1413,14 +1413,17 @@ a bounded continuation with a tool call on a route without native compaction.
 compaction threshold and reached 261,181 input tokens without recording a compaction intent.
 At all 59 sampling boundaries with a known previous usage above threshold, the sampler saw one
 live Code Mode cell, at least three user messages and no retry. The live-cell guard suppressed
-compaction while sampling continued. Cover a cell that stays live across the threshold: preserve
-its handle and eventual result without executing it twice. Reserve room for the summary and the next
-ordinary completion. Repeating the same nearly full prompt can exhaust even a bounded retry budget.
+compaction while sampling continued. #19867 removed that guard and exercises a yielded cell and
+its in-flight nested tool across compaction in the [runtime recovery test](../sampler/internal/residentruntime/provider_compaction_recovery_test.go).
 
-Use the last N items as the retention unit. Move the cut to keep a parallel tool-call batch and
-all its results together. Preserve the current task when a cut falls inside a user turn.
-Evaluate omitting historical reasoning **only from messages copied into a compacted context**;
-keep ordinary replay, new reasoning and History intact. Compare with
+Chat now replaces earlier tool exchanges with a handoff and retains recent authored user messages
+under a token budget (#19865). [Sampler contract](../sampler/SPEC.md)
+
+Measure whether the current policy leaves room for both the summary and the next ordinary
+completion. Repeating a nearly full prompt can exhaust even a bounded retry budget. Compare the
+current replacement with a last-N-item tail that keeps a parallel tool-call batch and its results
+together. For that alternative, evaluate omitting historical reasoning from the copied tail and
+preserve the current task across a cut inside a user turn. Compare with
 [Aider's token-budgeted tail](https://github.com/Aider-AI/aider/blob/main/aider/history.py)
 and another open-source tool-using harness on the same workload.
 
