@@ -15,14 +15,28 @@ import (
 const databaseURLEnv = settingPrefix + "DATABASE_URL=postgres://test-user:never-print-this@test-database/history"
 
 // requiredFile is a deployment's settings file with every setting that has no default.
-const requiredFile = `rpc:
+const requiredFile = requiredHead + policyServiceFile + requiredTail
+
+const requiredHead = `rpc:
   listen_address: 0.0.0.0:8080
   tls: {cert_file: /test/history.crt, key_file: /test/history.key}
   auth:
     - mode: spiffe
       ca_file: /test/workload-ca.crt
 policy_namespace: test-policies
-ingress:
+`
+
+const policyServiceFile = `policy_service:
+  target: test-policy-controller:8443
+  tls:
+    ca_file: /test/workload-ca.crt
+    server_uri: spiffe://agentplane/policy-controller
+    cert_file: /test/history.crt
+    key_file: /test/history.key
+    client_uri: spiffe://agentplane/history-ingress
+`
+
+const requiredTail = `ingress:
   writer_namespaces: [test-agentplane]
 `
 
@@ -76,7 +90,7 @@ service_delegation:
   actors: [{spiffe_id: spiffe://agentplane/actions}]
   methods: [/agentplane.history_service.HistoryService/ReadSessionEvents]
 policy_namespace: test-policies
-ingress:
+` + policyServiceFile + `ingress:
   writer_namespaces: [test-agentplane]
   sampler_service_actor: spiffe://agentplane/central-sampler
 `
@@ -104,7 +118,7 @@ ingress:
 	}
 }
 
-func TestPolicyServiceMustBeACompleteMutualTLSCallerAsHistory(t *testing.T) {
+func TestPolicyServiceIsRequiredAndMustBeACompleteMutualTLSCallerAsHistory(t *testing.T) {
 	block := func(target, clientURI, serverURI string) string {
 		return fmt.Sprintf(`policy_service:
   target: %q
@@ -122,6 +136,7 @@ func TestPolicyServiceMustBeACompleteMutualTLSCallerAsHistory(t *testing.T) {
 		settings string
 		valid    bool
 	}{
+		{"absent", "", false},
 		{"complete", block("test-policy-controller:8443", history, policy), true},
 		{"no target", block("", history, policy), false},
 		{"another caller identity", block("test-policy-controller:8443", peertls.AppURI, policy), false},
@@ -129,8 +144,8 @@ func TestPolicyServiceMustBeACompleteMutualTLSCallerAsHistory(t *testing.T) {
 		{"no client SVID", "policy_service:\n  target: test-policy-controller:8443\n  tls:\n    ca_file: /test/workload-ca.crt\n    server_uri: " + policy + "\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := loadTestConfig(t, requiredFile+tc.settings)
-			if tc.valid && (err != nil || c.PolicyService == nil || c.PolicyService.Target != "test-policy-controller:8443") {
+			c, err := loadTestConfig(t, requiredHead+tc.settings+requiredTail)
+			if tc.valid && (err != nil || c.PolicyService.Target != "test-policy-controller:8443") {
 				t.Fatalf("loadConfig = %+v, %v", c.PolicyService, err)
 			}
 			if !tc.valid && err == nil {
@@ -146,7 +161,7 @@ func TestSettingsFileValuesIgnoreGenericEnvironmentOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.WatchLeaseSeconds != 1.5 || c.FoldConcurrency != 7 || c.PolicyNamespace != "test-policies" {
+	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.WatchLeaseSeconds != 1.5 || c.FoldConcurrency != 7 {
 		t.Errorf("settings file values changed under environment overrides: %+v", c)
 	}
 	c, err = loadTestConfig(t, strings.Replace(requiredFile, "  writer_namespaces", "  settle_deltas: false\n  writer_namespaces", 1))
