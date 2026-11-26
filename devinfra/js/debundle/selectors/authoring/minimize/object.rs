@@ -8,7 +8,7 @@ use readoff_render::kept_spans_for_anchor_set;
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
-use super::{extend_anchor_cover, finish_minimized_selector, render_var_slots};
+use super::{extend_anchor_cover, finish_minimized_selector, push_candidate, render_var_slots};
 use crate::render::{AnchorSpan, node_holds_anchor, span_key};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
@@ -141,15 +141,6 @@ pub(crate) fn try_object_read_off_candidates(
             .filter(|span| node_holds_anchor(target_decl_span, *span))
             .collect()
     };
-    let collect = |selector: SpecializedSelector, out: &mut Vec<SpecializedSelector>| -> bool {
-        if !out
-            .iter()
-            .any(|kept| kept.match_source == selector.match_source)
-        {
-            out.push(selector);
-        }
-        out.len() >= limit
-    };
     let mut out: Vec<SpecializedSelector> = Vec::new();
 
     // Single pick (limit == 1): the minimal anchor set, else the slot key-set cover.
@@ -158,7 +149,7 @@ pub(crate) fn try_object_read_off_candidates(
         if !kept.is_empty()
             && let Some(selector) =
                 finish_minimized_selector(index, decl, target, render_with(&kept)?)?
-            && collect(selector, &mut out)
+            && push_candidate(&mut out, selector, limit)
         {
             return Ok(out);
         }
@@ -169,7 +160,7 @@ pub(crate) fn try_object_read_off_candidates(
         target,
         &object_anchor_ranking(object),
         &render_with,
-    )? && collect(selector, &mut out)
+    )? && push_candidate(&mut out, selector, limit)
     {
         return Ok(out);
     }
@@ -189,7 +180,7 @@ pub(crate) fn try_object_read_off_candidates(
             continue;
         }
         if let Some(selector) = finish_minimized_selector(index, decl, target, render_with(&kept)?)?
-            && collect(selector, &mut out)
+            && push_candidate(&mut out, selector, limit)
         {
             return Ok(out);
         }
