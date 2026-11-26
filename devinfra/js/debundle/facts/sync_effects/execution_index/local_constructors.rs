@@ -6,19 +6,19 @@ use swc_ecma_ast::*;
 use value_model::static_property_name;
 
 #[derive(Debug, Clone)]
-pub(in super::super) struct LocalConstructor {
-    pub(in super::super) key: Option<u32>,
+pub struct LocalConstructor {
+    pub key: Option<u32>,
     /// No constructor body or instance fields run during direct allocation.
-    pub(in super::super) inert_allocation: bool,
+    pub inert_allocation: bool,
     /// Implicit constructor whose instance fields are checked to initialize
     /// without user code. Unlike inert allocation, the fields still run.
-    pub(in super::super) checked_default_fields: bool,
+    pub checked_default_fields: bool,
     /// Own data fields written by the checked constructor body.
-    pub(in super::super) own_fields: BTreeSet<String>,
+    pub own_fields: BTreeSet<String>,
     /// Parameter property reads must come from fresh plain data objects.
-    pub(in super::super) property_reads: BTreeSet<(usize, String)>,
+    pub property_reads: BTreeSet<(usize, String)>,
     /// Unqualified reads must resolve to local bindings, not host getters.
-    pub(in super::super) binding_reads: BTreeSet<Id>,
+    pub binding_reads: BTreeSet<Id>,
 }
 
 pub(super) fn safe_constructor_value(

@@ -6,10 +6,10 @@
 use swc_ecma_ast::*;
 
 #[derive(Debug, Clone)]
-pub(super) struct NamespaceWrapperCandidate {
-    pub(super) cache: Id,
-    pub(super) object: Id,
-    pub(super) function_end: u32,
+pub struct NamespaceWrapperCandidate {
+    pub cache: Id,
+    pub object: Id,
+    pub function_end: u32,
 }
 
 fn ident(expr: &Expr, expected: &Id) -> bool {
@@ -261,7 +261,7 @@ fn cache_store(stmt: &Stmt, is_object: &Id, cache: &Id, value: &Id, namespace: &
 
 /// Admit only the complete seven-step shape. Every eager call and returned
 /// closure is accounted for; later semantic rules certify its prerequisites.
-pub(super) fn candidate(function: &Function) -> Option<NamespaceWrapperCandidate> {
+pub fn candidate(function: &Function) -> Option<NamespaceWrapperCandidate> {
     if function.is_async || function.is_generator || !function.decorators.is_empty() {
         return None;
     }

@@ -4,12 +4,12 @@
 //! flattened lane, rewound, unless that execution seals the owner; so does
 //! an admitted root expression statement.
 
-use super::super::execution_index::{Call, CallKind};
 use super::super::interpreter::{Executor, LocalActivation, Outcome};
 use super::operands::RootOperands;
 use analysis::facts::binding_effect_coverage::RootInitializerIdentity;
 use analysis::facts::{OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptRewind};
 use analysis_vocabulary::execution_evidence::{AssumedEffectReason, ExecutionOperation};
+use execution_index::{Call, CallKind};
 use kernel::frame::SelectedValue;
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;

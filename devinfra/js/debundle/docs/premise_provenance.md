@@ -40,7 +40,7 @@ no edge-level attribution.
   write statement report uses.
 - Loader closure: `FactContext::assume` (`inference/iterative.rs`) from
   `loader_closure.rs`, reported in `export_reentry.json`.
-- Native census: `native_integrity_dependencies` (`execution_index.rs`), carried by
+- Native census: `native_integrity_dependencies` (`execution_index/mod.rs`), carried by
   `Integrity::Intact`.
 
 ## By kind

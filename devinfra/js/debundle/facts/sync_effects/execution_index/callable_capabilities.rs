@@ -1,8 +1,8 @@
 //! Callable-capability inference over the prepared execution index.
 
-use super::super::strict_provider;
 use super::native_write_census::{ArraySpreadProtocolIntegrity, NativeWriteCensus};
 use super::{CallKind, ExecutionIndex, SemanticShapeInputs};
+use crate::strict_provider;
 use analysis_domain::integrity::{IntegrityFlags, IntrinsicSlot, PrototypeWrites};
 use analysis_domain::item_views::TopLevelItemView;
 use analysis_vocabulary::execution_evidence::SourceLocator;
@@ -169,7 +169,7 @@ impl InferredForeignCall {
 /// Prepared once for callable inference and the whole-program native census.
 /// Value flow remains demand-driven even when every module contributes writes.
 pub struct PreparedCallableCapabilities {
-    pub(in super::super) index: ExecutionIndex,
+    pub index: ExecutionIndex,
     pub(super) exported_locals: BTreeSet<String>,
     pub(super) flow: Option<ChunkValueFlow>,
 }

@@ -16,6 +16,7 @@ rust_library(
         "//devinfra/js/debundle/analysis_domain",
         "//devinfra/js/debundle/analysis_vocabulary",
         "//devinfra/js/debundle/facts/sync_effects",
+        "//devinfra/js/debundle/facts/sync_effects/execution_index",
         "//devinfra/js/debundle/inference",
         "//devinfra/js/debundle/purity",
         "//devinfra/js/debundle/spec",

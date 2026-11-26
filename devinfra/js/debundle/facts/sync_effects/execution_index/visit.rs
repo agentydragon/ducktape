@@ -1,6 +1,5 @@
 //! The AST visitor that fills the `ExecutionIndex`.
 
-use super::super::namespace_wrapper;
 use super::class_value_facts::collect_class_value_facts;
 use super::fresh_values::{
     from_entries_mapped_proof, map_entry_array_span, primitive_constant, record_factory_argument,
@@ -24,6 +23,7 @@ use super::{
     plain_assign_source_property, set_from_primitive_array_aliases, set_from_set_spread_source,
     shallow_data_pattern, sole_return_expression,
 };
+use crate::namespace_wrapper;
 use analysis::facts::at_init_fallback::{
     is_no_sync_callback_member_call, member_row_invokes_no_argument,
 };

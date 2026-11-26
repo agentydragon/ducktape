@@ -5,19 +5,25 @@ pub mod callable_capabilities;
 mod callback_arguments;
 mod class_value_facts;
 mod deferred_global_publication;
+mod foreign_call;
 mod fresh_values;
 mod global_receiver;
 mod input_validation;
-pub(super) mod intrinsic_roots;
-pub(super) mod local_constructors;
+pub mod intrinsic_roots;
+pub mod local_constructors;
 mod namespace_family;
+mod namespace_wrapper;
+pub mod native_operation;
 mod native_point_effects;
 mod native_write_census;
-pub(super) mod patterns;
+pub mod noninvoking_initialization;
+pub mod patterns;
 mod property_keys;
 mod prototype_properties;
+mod provider;
 mod receiver_flow;
 mod recording;
+mod strict_provider;
 mod visit;
 
 use native_write_census::{
@@ -28,14 +34,14 @@ pub use native_write_census::{
     ArraySpreadProtocolIntegrity, NativeWriteCensus, apply_intrinsics_never_written,
     resolve_array_spread_protocol_integrity, resolve_native_integrity,
 };
-pub(super) use native_write_census::{IntrinsicWriteTarget, NativePointEffects};
+pub use native_write_census::{IntrinsicWriteTarget, NativePointEffects};
 use property_keys::{
     PropertyKeyDomain, PropertyKeyEvidence, PropertyKeyExpr, key_domain_may_name,
     property_key_evidence,
 };
 
-use super::namespace_wrapper::NamespaceWrapperCandidate;
-use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
+use crate::namespace_wrapper::NamespaceWrapperCandidate;
+use crate::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use analysis::facts::OwnerInitializationCoverageRefusalReason;
 use analysis::facts::global_object::{unshadowed_global_names, unshadowed_global_object_aliases};
 use analysis::facts::local_effect_targets::{MetadataDecorateCall, metadata_decorate_call};
@@ -191,24 +197,24 @@ fn no_reentry_inert_argument(expression: &Expr) -> bool {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct Parameter {
-    pub(super) binding: Option<Id>,
-    pub(super) bindings: BTreeSet<Id>,
-    pub(super) default: Option<ValueExpr>,
+pub struct Parameter {
+    pub binding: Option<Id>,
+    pub bindings: BTreeSet<Id>,
+    pub default: Option<ValueExpr>,
     /// A pattern parameter's bindings as projections of its incoming value,
     /// bound to `pattern_source()`, and whether some binding receives a part
     /// of it only as unknown.
-    pub(super) pattern_assignments: Vec<(Id, ValueExpr)>,
-    pub(super) pattern_loses_values: bool,
+    pub pattern_assignments: Vec<(Id, ValueExpr)>,
+    pub pattern_loses_values: bool,
     /// The pattern destructures an array, so binding it runs the iterator
     /// protocol on the incoming value (or on a part of it).
-    pub(super) pattern_iterates: bool,
+    pub pattern_iterates: bool,
     /// Some array pattern below the root iterates a part of the incoming
     /// value, or a default, which no source tracks.
-    pub(super) pattern_iterates_part: bool,
+    pub pattern_iterates_part: bool,
     /// Defaults below the root that supply a value an array pattern
     /// iterates.
-    pub(super) iterated_defaults: Vec<ValueExpr>,
+    pub iterated_defaults: Vec<ValueExpr>,
 }
 
 impl Parameter {
@@ -264,22 +270,22 @@ impl Parameter {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct Call {
-    pub(super) kind: CallKind,
-    pub(super) callee: ValueExpr,
-    pub(super) args: Vec<ValueExpr>,
-    pub(super) span: Span,
-    pub(super) caller: Option<u32>,
-    pub(super) owner: SourceUnitOrdinal,
-    pub(super) plain_object_sources: bool,
-    pub(super) no_sync_arguments: bool,
-    pub(super) no_reentry_candidate: bool,
-    pub(super) no_reentry_record_candidate: bool,
-    pub(super) has_spread: bool,
+pub struct Call {
+    pub kind: CallKind,
+    pub callee: ValueExpr,
+    pub args: Vec<ValueExpr>,
+    pub span: Span,
+    pub caller: Option<u32>,
+    pub owner: SourceUnitOrdinal,
+    pub plain_object_sources: bool,
+    pub no_sync_arguments: bool,
+    pub no_reentry_candidate: bool,
+    pub no_reentry_record_candidate: bool,
+    pub has_spread: bool,
 }
 
 impl Call {
-    pub(super) fn member_read(
+    pub fn member_read(
         owner: SourceUnitOrdinal,
         caller: Option<u32>,
         callee: ValueExpr,
@@ -302,30 +308,30 @@ impl Call {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct RetainedCallbackCall {
-    pub(super) namespace_member: Option<(Id, String)>,
-    pub(super) signatures: Vec<spec::RetainedCallbackSignature>,
-    pub(super) argument_count: usize,
-    pub(super) callback_argument_exprs: BTreeMap<usize, ValueExpr>,
-    pub(super) require_single_callback_identity: bool,
+pub struct RetainedCallbackCall {
+    pub namespace_member: Option<(Id, String)>,
+    pub signatures: Vec<spec::RetainedCallbackSignature>,
+    pub argument_count: usize,
+    pub callback_argument_exprs: BTreeMap<usize, ValueExpr>,
+    pub require_single_callback_identity: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct IndexedRetainedCallbackCall {
-    pub(super) call: RetainedCallbackCall,
-    pub(super) owner: SourceUnitOrdinal,
-    pub(super) caller: Option<u32>,
+pub struct IndexedRetainedCallbackCall {
+    pub call: RetainedCallbackCall,
+    pub owner: SourceUnitOrdinal,
+    pub caller: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct DescriptorCopyCallCandidate {
+pub struct DescriptorCopyCallCandidate {
     pub source_object: u32,
     pub signature: spec::DescriptorCopyFactorySignature,
     pub provider_binding: Id,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum CallKind {
+pub enum CallKind {
     Call,
     New,
     ImplicitCoercion,
@@ -341,7 +347,7 @@ pub(super) enum CallKind {
 
 /// The builtin row a direct call or construction names, with its callee
 /// spelling. Identity and slot integrity are proved separately.
-pub(super) fn native_call_identity_key(
+pub fn native_call_identity_key(
     kind: CallKind,
     callee: &ValueExpr,
 ) -> Option<(&'static Row, NativeCallee)> {
@@ -461,85 +467,85 @@ fn plain_assign_source_property(property: &PropOrSpread) -> bool {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct CallbackResultWrite {
-    pub(super) receiver: ValueExpr,
-    pub(super) property_key: ValueExpr,
-    pub(super) simple_assignment: bool,
-    pub(super) data_read_operands: bool,
-    pub(super) property: Option<String>,
-    pub(super) value: ValueExpr,
-    pub(super) site: CallSite,
+pub struct CallbackResultWrite {
+    pub receiver: ValueExpr,
+    pub property_key: ValueExpr,
+    pub simple_assignment: bool,
+    pub data_read_operands: bool,
+    pub property: Option<String>,
+    pub value: ValueExpr,
+    pub site: CallSite,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct MemberValueWrite {
-    pub(super) receiver: Id,
-    pub(super) property: Option<String>,
-    pub(super) value: ValueExpr,
-    pub(super) site: CallSite,
-    pub(super) owner: SourceUnitOrdinal,
+pub struct MemberValueWrite {
+    pub receiver: Id,
+    pub property: Option<String>,
+    pub value: ValueExpr,
+    pub site: CallSite,
+    pub owner: SourceUnitOrdinal,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct Callable {
-    pub(super) owner: SourceUnitOrdinal,
+pub struct Callable {
+    pub owner: SourceUnitOrdinal,
     created_after_parent_await: bool,
-    pub(super) params: Vec<Parameter>,
-    pub(super) reads: BTreeSet<Id>,
+    pub params: Vec<Parameter>,
+    pub reads: BTreeSet<Id>,
     bare_reads: BTreeSet<Id>,
-    pub(super) rebinds: BTreeSet<Id>,
-    pub(super) calls: Vec<Arc<Call>>,
-    pub(super) local_assignments: Vec<(Id, ValueExpr)>,
-    pub(super) declared_locals: BTreeSet<Id>,
+    pub rebinds: BTreeSet<Id>,
+    pub calls: Vec<Arc<Call>>,
+    pub local_assignments: Vec<(Id, ValueExpr)>,
+    pub declared_locals: BTreeSet<Id>,
     /// Locals a read can observe before any assignment, as `undefined`: a
     /// declarator without an initializer outside a `for`-`in`/`of` head, and
     /// every `var` (hoisted). `local_assignments` never contributes that value.
-    pub(super) undefined_before_assignment: BTreeSet<Id>,
+    pub undefined_before_assignment: BTreeSet<Id>,
     /// Bindings a `for`-`in`/`of` head of this callable writes. No
     /// `local_assignments` entry records the elements a head binding takes.
-    pub(super) head_bindings: BTreeSet<Id>,
+    pub head_bindings: BTreeSet<Id>,
     /// Values whose parts reach a binding only as unknown: `for`-`of`
     /// iterables, initializers of destructuring that loses values, thrown
     /// values (a `catch` parameter) and yielded values (a generator's
     /// consumer).
-    pub(super) published_sources: Vec<ValueExpr>,
+    pub published_sources: Vec<ValueExpr>,
     /// Operands this callable runs the iterator protocol on: `for`-`of`
     /// iterables, array-destructured values, spread operands and `yield*`
     /// operands. Over anything but a proven native iterable, the protocol
     /// calls user code (`[Symbol.iterator]`, `next`).
-    pub(super) iterated_sources: Vec<ValueExpr>,
+    pub iterated_sources: Vec<ValueExpr>,
     /// Bindings an update expression (`x++`) of this callable writes; neither
     /// `rebinds` nor `local_assignments` records them.
-    pub(super) update_targets: BTreeSet<Id>,
+    pub update_targets: BTreeSet<Id>,
     hoisted_vars: BTreeSet<Id>,
     lexical_declarations: BTreeMap<Id, LocalBinding>,
-    pub(super) self_binding: Option<Id>,
+    pub self_binding: Option<Id>,
     /// Catch parameters and destructured declarations are locals for closure
     /// projection. Keep them separate from `declared_locals`, whose consumers
     /// also include direct callback-factory and class-closure admission.
-    pub(super) pattern_locals: BTreeSet<Id>,
-    pub(super) body_facts: CallableBodyFacts,
-    pub(super) local_functions: BTreeMap<Id, u32>,
-    pub(super) literal_captures: BTreeSet<Id>,
+    pub pattern_locals: BTreeSet<Id>,
+    pub body_facts: CallableBodyFacts,
+    pub local_functions: BTreeMap<Id, u32>,
+    pub literal_captures: BTreeSet<Id>,
     literal_exposures: BTreeSet<Id>,
-    pub(super) escaped_bindings: BTreeSet<Id>,
-    pub(super) namespace_escape_values: Vec<ValueExpr>,
-    pub(super) member_writes: Vec<(Id, String)>,
-    pub(super) member_value_writes: Vec<MemberValueWrite>,
-    pub(super) callback_result_writes: Vec<CallbackResultWrite>,
-    pub(super) dynamic_property_effect: bool,
-    pub(super) dynamic_property_receivers: Vec<ValueExpr>,
+    pub escaped_bindings: BTreeSet<Id>,
+    pub namespace_escape_values: Vec<ValueExpr>,
+    pub member_writes: Vec<(Id, String)>,
+    pub member_value_writes: Vec<MemberValueWrite>,
+    pub callback_result_writes: Vec<CallbackResultWrite>,
+    pub dynamic_property_effect: bool,
+    pub dynamic_property_receivers: Vec<ValueExpr>,
     /// Receivers of member targets in this body's destructuring assignments.
-    pub(super) destructuring_member_receivers: Vec<ValueExpr>,
-    pub(super) implicit_capture: bool,
-    pub(super) opaque: bool,
-    pub(super) generator: bool,
-    pub(super) may_fall_through: bool,
+    pub destructuring_member_receivers: Vec<ValueExpr>,
+    pub implicit_capture: bool,
+    pub opaque: bool,
+    pub generator: bool,
+    pub may_fall_through: bool,
 }
 
 impl Callable {
     /// The bindings this callable's own scope declares, parameters included.
-    pub(super) fn own_bindings(&self) -> BTreeSet<&Id> {
+    pub fn own_bindings(&self) -> BTreeSet<&Id> {
         self.declared_locals
             .iter()
             .chain(&self.pattern_locals)
@@ -553,7 +559,7 @@ impl Callable {
 
     /// Every binding this callable writes: assignments of any operator and
     /// destructuring targets (`rebinds`), loop heads and updates.
-    pub(super) fn writes(&self) -> impl Iterator<Item = &Id> {
+    pub fn writes(&self) -> impl Iterator<Item = &Id> {
         self.rebinds
             .iter()
             .chain(&self.head_bindings)
@@ -561,7 +567,7 @@ impl Callable {
     }
 
     /// Bindings an enclosing scope declares that this callable writes.
-    pub(super) fn captured_writes(&self) -> BTreeSet<&Id> {
+    pub fn captured_writes(&self) -> BTreeSet<&Id> {
         let own = self.own_bindings();
         self.writes()
             .filter(|binding| !own.contains(binding))
@@ -569,7 +575,7 @@ impl Callable {
     }
 
     /// Bindings an enclosing scope declares that this callable reads.
-    pub(super) fn captured_reads(&self) -> BTreeSet<&Id> {
+    pub fn captured_reads(&self) -> BTreeSet<&Id> {
         let own = self.own_bindings();
         self.reads
             .iter()
@@ -581,7 +587,7 @@ impl Callable {
     /// although a later one assigns them: a loop, or a call between, can
     /// carry the later value to the earlier read. Returns the readers'
     /// targets and the locals they read.
-    pub(super) fn reads_before_assignment(&self) -> (BTreeSet<&Id>, BTreeSet<Id>) {
+    pub fn reads_before_assignment(&self) -> (BTreeSet<&Id>, BTreeSet<Id>) {
         let mut readers = BTreeSet::new();
         let mut sources = BTreeSet::new();
         for (position, (target, value)) in self.local_assignments.iter().enumerate() {
@@ -602,9 +608,9 @@ impl Callable {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct CallablePrefixEffects {
-    pub(super) reads: BTreeSet<Id>,
-    pub(super) rebinds: BTreeSet<Id>,
+pub struct CallablePrefixEffects {
+    pub reads: BTreeSet<Id>,
+    pub rebinds: BTreeSet<Id>,
 }
 
 impl Default for Callable {
@@ -657,7 +663,7 @@ fn sole_return_expression(body: &FunctionBody) -> Option<&Expr> {
 
 /// Global-object names the native census resolves.
 #[derive(Debug, Clone, Default)]
-pub(super) struct GlobalNames {
+pub struct GlobalNames {
     /// Unshadowed bindings that evaluate to the global object.
     aliases: BTreeSet<&'static str>,
     /// Node's and Bun's `global` is one of `aliases` under a
@@ -692,7 +698,7 @@ impl GlobalNames {
 /// Global data properties that hold only fresh ordinary objects created by
 /// analyzed code (SPEC.md § Bundle-owned globals).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct BundleGlobals {
+pub struct BundleGlobals {
     names: BTreeSet<String>,
     /// Every property keyed by a `Symbol.for` symbol.
     registered_symbols: bool,
@@ -719,16 +725,16 @@ impl BundleGlobals {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct BindingDeclarationWrite {
+pub struct BindingDeclarationWrite {
     owner: SourceUnitOrdinal,
     /// A simple `var` in a callable's scope. Such a binding is initialized to
     /// undefined on entry; this proves no kind or privacy of its stored value.
     private_var_scope: Option<u32>,
     binding_span: Span,
     initializer_span: Option<Span>,
-    pub(super) initializer: Option<ValueExpr>,
-    pub(super) direct_top_level: bool,
-    pub(super) simple_identifier: bool,
+    pub initializer: Option<ValueExpr>,
+    pub direct_top_level: bool,
+    pub simple_identifier: bool,
     primitive_literal_initializer: bool,
     /// Retained from the canonical declaration visitor so native-input
     /// validation need not re-traverse the initializer AST.
@@ -928,9 +934,9 @@ struct FreshErrorWriteClaim {
 }
 
 #[derive(Default)]
-pub(super) struct ExecutionIndex {
-    pub(super) member_owners: BTreeMap<CallSite, SourceUnitOrdinal>,
-    pub(super) retained_record_factories: BTreeSet<String>,
+pub struct ExecutionIndex {
+    pub member_owners: BTreeMap<CallSite, SourceUnitOrdinal>,
+    pub retained_record_factories: BTreeSet<String>,
     owner: SourceUnitOrdinal,
     current: Option<u32>,
     /// Lexical var scope, distinct from the effect owner inherited by
@@ -947,110 +953,110 @@ pub(super) struct ExecutionIndex {
     literal_depth: u32,
     factory_member_value_depth: u32,
     factory_callback_depth: u32,
-    pub(super) callables: BTreeMap<u32, Callable>,
+    pub callables: BTreeMap<u32, Callable>,
     /// Functions whose call cannot inspect or retain any argument.
     inert_argument_functions: BTreeSet<u32>,
-    pub(super) callable_spans: BTreeMap<u32, Span>,
+    pub callable_spans: BTreeMap<u32, Span>,
     immediate_anonymous_callers: BTreeMap<u32, Option<u32>>,
     inline_callback_entries: BTreeMap<u32, callback_arguments::InlineCallbackEntry>,
     native_guarded_regions: Vec<callback_arguments::GuardedRegion>,
-    pub(super) local_constructors: BTreeMap<u32, LocalConstructor>,
+    pub local_constructors: BTreeMap<u32, LocalConstructor>,
     /// Source-covered constructor operations for exported provider summaries.
-    pub(super) class_provider_bodies: BTreeMap<u32, (LocalBody, Vec<Id>)>,
-    pub(super) local_class_construction_shapes: LocalClassConstructionShapes,
-    pub(super) local_class_construction_proof: LocalClassConstructionProof,
-    pub(super) semantic_facts: Option<Arc<SemanticFacts>>,
+    pub class_provider_bodies: BTreeMap<u32, (LocalBody, Vec<Id>)>,
+    pub local_class_construction_shapes: LocalClassConstructionShapes,
+    pub local_class_construction_proof: LocalClassConstructionProof,
+    pub semantic_facts: Option<Arc<SemanticFacts>>,
     /// Slot flags of the completed census and validated inputs; set with
     /// `semantic_facts`.
-    pub(super) integrity: IntegrityFlags,
+    pub integrity: IntegrityFlags,
     /// Native own-data lookups from the canonical operation index, with the
     /// slots required at each read's source position.
-    pub(super) native_own_data_reads: BTreeMap<u32, [IntrinsicSlot; 2]>,
-    pub(super) class_values: BTreeMap<u32, ClassValueFacts>,
-    pub(super) class_owners: BTreeMap<u32, SourceUnitOrdinal>,
-    pub(super) class_bindings: BTreeMap<u32, Id>,
-    pub(super) class_spans: BTreeMap<u32, Span>,
+    pub native_own_data_reads: BTreeMap<u32, [IntrinsicSlot; 2]>,
+    pub class_values: BTreeMap<u32, ClassValueFacts>,
+    pub class_owners: BTreeMap<u32, SourceUnitOrdinal>,
+    pub class_bindings: BTreeMap<u32, Id>,
+    pub class_spans: BTreeMap<u32, Span>,
     /// The `extends` expression of each class that has one.
-    pub(super) class_heritage_spans: BTreeMap<u32, Span>,
+    pub class_heritage_spans: BTreeMap<u32, Span>,
     /// Object literals with a getter or setter that reads `this`: a member
     /// read or write that may run it hands it the receiver.
-    pub(super) this_reading_accessor_objects: BTreeSet<u32>,
+    pub this_reading_accessor_objects: BTreeSet<u32>,
     /// The non-null `__proto__` expression of each object literal with one.
-    pub(super) literal_prototypes: BTreeMap<u32, ValueExpr>,
+    pub literal_prototypes: BTreeMap<u32, ValueExpr>,
     /// Constructors, methods and accessors of every class: they run as class
     /// members, not as values the class body creates.
-    pub(super) class_member_callables: BTreeSet<u32>,
+    pub class_member_callables: BTreeSet<u32>,
     /// The constructors among `class_member_callables`.
-    pub(super) class_constructors: BTreeSet<u32>,
+    pub class_constructors: BTreeSet<u32>,
     /// Per class, the spans that run at construction or class creation and
     /// can store values on the instance or the class: the constructor,
     /// field initializers and static blocks.
-    pub(super) class_store_regions: BTreeMap<u32, Vec<Span>>,
+    pub class_store_regions: BTreeMap<u32, Vec<Span>>,
     /// The getters and setters (static or not) each class declares.
     class_accessors: BTreeMap<u32, Vec<u32>>,
     /// Classes declaring a getter or setter that reads `this`.
-    pub(super) this_reading_accessor_classes: BTreeSet<u32>,
+    pub this_reading_accessor_classes: BTreeSet<u32>,
     /// Receivers of member targets in destructuring assignments, per
     /// top-level owner; a callable's own are on `Callable`.
-    pub(super) top_destructuring_member_receivers: Vec<Vec<ValueExpr>>,
+    pub top_destructuring_member_receivers: Vec<Vec<ValueExpr>>,
     class_ids: BTreeSet<Id>,
     /// Top-level `const` declarations, exported or not: a store throws.
-    pub(super) top_const_bindings: BTreeSet<Id>,
+    pub top_const_bindings: BTreeSet<Id>,
     /// Every binding read or written anywhere inside a callable body,
     /// including after an `await` (unlike `CallableFacts::{reads,rebinds}`).
-    pub(super) captured_bindings: BTreeSet<Id>,
-    pub(super) other_class_uses: BTreeSet<Id>,
+    pub captured_bindings: BTreeSet<Id>,
+    pub other_class_uses: BTreeSet<Id>,
     safe_class_target: Option<Id>,
-    pub(super) plain_data_objects: BTreeSet<u32>,
+    pub plain_data_objects: BTreeSet<u32>,
     /// The top-level owner whose source contains each object literal.
-    pub(super) object_literal_owners: BTreeMap<u32, SourceUnitOrdinal>,
-    pub(super) own_descriptor_shapes: BTreeMap<u32, OwnPropertyShape>,
+    pub object_literal_owners: BTreeMap<u32, SourceUnitOrdinal>,
+    pub own_descriptor_shapes: BTreeMap<u32, OwnPropertyShape>,
     descriptor_copy_factories:
         BTreeMap<Id, analysis_vocabulary::inputs::DescriptorCopyFactorySummary>,
-    pub(super) descriptor_copy_calls: BTreeMap<CallSite, DescriptorCopyCallCandidate>,
-    pub(super) null_proto_data_objects: BTreeSet<u32>,
-    pub(super) exact_object_spread_copies: BTreeSet<u32>,
-    pub(super) map_entry_arrays: BTreeSet<u32>,
-    pub(super) dense_array_literals: BTreeMap<u32, usize>,
-    pub(super) array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
+    pub descriptor_copy_calls: BTreeMap<CallSite, DescriptorCopyCallCandidate>,
+    pub null_proto_data_objects: BTreeSet<u32>,
+    pub exact_object_spread_copies: BTreeSet<u32>,
+    pub map_entry_arrays: BTreeSet<u32>,
+    pub dense_array_literals: BTreeMap<u32, usize>,
+    pub array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
     literal_property_kinds: BTreeMap<u32, Vec<LiteralPropertyKind>>,
     callable_creations: BTreeMap<u32, DeferredCallableCreation>,
-    pub(super) method_record_members: BTreeMap<u32, Vec<crate::foreign_call::RecordMember>>,
-    pub(super) array_iterations: BTreeMap<CallSite, ArrayIteration>,
-    pub(super) async_callables: BTreeSet<u32>,
-    pub(super) callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
+    pub method_record_members: BTreeMap<u32, Vec<crate::foreign_call::RecordMember>>,
+    pub array_iterations: BTreeMap<CallSite, ArrayIteration>,
+    pub async_callables: BTreeSet<u32>,
+    pub callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
     direct_call_members: BTreeSet<CallSite>,
     /// Direct calls of annotated record factories, with the syntax check of
     /// their argument. Semantic admission is checked by the interpreter.
-    pub(super) record_factory_calls: BTreeMap<CallSite, RecordFactoryArgument>,
+    pub record_factory_calls: BTreeMap<CallSite, RecordFactoryArgument>,
     member_write_sites: BTreeSet<CallSite>,
-    pub(super) primitive_data_properties: BTreeSet<(u32, String)>,
-    pub(super) from_entries_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
-    pub(super) mapped_array_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
-    pub(super) plain_array_bindings: BTreeSet<String>,
+    pub primitive_data_properties: BTreeSet<(u32, String)>,
+    pub from_entries_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
+    pub mapped_array_map_calls: BTreeMap<CallSite, FromEntriesMappedProof>,
+    pub plain_array_bindings: BTreeSet<String>,
     mutated_intrinsic_roots: IntrinsicRoots,
     native_integrity_witnesses: Arc<Vec<NativeMutationWitness>>,
     native_prototype_mutations: Arc<Vec<NativePrototypeMutation>>,
     source_chunk_id: Option<String>,
-    pub(super) native_point_effects: BTreeMap<(SourceUnitOrdinal, Option<u32>), NativePointEffects>,
-    pub(super) initial_native_point_effects: NativePointEffects,
-    pub(super) all_native_point_effects: NativePointEffects,
-    pub(super) reassigned_map: bool,
+    pub native_point_effects: BTreeMap<(SourceUnitOrdinal, Option<u32>), NativePointEffects>,
+    pub initial_native_point_effects: NativePointEffects,
+    pub all_native_point_effects: NativePointEffects,
+    pub reassigned_map: bool,
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
-    pub(super) intrinsic_writes: Vec<IntrinsicWriteTarget>,
+    pub intrinsic_writes: Vec<IntrinsicWriteTarget>,
     prototype_calls: Vec<Arc<Call>>,
     prototype_field_writes: Vec<(SourceUnitOrdinal, Option<u32>, Span, PropertyKeyExpr)>,
-    pub(super) prototype_callable_reads: BTreeMap<u32, BTreeSet<Id>>,
+    pub prototype_callable_reads: BTreeMap<u32, BTreeSet<Id>>,
     /// Per callable, the bindings it or a callable nested in it writes
     /// (assignment and destructuring targets, loop heads, updates). A closure
     /// must capture a cell for each so a nested writer reaches the owner.
-    pub(super) nested_callable_writes: BTreeMap<u32, BTreeSet<Id>>,
+    pub nested_callable_writes: BTreeMap<u32, BTreeSet<Id>>,
     prototype_capture_stack: Vec<u32>,
     property_key_assignments: BTreeMap<Id, Vec<PropertyKeyExpr>>,
-    pub(super) property_key_declarations: BTreeSet<Id>,
+    pub property_key_declarations: BTreeSet<Id>,
     native_write_census: NativeWriteCensus,
-    pub(super) binding_declaration_writes: BTreeMap<Id, Vec<BindingDeclarationWrite>>,
+    pub binding_declaration_writes: BTreeMap<Id, Vec<BindingDeclarationWrite>>,
     namespace_wrapper_candidates: BTreeMap<u32, NamespaceWrapperCandidate>,
     /// Reference bounds suffice to reject any use outside a candidate body.
     /// Binding declarations are handled by `visit_binding_ident` separately.
@@ -1065,16 +1071,16 @@ pub(super) struct ExecutionIndex {
     /// Direct primitive literal initializers for simple top-level `const`
     /// bindings. Reassignment and dynamic-scope checks are applied after the
     /// single canonical AST walk is complete.
-    pub(super) direct_primitive_const_bindings: BTreeSet<Id>,
-    pub(super) reassigned_bindings: BTreeSet<Id>,
+    pub direct_primitive_const_bindings: BTreeSet<Id>,
+    pub reassigned_bindings: BTreeSet<Id>,
     /// Complete target-walker writes for primitive Set operand certification.
     binding_target_writes: BTreeSet<Id>,
     ordinary_input_refs: BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
     value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
     resolved_value_inputs: Vec<ResolvedBindingValueInput>,
     value_input_errors: Vec<String>,
-    pub(super) resolved_native_operation_inputs: Vec<ResolvedNativeOperationInput>,
-    pub(super) native_operation_input_evidence: BTreeMap<CallSite, NativeOperationInputEvidence>,
+    pub resolved_native_operation_inputs: Vec<ResolvedNativeOperationInput>,
+    pub native_operation_input_evidence: BTreeMap<CallSite, NativeOperationInputEvidence>,
     native_operation_input_errors: Vec<String>,
     primitive_native_symbol_calls: BTreeSet<CallSite>,
     native_integrity_value_input_refs: BTreeSet<ValueInputRef>,
@@ -1090,125 +1096,120 @@ pub(super) struct ExecutionIndex {
     /// Visiting the declaration of a `for`-`in`/`of` head.
     for_head_declaration: bool,
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
-    pub(super) setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
+    pub setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
     hoisted_nested_functions: BTreeSet<u32>,
-    pub(super) owner_callable_prefix_effects: Vec<Option<CallablePrefixEffects>>,
-    pub(super) uncovered_callable_effect_owners: BTreeSet<SourceUnitOrdinal>,
-    pub(super) top_calls: Vec<Vec<Arc<Call>>>,
+    pub owner_callable_prefix_effects: Vec<Option<CallablePrefixEffects>>,
+    pub uncovered_callable_effect_owners: BTreeSet<SourceUnitOrdinal>,
+    pub top_calls: Vec<Vec<Arc<Call>>>,
     /// Top-level calls that syntax may skip even when an execution path
     /// happens to evaluate them during abstract interpretation.
     conditional_top_member_reads: BTreeSet<CallSite>,
     /// Per top-level owner, what `Callable::published_sources` lists for a
     /// callable: values whose parts reach a binding only as unknown.
-    pub(super) top_published_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
+    pub top_published_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
     /// Per top-level owner, what `Callable::iterated_sources` lists for a
     /// callable.
-    pub(super) top_iterated_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
+    pub top_iterated_sources: BTreeMap<SourceUnitOrdinal, Vec<ValueExpr>>,
     original_statement_spans: Vec<Span>,
     /// Ordinary CallExpr syntax at lexical top level; optional calls use a
     /// conservative Call record too, but do not satisfy this witness shape.
     ordinary_top_call_sites: BTreeSet<CallSite>,
     bare_constructor_sites: BTreeSet<CallSite>,
-    pub(super) literal_true_second_arguments: BTreeSet<CallSite>,
-    pub(super) top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
-    pub(super) fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
+    pub literal_true_second_arguments: BTreeSet<CallSite>,
+    pub top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
+    pub fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
-    pub(super) top_assignments: Vec<Vec<(Id, ValueExpr)>>,
-    pub(super) ordered_initializers: BTreeMap<SourceUnitOrdinal, LocalBody>,
+    pub top_assignments: Vec<Vec<(Id, ValueExpr)>>,
+    pub ordered_initializers: BTreeMap<SourceUnitOrdinal, LocalBody>,
     /// Top-level `receiver.property = value` and `binding = value` statements
     /// lowered from their exact source expression. Lowering selects nothing: `roots/operands`
     /// admits one.
-    pub(super) ordered_statements: BTreeMap<SourceUnitOrdinal, LocalBody>,
+    pub ordered_statements: BTreeMap<SourceUnitOrdinal, LocalBody>,
     /// Canonical owner/binding/initializer identity, independent of the
     /// legacy initializer leaf and allocation admission.
-    pub(super) initialization_source_identities:
-        BTreeMap<SourceUnitOrdinal, InitializationSourceIdentity>,
-    pub(super) noninvoking_initializers: BTreeMap<SourceUnitOrdinal, OriginalInitializer>,
-    pub(super) initialization_coverage_refusals:
-        Vec<Option<OwnerInitializationCoverageRefusalReason>>,
-    pub(super) top_definite_initializers: Vec<BTreeSet<Id>>,
-    pub(super) const_call_owners: BTreeSet<SourceUnitOrdinal>,
-    pub(super) top_member_value_writes: Vec<Vec<MemberValueWrite>>,
-    pub(super) top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
-    pub(super) top_exported_values: Vec<Vec<ValueExpr>>,
-    pub(super) top_metadata_decorations: Vec<Option<MetadataDecorateCall>>,
-    pub(super) deferred_global_candidates: Vec<Option<DeferredGlobalPublication>>,
+    pub initialization_source_identities: BTreeMap<SourceUnitOrdinal, InitializationSourceIdentity>,
+    pub noninvoking_initializers: BTreeMap<SourceUnitOrdinal, OriginalInitializer>,
+    pub initialization_coverage_refusals: Vec<Option<OwnerInitializationCoverageRefusalReason>>,
+    pub top_definite_initializers: Vec<BTreeSet<Id>>,
+    pub const_call_owners: BTreeSet<SourceUnitOrdinal>,
+    pub top_member_value_writes: Vec<Vec<MemberValueWrite>>,
+    pub top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
+    pub top_exported_values: Vec<Vec<ValueExpr>>,
+    pub top_metadata_decorations: Vec<Option<MetadataDecorateCall>>,
+    pub deferred_global_candidates: Vec<Option<DeferredGlobalPublication>>,
     discarded_sync_iifes: Vec<Option<u32>>,
-    pub(super) deferred_global_certificates: BTreeSet<SourceUnitOrdinal>,
+    pub deferred_global_certificates: BTreeSet<SourceUnitOrdinal>,
     deferred_global_requested: bool,
     global_guards_requested: bool,
     global_membership_candidates: BTreeMap<CallSite, GlobalMembershipProbe>,
-    pub(super) non_reentrant_global_membership: BTreeSet<CallSite>,
+    pub non_reentrant_global_membership: BTreeSet<CallSite>,
     global_slot_mentions: BTreeMap<String, usize>,
     dynamic_global_member: bool,
     global_alias_written: bool,
-    pub(super) imported_bindings: BTreeSet<Id>,
-    pub(super) hoisted_bindings: BTreeMap<Id, u32>,
-    pub(super) direct_top_level_functions: BTreeSet<Id>,
+    pub imported_bindings: BTreeSet<Id>,
+    pub hoisted_bindings: BTreeMap<Id, u32>,
+    pub direct_top_level_functions: BTreeSet<Id>,
     /// Exact sole-return calls in top-level function declarations, collected
     /// by the canonical structural visitor alongside callable/call facts.
     direct_return_calls: BTreeMap<Id, Span>,
-    pub(super) exported_hoisted_functions: BTreeSet<u32>,
-    pub(super) global_object_names: BTreeSet<&'static str>,
+    pub exported_hoisted_functions: BTreeSet<u32>,
+    pub global_object_names: BTreeSet<&'static str>,
     /// Global names for the native census; the bundle-owned properties are
     /// filled in once the census resolves them.
     census_globals: GlobalNames,
-    pub(super) hoisted_function_owners: BTreeSet<SourceUnitOrdinal>,
-    pub(super) exported_declaration_owners: BTreeSet<SourceUnitOrdinal>,
-    pub(super) exported_bindings: BTreeSet<Id>,
+    pub hoisted_function_owners: BTreeSet<SourceUnitOrdinal>,
+    pub exported_declaration_owners: BTreeSet<SourceUnitOrdinal>,
+    pub exported_bindings: BTreeSet<Id>,
     /// Local binding of each local export name; `default` is not a binding.
-    pub(super) exported_names: BTreeMap<String, Id>,
+    pub exported_names: BTreeMap<String, Id>,
     /// Source units holding `export default`.
-    pub(super) default_export_owners: BTreeSet<SourceUnitOrdinal>,
-    pub(super) dynamic_scope_owners: BTreeSet<SourceUnitOrdinal>,
-    pub(super) opaque_top: BTreeSet<SourceUnitOrdinal>,
+    pub default_export_owners: BTreeSet<SourceUnitOrdinal>,
+    pub dynamic_scope_owners: BTreeSet<SourceUnitOrdinal>,
+    pub opaque_top: BTreeSet<SourceUnitOrdinal>,
     no_sync_callback_members: BTreeMap<String, BTreeSet<String>>,
-    pub(super) callback_factory_imports: BTreeSet<Id>,
-    pub(super) callback_factory_summaries:
-        BTreeMap<Id, analysis_vocabulary::inputs::CallableSummary>,
+    pub callback_factory_imports: BTreeSet<Id>,
+    pub callback_factory_summaries: BTreeMap<Id, analysis_vocabulary::inputs::CallableSummary>,
     /// The existing canonical call-shape check accepted one syntactic inline
     /// callback. Lowered values cannot establish this source prerequisite.
-    pub(super) direct_inline_callback_calls: BTreeMap<CallSite, Id>,
-    pub(super) foreign_call_imports: BTreeMap<Id, analysis_vocabulary::inputs::ForeignCallSummary>,
-    pub(super) importer_cell_reads: BTreeMap<Id, BTreeSet<Id>>,
+    pub direct_inline_callback_calls: BTreeMap<CallSite, Id>,
+    pub foreign_call_imports: BTreeMap<Id, analysis_vocabulary::inputs::ForeignCallSummary>,
+    pub importer_cell_reads: BTreeMap<Id, BTreeSet<Id>>,
     /// The derived summary of an import whose callback-factory evidence is
     /// all source-inferred. The evidence keeps the call's timing and result
     /// consumers; the summary is the receipt for the provider body's effects.
-    pub(super) callback_factory_call_summaries:
+    pub callback_factory_call_summaries:
         BTreeMap<Id, analysis_vocabulary::inputs::ForeignCallSummary>,
-    pub(super) inline_callback_factory_imports: BTreeSet<Id>,
-    pub(super) callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
+    pub inline_callback_factory_imports: BTreeSet<Id>,
+    pub callback_factory_members: BTreeMap<Id, BTreeSet<String>>,
     /// Union used only for namespace privacy/mutation guards. Admission of the
     /// old and stronger contracts remains separate.
-    pub(super) audited_factory_members: BTreeMap<Id, BTreeSet<String>>,
-    pub(super) rejected_namespace_member_writes:
+    pub audited_factory_members: BTreeMap<Id, BTreeSet<String>>,
+    pub rejected_namespace_member_writes: BTreeMap<(Id, String), CallbackFactoryWriteWitness>,
+    pub rejected_namespace_dynamic_property_writes:
         BTreeMap<(Id, String), CallbackFactoryWriteWitness>,
-    pub(super) rejected_namespace_dynamic_property_writes:
-        BTreeMap<(Id, String), CallbackFactoryWriteWitness>,
-    pub(super) rejected_namespace_call_arguments: BTreeMap<Id, CallbackFactoryCallArgumentWitness>,
+    pub rejected_namespace_call_arguments: BTreeMap<Id, CallbackFactoryCallArgumentWitness>,
     retained_callback_factory_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     retained_callback_constructor_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     no_reentry_callback_imports: BTreeMap<Id, Vec<spec::RetainedCallbackSignature>>,
     no_reentry_statement_calls: BTreeMap<(u32, u32), spec::RetainedCallbackSignature>,
     retained_callback_factory_members:
         BTreeMap<Id, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
-    pub(super) retained_callback_calls: BTreeMap<CallSite, IndexedRetainedCallbackCall>,
-    pub(super) retained_constructor_calls: BTreeMap<CallSite, RetainedCallbackCall>,
-    pub(super) no_reentry_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
+    pub retained_callback_calls: BTreeMap<CallSite, IndexedRetainedCallbackCall>,
+    pub retained_constructor_calls: BTreeMap<CallSite, RetainedCallbackCall>,
+    pub no_reentry_callback_calls: BTreeMap<CallSite, RetainedCallbackCall>,
     /// Synthetic getter reads for a source-selected member callee. The map
     /// lets runtime timing suppress only foreign-callback promotion when the
     /// exact outer call's callback identities satisfy its contract.
-    pub(super) no_reentry_accessor_calls: BTreeMap<CallSite, CallSite>,
+    pub no_reentry_accessor_calls: BTreeMap<CallSite, CallSite>,
     /// The ordinary call whose callee is evaluated by a synthetic lookup.
-    pub(super) accessor_callee_calls: BTreeMap<CallSite, Call>,
-    pub(super) no_reentry_exports: BTreeSet<Id>,
-    pub(super) host_async_local_storage_imports: BTreeSet<Id>,
-    pub(super) host_promise_resolve: bool,
-    pub(super) no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
-    pub(super) no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
-    pub(super) returned_record_summaries:
-        BTreeMap<Id, analysis_vocabulary::inputs::ReturnedRecordSummary>,
-    pub(super) namespace_wrapper_summaries: BTreeMap<Id, NamespaceWrapperSummary>,
+    pub accessor_callee_calls: BTreeMap<CallSite, Call>,
+    pub no_reentry_exports: BTreeSet<Id>,
+    pub host_async_local_storage_imports: BTreeSet<Id>,
+    pub host_promise_resolve: bool,
+    pub no_reentry_members: BTreeMap<Id, BTreeSet<String>>,
+    pub no_reentry_record_members: BTreeMap<Id, BTreeSet<String>>,
+    pub returned_record_summaries: BTreeMap<Id, analysis_vocabulary::inputs::ReturnedRecordSummary>,
+    pub namespace_wrapper_summaries: BTreeMap<Id, NamespaceWrapperSummary>,
 }
 
 /// The own keys `Object.assign` copies from `sources` when each is an object
@@ -1242,11 +1243,7 @@ fn object_literal_assign_keys(sources: &[ExprOrSpread]) -> Option<Vec<String>> {
 impl ExecutionIndex {
     /// A unique top-level function identity with no source writes or dynamic
     /// scope; earlier statements cannot silently replace this class base.
-    pub(super) fn stable_heritage_function(
-        &self,
-        binding: &Id,
-        flow: &ChunkValueFlow,
-    ) -> Option<u32> {
+    pub fn stable_heritage_function(&self, binding: &Id, flow: &ChunkValueFlow) -> Option<u32> {
         let &key = self.hoisted_bindings.get(binding)?;
         (self.dynamic_scope_owners.is_empty()
             && self.direct_top_level_functions.contains(binding)
@@ -1262,7 +1259,7 @@ impl ExecutionIndex {
 
     /// The callee's exact body and parameters cannot observe or publish any
     /// argument; this does not waive the call's normal evaluation effects.
-    pub(super) fn inert_heritage_callee(&self, binding: &Id, flow: &ChunkValueFlow) -> bool {
+    pub fn inert_heritage_callee(&self, binding: &Id, flow: &ChunkValueFlow) -> bool {
         self.stable_heritage_function(binding, flow)
             .is_some_and(|key| self.inert_argument_functions.contains(&key))
     }
@@ -1272,7 +1269,7 @@ impl ExecutionIndex {
     /// activation, so they are not retained provider captures. Enclosing
     /// lexical cells still require the local transfer or checked private-var
     /// capture projection to represent them.
-    pub(super) fn deferred_module_reference(&self, binding: &Id) -> bool {
+    pub fn deferred_module_reference(&self, binding: &Id) -> bool {
         self.imported_bindings.contains(binding)
             || self.hoisted_bindings.contains_key(binding)
             || self.class_ids.contains(binding)
@@ -1285,7 +1282,7 @@ impl ExecutionIndex {
             || !self.property_key_declarations.contains(binding)
     }
 
-    pub(super) fn private_var_binding(&self, binding: &Id) -> bool {
+    pub fn private_var_binding(&self, binding: &Id) -> bool {
         if !self.dynamic_scope_owners.is_empty() || self.imported_bindings.contains(binding) {
             return false;
         }
@@ -1313,7 +1310,7 @@ impl ExecutionIndex {
             .all(|write| write.private_var_scope == Some(scope) && write.simple_identifier)
     }
 
-    pub(super) fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+    pub fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
         if self.array_elements.contains_key(&allocation) {
             return None;
         }
@@ -1466,11 +1463,11 @@ impl IndexReads for ExecutionIndex {
     }
 }
 
-pub(super) struct SemanticShapeInputs<'a> {
-    pub(super) classes: LocalClassConstructionShapes,
-    pub(super) sets: SetIterableShapes,
-    pub(super) array_spreads: &'a StableArraySpreadShapes,
-    pub(super) callables: CallableInferenceInputs,
+pub struct SemanticShapeInputs<'a> {
+    pub classes: LocalClassConstructionShapes,
+    pub sets: SetIterableShapes,
+    pub array_spreads: &'a StableArraySpreadShapes,
+    pub callables: CallableInferenceInputs,
 }
 
 impl ExecutionIndex {
@@ -1484,7 +1481,7 @@ impl ExecutionIndex {
             .collect()
     }
 
-    pub(super) fn collect(
+    pub fn collect(
         body: &[TopLevelItemView<'_>],
         hints: &AnalysisInputs,
         flow: Option<&ChunkValueFlow>,
@@ -2089,7 +2086,7 @@ impl ExecutionIndex {
 
     /// Whether `callable`, or an arrow or other callable nested in it, reads
     /// `this`. An unindexed or opaque callable may.
-    pub(super) fn reads_this(&self, callable: u32) -> bool {
+    pub fn reads_this(&self, callable: u32) -> bool {
         let Some(span) = self.callable_spans.get(&callable) else {
             return true;
         };
@@ -2105,7 +2102,7 @@ impl ExecutionIndex {
     }
 
     /// The bindings referenced in `[lo, hi)`.
-    pub(super) fn references_within(&self, lo: u32, hi: u32) -> impl Iterator<Item = &Id> {
+    pub fn references_within(&self, lo: u32, hi: u32) -> impl Iterator<Item = &Id> {
         let start = self
             .ident_references
             .partition_point(|(position, _)| *position < lo);
@@ -2117,7 +2114,7 @@ impl ExecutionIndex {
 
     /// A source binding used exactly once, at this member read. A second use
     /// could alias, delete, redefine or publish the instance before the read.
-    pub(super) fn sole_binding_reference_at(&self, binding: &Id, span: Span) -> bool {
+    pub fn sole_binding_reference_at(&self, binding: &Id, span: Span) -> bool {
         self.dynamic_scope_owners.is_empty()
             && !self.reassigned_bindings.contains(binding)
             && !self.binding_target_writes.contains(binding)
@@ -2135,7 +2132,7 @@ impl ExecutionIndex {
     /// This member operation belongs to a direct module-level initializer,
     /// whose expression is evaluated at most once. A lexical use inside a
     /// callable can execute again after its first result exposes the instance.
-    pub(super) fn single_eager_initializer_read(&self, call: &Call) -> bool {
+    pub fn single_eager_initializer_read(&self, call: &Call) -> bool {
         call.caller.is_none()
             && self.top_calls[call.owner.0].iter().any(|indexed| {
                 indexed.kind == CallKind::LocalMemberRead
@@ -2155,17 +2152,17 @@ impl ExecutionIndex {
                 })
     }
 
-    pub(super) fn unconditionally_evaluated_member_read(&self, call: &Call) -> bool {
+    pub fn unconditionally_evaluated_member_read(&self, call: &Call) -> bool {
         !self
             .conditional_top_member_reads
             .contains(&CallSite::from(call.span))
     }
 
-    pub(super) fn statement_span(&self, owner: SourceUnitOrdinal) -> Span {
+    pub fn statement_span(&self, owner: SourceUnitOrdinal) -> Span {
         self.original_statement_spans[owner.0]
     }
 
-    pub(crate) fn locate_native_integrity_witnesses(
+    pub fn locate_native_integrity_witnesses(
         &mut self,
         mut locate: impl FnMut(Span) -> Option<analysis_vocabulary::execution_evidence::SourceLocation>,
     ) {

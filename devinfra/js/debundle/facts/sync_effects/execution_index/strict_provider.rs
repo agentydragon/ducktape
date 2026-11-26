@@ -1,9 +1,9 @@
 //! Derived foreign call summaries: the projection of a provider body the
 //! provider adapter sealed onto what an importer may assume of its result.
 
-use super::adapters::provider::{ProviderContext, SealedProviderBody};
-use super::execution_index::ExecutionIndex;
+use crate::ExecutionIndex;
 use crate::foreign_call::DerivedForeignCall;
+use crate::provider::{ProviderContext, SealedProviderBody};
 use analysis_vocabulary::inputs::{ForeignInvocation, ForeignReturn};
 use analysis_vocabulary::value::{Kind, Value};
 use std::collections::BTreeSet;
@@ -90,7 +90,7 @@ fn retain_provider_values(
 /// The canonical source collector retained whole-body syntax coverage before
 /// value lowering. Direct returns and ordered bodies share their transfers
 /// with application execution; refusal never retries the legacy AST evaluator.
-pub(super) fn derive(
+pub fn derive(
     index: &ExecutionIndex,
     callable: u32,
     shadowed: &BTreeSet<&'static str>,
@@ -194,7 +194,7 @@ pub(super) fn derive(
 /// Derive the constructor result with the same ordered allocation operations
 /// used by ordinary local execution. Class syntax admission is collected once
 /// in `ExecutionIndex`; a refused query never retries the private AST evaluator.
-pub(super) fn derive_class(
+pub fn derive_class(
     index: &ExecutionIndex,
     class: u32,
     shadowed: &BTreeSet<&'static str>,
@@ -295,7 +295,7 @@ mod tests {
             _ => panic!("provider fixture"),
         };
         let views = top_level_item_views(&module.body);
-        let prepared = crate::execution_index::callable_capabilities::prepare_callable_capabilities(
+        let prepared = crate::callable_capabilities::prepare_callable_capabilities(
             &views,
             BTreeSet::from(["make".into()]),
             Vec::new(),
@@ -410,16 +410,15 @@ mod tests {
                 module.visit_with(&mut make);
                 let key = make.0.expect("canonical nested make callable");
                 let views = top_level_item_views(&module.body);
-                let prepared =
-                    crate::execution_index::callable_capabilities::prepare_callable_capabilities(
-                        &views,
-                        BTreeSet::from(["make".into()]),
-                        Vec::new(),
-                        Vec::new(),
-                        Default::default(),
-                        Default::default(),
-                        Default::default(),
-                    );
+                let prepared = crate::callable_capabilities::prepare_callable_capabilities(
+                    &views,
+                    BTreeSet::from(["make".into()]),
+                    Vec::new(),
+                    Vec::new(),
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                );
                 let summary = derive(&prepared.index, key, &BTreeSet::new())
                     .expect("local transfer retains the checked provider capture");
 
@@ -455,16 +454,15 @@ mod tests {
                 module.visit_with(&mut make);
                 let key = make.0.expect("canonical nested make callable");
                 let views = top_level_item_views(&module.body);
-                let prepared =
-                    crate::execution_index::callable_capabilities::prepare_callable_capabilities(
-                        &views,
-                        BTreeSet::from(["make".into()]),
-                        Vec::new(),
-                        Vec::new(),
-                        Default::default(),
-                        Default::default(),
-                        Default::default(),
-                    );
+                let prepared = crate::callable_capabilities::prepare_callable_capabilities(
+                    &views,
+                    BTreeSet::from(["make".into()]),
+                    Vec::new(),
+                    Vec::new(),
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                );
 
                 assert!(
                     prepared.index.callables[&key]
