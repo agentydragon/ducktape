@@ -29,7 +29,7 @@ use std::collections::BTreeMap;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use artifact::paths::{join_module_path, module_path_dirname, relative_module_path};
+use artifact::paths::{join_module_path, module_path_dirname, relative_module_specifier};
 use artifact::{ArtifactIndexes, ImportReferenceKind};
 use binding_targets::{imported_export_name, module_export_name, public_export_name};
 use js_ast::{
@@ -427,10 +427,7 @@ impl SourceCanonicalizer<'_> {
             caller_chunk_name,
             module_path_dirname(self.caller_file).as_str(),
         ]);
-        let mut rewritten = relative_module_path(&caller_dir, &target_path);
-        if !rewritten.starts_with('.') {
-            rewritten = format!("./{rewritten}");
-        }
+        let rewritten = relative_module_specifier(&caller_dir, &target_path);
         (rewritten != source).then_some(rewritten)
     }
 

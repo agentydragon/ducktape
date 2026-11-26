@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 use crate::paths::{
-    join_module_path, module_path_dirname, normalize_module_path, relative_module_path,
+    join_module_path, module_path_dirname, normalize_module_path, relative_module_specifier,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -43,12 +43,10 @@ impl RuntimeResourceDestination {
             Self::External { url } => return Some(url.clone()),
             Self::Unresolved { .. } => return None,
         };
-        let relative = relative_module_path(&module_path_dirname(caller_file), path);
-        Some(if relative.starts_with('.') {
-            relative
-        } else {
-            format!("./{relative}")
-        })
+        Some(relative_module_specifier(
+            &module_path_dirname(caller_file),
+            path,
+        ))
     }
 }
 

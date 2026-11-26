@@ -7,14 +7,18 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use relative_path::RelativePath;
 
-pub fn relative_module_specifier(from_dir: &Path, target_path: &Path) -> String {
-    let from = module_path_from_path(from_dir);
-    let to = module_path_from_path(target_path);
-    let mut specifier = relative_module_path(&from, &to);
-    if !specifier.starts_with('.') {
-        specifier = format!("./{specifier}");
+fn explicit_relative_specifier(path: String) -> String {
+    if path.is_empty() {
+        ".".to_string()
+    } else if path.starts_with('.') {
+        path
+    } else {
+        format!("./{path}")
     }
-    specifier
+}
+
+pub fn relative_module_specifier(from_dir: &str, to_path: &str) -> String {
+    explicit_relative_specifier(relative_module_path(from_dir, to_path))
 }
 
 pub fn relative_module_path(from_dir: &str, to_path: &str) -> String {
@@ -35,12 +39,7 @@ pub fn relative_module_path(from_dir: &str, to_path: &str) -> String {
 /// this preserves leading `..` components — they are legal in a relative
 /// import specifier.
 pub fn normalize_relative_module_specifier(value: &str) -> String {
-    let normalized = RelativePath::new(value).normalize().to_string();
-    if normalized.is_empty() {
-        ".".to_string()
-    } else {
-        normalized
-    }
+    explicit_relative_specifier(RelativePath::new(value).normalize().to_string())
 }
 
 pub fn chunk_id_for_js_path(js_path: &str) -> Result<String> {

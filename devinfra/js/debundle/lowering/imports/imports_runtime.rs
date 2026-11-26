@@ -13,7 +13,7 @@ use analysis::ImportedSourceTarget;
 use anyhow::{Context, Result, bail};
 use artifact::paths::{
     join_module_path, module_path_dirname, normalize_relative_module_specifier,
-    relative_module_path,
+    relative_module_specifier,
 };
 use frontend_elaboration::source_ast::{RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind};
 use js_ast::{import_decl_module_item, is_dotted_import_meta_property, set_str_value, str_value};
@@ -187,11 +187,7 @@ pub(crate) fn source_chunk_import_for_target(
             source_import_cache.resolve(source, source_chunk_id, source_runtime_file)?
         {
             let target_path = join_module_path(&[&target.chunk_id, &target.entry_file]);
-            let mut rel = relative_module_path(&dest_dir, &target_path);
-            if !rel.starts_with('.') {
-                rel = format!("./{rel}");
-            }
-            rel
+            relative_module_specifier(&dest_dir, &target_path)
         } else if source.starts_with('.') {
             // Relative specifier that didn't resolve through the chunk
             // artifact (e.g. it points at an extra_files asset). Walk up
@@ -204,11 +200,7 @@ pub(crate) fn source_chunk_import_for_target(
                 .map(|parent| parent.iter().count())
                 .unwrap_or(0);
             let raw = format!("{}{}", "../".repeat(depth), source);
-            let mut rel = normalize_relative_module_specifier(&raw);
-            if !rel.starts_with('.') {
-                rel = format!("./{rel}");
-            }
-            rel
+            normalize_relative_module_specifier(&raw)
         } else {
             // Bare specifier (npm package etc.) — pass through unchanged.
             source.to_string()

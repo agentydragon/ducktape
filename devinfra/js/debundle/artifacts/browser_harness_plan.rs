@@ -157,8 +157,8 @@ fn runtime_js_href(artifact: &ChunkBundle, js_path: &str, app_root: &Path) -> Re
         .join(path_from_module_path(chunk_name))
         .join(path_from_module_path(entry_file));
     Ok(artifact::paths::relative_module_specifier(
-        app_root,
-        &entry_path,
+        &module_path_from_path(app_root),
+        &module_path_from_path(&entry_path),
     ))
 }
 
