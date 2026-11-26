@@ -688,7 +688,7 @@ export { X, Existing };
 // Pin the body-index → statement-ordinal conversion when an
 // earlier comma-list var-decl in the chunk shifts the count.
 //
-// `facts::top_level_item_views` splits a top-level
+// `item_views::top_level_item_views` splits a top-level
 // `var a = …, b = …;` into two post-split source units with
 // consecutive `SourceUnitOrdinal` values. A subsequent anonymous
 // statement at pre-split body index N therefore lives at

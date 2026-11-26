@@ -30,7 +30,7 @@ from cryptography import x509
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 from sqlalchemy import create_engine, text
-from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, stop_after_attempt, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.api.rules import egress_rules_pb2, egress_rules_pb2_grpc
@@ -44,9 +44,10 @@ from agentplane.egress.resources import CREDENTIALS_PLURAL, placeholder_of
 from agentplane.egress.settings import Settings
 from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
-from agentplane.egress.testing.sidecar_process import SidecarProcess
+from agentplane.egress.testing.policy_service import policy_service
+from agentplane.egress.testing.sidecar_process import sidecar_process
 from agentplane.identity.auth import listener
-from agentplane.net.peertls.config import EGRESS_PROXY_URI
+from agentplane.net.peertls.config import EGRESS_PROXY_URI, PolicyServicePeer
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes import CustomObjectsClient
@@ -129,6 +130,7 @@ class SeededSandbox:
 def replica_settings(
     *,
     api_config: Path,
+    policy: PolicyServicePeer,
     ca: tuple[Path, Path],
     svid_cert: tuple[Path, Path],
     svid_ca_file: Path,
@@ -140,6 +142,7 @@ def replica_settings(
         allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
         credentials_namespace=CREDENTIALS_NAMESPACE,
         kubeconfig=api_config,
+        policy_service=policy,
         log_levels={},
         ca_cert=cert,
         ca_key=key,
@@ -413,6 +416,7 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
     runtime_ca = make_ca("agentplane-egress-test-runtime")
     async with (
         kubernetes_apiserver() as api,
+        policy_service(api.kubeconfig, NAMESPACE, tmp_path / "policy-service") as policy,
         recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
     ):
         seeded = await seed(api)
@@ -428,6 +432,7 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
         client_tls.load_cert_chain(*(str(path) for path in client_certificate))
         settings = replica_settings(
             api_config=api.kubeconfig,
+            policy=policy,
             ca=write_ca(interception_ca, tmp_path, "interception"),
             upstream_ca_file=write_ca(upstream_ca, tmp_path, "upstream")[0],
             svid_cert=svid_server,
@@ -531,7 +536,7 @@ async def test_rules_grpc_sidecar_presents_its_svid_and_discards_caller_credenti
     caller_token = await egress.api.workload_token(
         ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B), ["ignored-caller-token"]
     )
-    async with SidecarProcess(
+    async with sidecar_process(
         proxy=Proxy(
             address=f"{egress.proxy_listener.host}:{egress.proxy_listener.port}",
             transport=TLSProxyTransport(ca_file=root, auth=SpiffeProxyAuth(cert_file=certificate, key_file=key)),
@@ -1052,10 +1057,15 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
 ) -> None:
     ca = make_ca("test-replica-ca")
     cert, key = write_ca(ca, tmp_path, "replica")
+    second_config_path = tmp_path / "second-replica-kubeconfig.yaml"
     async with (
         kubernetes_apiserver() as first_api,
         kubernetes_apiserver() as second_api,
         severable_proxy(second_api.kubeconfig) as second_path,
+        policy_service(first_api.kubeconfig, NAMESPACE, tmp_path / "first-policy-service") as first_policy,
+        policy_service(
+            second_config_path, NAMESPACE, tmp_path / "second-policy-service", impersonate=_REPLICA_USER
+        ) as second_policy,
         recording_upstream(*issue_leaf(ca, UPSTREAM_HOST, tmp_path)) as upstream,
     ):
         # The replicas have independent live Sandbox objects and client SVIDs, under the same test root.
@@ -1075,10 +1085,12 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             client_contexts.append(context)
         first_tls, second_tls = client_contexts
         settings = [
-            replica_settings(api_config=api_config, ca=(cert, key), svid_cert=server_certificate, svid_ca_file=cert)
-            for api_config in (
-                first_api.kubeconfig,
-                await revocable_kubeconfig(second_api, tmp_path / "second-replica-kubeconfig.yaml", via=second_path),
+            replica_settings(
+                api_config=api_config, policy=policy, ca=(cert, key), svid_cert=server_certificate, svid_ca_file=cert
+            )
+            for api_config, policy in (
+                (first_api.kubeconfig, first_policy),
+                (await revocable_kubeconfig(second_api, second_config_path, via=second_path), second_policy),
             )
         ]
         async with (
@@ -1124,12 +1136,12 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             unavailable_before = await asyncio.to_thread(
                 _unauthenticated_unavailable_decisions, history_db_url, host=UPSTREAM_HOST, method="GET"
             )
-            # Identity authentication must re-read the live Identity. Its API read is now unavailable too, so
-            # the refusal is deliberately unattributed rather than claiming a subject whose incarnation could
-            # not be verified.
-            await get(second, second_tls, "stale-existing-connection", 502, denied_reason="unavailable")
-            async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+            # Its PolicyService reads that API server too (as `_REPLICA_USER`), so its Identity view goes stale
+            # once the grace (30s, identitycache.StandardGrace) ends. Then the refusal is deliberately
+            # unattributed rather than claiming a subject whose incarnation could not be verified.
+            async for attempt in AsyncRetrying(stop=stop_after_delay(60), wait=wait_fixed(0.5), reraise=True):
                 with attempt:
+                    await get(second, second_tls, "stale-existing-connection", 502, denied_reason="unavailable")
                     assert (
                         await asyncio.to_thread(
                             _unauthenticated_unavailable_decisions, history_db_url, host=UPSTREAM_HOST, method="GET"
@@ -1138,7 +1150,11 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             assert len(upstream.requests) == before
             await revoke_binding(second_api)
             await grant_replica(second_api, NAMESPACE)
-            await second.process.health(serving=True)
+            # The outage outlasted the Identity grace, so client-go's watch backoff (up to 30s) has grown past
+            # one health wait.
+            async for attempt in AsyncRetrying(stop=stop_after_attempt(3), reraise=True):
+                with attempt:
+                    await second.process.health(serving=True)
             await get(second, second_tls, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
@@ -1321,7 +1337,7 @@ async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.M
     finished = asyncio.Event()
     async with (
         recording_grpc_upstream(keypair, finished=finished) as (port, requests),
-        SidecarProcess(
+        sidecar_process(
             proxy=Proxy(
                 address=f"localhost:{egress.proxy_listener.port}",
                 transport=TLSProxyTransport(

@@ -1742,6 +1742,14 @@ data:
     allowed_service_account_namespaces:
       - agentplane-staging
     policy_namespace: agentplane-staging
+    policy_service:
+      target: policy-controller.agentplane-staging.svc.cluster.local:8083
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/policy-controller
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/llm-ingress
     central_sampler_services:
       - spiffe://agentplane/central-sampler
     central_sampler_identity_callers: true
@@ -1808,6 +1816,14 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: policy-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8083"
+              protocol: TCP
     - toEndpoints:
         - matchLabels:
             k8s:app.kubernetes.io/name: litellm
@@ -1906,6 +1922,14 @@ data:
       port: 443
       token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
     exempt_networks: []
+    policy_service:
+      target: policy-controller.agentplane-staging.svc.cluster.local:8083
+      tls:
+        ca_file: /etc/agentplane-egress/svid-ca/ca-certificates.crt
+        server_uri: spiffe://agentplane/policy-controller
+        cert_file: /etc/agentplane-egress/svid/tls.crt
+        key_file: /etc/agentplane-egress/svid/tls.key
+        client_uri: spiffe://agentplane/egress-proxy
 immutable: false
 ---
 apiVersion: v1
@@ -2740,6 +2764,14 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: policy-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8083"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
             app.kubernetes.io/instance: forgejo
             app.kubernetes.io/name: forgejo
             k8s:io.kubernetes.pod.namespace: forgejo
@@ -3172,6 +3204,14 @@ data:
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
     policy_namespace: agentplane-staging
+    policy_service:
+      target: policy-controller.agentplane-staging.svc.cluster.local:8083
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/policy-controller
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/history-ingress
     ingress:
       event_block_writes: true
       writer_namespaces:
@@ -3213,6 +3253,14 @@ spec:
       toPorts:
         - ports:
             - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: policy-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8083"
               protocol: TCP
   endpointSelector:
     matchLabels:
@@ -7289,6 +7337,14 @@ data:
             workspace_provenance: DEPLOYMENT_CONFIG
             workspace_root_enforced: true
             creates_missing_cwd: true
+    policy_service:
+      target: policy-controller.agentplane-staging.svc.cluster.local:8083
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/policy-controller
+        cert_file: /run/agentplane/environments-client-tls/tls.crt
+        key_file: /run/agentplane/environments-client-tls/tls.key
+        client_uri: spiffe://agentplane/sandbox-controller
     namespace: agentplane-staging
     metrics_bind_address: :8080
     health_probe_bind_address: :8081
@@ -7321,6 +7377,14 @@ spec:
       toPorts:
         - ports:
             - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: policy-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8083"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -7878,6 +7942,14 @@ data:
     connection_delegation_service: spiffe://agentplane/mcp-edge
     session_delegation_service: spiffe://agentplane/central-sampler
     policy_namespace: agentplane-staging
+    policy_service:
+      target: policy-controller.agentplane-staging.svc.cluster.local:8083
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/policy-controller
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/actions
     caller_service_account_namespaces:
       - agentplane-staging
       - haku-sandbox
@@ -8785,6 +8857,14 @@ spec:
       toPorts:
         - ports:
             - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: policy-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8083"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -9773,6 +9853,14 @@ data:
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
     http_port: 8081
+    policy_service:
+      target: policy-controller.agentplane-staging.svc.cluster.local:8083
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/policy-controller
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/notifications
     github:
       api_url: https://api.github.com/
       request_timeout_s: 5
@@ -9907,6 +9995,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: policy-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8083"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -12189,9 +12285,17 @@ data:
       key_file: /run/agentplane/workload-tls/tls.key
       client_ca_file: /run/agentplane/workload-trust/ca-certificates.crt
     reader_services:
+      - spiffe://agentplane/actions
       - spiffe://agentplane/app
+      - spiffe://agentplane/egress-proxy
+      - spiffe://agentplane/history-ingress
+      - spiffe://agentplane/llm-ingress
       - spiffe://agentplane/mcp-edge
+      - spiffe://agentplane/notifications
+      - spiffe://agentplane/sandbox-controller
+      - spiffe://agentplane/sessions
     writer_services:
+      - spiffe://agentplane/actions
       - spiffe://agentplane/app
     workload_issuer: agentplane-workload
     workload_namespaces:

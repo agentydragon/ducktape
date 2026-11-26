@@ -36,14 +36,12 @@ type config struct {
 	RequestTimeoutSeconds float64         `mapstructure:"request_timeout_s"`
 	RPC                   listener.Config `mapstructure:"rpc"`
 	Kubeconfig            string          `mapstructure:"kubeconfig"`
-	// PolicyNamespace holds the Identities a Sandbox SVID may name.
+	// CLEANUP(added 2026-11-26): Remove once the manifests stop setting policy_namespace for History (manifest PR after this one).
 	PolicyNamespace string `mapstructure:"policy_namespace"`
-	// PolicyService, when set, serves every Identity this service resolves instead of PolicyNamespace reads.
-	// CLEANUP(added 2026-11-26): require it and drop the Kubernetes Identity reads once the staging manifests set it
-	//   (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
-	PolicyService   *identitycache.Peer `mapstructure:"policy_service"`
-	Ingress         ingressConfig       `mapstructure:"ingress"`
-	FoldConcurrency int                 `mapstructure:"fold_concurrency"`
+	// PolicyService serves every Identity this service resolves.
+	PolicyService   identitycache.Peer `mapstructure:"policy_service"`
+	Ingress         ingressConfig      `mapstructure:"ingress"`
+	FoldConcurrency int                `mapstructure:"fold_concurrency"`
 	// FoldPageSize is how many entries a cycle folds per Session; the history store serves at most 1000.
 	FoldPageSize             int     `mapstructure:"fold_page_size"`
 	FoldIntervalSeconds      float64 `mapstructure:"fold_interval_s"`
@@ -139,7 +137,6 @@ func loadConfig() (config, error) {
 func (c *config) validate() error {
 	for _, required := range []struct{ name, value string }{
 		{"database_url", c.DatabaseURL},
-		{"policy_namespace", c.PolicyNamespace},
 	} {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)
@@ -153,10 +150,8 @@ func (c *config) validate() error {
 			return fmt.Errorf("service_delegation: %w", err)
 		}
 	}
-	if c.PolicyService != nil {
-		if err := c.PolicyService.Validate(peertls.HistoryIngressURI); err != nil {
-			return err
-		}
+	if err := c.PolicyService.Validate(peertls.HistoryIngressURI); err != nil {
+		return err
 	}
 	if c.Ingress.SamplerServiceActor != "" {
 		if err := auth.ValidateServiceCallers([]string{c.Ingress.SamplerServiceActor}); err != nil {

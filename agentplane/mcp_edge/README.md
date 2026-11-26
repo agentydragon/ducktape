@@ -42,8 +42,8 @@ refused. `Health.Check`, `Health.List` and `Health.Watch` remain registered on t
 kubelet probes use the HTTP health routes. The gate
 re-verifies the bearer for a watch and requires the same operator. Its drain context ends active watches
 and refuses new protected calls. Each MCP request resolves its issued bearer through
-the current grant and Connection binding. Consent and operator rebind choose a live Identity in the
-Action policy namespace and pin its exact Kubernetes UID. Resolution checks that UID directly; an
+the current grant and Connection binding. Consent and operator rebind choose a live Identity from
+PolicyService and pin its exact Kubernetes UID. Resolution checks that UID through PolicyService; an
 unavailable, deleted or replaced Identity refuses the request. The operator-facing picker also
 requires a current Identity watch.
 
@@ -76,12 +76,13 @@ there is no ServiceAccount fallback.
 `AGENTPLANE_MCP_EDGE_CONFIG_FILE` names the complete YAML settings file. It is the only environment
 input for static settings; `AGENTPLANE_MCP_EDGE_DATABASE_URL` is read explicitly from the PostgreSQL
 Secret and is not part of the file model. `actions_target` is the internal Action Service gRPC
-endpoint. OAuth deployments set `policy_namespace` to the namespace whose live Identities may be
-selected. `actions_tls` verifies the Action Service SVID and can also present the edge's service
+endpoint. `policy_service` is required: the PolicyService
+endpoint and mutual-TLS caller (the edge's SVID) that supply live Identities. `policy_namespace` is
+accepted but unused. `actions_tls` verifies the Action Service SVID and can also present the edge's service
 SVID. When that client certificate is configured, `actions_token_file` must be absent; there is no
 bearer fallback if the certificate is unavailable. Otherwise, `actions_token_file` selects a
 mounted projected Action audience token. Staging configures the edge's service SVID and has no Action
-audience token mount: the `mcp-edge` Role grants only `identities` reads.
+audience token mount.
 `operator_oidc` requires the
 issuer, audience, JWKS URI and token profile used by the app's operator tokens. `oauth` is an
 optional typed inline object for synthetic deployments. Staging instead sets `oauth_file` to the

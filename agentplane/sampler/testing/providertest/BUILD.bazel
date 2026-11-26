@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_testonly = True)
+
+go_library(
+    name = "providertest",
+    srcs = ["providertest.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/testing/providertest",
+    visibility = [
+        "//agentplane/sampler/internal/providerrequest:__pkg__",
+        "//agentplane/sampler/providers:__subpackages__",
+    ],
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/sampler/internal/content",
+        "//agentplane/sampler/internal/providerio",
+        "//agentplane/sampler/protocol",
+        "//agentplane/testing/jsonassert",
+    ],
+)

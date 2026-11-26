@@ -1,5 +1,4 @@
 //! Shared fact computation and loaded-fact validation, independent of lowering.
-use analysis::diagnostics::progress::{Phase, State};
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis_projection::AnalysisProjection;
 use analysis_vocabulary::execution_evidence::SourceLocator;
@@ -9,6 +8,7 @@ use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ChunkBundle, chunk_runtime_entry};
 use chunk_analysis::{DynamicImportTarget, check_chunk_facts, compute_chunk_facts};
 use js_ast::ParsedJsModule;
+use progress::{Phase, State};
 use source_identity::ChunkId;
 use spec::AdmissionCheck;
 use std::collections::BTreeMap;
@@ -315,16 +315,20 @@ pub fn compute_logical_chunk_facts(
             (facts, redundant)
         }
         ChunkFacts::Compute(structural_analysis) => {
-            let structural_analysis = program_summary
+            // Finish the source census with the same program flow used by
+            // capability and purity preparation. Missing flow is not a
+            // local-analysis fallback.
+            let flow = program_summary
                 .structural_flows
-                .complete_chunk(
-                    chunk_id,
-                    structural_analysis,
-                    &analysis_inputs.assumptions.argument_inputs,
-                )
+                .get(chunk_id)
                 .with_context(|| {
                     format!("missing prepared program value flow for chunk {chunk_id}")
                 })?;
+            let structural_analysis = analysis::facts::complete_chunk_structural_with_flow(
+                structural_analysis,
+                &analysis_inputs.assumptions.argument_inputs,
+                flow.clone(),
+            );
             compute_chunk_facts(
                 chunk_id,
                 diagnostics,

@@ -2,10 +2,10 @@
 
 use crate::effect_coverage::EffectCoverageFragment;
 use analysis::facts::EffectCell;
-use analysis::facts::abstract_domain::builtins::{
+use analysis_domain::builtins::{
     ARRAY_PROTOTYPE_SLOTS, ITERATION_ROWS, IterationResult, IterationRow,
 };
-use analysis::facts::abstract_domain::integrity::IntrinsicSlot;
+use analysis_domain::integrity::IntrinsicSlot;
 use analysis_model::PrimKinds;
 use analysis_vocabulary::execution_evidence::OrderedCallAdmissionRefusal;
 use analysis_vocabulary::inputs::ProofDependencies;

@@ -44,7 +44,7 @@ func svidConfig(t *testing.T, ca *peertlstesting.CA) config {
 	}
 	c := defaultConfig()
 	c.DatabaseURL = integrationDatabase.URL
-	c.Kubeconfig, c.PolicyNamespace = kubeconfig, testPolicyNamespace
+	c.Kubeconfig = kubeconfig
 	c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
 	c.RPC.Auth = []*listener.SPIFFEAuth{
 		{CAFile: serving.CAFile},
@@ -63,7 +63,7 @@ func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) run
 		tune(&c)
 	}
 	workload := workloadauthtesting.NewIdentityWorkload(
-		t, kube, "test-sandbox-namespace", "history-runner-"+uuid.NewString()[:8], c.PolicyNamespace,
+		t, kube, "test-sandbox-namespace", "history-runner-"+uuid.NewString()[:8], testPolicyNamespace,
 	)
 	rpcListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -71,7 +71,7 @@ func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) run
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, rpcListener) }()
+	go func() { served <- serve(ctx, c, rpcListener, testIdentities(t)) }()
 	var stopped bool
 	stop := func() error {
 		if stopped {
@@ -202,13 +202,23 @@ func TestSharedListenerPreservesHistoryReadAndWriterPolicies(t *testing.T) {
 
 const testPolicyNamespace = "test-policies"
 
+// testIdentities reads the test API server's Identities in testPolicyNamespace, standing in for the PolicyService view.
+func testIdentities(t *testing.T) auth.IdentityUIDReader {
+	t.Helper()
+	identities, err := auth.NewKubernetesIdentityUIDs(kube.Config, testPolicyNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identities
+}
+
 // An Identity SVID reads exactly the Sessions retained as executing as its Identity incarnation: not
 // another Identity's, and not its predecessor's once a same-named successor replaces it.
 func TestAnIdentitySVIDReadsTheSessionsItsIdentityExecuted(t *testing.T) {
 	ca := peertlstesting.NewCA(t)
 	first := workloadauthtesting.NewIdentityWorkload(t, kube, "test-sandbox-namespace", "test-first-"+uuid.NewString()[:8], testPolicyNamespace)
 	other := workloadauthtesting.NewIdentityWorkload(t, kube, "test-sandbox-namespace", "test-other-"+uuid.NewString()[:8], testPolicyNamespace)
-	service := startWithSVIDs(t, ca, func(c *config) { c.PolicyNamespace = testPolicyNamespace })
+	service := startWithSVIDs(t, ca, nil)
 	firstConnection := svidConnection(t, ca, service, first.URI)
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
@@ -270,7 +280,6 @@ func TestAnIdentitySVIDReadsTheSessionsItsIdentityExecuted(t *testing.T) {
 func TestSharedListenerAdmitsOnlyGrantedServiceReaders(t *testing.T) {
 	ca := peertlstesting.NewCA(t)
 	service := startWithSVIDs(t, ca, func(c *config) {
-		c.PolicyNamespace = testPolicyNamespace
 		c.ReaderServiceCallers = []string{peertls.AppURI}
 	})
 	for _, attempt := range []struct {

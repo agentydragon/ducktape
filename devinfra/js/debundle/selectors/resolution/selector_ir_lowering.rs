@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::StatementKind;
+use analysis_domain::item_views::StatementKind;
 use selector_ir::{
     ClaimKind, SelectorAtom, SelectorProgram, SelectorProjectedValue, SelectorTargetId,
     SelectorVariableId, SourceUnitTerm, StringTerm, VariableDomain,

@@ -23,12 +23,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wiretest"
 )
 
 func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
 	source := "// @exec: is just a JavaScript comment in JSON code\nconst value = `quotes: \" and ${1 + 2}`;\ntext(value);"
-	input := string(wirefixture.MustMarshalJSON(t, map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123}))
+	input := string(wiretest.MustMarshalJSON(t, map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123}))
 	manager, _ := newFakeCodeModeManager(t)
 	runtime := openFakeSession(t, manager, "fixture")
 	prepared, err := runtime.prepareCall(context.Background(), protocol.ToolInvocation{Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "call", Input: input})

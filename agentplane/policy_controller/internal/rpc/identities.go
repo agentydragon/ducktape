@@ -2,9 +2,13 @@ package rpc
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"log/slog"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -12,6 +16,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -143,20 +148,31 @@ func (s *Service) CreateIdentity(ctx context.Context, request *policypb.CreateId
 	if errs := validation.IsDNS1123Subdomain(request.GetName()); len(errs) > 0 {
 		return nil, status.Error(codes.InvalidArgument, "Identity name must be a DNS subdomain: "+strings.Join(errs, "; "))
 	}
+	unkeyed := proto.CloneOf(request)
+	unkeyed.IdempotencyKey = ""
+	record, err := idempotencyRecord(request.GetIdempotencyKey(), unkeyed)
+	if err != nil {
+		return nil, err
+	}
 	identity := &policyapi.Identity{
 		TypeMeta:   metav1.TypeMeta{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "Identity"},
-		ObjectMeta: metav1.ObjectMeta{Namespace: s.namespace, Name: request.GetName()},
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.namespace, Name: request.GetName(), Annotations: record},
 		Spec:       policyapi.IdentitySpec{Description: request.GetDescription()},
 	}
 	if err := s.objects.Create(ctx, identity); err != nil {
-		if apierrors.IsAlreadyExists(err) {
+		switch {
+		case apierrors.IsAlreadyExists(err) && record != nil:
+			if identity, err = s.retriedIdentity(ctx, request.GetName(), record); err != nil {
+				return nil, err
+			}
+		case apierrors.IsAlreadyExists(err):
 			return nil, status.Error(codes.AlreadyExists, "an Identity of that name exists")
-		}
-		if apierrors.IsInvalid(err) {
+		case apierrors.IsInvalid(err):
 			return nil, status.Error(codes.InvalidArgument, "Identity is invalid")
+		default:
+			slog.ErrorContext(ctx, "PolicyService Identity creation failed", "error", err)
+			return nil, status.Error(codes.Unavailable, "Identity could not be created")
 		}
-		slog.ErrorContext(ctx, "PolicyService Identity creation failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Identity could not be created")
 	}
 	message, err := identityMessage(identity)
 	if err != nil {
@@ -164,6 +180,26 @@ func (s *Service) CreateIdentity(ctx context.Context, request *policypb.CreateId
 		return nil, status.Error(codes.Internal, "Identity response is invalid")
 	}
 	return &policypb.CreateIdentityResponse{Identity: message}, nil
+}
+
+// retriedIdentity is the Identity of name that an earlier CreateIdentity carrying record created, while it is not
+// being deleted.
+func (s *Service) retriedIdentity(ctx context.Context, name string, record map[string]string) (*policyapi.Identity, error) {
+	identity := &policyapi.Identity{}
+	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: name}, identity); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Error(codes.Aborted, "Identity changed; try again")
+		}
+		slog.ErrorContext(ctx, "PolicyService Identity read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "Identity is unavailable")
+	}
+	if !recorded(identity.Annotations, record) {
+		return nil, status.Error(codes.AlreadyExists, "an Identity of that name exists and is not this idempotency_key's")
+	}
+	if !identity.DeletionTimestamp.IsZero() {
+		return nil, status.Error(codes.AlreadyExists, "this idempotency_key's Identity is being deleted")
+	}
+	return identity, nil
 }
 
 func (s *Service) GrantIdentityPolicyBinding(ctx context.Context, request *policypb.GrantIdentityPolicyBindingRequest) (*policypb.GrantIdentityPolicyBindingResponse, error) {
@@ -187,11 +223,17 @@ func (s *Service) GrantIdentityPolicyBinding(ctx context.Context, request *polic
 	if err := s.requireKnownPolicySets(ctx, request.GetPolicySets()); err != nil {
 		return nil, err
 	}
+	unkeyed := proto.CloneOf(request)
+	unkeyed.IdempotencyKey = ""
+	record, err := idempotencyRecord(request.GetIdempotencyKey(), unkeyed)
+	if err != nil {
+		return nil, err
+	}
 	controller, blockOwnerDeletion := false, false
 	binding := &policyapi.PolicyBinding{
 		TypeMeta: metav1.TypeMeta{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "PolicyBinding"},
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: s.namespace, GenerateName: identity.Name + "-",
+			Namespace: s.namespace, GenerateName: identity.Name + "-", Annotations: record,
 			// Owned by the Identity incarnation: deleting it deletes this grant (DeleteIdentity does
 			// not count owned bindings), and a same-named successor inherits nothing.
 			OwnerReferences: []metav1.OwnerReference{{
@@ -205,8 +247,16 @@ func (s *Service) GrantIdentityPolicyBinding(ctx context.Context, request *polic
 			PolicySets: slices.Clone(request.GetPolicySets()),
 		},
 	}
+	if record != nil {
+		binding.GenerateName, binding.Name = "", keyedBindingName(identity, request.GetIdempotencyKey())
+	}
 	if err := s.createPolicyBinding(ctx, binding, request.GetExpiresAt()); err != nil {
-		return nil, err
+		if record == nil || !errors.Is(err, errBindingNameTaken) {
+			return nil, err
+		}
+		if binding, err = s.retriedIdentityBinding(ctx, binding.Name, identity.UID, record); err != nil {
+			return nil, err
+		}
 	}
 	message, err := bindingMessage(binding)
 	if err != nil {
@@ -214,6 +264,73 @@ func (s *Service) GrantIdentityPolicyBinding(ctx context.Context, request *polic
 		return nil, status.Error(codes.Internal, "PolicyBinding response is invalid")
 	}
 	return &policypb.GrantIdentityPolicyBindingResponse{Binding: message}, nil
+}
+
+// keyedBindingName is the one name a grant keyed by key on identity takes, so that a retry meets the binding the
+// first call created. It derives from the Identity's UID as well, so a same-named successor's grants never collide
+// with a predecessor's that garbage collection has yet to remove.
+func keyedBindingName(identity *policyapi.Identity, key string) string {
+	sum := sha256.Sum256([]byte(string(identity.UID) + "\x00" + key))
+	suffix := "-" + hex.EncodeToString(sum[:8])
+	prefix := identity.Name
+	if limit := validation.DNS1123SubdomainMaxLength - len(suffix); len(prefix) > limit {
+		prefix = strings.TrimRight(prefix[:limit], ".-")
+	}
+	return prefix + suffix
+}
+
+// retriedIdentityBinding is the binding of name that an earlier grant carrying record created on the Identity
+// incarnation owner, while it is not being deleted.
+func (s *Service) retriedIdentityBinding(ctx context.Context, name string, owner types.UID, record map[string]string) (*policyapi.PolicyBinding, error) {
+	binding := &policyapi.PolicyBinding{}
+	if err := s.objects.Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: name}, binding); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Error(codes.Aborted, "PolicyBinding changed; try again")
+		}
+		slog.ErrorContext(ctx, "PolicyService PolicyBinding read failed", "error", err)
+		return nil, status.Error(codes.Unavailable, "PolicyBinding is unavailable")
+	}
+	if !ownedBy(binding.OwnerReferences, owner) || !recorded(binding.Annotations, record) {
+		return nil, status.Error(codes.AlreadyExists, "this idempotency_key granted the Identity another request")
+	}
+	if !binding.DeletionTimestamp.IsZero() {
+		return nil, status.Error(codes.AlreadyExists, "this idempotency_key's PolicyBinding is being deleted")
+	}
+	return binding, nil
+}
+
+// idempotencyKeyAnnotation and requestDigestAnnotation are PolicyService's record, on an object a keyed request
+// created, of its idempotency_key and a digest of the rest of the request. They stand in for a uniqueness constraint
+// while Identities and PolicyBindings are custom resources; should the record move into a database, the key becomes
+// a unique key there and the digest a column beside it.
+const (
+	idempotencyKeyAnnotation = "agentplane.allegedly.works/idempotency-key"
+	requestDigestAnnotation  = "agentplane.allegedly.works/request-digest"
+	maxIdempotencyKeyLength  = 200
+)
+
+// idempotencyRecord is the annotations recording a request keyed by key whose other fields are unkeyed, or nil
+// without a key.
+func idempotencyRecord(key string, unkeyed proto.Message) (map[string]string, error) {
+	if key == "" {
+		return nil, nil
+	}
+	if utf8.RuneCountInString(key) > maxIdempotencyKeyLength {
+		return nil, status.Errorf(codes.InvalidArgument, "idempotency_key must be 1 to %d characters", maxIdempotencyKeyLength)
+	}
+	// Deterministic marshalling is stable for one schema. A field added later is absent until set, so it leaves the
+	// digest of a request that does not set it unchanged.
+	encoded, err := proto.MarshalOptions{Deterministic: true}.Marshal(unkeyed)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "request could not be digested")
+	}
+	digest := sha256.Sum256(encoded)
+	return map[string]string{idempotencyKeyAnnotation: key, requestDigestAnnotation: hex.EncodeToString(digest[:])}, nil
+}
+
+func recorded(annotations, record map[string]string) bool {
+	return annotations[idempotencyKeyAnnotation] == record[idempotencyKeyAnnotation] &&
+		annotations[requestDigestAnnotation] == record[requestDigestAnnotation]
 }
 
 func ownedBy(owners []metav1.OwnerReference, uid types.UID) bool {

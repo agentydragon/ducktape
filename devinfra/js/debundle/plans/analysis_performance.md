@@ -265,7 +265,7 @@ Keep these bounded reuse opportunities distinct from premise-dependent analysis:
   `prepare_callable_capabilities` repeats the identical body-only local flow
   solve. Reuse that result across the two preparations; the execution indexes
   themselves have changed assumptions and cannot simply be reused.
-- Program-backed `values_of_expr` queries in `facts/value_flow/program.rs`
+- Program-backed `values_of_expr` queries in `value_flow/program.rs`
   repeatedly lower syntax, rebuild coordinate mappings, evaluate completed facts
   and project origins. Some heap
   consumers query one expression separately for adjacent classifications.

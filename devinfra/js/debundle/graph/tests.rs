@@ -125,7 +125,7 @@ mod from_report_tests {
     use analysis_vocabulary::report_schema::{NativeIntegrityGuard, NativeIntegrityUse};
     use source_identity::SourceUnitId;
 
-    use analysis::StatementKind;
+    use analysis_domain::item_views::StatementKind;
 
     use crate::{DependencyEdgeId, DependencyGraphInput, EdgeRole};
     use analysis_model::DepKind;

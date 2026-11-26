@@ -10,7 +10,7 @@ from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.history_ingress import history_ingress
 from agentplane.env.e2e.testing.process import RunningRunner
-from agentplane.environments.testing.process import EnvironmentServiceProcess
+from agentplane.environments.testing.environment_service_process import EnvironmentServiceProcess
 from agentplane.history_service.testing.go_service import GoHistoryService, go_history_service
 from agentplane.net.peertls.config import MTLS, SANDBOX_CONTROLLER_URI
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster

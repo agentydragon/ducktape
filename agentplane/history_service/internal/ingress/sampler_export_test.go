@@ -21,7 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/historyexport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exportfixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exporttest"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -148,7 +148,7 @@ func (s *samplerExportStream) Recv() (*session_ingresspb.PushFrame, error) {
 type samplerExportFixture struct {
 	history   *storage.Store
 	historyDB *sql.DB
-	source    *exportfixture.Source
+	source    *exporttest.Source
 	target    string
 	tls       *transport.ClientTLS
 	// identity is a live Identity the sampler may act for; ingress records how each push was admitted.
@@ -177,7 +177,7 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	if err := migrations.Up(ctx, samplerDB); err != nil {
 		t.Fatal(err)
 	}
-	samplerSource := exportfixture.New(samplerDB, 30*time.Second)
+	samplerSource := exporttest.New(samplerDB, 30*time.Second)
 
 	ca := transporttesting.NewCA(t)
 	serverCredentials := ca.Issue(t, transport.HistoryIngressURI)

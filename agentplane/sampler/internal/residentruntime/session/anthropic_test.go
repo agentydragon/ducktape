@@ -26,7 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
-	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wiretest"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -37,7 +37,7 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	stream := wirefixture.SSEEventStream(
+	stream := wiretest.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_history","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
 		`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
@@ -175,14 +175,14 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 	var release sync.Once
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, wirefixture.SSEEventStream(`{"type":"message_start","message":{"id":"msg_evidence_failure","role":"assistant","content":[],"usage":{"input_tokens":1}}}`))
+		_, _ = io.WriteString(w, wiretest.SSEEventStream(`{"type":"message_start","message":{"id":"msg_evidence_failure","role":"assistant","content":[],"usage":{"input_tokens":1}}}`))
 		w.(http.Flusher).Flush()
 		select {
 		case <-resume:
 		case <-r.Context().Done():
 			return
 		}
-		_, _ = io.WriteString(w, wirefixture.SSEEventStream(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"uncommitted"}}`))
+		_, _ = io.WriteString(w, wiretest.SSEEventStream(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"uncommitted"}}`))
 		w.(http.Flusher).Flush()
 	}))
 	defer server.Close()
@@ -255,7 +255,7 @@ func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testi
 		t.Fatal(err)
 	}
 	invalidStart := `{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`
-	stream := wirefixture.SSEEventStream(
+	stream := wiretest.SSEEventStream(
 		`{"type":"message_start","message":{"id":"msg_invalid","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		invalidStart,
 	)

@@ -130,7 +130,7 @@ go_test(
         "//agentplane/sampler/providers/anthropic",
         "//agentplane/sampler/providers/chatcompletions",
         "//agentplane/sampler/providers/responses",
-        "//agentplane/sampler/testing/wirefixture",
+        "//agentplane/sampler/testing/wiretest",
         "//agentplane/testing/grpcserver",
         "//agentplane/testing/jsonassert",
         "//agentplane/testing/postgres",

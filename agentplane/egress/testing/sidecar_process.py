@@ -2,169 +2,78 @@
 
 from __future__ import annotations
 
-import asyncio
-import tempfile
-from collections.abc import Mapping
-from contextlib import ExitStack, suppress
+from collections.abc import AsyncIterator, Mapping
+from contextlib import ExitStack, asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import MappingProxyType
+from uuid import uuid4
 
-import aiohttp
 import yaml
 from python.runfiles import Runfiles
 
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoutes
-from agentplane.egress.sidecar_config import Proxy, Settings, WorkloadRoute
+from agentplane.egress.sidecar_config import READINESS_PATH, Proxy, Settings, WorkloadRoute
+from agentplane.testing.go_process import HttpReadiness, go_process
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import Listener, listen_tcp
 
 _BINARY = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/egress/sidecar/cmd/egress-sidecar_/egress-sidecar"
+_GRACE_SECONDS = 10
 
 
+@dataclass(frozen=True)
 class SidecarProcess:
-    def __init__(
-        self,
-        *,
-        proxy: Proxy,
-        workload_routes: Mapping[str, WorkloadRoute] = MappingProxyType({}),
-        platform_routes: PlatformRoutes | None = None,
-    ) -> None:
-        self._proxy = proxy
-        self._workload_routes = workload_routes
-        self._platform_routes = platform_routes or PlatformRoutes(listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS)
-        self._listener_stack = ExitStack()
-        self._proxy_listener: Listener | None = None
-        self._readiness_listener: Listener | None = None
-        self._platform_route_listener: Listener | None = None
-        self.process: asyncio.subprocess.Process | None = None
-        self._stderr_task: asyncio.Task[None] | None = None
-        self._stderr: list[str] = []
-        self._settings_dir = tempfile.TemporaryDirectory()
+    """Addresses of a running sidecar's listeners; they stay readable after it stops."""
 
-    async def __aenter__(self) -> SidecarProcess:
-        try:
-            self._proxy_listener = self._listener_stack.enter_context(listen_tcp())
-            self._readiness_listener = self._listener_stack.enter_context(listen_tcp())
-            self._platform_route_listener = self._listener_stack.enter_context(listen_tcp())
-            routes_config = PlatformRoutes(
-                listen_address=self._fd_address(self._platform_route_listener), routes=self._platform_routes.routes
-            )
+    proxy_listener: Listener
+    readiness_listener: Listener
+    platform_route_listener: Listener
 
-            settings = Settings(
-                proxy=self._proxy,
-                workload_routes=dict(self._workload_routes),
-                platform_routes=routes_config,
-                listen_address=self._fd_address(self.proxy_listener),
-                readiness_listen_address=self._fd_address(self.readiness_listener),
-            )
-            settings_path = Path(self._settings_dir.name) / "settings.yaml"
-            settings_path.write_text(yaml.safe_dump(settings.model_dump(mode="json", exclude_none=True)))
-            env = {Settings.config_file_env: str(settings_path)}
-            listeners = [self.proxy_listener, self.readiness_listener, self.platform_route_listener]
-            pass_fds = tuple(listener.socket.fileno() for listener in listeners)
-            spawn = asyncio.create_task(
-                asyncio.create_subprocess_exec(
-                    _BINARY,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.PIPE,
-                    env=env,
-                    pass_fds=pass_fds,
-                )
-            )
-            cancelled = False
-            while True:
-                try:
-                    self.process = await asyncio.shield(spawn)
-                    break
-                except asyncio.CancelledError:
-                    cancelled = True
-                    if spawn.done():
-                        self.process = spawn.result()
-                        break
-            # The child now owns the inherited descriptors. Keep the cached
-            # host/port values for clients, but release the parent's copies.
-            self._listener_stack.close()
-            if cancelled:
-                raise asyncio.CancelledError
-            assert self.process.stderr is not None
-            self._stderr_task = asyncio.create_task(self._capture_stderr(self.process.stderr))
-            await self._wait_ready()
-            return self
-        except BaseException:
-            await self._stop()
-            raise
 
-    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
-        await self._stop()
+def _fd_address(listener: Listener) -> str:
+    return f"fd:{listener.socket.fileno()}"
 
-    @property
-    def proxy_listener(self) -> Listener:
-        if self._proxy_listener is None:
-            raise RuntimeError("sidecar proxy listener has not been allocated")
-        return self._proxy_listener
 
-    @property
-    def readiness_listener(self) -> Listener:
-        if self._readiness_listener is None:
-            raise RuntimeError("sidecar readiness listener has not been allocated")
-        return self._readiness_listener
-
-    @property
-    def platform_route_listener(self) -> Listener:
-        if self._platform_route_listener is None:
-            raise RuntimeError("sidecar platform route listener has not been allocated")
-        return self._platform_route_listener
-
-    @staticmethod
-    def _fd_address(listener: Listener) -> str:
-        return f"fd:{listener.socket.fileno()}"
-
-    async def _capture_stderr(self, stream: asyncio.StreamReader) -> None:
-        while line := await stream.readline():
-            self._stderr.append(line.decode(errors="replace").rstrip())
-
-    async def _wait_ready(self) -> None:
-        assert self.process is not None
-        deadline = asyncio.get_running_loop().time() + 10
-        listener = self.readiness_listener
-        async with aiohttp.ClientSession() as session:
-            while asyncio.get_running_loop().time() < deadline:
-                if self.process.returncode is not None:
-                    raise RuntimeError(f"Go sidecar exited with {self.process.returncode}: {self._logs()}")
-                try:
-                    async with session.get(
-                        f"http://{listener.host}:{listener.port}/readyz", timeout=aiohttp.ClientTimeout(total=0.5)
-                    ) as response:
-                        if response.status == 200:
-                            return
-                except aiohttp.ClientError, TimeoutError:
-                    pass
-                await asyncio.sleep(0.02)
-        raise TimeoutError(f"Go sidecar did not become ready: {self._logs()}")
-
-    async def _stop(self) -> None:
-        try:
-            await self._stop_process()
-        finally:
-            self._listener_stack.close()
-            self._settings_dir.cleanup()
-
-    async def _stop_process(self) -> None:
-        if self.process is None:
-            return
-        if self.process.returncode is None:
-            with suppress(ProcessLookupError):
-                self.process.terminate()
-            try:
-                await asyncio.wait_for(self.process.wait(), timeout=10)
-            except TimeoutError:
-                self.process.kill()
-                await self.process.wait()
-        if self._stderr_task is not None:
-            await self._stderr_task
-        returncode = self.process.returncode
-        self.process = None
-        if returncode != 0:
-            raise RuntimeError(f"Go sidecar exited with {returncode}: {self._logs()}")
-
-    def _logs(self) -> str:
-        return "\n".join(self._stderr)
+@asynccontextmanager
+async def sidecar_process(
+    *,
+    proxy: Proxy,
+    workload_routes: Mapping[str, WorkloadRoute] = MappingProxyType({}),
+    platform_routes: PlatformRoutes | None = None,
+) -> AsyncIterator[SidecarProcess]:
+    routes = platform_routes or PlatformRoutes(listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS)
+    with ExitStack() as listeners, TemporaryDirectory(prefix="egress-sidecar-") as directory:
+        sidecar = SidecarProcess(
+            proxy_listener=listeners.enter_context(listen_tcp()),
+            readiness_listener=listeners.enter_context(listen_tcp()),
+            platform_route_listener=listeners.enter_context(listen_tcp()),
+        )
+        settings = Settings(
+            proxy=proxy,
+            workload_routes=dict(workload_routes),
+            platform_routes=PlatformRoutes(
+                listen_address=_fd_address(sidecar.platform_route_listener), routes=routes.routes
+            ),
+            listen_address=_fd_address(sidecar.proxy_listener),
+            readiness_listen_address=_fd_address(sidecar.readiness_listener),
+        )
+        settings_path = Path(directory) / "settings.yaml"
+        settings_path.write_text(yaml.safe_dump(settings.model_dump(mode="json", exclude_none=True)))
+        readiness = sidecar.readiness_listener
+        async with go_process(
+            _BINARY,
+            env={Settings.config_file_env: str(settings_path)},
+            stderr=undeclared_outputs_dir() / f"egress-sidecar-{uuid4().hex}.log",
+            readiness=HttpReadiness(url=f"http://{readiness.host}:{readiness.port}{READINESS_PATH}"),
+            grace_s=_GRACE_SECONDS,
+            pass_fds=[
+                listener.socket.fileno()
+                for listener in (sidecar.proxy_listener, sidecar.readiness_listener, sidecar.platform_route_listener)
+            ],
+        ):
+            # The child owns the inherited descriptors. Release the parent's copies so the
+            # listeners stop accepting once the child exits.
+            listeners.close()
+            yield sidecar

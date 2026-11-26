@@ -222,7 +222,7 @@ py_library(
         ":history_ingress",
         ":process",
         "//agentplane/env:config",
-        "//agentplane/environments/testing:process",
+        "//agentplane/environments/testing:environment_service_process",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/net/peertls:config",
         "//agentplane/sandboxes/testing:kubernetes",

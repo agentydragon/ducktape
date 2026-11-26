@@ -88,34 +88,14 @@ type identitySources struct {
 	stop                           func()
 }
 
-// startIdentities serves every Identity read from one PolicyService view when policy_service is set, else from
-// Kubernetes.
-func startIdentities(ctx context.Context, c config, kubeConfig *rest.Config, objects client.Client) (identitySources, error) {
-	// CLEANUP(added 2026-11-26): drop the Kubernetes sources once the staging manifests set policy_service
-	//   (IDENTITY_READERS_BEHIND_POLICY_SERVICE).
-	if c.PolicyService != nil {
-		view, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
-		if err != nil {
-			return identitySources{}, fmt.Errorf("PolicyService Identity view: %w", err)
-		}
-		return identitySources{
-			callers: view, sandboxes: view, delegation: view, rules: reader.CachedIdentities{View: view}, stop: stop,
-		}, nil
-	}
-	callers, err := auth.NewKubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace)
+// startIdentities serves every Identity read from one PolicyService view.
+func startIdentities(ctx context.Context, c config) (identitySources, error) {
+	view, stop, err := identitycache.Start(ctx, *c.PolicyService, identitycache.StandardGrace)
 	if err != nil {
-		return identitySources{}, err
-	}
-	sandboxes, err := auth.KubernetesIdentityUIDs(objects, c.Namespace)
-	if err != nil {
-		return identitySources{}, err
-	}
-	delegation, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
-	if err != nil {
-		return identitySources{}, err
+		return identitySources{}, fmt.Errorf("PolicyService Identity view: %w", err)
 	}
 	return identitySources{
-		callers: callers, sandboxes: sandboxes, delegation: delegation, rules: reader.KubernetesIdentities{}, stop: func() {},
+		callers: view, sandboxes: view, delegation: view, rules: reader.CachedIdentities{View: view}, stop: stop,
 	}, nil
 }
 
@@ -165,7 +145,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	queueStore := store.NewStore(db, c.QueueCap)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	identities, err := startIdentities(ctx, c, config, objects)
+	identities, err := startIdentities(ctx, c)
 	if err != nil {
 		return err
 	}

@@ -317,6 +317,14 @@ data:
   settings.yaml: |
     sandbox_namespace: agentplane-staging
     policy_namespace: agentplane-staging
+    policy_service:
+      target: policy-controller.agentplane-staging.svc.cluster.local:8083
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/policy-controller
+        cert_file: /run/agentplane/sessions-client-tls/tls.crt
+        key_file: /run/agentplane/sessions-client-tls/tls.key
+        client_uri: spiffe://agentplane/sessions
     kubernetes_client_qps: -1
     rpc:
       listen_address: 0.0.0.0:8080
@@ -395,6 +403,14 @@ spec:
       toPorts:
         - ports:
             - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: policy-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8083"
               protocol: TCP
     - toEndpoints:
         - matchLabels:

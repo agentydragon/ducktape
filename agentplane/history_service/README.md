@@ -9,7 +9,7 @@ Consumers use `client.py`; `testing/go_service.py` runs the built Go service ove
 Tests can inspect the fold's storage through `fold/models.py` and use the generated Thread entity
 messages for semantic reads.
 
-The required `rpc.auth` enables SPIFFE client trust; `policy_namespace` and
+The required `rpc.auth` enables SPIFFE client trust; `policy_service` and
 `ingress.writer_namespaces` are required for live workload credential checks.
 `reader_service_callers` grants named service SPIFFE IDs the backend-wide read scope. The independent
 `service_delegation` setting grants exact service actors read methods as a live effective Identity;
@@ -56,15 +56,16 @@ journal here, one call per Session. Sandbox Runtime opens end-to-end mTLS throug
 and central proxy's exact-authority CONNECT passthrough to `rpc.listen_address`.
 History presents `spiffe://agentplane/history-ingress`, verifies the client SVID against the
 Agentplane workload CA with an explicit clientAuth EKU, and resolves its Identity, WorkloadCredential,
-and Sandbox owner from live Kubernetes records. A deleted Sandbox, stale credential, changed Identity
+and Sandbox owner. The Identity comes from PolicyService (`policy_service`, mutual TLS as History: a
+`WatchIdentities` view with read-through `GetIdentity` on a miss); the WorkloadCredential and Sandbox come from live
+Kubernetes records. A deleted Sandbox, stale credential, changed Identity
 incarnation, or missing bound Pod is refused before the ingress handler. No header selects the caller
 and the proxy asserts none.
 
 `rpc` configures the shared native gRPC listener and server TLS files. History admits live workload SVIDs
 for Identity reads and runner `Push` calls, plus configured service SVIDs for component reads and
 sampler writes. The listener requires an SVID. A workload certificate cannot be combined with
-authorization metadata. For runner writes the WorkloadCredential must name an Identity in
-`policy_namespace` and belong to a Sandbox in `ingress.writer_namespaces`. See the
+authorization metadata. For runner writes the WorkloadCredential must name an Identity PolicyService serves and belong to a Sandbox in `ingress.writer_namespaces`. See the
 [Session writer binding](#session-writer-and-execution-sandbox) for announcement and reconnect checks.
 
 `Store.Append` accepts exact replays and refuses gaps and conflicting entries. Each acknowledgement

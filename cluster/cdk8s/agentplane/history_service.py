@@ -28,10 +28,12 @@ from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
+    PolicyServicePeer,
 )
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import central_sampler, database, egress, workload_tls
+from cluster.cdk8s.agentplane import central_sampler, database, egress, policy_controller, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -157,6 +159,10 @@ class HistoryService(Construct):
             reader_service_callers=frozenset((ACTIONS_URI, APP_URI, NOTIFICATIONS_URI)),
             service_delegation=service_delegation,
             policy_namespace=env.namespace,
+            policy_service=PolicyServicePeer(
+                target=policy_controller.tls_service(env.namespace).authority,
+                tls=serving_tls.client_tls(POLICY_CONTROLLER_URI, client_uri=HISTORY_SERVICE_URI),
+            ),
             ingress=ingress_settings,
             rpc=serving_tls.spiffe_listener(endpoint.pod_port),
         )
@@ -188,6 +194,11 @@ class HistoryService(Construct):
                     else []
                 ),
             ],
-            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
+            egress=[
+                cilium.dns_egress(),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
+                database.egress(env.namespace),
+                policy_controller.tls_service(env.namespace).egress(),
+            ],
         )
         egress.add_runner_egress_network_policy(self, policy=EGRESS_POLICY, endpoint=endpoint)

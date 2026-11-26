@@ -13,6 +13,7 @@ rust_library(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:js_ast",
         "//devinfra/js/debundle:source_identity",
+        "//devinfra/js/debundle/analysis_domain",
         "//devinfra/js/debundle/selectors/authoring:shape_index",
         "//devinfra/js/debundle/selectors/matching:chunk_facts",
         "//devinfra/js/debundle/selectors/matching/source_match",

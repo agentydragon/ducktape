@@ -13,7 +13,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/policy/identitycache"
-	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
@@ -27,22 +26,20 @@ type config struct {
 	RPCTLS        *peertls.ServerTLSListener `yaml:"rpc_tls,omitempty"`
 	DatabaseURL   string                     `mapstructure:"-" yaml:"-"`
 	ActionsTarget string                     `yaml:"actions_target"`
-	// PolicyNamespace holds live Identities; ActionsTokenFile is the rotating Action-audience token.
-	PolicyNamespace string `yaml:"policy_namespace"`
-	// PolicyService, when set, supplies Identities through PolicyService.WatchIdentities instead of the informer in
-	// PolicyNamespace.
-	// CLEANUP(added 2026-11-26): require it and drop PolicyNamespace and the informer once the staging manifests set it
-	//   (agentplane/plans/task_dag.md IDENTITY_READERS_BEHIND_POLICY_SERVICE).
-	PolicyService     *identitycache.Peer `yaml:"policy_service,omitempty"`
-	ActionsTokenFile  string              `yaml:"actions_token_file"`
-	Host              string              `yaml:"host"`
-	HTTPPort          int                 `yaml:"http_port"`
-	OperatorOIDC      operator.Settings   `yaml:"operator_oidc"`
-	OperatorServices  []string            `yaml:"operator_services,omitempty"`
-	OAuthFile         string              `yaml:"oauth_file,omitempty"`
-	OAuth             *oauthSettings      `yaml:"oauth,omitempty"`
-	MaxWaitSeconds    float64             `yaml:"max_wait_seconds"`
-	DirectWaitSeconds float64             `yaml:"direct_wait_seconds"`
+	// CLEANUP(added 2026-11-26): Remove once the manifests stop setting policy_namespace for the MCP edge (manifest PR after this one).
+	PolicyNamespace string `yaml:"policy_namespace,omitempty"`
+	// PolicyService supplies Identities through PolicyService.WatchIdentities.
+	PolicyService identitycache.Peer `yaml:"policy_service"`
+	// ActionsTokenFile is the rotating Action-audience token.
+	ActionsTokenFile  string            `yaml:"actions_token_file"`
+	Host              string            `yaml:"host"`
+	HTTPPort          int               `yaml:"http_port"`
+	OperatorOIDC      operator.Settings `yaml:"operator_oidc"`
+	OperatorServices  []string          `yaml:"operator_services,omitempty"`
+	OAuthFile         string            `yaml:"oauth_file,omitempty"`
+	OAuth             *oauthSettings    `yaml:"oauth,omitempty"`
+	MaxWaitSeconds    float64           `yaml:"max_wait_seconds"`
+	DirectWaitSeconds float64           `yaml:"direct_wait_seconds"`
 }
 
 type oauthSettings struct {
@@ -96,13 +93,8 @@ func (c config) validate() error {
 			return errors.New(required.name + " is required")
 		}
 	}
-	if len(validation.IsDNS1123Label(c.PolicyNamespace)) > 0 {
-		return errors.New("policy_namespace must be a namespace name")
-	}
-	if c.PolicyService != nil {
-		if err := c.PolicyService.Validate(peertls.MCPEdgeURI); err != nil {
-			return err
-		}
+	if err := c.PolicyService.Validate(peertls.MCPEdgeURI); err != nil {
+		return err
 	}
 	if c.HTTPPort < 1 || c.HTTPPort > 65535 {
 		return errors.New("http_port must be between 1 and 65535")

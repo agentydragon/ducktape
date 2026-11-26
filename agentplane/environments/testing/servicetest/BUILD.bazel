@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "servicetest",
+    testonly = True,
+    srcs = ["launcher.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/environments/testing/servicetest",
+    visibility = ["//agentplane/action_service/orchestration_v1:__pkg__"],
+    deps = [
+        "//agentplane/environments/internal/resume",
+        "//agentplane/environments/internal/service",
+        "//agentplane/environments/lifecycle",
+        "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/identity/auth",
+        "//agentplane/net/peertls",
+        "//agentplane/sandboxes/runtimeconfig",
+        "//agentplane/testing/grpcmethods",
+        "@io_k8s_apimachinery//pkg/util/sets",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@org_golang_google_grpc//:grpc",
+    ],
+)
