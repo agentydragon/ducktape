@@ -110,6 +110,10 @@ When creating a Thread on an existing Sandbox, the form shows that Sandbox's Ide
 Identity bindings read-only. It distinguishes an unassigned Identity from a missing Identity resource,
 and keeps policy-watch loading and failures visible.
 
+A Sandbox launch suggests the first free preset-derived Sandbox name. Its new Identity defaults to that
+name and can be renamed. Choosing an existing Identity creates only the Sandbox and leaves that
+Identity and its grants unchanged, including when the launch fails.
+
 ## Sandbox deletion and identity cleanup
 
 The Sandbox list and page offer an independent identity-cleanup choice in the delete dialog when the

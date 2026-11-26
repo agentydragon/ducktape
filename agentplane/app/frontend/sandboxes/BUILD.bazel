@@ -155,6 +155,7 @@ ts_library(
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
         "//agentplane/app/frontend/app_config:client",
+        "//agentplane/app/frontend/policy:watch",
         "//agentplane/app/frontend/sandboxes:sandbox_status",
         "//agentplane/app/frontend/shell:topbar",
         "//agentplane/app/frontend/transport:client",
