@@ -16,11 +16,11 @@ use swc_ecma_visit::VisitWith;
 use value_model::ValueExpr;
 
 #[derive(Clone)]
-pub(in super::super) struct DeferredGlobalPublication {
+pub struct DeferredGlobalPublication {
     pub(super) root: BuiltinGlobalRoot,
     pub(super) receiver_id: Id,
     pub(super) property: String,
-    pub(in super::super) value: ValueExpr,
+    pub value: ValueExpr,
 }
 
 pub(super) fn uses_any_binding(value: &ValueExpr, ids: &BTreeSet<Id>) -> bool {

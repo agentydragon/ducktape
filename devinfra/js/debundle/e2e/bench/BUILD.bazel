@@ -99,9 +99,7 @@ rust_test(
         "manual",
     ],
     deps = [
-        "//devinfra/js/debundle:raw_js_test_support",
         "@crates//:rmp-serde",
-        "@crates//:swc_ecma_parser",
     ],
 )
 

@@ -260,7 +260,7 @@ an LRU, per-world cache or another scheduler.
 
 Keep these bounded reuse opportunities distinct from premise-dependent analysis:
 
-- `cross_module_purity.rs` optionally repeats all-module capability preparation
+- `cross_module_purity/` optionally repeats all-module capability preparation
   after deriving bundle globals. For selected-value-input modules,
   `prepare_callable_capabilities` repeats the identical body-only local flow
   solve. Reuse that result across the two preparations; the execution indexes
@@ -302,7 +302,7 @@ Tana savings; this is a source-audit finding, not a measured dominant hotspot.
 
 ### PF11 — Receiver-flow aggregate replay and fallback restart
 
-Receiver flow in `facts/sync_effects/execution_index.rs` has separate binding,
+Receiver flow in `facts/sync_effects/execution_index/mod.rs` has separate binding,
 assignment, return-site and callable keys, but reconstructs full assignment/return
 aggregates on wakes. For unresolved
 capture-connected callable summaries, `close_receiver_flow` rebuilds and reruns

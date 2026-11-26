@@ -2,10 +2,10 @@
 //! application `Executor`, for ordered root initializers and callable bodies.
 
 use super::super::alternatives::execution_state::ExecutionPath;
-use super::super::execution_index::intrinsic_roots::native_own_data_read_slots;
-use super::super::execution_index::{Call, CallKind, MemberValueWrite};
 use super::super::interpreter::{Executor, Outcome, unknown};
 use analysis::facts::binding_effect_coverage::{LocalBodyIdentity, LocalCallReceipt};
+use execution_index::intrinsic_roots::native_own_data_read_slots;
+use execution_index::{Call, CallKind, MemberValueWrite};
 use kernel::cells::missing_activation_binding;
 use kernel::closure::{CapturePolicy, ClosureAdmission};
 use kernel::context::{
@@ -313,7 +313,7 @@ impl LocalExecutionContext<'_, '_, '_> {
     /// substitutes.
     fn substituted_call_summary(
         &self,
-        call: &super::super::execution_index::Call,
+        call: &execution_index::Call,
     ) -> Option<analysis_vocabulary::inputs::ForeignCallSummary> {
         if call.has_spread {
             return None;

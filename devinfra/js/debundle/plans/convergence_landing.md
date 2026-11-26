@@ -265,21 +265,23 @@ when their disposition has landed on `devel`.
 
 `facts/sync_effects/` becomes, in this order of extraction:
 
-| Module                               | Owns                                                                                                                        |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `kernel/continuation.rs`             | `LocalContinuation`, `Step`; the five narrow context traits.                                                                |
-| `alternatives/`                      | `Family`, the leaves of a forked body, and the join of their path states; refusal is a conservative outcome.                |
-| `world/` (crate)                     | `SemanticWorldData`, `ObjectSurfaceStore`, `DescriptorHeap`, lexical cells; `World::join`; no literal-heap flags.           |
-| `world/completion.rs`                | `Completion`, `TransferLedger`.                                                                                             |
-| `adapters/{application,provider}.rs` | The two execution modes, implementing only the narrow traits; strict-provider private heap is the provider adapter's world. |
-| `native/`                            | Builtin table rows → one `plan`/`commit` path.                                                                              |
-| `roots/`                             | `execute_owner` as named phases: operands, body, assignment/export, owner finalization.                                     |
-| `legacy/`                            | Whatever is not yet deleted, each item with a `CLEANUP` tombstone naming its last caller.                                   |
+| Module                     | Owns                                                                                                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kernel/continuation.rs`   | `LocalContinuation`, `Step`; the five narrow context traits.                                                                                                |
+| `alternatives/`            | `Family`, the leaves of a forked body, and the join of their path states; refusal is a conservative outcome.                                                |
+| `world/` (crate)           | `SemanticWorldData`, `ObjectSurfaceStore`, `DescriptorHeap`, lexical cells; `World::join`; no literal-heap flags.                                           |
+| `world/completion.rs`      | `Completion`, `TransferLedger`.                                                                                                                             |
+| `execution_index/` (crate) | `ExecutionIndex` and its build; the provider adapter (`provider.rs`) and `strict_provider.rs`, since sealing provider bodies is part of building the index. |
+| `adapters/application.rs`  | The application execution mode, implementing only the narrow traits.                                                                                        |
+| `native/`                  | Builtin table rows → one `plan`/`commit` path.                                                                                                              |
+| `roots/`                   | `execute_owner` as named phases: operands, body, assignment/export, owner finalization.                                                                     |
+| `legacy/`                  | Whatever is not yet deleted, each item with a `CLEANUP` tombstone naming its last caller.                                                                   |
 
 AR4 tracks the remaining execution-index interface in [the work queue](../TODO.md#architecture-review-follow-ups).
 `value_model/`, `world/` (with the allocation, array and effect-coverage
-transfers) and `kernel/` (with `Family`; it reads `ExecutionIndex` through
-`kernel::context::IndexReads`) are Bazel crates below `sync_effects`.
+transfers), `kernel/` (with `Family`; it reads `ExecutionIndex` through
+`kernel::context::IndexReads`) and `execution_index/` are Bazel crates below
+`sync_effects`.
 
 ## Dependency graph and waves
 
@@ -429,8 +431,8 @@ parity tests green.
   `CallableSummary` to a DTO; graduate contracts into `SPEC.md` and
   `docs/design.md`; delete this plan and the burned-down parts of the others.
 
-**Interpreter split (parallel to Waves 3 and 4).** `interpreter.rs` is 8.7k
-lines against the exit gate's 3k. Legacy `Executor` method groups that read
+**Interpreter split (parallel to Waves 3 and 4).** `interpreter.rs` is 2.2k
+lines, under the exit gate's 3k; its `interpreter/` children hold 12k. Legacy `Executor` method groups that read
 interpreter-private state live in `interpreter/` child modules
 (`native_calls`, `dense_arrays`, `factory_results`, `local_construction`,
 `callback_promotion`); moving one into a § Target code shape module first needs

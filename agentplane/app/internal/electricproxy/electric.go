@@ -45,7 +45,6 @@ var (
 		"electric-up-to-date": {}, "etag": {}, "retry-after": {}, "vary": {},
 	}
 	bodyPairPattern = regexp.MustCompile(`\(owner_id = \$[0-9]+ AND generation = \$[0-9]+\)`)
-	threadIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 )
 
 // ThreadEpochStore reads the current projection epoch so Electric cannot serve stale shapes.
@@ -134,10 +133,9 @@ func (p *ElectricProxy) chunks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *ElectricProxy) prepareShape(w http.ResponseWriter, r *http.Request) (string, string, *SubsetRequest, bool) {
-	threadID, ok := parseThreadID(w, r)
-	if !ok {
-		return "", "", nil, false
-	}
+	// The app's route guard already rejected non-UUID thread IDs; Electric matches the
+	// lowercase canonical form.
+	threadID := strings.ToLower(r.PathValue("thread_id"))
 	query := r.URL.Query()
 	epochs := query["projection_epoch"]
 	if len(epochs) != 1 {
@@ -390,13 +388,4 @@ func decodeSubset(w http.ResponseWriter, r *http.Request) (SubsetRequest, int, e
 		return SubsetRequest{}, http.StatusUnprocessableEntity, errors.New("invalid subset request")
 	}
 	return subset, http.StatusOK, nil
-}
-
-func parseThreadID(w http.ResponseWriter, r *http.Request) (string, bool) {
-	threadID := r.PathValue("thread_id")
-	if !threadIDPattern.MatchString(threadID) {
-		httpresponse.WriteDetailError(w, http.StatusUnprocessableEntity, "thread_id must be a UUID")
-		return "", false
-	}
-	return strings.ToLower(threadID), true
 }

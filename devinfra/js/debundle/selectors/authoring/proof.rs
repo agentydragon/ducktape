@@ -6,7 +6,8 @@ use anyhow::{Context, Result, bail};
 use selector_outcome::{Outcome, ResolvedBy};
 use selector_resolve::{EntityIndex, Member, MemberSelector, SpecModule};
 use source_match::{MemberBindingMatch, ParsedSourceMatchSelector};
-use spec::{SourceMatch, SourceMatchIdentifierMode};
+use spec::SourceMatchIdentifierMode;
+use spec::annotations::SourceMatch;
 use synthesis_failure::{ProofError, ProofFailure};
 
 use crate::chunk_index::{ChunkSelectorIndex, IndexedDeclaration, SYNTHESIS_MODULE};

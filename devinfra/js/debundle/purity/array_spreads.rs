@@ -21,7 +21,7 @@ pub struct StableArraySpreadShapes {
 }
 
 impl StableArraySpreadShapes {
-    pub(crate) fn collect(original: &[ModuleItem], body: &[TopLevelItemView<'_>]) -> Self {
+    pub fn collect(original: &[ModuleItem], body: &[TopLevelItemView<'_>]) -> Self {
         let ordinals: BTreeMap<_, _> = body
             .iter()
             .enumerate()

@@ -238,12 +238,38 @@ func checkExportAcknowledgement(ctx context.Context, outbox Outbox, sessionID st
 type exportQueue struct {
 	queue  workqueue.TypedRateLimitingInterface[string]
 	export func(ctx context.Context, sessionID string) (caughtUp bool, err error)
+	// scanBackoff spaces pending-Session scans after a failed one; success resets it.
+	scanBackoff workqueue.TypedRateLimiter[string]
 }
 
 func newExportQueue(config workqueue.TypedRateLimitingQueueConfig[string], export func(context.Context, string) (bool, error)) *exportQueue {
 	return &exportQueue{
-		queue:  workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.NewTypedItemExponentialFailureRateLimiter[string](exportRetryBase, exportRetryMax), config),
-		export: export,
+		queue:       workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.NewTypedItemExponentialFailureRateLimiter[string](exportRetryBase, exportRetryMax), config),
+		export:      export,
+		scanBackoff: workqueue.NewTypedItemExponentialFailureRateLimiter[string](exportRetryBase, exportRetryMax),
+	}
+}
+
+// scanPending enqueues pending Sessions after each outbox change until ctx ends. A failed scan
+// (a DB timeout or failover) is retried after a backoff rather than ending the export loop.
+func (q *exportQueue) scanPending(ctx context.Context, outbox Outbox, target string, changed <-chan struct{}) error {
+	const scanKey = "pending-scan"
+	for {
+		wake := changed
+		var retry <-chan time.Time
+		if err := q.enqueuePending(ctx, outbox, target); err == nil {
+			q.scanBackoff.Forget(scanKey)
+		} else if ctx.Err() == nil {
+			delay := q.scanBackoff.When(scanKey)
+			slog.Warn("History export pending-Session scan failed; retrying", "target", target, "error", err, "retry_in", delay)
+			wake, retry = nil, time.After(delay)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-wake:
+		case <-retry:
+		}
 	}
 }
 
@@ -313,19 +339,7 @@ func Run(ctx context.Context, outbox Outbox, target, tokenFile, outboxChannel st
 	}
 	tasks.Go(func() error {
 		defer queue.queue.ShutDown()
-		for {
-			if err := queue.enqueuePending(taskCtx, outbox, target); err != nil {
-				if taskCtx.Err() != nil {
-					return taskCtx.Err()
-				}
-				return err
-			}
-			select {
-			case <-taskCtx.Done():
-				return taskCtx.Err()
-			case <-changed:
-			}
-		}
+		return queue.scanPending(taskCtx, outbox, target, changed)
 	})
 	return tasks.Wait()
 }

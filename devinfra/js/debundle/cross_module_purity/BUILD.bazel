@@ -1,0 +1,39 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//devinfra/js/debundle:__subpackages__"])
+
+rust_library(
+    name = "cross_module_purity",
+    srcs = glob(["*.rs"]),
+    crate_root = "mod.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:binding_targets",
+        "//devinfra/js/debundle:js_ast",
+        "//devinfra/js/debundle:progress",
+        "//devinfra/js/debundle/analysis_domain",
+        "//devinfra/js/debundle/analysis_vocabulary",
+        "//devinfra/js/debundle/facts/sync_effects",
+        "//devinfra/js/debundle/facts/sync_effects/execution_index",
+        "//devinfra/js/debundle/inference",
+        "//devinfra/js/debundle/purity",
+        "//devinfra/js/debundle/spec",
+        "//devinfra/js/debundle/value_flow",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
+rust_test(
+    name = "cross_module_purity_test",
+    crate = ":cross_module_purity",
+    edition = "2024",
+    deps = [
+        "@crates//:swc_ecma_parser",
+        "@crates//:swc_ecma_visit",
+    ],
+)

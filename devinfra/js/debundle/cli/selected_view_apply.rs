@@ -9,7 +9,8 @@ use graph_provenance::VerifiedGraphSourceContext;
 use ownership_subset::OwnershipSubset;
 use peel::assignment::{AssignmentProblem, accepted};
 use selector_codemod::source_unit::{SourceUnitSelectorRequest, SourceUnitSelectorSynthesis};
-use spec::{LogicalModule, ModulePath, SourceMatchBinding, SourceMatchBindingDetail};
+use spec::annotations::SourceMatchBinding;
+use spec::{LogicalModule, ModulePath, SourceMatchBindingDetail};
 
 use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 use crate::source_unit_apply::{SelectorOverride, SourceUnitApplyOptions, SourceUnitApplyOutcome};
@@ -298,10 +299,13 @@ fn realize_change(
                     }
                     Some(SelectorOverride::Relational(selector)) => {
                         ensure!(
-                            !matches!(selector.validate()?, spec::MemberSelectorSpec::Binding(_)),
+                            !matches!(
+                                selector.validate()?,
+                                spec::member_selectors::MemberSelectorSpec::Binding(_)
+                            ),
                             "relational override cannot use a binding name pin"
                         );
-                        module.members.push(spec::Member {
+                        module.members.push(spec::member_selectors::Member {
                             name: Some(readable),
                             selector: *selector,
                         });
@@ -342,17 +346,19 @@ fn realize_change(
                         "anonymous source ordinal {ordinal} has no uniquely proven structural selector"
                     );
                 };
-                module.anonymous_statements.push(spec::AnonymousStatement {
-                    match_source: None,
-                    source_match: Some(spec::SourceMatch {
-                        identifiers: selector.claim.identifiers,
-                        match_source: selector.claim.match_source,
-                        target_binding: None,
-                    }),
-                    no_reentry_call: None,
-                    note: None,
-                    comment: None,
-                });
+                module
+                    .anonymous_statements
+                    .push(spec::annotations::AnonymousStatement {
+                        match_source: None,
+                        source_match: Some(spec::annotations::SourceMatch {
+                            identifiers: selector.claim.identifiers,
+                            match_source: selector.claim.match_source,
+                            target_binding: None,
+                        }),
+                        no_reentry_call: None,
+                        note: None,
+                        comment: None,
+                    });
             }
             Ok(module)
         },

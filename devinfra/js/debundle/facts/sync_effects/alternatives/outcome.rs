@@ -5,7 +5,6 @@ use super::super::interpreter::Outcome;
 use analysis::facts::statement_facts::SynchronousCalls;
 use analysis_vocabulary::inputs::ProofDependencies;
 use value_model::CallableSelection;
-use world::allocation_transfer::AllocationJudgment;
 use world::effect_coverage::EffectCoverageFragment;
 
 impl Outcome {
@@ -171,18 +170,4 @@ fn join_selections(selections: Vec<Option<&CallableSelection>>) -> Option<Callab
         target: first.target.clone(),
         dependencies: Box::new(dependencies),
     })
-}
-
-/// Allocation-only when every leaf is, under all of their conditions.
-pub(crate) fn join_allocation_judgments<'a>(
-    judgments: impl IntoIterator<Item = &'a AllocationJudgment>,
-) -> AllocationJudgment {
-    let mut dependencies = ProofDependencies::default();
-    for judgment in judgments {
-        let AllocationJudgment::CoveredAllocationOnly(covered) = judgment else {
-            return AllocationJudgment::Opaque;
-        };
-        dependencies.extend(covered);
-    }
-    AllocationJudgment::CoveredAllocationOnly(Box::new(dependencies))
 }

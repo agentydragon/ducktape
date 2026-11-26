@@ -218,8 +218,8 @@ type threadEpochStore struct {
 
 func (s threadEpochStore) CurrentEpoch(ctx context.Context, rawID string) (string, bool, error) {
 	id, err := uuid.Parse(rawID)
-	if err != nil || id.String() != rawID {
-		return "", false, nil
+	if err != nil {
+		return "", false, err
 	}
 	return s.history.CurrentEpoch(ctx, id)
 }

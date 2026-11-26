@@ -1,6 +1,6 @@
 //! Callable conclusions composed from canonical identity and body candidates.
 
-use crate::facts::semantic_inference::{NativeCallee, NativePremises, SemanticFact, SemanticKey};
+use crate::semantic_inference::{NativeCallee, NativePremises, SemanticFact, SemanticKey};
 use analysis_domain::builtins::Row;
 use analysis_domain::integrity::IntrinsicSlot;
 use analysis_vocabulary::inputs::NativeIntrinsic;

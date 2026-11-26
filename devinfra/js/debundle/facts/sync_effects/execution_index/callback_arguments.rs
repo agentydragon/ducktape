@@ -6,9 +6,9 @@ use analysis_vocabulary::report_schema::NativeUnreachableBranch;
 
 #[derive(Debug)]
 pub(super) struct InlineCallbackEntry {
-    pub import: Id,
-    pub function: Span,
-    pub call: Span,
+    pub(crate) import: Id,
+    pub(crate) function: Span,
+    pub(crate) call: Span,
 }
 
 #[derive(Debug)]
@@ -64,11 +64,11 @@ impl Predicate {
 
 #[derive(Debug)]
 pub(super) struct GuardedRegion {
-    pub callable: u32,
-    pub guard: Span,
-    pub region: Span,
-    pub expected: bool,
-    pub predicate: Predicate,
+    pub(crate) callable: u32,
+    pub(crate) guard: Span,
+    pub(crate) region: Span,
+    pub(crate) expected: bool,
+    pub(crate) predicate: Predicate,
 }
 
 /// Strengthens a derived callback factory (`key` returning `closure`): no

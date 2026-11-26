@@ -20,9 +20,9 @@ pub enum InvalidSelectorError {
         modules: Vec<String>,
     },
     #[error(transparent)]
-    Member(#[from] spec::MemberSelectorError),
+    Member(#[from] spec::member_selectors::MemberSelectorError),
     #[error(transparent)]
-    Anonymous(#[from] spec::AnonymousStatementSelectorError),
+    Anonymous(#[from] spec::annotations::AnonymousStatementSelectorError),
     #[error(transparent)]
     Claims(#[from] ClaimValidationError),
 }
@@ -193,10 +193,10 @@ pub enum InvalidSelectorCause {
         modules: Vec<String>,
     },
     Member {
-        problem: spec::MemberSelectorError,
+        problem: spec::member_selectors::MemberSelectorError,
     },
     AnonymousSpec {
-        problem: spec::AnonymousStatementSelectorError,
+        problem: spec::annotations::AnonymousStatementSelectorError,
     },
     Claims {
         problem: ClaimValidationError,
@@ -227,11 +227,11 @@ impl InvalidSelectorError {
             Ok(error) => return Ok(error.into()),
             Err(error) => error,
         };
-        let error = match error.downcast::<spec::MemberSelectorError>() {
+        let error = match error.downcast::<spec::member_selectors::MemberSelectorError>() {
             Ok(error) => return Ok(error.into()),
             Err(error) => error,
         };
-        let error = match error.downcast::<spec::AnonymousStatementSelectorError>() {
+        let error = match error.downcast::<spec::annotations::AnonymousStatementSelectorError>() {
             Ok(error) => return Ok(error.into()),
             Err(error) => error,
         };

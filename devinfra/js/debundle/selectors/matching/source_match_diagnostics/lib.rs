@@ -18,9 +18,9 @@ use source_match::{
     ParsedSourceMatchSelector, SelectorField, SourceMatchBodyDebt, SourceMatchNearMiss,
     chunk_resolver, free_identifiers, parse_selector_module, selector_mode, unsupported_error,
 };
-use spec::AnonymousStatementSelector;
 #[cfg(test)]
 use spec::SourceMatchIdentifierMode;
+use spec::annotations::AnonymousStatementSelector;
 use swc_ecma_ast::*;
 
 mod explain;

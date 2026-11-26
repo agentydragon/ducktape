@@ -1,5 +1,5 @@
 import { toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
-import { TimestampSchema, ValueSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
+import { ValueSchema } from "@bufbuild/protobuf/wkt";
 
 import {
   ExecutionErrorSchema,
@@ -49,13 +49,6 @@ export function actionCaller(request: ActionRequest): ActionCaller {
   }
   if (request.callerIdentity !== undefined) return { kind: "identity", identity: request.callerIdentity };
   return { kind: "unknown" };
-}
-
-export function timestampText(value: Timestamp | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  const json = toJson(TimestampSchema, value);
-  if (typeof json !== "string") throw new Error("The Action Service returned an invalid timestamp.");
-  return json;
 }
 
 export function mcpLifecycleLabel(value: McpLifecycle): string {

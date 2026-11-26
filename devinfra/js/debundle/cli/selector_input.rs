@@ -6,7 +6,8 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 use source_match::{ParsedSourceMatchSelector, SelectorField};
 use source_match_diagnostics::ExplainRangeKind;
-use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
+use spec::SourceMatchIdentifierMode;
+use spec::annotations::AnonymousStatementSelector;
 use spec_modules::{read_flat_transform_spec, read_module_file};
 
 #[derive(Debug, Serialize)]
