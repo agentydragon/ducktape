@@ -1,28 +1,9 @@
-use analysis_model::DepKind;
-use anyhow::Result;
-use artifact::paths::{join_module_path, normalize_module_path};
+//! Split top-level declarations between the modules that claim their bindings.
+
 use binding_targets::{binding_names, declaration_ids};
-use graph::AtomicGroupConflict;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
-
-pub(super) fn target_file_for_request(target_dir: &str, target_path: &str) -> Result<String> {
-    let normalized = normalize_module_path(target_path)?;
-    let with_ext = if normalized.ends_with(".js") {
-        normalized
-    } else {
-        format!("{normalized}.js")
-    };
-    Ok(join_module_path(&[target_dir, &with_ext]))
-}
-
-pub(super) fn normalize_optional_relative_dir(value: &str) -> Result<String> {
-    if value.is_empty() {
-        return Ok(String::new());
-    }
-    normalize_module_path(value)
-}
 
 /// Selection leaves at most one item: an unchanged statement or one residual
 /// declaration containing the unselected declarators. No temporary Vec is needed.
@@ -61,7 +42,7 @@ pub(super) fn remaining_item_after_selection(
     }
 }
 
-pub(super) fn split_var_decl(
+fn split_var_decl(
     var: &VarDecl,
     was_exported: bool,
     binding_assignment: &HashMap<Id, usize>,
@@ -114,59 +95,8 @@ pub(super) fn split_var_decl(
     }
 }
 
-pub(super) fn assigned_module_for_ids(
-    ids: &[Id],
-    binding_assignment: &HashMap<Id, usize>,
-) -> Option<usize> {
+fn assigned_module_for_ids(ids: &[Id], binding_assignment: &HashMap<Id, usize>) -> Option<usize> {
     ids.iter()
         .filter_map(|id| binding_assignment.get(id).copied())
         .next()
-}
-
-/// Per-cause guidance for the atomic-group-conflict bail message —
-/// gives the spec author vocabulary to search for (`cycle`,
-/// `side-effect`, `mutable`, `assignment`, `cross-destination`).
-pub(super) fn render_atomic_group_cause_guidance(conflicts: &[AtomicGroupConflict]) -> String {
-    // `AtomicGroup::causes` is already a `BTreeSet<DepKind>` — gather
-    // per-conflict causes into one `BTreeSet` so iteration stays
-    // `DepKind`-`Ord`-stable without a post-collection sort.
-    let causes: BTreeSet<DepKind> = conflicts
-        .iter()
-        .flat_map(|c| c.causes.iter().copied())
-        .collect();
-    let mut out = String::new();
-    for cause in &causes {
-        out.push_str(match cause {
-            DepKind::EagerUse => {
-                "EagerUse cycle: a top-level statement reads a binding at-init; \
-                 splitting reader and declarer across modules forms an evaluation-order cycle. "
-            }
-            DepKind::EagerRebind | DepKind::LazyRebind | DepKind::DeferredRebind => {
-                "Rebind: a function or top-level statement performs an assignment \
-                 to a mutable binding owned by a different module — the resulting ESM \
-                 import would be read-only, so this cross-destination assignment is invalid. \
-                 The assigner and the binding declarer must materialize together. "
-            }
-            DepKind::Sequenced => {
-                "Sequenced side-effect chain: two top-level side-effect statements are \
-                 forced into a fixed source order; splitting them across modules \
-                 inverts the run order. "
-            }
-            DepKind::LocalEffect => {
-                "Local effect: a trusted helper call mutates a target binding \
-                 (for example a TypeScript decorator application on a class prototype); \
-                 the mutating statement and target binding must materialize together. "
-            }
-            DepKind::CoDeclaration => {
-                "Shared var declaration: all source statements that declare the same `var` \
-                 binding must materialize in one module. "
-            }
-            DepKind::CoLocation => {
-                "Protected iterable interval: its producers and consumer must \
-                 materialize in one module to retain their source interval. "
-            }
-            DepKind::LazyUse | DepKind::HoistedUse => continue,
-        });
-    }
-    out
 }

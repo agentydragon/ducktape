@@ -4,7 +4,6 @@ use super::ChunkContext;
 use super::plan_builder::ChunkPlanBuilder;
 use crate::io::{ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use crate::plans::ModulePlan;
-use crate::util::render_atomic_group_cause_guidance;
 use crate::{
     BindingSourceUnitAssociation, ExportReentryReport, FinalModuleContent, GateRejectionPolicy,
     GraphReportSelection, ReportEmission,
@@ -12,6 +11,7 @@ use crate::{
 use analysis::facts::ChunkFactAnalysis;
 use analysis::reports::spec_lint::{ChunkSpecLint, LintFinding, LoaderKeyUses, PurityHintOwner};
 use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
+use analysis_model::DepKind;
 use analysis_projection::AnalysisProjection;
 use anyhow::{Result, bail, ensure};
 use artifact::paths::join_module_path;
@@ -21,6 +21,7 @@ use gate::{
     AssignmentAnalysis, ChunkGateRejection, GateVerdict, RejectedAssignment, ValidatedAssignment,
     render_atomic_group_conflict_summary, render_cycle_summary,
 };
+use graph::AtomicGroupConflict;
 use graph::report::source_unit_key;
 use output_layout::{
     ATOMIC_GROUP_CONFLICTS_REPORT, CANDIDATE_RELOCATION_ASSESSMENT_REPORT, CYCLES_REPORT,
@@ -779,4 +780,52 @@ fn module_output_file(
         .inputs()
         .planned_module(module)
         .map(|planned| join_module_path(&[chunk_id, &planned.target_file]))
+}
+
+/// Per-cause guidance for the atomic-group-conflict bail message —
+/// gives the spec author vocabulary to search for (`cycle`,
+/// `side-effect`, `mutable`, `assignment`, `cross-destination`).
+fn render_atomic_group_cause_guidance(conflicts: &[AtomicGroupConflict]) -> String {
+    // `AtomicGroup::causes` is already a `BTreeSet<DepKind>` — gather
+    // per-conflict causes into one `BTreeSet` so iteration stays
+    // `DepKind`-`Ord`-stable without a post-collection sort.
+    let causes: BTreeSet<DepKind> = conflicts
+        .iter()
+        .flat_map(|c| c.causes.iter().copied())
+        .collect();
+    let mut out = String::new();
+    for cause in &causes {
+        out.push_str(match cause {
+            DepKind::EagerUse => {
+                "EagerUse cycle: a top-level statement reads a binding at-init; \
+                 splitting reader and declarer across modules forms an evaluation-order cycle. "
+            }
+            DepKind::EagerRebind | DepKind::LazyRebind | DepKind::DeferredRebind => {
+                "Rebind: a function or top-level statement performs an assignment \
+                 to a mutable binding owned by a different module — the resulting ESM \
+                 import would be read-only, so this cross-destination assignment is invalid. \
+                 The assigner and the binding declarer must materialize together. "
+            }
+            DepKind::Sequenced => {
+                "Sequenced side-effect chain: two top-level side-effect statements are \
+                 forced into a fixed source order; splitting them across modules \
+                 inverts the run order. "
+            }
+            DepKind::LocalEffect => {
+                "Local effect: a trusted helper call mutates a target binding \
+                 (for example a TypeScript decorator application on a class prototype); \
+                 the mutating statement and target binding must materialize together. "
+            }
+            DepKind::CoDeclaration => {
+                "Shared var declaration: all source statements that declare the same `var` \
+                 binding must materialize in one module. "
+            }
+            DepKind::CoLocation => {
+                "Protected iterable interval: its producers and consumer must \
+                 materialize in one module to retain their source interval. "
+            }
+            DepKind::LazyUse | DepKind::HoistedUse => continue,
+        });
+    }
+    out
 }
